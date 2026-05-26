@@ -16,6 +16,7 @@ from app.api.routes.runs import router as runs_router
 from app.api.routes.runtime import router as runtime_router
 from app.api.routes.service import router as service_router
 from app.api.routes.stats import router as stats_router
+from app.api.routes.task_packs import router as task_packs_router
 from app.api.routes.web import router as web_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -88,7 +89,12 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
         forwarded_host = (
             str(request.headers.get("x-forwarded-host") or "").split(",", 1)[0].strip().lower()
         )
-        forwarded_proto = str(request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip().lower()
+        forwarded_proto = (
+            str(request.headers.get("x-forwarded-proto") or "")
+            .split(",", 1)[0]
+            .strip()
+            .lower()
+        )
         origin = settings._normalize_origin(request.headers.get("origin") or "")
         referer = settings._normalize_origin(request.headers.get("referer") or "")
         trusted_hosts_local = settings.trusted_hosts()
@@ -145,6 +151,7 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
     app.include_router(runtime_router)
     app.include_router(runs_router)
     app.include_router(stats_router)
+    app.include_router(task_packs_router)
     app.include_router(orchestration_router)
     app.include_router(web_router)
 

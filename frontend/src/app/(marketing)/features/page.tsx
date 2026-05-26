@@ -7,9 +7,9 @@ export default function FeaturesPage() {
   const { locale, t } = useLocale();
 
   const launchNotice = {
-    en: 'These cards describe the current hosted runtime, member portal, and operator/admin surfaces that ship with Cloud.',
-    'zh-CN': '这些模块描述的是当前随 Cloud 一起交付的 hosted runtime、成员 Portal 与 operator/admin 界面。',
-    'zh-TW': '這些模組描述的是目前隨 Cloud 一起交付的 hosted runtime、成員 Portal 與 operator/admin 介面。',
+    en: 'Cloud is available in Starter, Pro, Agency, and Enterprise packages. These cards describe the hosted runtime, member portal, and operator/admin surfaces that ship with every tier.',
+    'zh-CN': 'Cloud 提供 Starter、Pro、Agency、Enterprise 四种套餐。以下模块描述的是所有层级均包含的 hosted runtime、成员 Portal 与 operator/admin 界面。',
+    'zh-TW': 'Cloud 提供 Starter、Pro、Agency、Enterprise 四種方案。以下模組描述的是所有層級均包含的 hosted runtime、成員 Portal 與 operator/admin 介面。',
   }[locale];
 
   const featureGroups = {

@@ -121,11 +121,13 @@ export function localizeTopUpPackOperatorNote(t: TranslateFn, packId: string | n
 export function localizeTopUpTierLabel(t: TranslateFn, tierId: string): string {
   switch (tierId) {
     case 'starter':
-      return t('admin.plan_package_alias_starter', {}, 'Free');
+      return t('admin.plan_package_alias_starter', {}, 'Starter');
     case 'pro':
-      return t('admin.plan_package_alias_pro', {}, 'Basic');
+      return t('admin.plan_package_alias_pro', {}, 'Pro');
     case 'agency':
-      return t('admin.plan_package_alias_agency', {}, 'Bulk');
+      return t('admin.plan_package_alias_agency', {}, 'Agency');
+    case 'enterprise':
+      return t('admin.plan_package_alias_enterprise', {}, 'Enterprise');
     default:
       return tierId;
   }

@@ -5,12 +5,13 @@ import { useLocale } from '@/contexts/LocaleContext';
 
 type PackageRow = {
   packageName: string;
-  includedPoints: string;
+  sites: string;
+  tasksPerMonth: string;
+  batchLimit: string;
   concurrency: string;
-  batchCeiling: string;
-  gracePeriod: string;
-  overLimitBehavior: string;
-  headroomPosture: string;
+  geoReports: string;
+  auditRetention: string;
+  supportLevel: string;
   bestFor: string;
 };
 
@@ -24,64 +25,84 @@ export default function PackagesPage() {
 
   const copy = {
     en: {
-      eyebrow: 'Package Guide',
-      title: 'Compare the current Cloud packages at a glance',
+      eyebrow: 'Packages',
+      title: 'Choose the package that matches your scale',
       description:
-        'Free, Basic, and Bulk share the same core product surface. The real differences come from included points, concurrency, batch ceiling, and commercial headroom.',
+        'Starter, Pro, Agency, and Enterprise share the same core product surface. The real differences come from site count, task volume, concurrency, batch ceiling, and support level.',
       notice:
         'This is a read-only comparison page. Package changes remain operator-managed and do not happen through a self-serve transaction flow.',
-      columns: ['Package', 'Included points', 'Concurrency', 'Batch ceiling', 'Grace period', 'Over-limit behavior', 'Headroom posture', 'Best for'],
+      columns: ['Package', 'Sites', 'Tasks/mo', 'Batch limit', 'Concurrency', 'GEO reports', 'Audit retention', 'Support', 'Best for'],
       rows: [
         {
-          packageName: 'Free',
-          includedPoints: '500',
+          packageName: 'Starter',
+          sites: '1',
+          tasksPerMonth: '500',
+          batchLimit: '0',
           concurrency: '1 active run',
-          batchCeiling: '0',
-          gracePeriod: '0 days',
-          overLimitBehavior: 'Fail closed',
-          headroomPosture: 'Fail closed immediately when over limit.',
-          bestFor: 'Single-site / light trials',
+          geoReports: '3/mo',
+          auditRetention: '7 days',
+          supportLevel: 'Community',
+          bestFor: 'Single-site trial, small GEO/product tasks',
         },
         {
-          packageName: 'Basic',
-          includedPoints: '10,000',
+          packageName: 'Pro',
+          sites: '1',
+          tasksPerMonth: '10,000',
+          batchLimit: '10',
           concurrency: '2 active runs',
-          batchCeiling: '10',
-          gracePeriod: '3 days',
-          overLimitBehavior: 'Short grace, then operator follow-up',
-          headroomPosture: 'Short grace before operator intervention.',
-          bestFor: 'Steady daily work / medium automation',
+          geoReports: '20/mo',
+          auditRetention: '30 days',
+          supportLevel: 'Email',
+          bestFor: 'Daily content / GEO / Woo product ops',
         },
         {
-          packageName: 'Bulk',
-          includedPoints: '50,000',
+          packageName: 'Agency',
+          sites: '10',
+          tasksPerMonth: '50,000',
+          batchLimit: '100',
           concurrency: '6 active runs',
-          batchCeiling: '100',
-          gracePeriod: '7 days',
-          overLimitBehavior: 'Short-lived overage before intervention',
-          headroomPosture: 'Wider operator headroom before intervention.',
-          bestFor: 'Multi-site / sustained automation / higher concurrency',
+          geoReports: '100/mo',
+          auditRetention: '90 days',
+          supportLevel: 'Priority',
+          bestFor: 'Multi-site, bulk products, multi-language, team collaboration',
+        },
+        {
+          packageName: 'Enterprise',
+          sites: 'Unlimited',
+          tasksPerMonth: 'Custom',
+          batchLimit: 'Custom',
+          concurrency: 'Custom',
+          geoReports: 'Unlimited',
+          auditRetention: '1 year+',
+          supportLevel: 'Dedicated SLA',
+          bestFor: 'BYOM, private models, audit, SLA, compliance support',
         },
       ] as PackageRow[],
+      pointsFootnote:
+        'Points shown are approximate runtime consumption units for reference only. Actual entitlements are based on task volume, site count, and package tier.',
       chooseTitle: 'How to choose',
       choices: [
         {
-          title: 'Free',
-          description: 'Single-site, lighter trials, and the most conservative over-limit policy.',
+          title: 'Starter',
+          description: 'Single-site trial with conservative limits. Best for evaluating hosted runtime on one WordPress site before scaling.',
         },
         {
-          title: 'Basic',
-          description: 'Stable daily workflows that need more predictable headroom and short grace.',
+          title: 'Pro',
+          description: 'Steady daily operations for content, GEO, and WooCommerce product workflows on a single site.',
         },
         {
-          title: 'Bulk',
-          description: 'Multi-site and sustained automation when higher concurrency is already normal.',
+          title: 'Agency',
+          description: 'Multi-site operations with higher concurrency, batch limits, and team collaboration across many properties.',
+        },
+        {
+          title: 'Enterprise',
+          description: 'Custom deployments with BYOM, private models, extended audit retention, and dedicated SLA compliance support.',
         },
       ] as ChoiceItem[],
       rulesTitle: 'What stays the same',
       rules: [
-        'Core capability entry stays shared across packages.',
-        'Package differences should be read through points, concurrency, batch ceiling, and policy headroom, not through sales-front feature gating.',
+        'Core capability entry stays shared across all packages.',
+        'Package differences should be read through site count, task volume, concurrency, batch ceiling, and support level—not through sales-front feature gating.',
         'If you are between two packages, start by checking your current usage and then ask for operator follow-up.',
       ],
       currentPackage: 'Review current package posture',
@@ -89,64 +110,84 @@ export default function PackagesPage() {
       requestUpgrade: 'Ask an operator to review package fit',
     },
     'zh-CN': {
-      eyebrow: '套餐说明',
-      title: '一眼看懂当前 Cloud 套餐差异',
+      eyebrow: '套餐',
+      title: '选择与你规模匹配的套餐',
       description:
-        'Free、Basic、Bulk 共享同一套核心产品面。真正的差异主要来自 included points、并发、批量上限和商业 headroom。',
+        'Starter、Pro、Agency、Enterprise 共享同一套核心产品面。真正的差异主要来自站点数、任务量、并发、批量上限和支持等级。',
       notice:
         '这是一张只读对比页。套餐调整仍由 operator-managed 处理，不通过自助交易流完成。',
-      columns: ['套餐', 'included points', '并发', '批量上限', 'grace period', '超限行为', 'headroom 姿态', '最适合'],
+      columns: ['套餐', '站点数', '任务/月', '批量上限', '并发', 'GEO 报告', '审计保留', '支持', '最适合'],
       rows: [
         {
-          packageName: 'Free',
-          includedPoints: '500',
+          packageName: 'Starter',
+          sites: '1',
+          tasksPerMonth: '500',
+          batchLimit: '0',
           concurrency: '1 个活跃 run',
-          batchCeiling: '0',
-          gracePeriod: '0 天',
-          overLimitBehavior: '直接 fail closed',
-          headroomPosture: '超限后立即收口。',
-          bestFor: '单站点 / 轻量试用',
+          geoReports: '3/月',
+          auditRetention: '7 天',
+          supportLevel: '社区',
+          bestFor: '单站点试用、少量 GEO/商品任务',
         },
         {
-          packageName: 'Basic',
-          includedPoints: '10,000',
+          packageName: 'Pro',
+          sites: '1',
+          tasksPerMonth: '10,000',
+          batchLimit: '10',
           concurrency: '2 个活跃 run',
-          batchCeiling: '10',
-          gracePeriod: '3 天',
-          overLimitBehavior: '短暂 grace 后 operator 跟进',
-          headroomPosture: '短暂 grace 后再进入 operator 跟进。',
-          bestFor: '稳定日常 / 中等自动化',
+          geoReports: '20/月',
+          auditRetention: '30 天',
+          supportLevel: '邮件',
+          bestFor: '日常内容 / GEO / Woo 商品运营',
         },
         {
-          packageName: 'Bulk',
-          includedPoints: '50,000',
+          packageName: 'Agency',
+          sites: '10',
+          tasksPerMonth: '50,000',
+          batchLimit: '100',
           concurrency: '6 个活跃 run',
-          batchCeiling: '100',
-          gracePeriod: '7 天',
-          overLimitBehavior: '允许短时超限后再介入',
-          headroomPosture: '在介入前保留更宽的 operator headroom。',
-          bestFor: '多站点 / 持续自动化 / 高并发',
+          geoReports: '100/月',
+          auditRetention: '90 天',
+          supportLevel: '优先',
+          bestFor: '多站点、批量商品、多语言、团队协作',
+        },
+        {
+          packageName: 'Enterprise',
+          sites: '不限',
+          tasksPerMonth: '定制',
+          batchLimit: '定制',
+          concurrency: '定制',
+          geoReports: '不限',
+          auditRetention: '1 年+',
+          supportLevel: '专属 SLA',
+          bestFor: 'BYOM、私有模型、审计、SLA、合规支持',
         },
       ] as PackageRow[],
+      pointsFootnote:
+        '点数仅为近似运行时消耗参考单位，不作为主收费锚点。实际权益以任务量、站点数和套餐层级为准。',
       chooseTitle: '怎么选',
       choices: [
         {
-          title: 'Free',
-          description: '单站点、轻量试用，以及最保守的超限策略。',
+          title: 'Starter',
+          description: '单站点试用，限制较保守。适合在单个 WordPress 站点上评估托管运行，再决定是否扩容。',
         },
         {
-          title: 'Basic',
-          description: '稳定日常工作流，需要更可预测的 headroom 和短暂 grace。',
+          title: 'Pro',
+          description: '适合单站点上稳定日常运营的内容、GEO 与 WooCommerce 商品工作流。',
         },
         {
-          title: 'Bulk',
-          description: '多站点、持续自动化，以及更高并发已经成为常态。',
+          title: 'Agency',
+          description: '多站点运营，具备更高并发、批量上限，以及跨多个资产的团队协作能力。',
+        },
+        {
+          title: 'Enterprise',
+          description: '定制部署，支持 BYOM、私有模型、延长审计保留期，以及专属 SLA 合规支持。',
         },
       ] as ChoiceItem[],
       rulesTitle: '哪些东西不变',
       rules: [
         '核心能力入口在各套餐之间保持共享。',
-        '套餐差异应该通过 points、并发、批量上限和策略 headroom 来理解，而不是销售前台式功能割裂。',
+        '套餐差异应该通过站点数、任务量、并发、批量上限和支持等级来理解，而不是销售前台式功能割裂。',
         '如果你处在两个套餐之间，先看当前使用情况，再进入 operator 跟进。',
       ],
       currentPackage: '查看当前套餐状态',
@@ -154,64 +195,84 @@ export default function PackagesPage() {
       requestUpgrade: '请 operator 评估套餐是否需要调整',
     },
     'zh-TW': {
-      eyebrow: '方案說明',
-      title: '一眼看懂目前的 Cloud 方案差異',
+      eyebrow: '方案',
+      title: '選擇與你規模匹配的方案',
       description:
-        'Free、Basic、Bulk 共用同一套核心產品面。真正差異主要來自 included points、併發、批次上限和商業 headroom。',
+        'Starter、Pro、Agency、Enterprise 共用同一套核心產品面。真正差異主要來自站點數、任務量、併發、批次上限和支援等級。',
       notice:
         '這是一張唯讀對比頁。方案調整仍由 operator-managed 處理，不透過自助交易流完成。',
-      columns: ['方案', 'included points', '併發', '批次上限', 'grace period', '超限行為', 'headroom 姿態', '最適合'],
+      columns: ['方案', '站點數', '任務/月', '批次上限', '併發', 'GEO 報告', '稽核保留', '支援', '最適合'],
       rows: [
         {
-          packageName: 'Free',
-          includedPoints: '500',
+          packageName: 'Starter',
+          sites: '1',
+          tasksPerMonth: '500',
+          batchLimit: '0',
           concurrency: '1 個活躍 run',
-          batchCeiling: '0',
-          gracePeriod: '0 天',
-          overLimitBehavior: '直接 fail closed',
-          headroomPosture: '超限後立即收口。',
-          bestFor: '單站點 / 輕量試用',
+          geoReports: '3/月',
+          auditRetention: '7 天',
+          supportLevel: '社區',
+          bestFor: '單站點試用、少量 GEO/商品任務',
         },
         {
-          packageName: 'Basic',
-          includedPoints: '10,000',
+          packageName: 'Pro',
+          sites: '1',
+          tasksPerMonth: '10,000',
+          batchLimit: '10',
           concurrency: '2 個活躍 run',
-          batchCeiling: '10',
-          gracePeriod: '3 天',
-          overLimitBehavior: '短暫 grace 後 operator 跟進',
-          headroomPosture: '短暫 grace 後再進入 operator 跟進。',
-          bestFor: '穩定日常 / 中等自動化',
+          geoReports: '20/月',
+          auditRetention: '30 天',
+          supportLevel: '郵件',
+          bestFor: '日常內容 / GEO / Woo 商品營運',
         },
         {
-          packageName: 'Bulk',
-          includedPoints: '50,000',
+          packageName: 'Agency',
+          sites: '10',
+          tasksPerMonth: '50,000',
+          batchLimit: '100',
           concurrency: '6 個活躍 run',
-          batchCeiling: '100',
-          gracePeriod: '7 天',
-          overLimitBehavior: '允許短時超限後再介入',
-          headroomPosture: '在介入前保留更寬的 operator headroom。',
-          bestFor: '多站點 / 持續自動化 / 高併發',
+          geoReports: '100/月',
+          auditRetention: '90 天',
+          supportLevel: '優先',
+          bestFor: '多站點、批量商品、多語言、團隊協作',
+        },
+        {
+          packageName: 'Enterprise',
+          sites: '不限',
+          tasksPerMonth: '定制',
+          batchLimit: '定制',
+          concurrency: '定制',
+          geoReports: '不限',
+          auditRetention: '1 年+',
+          supportLevel: '專屬 SLA',
+          bestFor: 'BYOM、私有模型、稽核、SLA、合規支援',
         },
       ] as PackageRow[],
+      pointsFootnote:
+        '點數僅為近似執行時消耗參考單位，不作為主收費錨點。實際權益以任務量、站點數和方案層級為準。',
       chooseTitle: '怎麼選',
       choices: [
         {
-          title: 'Free',
-          description: '單站點、輕量試用，以及最保守的超限策略。',
+          title: 'Starter',
+          description: '單站點試用，限制較保守。適合在單個 WordPress 站點上評估託管執行，再決定是否擴容。',
         },
         {
-          title: 'Basic',
-          description: '穩定日常工作流程，需要更可預測的 headroom 和短暫 grace。',
+          title: 'Pro',
+          description: '適合單站點上穩定日常營運的內容、GEO 與 WooCommerce 商品工作流。',
         },
         {
-          title: 'Bulk',
-          description: '多站點、持續自動化，以及更高併發已成常態。',
+          title: 'Agency',
+          description: '多站點營運，具備更高併發、批次上限，以及跨多個資產的團隊協作能力。',
+        },
+        {
+          title: 'Enterprise',
+          description: '定制部署，支援 BYOM、私有模型、延長稽核保留期，以及專屬 SLA 合規支援。',
         },
       ] as ChoiceItem[],
       rulesTitle: '哪些東西不變',
       rules: [
         '核心能力入口在各方案之間保持共享。',
-        '方案差異應透過 points、併發、批次上限和策略 headroom 理解，而不是銷售前台式功能切割。',
+        '方案差異應透過站點數、任務量、併發、批次上限和支援等級理解，而不是銷售前台式功能切割。',
         '如果你介於兩個方案之間，先看目前使用情況，再進入 operator 跟進。',
       ],
       currentPackage: '查看目前方案狀態',
@@ -253,7 +314,7 @@ export default function PackagesPage() {
       <section className="w-full py-6">
         <div className="container mx-auto px-4">
           <div className="overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/80 shadow-sm dark:border-slate-800 dark:bg-slate-950/55">
-            <div className="grid grid-cols-1 gap-px bg-slate-200/80 dark:bg-slate-800 lg:grid-cols-8">
+            <div className="grid grid-cols-1 gap-px bg-slate-200/80 dark:bg-slate-800 lg:grid-cols-9">
               {copy.columns.map((column) => (
                 <div
                   key={column}
@@ -267,28 +328,31 @@ export default function PackagesPage() {
               {copy.rows.map((row) => (
                 <div
                   key={row.packageName}
-                  className="grid grid-cols-1 gap-px bg-slate-200/80 dark:bg-slate-800 lg:grid-cols-8"
+                  className="grid grid-cols-1 gap-px bg-slate-200/80 dark:bg-slate-800 lg:grid-cols-9"
                 >
                   <div className="bg-white px-5 py-5 dark:bg-slate-950/55">
                     <div className="text-lg font-semibold text-slate-950 dark:text-white">{row.packageName}</div>
                   </div>
                   <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
-                    {row.includedPoints}
+                    {row.sites}
+                  </div>
+                  <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
+                    {row.tasksPerMonth}
+                  </div>
+                  <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
+                    {row.batchLimit}
                   </div>
                   <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
                     {row.concurrency}
                   </div>
                   <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
-                    {row.batchCeiling}
+                    {row.geoReports}
                   </div>
                   <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
-                    {row.gracePeriod}
-                  </div>
-                  <div className="bg-white px-5 py-5 text-sm leading-6 text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
-                    {row.overLimitBehavior}
+                    {row.auditRetention}
                   </div>
                   <div className="bg-white px-5 py-5 text-sm text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
-                    {row.headroomPosture}
+                    {row.supportLevel}
                   </div>
                   <div className="bg-white px-5 py-5 text-sm leading-6 text-slate-700 dark:bg-slate-950/55 dark:text-slate-200">
                     {row.bestFor}
@@ -297,6 +361,9 @@ export default function PackagesPage() {
               ))}
             </div>
           </div>
+          <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+            {copy.pointsFootnote}
+          </p>
         </div>
       </section>
 

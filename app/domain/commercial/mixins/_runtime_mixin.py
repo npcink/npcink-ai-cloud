@@ -1,18 +1,44 @@
 """Commercial service: runtime authorization and policy mixin."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
+from sqlalchemy.orm import Session
+
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
+    ACCOUNT_STATUS_ACTIVE,
     ENTITLEMENT_SNAPSHOT_STATUS_ACTIVE,
+    PLAN_STATUS_ACTIVE,
+    PLAN_VERSION_STATUS_PUBLISHED,
+    SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_TRIALING,
+    AccountEntitlementSnapshot,
+    AccountSubscription,
+    ProviderCallRecord,
+    RunRecord,
 )
-from app.domain.commercial.mixins._audit_mixin import ServiceAuditContext
+from app.core.secrets import encrypt_site_api_signing_secret
+from app.core.security import build_secret_hash
 from app.domain.commercial.mixins._billing_mixin import (
     DEFAULT_FREE_PLAN_ID,
+    DEFAULT_FREE_PLAN_KIND,
     DEFAULT_FREE_PLAN_VERSION_ID,
+    DEFAULT_RUNTIME_BUDGETS,
+    DEFAULT_RUNTIME_COMMERCIAL_POLICY,
+    DEFAULT_RUNTIME_CONCURRENCY,
+    DEFAULT_RUNTIME_ENTITLEMENTS,
+)
+from app.domain.runtime.errors import (
+    RuntimeConcurrencyExceededError,
+    RuntimeEntitlementDeniedError,
+    RuntimeQuotaExceededError,
+    RuntimeSiteInactiveError,
+    RuntimeSiteNotProvisionedError,
+    RuntimeSubscriptionInactiveError,
 )
 
 
@@ -43,7 +69,10 @@ class CommercialServiceRuntimeMixin:
                 status=ACCOUNT_STATUS_ACTIVE,
                 metadata_json={"source": "seed_runtime"},
             )
-            if plan_id == DEFAULT_FREE_PLAN_ID and plan_version_id == DEFAULT_FREE_PLAN_VERSION_ID:
+            if (
+                plan_id == DEFAULT_FREE_PLAN_ID
+                and plan_version_id == DEFAULT_FREE_PLAN_VERSION_ID
+            ):
                 self._ensure_plan_free_version_in_session(repository=repository)
             else:
                 repository.upsert_plan(
@@ -70,12 +99,16 @@ class CommercialServiceRuntimeMixin:
                 account_id=resolved_account_id,
                 name=site_name or site_id,
                 status=SITE_STATUS_ACTIVE,
-                metadata_json={
-                    "source": "seed_runtime",
-                    "tier_id": "starter",
-                    "package_alias": "Free",
-                    "plan_kind": DEFAULT_FREE_PLAN_KIND,
-                } if plan_id == DEFAULT_FREE_PLAN_ID else {"source": "seed_runtime"},
+                metadata_json=(
+                    {
+                        "source": "seed_runtime",
+                        "tier_id": "starter",
+                        "package_alias": "Free",
+                        "plan_kind": DEFAULT_FREE_PLAN_KIND,
+                    }
+                    if plan_id == DEFAULT_FREE_PLAN_ID
+                    else {"source": "seed_runtime"}
+                ),
                 provisioned_at=now,
             )
             site.activated_at = now
@@ -733,7 +766,10 @@ class CommercialServiceRuntimeMixin:
         callback_url = str(raw.get("callback_url") or raw.get("url") or "").strip()
         key_id = str(raw.get("key_id") or "").strip()
         secret = str(raw.get("secret") or "").strip()
-        callback_id = str(raw.get("callback_id") or "runtime_terminal").strip() or "runtime_terminal"
+        callback_id = (
+            str(raw.get("callback_id") or "runtime_terminal").strip()
+            or "runtime_terminal"
+        )
         return {
             "enabled": bool(raw.get("enabled")),
             "callback_url": callback_url,
@@ -741,4 +777,3 @@ class CommercialServiceRuntimeMixin:
             "secret": secret,
             "callback_id": callback_id,
         }
-
