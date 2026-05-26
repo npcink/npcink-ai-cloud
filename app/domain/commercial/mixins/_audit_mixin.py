@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
@@ -708,6 +708,40 @@ class CommercialServiceAuditMixin:
             return {
                 "totals": {"events": sum(item["count"] for item in items)},
                 "items": items,
+            }
+
+    def list_commercial_decision_events(
+        self,
+        *,
+        site_id: str | None = None,
+        subscription_id: str | None = None,
+        decision: str | None = None,
+        decision_code: str | None = None,
+        request_kind: str | None = None,
+        since: datetime | None = None,
+        limit: int = 50,
+    ) -> dict[str, object]:
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            events = repository.list_commercial_decision_events(
+                site_id=site_id,
+                subscription_id=subscription_id,
+                decision=decision,
+                decision_code=decision_code,
+                request_kind=request_kind,
+                since=since,
+                limit=limit,
+            )
+            return {
+                "items": [self._serialize_commercial_decision_event(event) for event in events],
+                "total": len(events),
+                "filters": {
+                    "site_id": site_id or "",
+                    "subscription_id": subscription_id or "",
+                    "decision": decision or "",
+                    "decision_code": decision_code or "",
+                    "request_kind": request_kind or "",
+                },
             }
 
     def list_service_audit_events(
