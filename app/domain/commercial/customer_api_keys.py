@@ -4,7 +4,7 @@ import base64
 import json
 
 SCOPE_ALIAS_MAP: dict[str, list[str]] = {
-    "read": ["runtime:read", "stats:read", "catalog:read"],
+    "read": ["runtime:read", "stats:read", "catalog:read", "entitlement:read"],
     "write": [],
     "execute": ["runtime:resolve", "runtime:execute"],
 }
@@ -15,6 +15,7 @@ DEFAULT_PORTAL_RUNTIME_SCOPES: list[str] = [
     "runtime:execute",
     "runtime:read",
     "stats:read",
+    "entitlement:read",
 ]
 
 

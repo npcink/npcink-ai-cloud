@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.envelope import build_envelope
 from app.api.routes.catalog import router as catalog_router
+from app.api.routes.entitlements import router as entitlements_router
 from app.api.routes.health import router as health_router
 from app.api.routes.internal import router as internal_router
 from app.api.routes.orchestration import router as orchestration_router
@@ -145,6 +146,7 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
     app.state.services = services or create_default_services(settings)
     app.include_router(health_router)
     app.include_router(catalog_router)
+    app.include_router(entitlements_router)
     app.include_router(internal_router)
     app.include_router(portal_router)
     app.include_router(service_router)

@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--site-name", default="")
     parser.add_argument(
         "--scopes",
-        default="catalog:read,runtime:resolve,runtime:execute,runtime:read,stats:read",
+        default="catalog:read,runtime:resolve,runtime:execute,runtime:read,stats:read,entitlement:read",
         help="Comma-separated API key scopes",
     )
     parser.add_argument(

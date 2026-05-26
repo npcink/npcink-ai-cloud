@@ -863,13 +863,13 @@ function CreateKeyModal({
       id: 'standard',
       label: t('keys.preset_standard'),
       description: t('keys.preset_standard_desc'),
-      scopes: ['catalog:read', 'runtime:resolve', 'runtime:execute', 'runtime:read', 'stats:read'],
+      scopes: ['catalog:read', 'runtime:resolve', 'runtime:execute', 'runtime:read', 'stats:read', 'entitlement:read'],
     },
     {
       id: 'readonly',
       label: t('keys.preset_readonly'),
       description: t('keys.preset_readonly_desc'),
-      scopes: ['catalog:read', 'runtime:read', 'stats:read'],
+      scopes: ['catalog:read', 'runtime:read', 'stats:read', 'entitlement:read'],
     },
   ] as const;
   const [presetId, setPresetId] = useState<(typeof keyPresets)[number]['id']>('standard');

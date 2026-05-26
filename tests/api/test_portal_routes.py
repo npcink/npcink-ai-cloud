@@ -478,7 +478,14 @@ def test_portal_issue_site_key_normalizes_legacy_scope_aliases(tmp_path: Path) -
 
     assert issue_response.status_code == 200
     scopes = set(issue_response.json()["data"]["scopes"])
-    assert scopes == {"catalog:read", "runtime:resolve", "runtime:execute", "runtime:read", "stats:read"}
+    assert scopes == {
+        "catalog:read",
+        "runtime:resolve",
+        "runtime:execute",
+        "runtime:read",
+        "stats:read",
+        "entitlement:read",
+    }
 
     dispose_engine(database_url)
 

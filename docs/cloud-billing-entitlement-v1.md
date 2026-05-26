@@ -1,6 +1,6 @@
 # Cloud Billing Entitlement v1
 
-Status: draft
+Status: active
 Date: 2026-05-27
 
 ## Scope
