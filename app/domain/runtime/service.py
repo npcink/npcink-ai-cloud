@@ -53,6 +53,7 @@ from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
     RuntimeCancelNotAllowedError,
     RuntimeCallbackConfigurationError,
+    RuntimeErrorBase,
     RuntimeExecutionContractError,
     RuntimeIdempotencyConflictError,
     RuntimeResultExpiredError,

@@ -1,7 +1,6 @@
 """Commercial service: site and site-key operations mixin."""
 from __future__ import annotations
 
-import re
 import secrets
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -14,7 +13,6 @@ from app.core.callback_security import (
     validate_runtime_callback_target,
 )
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_STATUS_ACTIVE,
     SITE_API_KEY_STATUS_ACTIVE,
@@ -42,17 +40,8 @@ from app.domain.commercial.errors import (
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.service import (
     PLAN_TIER_REGISTRY,
-    PORTAL_MEMBERSHIP_ALLOWED_ROLES,
     PORTAL_SITE_PROVISION_ROLES,
     DEFAULT_PLAN_TIER_ID,
-    IDENTITY_TYPE_USER_ADMIN,
-    USER_ALLOWED_ACTION_VIEW_SITES,
-    USER_ALLOWED_ACTION_VIEW_USAGE,
-    USER_ALLOWED_ACTION_VIEW_BILLING,
-    USER_ALLOWED_ACTION_VIEW_AUDIT,
-    USER_ALLOWED_ACTION_PROVISION_SITES,
-    USER_ALLOWED_ACTION_MANAGE_SITE_KEYS,
-    USER_ALLOWED_ACTION_ARCHIVE_SITES,
     ServiceAuditContext,
     _normalize_portal_site_url,
     _slugify_portal_site_segment,

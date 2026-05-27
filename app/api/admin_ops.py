@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 import hmac
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import Request
 
 from app.api.auth import PortalBearerTokenError, get_cloud_services
 from app.api.portal_session import (
-    build_new_portal_session_metadata,
     get_commercial_service,
-    serialize_portal_session,
 )
 from app.core.models import PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
 
@@ -44,12 +40,8 @@ class ResolvedAdminSession:
             revocable=revocable,
         )
 
-    def as_payload(
-        self,
-        *,
-        impersonation: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        payload: dict[str, object] = {
+    def as_payload(self) -> dict[str, object]:
+        return {
             "platform_admin_ref": self.platform_admin_ref,
             "role": self.role,
             "auth_mode": self.auth_mode,
@@ -58,19 +50,6 @@ class ResolvedAdminSession:
             "issued_at": "",
             "expires_at": "",
         }
-        if impersonation is not None:
-            payload["impersonation"] = impersonation
-        return payload
-
-
-@dataclass(frozen=True)
-class PlatformImpersonationSession:
-    impersonation: dict[str, object]
-    portal_session: dict[str, object]
-    member_ref: str
-    site_id: str
-    expires_at: str
-    max_age: int
 
 
 def resolve_admin_login_identity(
@@ -108,67 +87,3 @@ def resolve_admin_login_identity(
     )
 
 
-def start_platform_impersonation_session(
-    request: Request,
-    *,
-    platform_admin_ref: str,
-    platform_role: str,
-    member_ref: str,
-    site_id: str,
-    reason_code: str,
-    reason_text: str,
-    audit_context: Any,
-) -> PlatformImpersonationSession:
-    impersonation = get_commercial_service(request).start_platform_impersonation(
-        platform_admin_ref=platform_admin_ref,
-        platform_role=platform_role,
-        member_ref=member_ref,
-        site_id=site_id,
-        reason_code=reason_code,
-        reason_text=reason_text,
-        read_only=True,
-        audit_context=audit_context,
-    )
-    session_metadata = build_new_portal_session_metadata(request)
-    session_metadata["member_ref"] = member_ref
-    portal_session = serialize_portal_session(
-        request,
-        member_ref=member_ref,
-        site_id=site_id,
-        strict_site=True,
-        session_metadata=session_metadata,
-    )
-    portal_session["impersonation"] = impersonation
-
-    expires_at = str(impersonation.get("expires_at") or "")
-    max_age = 60
-    if expires_at:
-        try:
-            expires_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-            max_age = max(60, int((expires_dt - datetime.now(UTC)).total_seconds()))
-        except ValueError:
-            max_age = 60
-    return PlatformImpersonationSession(
-        impersonation=impersonation,
-        portal_session=portal_session,
-        member_ref=member_ref,
-        site_id=site_id,
-        expires_at=expires_at,
-        max_age=max_age,
-    )
-
-
-def end_platform_impersonation(
-    request: Request,
-    *,
-    impersonation_id: str,
-    platform_admin_ref: str,
-    ended_reason: str,
-    audit_context: Any,
-) -> dict[str, object]:
-    return get_commercial_service(request).end_platform_impersonation(
-        impersonation_id=impersonation_id,
-        platform_admin_ref=platform_admin_ref,
-        ended_reason=ended_reason,
-        audit_context=audit_context,
-    )

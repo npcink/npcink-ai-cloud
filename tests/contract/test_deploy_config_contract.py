@@ -171,16 +171,6 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert "python -m app.dev.baseline_status" in baseline_script
     assert "/internal/service/observability/summary" in release_smoke_script
     assert "/health/operational-ready" in release_smoke_script
-    assert "--addon-site-id" in release_smoke_script
-    assert "--addon-key-id" in release_smoke_script
-    assert "--addon-secret" in release_smoke_script
-    assert "/v1/addon/dashboard" in release_smoke_script
-    assert "/v1/addon/providers/release-summary" in release_smoke_script
-    assert "data.generated_at" in release_smoke_script
-    assert "data.fresh_until" in release_smoke_script
-    assert "data.fallback_reason" in release_smoke_script
-    assert "release smoke requires addon credentials" in release_smoke_script
-    assert "Skipping addon projection freshness smoke" not in release_smoke_script
     assert "/internal/service/observability/summary" in remote_smoke_script
     assert "/health/operational-ready" in remote_smoke_script
     assert '"policy":{"allow_fallback":true}}' in remote_smoke_script

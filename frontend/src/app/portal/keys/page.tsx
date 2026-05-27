@@ -353,7 +353,7 @@ function KeysContent() {
     );
   }
 
-  const isReadOnlySession = Boolean(session.impersonation?.read_only);
+  const isReadOnlySession = false;
   const activeKeyCount = keys.filter((key) => key.status === 'active').length;
   const latestUsedKey = keys.find((key) => key.last_used_at);
   const selectedKey = keys.find((key) => key.key_id === selectedKeyId) || null;
@@ -366,15 +366,13 @@ function KeysContent() {
     planKind: session.current_subscription?.plan_kind,
     coverageState: siteCoverage || session.current_subscription ? 'covered' : 'uncovered',
   });
-  const writeNotice = session.impersonation?.read_only
-    ? t('keys.read_only_session_notice')
-    : siteSummary?.allowed_actions?.includes('manage_site_keys')
-      ? null
-      : t(
-          'keys.user_admin_read_only_notice',
-          {},
-          'Your current user-admin access is read-only. Ask an account admin to grant key-management access before creating or rotating keys.'
-        );
+  const writeNotice = siteSummary?.allowed_actions?.includes('manage_site_keys')
+    ? null
+    : t(
+        'keys.user_admin_read_only_notice',
+        {},
+        'Your current user-admin access is read-only. Ask an account admin to grant key-management access before creating or rotating keys.'
+      );
   const selectedKeyProtected = isProtectedSystemInitializedKey(selectedKey);
   const canManageSiteKeys = Boolean(siteSummary?.allowed_actions?.includes('manage_site_keys'));
   const canWriteKeys = canManageSiteKeys && !isReadOnlySession;

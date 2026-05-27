@@ -60,7 +60,6 @@ const localeBlocks = {
 
 const translationLockedFiles = [
   resolve(root, 'src/app/admin/layout.tsx'),
-  resolve(root, 'src/app/admin/topup-packs/page.tsx'),
 ];
 
 const keys = new Set();

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
@@ -32,7 +31,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
 
-def test_addon_projection_contract_exposes_freshness_semantics(tmp_path: Path) -> None:
+def test_addon_projection_surfaces_are_absent(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
     seed_site_auth(database_url, site_id="site_alpha", scopes=["stats:read"])
 
@@ -55,31 +54,7 @@ def test_addon_projection_contract_exposes_freshness_semantics(tmp_path: Path) -
         ),
     )
 
-    if dashboard.status_code == 404 and provider.status_code == 404:
-        dispose_engine(database_url)
-        pytest.skip("addon projection surface is not registered in the minimal Cloud app")
-
-    assert dashboard.status_code == 200
-    assert provider.status_code == 200
-
-    dashboard_data = dashboard.json()["data"]
-    provider_data = provider.json()["data"]
-
-    for payload in (dashboard_data, provider_data):
-        assert set(("source", "generated_at", "fresh_until", "stale", "generation_ms")) <= set(
-            payload.keys()
-        )
-        assert payload["source"] in {"projection", "live_fallback"}
-        assert isinstance(payload["generated_at"], str) and payload["generated_at"]
-        assert isinstance(payload["fresh_until"], str) and payload["fresh_until"]
-        assert isinstance(payload["stale"], bool)
-        assert isinstance(payload["generation_ms"], int)
-        if payload["source"] == "live_fallback":
-            assert isinstance(payload.get("fallback_reason"), str)
-            assert payload["fallback_reason"] in {
-                "projection_missing",
-                "projection_stale",
-                "projection_error",
-            }
+    assert dashboard.status_code == 404
+    assert provider.status_code == 404
 
     dispose_engine(database_url)

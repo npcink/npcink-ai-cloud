@@ -370,47 +370,6 @@ def test_usage_service_builds_logs_analytics_projections(tmp_path: Path) -> None
     dispose_engine(database_url)
 
 
-def test_usage_service_builds_prompt_advisor_summary(tmp_path: Path) -> None:
-    database_url = _sqlite_url(tmp_path)
-    init_schema(database_url)
-    fixed_now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)
-    _seed_runtime_activity(database_url, fixed_now)
-
-    service = UsageService(database_url, now_factory=lambda: fixed_now)
-    payload = service.get_prompt_advisor_recommendation_summary(
-        site_id="site_alpha",
-        filters={
-            "ability_id": "magick-ai/workflows/generate-post-draft",
-            "prompt_id": "text_generate_default",
-            "current_variant": "current",
-            "current_version": 3,
-            "candidate_variant": "candidate",
-            "candidate_version": 4,
-            "range": "24h",
-        },
-    )
-
-    assert payload["source"] == "cloud_prompt_advisor_summary"
-    assert payload["site_id"] == "site_alpha"
-    assert payload["ability_id"] == "magick-ai/workflows/generate-post-draft"
-    assert payload["prompt_id"] == "text_generate_default"
-    assert payload["recommended_variant"] in {"current", "candidate"}
-    assert payload["recommended_version"] in {3, 4}
-    assert payload["reason_summary"] != ""
-    assert payload["risk_summary"] != ""
-    assert payload["updated_at"] != ""
-    assert payload["boundary_note"] != ""
-    assert set(payload["evidence"].keys()) == {
-        "logs_summary",
-        "recommended_providers",
-        "recommended_error_codes",
-        "degraded_provider_ids",
-    }
-    assert payload["evidence"]["logs_summary"]["total"] >= 1
-
-    dispose_engine(database_url)
-
-
 def test_usage_service_builds_prompt_governance_recommendation_summaries(
     tmp_path: Path,
 ) -> None:
@@ -460,39 +419,4 @@ def test_usage_service_builds_prompt_governance_recommendation_summaries(
     dispose_engine(database_url)
 
 
-def test_usage_service_builds_preset_advisor_summary(tmp_path: Path) -> None:
-    database_url = _sqlite_url(tmp_path)
-    init_schema(database_url)
-    fixed_now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)
-    _seed_runtime_activity(database_url, fixed_now)
 
-    service = UsageService(database_url, now_factory=lambda: fixed_now)
-    payload = service.get_preset_advisor_recommendation_summary(
-        site_id="site_alpha",
-        filters={
-            "preset_id": "default",
-            "default_preset_id": "default",
-            "ability_id": "magick-ai/workflows/generate-post-draft",
-            "range": "24h",
-        },
-    )
-
-    assert payload["source"] == "cloud_preset_advisor_summary"
-    assert payload["site_id"] == "site_alpha"
-    assert payload["ability_id"] == "magick-ai/workflows/generate-post-draft"
-    assert payload["preset_id"] == "default"
-    assert payload["recommended_preset"] != ""
-    assert payload["recommended_changes"]
-    assert payload["reason_summary"] != ""
-    assert payload["impact_summary"] != ""
-    assert payload["updated_at"] != ""
-    assert payload["boundary_note"] != ""
-    assert set(payload["evidence"].keys()) == {
-        "logs_summary",
-        "observed_presets",
-        "recommended_providers",
-        "recommended_error_codes",
-        "degraded_provider_ids",
-    }
-
-    dispose_engine(database_url)

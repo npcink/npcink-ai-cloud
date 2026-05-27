@@ -146,13 +146,6 @@ export function PortalNavbar() {
       : '') ||
     visibleSites[0]?.site_id ||
     '';
-  const sessionBadges = [
-    session?.impersonation ? t('portal.session_impersonation', {}, 'Support view') : null,
-    session?.impersonation?.read_only ? t('portal.session_read_only', {}, 'Read only') : null,
-    isAuthenticated && !session?.impersonation
-      ? t('portal.session_user_view', {}, 'Current user view')
-      : null,
-  ].filter(Boolean) as string[];
   const selectedSite = visibleSites.find((site) => site.site_id === selectedSiteId) || null;
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/78 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
@@ -178,18 +171,6 @@ export function PortalNavbar() {
           </Link>
 
           <div className="flex items-center gap-2">
-            {sessionBadges.length ? (
-              <div className="hidden flex-wrap items-center gap-2 lg:flex">
-                {sessionBadges.map((badge) => (
-                  <span
-                    key={badge}
-                    className="rounded-full border border-amber-200/80 bg-amber-50/90 px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
-                  >
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            ) : null}
             {isAuthenticated && visibleSites.length ? (
               <div ref={siteMenuRef} className="relative hidden items-center gap-2 md:flex">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -365,16 +346,6 @@ export function PortalNavbar() {
         </div>
       </div>
 
-      {session?.impersonation?.read_only ? (
-        <div className="border-t border-amber-200/70 bg-amber-50/90 px-4 py-2 text-center text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-200">
-          {t(
-            'portal.read_only_global_notice',
-            {},
-            '当前是只读支持视角，可以查看数据，但不能创建密钥、提交申请或修改设置。'
-          )}
-        </div>
-      ) : null}
-
       <div
         id="portal-mobile-nav"
         className={cn(
@@ -401,18 +372,6 @@ export function PortalNavbar() {
                   </option>
                 ))}
               </select>
-            </div>
-          ) : null}
-          {sessionBadges.length ? (
-            <div className="flex flex-wrap gap-2">
-              {sessionBadges.map((badge) => (
-                <span
-                  key={badge}
-                  className="rounded-full border border-amber-200/80 bg-amber-50/90 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
-                >
-                  {badge}
-                </span>
-              ))}
             </div>
           ) : null}
           {primaryNavItems.map((item) => (

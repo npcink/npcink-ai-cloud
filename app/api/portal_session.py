@@ -28,11 +28,7 @@ COOKIE_PORTAL_SESSION_TOKEN = "magick_portal_session_token"
 COOKIE_BEARER_TOKEN = COOKIE_PORTAL_SESSION_TOKEN
 COOKIE_SESSION_ISSUED_AT = "magick_portal_session_issued_at"
 COOKIE_SESSION_EXPIRES_AT = "magick_portal_session_expires_at"
-COOKIE_IMPERSONATION_ID = "magick_portal_impersonation_id"
-COOKIE_IMPERSONATOR_REF = "magick_portal_impersonator_ref"
-COOKIE_IMPERSONATOR_ROLE = "magick_portal_impersonator_role"
-COOKIE_IMPERSONATION_READ_ONLY = "magick_portal_impersonation_read_only"
-COOKIE_IMPERSONATION_EXPIRES_AT = "magick_portal_impersonation_expires_at"
+
 
 
 def get_commercial_service(request: Request) -> CommercialService:
@@ -195,7 +191,6 @@ def serialize_portal_session(
     current_subscription: dict[str, object] | None = None
     resolved_site_id = site_id
     session = session_metadata or _resolve_portal_session_metadata(request, member_ref=member_ref)
-    impersonation = current_portal_impersonation_session(request)
     if site_id:
         try:
             access = service.resolve_portal_site_access(
@@ -269,7 +264,6 @@ def serialize_portal_session(
             "expires_at": session.get("expires_at", ""),
             "revocable": bool(session.get("revocable")),
         },
-        "impersonation": impersonation,
     }
 
 
@@ -347,73 +341,6 @@ def clear_portal_session_cookies(response: JSONResponse | RedirectResponse) -> N
     response.delete_cookie(COOKIE_PORTAL_SESSION_TOKEN)
     response.delete_cookie(COOKIE_SESSION_ISSUED_AT)
     response.delete_cookie(COOKIE_SESSION_EXPIRES_AT)
-    clear_portal_impersonation_cookies(response)
-
-
-def set_portal_impersonation_cookies(
-    request: Request,
-    response: JSONResponse | RedirectResponse,
-    *,
-    impersonation_id: str,
-    platform_admin_ref: str,
-    platform_role: str,
-    read_only: bool,
-    expires_at: str,
-    max_age: int,
-) -> None:
-    secure = portal_cookie_secure(request)
-    response.set_cookie(
-        COOKIE_IMPERSONATION_ID,
-        impersonation_id,
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=max_age,
-    )
-    response.set_cookie(
-        COOKIE_IMPERSONATOR_REF,
-        platform_admin_ref,
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=max_age,
-    )
-    response.set_cookie(
-        COOKIE_IMPERSONATOR_ROLE,
-        platform_role,
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=max_age,
-    )
-    response.set_cookie(
-        COOKIE_IMPERSONATION_READ_ONLY,
-        "1" if read_only else "0",
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=max_age,
-    )
-    response.set_cookie(
-        COOKIE_IMPERSONATION_EXPIRES_AT,
-        expires_at,
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=max_age,
-    )
-
-
-def clear_portal_impersonation_cookies(response: JSONResponse | RedirectResponse) -> None:
-    response.delete_cookie(COOKIE_IMPERSONATION_ID)
-    response.delete_cookie(COOKIE_IMPERSONATOR_REF)
-    response.delete_cookie(COOKIE_IMPERSONATOR_ROLE)
-    response.delete_cookie(COOKIE_IMPERSONATION_READ_ONLY)
-    response.delete_cookie(COOKIE_IMPERSONATION_EXPIRES_AT)
-
-
-def current_portal_impersonation_session(request: Request) -> dict[str, object] | None:
-    return None
 
 
 def _has_portal_request_headers(request: Request) -> bool:

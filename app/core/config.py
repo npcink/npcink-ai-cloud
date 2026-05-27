@@ -317,7 +317,6 @@ class Settings(BaseSettings):
             and self.allow_dev_ops_internal_token_fallback
         ):
             self.allow_dev_admin_internal_token_fallback = True
-        environment = str(self.environment or "").strip().lower()
         production_like = self.production_like_environment()
         secret_fields = {
             "internal_auth_token": self.internal_auth_token,

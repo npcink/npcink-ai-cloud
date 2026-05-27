@@ -16,35 +16,26 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_SUSPENDED,
-    AccountSubscription,
     Site,
 )
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
-    CommercialValidationError,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.service import (
-    CANONICAL_TIER_PLAN_IDS,
-    DEFAULT_FREE_PLAN_ID,
     DEFAULT_FREE_PLAN_KIND,
-    DEFAULT_FREE_PLAN_VERSION_ID,
     DEFAULT_FREE_SUBSCRIPTION_SOURCE,
-    DEFAULT_PLAN_TIER_ID,
     IDENTITY_TYPE_USER_ADMIN,
     PLAN_TIER_REGISTRY,
     PORTAL_INVITE_DELIVERY_FAILED,
     PORTAL_INVITE_DELIVERY_QUEUED,
     PORTAL_INVITE_DELIVERY_SENT,
     PORTAL_MEMBER_ALLOWED_LOGIN_STATUSES,
-    PORTAL_MEMBER_IDENTITY_PROVIDER,
     ServiceAuditContext,
     _canonicalize_customer_membership_role_for_write,
     _normalize_customer_membership_role,
-    _normalize_portal_member_currency,
     _normalize_portal_member_email,
-    _normalize_portal_member_locale,
     _normalize_portal_membership_metadata,
     _portal_membership_has_allowed_role,
     _portal_membership_role_priority,
@@ -821,87 +812,6 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 }
                 for item in account_items
             ],
-        }
-
-    def get_portal_member_preferences(
-        self,
-        *,
-        member_ref: str,
-    ) -> dict[str, object]:
-        normalized_member_ref = str(member_ref or "").strip()
-        if not normalized_member_ref:
-            raise CommercialPermissionError(
-                "service.portal_member_ref_required",
-                "portal member_ref is required",
-            )
-
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identity = repository.get_portal_member_identity_by_member_ref(
-                member_ref=normalized_member_ref,
-            )
-
-        metadata = dict(getattr(identity, "metadata_json", None) or {}) if identity is not None else {}
-        return {
-            "member_ref": normalized_member_ref,
-            "locale": _normalize_portal_member_locale(metadata.get("locale")),
-            "currency": _normalize_portal_member_currency(metadata.get("currency")),
-        }
-
-    def update_portal_member_preferences(
-        self,
-        *,
-        member_ref: str,
-        locale: str,
-        currency: str,
-        audit_context: AuditContext | None = None,
-    ) -> dict[str, object]:
-        normalized_member_ref = str(member_ref or "").strip()
-        normalized_locale = _normalize_portal_member_locale(locale)
-        normalized_currency = _normalize_portal_member_currency(currency)
-        if not normalized_member_ref:
-            raise CommercialPermissionError(
-                "service.portal_member_ref_required",
-                "portal member_ref is required",
-            )
-        if not normalized_locale:
-            raise CommercialValidationError(
-                "service.portal_member_preferences_invalid",
-                "portal member locale is invalid",
-            )
-
-        normalized_email = _normalize_portal_member_email(
-            normalized_member_ref,
-            None,
-        )
-        now = self.now_factory()
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            identity = repository.get_portal_member_identity_by_member_ref(
-                member_ref=normalized_member_ref,
-            )
-            existing_metadata = dict(getattr(identity, "metadata_json", None) or {}) if identity is not None else {}
-            existing_metadata["locale"] = normalized_locale
-            existing_metadata["currency"] = normalized_currency
-            existing_metadata["preferences_updated_at"] = self._serialize_datetime(now)
-            if audit_context is not None:
-                existing_metadata["preferences_updated_by"] = str(audit_context.actor_ref or "")
-            repository.upsert_portal_member_identity(
-                identity_id=str(getattr(identity, "identity_id", "") or f"pmi_{uuid4().hex}"),
-                provider=str(getattr(identity, "provider", "") or PORTAL_MEMBER_IDENTITY_PROVIDER),
-                external_subject=str(getattr(identity, "external_subject", "") or normalized_email or normalized_member_ref),
-                email=str(getattr(identity, "email", "") or normalized_email or None),
-                member_ref=normalized_member_ref,
-                status=str(getattr(identity, "status", "") or "active"),
-                metadata_json=existing_metadata,
-            )
-            session.commit()
-
-        return {
-            "member_ref": normalized_member_ref,
-            "locale": normalized_locale,
-            "currency": normalized_currency,
-            "updated_at": self._serialize_datetime(now),
         }
 
     def upsert_account_subscription(

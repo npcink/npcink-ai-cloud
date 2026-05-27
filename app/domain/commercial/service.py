@@ -1,86 +1,21 @@
 from __future__ import annotations
 
 import re
-import secrets
-from collections import Counter, defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from urllib.parse import quote, urlsplit
-from uuid import uuid4
+from urllib.parse import urlsplit
 
-from sqlalchemy.orm import Session
-
-from app.adapters.repositories.commercial_repository import CommercialRepository
-from app.core.callback_security import (
-    RuntimeCallbackTargetValidationError,
-    validate_runtime_callback_target,
-)
-from app.core.config import Settings, get_settings
-from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
     ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
-    ACCOUNT_STATUS_ACTIVE,
-    ENTITLEMENT_SNAPSHOT_STATUS_ACTIVE,
-    PLAN_STATUS_ACTIVE,
-    PLAN_VERSION_STATUS_PUBLISHED,
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-    PLATFORM_ADMIN_STATUS_ACTIVE,
-    PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-    PLATFORM_IMPERSONATION_STATUS_ENDED,
-    PORTAL_ACTION_REQUEST_STATUS_ACKNOWLEDGED,
-    PORTAL_ACTION_REQUEST_STATUS_CANCELED,
-    PORTAL_ACTION_REQUEST_STATUS_OPEN,
-    PORTAL_ACTION_REQUEST_STATUS_RESOLVED,
-    PORTAL_LOGIN_CODE_STATUS_CONSUMED,
-    PORTAL_LOGIN_CODE_STATUS_EXPIRED,
-    PORTAL_LOGIN_CODE_STATUS_LOCKED,
-    PORTAL_LOGIN_CODE_STATUS_PENDING,
-    SITE_API_KEY_STATUS_ACTIVE,
-    SITE_API_KEY_STATUS_EXPIRED,
-    SITE_API_KEY_STATUS_REVOKED,
-    SITE_STATUS_ACTIVE,
-    SITE_STATUS_ARCHIVED,
-    SITE_STATUS_PROVISIONING,
-    SITE_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_ACTIVE,
-    SUBSCRIPTION_STATUS_CANCELED,
-    SUBSCRIPTION_STATUS_PAST_DUE,
-    SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
-    CommercialDecisionEvent,
-    BillingSnapshot,
-    PlatformImpersonationSession,
-    PortalActionRequest,
-    ProviderCallRecord,
-    RunRecord,
-    ServiceAuditEvent,
     Site,
-    SiteApiKey,
-    AccountEntitlementSnapshot,
-    AccountSubscription,
 )
-from app.core.security import build_secret_hash
-from app.core.secrets import (
-    encrypt_runtime_terminal_callback_secret,
-    encrypt_site_api_signing_secret,
-)
-from app.domain.commercial.customer_api_keys import expand_api_key_scopes
 from app.domain.commercial.errors import (
-    CommercialNotFoundError,
     CommercialPermissionError,
-    CommercialValidationError,
-)
-from app.domain.runtime.errors import (
-    RuntimeConcurrencyExceededError,
-    RuntimeEntitlementDeniedError,
-    RuntimeQuotaExceededError,
-    RuntimeSiteInactiveError,
-    RuntimeSiteNotProvisionedError,
-    RuntimeSubscriptionInactiveError,
 )
 
 ALLOWED_ABILITY_FAMILIES = {
@@ -279,20 +214,6 @@ DEFAULT_FREE_SUBSCRIPTION_SOURCE = "production_default_free_bind_v1"
 CANONICAL_TIER_PLAN_IDS = {
     tier_id: (tier_id, f"{tier_id}_v1") for tier_id in PLAN_TIER_REGISTRY
 }
-TOPUP_PACK_CATALOG_REQUEST_KIND = "topup_pack_catalog"
-TOPUP_PACK_OVERLAY_DECISION_PREFIX = "topup_pack_catalog.overlay."
-ALLOWED_TOPUP_PACK_TIERS = {"starter", "pro", "agency"}
-TOPUP_PACK_EDITABLE_FIELDS = {
-    "label",
-    "points_label",
-    "runs_increment",
-    "tokens_increment",
-    "cost_increment",
-    "operator_note",
-    "recommended_for_tiers",
-    "display_order",
-    "active",
-}
 OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
     "pack_small": {
         "pack_id": "pack_small",
@@ -366,10 +287,6 @@ PLATFORM_ADMIN_ACCOUNT_WRITE_ROLES = {
 PLATFORM_ADMIN_CATALOG_WRITE_ROLES = {
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
 }
-PLATFORM_IMPERSONATION_ALLOWED_ROLES = {
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-}
-PLATFORM_IMPERSONATION_MAX_TTL_SECONDS = 30 * 60
 PORTAL_MEMBER_ALLOWED_LOGIN_STATUSES = {
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
@@ -382,9 +299,6 @@ PORTAL_INVITE_DELIVERY_QUEUED = "queued"
 PORTAL_INVITE_DELIVERY_SENT = "sent"
 PORTAL_INVITE_DELIVERY_FAILED = "failed"
 PORTAL_INVITE_DELIVERY_SKIPPED = "skipped"
-PORTAL_MEMBER_PREFERENCE_LOCALES = {"en", "zh-CN", "zh-TW"}
-PORTAL_MEMBER_PREFERENCE_CURRENCIES = {"USD", "CNY", "HKD"}
-PORTAL_MEMBER_IDENTITY_PROVIDER = "email_magic_link"
 IDENTITY_TYPE_PLATFORM_ADMIN = "platform_admin"
 IDENTITY_TYPE_USER_ADMIN = "user_admin"
 USER_ALLOWED_ACTION_VIEW_SITES = "view_sites"
@@ -405,20 +319,6 @@ def _normalize_portal_member_email(member_ref: str, metadata_json: dict[str, obj
     if normalized_member_ref.startswith("user:"):
         return normalized_member_ref[len("user:") :].strip().lower()
     return ""
-
-
-def _normalize_portal_member_locale(value: object) -> str:
-    locale = str(value or "").strip()
-    if locale in PORTAL_MEMBER_PREFERENCE_LOCALES:
-        return locale
-    return ""
-
-
-def _normalize_portal_member_currency(value: object) -> str:
-    currency = str(value or "").strip().upper()
-    if currency in PORTAL_MEMBER_PREFERENCE_CURRENCIES:
-        return currency
-    return "CNY"
 
 
 def _subscription_counts_as_covered(subscription: object | None) -> bool:
@@ -544,7 +444,6 @@ def _canonicalize_platform_admin_role_for_write(role: str) -> str:
 
 
 def _resolve_portal_allowed_actions(role: str) -> list[str]:
-    normalized_role = _normalize_customer_membership_role(role)
     actions = [
         USER_ALLOWED_ACTION_VIEW_SITES,
         USER_ALLOWED_ACTION_VIEW_USAGE,
@@ -562,7 +461,7 @@ def _platform_capability_flags(role: str) -> dict[str, bool]:
     return {
         "can_manage_accounts": normalized_role in PLATFORM_ADMIN_ACCOUNT_WRITE_ROLES,
         "can_manage_catalog": normalized_role in PLATFORM_ADMIN_CATALOG_WRITE_ROLES,
-        "can_impersonate": normalized_role in PLATFORM_IMPERSONATION_ALLOWED_ROLES,
+        "can_impersonate": False,
         "can_manage_billing": normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES,
         "can_review_diagnostics": normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES,
     }
@@ -641,13 +540,13 @@ def assert_platform_admin_capability(
 
 
 from app.domain.commercial.mixins import (
-    CommercialServiceAuditMixin,
     CommercialServiceAccountMixin,
-    CommercialServiceSiteMixin,
+    CommercialServiceAdminMixin,
+    CommercialServiceAuditMixin,
     CommercialServiceBillingMixin,
     CommercialServicePortalMixin,
-    CommercialServiceAdminMixin,
     CommercialServiceRuntimeMixin,
+    CommercialServiceSiteMixin,
 )
 
 

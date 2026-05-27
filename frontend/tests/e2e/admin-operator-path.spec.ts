@@ -56,12 +56,6 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('button', { name: /Rebuild current-period billing snapshots|重建当前周期账单快照/i })).toHaveCount(0);
   await expect(page.getByText(/checkout|buy points|storefront/i)).toHaveCount(0);
 
-  await page.goto('/admin/impersonations');
-  await expect(
-    page.getByRole('heading', { name: /An active impersonation session needs bounded follow-up|当前存在需要收口的模拟登录会话/i })
-  ).toBeVisible();
-  await expect(page.getByText(/imp_active_p\.\.\.ession/i).first()).toBeVisible();
-
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
   await expect(page.getByRole('heading', { name: /MVP Account|acct_mvp_enterprise_primary/i }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /Open customer subscription|打开客户订阅/i })).toHaveCount(0);
@@ -80,9 +74,6 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/accounts/acct_mvp_enterprise_primary"]').first()).toBeVisible();
   await expect(page.locator('a[href="/admin/sites/site_mvp"]').first()).toBeVisible();
   await expect(page.locator('a[href="/admin/subscriptions/sub_growth"]').first()).toBeVisible();
-  await expect(
-    page.locator('a[href="/admin/impersonations?account_id=acct_mvp_enterprise_primary&member_ref=user%3Aadmin%40example.com&site_id=site_mvp"]').first()
-  ).toBeVisible();
 
   await page.getByRole('button', { name: /Pending access cleanup|待清理访问/i }).click();
   await expect(page).toHaveURL(/view=pending_cleanup/);
@@ -180,15 +171,6 @@ test('admin support and detail pages keep bounded operator hierarchy', async ({ 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installAdminMocks(page);
 
-  await page.goto('/admin/impersonations');
-  await expect(page.getByText(/imp_active_p\.\.\.ession/i).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: /End impersonation|结束模拟会话|结束模拟登录/i }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: /Start impersonation|发起模拟会话/i })).toHaveCount(0);
-  await expect(
-    page.getByText(/Start a new impersonation only after the active session is closed|先结束当前会话后再开始新的模拟登录/i)
-  ).toBeVisible();
-  await expect(page.locator('table').getByText('acct_mvp_ent...rimary').first()).toBeVisible();
-
   await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
   await expect(page.getByText('acct_mvp_ent...rimary').first()).toBeVisible();
   await expect(page.getByRole('link', { name: /Open customer subscription|打开客户订阅/i })).toHaveCount(0);
@@ -196,8 +178,6 @@ test('admin support and detail pages keep bounded operator hierarchy', async ({ 
   await expect(page.getByRole('link', { name: /Open coverage|打开覆盖|打開覆蓋/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /View sites|查看站点|檢視站點/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Invite member|邀请成员|邀請成員/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Start impersonation|发起模拟会话|發起模擬會話/i })).toBeVisible();
-  await expect(page.getByText(/Manage support session|管理支持会话|管理支援工作階段/i).first()).toBeVisible();
   await expect(page.getByText(/Manage portal access|管理成员接入|管理 Portal 存取/i).first()).toBeVisible();
   await expect(page.getByLabel(/Plan Version|套餐版本|方案版本/i)).toBeHidden();
   await expect(page.getByLabel(/Email|邮箱|電子郵件/i)).toBeHidden();
@@ -251,33 +231,6 @@ test('admin support and detail pages keep bounded operator hierarchy', async ({ 
   await expect(page.getByText(/current-period integrity|当前周期完整性|當前週期完整性/i).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /View audit trail|查看审计/i }).first()).toBeVisible();
   await expect(page.getByText(/Recent audit summary for this subscription|此订阅的近期审计摘要/i)).toBeVisible();
-});
-
-test('admin mutation receipts keep bounded audit backlink filters', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installAdminMocks(page);
-
-  await page.goto('/admin/impersonations');
-  await page
-    .locator('table')
-    .getByRole('button', { name: /End impersonation|结束模拟会话|结束模拟登录/i })
-    .first()
-    .click({ force: true });
-
-  await expect(page.getByText(/Impersonation ended|模拟会话已结束/i)).toBeVisible();
-  await expect(page.getByText(/Latest receipt|最新回执/i)).toBeVisible();
-  await expect(
-    page.getByText(/Read-only impersonation .* is now ended\./i)
-  ).toBeVisible();
-  await expect(page.getByText(/platform_impersonation\.end/i).first()).toBeVisible();
-  await expect(
-    page.locator('a[href*="/api/admin/audit-events?"]').filter({
-      hasText: /View audit trail|查看审计/i,
-    }).first()
-  ).toHaveAttribute(
-    'href',
-    /\/api\/admin\/audit-events\?(?:.*&)?account_id=acct_mvp_enterprise_primary(?:&.*)?site_id=site_mvp(?:&.*)?event_kind=platform_impersonation\.end(?:&.*)?outcome=succeeded/
-  );
 });
 
 test('admin navigation stays customer-first', async ({ page }) => {

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import time
-from typing import Any, Callable
+from typing import Callable
 
 from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.core.config import Settings, get_settings

@@ -1,13 +1,12 @@
 /**
  * Magick AI Cloud Portal API Client
- * 
+ *
  * 对接后端 Portal API (/portal/v1/*)
  * 支持邮箱验证码认证、Session 管理、API Key 管理等
  */
 
 import { getPortalApiBaseUrl } from './env';
 import { generateIdempotencyKey } from './idempotency';
-import type { Locale } from './i18n';
 
 export type ProductIdentityType = 'platform_admin' | 'user_admin';
 
@@ -34,14 +33,6 @@ export interface PortalSession {
   }>;
   auth_mode?: string;
   sites: Site[];
-  impersonation?: {
-    impersonation_id: string;
-    read_only: boolean;
-    status?: string;
-    reason_code?: string;
-    reason_text?: string;
-    expires_at?: string;
-  };
   current_subscription?: {
     status: 'active' | 'canceled' | 'expired' | 'trialing';
     subscription_id?: string;
@@ -78,13 +69,6 @@ export interface PortalMemberSummary {
     membership_status: string;
     site_count: number;
   }>;
-}
-
-export interface PortalMemberPreferences {
-  member_ref: string;
-  locale: Locale | '';
-  currency: 'CNY' | 'USD' | 'HKD';
-  updated_at?: string;
 }
 
 export interface Site {
@@ -128,11 +112,6 @@ export interface PortalLoginCodeRequest {
 export interface PortalLoginCodeVerifyRequest {
   email: string;
   code: string;
-}
-
-export interface PortalMemberPreferencesUpdateRequest {
-  locale: Locale;
-  currency: 'CNY' | 'USD' | 'HKD';
 }
 
 export interface CreateSiteRequest {
@@ -393,144 +372,9 @@ export interface PortalBillingReconciliation {
   };
 }
 
-export interface PortalAnalyticsOverview {
-  site_id: string;
-  account_id?: string;
-  member_ref?: string;
-  identity_type?: string;
-  role?: string;
-  tier_id?: string;
-  allowed_ranges?: string[];
-  selected_range?: string;
-  overview?: {
-    total_calls: number;
-    success_rate: number;
-    error_rate: number;
-    avg_latency_ms: number;
-    p95_latency_ms: number;
-    total_cost: number;
-    trend_7d: Array<{
-      date: string;
-      total: number;
-      success: number;
-      error: number;
-    }>;
-  };
-  generated_at?: string;
-}
-
-export interface PortalAnalyticsTrend {
-  site_id: string;
-  account_id?: string;
-  member_ref?: string;
-  identity_type?: string;
-  role?: string;
-  tier_id?: string;
-  allowed_ranges?: string[];
-  selected_range?: string;
-  granularity?: string;
-  start_at?: string;
-  end_at?: string;
-  rows: Array<{
-    bucket_gmt: string;
-    ability_id: string;
-    caller_id: string;
-    request_total: number;
-    success_total: number;
-    guard_fail_total: number;
-    avg_latency_ms: number;
-  }>;
-}
-
-export interface PortalAnalyticsCostBreakdown {
-  site_id: string;
-  account_id?: string;
-  member_ref?: string;
-  identity_type?: string;
-  role?: string;
-  tier_id?: string;
-  allowed_ranges?: string[];
-  selected_range?: string;
-  group_by?: string;
-  total_cost: number;
-  breakdown: Array<{
-    label: string;
-    value: number;
-    percentage: number;
-  }>;
-  generated_at?: string;
-}
-
-export interface PortalAnalyticsPerformance {
-  site_id: string;
-  account_id?: string;
-  member_ref?: string;
-  identity_type?: string;
-  role?: string;
-  tier_id?: string;
-  allowed_ranges?: string[];
-  selected_range?: string;
-  performance?: {
-    latency: {
-      p50_ms: number;
-      p95_ms: number;
-      p99_ms: number;
-      avg_ms: number;
-    };
-    tool_latency: {
-      p50_ms: number;
-      p95_ms: number;
-    };
-    error_rate: number;
-    timeout_rate: number;
-    blocked_rate: number;
-    canceled_rate: number;
-    top_errors: Array<{
-      error_code: string;
-      count: number;
-      percentage: number;
-    }>;
-    status_distribution: {
-      total: number;
-      success: number;
-      error: number;
-      timeout: number;
-      blocked: number;
-      canceled: number;
-    };
-  };
-  generated_at?: string;
-}
-
 export interface PortalSiteBundle {
   summary: PortalSiteSummaryRecord;
   apiKeys: ApiKey[];
-}
-
-export interface PortalAnalyticsOverview {
-  site_id: string;
-  account_id?: string;
-  member_ref?: string;
-  identity_type?: string;
-  role?: string;
-  tier_id?: string;
-  allowed_ranges?: string[];
-  selected_range?: string;
-  overview?: {
-    total_calls: number;
-    success_rate: number;
-    error_rate: number;
-    avg_latency_ms: number;
-    p95_latency_ms: number;
-    total_cost: number;
-    trend_7d: Array<{
-      date: string;
-      total: number;
-      success: number;
-      error: number;
-    }>;
-  };
-  generated_at?: string;
 }
 
 export interface PortalAnalyticsTrend {
@@ -732,73 +576,6 @@ export interface PortalBillingBundle {
   reconciliation: PortalBillingReconciliation;
 }
 
-export type PortalActionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'canceled';
-
-export interface PortalActionRequest {
-  request_id: string;
-  request_type: 'package_change' | 'topup_pack' | 'site_delete' | 'usage_alert' | 'key_expiry' | 'auth_guard' | string;
-  account_id: string;
-  site_id?: string;
-  member_ref: string;
-  title: string;
-  message?: string;
-  status: PortalActionRequestStatus;
-  payload?: Record<string, unknown>;
-  created_at: string;
-  updated_at?: string;
-  acknowledged_at?: string;
-  resolved_at?: string;
-  canceled_at?: string;
-}
-
-export interface PortalActionRequestList {
-  items: PortalActionRequest[];
-  total?: number;
-}
-
-export interface PortalPackageChangeRequestPayload {
-  target_package: 'free' | 'basic' | 'bulk';
-  reason?: string;
-  expected_sites?: number;
-  expected_usage?: string;
-}
-
-export interface PortalTopUpPack {
-  pack_id: string;
-  label: string;
-  points_label: string;
-  runs_increment: number;
-  tokens_increment: number;
-  cost_increment: number;
-  recommended_for_tiers: string[];
-  display_order: number;
-  active: boolean;
-}
-
-export interface PortalTopUpPackRequestPayload {
-  pack_id: string;
-  reason?: string;
-  expected_usage?: string;
-}
-
-export interface PortalDeleteSiteRequestPayload {
-  reason?: string;
-  delete_mode?: 'disconnect' | 'delete';
-}
-
-export interface PortalUsageAlertThreshold {
-  warning: number;
-  critical: number;
-}
-
-export interface PortalUsageAlertSettings {
-  enabled: boolean;
-  requests: PortalUsageAlertThreshold;
-  tokens: PortalUsageAlertThreshold;
-  cost: PortalUsageAlertThreshold;
-  updated_at?: string;
-}
-
 export interface PortalSiteDiagnostics {
   site_id: string;
   generated_at: string;
@@ -816,36 +593,6 @@ export interface PortalSiteDiagnostics {
     detail: string;
     action?: string;
   }>;
-}
-
-export interface PortalCompliancePosture {
-  site_id: string;
-  account_id?: string;
-  member_ref?: string;
-  identity_type?: string;
-  role?: string;
-  data_residency: {
-    storage_region: string;
-    inference_region: string;
-    byom_enabled: boolean;
-  };
-  audit: {
-    retention_days: number;
-    events_in_retention: number;
-    last_export_at: string | null;
-  };
-  security_controls: Array<{
-    control: string;
-    status: string;
-    detail: string;
-  }>;
-  compliance_requests_allowed: string[];
-  tier_id?: string;
-}
-
-export interface PortalComplianceRequestPayload {
-  request_type: 'compliance_export' | 'compliance_deletion_review' | 'compliance_report';
-  reason?: string;
 }
 
 export interface PortalEnvelope<T> {
@@ -1036,16 +783,6 @@ export class PortalClient {
     return this.request('GET', '/member-summary', undefined, { requireAuth: true });
   }
 
-  async getMemberPreferences(): Promise<PortalEnvelope<PortalMemberPreferences>> {
-    return this.request('GET', '/member-preferences', undefined, { requireAuth: true });
-  }
-
-  async updateMemberPreferences(
-    payload: PortalMemberPreferencesUpdateRequest
-  ): Promise<PortalEnvelope<PortalMemberPreferences>> {
-    return this.request('POST', '/member-preferences', payload, { requireAuth: true });
-  }
-
   // ========================================
   // 站点管理
   // ========================================
@@ -1206,98 +943,13 @@ export class PortalClient {
     };
   }
 
-  async listNotifications(options?: {
-    status?: PortalActionRequestStatus | '';
-    limit?: number;
-  }): Promise<PortalEnvelope<PortalActionRequestList>> {
-    const params = new URLSearchParams();
-    if (options?.status !== undefined) params.set('status', options.status);
-    if (options?.limit) params.set('limit', String(options.limit));
-    const query = params.toString() ? `?${params.toString()}` : '';
-    return this.request('GET', `/notifications${query}`, undefined, { requireAuth: true });
-  }
-
-  async acknowledgeNotification(notificationId: string): Promise<PortalEnvelope<PortalActionRequest>> {
-    return this.request('POST', `/notifications/${notificationId}/ack`, {}, { requireAuth: true });
-  }
-
-  async listPackageChangeRequests(siteId: string): Promise<PortalEnvelope<PortalActionRequestList>> {
-    return this.request('GET', `/sites/${siteId}/package-change-requests`, undefined, { requireAuth: true });
-  }
-
-  async createPackageChangeRequest(
-    siteId: string,
-    payload: PortalPackageChangeRequestPayload
-  ): Promise<PortalEnvelope<PortalActionRequest>> {
-    return this.request('POST', `/sites/${siteId}/package-change-requests`, payload, { requireAuth: true });
-  }
-
-  async listTopUpPacks(): Promise<PortalEnvelope<{ items: PortalTopUpPack[] }>> {
-    return this.request('GET', '/topup-packs', undefined, { requireAuth: true });
-  }
-
-  async listTopUpPackRequests(siteId: string): Promise<PortalEnvelope<PortalActionRequestList>> {
-    return this.request('GET', `/sites/${siteId}/topup-pack-requests`, undefined, { requireAuth: true });
-  }
-
-  async createTopUpPackRequest(
-    siteId: string,
-    payload: PortalTopUpPackRequestPayload
-  ): Promise<PortalEnvelope<PortalActionRequest>> {
-    return this.request('POST', `/sites/${siteId}/topup-pack-requests`, payload, { requireAuth: true });
-  }
-
-  async createSiteDeleteRequest(
-    siteId: string,
-    payload: PortalDeleteSiteRequestPayload
-  ): Promise<PortalEnvelope<PortalActionRequest>> {
-    return this.request('POST', `/sites/${siteId}/delete-requests`, payload, { requireAuth: true });
-  }
-
-  async getUsageAlertSettings(siteId: string): Promise<PortalEnvelope<PortalUsageAlertSettings>> {
-    return this.request('GET', `/sites/${siteId}/usage-alert-settings`, undefined, { requireAuth: true });
-  }
-
-  async updateUsageAlertSettings(
-    siteId: string,
-    payload: PortalUsageAlertSettings
-  ): Promise<PortalEnvelope<PortalUsageAlertSettings>> {
-    return this.request('POST', `/sites/${siteId}/usage-alert-settings`, payload, { requireAuth: true });
-  }
-
   async getSiteDiagnostics(siteId: string): Promise<PortalEnvelope<PortalSiteDiagnostics>> {
     return this.request('GET', `/sites/${siteId}/diagnostics`, undefined, { requireAuth: true });
   }
 
   // ========================================
-  // Compliance Premium Layer
-  // ========================================
-
-  async getCompliancePosture(siteId: string): Promise<PortalEnvelope<PortalCompliancePosture>> {
-    return this.request('GET', `/sites/${siteId}/compliance/posture`, undefined, { requireAuth: true });
-  }
-
-  async createComplianceRequest(
-    siteId: string,
-    payload: PortalComplianceRequestPayload
-  ): Promise<PortalEnvelope<PortalActionRequest>> {
-    return this.request('POST', `/sites/${siteId}/compliance/requests`, payload, { requireAuth: true });
-  }
-
-  // ========================================
   // Analytics Dashboard
   // ========================================
-
-  /**
-   * 获取 Analytics Overview
-   * GET /portal/v1/sites/{siteId}/analytics/overview
-   */
-  async getAnalyticsOverview(
-    siteId: string,
-    range: string = '7d'
-  ): Promise<PortalEnvelope<PortalAnalyticsOverview>> {
-    return this.request('GET', `/sites/${siteId}/analytics/overview?range=${encodeURIComponent(range)}`, undefined, { requireAuth: true });
-  }
 
   /**
    * 获取 Analytics Trend

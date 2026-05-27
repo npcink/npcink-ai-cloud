@@ -24,6 +24,7 @@ def test_removed_public_control_plane_surfaces_are_absent_from_openapi(tmp_path)
     removed_prefixes = (
         "/v1/orchestration",
         "/v1/task-packs",
+        "/v1/addon",
         "/v1/prompt/advisor/recommendation",
         "/v1/prompt/eval/recommendation",
         "/v1/prompt/canary/recommendation",
@@ -49,6 +50,7 @@ def test_removed_urls_return_404(tmp_path) -> None:
     removed_urls = (
         "/v1/orchestration/runs",
         "/v1/task-packs/woocommerce-growth/analyze",
+        "/v1/addon/dashboard",
         "/v1/prompt/advisor/recommendation",
         "/v1/prompt/eval/recommendation",
         "/v1/prompt/canary/recommendation",

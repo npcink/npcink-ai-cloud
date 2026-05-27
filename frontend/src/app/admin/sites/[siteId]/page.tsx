@@ -94,7 +94,6 @@ interface SiteDetail {
   related_surfaces?: {
     account_href?: string;
     subscription_href?: string;
-    impersonation_href?: string;
     audit_href?: string;
   };
   commercial_follow_up?: {
@@ -111,14 +110,6 @@ interface SiteDetail {
   }>;
 }
 
-interface ImpersonationRecord {
-  impersonation_id: string;
-  member_ref: string;
-  site_id: string;
-  started_at?: string;
-  expires_at?: string;
-}
-
 function SiteDetailContent() {
   const params = useParams();
   const { t } = useLocale();
@@ -127,35 +118,9 @@ function SiteDetailContent() {
   const [site, setSite] = useState<SiteDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMemberRef, setSelectedMemberRef] = useState('');
-  const [reasonText, setReasonText] = useState('');
-  const [activeImpersonation, setActiveImpersonation] = useState<ImpersonationRecord | null>(null);
-  const [impersonationNotice, setImpersonationNotice] = useState<string | null>(null);
-  const [impersonationError, setImpersonationError] = useState<string | null>(null);
-  const [isImpersonationSubmitting, setIsImpersonationSubmitting] = useState(false);
   const [siteNotice, setSiteNotice] = useState<string | null>(null);
   const [siteActionError, setSiteActionError] = useState<string | null>(null);
   const [isActivatingSite, setIsActivatingSite] = useState(false);
-
-  const loadActiveImpersonation = async (_currentSiteId: string) => {
-    setActiveImpersonation(null);
-  };
-
-  const handleStartImpersonation = async () => {
-    if (!site || !selectedMemberRef) {
-      setImpersonationError(t('error.select_member'));
-      return;
-    }
-
-    setImpersonationNotice(null);
-    setImpersonationError(t('admin.impersonation_removed', {}, 'Impersonation has been removed from the Cloud service plane.'));
-  };
-
-  const handleEndImpersonation = async (_impersonationId: string) => {
-    setActiveImpersonation(null);
-    setImpersonationNotice(null);
-    setImpersonationError(t('admin.impersonation_removed', {}, 'Impersonation has been removed from the Cloud service plane.'));
-  };
 
   const handleActivateSite = async () => {
     if (!site) {
@@ -303,13 +268,7 @@ function SiteDetailContent() {
             : [],
         };
         setSite(normalizedSite);
-        const nextMembers = memberships.filter(
-          (membership: { status?: string }) => membership.status === 'active'
-        );
-        setSelectedMemberRef(nextMembers[0]?.member_ref || '');
-        await Promise.all([
-          loadActiveImpersonation(normalizedSite.site_id),
-        ]);
+        await Promise.resolve();
       } catch (err) {
         setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_load')));
       } finally {
@@ -641,7 +600,7 @@ function SiteDetailContent() {
                 t(
                   'admin.site_detail.related_surfaces_desc',
                   undefined,
-                  'Use related surfaces to move between customer, coverage, impersonation, and audit follow-up without restarting from overview.'
+                  'Use related surfaces to move between customer, coverage, and audit follow-up without restarting from overview.'
                 )}
             </p>
           </BackofficeStackCard>
@@ -866,93 +825,7 @@ function SiteDetailContent() {
         </BackofficeSectionPanel>
       </div>
 
-      <BackofficeLayer
-        eyebrow={t('admin.current_impersonation')}
-        title={t('admin.support_session_title')}
-        description={t('admin.support_session_site_desc')}
-      />
-      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <BackofficeSectionPanel className="space-y-5">
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={handleStartImpersonation}
-              className={cn('btn btn-secondary', (!selectedMemberRef || isImpersonationSubmitting) && 'pointer-events-none opacity-50')}
-              disabled={!selectedMemberRef || isImpersonationSubmitting}
-            >
-              {isImpersonationSubmitting ? t('common.saving') : t('admin.start_impersonation')}
-            </button>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-[0.7fr_1fr]">
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.member')}</span>
-              <select
-                value={selectedMemberRef}
-                onChange={(event) => setSelectedMemberRef(event.target.value)}
-                className="input w-full"
-              >
-                <option value="">{t('common.member')}</option>
-                {(site.memberships || []).filter((member) => member.status === 'active').map((member) => (
-                  <option key={member.member_ref} value={member.member_ref}>
-                    {member.member_ref} · {translateAdminRole(member.role, t)}{member.status ? ` · ${translateStatusLabel(member.status, t)}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.reason_text')}</span>
-              <input
-                type="text"
-                value={reasonText}
-                onChange={(event) => setReasonText(event.target.value)}
-                placeholder={t('admin.reason_text_placeholder')}
-                className="input w-full"
-              />
-            </label>
-          </div>
-          {impersonationNotice ? (
-            <BackofficeStackCard className="border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
-              {impersonationNotice}
-            </BackofficeStackCard>
-          ) : null}
-          {impersonationError ? (
-            <BackofficeStackCard className="border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-              {impersonationError}
-            </BackofficeStackCard>
-          ) : null}
-          {activeImpersonation ? (
-            <BackofficeStackCard className="border-blue-200 bg-blue-50/70 dark:border-blue-900 dark:bg-blue-950/20">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
-                    {t('admin.current_impersonation')}
-                  </p>
-                  <h3 className="mt-2 font-semibold text-gray-950 dark:text-white">{activeImpersonation.impersonation_id}</h3>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {activeImpersonation.member_ref} · {activeImpersonation.site_id}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
-                    {activeImpersonation.started_at ? formatDate(activeImpersonation.started_at) : t('common.never')} · {activeImpersonation.expires_at ? formatDate(activeImpersonation.expires_at) : t('common.never')}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Link href="/portal" className="btn btn-secondary">
-                    {t('admin.open_customer_portal')}
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => handleEndImpersonation(activeImpersonation.impersonation_id)}
-                    className="btn btn-secondary"
-                    disabled={isImpersonationSubmitting}
-                  >
-                    {t('admin.end_impersonation')}
-                  </button>
-                </div>
-              </div>
-            </BackofficeStackCard>
-          ) : null}
-        </BackofficeSectionPanel>
-
+      <div className="grid gap-6 xl:grid-cols-2">
         <BackofficeSectionPanel className="overflow-hidden p-0">
           <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">

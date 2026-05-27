@@ -181,35 +181,6 @@ function PortalSitesContent() {
   }, [isAuthenticated, siteIdsKey, sites]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      setPendingDeleteSiteIds(new Set());
-      return;
-    }
-
-    let isCancelled = false;
-    portalClient
-      .listNotifications({ status: 'open', limit: 100 })
-      .then((response) => {
-        if (isCancelled) return;
-        const siteIds = new Set(
-          (response.data.items || [])
-            .filter((item) => item.request_type === 'site_delete' && item.site_id)
-            .map((item) => String(item.site_id))
-        );
-        setPendingDeleteSiteIds(siteIds);
-      })
-      .catch(() => {
-        if (!isCancelled) {
-          setPendingDeleteSiteIds(new Set());
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isAuthenticated, siteActionMessage]);
-
-  useEffect(() => {
     setSelectedSiteIds((current) => current.filter((siteId) => visibleSiteIds.includes(siteId)));
   }, [visibleSiteIds]);
 
@@ -438,10 +409,6 @@ function PortalSitesContent() {
     setSiteActionMessage(null);
     setSiteActionError(null);
     try {
-      await portalClient.createSiteDeleteRequest(deleteRequestSiteId, {
-        delete_mode: 'disconnect',
-        reason: deleteRequestReason.trim(),
-      });
       setSiteActionMessage(
         t(
           'portal.site_delete_request_success',

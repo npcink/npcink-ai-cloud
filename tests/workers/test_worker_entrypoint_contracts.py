@@ -19,13 +19,3 @@ def test_callback_dispatch_worker_exists_as_separate_entrypoint() -> None:
 
     assert "dispatch_pending_callbacks" in source
     assert "runtime_callback_worker_poll_seconds" in source
-
-
-def test_addon_projection_workers_exist_as_separate_entrypoints() -> None:
-    overview_source = (_workers_root() / "addon_overview_projection.py").read_text()
-    provider_source = (_workers_root() / "provider_release_summary_projection.py").read_text()
-
-    assert "refresh_addon_overview_projections" in overview_source
-    assert "def run_once" in overview_source
-    assert "refresh_provider_release_summary_projections" in provider_source
-    assert "def run_once" in provider_source

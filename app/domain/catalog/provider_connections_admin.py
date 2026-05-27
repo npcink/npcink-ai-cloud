@@ -4,20 +4,13 @@ from datetime import UTC, datetime
 import re
 from typing import Any, Callable
 
-from app.adapters.providers.anthropic import AnthropicProviderAdapter
 from app.adapters.providers.base import ProviderAdapter
 from app.adapters.providers.base import CatalogInstanceSeed, CatalogModelSeed, ProviderCatalogSnapshot
-from app.adapters.providers.litellm_gateway import LiteLLMGatewayProviderAdapter
-from app.adapters.providers.openai import OpenAIProviderAdapter
-from app.adapters.providers.openrouter import OpenRouterProviderAdapter
 from app.adapters.providers.registry import build_provider_adapter_from_connection
-from app.adapters.providers.tei import TEIProviderAdapter
-from app.adapters.providers.vllm import VLLMProviderAdapter
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.secrets import (
-    decrypt_provider_connection_secret,
     encrypt_provider_connection_secret,
 )
 from app.dev.model_ops_release_preflight import evaluate_model_admin_release_preflight

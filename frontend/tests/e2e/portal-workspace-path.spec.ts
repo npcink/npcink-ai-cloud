@@ -63,7 +63,6 @@ function buildPortalSession(selectedSiteId: string) {
         sites,
       },
     ],
-    impersonation: null,
     current_subscription:
       currentSite.site_id === 'site_attention'
         ? {

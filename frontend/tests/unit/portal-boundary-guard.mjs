@@ -6,7 +6,7 @@ const root = process.cwd();
 const portalAppDir = resolve(root, 'src/app/portal');
 const portalComponentsDir = resolve(root, 'src/components/portal');
 const workspaceHeaderPath = resolve(root, 'src/components/portal/PortalWorkspaceHeader.tsx');
-const siteRecordPath = resolve(root, 'src/app/portal/sites/[siteId]/page.tsx');
+const sitesPagePath = resolve(root, 'src/app/portal/sites/page.tsx');
 
 function listFiles(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -44,52 +44,33 @@ assert.equal(
 );
 
 const workspaceHeaderSource = readFileSync(workspaceHeaderPath, 'utf8');
-assert.match(
-  workspaceHeaderSource,
-  /'preferences'/,
-  'Portal workspace header may identify Preferences as a secondary page'
-);
 assert.doesNotMatch(
   workspaceHeaderSource,
   /'settings'/,
   'Portal workspace header must not keep the legacy Settings page token'
 );
-
-const siteRecordSource = readFileSync(siteRecordPath, 'utf8');
-assert.match(
-  siteRecordSource,
-  /currentPage="record"/,
-  '/portal/sites/[siteId] must stay outside the primary portal workspace chain'
-);
-assert.match(
-  siteRecordSource,
-  /portal\.read_only_record/,
-  '/portal/sites/[siteId] must remain a read-only record surface'
-);
-
-for (const route of ['keys', 'usage', 'billing']) {
-  assert.match(
-    siteRecordSource,
-    new RegExp(`/portal/${route}\\?site=\\$\\{siteId\\}`),
-    `/portal/sites/[siteId] must link users back into the dedicated ${route} workspace`
-  );
-}
 assert.doesNotMatch(
-  siteRecordSource,
+  workspaceHeaderSource,
+  /'preferences'/,
+  'Portal workspace header must not keep the retired Preferences page token'
+);
+
+const sitesPageSource = readFileSync(sitesPagePath, 'utf8');
+assert.doesNotMatch(
+  sitesPageSource,
   /\/portal\/settings/,
-  '/portal/sites/[siteId] must not link users back into the retired Settings surface'
+  '/portal/sites must not link users back into the retired Settings surface'
 );
 assert.doesNotMatch(
-  siteRecordSource,
+  sitesPageSource,
   /\/portal\/preferences/,
-  '/portal/sites/[siteId] must not promote Preferences as a site-record workflow'
+  '/portal/sites must not promote Preferences as a site workflow'
 );
-
 assert.doesNotMatch(
-  siteRecordSource,
+  sitesPageSource,
   /admin\.quick_actions/,
-  '/portal/sites/[siteId] must not drift back into an admin-style quick actions dashboard'
+  '/portal/sites must not drift back into an admin-style quick actions dashboard'
 );
 
-const siteRecordStats = statSync(siteRecordPath);
-assert.ok(siteRecordStats.isFile(), '/portal/sites/[siteId] route must remain implemented as a real page file');
+const sitesPageStats = statSync(sitesPagePath);
+assert.ok(sitesPageStats.isFile(), '/portal/sites route must remain implemented as a real page file');

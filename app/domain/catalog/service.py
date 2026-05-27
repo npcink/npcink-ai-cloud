@@ -15,7 +15,11 @@ from app.core.models import ProviderCallRecord
 from app.domain.catalog.provider_connections_admin import (
     ProviderConnectionsAdminService,
 )
-from app.domain.catalog.recognition_admin import RecognitionAdminService
+from app.domain.catalog.recognition_admin import (
+    ALLOWED_ADMIN_RECOGNITION_SORT_FIELDS,
+    ALLOWED_RECOGNITION_REVIEW_STATUSES,
+    RecognitionAdminService,
+)
 from app.domain.catalog.recognition import (
     build_recognition_bundle,
     build_recognition_bundle_from_upstream_snapshot,

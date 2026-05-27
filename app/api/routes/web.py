@@ -39,9 +39,6 @@ from app.api.portal_session import (
     portal_cookie_secure,
 )
 from app.api.portal_session import (
-    clear_portal_impersonation_cookies as _clear_portal_impersonation_cookies,
-)
-from app.api.portal_session import (
     clear_portal_session_cookies as _clear_browser_session_cookies,
 )
 from app.api.portal_session import (
@@ -1356,7 +1353,6 @@ async def web_admin_session(request: Request) -> Any:
 async def web_admin_logout() -> RedirectResponse:
     response = RedirectResponse(url="/admin/login", status_code=303)
     _clear_admin_session_cookie(response)
-    _clear_portal_impersonation_cookies(response)
     _clear_browser_session_cookies(response)
     return response
 

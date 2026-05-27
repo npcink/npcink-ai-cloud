@@ -6,44 +6,21 @@ Magick AI Cloud is the runtime enhancement layer for the local Magick AI plugin.
 It is not a second control plane, a second source of truth, or a SaaS
 replacement for the plugin.
 
-## Addon Projection-First Read Model
+## Scope Reminder
 
-Addon read surfaces are now frozen to a `Cloud projection-first + live fallback`
-contract.
+Magick AI Cloud is the runtime enhancement layer for the local Magick AI plugin.
+It is not a second control plane, a second source of truth, or a SaaS
+replacement for the plugin.
 
-- Cloud owns the read-model truth for:
-  - `GET /v1/addon/dashboard`
-  - `GET /v1/addon/providers/release-summary`
-- both routes return the same freshness semantics:
-  - `source = projection | live_fallback`
-  - `generated_at`
-  - `fresh_until`
-  - `stale`
-  - `generation_ms`
-  - `fallback_reason` when `source=live_fallback`
-- WordPress may keep a short local cache for faster admin rendering, but that
-  cache is UX-only and does not own freshness thresholds or fallback policy
-- `catalog / recognition sync latestness`, `reconcile detail`, `runtime detail`,
-  and operator workflow state stay outside the overview projection main payload
-- WordPress Cloud Addon remains a light access shell:
-  - settings UI accepts only base URL and Cloud API Key
-  - before verification, the addon shows only Settings
-  - saving Settings runs verification; after success, tab order is
-    Cloud Overview / Expiry & Entitlement / Settings
-  - no Developer tab
-  - no split credential editor
-  - no local provider evidence or reconcile detail panel
-  - no `/admin/cloud-addon/developer-readonly` diagnostics route
-- Cloud may still parse customer-facing API keys into `site_id / key_id / secret`
-  for signed runtime requests; those fields are internal implementation details,
-  not local UI or operator-facing settings
-- addon implementation is now intentionally split:
-  - `Magick_AI_Cloud_Model_Runtime_Client` keeps canonical hosted execution transport
-  - catalog, overview, runtime-read, repair, and logs analytics reads live in
-    bounded internal clients instead of one broad readonly bridge
-  - `Magick_AI_Cloud_Addon_Admin_Summary_Client` is the only client facade the addon admin page may consume
-- addon admin must not attach itself to bounded detail clients and regrow
-  prompt/preset/router/logs/provider-evidence/reconcile/runtime-detail surfaces
+Current repository status is a strong-contraction cleanup baseline:
+- orchestration, task-packs, prompt/preset advisor, and portal thick features
+  have been removed
+- admin surface is bounded to accounts, sites, plans, subscriptions, billing
+  inspect, provider ops, runtime diagnostics, audit, and commercial decisions
+- portal surface is bounded to login, session, sites, keys, usage, entitlements,
+  billing, and audit
+- addon projection/repair surfaces are not part of this baseline; they remain
+  deferred to a separate proposal with independent review
 
 Operational references:
 

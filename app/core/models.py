@@ -48,18 +48,10 @@ PORTAL_LOGIN_CODE_STATUS_LOCKED = "locked"
 PORTAL_MEMBER_IDENTITY_STATUS_ACTIVE = "active"
 PORTAL_MEMBER_IDENTITY_STATUS_DISABLED = "disabled"
 
-PORTAL_ACTION_REQUEST_STATUS_OPEN = "open"
-PORTAL_ACTION_REQUEST_STATUS_ACKNOWLEDGED = "acknowledged"
-PORTAL_ACTION_REQUEST_STATUS_RESOLVED = "resolved"
-PORTAL_ACTION_REQUEST_STATUS_CANCELED = "canceled"
-
 PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN = "platform_admin"
 
 PLATFORM_ADMIN_STATUS_ACTIVE = "active"
 PLATFORM_ADMIN_STATUS_DISABLED = "disabled"
-
-PLATFORM_IMPERSONATION_STATUS_ACTIVE = "active"
-PLATFORM_IMPERSONATION_STATUS_ENDED = "ended"
 
 PLAN_STATUS_DRAFT = "draft"
 PLAN_STATUS_ACTIVE = "active"
@@ -197,37 +189,6 @@ class PortalLoginCode(Base):
     )
 
 
-class PortalActionRequest(Base):
-    __tablename__ = "portal_action_requests"
-
-    request_id: Mapped[str] = mapped_column(String(191), primary_key=True)
-    request_type: Mapped[str] = mapped_column(String(64), index=True)
-    account_id: Mapped[str | None] = mapped_column(String(191), index=True)
-    site_id: Mapped[str | None] = mapped_column(String(191), index=True)
-    member_ref: Mapped[str] = mapped_column(String(191), index=True)
-    title: Mapped[str] = mapped_column(String(191))
-    message: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(
-        String(32),
-        default=PORTAL_ACTION_REQUEST_STATUS_OPEN,
-        index=True,
-    )
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        index=True,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-
 class PlatformAdminIdentity(Base):
     __tablename__ = "platform_admin_identities"
     __table_args__ = (
@@ -249,39 +210,6 @@ class PlatformAdminIdentity(Base):
         default=PLATFORM_ADMIN_STATUS_ACTIVE,
         index=True,
     )
-    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-
-class PlatformImpersonationSession(Base):
-    __tablename__ = "platform_impersonation_sessions"
-
-    impersonation_id: Mapped[str] = mapped_column(String(191), primary_key=True)
-    platform_admin_ref: Mapped[str] = mapped_column(String(191), index=True)
-    platform_role: Mapped[str] = mapped_column(String(64), index=True)
-    member_ref: Mapped[str] = mapped_column(String(191), index=True)
-    account_id: Mapped[str | None] = mapped_column(String(191), index=True)
-    site_id: Mapped[str | None] = mapped_column(String(191), index=True)
-    reason_code: Mapped[str] = mapped_column(String(64), index=True)
-    reason_text: Mapped[str | None] = mapped_column(Text)
-    read_only: Mapped[bool] = mapped_column(Boolean, default=True)
-    status: Mapped[str] = mapped_column(
-        String(32),
-        default=PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-        index=True,
-    )
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    ended_reason: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -930,27 +858,6 @@ class BillingSnapshot(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
-    )
-
-
-class OperatorManagedTopupPackOverlay(Base):
-    __tablename__ = "operator_managed_topup_pack_overlays"
-
-    pack_id: Mapped[str] = mapped_column(String(191), primary_key=True)
-    label: Mapped[str] = mapped_column(String(191), default="")
-    points_label: Mapped[str] = mapped_column(String(191), default="")
-    runs_increment: Mapped[float] = mapped_column(Float, default=0.0)
-    tokens_increment: Mapped[float] = mapped_column(Float, default=0.0)
-    cost_increment: Mapped[float] = mapped_column(Float, default=0.0)
-    operator_note: Mapped[str] = mapped_column(Text, default="")
-    recommended_for_tiers_json: Mapped[list[str]] = mapped_column(JSON, default=list)
-    display_order: Mapped[int] = mapped_column(Integer, default=1)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        index=True,
     )
 
 

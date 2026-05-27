@@ -131,18 +131,6 @@ export const EmptyStates = {
     );
   },
 
-  /** 无通知 */
-  NoNotifications: () => {
-    const { t } = useLocale();
-    return (
-      <EmptyState
-        icon="🔔"
-        title={t('empty.no_notifications_title')}
-        description={t('empty.no_notifications_desc')}
-      />
-    );
-  },
-
   /** 无消息 */
   NoMessages: () => {
     const { t } = useLocale();

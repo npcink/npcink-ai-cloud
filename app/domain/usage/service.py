@@ -142,7 +142,6 @@ class UsageService:
     ) -> dict[str, Any]:
         now = self.now_factory()
         windows = self._build_windows(now)
-        rolling_window = windows["rolling_24h"]
 
         with get_session(self.database_url) as session:
             repository = StatsRepository(session)

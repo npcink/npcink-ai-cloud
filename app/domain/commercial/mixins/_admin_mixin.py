@@ -9,41 +9,32 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    AccountSubscription,
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
     PLATFORM_ADMIN_STATUS_ACTIVE,
-    PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-    PLATFORM_IMPERSONATION_STATUS_ENDED,
-    PlatformImpersonationSession,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
-    Site,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_PAST_DUE,
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
+    AccountSubscription,
 )
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
 )
 from app.domain.commercial.mixins._audit_mixin import (
-    ServiceAuditContext,
     IDENTITY_TYPE_PLATFORM_ADMIN,
     IDENTITY_TYPE_USER_ADMIN,
-    _aggregate_membership_status,
+    ServiceAuditContext,
     _canonicalize_platform_admin_role_for_write,
-    _subscription_counts_as_covered,
     _platform_capability_flags,
+    _subscription_counts_as_covered,
 )
 from app.domain.commercial.mixins._billing_mixin import (
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
 )
-
-
-# Default impersonation TTL (30 minutes)
-PLATFORM_IMPERSONATION_MAX_TTL_SECONDS = 30 * 60
 
 class CommercialServiceAdminMixin:
 
@@ -153,7 +144,6 @@ class CommercialServiceAdminMixin:
                 "service.platform_admin_ref_required",
                 "platform admin ref is required",
             )
-        now = self.now_factory()
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             identity = repository.get_platform_admin_identity(admin_ref=normalized_admin_ref)
@@ -161,17 +151,6 @@ class CommercialServiceAdminMixin:
                 raise CommercialNotFoundError(
                     "service.platform_admin_not_found",
                     f"platform admin '{normalized_admin_ref}' was not found",
-                )
-            active_impersonations = repository.list_platform_impersonations(
-                platform_admin_ref=normalized_admin_ref,
-                active_only=True,
-                now=now,
-                limit=1,
-            )
-            if active_impersonations:
-                raise CommercialPermissionError(
-                    "service.platform_admin_impersonation_active",
-                    f"platform admin '{normalized_admin_ref}' has an active impersonation session",
                 )
             payload = self._serialize_platform_admin_identity(identity)
             repository.delete_platform_admin_identity(admin_ref=normalized_admin_ref)
@@ -182,157 +161,6 @@ class CommercialServiceAdminMixin:
                 outcome="succeeded",
                 scope_kind="platform_admin",
                 scope_id=normalized_admin_ref,
-                payload_json=payload,
-            )
-            session.commit()
-            return payload
-
-
-    def start_platform_impersonation(
-        self,
-        *,
-        platform_admin_ref: str,
-        platform_role: str,
-        member_ref: str,
-        site_id: str,
-        reason_code: str,
-        reason_text: str = "",
-        read_only: bool = True,
-        ttl_seconds: int = PLATFORM_IMPERSONATION_MAX_TTL_SECONDS,
-        audit_context: ServiceAuditContext | None = None,
-    ) -> dict[str, object]:
-        normalized_platform_admin_ref = platform_admin_ref.strip()
-        normalized_platform_role = platform_role.strip()
-        normalized_member_ref = member_ref.strip()
-        normalized_site_id = site_id.strip()
-        normalized_reason_code = reason_code.strip() or "support_debug"
-        normalized_reason_text = reason_text.strip()
-        assert_platform_admin_capability(
-            role=normalized_platform_role,
-            capability="can_impersonate",
-            error_code="service.platform_impersonation_role_forbidden",
-            message="platform admin cannot start impersonation",
-        )
-        if not normalized_member_ref:
-            raise CommercialPermissionError(
-                "service.platform_impersonation_member_required",
-                "target member ref is required",
-            )
-        if not normalized_site_id:
-            raise CommercialPermissionError(
-                "service.platform_impersonation_site_required",
-                "target site id is required",
-            )
-        now = self.now_factory()
-        bounded_ttl_seconds = max(60, min(int(ttl_seconds or 0), PLATFORM_IMPERSONATION_MAX_TTL_SECONDS))
-        expires_at = now + timedelta(seconds=bounded_ttl_seconds)
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            access = self.resolve_portal_site_access(
-                site_id=normalized_site_id,
-                member_ref=normalized_member_ref,
-            )
-            impersonation = repository.create_platform_impersonation(
-                impersonation_id=f"imp_{uuid4().hex}",
-                platform_admin_ref=normalized_platform_admin_ref,
-                platform_role=normalized_platform_role,
-                member_ref=normalized_member_ref,
-                account_id=str(access.get("account_id") or ""),
-                site_id=normalized_site_id,
-                reason_code=normalized_reason_code,
-                reason_text=normalized_reason_text or None,
-                read_only=read_only,
-                status=PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-                started_at=now,
-                expires_at=expires_at,
-                metadata_json={
-                    "target_role": str(access.get("role") or ""),
-                    "site": access.get("site"),
-                },
-            )
-            payload = self._serialize_platform_impersonation(impersonation)
-            self._record_service_audit_in_session(
-                repository=repository,
-                audit_context=audit_context,
-                event_kind="platform_impersonation.start",
-                outcome="succeeded",
-                account_id=str(access.get("account_id") or ""),
-                site_id=normalized_site_id,
-                scope_kind="platform_impersonation",
-                scope_id=impersonation.impersonation_id,
-                payload_json=payload,
-            )
-            session.commit()
-            return payload
-
-
-    def get_platform_impersonation(
-        self,
-        *,
-        impersonation_id: str,
-        active_only: bool = False,
-    ) -> dict[str, object]:
-        normalized_id = impersonation_id.strip()
-        if not normalized_id:
-            raise CommercialNotFoundError(
-                "service.platform_impersonation_not_found",
-                "platform impersonation was not found",
-            )
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            record = (
-                repository.get_active_platform_impersonation(
-                    impersonation_id=normalized_id,
-                    now=self.now_factory(),
-                )
-                if active_only
-                else repository.get_platform_impersonation(impersonation_id=normalized_id)
-            )
-            if record is None:
-                raise CommercialNotFoundError(
-                    "service.platform_impersonation_not_found",
-                    f"platform impersonation '{normalized_id}' was not found",
-                )
-            return self._serialize_platform_impersonation(record)
-
-
-    def end_platform_impersonation(
-        self,
-        *,
-        impersonation_id: str,
-        platform_admin_ref: str,
-        ended_reason: str = "",
-        audit_context: ServiceAuditContext | None = None,
-    ) -> dict[str, object]:
-        normalized_id = impersonation_id.strip()
-        normalized_platform_admin_ref = platform_admin_ref.strip()
-        now = self.now_factory()
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            record = repository.get_platform_impersonation(impersonation_id=normalized_id)
-            if record is None:
-                raise CommercialNotFoundError(
-                    "service.platform_impersonation_not_found",
-                    f"platform impersonation '{normalized_id}' was not found",
-                )
-            if str(record.platform_admin_ref or "") != normalized_platform_admin_ref:
-                raise CommercialPermissionError(
-                    "service.platform_impersonation_admin_required",
-                    f"platform admin '{normalized_platform_admin_ref}' cannot end impersonation '{normalized_id}'",
-                )
-            record.status = PLATFORM_IMPERSONATION_STATUS_ENDED
-            record.ended_at = now
-            record.ended_reason = ended_reason.strip() or "ended_by_admin"
-            payload = self._serialize_platform_impersonation(record)
-            self._record_service_audit_in_session(
-                repository=repository,
-                audit_context=audit_context,
-                event_kind="platform_impersonation.end",
-                outcome="succeeded",
-                account_id=record.account_id,
-                site_id=record.site_id,
-                scope_kind="platform_impersonation",
-                scope_id=record.impersonation_id,
                 payload_json=payload,
             )
             session.commit()
@@ -976,259 +804,6 @@ class CommercialServiceAdminMixin:
         }
 
 
-    def list_admin_members_queue(
-        self,
-        *,
-        member_ref: str | None = None,
-        status: str | None = None,
-        account_id: str | None = None,
-        has_coverage_follow_up: bool | None = None,
-        disabled: bool | None = None,
-        dev_baseline: bool | None = None,
-        never_logged_in: bool = False,
-        limit: int = 100,
-    ) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            memberships = repository.list_account_memberships(limit=None)
-            sites = repository.list_sites(limit=None)
-            subscriptions = repository.list_subscriptions(limit=None)
-            accounts = repository.list_accounts(limit=None)
-
-        accounts_by_id = {
-            str(account.account_id or ""): account
-            for account in accounts
-            if str(account.account_id or "").strip()
-        }
-        sites_by_account: dict[str, list[Site]] = defaultdict(list)
-        for site in sites:
-            site_account_id = str(getattr(site, "account_id", "") or "").strip()
-            if site_account_id:
-                sites_by_account[site_account_id].append(site)
-
-        latest_subscription_by_account = self._latest_subscription_map(subscriptions)
-
-        member_items: dict[str, dict[str, object]] = {}
-        for membership in memberships:
-            serialized = self._serialize_account_membership(
-                membership,
-                accessible_sites=sites_by_account.get(str(getattr(membership, "account_id", "") or "").strip(), []),
-            )
-            current_member_ref = str(serialized.get("member_ref") or "").strip()
-            if not current_member_ref:
-                continue
-            if member_ref and member_ref not in current_member_ref:
-                continue
-            current_account_id = str(serialized.get("account_id") or "").strip()
-            if account_id and current_account_id != account_id:
-                continue
-
-            bucket = member_items.setdefault(
-                current_member_ref,
-                {
-                    "member_ref": current_member_ref,
-                    "email": str(serialized.get("email") or ""),
-                    "allowed_action_set": set(),
-                    "status_set": set(),
-                    "invite_state_set": set(),
-                    "accounts": [],
-                    "accessible_site_count": 0,
-                    "sites_needing_follow_up_count": 0,
-                    "last_login_at": "",
-                    "dev_baseline": False,
-                    "covered_subscription_ids": set(),
-                },
-            )
-            for action in list(serialized.get("allowed_actions") or []):
-                normalized_action = str(action).strip()
-                if normalized_action:
-                    bucket["allowed_action_set"].add(normalized_action)
-            bucket["status_set"].add(str(serialized.get("status") or ""))
-            if str(serialized.get("invite_state") or "").strip():
-                bucket["invite_state_set"].add(str(serialized.get("invite_state") or ""))
-
-            last_login_at = str(serialized.get("last_login_at") or "")
-            if last_login_at and last_login_at > str(bucket.get("last_login_at") or ""):
-                bucket["last_login_at"] = last_login_at
-
-            accessible_sites = list(serialized.get("accessible_sites") or [])
-            account_site_count = 0
-            account_covered_site_count = 0
-            account_sites_needing_follow_up_count = 0
-            highlighted_follow_up_site_id = ""
-            highlighted_subscription_id = ""
-            for accessible_site in accessible_sites:
-                site_id = str(accessible_site.get("site_id") or "").strip()
-                if not site_id:
-                    continue
-                account_site_count += 1
-                bucket["accessible_site_count"] += 1
-                subscription = latest_subscription_by_account.get(current_account_id)
-                covered = _subscription_counts_as_covered(subscription)
-                plan_value = str(getattr(subscription, "plan_id", "") or "").strip() if subscription is not None else ""
-                if plan_value:
-                    if plan_value == "plan_dev_unlimited":
-                        bucket["dev_baseline"] = True
-                if covered:
-                    account_covered_site_count += 1
-                    subscription_id = str(getattr(subscription, "subscription_id", "") or "").strip()
-                    if subscription_id:
-                        bucket["covered_subscription_ids"].add(subscription_id)
-                else:
-                    account_sites_needing_follow_up_count += 1
-                    bucket["sites_needing_follow_up_count"] += 1
-                    if not highlighted_follow_up_site_id:
-                        highlighted_follow_up_site_id = site_id
-                        highlighted_subscription_id = str(getattr(subscription, "subscription_id", "") or "")
-
-            bucket["accounts"].append(
-                {
-                    "account_id": current_account_id,
-                    "account_name": str(getattr(accounts_by_id.get(current_account_id), "name", "") or current_account_id),
-                    "site_count": account_site_count,
-                    "covered_site_count": account_covered_site_count,
-                    "sites_needing_follow_up_count": account_sites_needing_follow_up_count,
-                    "highlight_site_id": highlighted_follow_up_site_id,
-                    "highlight_subscription_id": highlighted_subscription_id,
-                }
-            )
-
-        items: list[dict[str, object]] = []
-        members_needing_coverage_follow_up = 0
-        never_logged_in_members = 0
-        disabled_mapped_members = 0
-        members_on_dev_baseline = 0
-
-        for item in member_items.values():
-            resolved_status = _aggregate_membership_status(set(item.get("status_set") or set()))
-            resolved_invite_state = "accepted"
-            invite_states = set(item.get("invite_state_set") or set())
-            if "pending" in invite_states:
-                resolved_invite_state = "pending"
-            elif "sent" in invite_states:
-                resolved_invite_state = "sent"
-            elif invite_states:
-                resolved_invite_state = next(iter(invite_states))
-
-            accessible_site_count = int(item.get("accessible_site_count") or 0)
-            sites_needing_follow_up_count = int(item.get("sites_needing_follow_up_count") or 0)
-            dev_baseline_member = bool(item.get("dev_baseline"))
-            has_coverage_follow_up_value = sites_needing_follow_up_count > 0
-            never_logged_in_member = not str(item.get("last_login_at") or "")
-            disabled_mapped = resolved_status == "disabled" and accessible_site_count > 0
-            primary_account = None
-            for account_summary in list(item.get("accounts") or []):
-                if int(account_summary.get("sites_needing_follow_up_count") or 0) > 0:
-                    primary_account = account_summary
-                    break
-            if primary_account is None:
-                accounts_list = list(item.get("accounts") or [])
-                primary_account = accounts_list[0] if accounts_list else None
-
-            primary_account_id = str((primary_account or {}).get("account_id") or "")
-            primary_follow_up_site_id = str((primary_account or {}).get("highlight_site_id") or "")
-            primary_impersonation_href = ""
-
-            covered_subscription_ids = sorted(
-                {
-                    str(value or "").strip()
-                    for value in item.get("covered_subscription_ids") or set()
-                    if str(value or "").strip()
-                }
-            )
-            single_covered_subscription_id = ""
-            if len(covered_subscription_ids) == 1 and not dev_baseline_member:
-                single_covered_subscription_id = covered_subscription_ids[0]
-
-            if status and resolved_status != status:
-                continue
-            if has_coverage_follow_up is True and not has_coverage_follow_up_value:
-                continue
-            if has_coverage_follow_up is False and has_coverage_follow_up_value:
-                continue
-            if disabled is True and not disabled_mapped:
-                continue
-            if disabled is False and disabled_mapped:
-                continue
-            if dev_baseline is True and not dev_baseline_member:
-                continue
-            if dev_baseline is False and dev_baseline_member:
-                continue
-            if never_logged_in and not never_logged_in_member:
-                continue
-
-            if has_coverage_follow_up_value:
-                members_needing_coverage_follow_up += 1
-            if never_logged_in_member:
-                never_logged_in_members += 1
-            if disabled_mapped:
-                disabled_mapped_members += 1
-            if dev_baseline_member:
-                members_on_dev_baseline += 1
-
-            items.append(
-                {
-                    "member_ref": str(item.get("member_ref") or ""),
-                    "email": str(item.get("email") or ""),
-                    "identity_type": IDENTITY_TYPE_USER_ADMIN,
-                    "status": resolved_status,
-                    "invite_state": resolved_invite_state,
-                    "allowed_actions": sorted(
-                        {
-                            value
-                            for value in item.get("allowed_action_set") or set()
-                            if value
-                        }
-                    ),
-                    "account_count": len(item.get("accounts") or []),
-                    "accessible_site_count": accessible_site_count,
-                    "sites_needing_follow_up_count": sites_needing_follow_up_count,
-                    "last_login_at": str(item.get("last_login_at") or ""),
-                    "accounts": list(item.get("accounts") or []),
-                    "dev_baseline": dev_baseline_member,
-                    "has_coverage_follow_up": has_coverage_follow_up_value,
-                    "never_logged_in": never_logged_in_member,
-                    "disabled_mapped": disabled_mapped,
-                    "primary_account_id": primary_account_id,
-                    "primary_follow_up_site_id": primary_follow_up_site_id,
-                    "primary_impersonation_href": primary_impersonation_href,
-                    "single_covered_subscription_id": single_covered_subscription_id,
-                }
-            )
-
-        items.sort(
-            key=lambda item: (
-                0 if bool(item.get("has_coverage_follow_up")) else 1,
-                0 if bool(item.get("disabled_mapped")) else 1,
-                0 if bool(item.get("never_logged_in")) else 1,
-                0 if bool(item.get("dev_baseline")) else 1,
-                str(item.get("member_ref") or ""),
-            )
-        )
-        bounded_items = items[: max(1, int(limit or 0))]
-
-        return {
-            "filters": {
-                "member_ref": member_ref or "",
-                "status": status or "",
-                "account_id": account_id or "",
-                "has_coverage_follow_up": has_coverage_follow_up,
-                "disabled": disabled,
-                "dev_baseline": dev_baseline,
-                "never_logged_in": bool(never_logged_in),
-                "limit": limit,
-            },
-            "summary": {
-                "total": len(items),
-                "members_needing_coverage_follow_up": members_needing_coverage_follow_up,
-                "never_logged_in_members": never_logged_in_members,
-                "disabled_mapped_members": disabled_mapped_members,
-                "members_on_dev_baseline": members_on_dev_baseline,
-            },
-            "items": bounded_items,
-        }
-
-
     def list_admin_account_members(
         self,
         *,
@@ -1334,86 +909,6 @@ class CommercialServiceAdminMixin:
                 "limit": limit,
             },
             "items": [self._serialize_platform_admin_identity(identity) for identity in identities],
-        }
-
-
-    def list_admin_platform_impersonations(
-        self,
-        *,
-        status: str | None = None,
-        platform_admin_ref: str | None = None,
-        member_ref: str | None = None,
-        account_id: str | None = None,
-        site_id: str | None = None,
-        active_only: bool = False,
-        limit: int = 100,
-    ) -> dict[str, object]:
-        now = self.now_factory()
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            records = repository.list_platform_impersonations(
-                status=status,
-                platform_admin_ref=platform_admin_ref,
-                member_ref=member_ref,
-                account_id=account_id,
-                site_id=site_id,
-                active_only=active_only,
-                now=now,
-                limit=limit,
-            )
-        return {
-            "filters": {
-                "status": status or "",
-                "platform_admin_ref": platform_admin_ref or "",
-                "member_ref": member_ref or "",
-                "account_id": account_id or "",
-                "site_id": site_id or "",
-                "active_only": bool(active_only),
-                "limit": limit,
-            },
-            "items": [self._serialize_platform_impersonation(record) for record in records],
-        }
-
-
-    def _serialize_platform_admin_identity(self, identity: object) -> dict[str, object]:
-        role = str(getattr(identity, "role", "") or "")
-        return {
-            "admin_ref": str(getattr(identity, "admin_ref", "") or ""),
-            "provider": str(getattr(identity, "provider", "") or ""),
-            "external_subject": str(getattr(identity, "external_subject", "") or ""),
-            "email": str(getattr(identity, "email", "") or ""),
-            "identity_type": IDENTITY_TYPE_PLATFORM_ADMIN,
-            "role": role,
-            "capabilities": _platform_capability_flags(role),
-            "status": str(getattr(identity, "status", "") or ""),
-            "metadata": getattr(identity, "metadata_json", None) or {},
-            "created_at": self._serialize_datetime(getattr(identity, "created_at", None)),
-            "updated_at": self._serialize_datetime(getattr(identity, "updated_at", None)),
-        }
-
-
-    def _serialize_platform_impersonation(
-        self,
-        record: PlatformImpersonationSession | object,
-    ) -> dict[str, object]:
-        return {
-            "impersonation_id": str(getattr(record, "impersonation_id", "") or ""),
-            "platform_admin_ref": str(getattr(record, "platform_admin_ref", "") or ""),
-            "platform_role": str(getattr(record, "platform_role", "") or ""),
-            "member_ref": str(getattr(record, "member_ref", "") or ""),
-            "account_id": str(getattr(record, "account_id", "") or ""),
-            "site_id": str(getattr(record, "site_id", "") or ""),
-            "reason_code": str(getattr(record, "reason_code", "") or ""),
-            "reason_text": str(getattr(record, "reason_text", "") or ""),
-            "read_only": bool(getattr(record, "read_only", True)),
-            "status": str(getattr(record, "status", "") or ""),
-            "started_at": self._serialize_datetime(getattr(record, "started_at", None)),
-            "expires_at": self._serialize_datetime(getattr(record, "expires_at", None)),
-            "ended_at": self._serialize_datetime(getattr(record, "ended_at", None)),
-            "ended_reason": str(getattr(record, "ended_reason", "") or ""),
-            "metadata": getattr(record, "metadata_json", None) or {},
-            "created_at": self._serialize_datetime(getattr(record, "created_at", None)),
-            "updated_at": self._serialize_datetime(getattr(record, "updated_at", None)),
         }
 
 

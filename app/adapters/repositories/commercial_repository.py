@@ -7,22 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.core.models import (
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
+    PORTAL_LOGIN_CODE_STATUS_PENDING,
     Account,
     AccountEntitlementSnapshot,
     AccountMembership,
     AccountSubscription,
     BillingSnapshot,
     CommercialDecisionEvent,
-    OperatorManagedTopupPackOverlay,
     Plan,
     PlanVersion,
     PlatformAdminIdentity,
-    PlatformImpersonationSession,
-    PortalActionRequest,
     PortalLoginCode,
     PortalMemberIdentity,
-    PORTAL_LOGIN_CODE_STATUS_PENDING,
-    PLATFORM_IMPERSONATION_STATUS_ACTIVE,
     ProviderCallRecord,
     RunRecord,
     ServiceAuditEvent,
@@ -283,66 +279,6 @@ class CommercialRepository:
         self.session.flush()
         return code
 
-    def get_portal_action_request(self, request_id: str) -> PortalActionRequest | None:
-        return self.session.get(PortalActionRequest, request_id)
-
-    def create_portal_action_request(
-        self,
-        *,
-        request_id: str,
-        request_type: str,
-        account_id: str | None,
-        site_id: str | None,
-        member_ref: str,
-        title: str,
-        message: str | None,
-        status: str,
-        payload_json: dict[str, object] | None,
-    ) -> PortalActionRequest:
-        item = PortalActionRequest(
-            request_id=request_id,
-            request_type=request_type,
-            account_id=account_id,
-            site_id=site_id,
-            member_ref=member_ref,
-            title=title,
-            message=message,
-            status=status,
-            payload_json=payload_json,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
-        )
-        self.session.add(item)
-        self.session.flush()
-        return item
-
-    def list_portal_action_requests(
-        self,
-        *,
-        member_ref: str | None = None,
-        site_id: str | None = None,
-        account_id: str | None = None,
-        request_type: str | None = None,
-        statuses: list[str] | None = None,
-        limit: int = 50,
-    ) -> list[PortalActionRequest]:
-        statement = select(PortalActionRequest)
-        if member_ref:
-            statement = statement.where(PortalActionRequest.member_ref == member_ref)
-        if site_id:
-            statement = statement.where(PortalActionRequest.site_id == site_id)
-        if account_id:
-            statement = statement.where(PortalActionRequest.account_id == account_id)
-        if request_type:
-            statement = statement.where(PortalActionRequest.request_type == request_type)
-        if statuses:
-            statement = statement.where(PortalActionRequest.status.in_(statuses))
-        statement = statement.order_by(
-            PortalActionRequest.created_at.desc(),
-            PortalActionRequest.request_id.desc(),
-        ).limit(max(1, min(limit, 100)))
-        return list(self.session.scalars(statement))
-
     def list_portal_login_codes(
         self,
         *,
@@ -478,106 +414,6 @@ class CommercialRepository:
         self.session.delete(identity)
         self.session.flush()
         return True
-
-    def get_platform_impersonation(
-        self,
-        *,
-        impersonation_id: str,
-    ) -> PlatformImpersonationSession | None:
-        return self.session.get(PlatformImpersonationSession, impersonation_id)
-
-    def list_platform_impersonations(
-        self,
-        *,
-        status: str | None = None,
-        platform_admin_ref: str | None = None,
-        member_ref: str | None = None,
-        account_id: str | None = None,
-        site_id: str | None = None,
-        active_only: bool = False,
-        now: datetime | None = None,
-        limit: int | None = None,
-    ) -> list[PlatformImpersonationSession]:
-        statement = select(PlatformImpersonationSession)
-        if status:
-            statement = statement.where(PlatformImpersonationSession.status == status)
-        if platform_admin_ref:
-            statement = statement.where(
-                PlatformImpersonationSession.platform_admin_ref == platform_admin_ref
-            )
-        if member_ref:
-            statement = statement.where(PlatformImpersonationSession.member_ref == member_ref)
-        if account_id:
-            statement = statement.where(PlatformImpersonationSession.account_id == account_id)
-        if site_id:
-            statement = statement.where(PlatformImpersonationSession.site_id == site_id)
-        if active_only:
-            current = now or datetime.now(UTC)
-            statement = statement.where(
-                PlatformImpersonationSession.status == PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-                PlatformImpersonationSession.expires_at > current,
-                PlatformImpersonationSession.ended_at.is_(None),
-            )
-        statement = statement.order_by(
-            PlatformImpersonationSession.started_at.desc(),
-            PlatformImpersonationSession.impersonation_id.desc(),
-        )
-        if limit is not None and limit > 0:
-            statement = statement.limit(limit)
-        return list(self.session.scalars(statement))
-
-    def get_active_platform_impersonation(
-        self,
-        *,
-        impersonation_id: str,
-        now: datetime,
-    ) -> PlatformImpersonationSession | None:
-        return self.session.scalar(
-            select(PlatformImpersonationSession).where(
-                PlatformImpersonationSession.impersonation_id == impersonation_id,
-                PlatformImpersonationSession.status == PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-                PlatformImpersonationSession.expires_at > now,
-                PlatformImpersonationSession.ended_at.is_(None),
-            )
-        )
-
-    def create_platform_impersonation(
-        self,
-        *,
-        impersonation_id: str,
-        platform_admin_ref: str,
-        platform_role: str,
-        member_ref: str,
-        account_id: str | None,
-        site_id: str | None,
-        reason_code: str,
-        reason_text: str | None,
-        read_only: bool,
-        started_at: datetime,
-        expires_at: datetime,
-        status: str,
-        metadata_json: dict[str, object] | None = None,
-    ) -> PlatformImpersonationSession:
-        session = PlatformImpersonationSession(
-            impersonation_id=impersonation_id,
-            platform_admin_ref=platform_admin_ref,
-            platform_role=platform_role,
-            member_ref=member_ref,
-            account_id=account_id,
-            site_id=site_id,
-            reason_code=reason_code,
-            reason_text=reason_text,
-            read_only=read_only,
-            status=status,
-            started_at=started_at,
-            expires_at=expires_at,
-            ended_at=None,
-            ended_reason=None,
-            metadata_json=metadata_json,
-        )
-        self.session.add(session)
-        self.session.flush()
-        return session
 
     def get_site(self, site_id: str) -> Site | None:
         return self.session.get(Site, site_id)
@@ -1531,66 +1367,6 @@ class CommercialRepository:
         self.session.add(event)
         self.session.flush()
         return event
-
-    def get_operator_managed_topup_pack_overlay(
-        self,
-        pack_id: str,
-    ) -> OperatorManagedTopupPackOverlay | None:
-        return self.session.get(OperatorManagedTopupPackOverlay, pack_id)
-
-    def list_operator_managed_topup_pack_overlays(
-        self,
-    ) -> list[OperatorManagedTopupPackOverlay]:
-        statement = select(OperatorManagedTopupPackOverlay).order_by(
-            OperatorManagedTopupPackOverlay.updated_at.desc(),
-            OperatorManagedTopupPackOverlay.pack_id.asc(),
-        )
-        return list(self.session.scalars(statement))
-
-    def upsert_operator_managed_topup_pack_overlay(
-        self,
-        *,
-        pack_id: str,
-        label: str,
-        points_label: str,
-        runs_increment: float,
-        tokens_increment: float,
-        cost_increment: float,
-        operator_note: str,
-        recommended_for_tiers_json: list[str],
-        display_order: int,
-        active: bool,
-        updated_at: datetime,
-    ) -> OperatorManagedTopupPackOverlay:
-        overlay = self.get_operator_managed_topup_pack_overlay(pack_id)
-        if overlay is None:
-            overlay = OperatorManagedTopupPackOverlay(
-                pack_id=pack_id,
-                label=label,
-                points_label=points_label,
-                runs_increment=runs_increment,
-                tokens_increment=tokens_increment,
-                cost_increment=cost_increment,
-                operator_note=operator_note,
-                recommended_for_tiers_json=recommended_for_tiers_json,
-                display_order=display_order,
-                active=active,
-                updated_at=updated_at,
-            )
-            self.session.add(overlay)
-        else:
-            overlay.label = label
-            overlay.points_label = points_label
-            overlay.runs_increment = runs_increment
-            overlay.tokens_increment = tokens_increment
-            overlay.cost_increment = cost_increment
-            overlay.operator_note = operator_note
-            overlay.recommended_for_tiers_json = recommended_for_tiers_json
-            overlay.display_order = display_order
-            overlay.active = active
-            overlay.updated_at = updated_at
-        self.session.flush()
-        return overlay
 
     def list_commercial_decision_events(
         self,

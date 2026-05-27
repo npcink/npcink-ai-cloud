@@ -9,14 +9,10 @@ import { cn } from '@/lib/utils';
 export type PortalWorkspacePage =
   | 'keys'
   | 'usage'
-  | 'analytics'
   | 'billing'
   | 'audit'
-  | 'compliance'
   | 'record'
-  | 'sites'
-  | 'preferences'
-  | 'notifications';
+  | 'sites';
 
 export type PortalWorkspaceMetric = {
   label: string;

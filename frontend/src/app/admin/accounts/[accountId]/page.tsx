@@ -130,15 +130,6 @@ interface SiteMembership {
   status?: string;
 }
 
-interface ImpersonationRecord {
-  impersonation_id: string;
-  member_ref: string;
-  site_id: string;
-  status: string;
-  started_at?: string;
-  expires_at?: string;
-}
-
 interface PackagePlanListItem {
   plan?: {
     plan_id?: string;
@@ -228,11 +219,6 @@ function AccountDetailContent() {
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [selectedMemberRef, setSelectedMemberRef] = useState('');
   const [siteMembers, setSiteMembers] = useState<SiteMembership[]>([]);
-  const [reasonText, setReasonText] = useState('');
-  const [impersonationNotice, setImpersonationNotice] = useState<string | null>(null);
-  const [impersonationError, setImpersonationError] = useState<string | null>(null);
-  const [activeImpersonation, setActiveImpersonation] = useState<ImpersonationRecord | null>(null);
-  const [isImpersonationSubmitting, setIsImpersonationSubmitting] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -253,10 +239,6 @@ function AccountDetailContent() {
   const [packageActionError, setPackageActionError] = useState<string | null>(null);
   const [packageActionPending, setPackageActionPending] = useState<'change' | 'suspend' | 'cancel' | null>(null);
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
-
-  const loadActiveImpersonation = useCallback(async () => {
-    setActiveImpersonation(null);
-  }, []);
 
   const loadPackagePlans = useCallback(async () => {
     try {
@@ -746,27 +728,10 @@ function AccountDetailContent() {
     }
   };
 
-  const handleStartImpersonation = async () => {
-    if (!selectedSiteId || !selectedMemberRef) {
-      setImpersonationError(t('error.select_site_member'));
-      return;
-    }
-
-    setImpersonationNotice(null);
-    setImpersonationError(t('admin.impersonation_removed', {}, 'Impersonation has been removed from the Cloud service plane.'));
-  };
-
-  const handleEndImpersonation = async (_impersonationId: string) => {
-    setActiveImpersonation(null);
-    setImpersonationNotice(null);
-    setImpersonationError(t('admin.impersonation_removed', {}, 'Impersonation has been removed from the Cloud service plane.'));
-  };
-
   useEffect(() => {
     void loadAccount();
-    void loadActiveImpersonation();
     void loadPackagePlans();
-  }, [loadAccount, loadActiveImpersonation, loadPackagePlans]);
+  }, [loadAccount, loadPackagePlans]);
 
   useEffect(() => {
     if (!selectedSiteId) {
@@ -968,7 +933,6 @@ function AccountDetailContent() {
       toneClassName: membersWithDeliveryFailures.length > 0 || pendingMembers.length > 0 ? 'text-amber-700 dark:text-amber-300' : undefined,
     },
   ];
-  const memberOptions = siteMembers;
   const packagePlanOptions = packagePlans
     .filter((item) => item.plan?.plan_id)
     .map((item) => {
@@ -1192,9 +1156,6 @@ function AccountDetailContent() {
               </a>
               <a href="#portal-access" className="btn btn-secondary">
                 {t('admin.account_detail.invite_member_action', undefined, 'Invite member')}
-              </a>
-              <a href="#portal-access" className="btn btn-secondary">
-                {t('admin.start_impersonation', undefined, 'Impersonate')}
               </a>
               <button
                 type="button"
@@ -1445,117 +1406,10 @@ function AccountDetailContent() {
               {t('admin.account_detail.portal_access_title', undefined, 'Portal access')}
             </h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {t('admin.account_detail.portal_access_desc', undefined, 'Use this block for invite delivery, support impersonation, and member access follow-up after the customer coverage posture is clear.')}
+              {t('admin.account_detail.portal_access_desc', undefined, 'Use this block for invite delivery and member access follow-up after the customer coverage posture is clear.')}
             </p>
           </div>
           <BackofficeMetricStrip items={portalAccessSummaryItems} columnsClassName="xl:grid-cols-2" />
-          {activeImpersonation ? (
-            <BackofficeStackCard className="border-blue-200 bg-blue-50/70 dark:border-blue-900 dark:bg-blue-950/20">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
-                    {t('admin.current_impersonation')}
-                  </p>
-                  <BackofficeIdentifier value={activeImpersonation.impersonation_id} className="mt-2 block font-semibold text-gray-950 dark:text-white" />
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {activeImpersonation.member_ref} · {activeImpersonation.site_id}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
-                    {activeImpersonation.started_at ? formatDate(activeImpersonation.started_at) : t('common.never')} · {activeImpersonation.expires_at ? formatDate(activeImpersonation.expires_at) : t('common.never')}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Link href="/portal" className="btn btn-secondary">
-                    {t('admin.open_customer_portal')}
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => handleEndImpersonation(activeImpersonation.impersonation_id)}
-                    className="btn btn-secondary"
-                    disabled={isImpersonationSubmitting}
-                  >
-                    {t('admin.end_impersonation')}
-                  </button>
-                </div>
-              </div>
-            </BackofficeStackCard>
-          ) : null}
-          <details
-            data-ui="member-coverage-details"
-            className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800"
-          >
-            <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
-              {t('admin.account_detail.portal_access_session_reveal', undefined, 'Manage support session')}
-            </summary>
-            <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={handleStartImpersonation}
-                  className={cn('btn btn-secondary', (!selectedSiteId || !selectedMemberRef || isImpersonationSubmitting) && 'pointer-events-none opacity-50')}
-                  disabled={!selectedSiteId || !selectedMemberRef || isImpersonationSubmitting}
-                >
-                  {isImpersonationSubmitting ? t('common.saving') : t('admin.start_impersonation')}
-                </button>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-3">
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.site')}</span>
-                  <select
-                    value={selectedSiteId}
-                    onChange={(event) => {
-                      setSelectedSiteId(event.target.value);
-                      setImpersonationNotice(null);
-                      setImpersonationError(null);
-                    }}
-                    className="input w-full"
-                  >
-                    <option value="">{t('common.site')}</option>
-                    {siteOptions.map((site) => (
-                      <option key={site.site_id} value={site.site_id}>
-                        {site.site_id} · {translateStatusLabel(site.status || 'unknown', t)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.members')}</span>
-                  <select
-                    value={selectedMemberRef}
-                    onChange={(event) => setSelectedMemberRef(event.target.value)}
-                    className="input w-full"
-                  >
-                    <option value="">{t('common.member')}</option>
-                    {memberOptions.map((member) => (
-                      <option key={member.member_ref} value={member.member_ref}>
-                        {member.member_ref} · {translateExternalCommercialRole(member.identity_type || member.role, t)}{member.status ? ` · ${translateStatusLabel(member.status, t)}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.reason_text')}</span>
-                  <input
-                    type="text"
-                    value={reasonText}
-                    onChange={(event) => setReasonText(event.target.value)}
-                    placeholder={t('admin.reason_text_placeholder')}
-                    className="input w-full"
-                  />
-                </label>
-              </div>
-              {impersonationNotice ? (
-                <BackofficeStackCard className="border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
-                  {impersonationNotice}
-                </BackofficeStackCard>
-              ) : null}
-              {impersonationError ? (
-                <BackofficeStackCard className="border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                  {impersonationError}
-                </BackofficeStackCard>
-              ) : null}
-            </div>
-          </details>
           <details className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800">
             <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
               {t('admin.account_detail.member_plan_coverage_reveal', undefined, 'View member coverage details')}

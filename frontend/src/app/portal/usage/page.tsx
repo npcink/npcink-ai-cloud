@@ -23,16 +23,12 @@ import {
 import {
   portalClient,
   type Entitlements,
-  type PortalMemberPreferences,
-  type PortalUsageAlertSettings,
   type PortalUsageSummaryPayload,
 } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import {
   DEFAULT_PORTAL_CURRENCY,
   formatPortalCurrency,
-  resolvePortalDisplayCurrency,
-  type PortalCurrency,
 } from '@/lib/currency';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatCompactNumber, formatDate, formatNumber } from '@/lib/utils';
@@ -54,10 +50,6 @@ function PortalUsageContent() {
   });
   const [usage, setUsage] = useState<PortalUsageSummaryPayload | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-  const [alertSettings, setAlertSettings] = useState<PortalUsageAlertSettings | null>(null);
-  const [preferredCurrency, setPreferredCurrency] = useState<PortalCurrency>(DEFAULT_PORTAL_CURRENCY);
-  const [isSavingAlerts, setIsSavingAlerts] = useState(false);
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,17 +69,9 @@ function PortalUsageContent() {
       setError(null);
 
       try {
-        const [bundle, preferencesResponse, alertSettingsResponse] = await Promise.all([
-          portalClient.getUsageBundle(selectedSiteId),
-          portalClient.getMemberPreferences().catch(() => null),
-          portalClient.getUsageAlertSettings(selectedSiteId).catch(() => null),
-        ]);
+        const bundle = await portalClient.getUsageBundle(selectedSiteId);
         setUsage(bundle.usage);
         setEntitlements(bundle.entitlements);
-        setAlertSettings(alertSettingsResponse?.data || null);
-        setPreferredCurrency(
-          resolvePortalDisplayCurrency((preferencesResponse?.data as PortalMemberPreferences | undefined)?.currency)
-        );
       } catch (err) {
         setError(formatPortalErrorMessage(err, t, t('error.failed_load')));
       } finally {
@@ -104,67 +88,13 @@ function PortalUsageContent() {
     setError(null);
 
     try {
-      const [bundle, preferencesResponse, alertSettingsResponse] = await Promise.all([
-        portalClient.getUsageBundle(siteId),
-        portalClient.getMemberPreferences().catch(() => null),
-        portalClient.getUsageAlertSettings(siteId).catch(() => null),
-      ]);
+      const bundle = await portalClient.getUsageBundle(siteId);
       setUsage(bundle.usage);
       setEntitlements(bundle.entitlements);
-      setAlertSettings(alertSettingsResponse?.data || null);
-      setPreferredCurrency(
-        resolvePortalDisplayCurrency((preferencesResponse?.data as PortalMemberPreferences | undefined)?.currency)
-      );
     } catch (err) {
       setError(formatPortalErrorMessage(err, t, t('error.failed_load')));
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleAlertSettingChange = (
-    metric: 'requests' | 'tokens' | 'cost',
-    level: 'warning' | 'critical',
-    value: string
-  ) => {
-    const numeric = Math.max(1, Math.min(100, Number.parseInt(value, 10) || 1));
-    setAlertSettings((current) => {
-      const next = current || {
-        enabled: true,
-        requests: { warning: 80, critical: 95 },
-        tokens: { warning: 80, critical: 95 },
-        cost: { warning: 80, critical: 95 },
-      };
-      return {
-        ...next,
-        [metric]: {
-          ...next[metric],
-          [level]: numeric,
-        },
-      };
-    });
-  };
-
-  const saveAlertSettings = async () => {
-    if (!selectedSiteId || !alertSettings) {
-      return;
-    }
-    setIsSavingAlerts(true);
-    setAlertMessage(null);
-    try {
-      const response = await portalClient.updateUsageAlertSettings(selectedSiteId, alertSettings);
-      setAlertSettings(response.data);
-      setAlertMessage(
-        t(
-          'portal.usage.alert_settings_saved',
-          {},
-          '已保存。后续达到预警或严重阈值时，会在待办里生成站内提醒。'
-        )
-      );
-    } catch (err) {
-      setAlertMessage(formatPortalErrorMessage(err, t, t('error.failed_save')));
-    } finally {
-      setIsSavingAlerts(false);
     }
   };
 
@@ -251,7 +181,7 @@ function PortalUsageContent() {
   const remainingRequests = Math.max(0, toFinite(runBudgetState.limit || runsLimit) - toFinite(runBudgetState.current_total));
   const remainingTokens = Math.max(0, toFinite(tokenBudgetState.limit || tokensLimit) - toFinite(tokenBudgetState.current_total));
   const remainingCost = Math.max(0, toFinite(costBudgetState.limit || costLimit) - toFinite(costBudgetState.current_total));
-  const formatPreferredCurrency = (value: number) => formatPortalCurrency(value, { to: preferredCurrency });
+  const formatPreferredCurrency = (value: number) => formatPortalCurrency(value, { to: DEFAULT_PORTAL_CURRENCY });
   const headroomTone =
     overBudget
       ? t('status.over_budget')
@@ -409,82 +339,6 @@ function PortalUsageContent() {
                     {t('common.cost')}: <strong>{formatPreferredCurrency(costLimit)}</strong>
                   </span>
                 </div>
-              </div>
-            </BackofficeStackCard>
-            <BackofficeStackCard>
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-950 dark:text-white">
-                    {t('portal.usage.alert_settings_title', {}, '用量预警设置')}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    {t(
-                      'portal.usage.alert_settings_desc',
-                      {},
-                      '达到阈值时生成站内待办，不发送邮件。默认预警为 80%，严重为 95%。'
-                    )}
-                  </p>
-                </div>
-                <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={alertSettings?.enabled ?? true}
-                    onChange={(event) =>
-                      setAlertSettings((current) => ({
-                        ...(current || {
-                          requests: { warning: 80, critical: 95 },
-                          tokens: { warning: 80, critical: 95 },
-                          cost: { warning: 80, critical: 95 },
-                        }),
-                        enabled: event.target.checked,
-                      }))
-                    }
-                  />
-                  {t('common.enabled', {}, 'Enabled')}
-                </label>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {(['requests', 'tokens', 'cost'] as const).map((metric) => (
-                  <div key={metric} className="rounded-2xl border border-slate-200/80 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/35">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                      {metric === 'requests'
-                        ? t('usage.requests', {}, 'Requests')
-                        : metric === 'tokens'
-                          ? t('common.tokens')
-                          : t('common.cost')}
-                    </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                        <span>{t('portal.usage.alert_warning', {}, '预警 %')}</span>
-                        <input
-                          className="input w-full"
-                          type="number"
-                          min="1"
-                          max="99"
-                          value={alertSettings?.[metric]?.warning ?? 80}
-                          onChange={(event) => handleAlertSettingChange(metric, 'warning', event.target.value)}
-                        />
-                      </label>
-                      <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                        <span>{t('portal.usage.alert_critical', {}, '严重 %')}</span>
-                        <input
-                          className="input w-full"
-                          type="number"
-                          min="2"
-                          max="100"
-                          value={alertSettings?.[metric]?.critical ?? 95}
-                          onChange={(event) => handleAlertSettingChange(metric, 'critical', event.target.value)}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button type="button" className="btn btn-primary btn-sm" disabled={isSavingAlerts} onClick={() => void saveAlertSettings()}>
-                  {isSavingAlerts ? t('common.saving') : t('common.save')}
-                </button>
-                {alertMessage ? <span className="text-sm text-slate-600 dark:text-slate-300">{alertMessage}</span> : null}
               </div>
             </BackofficeStackCard>
             <BackofficeStackCard>

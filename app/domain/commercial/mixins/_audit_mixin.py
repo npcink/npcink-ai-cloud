@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
-from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.config import Settings, get_settings
@@ -17,10 +16,8 @@ from app.core.models import (
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
     ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
-    ACCOUNT_STATUS_ACTIVE,
+    AccountSubscription,
     CommercialDecisionEvent,
-    PLAN_STATUS_ACTIVE,
-    PLAN_VERSION_STATUS_PUBLISHED,
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
     ServiceAuditEvent,
     Site,
@@ -48,9 +45,6 @@ PLATFORM_ADMIN_ACCOUNT_WRITE_ROLES = {
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
 }
 PLATFORM_ADMIN_CATALOG_WRITE_ROLES = {
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-}
-PLATFORM_IMPERSONATION_ALLOWED_ROLES = {
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
 }
 PORTAL_MEMBER_ALLOWED_LOGIN_STATUSES = {
@@ -237,7 +231,6 @@ def _canonicalize_platform_admin_role_for_write(role: str) -> str:
 
 
 def _resolve_portal_allowed_actions(role: str) -> list[str]:
-    normalized_role = _normalize_customer_membership_role(role)
     actions = [
         USER_ALLOWED_ACTION_VIEW_SITES,
         USER_ALLOWED_ACTION_VIEW_USAGE,
@@ -255,7 +248,7 @@ def _platform_capability_flags(role: str) -> dict[str, bool]:
     return {
         "can_manage_accounts": normalized_role in PLATFORM_ADMIN_ACCOUNT_WRITE_ROLES,
         "can_manage_catalog": normalized_role in PLATFORM_ADMIN_CATALOG_WRITE_ROLES,
-        "can_impersonate": normalized_role in PLATFORM_IMPERSONATION_ALLOWED_ROLES,
+        "can_impersonate": False,
         "can_manage_billing": normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES,
         "can_review_diagnostics": normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES,
     }

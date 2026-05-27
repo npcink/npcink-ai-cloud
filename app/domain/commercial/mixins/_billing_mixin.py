@@ -1,88 +1,29 @@
 """Commercial service: billing, subscription, and plan operations mixin."""
 from __future__ import annotations
 
-import re
-import secrets
 from collections import Counter, defaultdict
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from urllib.parse import quote, urlsplit
+from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy.orm import Session
-
 from app.adapters.repositories.commercial_repository import CommercialRepository
-from app.core.callback_security import (
-    RuntimeCallbackTargetValidationError,
-    validate_runtime_callback_target,
-)
-from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
-    ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
-    ACCOUNT_STATUS_ACTIVE,
-    ENTITLEMENT_SNAPSHOT_STATUS_ACTIVE,
     PLAN_STATUS_ACTIVE,
     PLAN_VERSION_STATUS_PUBLISHED,
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-    PLATFORM_ADMIN_STATUS_ACTIVE,
-    PLATFORM_IMPERSONATION_STATUS_ACTIVE,
-    PLATFORM_IMPERSONATION_STATUS_ENDED,
-    PORTAL_ACTION_REQUEST_STATUS_ACKNOWLEDGED,
-    PORTAL_ACTION_REQUEST_STATUS_CANCELED,
-    PORTAL_ACTION_REQUEST_STATUS_OPEN,
-    PORTAL_ACTION_REQUEST_STATUS_RESOLVED,
-    PORTAL_LOGIN_CODE_STATUS_CONSUMED,
-    PORTAL_LOGIN_CODE_STATUS_EXPIRED,
-    PORTAL_LOGIN_CODE_STATUS_LOCKED,
-    PORTAL_LOGIN_CODE_STATUS_PENDING,
-    SITE_API_KEY_STATUS_ACTIVE,
-    SITE_API_KEY_STATUS_EXPIRED,
-    SITE_API_KEY_STATUS_REVOKED,
-    SITE_STATUS_ACTIVE,
-    SITE_STATUS_ARCHIVED,
-    SITE_STATUS_PROVISIONING,
-    SITE_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_ACTIVE,
-    SUBSCRIPTION_STATUS_CANCELED,
     SUBSCRIPTION_STATUS_PAST_DUE,
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
-    CommercialDecisionEvent,
-    BillingSnapshot,
-    PlatformImpersonationSession,
-    PortalActionRequest,
-    ProviderCallRecord,
-    RunRecord,
-    ServiceAuditEvent,
-    Site,
-    SiteApiKey,
     AccountEntitlementSnapshot,
     AccountSubscription,
+    BillingSnapshot,
+    Site,
 )
-from app.core.security import build_secret_hash
-from app.core.secrets import (
-    encrypt_runtime_terminal_callback_secret,
-    encrypt_site_api_signing_secret,
-)
-from app.domain.commercial.customer_api_keys import expand_api_key_scopes
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
-    CommercialPermissionError,
     CommercialValidationError,
 )
-from app.domain.runtime.errors import (
-    RuntimeConcurrencyExceededError,
-    RuntimeEntitlementDeniedError,
-    RuntimeQuotaExceededError,
-    RuntimeSiteInactiveError,
-    RuntimeSiteNotProvisionedError,
-    RuntimeSubscriptionInactiveError,
-)
+from app.domain.commercial.mixins._audit_mixin import ServiceAuditContext
 
 ALLOWED_ABILITY_FAMILIES = {
     "text",
@@ -279,20 +220,6 @@ DEFAULT_FREE_PLAN_SOURCE = "production_default_free_shell_v1"
 DEFAULT_FREE_SUBSCRIPTION_SOURCE = "production_default_free_bind_v1"
 CANONICAL_TIER_PLAN_IDS = {
     tier_id: (tier_id, f"{tier_id}_v1") for tier_id in PLAN_TIER_REGISTRY
-}
-TOPUP_PACK_CATALOG_REQUEST_KIND = "topup_pack_catalog"
-TOPUP_PACK_OVERLAY_DECISION_PREFIX = "topup_pack_catalog.overlay."
-ALLOWED_TOPUP_PACK_TIERS = {"starter", "pro", "agency"}
-TOPUP_PACK_EDITABLE_FIELDS = {
-    "label",
-    "points_label",
-    "runs_increment",
-    "tokens_increment",
-    "cost_increment",
-    "operator_note",
-    "recommended_for_tiers",
-    "display_order",
-    "active",
 }
 OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
     "pack_small": {
@@ -720,135 +647,6 @@ class CommercialServiceBillingMixin:
         with get_session(self.database_url) as session:
             return _build_items(CommercialRepository(session))
 
-    def list_admin_topup_packs(self) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            items = self.list_operator_managed_points_packs(repository=repository)
-            return {
-                "items": items,
-                "summary": {
-                    "total": len(items),
-                    "active": sum(1 for item in items if bool(item.get("active"))),
-                    "inactive": sum(1 for item in items if not bool(item.get("active"))),
-                },
-            }
-
-    def update_operator_managed_points_pack(
-        self,
-        *,
-        pack_id: str,
-        label: str,
-        points_label: str,
-        runs_increment: float,
-        tokens_increment: float,
-        cost_increment: float,
-        operator_note: str,
-        recommended_for_tiers: list[str],
-        display_order: int,
-        active: bool,
-        audit_context: ServiceAuditContext | None = None,
-    ) -> dict[str, object]:
-        normalized_pack_id = str(pack_id or "").strip()
-        if normalized_pack_id not in OPERATOR_MANAGED_POINTS_PACK_REGISTRY:
-            raise CommercialNotFoundError(
-                "service.topup_pack_not_found",
-                f"operator-managed top-up pack '{normalized_pack_id}' was not found",
-            )
-        normalized_tiers = [
-            tier_id
-            for tier_id in [str(item or "").strip() for item in recommended_for_tiers]
-            if tier_id
-        ]
-        invalid_tiers = [tier_id for tier_id in normalized_tiers if tier_id not in ALLOWED_TOPUP_PACK_TIERS]
-        if invalid_tiers:
-            raise CommercialValidationError(
-                "service.topup_pack_invalid_tiers",
-                f"unsupported top-up pack tiers: {', '.join(invalid_tiers)}",
-            )
-        normalized_display_order = max(1, int(display_order or 0))
-        now = self.now_factory()
-        overlay = {
-            "pack_id": normalized_pack_id,
-            "label": str(label or "").strip() or str(
-                OPERATOR_MANAGED_POINTS_PACK_REGISTRY[normalized_pack_id].get("label") or ""
-            ),
-            "points_label": str(points_label or "").strip() or str(
-                OPERATOR_MANAGED_POINTS_PACK_REGISTRY[normalized_pack_id].get("points_label") or ""
-            ),
-            "runs_increment": round(max(0.0, self._coerce_float(runs_increment)), 6),
-            "tokens_increment": round(max(0.0, self._coerce_float(tokens_increment)), 6),
-            "cost_increment": round(max(0.0, self._coerce_float(cost_increment)), 6),
-            "operator_note": str(operator_note or "").strip(),
-            "recommended_for_tiers": normalized_tiers,
-            "display_order": normalized_display_order,
-            "active": bool(active),
-            "overlay_updated_at": self._serialize_datetime(now),
-        }
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            repository.upsert_operator_managed_topup_pack_overlay(
-                pack_id=normalized_pack_id,
-                label=str(overlay.get("label") or ""),
-                points_label=str(overlay.get("points_label") or ""),
-                runs_increment=self._coerce_float(overlay.get("runs_increment")),
-                tokens_increment=self._coerce_float(overlay.get("tokens_increment")),
-                cost_increment=self._coerce_float(overlay.get("cost_increment")),
-                operator_note=str(overlay.get("operator_note") or ""),
-                recommended_for_tiers_json=list(overlay.get("recommended_for_tiers") or []),
-                display_order=int(overlay.get("display_order") or 1),
-                active=bool(overlay.get("active", True)),
-                updated_at=now,
-            )
-            self._record_commercial_decision_in_session(
-                repository=repository,
-                account_id=None,
-                site_id=None,
-                subscription_id=None,
-                plan_version_id=None,
-                run_id=None,
-                request_kind=TOPUP_PACK_CATALOG_REQUEST_KIND,
-                decision="allow",
-                decision_code=f"{TOPUP_PACK_OVERLAY_DECISION_PREFIX}{normalized_pack_id}",
-                ability_family=None,
-                channel=None,
-                execution_kind=None,
-                execution_tier=None,
-                data_classification=None,
-                trace_id=audit_context.trace_id if audit_context else None,
-                idempotency_key=audit_context.idempotency_key if audit_context else None,
-                payload_json={"pack_id": normalized_pack_id, "overlay": overlay},
-            )
-            item = next(
-                (
-                    pack
-                    for pack in self.list_operator_managed_points_packs(repository=repository)
-                    if str(pack.get("pack_id") or "") == normalized_pack_id
-                ),
-                None,
-            )
-            payload = {
-                "pack": item,
-                "catalog_summary": {
-                    "total": 3,
-                    "active": sum(
-                        1
-                        for pack in self.list_operator_managed_points_packs(repository=repository)
-                        if bool(pack.get("active"))
-                    ),
-                },
-            }
-            self._record_service_audit_in_session(
-                repository=repository,
-                audit_context=audit_context,
-                event_kind="topup_pack.update",
-                outcome="succeeded",
-                scope_kind="topup_pack",
-                scope_id=normalized_pack_id,
-                payload_json=payload,
-            )
-            session.commit()
-            return payload
-
     def apply_operator_managed_subscription_topup(
         self,
         *,
@@ -951,7 +749,6 @@ class CommercialServiceBillingMixin:
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             plans = repository.list_plans(status=status, limit=limit)
-            plan_ids = [plan.plan_id for plan in plans]
             versions = repository.list_plan_versions(limit=None)
             versions_by_plan: dict[str, list[object]] = defaultdict(list)
             for version in versions:
@@ -1398,11 +1195,6 @@ class CommercialServiceBillingMixin:
     ) -> dict[str, object]:
         now = self.now_factory()
         selected_pack = self._resolve_operator_managed_points_pack(pack_id, repository=repository)
-        if selected_pack and not bool(selected_pack.get("active", True)):
-            raise CommercialValidationError(
-                "service.subscription_topup_pack_inactive",
-                "operator-managed top-up pack is inactive and cannot be applied",
-            )
         pack_runs_increment = (
             self._coerce_float(selected_pack.get("runs_increment")) if selected_pack else 0.0
         )
@@ -2290,39 +2082,7 @@ class CommercialServiceBillingMixin:
         self,
         repository: CommercialRepository,
     ) -> dict[str, dict[str, object]]:
-        overlays: dict[str, dict[str, object]] = {}
-        for row in repository.list_operator_managed_topup_pack_overlays():
-            pack_id = str(getattr(row, "pack_id", "") or "").strip()
-            if not pack_id or pack_id not in OPERATOR_MANAGED_POINTS_PACK_REGISTRY:
-                continue
-            overlays[pack_id] = {
-                "label": str(getattr(row, "label", "") or ""),
-                "points_label": str(getattr(row, "points_label", "") or ""),
-                "runs_increment": round(
-                    max(0.0, self._coerce_float(getattr(row, "runs_increment", 0.0))),
-                    6,
-                ),
-                "tokens_increment": round(
-                    max(0.0, self._coerce_float(getattr(row, "tokens_increment", 0.0))),
-                    6,
-                ),
-                "cost_increment": round(
-                    max(0.0, self._coerce_float(getattr(row, "cost_increment", 0.0))),
-                    6,
-                ),
-                "operator_note": str(getattr(row, "operator_note", "") or ""),
-                "recommended_for_tiers": [
-                    str(item or "").strip()
-                    for item in list(getattr(row, "recommended_for_tiers_json", []) or [])
-                    if str(item or "").strip()
-                ],
-                "display_order": max(1, int(getattr(row, "display_order", 1) or 1)),
-                "active": bool(getattr(row, "active", True)),
-                "overlay_updated_at": self._serialize_datetime(
-                    self._normalize_datetime(getattr(row, "updated_at", None))
-                ),
-            }
-        return overlays
+        return {}
 
     def _resolve_operator_managed_points_pack(
         self,
@@ -2342,10 +2102,7 @@ class CommercialServiceBillingMixin:
             None,
         )
         if pack is None:
-            raise CommercialValidationError(
-                "service.subscription_topup_pack_not_found",
-                f"operator-managed points pack '{normalized_pack_id}' was not found",
-            )
+            return None
         return dict(pack)
 
     def _build_subscription_coverage_summary(

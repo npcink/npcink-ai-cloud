@@ -117,80 +117,6 @@ export async function installAdminMocks(page: Page) {
       nearest_expiry_at: '',
     },
   ];
-  let impersonationItems = [
-    {
-      impersonation_id: 'imp_active_primary_support_session',
-      platform_admin_ref: 'platform:admin:ops_primary',
-      platform_role: 'platform_admin',
-      member_ref: 'user:admin@example.com',
-      account_id: LONG_ACCOUNT_ID,
-      site_id: 'site_mvp',
-      reason_code: 'support_debug',
-      reason_text: 'Investigating hosted runtime delivery drift.',
-      mode: 'read_only',
-      read_only: true,
-      status: 'active',
-      expires_at: '2026-04-09T00:00:00Z',
-      created_at: '2026-04-08T09:00:00Z',
-    },
-    {
-      impersonation_id: 'imp_ended_recent_support_session',
-      platform_admin_ref: 'platform:admin:ops_primary',
-      platform_role: 'platform_admin',
-      member_ref: 'user:admin@example.com',
-      account_id: LONG_ACCOUNT_ID,
-      site_id: 'site_mvp',
-      reason_code: 'support_debug',
-      reason_text: 'Closed follow-up after billing review.',
-      mode: 'read_only',
-      read_only: true,
-      status: 'ended',
-      expires_at: '2026-04-07T00:00:00Z',
-      created_at: '2026-04-07T09:00:00Z',
-    },
-  ];
-  let topupPacks = [
-    {
-      pack_id: 'pack_small',
-      label: 'Small pack',
-      points_label: '10,000 points equivalent',
-      recommended_for_tiers: ['starter', 'pro'],
-      runs_increment: 10000,
-      tokens_increment: 2000000,
-      cost_increment: 99,
-      operator_note:
-        'Use when the current billing period needs basic-tier-sized budget headroom without rebinding the subscription.',
-      display_order: 1,
-      active: true,
-    },
-    {
-      pack_id: 'pack_medium',
-      label: 'Medium pack',
-      points_label: '35,000 points equivalent',
-      recommended_for_tiers: ['pro', 'agency'],
-      runs_increment: 35000,
-      tokens_increment: 7000000,
-      cost_increment: 349,
-      operator_note:
-        'Use when sustained workflow pressure needs materially higher current-period headroom before a package review.',
-      display_order: 2,
-      active: true,
-    },
-    {
-      pack_id: 'pack_large',
-      label: 'Large pack',
-      points_label: '150,000 points equivalent',
-      recommended_for_tiers: ['agency'],
-      runs_increment: 150000,
-      tokens_increment: 30000000,
-      cost_increment: 1499,
-      operator_note:
-        'Use when an operator needs a high-headroom current-period top-up without introducing a wallet or self-serve flow.',
-      display_order: 3,
-      active: true,
-    },
-  ];
-
   await page.context().addCookies([
     {
       name: 'magick_admin_session_token',
@@ -290,7 +216,7 @@ export async function installAdminMocks(page: Page) {
         },
         groups: [
           {
-            event_kind: searchParams.get('site_id') ? 'subscription.bind' : 'platform_impersonation.end',
+            event_kind: searchParams.get('site_id') ? 'subscription.bind' : 'provider_connection.sync',
             outcome: 'succeeded',
             count: 2,
             first_seen_at: '2026-04-08T08:30:00Z',
@@ -304,87 +230,6 @@ export async function installAdminMocks(page: Page) {
             last_seen_at: '2026-04-08T07:15:00Z',
           },
         ],
-      });
-      return;
-    }
-
-    if (pathname === '/api/admin/impersonations' && route.request().method() === 'GET') {
-      await fulfillJson(route, {
-        items: impersonationItems,
-      });
-      return;
-    }
-
-    if (pathname === '/api/admin/impersonations' && route.request().method() === 'POST') {
-      const newRecord = {
-        impersonation_id: 'imp_new_support_session',
-        platform_admin_ref: 'platform:admin:ops_primary',
-        platform_role: 'platform_admin',
-        member_ref: 'user:admin@example.com',
-        account_id: LONG_ACCOUNT_ID,
-        site_id: 'site_mvp',
-        reason_code: 'support_debug',
-        reason_text: 'Started from admin test.',
-        read_only: true,
-        status: 'active',
-        started_at: '2026-04-08T10:10:00Z',
-        expires_at: '2026-04-08T11:10:00Z',
-      };
-      impersonationItems = [newRecord, ...impersonationItems.filter((item) => item.status !== 'active')];
-      await fulfillJson(route, {
-        impersonation: newRecord,
-        receipt: {
-          event_kind: 'platform_impersonation.start',
-          scope_kind: 'platform_impersonation',
-          scope_id: newRecord.impersonation_id,
-          outcome: 'succeeded',
-          effective_summary: `Read-only impersonation for ${newRecord.member_ref} on ${newRecord.site_id} is now active.`,
-          audit_filters: {
-            account_id: LONG_ACCOUNT_ID,
-            site_id: 'site_mvp',
-            event_kind: 'platform_impersonation.start',
-            outcome: 'succeeded',
-          },
-        },
-      });
-      return;
-    }
-
-    if (
-      pathname.startsWith('/api/admin/impersonations/') &&
-      pathname.endsWith('/end') &&
-      route.request().method() === 'POST'
-    ) {
-      const impersonationId = pathname.split('/').slice(-2)[0] || 'imp_active_primary_support_session';
-      const sourceRecord =
-        impersonationItems.find((item) => item.impersonation_id === impersonationId) ||
-        impersonationItems[0];
-      const endedRecord = {
-        ...sourceRecord,
-        status: 'ended',
-        ended_at: '2026-04-08T10:20:00Z',
-      };
-      impersonationItems = [
-        endedRecord,
-        ...impersonationItems
-          .slice(1)
-          .filter((item) => item.impersonation_id !== endedRecord.impersonation_id),
-      ];
-      await fulfillJson(route, {
-        impersonation: endedRecord,
-        receipt: {
-          event_kind: 'platform_impersonation.end',
-          scope_kind: 'platform_impersonation',
-          scope_id: endedRecord.impersonation_id,
-          outcome: 'succeeded',
-          effective_summary: `Read-only impersonation ${endedRecord.impersonation_id} is now ended.`,
-          audit_filters: {
-            account_id: LONG_ACCOUNT_ID,
-            site_id: 'site_mvp',
-            event_kind: 'platform_impersonation.end',
-            outcome: 'succeeded',
-          },
-        },
       });
       return;
     }
@@ -550,14 +395,9 @@ export async function installAdminMocks(page: Page) {
           latest: {
             applied_at: '2026-04-08T09:30:00Z',
             pack_id: 'pack_medium',
-            pack_label: topupPacks.find((item) => item.pack_id === 'pack_medium')?.label || 'Medium pack',
+            pack_label: 'Medium pack',
             points_label: '35,000 points equivalent',
             reason: 'workflow_spike_buffer',
-          },
-          latest_pack: {
-            pack_id: 'pack_medium',
-            label: topupPacks.find((item) => item.pack_id === 'pack_medium')?.label || 'Medium pack',
-            points_label: topupPacks.find((item) => item.pack_id === 'pack_medium')?.points_label || '35,000 points equivalent',
           },
           current_period_totals: {
             runs: 35000,
@@ -565,7 +405,6 @@ export async function installAdminMocks(page: Page) {
             cost: 349,
           },
         },
-        topup_packs: topupPacks,
       });
       return;
     }
@@ -602,53 +441,6 @@ export async function installAdminMocks(page: Page) {
           stale_site_count: 0,
           missing_site_count: 0,
           next_action: null,
-        },
-      });
-      return;
-    }
-
-    if (pathname === '/api/admin/topup-packs' && route.request().method() === 'GET') {
-      await fulfillJson(route, {
-        items: topupPacks,
-        summary: {
-          total: topupPacks.length,
-          active: topupPacks.filter((item) => item.active).length,
-          inactive: topupPacks.filter((item) => !item.active).length,
-        },
-      });
-      return;
-    }
-
-    if (pathname.startsWith('/api/admin/topup-packs/') && route.request().method() === 'POST') {
-      const packId = pathname.split('/').pop() || '';
-      const payload = route.request().postDataJSON() as Record<string, unknown>;
-      topupPacks = topupPacks.map((item) =>
-        item.pack_id === packId
-          ? {
-              ...item,
-              label: String(payload.label || item.label),
-              points_label: String(payload.points_label || item.points_label),
-              runs_increment: Number(payload.runs_increment ?? item.runs_increment),
-              tokens_increment: Number(payload.tokens_increment ?? item.tokens_increment),
-              cost_increment: Number(payload.cost_increment ?? item.cost_increment),
-              operator_note: String(payload.operator_note || item.operator_note),
-              recommended_for_tiers: Array.isArray(payload.recommended_for_tiers)
-                ? payload.recommended_for_tiers.map((value) => String(value))
-                : item.recommended_for_tiers,
-              display_order: Number(payload.display_order ?? item.display_order),
-              active: Boolean(payload.active),
-              has_operator_overlay: true,
-              overlay_updated_at: '2026-04-08T10:30:00Z',
-            }
-          : item
-      );
-      const updatedPack = topupPacks.find((item) => item.pack_id === packId);
-      await fulfillJson(route, {
-        pack: updatedPack,
-        summary: {
-          total: topupPacks.length,
-          active: topupPacks.filter((item) => item.active).length,
-          inactive: topupPacks.filter((item) => !item.active).length,
         },
       });
       return;
@@ -724,7 +516,6 @@ export async function installAdminMocks(page: Page) {
         related_surfaces: {
           account_href: `/admin/accounts/${LONG_ACCOUNT_ID}`,
           subscription_href: '/admin/subscriptions/sub_mvp',
-          impersonation_href: '/admin/impersonations?site_id=site_mvp',
           audit_href: '/api/admin/audit-events?site_id=site_mvp&limit=20',
         },
         commercial_follow_up: {
@@ -832,7 +623,6 @@ export async function installAdminMocks(page: Page) {
             disabled_mapped: false,
             primary_account_id: LONG_ACCOUNT_ID,
             primary_follow_up_site_id: 'site_mvp',
-            primary_impersonation_href: '/admin/impersonations?account_id=acct_mvp_enterprise_primary&member_ref=user%3Aadmin%40example.com&site_id=site_mvp',
             single_covered_subscription_id: '',
             accounts: [
               {
@@ -863,7 +653,6 @@ export async function installAdminMocks(page: Page) {
             disabled_mapped: true,
             primary_account_id: LONG_ACCOUNT_ID,
             primary_follow_up_site_id: 'site_mvp',
-            primary_impersonation_href: '/admin/impersonations?account_id=acct_mvp_enterprise_primary&member_ref=user%3Apending%40example.com&site_id=site_mvp',
             single_covered_subscription_id: '',
             accounts: [
               {
@@ -894,7 +683,6 @@ export async function installAdminMocks(page: Page) {
             disabled_mapped: false,
             primary_account_id: 'acct_growth',
             primary_follow_up_site_id: '',
-            primary_impersonation_href: '/admin/impersonations?account_id=acct_growth&member_ref=user%3Acovered%40example.com',
             single_covered_subscription_id: 'sub_growth',
             accounts: [
               {

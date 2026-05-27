@@ -33,17 +33,14 @@ function getHomeRiskLevel({
   selectedSite,
   currentSubscriptionStatus,
   activeKeyCount,
-  readOnly,
 }: {
   selectedSite: Site;
   currentSubscriptionStatus: string;
   activeKeyCount: number | null;
-  readOnly: boolean;
 }) {
   if (selectedSite.status !== 'active') return 'setup';
   if (activeKeyCount === 0) return 'setup';
   if (currentSubscriptionStatus && currentSubscriptionStatus !== 'active') return 'package';
-  if (readOnly) return 'read_only';
   return 'normal';
 }
 
@@ -53,14 +50,12 @@ function buildRestrictionItems({
   subscriptionStatus,
   requestLimit,
   tokenLimit,
-  readOnly,
 }: {
   t: (key: string, params?: Record<string, string>, fallback?: string) => string;
   siteStatus: string;
   subscriptionStatus: string;
   requestLimit: number;
   tokenLimit: number;
-  readOnly: boolean;
 }): RestrictionItem[] {
   return [
     siteStatus !== 'active'
@@ -93,17 +88,6 @@ function buildRestrictionItems({
             'portal.home.restriction_limit_desc',
             {},
             'Open Usage to compare this period against the request and token limits in your current entitlement.'
-          ),
-        }
-      : null,
-    readOnly
-      ? {
-          tone: 'info',
-          label: t('portal.home.restriction_read_only_label', {}, 'This session is read only'),
-          detail: t(
-            'portal.home.restriction_read_only_desc',
-            {},
-            'You can inspect keys, usage, package, audit, and preferences, but write actions stay disabled.'
           ),
         }
       : null,
@@ -381,7 +365,6 @@ export default function PortalPage() {
     subscriptionStatus: currentSubscription?.status || '',
     requestLimit,
     tokenLimit,
-    readOnly: Boolean(session.impersonation?.read_only),
   });
   const inspectedSite = session.sites.find((site) => site.site_id === inspectedSiteId) || null;
   const inspectedSummary = inspectedSiteId ? siteSummaryCache[inspectedSiteId] || null : null;
@@ -392,7 +375,6 @@ export default function PortalPage() {
         subscriptionStatus: inspectedSummary?.subscription_status || inspectedSummary?.coverage?.status || '',
         requestLimit: Number(inspectedSummary?.entitlement_snapshot?.requests_limit || 0),
         tokenLimit: Number(inspectedSummary?.entitlement_snapshot?.tokens_limit || 0),
-        readOnly: Boolean(session.impersonation?.read_only),
       })
     : [];
 
@@ -437,7 +419,6 @@ export default function PortalPage() {
     selectedSite,
     currentSubscriptionStatus: currentSubscription?.status || '',
     activeKeyCount: currentSiteActiveKeyCount,
-    readOnly: Boolean(session.impersonation?.read_only),
   });
   const shouldShowStatusPanel = currentRiskLevel !== 'normal';
 
@@ -453,18 +434,6 @@ export default function PortalPage() {
               <h1 className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">
                 {t('portal.home.title', {}, 'Workspace')}
               </h1>
-              {session.impersonation ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <BackofficeTag tone="warning">
-                    {t('portal.session_impersonation', {}, 'Support view')}
-                  </BackofficeTag>
-                  {session.impersonation.read_only ? (
-                    <BackofficeTag tone="warning">
-                      {t('portal.session_read_only', {}, 'Read only')}
-                    </BackofficeTag>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
             <div className="grid min-w-0 gap-3 md:grid-cols-3">
               <div className="min-w-0 rounded-[1rem] border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">

@@ -28,8 +28,6 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
 const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
-  'platform_impersonation.start': 'audit.kind.platform_impersonation.start',
-  'platform_impersonation.end': 'audit.kind.platform_impersonation.end',
   'portal_member.invited': 'audit.kind.portal_member.invited',
   'portal_magic_link.requested': 'audit.kind.portal_login_code.requested',
   'portal_magic_link.consumed': 'audit.kind.portal_login_code.verified',

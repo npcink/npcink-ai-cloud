@@ -22,7 +22,6 @@ from app.api.portal_session import (
     COOKIE_SITE_ID,
     build_new_portal_session_metadata,
     clear_portal_session_cookies,
-    current_portal_impersonation_session,
     portal_cookie_secure,
     portal_json_error,
     resolve_portal_request_context,
@@ -116,16 +115,6 @@ def _portal_session_cleared_response() -> JSONResponse:
 
 
 def _portal_write_guard(request: Request) -> JSONResponse | None:
-    impersonation = current_portal_impersonation_session(request)
-    if not impersonation:
-        return None
-    if bool(impersonation.get("read_only", True)):
-        return portal_json_error(
-            request,
-            status_code=403,
-            error_code="auth.portal_impersonation_read_only",
-            message="read-only impersonation cannot perform portal write actions",
-        )
     return None
 
 
