@@ -177,7 +177,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath("."))
-from app.core.security import build_body_digest, build_canonical_request, build_hmac_signature, build_secret_hash
+from app.core.security import build_body_digest, build_canonical_request, build_hmac_signature
 
 method = os.environ["METHOD"]
 path = os.environ["PATH_INFO"]
@@ -201,7 +201,7 @@ canonical_request = build_canonical_request(
     traceparent=traceparent,
     body_digest=build_body_digest(b""),
 )
-signature = build_hmac_signature(build_secret_hash(secret), canonical_request)
+signature = build_hmac_signature(secret, canonical_request)
 print(f"X-Magick-Site-Id: {site_id}")
 print(f"X-Magick-Key-Id: {key_id}")
 print(f"X-Magick-Timestamp: {timestamp}")

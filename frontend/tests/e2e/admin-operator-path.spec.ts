@@ -228,3 +228,15 @@ test('admin navigation stays customer-first', async ({ page }) => {
   await expect(adminNav.getByRole('link', { name: /^Plans$|^套餐目录$|^方案目錄$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Members$|^成员$|^成員$/i })).toHaveCount(0);
 });
+
+test('admin operator path stays usable on mobile viewport', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installAdminMocks(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: /Platform state comes first|先看平台概况/i })).toBeVisible();
+
+  await page.goto('/admin/sites/site_mvp');
+  await expect(page.getByRole('heading', { name: /MVP Site|site_mvp/i }).first()).toBeVisible();
+});

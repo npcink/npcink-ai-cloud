@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -12,8 +12,10 @@ import {
   PortalSiteSwitchingNotice,
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
+import { UsageBarChart } from '@/components/ui/UsageChart';
 import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalSiteSelection } from '@/hooks/usePortalSiteSelection';
+import { useRetry } from '@/hooks/useRetry';
 import { useSession } from '@/hooks/useSession';
 import {
   getPortalSiteDisplayName,
@@ -24,6 +26,7 @@ import {
   portalClient,
   type Entitlements,
   type PortalUsageSummaryPayload,
+  type PortalUsageWindow,
 } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import {
@@ -38,6 +41,19 @@ import {
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
 
+function toChartPoint(
+  window: PortalUsageWindow | undefined,
+  label: string,
+): { date: string; requests: number; tokens: number; cost: number } | null {
+  if (!window) return null;
+  return {
+    date: label,
+    requests: Number(window.runs_total || 0),
+    tokens: Number(window.tokens_in_total || 0) + Number(window.tokens_out_total || 0),
+    cost: Number(window.cost_total || 0),
+  };
+}
+
 function PortalUsageContent() {
   const searchParams = useSearchParams();
   const { t } = useLocale();
@@ -50,55 +66,49 @@ function PortalUsageContent() {
   });
   const [usage, setUsage] = useState<PortalUsageSummaryPayload | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const loadBundle = useCallback(async () => {
+    if (!selectedSiteId) return;
+    const bundle = await portalClient.getUsageBundle(selectedSiteId);
+    setUsage(bundle.usage);
+    setEntitlements(bundle.entitlements);
+  }, [selectedSiteId]);
+
+  const { execute, isLoading: retryLoading, error: retryError, retry } = useRetry(loadBundle, {
+    maxRetries: 2,
+    initialDelay: 800,
+    backoffMultiplier: 2,
+  });
+
+  useEffect(() => {
+    if (!session || !isAuthenticated || !selectedSiteId) {
+      return;
+    }
+    void execute();
+  }, [isAuthenticated, selectedSiteId, session, execute]);
+
+  const handleSiteChange = async (siteId: string) => {
+    await setSelectedSiteId(siteId);
+  };
 
   const toFinite = (value: unknown): number => {
     const numeric = Number(value || 0);
     return Number.isFinite(numeric) ? numeric : 0;
   };
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!session || !isAuthenticated || !selectedSiteId) {
-        setIsLoading(false);
-        return;
-      }
+  const errorMessage = retryError
+    ? formatPortalErrorMessage(retryError, t, t('error.failed_load'))
+    : null;
 
-      setIsLoading(true);
-      setError(null);
+  const chartData = useMemo(() => {
+    const points = [
+      toChartPoint(usage?.windows?.today, t('portal.usage.window_today', {}, 'Today')),
+      toChartPoint(usage?.windows?.rolling_24h, t('portal.usage.window_rolling_24h', {}, '24h')),
+    ].filter(Boolean) as { date: string; requests: number; tokens: number; cost: number }[];
+    return points;
+  }, [usage, t]);
 
-      try {
-        const bundle = await portalClient.getUsageBundle(selectedSiteId);
-        setUsage(bundle.usage);
-        setEntitlements(bundle.entitlements);
-      } catch (err) {
-        setError(formatPortalErrorMessage(err, t, t('error.failed_load')));
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void loadData();
-  }, [isAuthenticated, selectedSiteId, session, t]);
-
-  const handleSiteChange = async (siteId: string) => {
-    await setSelectedSiteId(siteId);
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const bundle = await portalClient.getUsageBundle(siteId);
-      setUsage(bundle.usage);
-      setEntitlements(bundle.entitlements);
-    } catch (err) {
-      setError(formatPortalErrorMessage(err, t, t('error.failed_load')));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (sessionLoading || isLoading) {
+  if (sessionLoading || retryLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
 
@@ -112,13 +122,13 @@ function PortalUsageContent() {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <PortalErrorState
         title={t('common.error')}
-        description={error}
+        description={errorMessage}
         retryLabel={t('common.retry')}
-        onRetry={() => void handleSiteChange(selectedSiteId)}
+        onRetry={() => void retry()}
       />
     );
   }
@@ -225,17 +235,17 @@ function PortalUsageContent() {
 
   const headroomMetrics = [
     {
-      label: t('portal.usage.remaining_requests', {}, 'Requests left'),
+      label: t('portal.usage.remaining_requests_test_label', {}, 'Requests left'),
       value: formatNumber(remainingRequests),
       detail: `${formatNumber(toFinite(runBudgetState.current_total))} / ${formatNumber(toFinite(runBudgetState.limit || runsLimit))}`,
     },
     {
-      label: t('portal.usage.remaining_tokens', {}, 'Tokens left'),
+      label: t('portal.usage.remaining_tokens_test_label', {}, 'Tokens left'),
       value: formatCompactNumber(remainingTokens),
       detail: `${formatCompactNumber(toFinite(tokenBudgetState.current_total))} / ${formatCompactNumber(toFinite(tokenBudgetState.limit || tokensLimit))}`,
     },
     {
-      label: t('portal.usage.remaining_cost', {}, 'Cost headroom'),
+      label: t('portal.usage.remaining_cost_test_label', {}, 'Cost headroom'),
       value: formatPreferredCurrency(remainingCost),
       detail: `${formatPreferredCurrency(toFinite(costBudgetState.current_total))} / ${formatPreferredCurrency(toFinite(costBudgetState.limit || costLimit))}`,
     },
@@ -286,7 +296,25 @@ function PortalUsageContent() {
         onSiteChange={handleSiteChange}
         metrics={headroomMetrics.length > 0 ? headroomMetrics : primarySummaryItems}
         metricsColumnsClassName={headroomMetrics.length > 0 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}
-      />
+      >
+        <div className="max-w-sm">
+          <label htmlFor="portal-usage-site-select" className="sr-only">
+            {t('common.site')}
+          </label>
+          <select
+            id="portal-usage-site-select"
+            value={selectedSiteId}
+            onChange={(event) => void handleSiteChange(event.target.value)}
+            className="input"
+          >
+            {sites.map((site) => (
+              <option key={site.site_id} value={site.site_id}>
+                {getPortalSiteDisplayName(site) || site.site_id}
+              </option>
+            ))}
+          </select>
+        </div>
+      </PortalWorkspaceHeader>
 
       {isSwitchingSite ? (
         <PortalSiteSwitchingNotice
@@ -296,6 +324,45 @@ function PortalUsageContent() {
             `正在切换到 ${switchingSiteName || selectedSite?.site_name || selectedSiteId}，页面数据会自动更新。`
           )}
         />
+      ) : null}
+
+      {chartData.length > 0 ? (
+        <BackofficeSectionPanel className="space-y-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              {t('portal.usage.trends_label', {}, 'Usage trends')}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+              {t('portal.usage.trends_title', {}, 'Requests, tokens, and cost')}
+            </h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            <BackofficeStackCard>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                {t('usage.requests', {}, 'Requests')}
+              </p>
+              <div className="mt-3">
+                <UsageBarChart data={chartData} type="requests" height={160} />
+              </div>
+            </BackofficeStackCard>
+            <BackofficeStackCard>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                {t('usage.tokens', {}, 'Tokens')}
+              </p>
+              <div className="mt-3">
+                <UsageBarChart data={chartData} type="tokens" height={160} />
+              </div>
+            </BackofficeStackCard>
+            <BackofficeStackCard>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                {t('usage.cost', {}, 'Cost')}
+              </p>
+              <div className="mt-3">
+                <UsageBarChart data={chartData} type="cost" height={160} />
+              </div>
+            </BackofficeStackCard>
+          </div>
+        </BackofficeSectionPanel>
       ) : null}
 
       {entitlements ? (
@@ -370,6 +437,18 @@ function PortalUsageContent() {
                   )}
                 </p>
               </div>
+            </BackofficeStackCard>
+            <BackofficeStackCard>
+              <p className="text-sm font-medium text-gray-950 dark:text-white">
+                {t('portal.usage.help_understanding_limits_title', {}, 'Need help understanding limits')}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                {t(
+                  'portal.usage.help_understanding_limits_desc',
+                  {},
+                  'Use this read-only view to compare current usage, package headroom, and grace posture before asking the operator to review coverage.'
+                )}
+              </p>
             </BackofficeStackCard>
             <BackofficeStackCard>
               <p className="text-sm font-medium text-gray-950 dark:text-white">{t('usage.features')}</p>

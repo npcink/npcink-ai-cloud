@@ -61,6 +61,7 @@ PY
 			-X POST \
 			-H "Accept: application/json" \
 			-H "Content-Type: application/json" \
+			-H "X-Magick-Dev-Login-Code: 1" \
 			--data "${REQUEST_BODY}" \
 			"${BASE_URL%/}/portal/v1/auth/code/request"
 	)"

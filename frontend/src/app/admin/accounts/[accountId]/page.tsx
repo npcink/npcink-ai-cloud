@@ -1410,7 +1410,35 @@ function AccountDetailContent() {
             </p>
           </div>
           <BackofficeMetricStrip items={portalAccessSummaryItems} columnsClassName="xl:grid-cols-2" />
-          <details className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800">
+          {coverage?.members.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {coverage.members.slice(0, 2).map((member) => (
+                <BackofficeStackCard key={`portal-access-summary-${member.member_ref}`}>
+                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                    {member.email || member.member_ref}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    {translateExternalCommercialRole(member.identity_type || member.role, t)}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <BackofficeStatusBadge status={member.status} label={translateStatusLabel(member.status, t)} />
+                    <BackofficeStatusBadge
+                      status={member.sites_needing_follow_up > 0 ? 'error' : 'ok'}
+                      label={
+                        member.sites_needing_follow_up > 0
+                          ? t('admin.coverage_follow_up_required', undefined, 'Coverage follow-up required')
+                          : t('status.active')
+                      }
+                    />
+                  </div>
+                </BackofficeStackCard>
+              ))}
+            </div>
+          ) : null}
+          <details
+            data-ui="member-coverage-details"
+            className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800"
+          >
             <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
               {t('admin.account_detail.member_plan_coverage_reveal', undefined, 'View member coverage details')}
             </summary>

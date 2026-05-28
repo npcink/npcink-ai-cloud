@@ -87,6 +87,28 @@ services:
     volumes:
       - .:/app
 
+  callback-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: magick-ai-cloud-callback-worker:dev
+    command: python -m app.workers.callback_dispatch
+    env_file:
+      - ./.env
+      - ./.env.local
+    environment:
+      MAGICK_CLOUD_ENVIRONMENT: development
+      MAGICK_CLOUD_LOG_LEVEL: DEBUG
+      MAGICK_CLOUD_DATABASE_URL: postgresql+psycopg://magick:magick@postgres:5432/magick_ai_cloud
+      MAGICK_CLOUD_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
   ops-worker:
     build:
       context: .

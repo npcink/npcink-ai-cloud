@@ -10,8 +10,8 @@ from sqlalchemy import select
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
+from app.core.models import ProviderCallRecord, ReplayReceipt, RunRecord, RuntimeGuardEvent
 from app.core.secrets import encrypt_runtime_terminal_callback_secret
-from app.core.models import ReplayReceipt, RunRecord, RuntimeGuardEvent
 from app.core.security import REPLAY_SCOPE_PUBLIC_POST_SITE
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
@@ -771,8 +771,32 @@ def test_runtime_internal_diagnostics_shape_exposes_pressure_and_stale_issue_kin
         assert callback_run is not None
         assert dispatching_run is not None
         queued_run.started_at = datetime.now(UTC) - timedelta(minutes=10)
+        callback_run.status = "failed"
+        callback_run.error_code = "provider.rate_limited"
+        callback_run.error_message = "provider rate limited"
+        callback_run.finished_at = datetime.now(UTC) - timedelta(minutes=8)
+        callback_run.selected_provider_id = "openai"
+        callback_run.selected_model_id = "gpt-4o-mini"
+        callback_run.selected_instance_id = "openai-global-gpt-4o-mini"
         callback_run.callback_status = "pending"
         callback_run.callback_next_attempt_at = datetime.now(UTC) - timedelta(minutes=9)
+        session.add(
+            ProviderCallRecord(
+                run_id=callback_run.run_id,
+                provider_id="openai",
+                model_id="gpt-4o-mini",
+                instance_id="openai-global-gpt-4o-mini",
+                region="global",
+                latency_ms=0,
+                tokens_in=0,
+                tokens_out=0,
+                cost=0.0,
+                retry_count=1,
+                fallback_used=False,
+                error_code="provider.rate_limited",
+                created_at=datetime.now(UTC) - timedelta(minutes=8),
+            )
+        )
         dispatching_run.callback_status = "dispatching"
         dispatching_run.callback_attempt_count = 1
         dispatching_run.callback_last_attempt_at = datetime.now(UTC) - timedelta(minutes=6)
@@ -802,6 +826,8 @@ def test_runtime_internal_diagnostics_shape_exposes_pressure_and_stale_issue_kin
         "cancel",
         "callback",
         "retention",
+        "failures",
+        "operator_guidance",
     }
     assert set(summary_payload["data"]["queue"].keys()) == {
         "queued_runs",
@@ -840,6 +866,22 @@ def test_runtime_internal_diagnostics_shape_exposes_pressure_and_stale_issue_kin
         "pressure_state",
         "pressure_reasons",
     }
+    assert set(summary_payload["data"]["failures"].keys()) == {
+        "failed_recent",
+        "last_failed_at",
+        "top_error_codes",
+        "provider_error_calls_recent",
+        "top_provider_errors",
+        "pressure_state",
+        "pressure_reasons",
+        "dominant_error",
+    }
+    assert set(summary_payload["data"]["operator_guidance"].keys()) == {
+        "state",
+        "primary_reason",
+        "primary_evidence_path",
+        "suggested_actions",
+    }
     assert summary_payload["data"]["queue"]["pressure_state"] == "attention"
     assert "queue.queued_stale" in summary_payload["data"]["queue"]["pressure_reasons"]
     assert summary_payload["data"]["callback"]["pressure_state"] == "attention"
@@ -848,6 +890,19 @@ def test_runtime_internal_diagnostics_shape_exposes_pressure_and_stale_issue_kin
     assert summary_payload["data"]["callback"]["recoverable_dispatching"] == 1
     assert summary_payload["data"]["callback"]["recovery_action"] == (
         "requeue_pending_after_stale_dispatch_lease"
+    )
+    assert summary_payload["data"]["failures"]["failed_recent"] == 1
+    assert summary_payload["data"]["failures"]["provider_error_calls_recent"] == 1
+    assert summary_payload["data"]["failures"]["dominant_error"]["error_code"] == (
+        "provider.rate_limited"
+    )
+    assert summary_payload["data"]["failures"]["dominant_error"]["error_stage"] == "provider"
+    assert summary_payload["data"]["operator_guidance"]["primary_reason"] == (
+        "callback_delivery"
+    )
+    assert any(
+        item["action"] == "inspect_provider_credentials_quota_and_health"
+        for item in summary_payload["data"]["operator_guidance"]["suggested_actions"]
     )
 
     assert queued_stale_response.status_code == 200

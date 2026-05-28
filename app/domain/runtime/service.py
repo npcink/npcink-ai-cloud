@@ -7,9 +7,9 @@ from typing import Any, cast
 from uuid import uuid4
 
 from app.adapters.callbacks.base import (
+    RuntimeCallbackDispatcher,
     RuntimeCallbackDispatchError,
     RuntimeCallbackDispatchRequest,
-    RuntimeCallbackDispatcher,
 )
 from app.adapters.providers.base import (
     ProviderAdapter,
@@ -34,6 +34,11 @@ from app.core.models import (
     RunRecord,
     RuntimeGuardEvent,
 )
+from app.core.secrets import (
+    decrypt_runtime_execution_input,
+    decrypt_runtime_terminal_callback_secret,
+    encrypt_runtime_execution_input,
+)
 from app.core.security import (
     REPLAY_SCOPE_INTERNAL_POST,
     REPLAY_SCOPE_INTERNAL_POST_IP,
@@ -41,18 +46,13 @@ from app.core.security import (
     REPLAY_SCOPE_PUBLIC_POST_KEY,
     REPLAY_SCOPE_PUBLIC_POST_SITE,
 )
-from app.core.secrets import (
-    decrypt_runtime_execution_input,
-    decrypt_runtime_terminal_callback_secret,
-    encrypt_runtime_execution_input,
-)
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
 from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
-    RuntimeCancelNotAllowedError,
     RuntimeCallbackConfigurationError,
+    RuntimeCancelNotAllowedError,
     RuntimeErrorBase,
     RuntimeExecutionContractError,
     RuntimeIdempotencyConflictError,
@@ -65,11 +65,11 @@ from app.domain.runtime.errors import (
 from app.domain.runtime.models import (
     ABUSE_GUARD_ATTENTION_RATIO,
     ABUSE_GUARD_CRITICAL_RATIO,
-    RUNTIME_CALLBACK_EVENT,
     RUNTIME_BACKLOG_QUEUED_AGING_AFTER_SECONDS,
     RUNTIME_BACKLOG_RUNNING_AGING_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE,
+    RUNTIME_CALLBACK_EVENT,
     RUNTIME_DIAGNOSTIC_CALLBACK_DISPATCHING_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_CANCEL_STUCK_AFTER_SECONDS,
@@ -603,7 +603,11 @@ class RuntimeService:
 
         items.sort(
             key=lambda item: (
-                0 if item["pressure_state"] == "critical" else 1 if item["pressure_state"] == "attention" else 2,
+                0
+                if item["pressure_state"] == "critical"
+                else 1
+                if item["pressure_state"] == "attention"
+                else 2,
                 -int(item["lease_recovery_inputs"]["total_stale_runs"]),
                 -int(item["total_runs"]),
                 str(item["scope_id"]),
@@ -830,12 +834,14 @@ class RuntimeService:
         if len(reason) < OPERATOR_REPAIR_REASON_MIN_LENGTH:
             raise RuntimeExecutionContractError(
                 "runtime.repair_reason_too_short",
-                "mark_stale_running_failed requires a reason that explains why the run is considered stale",
+                "mark_stale_running_failed requires a reason that explains why the run "
+                "is considered stale",
             )
         if len(evidence) < OPERATOR_REPAIR_EVIDENCE_MIN_LENGTH:
             raise RuntimeExecutionContractError(
                 "runtime.repair_evidence_too_short",
-                "mark_stale_running_failed requires evidence that records the observed stale-running signals",
+                "mark_stale_running_failed requires evidence that records the observed "
+                "stale-running signals",
             )
 
     def run_bounded_auto_repairs(
@@ -1023,10 +1029,12 @@ class RuntimeService:
                 since=cooldown_since,
                 limit=limit_per_scope,
             )
-            cooldown_code_breakdown = repository.summarize_runtime_guard_event_code_breakdown_by_scope(
-                scope_kinds=scope_kinds,
-                since=cooldown_since,
-                limit_per_scope=3,
+            cooldown_code_breakdown = (
+                repository.summarize_runtime_guard_event_code_breakdown_by_scope(
+                    scope_kinds=scope_kinds,
+                    since=cooldown_since,
+                    limit_per_scope=3,
+                )
             )
         scope_specs = {
             REPLAY_SCOPE_PUBLIC_POST_SITE: {
@@ -1172,7 +1180,8 @@ class RuntimeService:
                 (
                     "queue.running_stale",
                     running_oldest_age_seconds is not None
-                    and running_oldest_age_seconds >= RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
+                    and running_oldest_age_seconds
+                    >= RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
                     running_oldest_age_seconds is not None
                     and running_oldest_age_seconds
                     >= (RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS * 3),
@@ -1270,11 +1279,185 @@ class RuntimeService:
             )
         )
 
+        failures = dict(summary.get("failures") or {})
+        failed_recent = max(0, int(failures.get("failed_recent") or 0))
+        provider_error_calls_recent = max(
+            0,
+            int(failures.get("provider_error_calls_recent") or 0),
+        )
+        failures["pressure_state"], failures["pressure_reasons"] = self._classify_runtime_pressure(
+            (
+                ("failures.failed_recent", failed_recent > 0, failed_recent >= 3),
+                (
+                    "failures.provider_error_calls_recent",
+                    provider_error_calls_recent > 0,
+                    provider_error_calls_recent >= 3,
+                ),
+            )
+        )
+        failures["dominant_error"] = self._build_dominant_runtime_error(failures)
+        operator_guidance = self._build_runtime_operator_guidance(
+            queue=queue,
+            cancel=cancel,
+            callback=callback,
+            failures=failures,
+            retention=dict(summary.get("retention") or {}),
+        )
+
         return {
             **summary,
             "queue": queue,
             "cancel": cancel,
             "callback": callback,
+            "failures": failures,
+            "operator_guidance": operator_guidance,
+        }
+
+    def _build_dominant_runtime_error(
+        self,
+        failures: dict[str, object],
+    ) -> dict[str, object]:
+        top_error_codes = failures.get("top_error_codes")
+        top_provider_errors = failures.get("top_provider_errors")
+        candidates: list[dict[str, object]] = []
+        if isinstance(top_error_codes, list):
+            candidates.extend(item for item in top_error_codes if isinstance(item, dict))
+        if isinstance(top_provider_errors, list):
+            candidates.extend(item for item in top_provider_errors if isinstance(item, dict))
+        if not candidates:
+            return {
+                "error_code": "",
+                "error_stage": "",
+                "count": 0,
+                "provider_id": "",
+                "last_seen_at": "",
+            }
+
+        def sort_key(item: dict[str, object]) -> tuple[int, str]:
+            return (
+                int(item.get("count") or 0),
+                str(item.get("last_seen_at") or ""),
+            )
+
+        dominant = sorted(candidates, key=sort_key, reverse=True)[0]
+        error_code = str(dominant.get("error_code") or "")
+        taxonomy = get_error_taxonomy(error_code)
+        return {
+            "error_code": error_code,
+            "error_stage": taxonomy.error_stage,
+            "count": int(dominant.get("count") or 0),
+            "provider_id": str(dominant.get("provider_id") or ""),
+            "last_seen_at": str(dominant.get("last_seen_at") or ""),
+        }
+
+    def _build_runtime_operator_guidance(
+        self,
+        *,
+        queue: dict[str, object],
+        cancel: dict[str, object],
+        callback: dict[str, object],
+        failures: dict[str, object],
+        retention: dict[str, object],
+    ) -> dict[str, object]:
+        candidates: list[dict[str, object]] = []
+
+        def add_candidate(
+            *,
+            reason: str,
+            state: str,
+            evidence_path: str,
+            action: str,
+            mode: str,
+            priority: int,
+        ) -> None:
+            candidates.append(
+                {
+                    "reason": reason,
+                    "state": state,
+                    "evidence_path": evidence_path,
+                    "suggested_action": action,
+                    "mode": mode,
+                    "priority": priority,
+                }
+            )
+
+        if callback.get("pressure_state") in {"attention", "critical"}:
+            add_candidate(
+                reason="callback_delivery",
+                state=str(callback.get("pressure_state") or "attention"),
+                evidence_path="callback.pressure_reasons",
+                action="inspect_callback_delivery_and_retry_buffer",
+                mode="operator_review",
+                priority=10,
+            )
+        if queue.get("pressure_state") in {"attention", "critical"}:
+            add_candidate(
+                reason="runtime_queue",
+                state=str(queue.get("pressure_state") or "attention"),
+                evidence_path="queue.pressure_reasons",
+                action="inspect_runtime_worker_and_backlog_scope",
+                mode="operator_review",
+                priority=20,
+            )
+        if cancel.get("pressure_state") in {"attention", "critical"}:
+            add_candidate(
+                reason="cancel_requests",
+                state=str(cancel.get("pressure_state") or "attention"),
+                evidence_path="cancel.pressure_reasons",
+                action="inspect_stuck_cancel_requests",
+                mode="operator_review",
+                priority=30,
+            )
+        if failures.get("pressure_state") in {"attention", "critical"}:
+            dominant = failures.get("dominant_error")
+            dominant_error = dominant if isinstance(dominant, dict) else {}
+            error_stage = str(dominant_error.get("error_stage") or "runtime")
+            action_by_stage = {
+                "provider": "inspect_provider_credentials_quota_and_health",
+                "auth": "inspect_site_key_signature_and_request_headers",
+                "routing": "inspect_profile_catalog_and_routing_candidates",
+                "runtime": "inspect_runtime_execution_error_and_worker_logs",
+            }
+            add_candidate(
+                reason=f"{error_stage}_failures",
+                state=str(failures.get("pressure_state") or "attention"),
+                evidence_path="failures.dominant_error",
+                action=action_by_stage.get(error_stage, "inspect_runtime_failure_detail"),
+                mode="operator_review",
+                priority=40,
+            )
+        if int(retention.get("due_purge") or 0) > 0:
+            add_candidate(
+                reason="retention_due",
+                state="attention",
+                evidence_path="retention.due_purge",
+                action="run_retention_cleanup_or_check_ops_cadence",
+                mode="worker_auto",
+                priority=50,
+            )
+
+        candidates.sort(key=lambda item: int(item["priority"]))
+        primary = candidates[0] if candidates else {
+            "reason": "none",
+            "state": "healthy",
+            "evidence_path": "",
+            "suggested_action": "continue_monitoring",
+            "mode": "none",
+            "priority": 100,
+        }
+        return {
+            "state": str(primary["state"]),
+            "primary_reason": str(primary["reason"]),
+            "primary_evidence_path": str(primary["evidence_path"]),
+            "suggested_actions": [
+                {
+                    "action": str(item["suggested_action"]),
+                    "reason": str(item["reason"]),
+                    "mode": str(item["mode"]),
+                    "evidence_path": str(item["evidence_path"]),
+                }
+                for item in candidates[:5]
+            ],
         }
 
     def cancel_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
@@ -1921,7 +2104,8 @@ class RuntimeService:
         if contract_timeout_seconds > 0 and timeout_seconds > contract_timeout_seconds:
             raise RuntimeExecutionContractError(
                 "runtime.contract_override_out_of_range",
-                "commercial override may not increase timeout_seconds beyond the execution contract",
+                "commercial override may not increase timeout_seconds beyond the "
+                "execution contract",
             )
 
         retry_max = max(0, self._coerce_int(policy.get("retry_max"), default=0))
@@ -1947,14 +2131,17 @@ class RuntimeService:
             )
 
         contract_task_backend = execution_contract.get("task_backend")
-        contract_task_backend = contract_task_backend if isinstance(contract_task_backend, dict) else {}
+        contract_task_backend = (
+            contract_task_backend if isinstance(contract_task_backend, dict) else {}
+        )
         task_backend = policy.get("task_backend")
         task_backend = task_backend if isinstance(task_backend, dict) else {}
 
         if bool(task_backend.get("enabled")) and not bool(contract_task_backend.get("enabled")):
             raise RuntimeExecutionContractError(
                 "runtime.contract_override_out_of_range",
-                "commercial override may not enable task_backend when the execution contract disabled it",
+                "commercial override may not enable task_backend when the execution "
+                "contract disabled it",
             )
         if not bool(task_backend.get("enabled")):
             return policy
@@ -1963,14 +2150,16 @@ class RuntimeService:
         if contract_mode and override_mode and override_mode != contract_mode:
             raise RuntimeExecutionContractError(
                 "runtime.contract_override_out_of_range",
-                "commercial override may not replace task_backend.mode outside the execution contract",
+                "commercial override may not replace task_backend.mode outside the "
+                "execution contract",
             )
         contract_callback_mode = str(contract_task_backend.get("callback_mode") or "")
         override_callback_mode = str(task_backend.get("callback_mode") or "")
         if contract_callback_mode and override_callback_mode not in {"", contract_callback_mode}:
             raise RuntimeExecutionContractError(
                 "runtime.contract_override_out_of_range",
-                "commercial override may not widen task_backend.callback_mode beyond the execution contract",
+                "commercial override may not widen task_backend.callback_mode beyond "
+                "the execution contract",
             )
         return policy
 
@@ -2861,7 +3050,8 @@ class RuntimeService:
             )
         except Exception:
             logger.exception(
-                "runtime callback dispatch recovery audit failed: operation=%s run_id=%s site_id=%s trace_id=%s error_code=%s",
+                "runtime callback dispatch recovery audit failed: operation=%s "
+                "run_id=%s site_id=%s trace_id=%s error_code=%s",
                 "record_callback_dispatch_recovery_audit",
                 run.run_id,
                 run.site_id,

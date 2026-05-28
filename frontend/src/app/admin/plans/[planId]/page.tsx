@@ -489,6 +489,9 @@ function PlanDetailContent() {
   const isDevBaseline = detail.plan.plan_id === 'plan_dev_unlimited';
   const baselineFieldPatch = buildBaselineFieldPatch(tierSummary);
   const latestFieldPatch = buildLatestFieldPatch(latestVersion, tierSummary);
+  const primaryPackageFitCue = detail.package_fit_cues?.[0]
+    ? localizePackageFitCue(t, detail.package_fit_cues[0])
+    : null;
   const baselineActionLabel = t(
     'admin.apply_tier_baseline',
     {},
@@ -528,6 +531,11 @@ function PlanDetailContent() {
                   size: 'compact',
                 },
                 {
+                  label: t('admin.site_limit', {}, 'Site limit'),
+                  value: formatInteger(Number(tierSummary?.site_limit || 0)),
+                  size: 'compact',
+                },
+                {
                   label: t('admin.plan_posture', {}, 'Plan posture'),
                   value: isFormalProductionPlan
                     ? t('admin.formal_production_plan', {}, 'Formal production plan')
@@ -537,7 +545,7 @@ function PlanDetailContent() {
                   size: 'compact',
                 },
               ]}
-              columnsClassName="md:grid-cols-3 xl:grid-cols-5"
+              columnsClassName="md:grid-cols-3 xl:grid-cols-6"
             />
           </div>
         }
@@ -550,6 +558,27 @@ function PlanDetailContent() {
             {t('admin.package_management_center_title', {}, 'Package management')}
           </Link>
         </div>
+        {latestVersion ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <BackofficeStatusBadge
+              status={latestVersion.status}
+              label={translateStatusLabel(latestVersion.status, t)}
+            />
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              {t('admin.latest_coverage_package_release', {}, 'Latest package release')}: {latestVersion.version_label}
+            </span>
+          </div>
+        ) : null}
+        {primaryPackageFitCue ? (
+          <BackofficeStackCard className="mt-4 bg-white/80 dark:bg-slate-950/55">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">
+              {primaryPackageFitCue.title}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              {primaryPackageFitCue.detail}
+            </p>
+          </BackofficeStackCard>
+        ) : null}
       </BackofficePrimaryPanel>
 
       <details className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">

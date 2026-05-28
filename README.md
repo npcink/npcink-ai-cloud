@@ -27,6 +27,8 @@ Operational references:
 - [deploy/OPS_PLAYBOOK.md](../cloud/deploy/OPS_PLAYBOOK.md)
 - [deploy/RELEASE_CHECKLIST.md](../cloud/deploy/RELEASE_CHECKLIST.md)
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](../cloud/deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
+- [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
+- [docs/internal-alpha-operator-checklist.md](docs/internal-alpha-operator-checklist.md)
 
 ## Test Entry For Agents
 

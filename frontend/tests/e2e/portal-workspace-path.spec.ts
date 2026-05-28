@@ -338,6 +338,17 @@ async function installPortalMocks(page: Page) {
         timezone: 'Asia/Shanghai',
         generated_at: '2026-04-07T10:00:00Z',
         windows: {
+          today: {
+            start_at: '2026-04-07T00:00:00Z',
+            end_at: '2026-04-07T10:00:00Z',
+            runs_total: 8,
+            provider_calls_total: 8,
+            tokens_in_total: 400,
+            tokens_out_total: 1200,
+            cost_total: 6.12,
+            success_rate: 1.0,
+            avg_latency_ms: 380,
+          },
           rolling_24h: {
             start_at: '2026-04-06T10:00:00Z',
             end_at: '2026-04-07T10:00:00Z',
@@ -516,4 +527,17 @@ test('portal package and top-up guides stay secondary and non-transactional', as
   await expect(page.getByText(/Need help\?|需要帮助|需要協助/i).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /Review top-up guidance/i })).toHaveCount(0);
   await expect(page.getByText(/checkout|wallet|storefront|buy now/i)).toHaveCount(0);
+});
+
+test('portal usage and workspace stay usable on mobile viewport', async ({ page }) => {
+  await installPortalMocks(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto('/portal');
+  await expect(page.getByRole('heading', { level: 1, name: /workspace|工作区/i })).toBeVisible();
+  await expect(page.getByText(/Current site|当前站点|目前站點/i).first()).toBeVisible();
+
+  await page.goto('/portal/usage?site=site_attention');
+  await expect(page.getByRole('heading', { level: 1, name: /usage|用量/i })).toBeVisible();
+  await expect(page.getByText(/Requests left|剩余 requests|剩餘 requests/i)).toBeVisible();
 });

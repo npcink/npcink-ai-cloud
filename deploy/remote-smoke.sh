@@ -200,8 +200,6 @@ build_signature() {
 
 	local body_digest
 	body_digest="$(printf '%s' "${body}" | openssl dgst -sha256 -r | awk '{print $1}')"
-	local secret_hash
-	secret_hash="$(printf '%s' "${SECRET}" | openssl dgst -sha256 -r | awk '{print $1}')"
 	local path_with_query="${path}"
 	if [ -n "${query}" ]; then
 		path_with_query="${path}?${query}"
@@ -217,7 +215,7 @@ build_signature() {
 		"${idempotency_key}" \
 		"${traceparent}" \
 		"${body_digest}")"
-	printf '%s' "${canonical_request}" | openssl dgst -sha256 -hmac "${secret_hash}" -r | awk '{print $1}'
+	printf '%s' "${canonical_request}" | openssl dgst -sha256 -hmac "${SECRET}" -r | awk '{print $1}'
 }
 
 HTTP_STATUS=""

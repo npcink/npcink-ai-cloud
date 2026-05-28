@@ -154,6 +154,19 @@ function PortalBillingContent() {
         </div>
       </BackofficeStackCard>
 
+      <BackofficeStackCard>
+        <p className="text-sm font-semibold text-gray-950 dark:text-white">
+          {t('portal.billing.help_title', {}, 'Need help?')}
+        </p>
+        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+          {t(
+            'portal.billing.help_desc',
+            {},
+            'Use this read-only billing detail to compare snapshots and ledger posture before asking the operator to review coverage.'
+          )}
+        </p>
+      </BackofficeStackCard>
+
       <div className="grid gap-4 lg:grid-cols-2">
         {snapshots.map((snapshot) => (
           <BackofficeStackCard key={snapshot.snapshot_id}>

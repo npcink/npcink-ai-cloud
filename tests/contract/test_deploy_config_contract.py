@@ -25,7 +25,10 @@ def test_prod_env_files_use_canonical_admin_and_openai_names() -> None:
         assert "MAGICK_CLOUD_OPS_CADENCE_POLL_SECONDS" in text
         assert "MAGICK_CLOUD_RUNTIME_CALLBACK_WORKER_POLL_SECONDS" in text or text is checklist_text
         assert "MAGICK_CLOUD_WORKER_HEARTBEAT_INTERVAL_SECONDS" in text or text is checklist_text
-        assert "MAGICK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS" in text or text is checklist_text
+        assert (
+            "MAGICK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS" in text
+            or text is checklist_text
+        )
         assert "MAGICK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT" in text or text is checklist_text
         assert "MAGICK_CLOUD_OPENAI_BASE_URL" in text or text is checklist_text
 
@@ -65,9 +68,15 @@ def test_env_example_production_payload_validates_with_canonical_names(
         "MAGICK_CLOUD_ADMIN_SESSION_SECRET=": "MAGICK_CLOUD_ADMIN_SESSION_SECRET="
         + ("a" * 32),
         "MAGICK_CLOUD_PORTAL_JWT_SECRET=": "MAGICK_CLOUD_PORTAL_JWT_SECRET=" + ("j" * 32),
-        "MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=": "MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=https://cloud.example.com",
-        "MAGICK_CLOUD_PORTAL_EMAIL_SMTP_HOST=": "MAGICK_CLOUD_PORTAL_EMAIL_SMTP_HOST=smtp.example.com",
-        "MAGICK_CLOUD_PORTAL_EMAIL_FROM_EMAIL=": "MAGICK_CLOUD_PORTAL_EMAIL_FROM_EMAIL=noreply@example.com",
+        "MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=": (
+            "MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=https://cloud.example.com"
+        ),
+        "MAGICK_CLOUD_PORTAL_EMAIL_SMTP_HOST=": (
+            "MAGICK_CLOUD_PORTAL_EMAIL_SMTP_HOST=smtp.example.com"
+        ),
+        "MAGICK_CLOUD_PORTAL_EMAIL_FROM_EMAIL=": (
+            "MAGICK_CLOUD_PORTAL_EMAIL_FROM_EMAIL=noreply@example.com"
+        ),
     }
     for original, updated in replacements.items():
         env_text = env_text.replace(original, updated)
@@ -127,7 +136,10 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
 
     assert "alembic upgrade head" in preview_script
     assert "python -m app.dev.baseline_status" in preview_script
-    assert 'SERVICES="${SERVICES:-api worker callback-worker ops-worker frontend}"' in preview_script
+    assert (
+        'SERVICES="${SERVICES:-api worker callback-worker ops-worker frontend}"'
+        in preview_script
+    )
     assert "for service in ${SERVICES}; do" in preview_script
     assert 'fatal startup log detected' in preview_script
     assert "MAGICK_CLOUD_TRUSTED_HOST_ALLOWLIST" in preview_script
@@ -141,7 +153,10 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert ".cache/magick-ai-cloud-mini" in preview_script
     assert "PREVIEW_STACK_SERVICES" in preview_script
     assert "DEPENDENCY_IMAGES=(" in preview_script
-    assert "keychain cannot be accessed because the current session does not allow user interaction" in preview_script
+    assert (
+        "keychain cannot be accessed because the current session does not allow user "
+        "interaction"
+    ) in preview_script
     assert "falling back to local dependency image transfer" in preview_script
     assert "falling back to local build + image transfer" in preview_script
     assert "--pull never" in preview_script
@@ -166,9 +181,12 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert "python -m app.dev.baseline_status" in baseline_script
     assert "/internal/service/observability/summary" in release_smoke_script
     assert "/health/operational-ready" in release_smoke_script
+    assert "build_hmac_signature(secret, canonical_request)" in release_smoke_script
     assert "/internal/service/observability/summary" in remote_smoke_script
     assert "/health/operational-ready" in remote_smoke_script
     assert '"policy":{"allow_fallback":true}}' in remote_smoke_script
+    assert 'openssl dgst -sha256 -hmac "${SECRET}"' in remote_smoke_script
+    assert 'openssl dgst -sha256 -hmac "${secret_hash}"' not in remote_smoke_script
     assert "max_retries" not in remote_smoke_script
     assert "/internal/service/observability/summary" in secret_rotation_script
     assert 'RESTART_SERVICES="proxy,api,worker,callback-worker,ops-worker"' in env_push_script
@@ -196,7 +214,10 @@ def test_release_gate_documents_cloud_hardening_blockers() -> None:
     ):
         assert marker in checklist_text
 
-    assert "`repo ready` is the only category currently closed by repository evidence" in checklist_text
+    assert (
+        "`repo ready` is the only category currently closed by repository evidence"
+        in checklist_text
+    )
     assert "Cloud must not be treated as GA-ready" in checklist_text
     assert "deploy/release-smoke.sh" in checklist_text
     assert "deploy/RELEASE_CHECKLIST.md" in playbook_text

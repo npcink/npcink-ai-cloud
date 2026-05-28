@@ -424,6 +424,21 @@ export default function PortalPage() {
 
   return (
     <BackofficePageStack>
+      <PortalSiteInspectorDrawer
+        isOpen={isInspectorOpen}
+        onClose={closeInspector}
+        site={inspectedSite}
+        summary={inspectedSummary}
+        isLoading={isInspectorLoading}
+        error={inspectorError}
+        restrictions={inspectorRestrictions}
+        isCurrentSite={inspectedSiteId === selectedSite.site_id}
+        onSelectCurrentSite={handleSiteSelect}
+        previousSiteId={previousSiteId}
+        nextSiteId={nextSiteId}
+        onNavigateSite={openInspector}
+        t={t}
+      />
       <section className="space-y-5">
         <BackofficeSectionPanel>
           <div className="grid gap-5 xl:grid-cols-[minmax(13rem,0.55fr)_minmax(0,1.45fr)_auto] xl:items-center">
@@ -486,6 +501,12 @@ export default function PortalPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 xl:justify-end">
+              <div className="w-full text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400 xl:text-right">
+                {t('portal.home.next_action_label', {}, 'Next action')}
+              </div>
+              <Link href={`/portal/keys?site=${selectedSite.site_id}`} className="btn btn-primary btn-sm">
+                {t('portal.home.open_keys_action', {}, 'Open Keys')}
+              </Link>
               <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
                 {t('portal.nav_sites', {}, 'Sites')}
               </Link>
@@ -607,6 +628,7 @@ export default function PortalPage() {
                     key={site.site_id}
                     role="button"
                     tabIndex={0}
+                    aria-label={`${getPortalSiteDisplayName(site)} ${t('common.view', {}, 'View')}`}
                     onClick={() => openInspector(site.site_id)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
@@ -696,21 +718,6 @@ export default function PortalPage() {
           </div>
         </BackofficeSectionPanel>
       </div>
-      <PortalSiteInspectorDrawer
-        isOpen={isInspectorOpen}
-        onClose={closeInspector}
-        site={inspectedSite}
-        summary={inspectedSummary}
-        isLoading={isInspectorLoading}
-        error={inspectorError}
-        restrictions={inspectorRestrictions}
-        isCurrentSite={inspectedSiteId === selectedSite.site_id}
-        onSelectCurrentSite={handleSiteSelect}
-        previousSiteId={previousSiteId}
-        nextSiteId={nextSiteId}
-        onNavigateSite={openInspector}
-        t={t}
-      />
     </BackofficePageStack>
   );
 }

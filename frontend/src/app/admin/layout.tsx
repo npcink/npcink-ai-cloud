@@ -51,8 +51,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { href: '/admin', label: t('nav.overview', {}, 'Overview') },
     { href: '/admin/accounts', label: t('common.accounts', {}, 'Customers') },
     { href: '/admin/sites', label: t('common.sites', {}, 'Sites') },
-    { href: '/admin/subscriptions', label: t('common.subscriptions', {}, 'Subscriptions') },
-    { href: '/admin/plans', label: t('common.package', {}, 'Package') },
+    { href: '/admin/coverage', label: t('admin.nav_coverage', {}, 'Coverage') },
   ];
 
   const isActive = (href: string) => {

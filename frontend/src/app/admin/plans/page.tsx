@@ -323,7 +323,7 @@ function PlansContent() {
     <BackofficePageStack>
       <BackofficePrimaryPanel
         eyebrow={t('admin.nav_coverage', {}, 'Coverage')}
-        title={t('admin.package_management_center_title', {}, 'Package management')}
+        title={t('admin.coverage_package_catalog_title', {}, 'Coverage package catalog')}
         description={t(
           'admin.package_management_center_desc',
           {},
@@ -474,9 +474,19 @@ function PlansContent() {
         </div>
       </BackofficeSectionPanel>
 
+      <BackofficeLayer
+        eyebrow={t('admin.nav_coverage', {}, 'Coverage')}
+        title={t('admin.default_production_plans', {}, 'Default production plans')}
+        description={t(
+          'admin.default_production_plans_desc',
+          {},
+          'Treat plan_free as a formal production package object. Keep it distinct from tier templates and from the dev-only baseline.'
+        )}
+      />
+
       <details className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">
         <summary className="cursor-pointer list-none text-sm font-medium text-slate-700 dark:text-slate-300">
-          {t('admin.package_advanced_maintenance_toggle', {}, 'Advanced maintenance: fallback, templates, and manual creation')}
+          {t('admin.package_shell_maintenance_toggle_label', {}, 'Inspect canonical package shell maintenance')}
         </summary>
       <BackofficeLayer
         className="mt-4"

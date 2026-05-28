@@ -448,6 +448,12 @@ class RuntimeRepository:
             RunRecord.result_purged_at >= recent_window_start,
             *self._site_filters(site_id),
         ]
+        failed_recent_filters = [
+            RunRecord.status == "failed",
+            RunRecord.finished_at.is_not(None),
+            RunRecord.finished_at >= recent_window_start,
+            *self._site_filters(site_id),
+        ]
         canceled_recent_filters = [
             RunRecord.status == "canceled",
             RunRecord.canceled_at.is_not(None),
@@ -498,6 +504,26 @@ class RuntimeRepository:
                     self._min_timestamp(retention_due_filters, RunRecord.retention_expires_at)
                 ),
                 "purged_recent": self._count_runs(retention_purged_recent_filters),
+            },
+            "failures": {
+                "failed_recent": self._count_runs(failed_recent_filters),
+                "last_failed_at": self._serialize_timestamp(
+                    self._max_timestamp(failed_recent_filters, RunRecord.finished_at)
+                ),
+                "top_error_codes": self._summarize_recent_failure_error_codes(
+                    recent_window_start=recent_window_start,
+                    site_id=site_id,
+                    limit=5,
+                ),
+                "provider_error_calls_recent": self._count_provider_error_calls(
+                    recent_window_start=recent_window_start,
+                    site_id=site_id,
+                ),
+                "top_provider_errors": self._summarize_recent_provider_errors(
+                    recent_window_start=recent_window_start,
+                    site_id=site_id,
+                    limit=5,
+                ),
             },
         }
 
@@ -715,7 +741,10 @@ class RuntimeRepository:
             )
             .where(RuntimeGuardEvent.created_at >= since)
             .group_by(RuntimeGuardEvent.event_code)
-            .order_by(func.count(RuntimeGuardEvent.id).desc(), func.max(RuntimeGuardEvent.created_at).desc())
+            .order_by(
+                func.count(RuntimeGuardEvent.id).desc(),
+                func.max(RuntimeGuardEvent.created_at).desc(),
+            )
         )
         if site_id:
             statement = statement.where(RuntimeGuardEvent.site_id == site_id)
@@ -1103,6 +1132,100 @@ class RuntimeRepository:
 
     def _min_timestamp(self, filters: list[object], column: object) -> datetime | None:
         return self.session.scalar(select(func.min(column)).select_from(RunRecord).where(*filters))
+
+    def _max_timestamp(self, filters: list[object], column: object) -> datetime | None:
+        return self.session.scalar(select(func.max(column)).select_from(RunRecord).where(*filters))
+
+    def _count_provider_error_calls(
+        self,
+        *,
+        recent_window_start: datetime,
+        site_id: str | None,
+    ) -> int:
+        statement = (
+            select(func.count())
+            .select_from(ProviderCallRecord)
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(
+                ProviderCallRecord.error_code.is_not(None),
+                ProviderCallRecord.error_code != "",
+                ProviderCallRecord.created_at >= recent_window_start,
+                *self._site_filters(site_id),
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def _summarize_recent_failure_error_codes(
+        self,
+        *,
+        recent_window_start: datetime,
+        site_id: str | None,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        statement = (
+            select(
+                RunRecord.error_code,
+                func.count().label("count"),
+                func.max(RunRecord.finished_at).label("last_seen_at"),
+            )
+            .where(
+                RunRecord.status == "failed",
+                RunRecord.finished_at.is_not(None),
+                RunRecord.finished_at >= recent_window_start,
+                RunRecord.error_code.is_not(None),
+                RunRecord.error_code != "",
+                *self._site_filters(site_id),
+            )
+            .group_by(RunRecord.error_code)
+            .order_by(func.count().desc(), func.max(RunRecord.finished_at).desc())
+            .limit(limit)
+        )
+        return [
+            {
+                "error_code": str(error_code or ""),
+                "count": int(count or 0),
+                "last_seen_at": self._serialize_timestamp(last_seen_at),
+            }
+            for error_code, count, last_seen_at in self.session.execute(statement).all()
+        ]
+
+    def _summarize_recent_provider_errors(
+        self,
+        *,
+        recent_window_start: datetime,
+        site_id: str | None,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        statement = (
+            select(
+                ProviderCallRecord.provider_id,
+                ProviderCallRecord.error_code,
+                func.count().label("count"),
+                func.max(ProviderCallRecord.created_at).label("last_seen_at"),
+            )
+            .select_from(ProviderCallRecord)
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(
+                ProviderCallRecord.error_code.is_not(None),
+                ProviderCallRecord.error_code != "",
+                ProviderCallRecord.created_at >= recent_window_start,
+                *self._site_filters(site_id),
+            )
+            .group_by(ProviderCallRecord.provider_id, ProviderCallRecord.error_code)
+            .order_by(func.count().desc(), func.max(ProviderCallRecord.created_at).desc())
+            .limit(limit)
+        )
+        return [
+            {
+                "provider_id": str(provider_id or ""),
+                "error_code": str(error_code or ""),
+                "count": int(count or 0),
+                "last_seen_at": self._serialize_timestamp(last_seen_at),
+            }
+            for provider_id, error_code, count, last_seen_at in self.session.execute(
+                statement
+            ).all()
+        ]
 
     def _callback_url_expression(self) -> Any:
         return func.coalesce(
