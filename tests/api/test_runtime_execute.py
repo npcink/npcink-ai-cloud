@@ -35,13 +35,13 @@ from app.core.models import (
     SiteApiKey,
     UsageMeterEvent,
 )
+from app.core.secrets import encrypt_runtime_terminal_callback_secret
 from app.core.security import (
     build_body_digest,
     build_canonical_request,
     build_hmac_signature,
 )
 from app.core.services import CloudServices
-from app.core.secrets import encrypt_runtime_terminal_callback_secret
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.service import RuntimeService
 from tests.conftest import (
@@ -1407,12 +1407,12 @@ def test_execute_route_allows_budget_grace_with_runtime_downgrade(tmp_path: Path
     first_body = json.dumps({**request_payload, "idempotency_key": "idem-budget-grace-001"}).encode(
         "utf-8"
     )
-    second_body = json.dumps({**request_payload, "idempotency_key": "idem-budget-grace-002"}).encode(
-        "utf-8"
-    )
-    third_body = json.dumps({**request_payload, "idempotency_key": "idem-budget-grace-003"}).encode(
-        "utf-8"
-    )
+    second_body = json.dumps(
+        {**request_payload, "idempotency_key": "idem-budget-grace-002"}
+    ).encode("utf-8")
+    third_body = json.dumps(
+        {**request_payload, "idempotency_key": "idem-budget-grace-003"}
+    ).encode("utf-8")
 
     first_response = client.post(
         "/v1/runtime/execute",
@@ -3212,5 +3212,199 @@ def test_failed_run_records_metered_provider_cost_and_purge_keeps_ledger(
             )
         ]
     assert meter_after == meter_before
+
+    dispose_engine(database_url)
+
+
+class _FixedTextProviderAdapter(OpenAIProviderAdapter):
+    """Provider adapter that returns a fixed output_text for analysis boundary tests."""
+
+    def __init__(self, output_text: str) -> None:
+        super().__init__()
+        self._output_text = output_text
+
+    def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        return ProviderExecutionResult(
+            output={
+                "output_text": self._output_text,
+                "messages": [{"role": "assistant", "content": self._output_text}],
+                "model_id": request.model_id,
+            },
+            latency_ms=80,
+            tokens_in=10,
+            tokens_out=max(1, len(self._output_text.split())),
+            cost=0.0,
+        )
+
+
+def test_adapter_origin_analysis_payload_succeeds(tmp_path: Path) -> None:
+    providers: dict[str, ProviderAdapter] = {
+        OpenAIProviderAdapter.provider_id: _FixedTextProviderAdapter(
+            "Top sellers are A, B, C."
+        )
+    }
+    database_url, client = _build_client(tmp_path, providers=providers)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "openclaw/analysis/top-sellers",
+        "ability_family": "openclaw",
+        "execution_kind": "text",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "data_classification": "internal",
+        "profile_id": "text.balanced",
+        "idempotency_key": "idem-analysis-001",
+        "trace_id": "trace-analysis-001",
+        "input": {
+            "messages": [{"role": "user", "content": "analyze top sellers"}],
+            "proposal_id": "proposal_001",
+            "correlation_id": "corr_001",
+        },
+        "policy": {"allow_fallback": True},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    response = client.post(
+        "/v1/runtime/execute",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key="idem-analysis-001",
+                trace_id="traceanalysis001000000000000",
+                body=body,
+            )
+        ),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution_context"]["ability_family"] == "openclaw"
+    result = data["result"]
+    assert "analysis_type" in result
+    assert "proposal_handoff" in result
+    assert result["proposal_handoff"]["proposal_id"] == "proposal_001"
+    assert result["proposal_handoff"]["correlation_id"] == "corr_001"
+
+    # Result endpoint also exposes the envelope
+    result_response = client.get(
+        f"/v1/runs/{data['run_id']}/result",
+        headers=build_auth_headers(
+            "GET",
+            f"/v1/runs/{data['run_id']}/result",
+            site_id="site_alpha",
+            trace_id="traceanalysis002000000000000",
+        ),
+    )
+    assert result_response.status_code == 200
+    assert result_response.json()["data"]["result"]["analysis_type"] in {
+        "report",
+        "recommendation",
+        "proposal_input",
+    }
+
+    dispose_engine(database_url)
+
+
+def test_adapter_origin_analysis_write_like_requires_approval(tmp_path: Path) -> None:
+    write_text = "The product has been updated and changes applied to WooCommerce."
+    providers: dict[str, ProviderAdapter] = {
+        OpenAIProviderAdapter.provider_id: _FixedTextProviderAdapter(write_text)
+    }
+    database_url, client = _build_client(tmp_path, providers=providers)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "openclaw/analysis/product-update",
+        "ability_family": "openclaw",
+        "execution_kind": "text",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "data_classification": "internal",
+        "profile_id": "text.balanced",
+        "idempotency_key": "idem-analysis-write-001",
+        "trace_id": "trace-analysis-write-001",
+        "input": {
+            "messages": [{"role": "user", "content": "update the product"}],
+            "proposal_id": "proposal_write_001",
+        },
+        "policy": {"allow_fallback": True},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    response = client.post(
+        "/v1/runtime/execute",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key="idem-analysis-write-001",
+                trace_id="traceanalysiswrite0010000000",
+                body=body,
+            )
+        ),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    result = data["result"]
+    assert result["requires_local_approval"] is True
+    assert result["analysis_type"] == "proposal_input"
+    assert result["proposal_handoff"]["proposal_id"] == "proposal_write_001"
+    # Dangerous text must not leak into the public response
+    response_text = response.text
+    assert "changes applied" not in response_text
+    assert "written to WordPress" not in response_text
+    assert "product updated" not in response_text
+    assert "已写入 WooCommerce" not in response_text
+    # Sanitized metadata may be present but not raw output_text
+    assert "_cloud_raw_result" in result
+    assert "output_text" not in result.get("_cloud_raw_result", {})
+
+    dispose_engine(database_url)
+
+
+def test_adapter_origin_analysis_no_write_phrase_defaults_to_report(tmp_path: Path) -> None:
+    read_text = "Here is a summary of your top selling products."
+    providers: dict[str, ProviderAdapter] = {
+        OpenAIProviderAdapter.provider_id: _FixedTextProviderAdapter(read_text)
+    }
+    database_url, client = _build_client(tmp_path, providers=providers)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "openclaw/analysis/top-sellers-readonly",
+        "ability_family": "openclaw",
+        "execution_kind": "text",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "data_classification": "internal",
+        "profile_id": "text.balanced",
+        "idempotency_key": "idem-analysis-read-001",
+        "trace_id": "trace-analysis-read-001",
+        "input": {"messages": [{"role": "user", "content": "summarize sales"}]},
+        "policy": {"allow_fallback": True},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    response = client.post(
+        "/v1/runtime/execute",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key="idem-analysis-read-001",
+                trace_id="traceanalysisread0010000000",
+                body=body,
+            )
+        ),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    result = data["result"]
+    assert result["requires_local_approval"] is False
+    assert result["analysis_type"] == "report"
 
     dispose_engine(database_url)

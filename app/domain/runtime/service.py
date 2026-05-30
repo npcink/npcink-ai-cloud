@@ -49,6 +49,7 @@ from app.core.security import (
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
+from app.domain.runtime.analysis_result import build_analysis_result_envelope
 from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
     RuntimeCallbackConfigurationError,
@@ -427,6 +428,12 @@ class RuntimeService:
 
             provider_calls = repository.list_provider_calls(run_id)
 
+        result = build_analysis_result_envelope(
+            run.result_json if isinstance(run.result_json, dict) else {},
+            ability_family=run.ability_family or "text",
+            ability_name=run.ability_name or "",
+            input_payload=run.input_json if isinstance(run.input_json, dict) else {},
+        )
         return {
             "run_id": run.run_id,
             "canonical_run_id": run.canonical_run_id or "",
@@ -434,7 +441,7 @@ class RuntimeService:
             "execution_context": self._build_execution_context_payload(run),
             "task_backend": self._build_task_backend_payload(run),
             "run_lifecycle": self._build_run_lifecycle(run),
-            "result": run.result_json,
+            "result": result,
             "provider_calls": [
                 {
                     "provider_id": call.provider_id,
@@ -1665,14 +1672,21 @@ class RuntimeService:
                     run=run,
                     provider_call=provider_call,
                 )
+                prepared_result = self._prepare_result_for_storage(
+                    provider_result.output,
+                    storage_mode=self._get_storage_mode(
+                        run.policy_json if isinstance(run.policy_json, dict) else {}
+                    ),
+                )
+                wrapped_result = build_analysis_result_envelope(
+                    prepared_result,
+                    ability_family=run.ability_family or "text",
+                    ability_name=run.ability_name or "",
+                    input_payload=input_payload,
+                )
                 repository.mark_run_succeeded(
                     run,
-                    result_json=self._prepare_result_for_storage(
-                        provider_result.output,
-                        storage_mode=self._get_storage_mode(
-                            run.policy_json if isinstance(run.policy_json, dict) else {}
-                        ),
-                    ),
+                    result_json=wrapped_result,
                     provider_id=candidate.provider_id,
                     model_id=candidate.model_id,
                     instance_id=candidate.instance_id,
@@ -2232,6 +2246,12 @@ class RuntimeService:
     ) -> RuntimeExecutionResponse:
         provider_calls = repository.list_provider_calls(run.run_id)
         failure_details = self._build_failure_details(run, provider_calls)
+        result = build_analysis_result_envelope(
+            run.result_json or {},
+            ability_family=run.ability_family or "text",
+            ability_name=run.ability_name or "",
+            input_payload=run.input_json if isinstance(run.input_json, dict) else {},
+        )
         return RuntimeExecutionResponse(
             run_id=run.run_id,
             canonical_run_id=run.canonical_run_id or "",
@@ -2252,7 +2272,7 @@ class RuntimeService:
             execution_context=self._build_execution_context(run),
             task_backend=self._build_task_backend_payload(run),
             run_lifecycle=self._build_run_lifecycle(run),
-            result=run.result_json or {},
+            result=result,
         )
 
     def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:

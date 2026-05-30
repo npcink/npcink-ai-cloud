@@ -29,6 +29,8 @@ Operational references:
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](../cloud/deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
 - [docs/internal-alpha-operator-checklist.md](docs/internal-alpha-operator-checklist.md)
+- [docs/cloud-adapter-analysis-contract.md](docs/cloud-adapter-analysis-contract.md)
+- [docs/cloud-local-integration-and-rebuild-guidance.md](docs/cloud-local-integration-and-rebuild-guidance.md)
 
 ## Test Entry For Agents
 

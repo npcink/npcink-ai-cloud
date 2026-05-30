@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.adapters.providers.base import ProviderAdapter
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
@@ -31,6 +32,7 @@ def _sqlite_url(tmp_path: Path) -> str:
 def _build_client(
     tmp_path: Path,
     *,
+    providers: dict[str, ProviderAdapter] | None = None,
     settings_overrides: dict[str, object] | None = None,
 ) -> tuple[str, TestClient]:
     database_url = _sqlite_url(tmp_path)
@@ -50,7 +52,9 @@ def _build_client(
         internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
         **(settings_overrides or {}),
     )
-    return database_url, TestClient(create_app(CloudServices(settings=settings)))
+    return database_url, TestClient(
+        create_app(CloudServices(settings=settings, providers=providers or {}))
+    )
 
 
 def _runtime_callback_metadata(callback_url: str) -> dict[str, object]:
@@ -1279,5 +1283,135 @@ def test_runtime_internal_backlog_diagnostics_contract_exposes_scope_layering(
     assert payload["data"]["scope_pressure"]["scope_kind"] == "ability_family"
     assert any(item["scope_id"] == "automation" for item in payload["data"]["items"])
     assert any(item["scope_id"] == "workflow" for item in payload["data"]["items"])
+
+    dispose_engine(database_url)
+
+
+class _ContractFixedTextProviderAdapter(ProviderAdapter):
+    """Minimal provider adapter that returns a fixed text result for contract tests."""
+
+    provider_id = "openai"
+
+    def __init__(self, output_text: str) -> None:
+        self._output_text = output_text
+
+    def execute(self, request: object) -> object:
+        from app.adapters.providers.base import ProviderExecutionResult
+
+        return ProviderExecutionResult(
+            output={
+                "output_text": self._output_text,
+                "messages": [{"role": "assistant", "content": self._output_text}],
+                "model_id": getattr(request, "model_id", "gpt-4.1-mini"),
+            },
+            latency_ms=80,
+            tokens_in=10,
+            tokens_out=max(1, len(self._output_text.split())),
+            cost=0.0,
+        )
+
+    def fetch_catalog(self) -> object:
+        from app.adapters.providers.base import ProviderCatalogSnapshot
+
+        return ProviderCatalogSnapshot(
+            provider_id=self.provider_id,
+            display_name="OpenAI Compatible",
+            adapter_type="openai",
+            models=[],
+        )
+
+
+def test_runtime_execute_adapter_origin_analysis_shape(tmp_path: Path) -> None:
+    """Adapter-origin analysis using ability_family=openclaw produces the analysis envelope."""
+    providers: dict[str, ProviderAdapter] = {
+        "openai": _ContractFixedTextProviderAdapter("Top sellers are A, B, C.")
+    }
+    database_url, client = _build_client(tmp_path, providers=providers)
+    request_payload = {
+        "site_id": "site_contract",
+        "ability_name": "openclaw/analysis/product-recommendation",
+        "ability_family": "openclaw",
+        "execution_kind": "text",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "data_classification": "internal",
+        "profile_id": "text.balanced",
+        "idempotency_key": "contract-analysis-001",
+        "trace_id": "trace-analysis-001",
+        "input": {
+            "messages": [{"role": "user", "content": "analyze top sellers"}],
+            "proposal_id": "proposal_abc_123",
+            "correlation_id": "corr_xyz_789",
+            "external_thread_id": "ext_thread_001",
+            "openclaw_thread_id": "oc_thread_002",
+        },
+        "policy": {"allow_fallback": True},
+    }
+    body = json.dumps(request_payload).encode("utf-8")
+    response = client.post(
+        "/v1/runtime/execute",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_contract",
+                idempotency_key="contract-analysis-001",
+                trace_id="traceanalysis00100000000000000",
+                body=body,
+            )
+        ),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["execution_context"]["ability_family"] == "openclaw"
+
+    result = data["result"]
+    assert result["analysis_type"] in {"report", "recommendation", "proposal_input"}
+    assert "summary" in result
+    assert "findings" in result
+    assert "recommendations" in result
+    assert "requires_local_approval" in result
+    assert "proposal_handoff" in result
+    assert "_cloud_raw_result" in result
+
+    handoff = result["proposal_handoff"]
+    assert handoff["proposal_id"] == "proposal_abc_123"
+    assert handoff["correlation_id"] == "corr_xyz_789"
+    assert handoff["external_thread_id"] == "ext_thread_001"
+    assert handoff["openclaw_thread_id"] == "oc_thread_002"
+
+    run_id = data["run_id"]
+
+    # Run status endpoint still uses the existing stable shape
+    status_response = client.get(
+        f"/v1/runs/{run_id}",
+        headers=build_auth_headers(
+            "GET",
+            f"/v1/runs/{run_id}",
+            site_id="site_contract",
+            trace_id="traceanalysis00200000000000000",
+        ),
+    )
+    assert status_response.status_code == 200
+    status_data = status_response.json()["data"]
+    assert "run_id" in status_data
+    assert status_data["ability_name"] == "openclaw/analysis/product-recommendation"
+
+    # Result endpoint also exposes the analysis envelope
+    result_response = client.get(
+        f"/v1/runs/{run_id}/result",
+        headers=build_auth_headers(
+            "GET",
+            f"/v1/runs/{run_id}/result",
+            site_id="site_contract",
+            trace_id="traceanalysis00300000000000000",
+        ),
+    )
+    assert result_response.status_code == 200
+    result_data = result_response.json()["data"]
+    assert result_data["execution_context"]["ability_family"] == "openclaw"
+    assert result_data["result"]["proposal_handoff"]["proposal_id"] == "proposal_abc_123"
 
     dispose_engine(database_url)
