@@ -2278,19 +2278,26 @@ class RuntimeService:
         if ability_family != "openclaw":
             return None
 
-        requires_local_approval = bool(result.get("requires_local_approval", False))
-        summary = str(result.get("summary", ""))
-        if not summary:
-            output = result.get("output", {})
-            summary = str(output.get("output_text", ""))[:500]
+        output = result.get("output", {})
+        output_text = str(output.get("output_text", ""))
+        summary = str(result.get("summary", "") or output_text)[:500]
+
+        requires_local_approval = bool(
+            result.get("requires_local_approval")
+            or output.get("requires_local_approval")
+            or any(
+                keyword in output_text.lower()
+                for keyword in ("write", "create", "update", "delete", "install", "modify")
+            )
+        )
 
         return {
             "analysis_type": "report" if not requires_local_approval else "proposal",
-            "summary": summary[:500],
-            "findings": result.get("findings", []),
-            "recommendations": result.get("recommendations", []),
+            "summary": summary,
+            "findings": result.get("findings", []) or output.get("findings", []),
+            "recommendations": result.get("recommendations", []) or output.get("recommendations", []),
             "requires_local_approval": requires_local_approval,
-            "proposal_handoff": result.get("proposal_handoff") if requires_local_approval else None,
+            "proposal_handoff": (result.get("proposal_handoff") or output.get("proposal_handoff")) if requires_local_approval else None,
         }
 
     def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:
