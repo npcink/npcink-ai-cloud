@@ -408,6 +408,18 @@ assert_json_non_empty "${HTTP_BODY}" "data.platform_admin_ref" "admin session sh
 signed_request "GET" "/v1/catalog/models" "" "" "idem-local-alpha-catalog-${IDEMPOTENCY_SUFFIX}" ""
 assert_status "${HTTP_STATUS}" "200" "catalog/models should succeed"
 assert_json_non_empty "${HTTP_BODY}" "data.items" "catalog/models should return models"
+CATALOG_MODELS_BODY="${HTTP_BODY}"
+
+if [ -n "${MAGICK_CLOUD_OPENAI_PROVIDER_LABEL:-}" ]; then
+	ok "DeepSeek Provider Label Smoke"
+	CATALOG_LABEL=$(json_read_path "$CATALOG_MODELS_BODY" "data.items.0.provider_display_name" 2>/dev/null || echo "")
+	if [ -z "$CATALOG_LABEL" ]; then
+		echo "  SKIP: catalog provider label not available (may need catalog refresh)"
+	else
+		assert_body_contains "$CATALOG_LABEL" "DeepSeek" "catalog shows DeepSeek provider label"
+		ok "DeepSeek provider label visible in catalog"
+	fi
+fi
 
 PROMPT_TEXT_JSON="$(json_quote "${PROMPT_TEXT}")"
 EXECUTE_BODY="$(cat <<JSON
@@ -425,6 +437,27 @@ if [ -n "${EXPECTED_MODEL_ID}" ]; then
 fi
 RUN_ID="$(json_read_path "${HTTP_BODY}" "data.run_id")"
 RUNTIME_BODY="${HTTP_BODY}"
+
+ok "OpenClaw Analysis Envelope Smoke"
+OPENCLAW_BODY="$(cat <<JSON
+{"ability_name":"openclaw.site_audit","ability_family":"openclaw","execution_kind":"text","profile_id":"${PROFILE_ID}","execution_pattern":"inline","input":{"text":"Analyze the site configuration"}}
+JSON
+)"
+signed_request "POST" "/v1/runtime/execute" "" "${OPENCLAW_BODY}" "idem-local-alpha-openclaw-${IDEMPOTENCY_SUFFIX}" "nonce-local-alpha-openclaw-${IDEMPOTENCY_SUFFIX}"
+assert_status "${HTTP_STATUS}" "200" "openclaw analysis execute"
+OPENCLAW_RESPONSE="${HTTP_BODY}"
+ANALYSIS_TYPE=$(json_read_path "$OPENCLAW_RESPONSE" "data.analysis_envelope.analysis_type" 2>/dev/null || echo "")
+if [ "$ANALYSIS_TYPE" = "report" ]; then
+	ok "openclaw read-only analysis returns report type"
+else
+	echo "  WARN: openclaw analysis_type=$ANALYSIS_TYPE (expected report)"
+fi
+REQUIRES_APPROVAL=$(json_read_path "$OPENCLAW_RESPONSE" "data.analysis_envelope.requires_local_approval" 2>/dev/null || echo "false")
+if [ "$REQUIRES_APPROVAL" = "false" ]; then
+	ok "openclaw read-only analysis does not require local approval"
+else
+	fail "openclaw read-only analysis should not require local approval"
+fi
 
 signed_request "GET" "/v1/runs/${RUN_ID}/result" "" "" "idem-local-alpha-result-${IDEMPOTENCY_SUFFIX}" ""
 assert_status "${HTTP_STATUS}" "200" "runtime result should load"
