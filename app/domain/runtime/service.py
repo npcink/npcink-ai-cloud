@@ -2229,8 +2229,6 @@ class RuntimeService:
     ) -> bool:
         if request.execution_pattern == "whole_run_offload":
             return self._is_task_backend_enabled(merged_policy)
-        if request.execution_pattern == "orchestrated":
-            return True
         return False
 
     def _is_task_backend_enabled(self, merged_policy: dict[str, object]) -> bool:
@@ -2386,8 +2384,6 @@ class RuntimeService:
     def _public_execution_pattern(self, execution_pattern: str) -> str:
         if execution_pattern == "whole_run_offload":
             return "whole_run_offload"
-        if execution_pattern == "orchestrated":
-            return "orchestrated"
         return "inline"
 
     def _build_execution_context(self, run: RunRecord) -> RuntimeExecutionContext:
@@ -2863,8 +2859,6 @@ class RuntimeService:
         policy: dict[str, object],
     ) -> str:
         if execution_pattern == "whole_run_offload" and self._is_task_backend_enabled(policy):
-            return "queue_backed"
-        if execution_pattern == "orchestrated":
             return "queue_backed"
         return "inline"
 

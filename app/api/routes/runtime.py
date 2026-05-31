@@ -13,7 +13,7 @@ from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.security import RequestAuthContext
 from app.domain.routing.errors import RoutingError
-from app.domain.runtime.errors import RuntimeErrorBase
+from app.domain.runtime.errors import RuntimeErrorBase, RuntimeUnsupportedExecutionPatternError
 from app.domain.runtime.models import (
     BLOCKED_RUNTIME_GOVERNANCE_POLICY_KEYS,
     RuntimeRequest,
@@ -147,15 +147,13 @@ def _normalize_runtime_execution_pattern(value: str) -> str:
     if value == "whole_run_offload":
         return "whole_run_offload"
     if value == "orchestrated":
-        return "orchestrated"
+        raise RuntimeUnsupportedExecutionPatternError()
     return "inline"
 
 
 def _public_runtime_execution_pattern(value: str) -> str:
     if value == "whole_run_offload":
         return "whole_run_offload"
-    if value == "orchestrated":
-        return "orchestrated"
     return "inline"
 
 
@@ -202,16 +200,16 @@ async def resolve_runtime(
             trace_id=auth.trace_id,
         )
 
-    runtime_request = _build_runtime_request(request, payload, auth)
-
+    runtime_request: RuntimeRequest | None = None
     try:
+        runtime_request = _build_runtime_request(request, payload, auth)
         resolved = await run_in_threadpool(service.resolve, runtime_request)
     except RoutingError as error:
         return _runtime_error_response(
             status_code=400,
             error_code=error.error_code,
             message=error.message,
-            trace_id=runtime_request.trace_id or "",
+            trace_id=(runtime_request.trace_id if runtime_request else auth.trace_id) or "",
             data={"profile_id": payload.profile_id},
         )
     except RuntimeErrorBase as error:
@@ -219,7 +217,7 @@ async def resolve_runtime(
             status_code=error.status_code,
             error_code=error.error_code,
             message=error.message,
-            trace_id=runtime_request.trace_id or "",
+            trace_id=(runtime_request.trace_id if runtime_request else auth.trace_id) or "",
             data={"profile_id": payload.profile_id},
         )
 
@@ -270,16 +268,16 @@ async def execute_runtime(
             trace_id=auth.trace_id,
         )
 
-    runtime_request = _build_runtime_request(request, payload, auth)
-
+    runtime_request: RuntimeRequest | None = None
     try:
+        runtime_request = _build_runtime_request(request, payload, auth)
         result = await run_in_threadpool(service.execute, runtime_request)
     except RoutingError as error:
         return _runtime_error_response(
             status_code=400,
             error_code=error.error_code,
             message=error.message,
-            trace_id=runtime_request.trace_id or "",
+            trace_id=(runtime_request.trace_id if runtime_request else auth.trace_id) or "",
             data={"profile_id": payload.profile_id},
         )
     except RuntimeErrorBase as error:
@@ -287,7 +285,7 @@ async def execute_runtime(
             status_code=error.status_code,
             error_code=error.error_code,
             message=error.message,
-            trace_id=runtime_request.trace_id or "",
+            trace_id=(runtime_request.trace_id if runtime_request else auth.trace_id) or "",
             data={"profile_id": payload.profile_id},
         )
 

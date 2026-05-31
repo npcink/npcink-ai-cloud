@@ -61,6 +61,15 @@ class RuntimeExecutionContractError(RuntimeErrorBase):
         super().__init__(400, error_code, message)
 
 
+class RuntimeUnsupportedExecutionPatternError(RuntimeErrorBase):
+    def __init__(self) -> None:
+        super().__init__(
+            400,
+            "runtime.unsupported_execution_pattern",
+            "execution pattern 'orchestrated' is not supported for public requests",
+        )
+
+
 class RuntimeCallbackConfigurationError(RuntimeErrorBase):
     def __init__(self, site_id: str, message: str) -> None:
         super().__init__(

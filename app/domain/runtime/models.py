@@ -90,6 +90,7 @@ RUNTIME_MAX_TIMEOUT_SECONDS = 3600
 RUNTIME_MAX_RETRY_MAX = 5
 RUNTIME_MAX_RETENTION_TTL = 604800
 RUNTIME_CALLBACK_EVENT = "runtime.run.terminal"
+RUNTIME_PUBLIC_EXECUTION_PATTERNS = frozenset({"inline", "whole_run_offload"})
 
 
 def normalize_runtime_request_policy(policy: dict[str, Any] | None) -> dict[str, object]:
@@ -148,7 +149,7 @@ class RuntimeRequest:
     workflow_id: str = ""
     contract_version: str = "v1"
     execution_tier: str = "cloud"
-    execution_pattern: str = "step_offload"
+    execution_pattern: str = "inline"
     data_classification: str = "internal"
     storage_mode: str = RUNTIME_STORAGE_MODE_RESULT_ONLY
     timeout_seconds: int = 0
