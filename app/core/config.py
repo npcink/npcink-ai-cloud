@@ -171,6 +171,13 @@ class Settings(BaseSettings):
             "MAGICK_CLOUD_OPENAI_COMPATIBLE_SAMPLE_CATALOG_PROFILE",
         ),
     )
+    openai_provider_label: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "MAGICK_CLOUD_OPENAI_PROVIDER_LABEL",
+            "MAGICK_CLOUD_OPENAI_COMPATIBLE_PROVIDER_LABEL",
+        ),
+    )
     litellm_provider_enabled: bool = Field(default=False)
     litellm_base_url: str | None = Field(default=None)
     litellm_api_key: str | None = Field(default=None)

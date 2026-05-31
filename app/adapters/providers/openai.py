@@ -33,6 +33,7 @@ class OpenAIProviderAdapter:
         allow_sample_execution: bool = True,
         extra_headers: dict[str, str] | None = None,
         model_namespace_prefix: str = "",
+        provider_label: str = "",
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -50,6 +51,9 @@ class OpenAIProviderAdapter:
             if str(key).strip() and str(value).strip()
         }
         self.model_namespace_prefix = str(model_namespace_prefix or "").strip().strip("/")
+        self.provider_label = str(provider_label or "").strip()
+        if self.provider_label:
+            self.display_name = self.provider_label
         self.transport = transport
 
     def fetch_catalog(self) -> ProviderCatalogSnapshot:

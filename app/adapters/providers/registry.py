@@ -81,6 +81,7 @@ def build_provider_adapters_with_overrides(
             app_name=settings.project_name,
             allow_sample_catalog=allow_sample_fallback,
             allow_sample_execution=allow_sample_fallback,
+            provider_label=settings.openai_provider_label,
         )
 
     if settings.anthropic_api_key:
