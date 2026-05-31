@@ -62,11 +62,12 @@ class RuntimeExecutionContractError(RuntimeErrorBase):
 
 
 class RuntimeUnsupportedExecutionPatternError(RuntimeErrorBase):
-    def __init__(self) -> None:
+    def __init__(self, pattern: str = "") -> None:
+        detail = f" '{pattern}'" if pattern else ""
         super().__init__(
             400,
             "runtime.unsupported_execution_pattern",
-            "execution pattern 'orchestrated' is not supported for public requests",
+            f"execution pattern{detail} is not supported for public requests",
         )
 
 

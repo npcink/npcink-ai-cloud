@@ -44,7 +44,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     )
 
 
-def test_orchestrated_execution_pattern_rejected_for_public_requests(tmp_path: Path):
+def test_orchestrated_execution_pattern_rejected_by_schema(tmp_path: Path):
     database_url, client = _build_client(tmp_path)
     try:
         body = b'{"ability_name":"test.ability","execution_kind":"text","profile_id":"text.balanced","execution_pattern":"orchestrated","input":{"text":"hello"}}'
@@ -55,8 +55,8 @@ def test_orchestrated_execution_pattern_rejected_for_public_requests(tmp_path: P
                 site_id="site_pattern",
                 key_id="key_pattern",
                 secret="pattern-secret-32-chars-long-enough!!",
-                idempotency_key="idem-orch-reject-001",
-                nonce="nonce-orch-reject-001",
+                idempotency_key="idem-orch-schema-001",
+                nonce="nonce-orch-schema-001",
                 body=body,
             )
         )
@@ -65,9 +65,7 @@ def test_orchestrated_execution_pattern_rejected_for_public_requests(tmp_path: P
             content=body,
             headers=headers,
         )
-        assert response.status_code == 400
-        body_json = response.json()
-        assert body_json.get("error_code") == "runtime.unsupported_execution_pattern"
+        assert response.status_code == 422
     finally:
         dispose_engine(database_url)
 

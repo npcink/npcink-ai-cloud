@@ -61,7 +61,7 @@ class RuntimePayload(BaseModel):
     channel: str = "openapi"
     execution_kind: str
     execution_tier: Literal["cloud"] = "cloud"
-    execution_pattern: Literal["inline", "whole_run_offload", "orchestrated"] = "inline"
+    execution_pattern: Literal["inline", "whole_run_offload"] = "inline"
     data_classification: Literal["public", "internal", "pii", "secret"] = "internal"
     storage_mode: Literal["no_store", "result_only", "full_store_with_ttl"] = "result_only"
     timeout_seconds: int = 0
@@ -146,8 +146,8 @@ def _resolve_trace_id(
 def _normalize_runtime_execution_pattern(value: str) -> str:
     if value == "whole_run_offload":
         return "whole_run_offload"
-    if value == "orchestrated":
-        raise RuntimeUnsupportedExecutionPatternError()
+    if value not in ("inline", "whole_run_offload"):
+        raise RuntimeUnsupportedExecutionPatternError(value)
     return "inline"
 
 
