@@ -2271,7 +2271,32 @@ class RuntimeService:
             task_backend=self._build_task_backend_payload(run),
             run_lifecycle=self._build_run_lifecycle(run),
             result=result,
+            analysis_envelope=self._build_analysis_envelope(result, run.ability_family or "text"),
         )
+
+    def _build_analysis_envelope(self, result: dict[str, Any], ability_family: str) -> dict[str, Any] | None:
+        if ability_family != "openclaw":
+            return None
+
+        output = result.get("output", {})
+        output_text = output.get("output_text", "")
+
+        requires_local_approval = bool(
+            output.get("requires_local_approval")
+            or any(
+                keyword in output_text.lower()
+                for keyword in ("write", "create", "update", "delete", "install", "modify")
+            )
+        )
+
+        return {
+            "analysis_type": "report" if not requires_local_approval else "proposal",
+            "summary": output_text[:500] if output_text else "",
+            "findings": output.get("findings", []),
+            "recommendations": output.get("recommendations", []),
+            "requires_local_approval": requires_local_approval,
+            "proposal_handoff": output.get("proposal_handoff") if requires_local_approval else None,
+        }
 
     def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:
         with get_session(self.database_url) as session:
