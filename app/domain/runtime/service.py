@@ -324,6 +324,7 @@ class RuntimeService:
         site_id: str,
         input_payload: dict[str, Any],
         source_bytes: bytes,
+        watermark_bytes: bytes | None = None,
         ttl_minutes: int = 30,
         idempotency_key: str | None = None,
         trace_id: str | None = None,
@@ -334,10 +335,14 @@ class RuntimeService:
         run_id = f"run_{uuid4().hex}"
         resolved_idempotency_key = idempotency_key or f"auto_{uuid4().hex}"
         source_checksum = hashlib.sha256(source_bytes).hexdigest()
+        watermark_checksum = (
+            hashlib.sha256(watermark_bytes).hexdigest() if watermark_bytes else ""
+        )
         request_fingerprint = self._build_request_fingerprint_for_media_derivative(
             site_id,
             input_payload,
             source_checksum=source_checksum,
+            watermark_checksum=watermark_checksum,
         )
 
         with get_session(self.database_url) as session:
@@ -376,6 +381,10 @@ class RuntimeService:
                 **input_payload,
                 "_source_bytes_b64": base64.b64encode(source_bytes).decode("ascii"),
             }
+            if watermark_bytes:
+                media_input["_watermark_bytes_b64"] = base64.b64encode(
+                    watermark_bytes
+                ).decode("ascii")
 
             policy = {
                 "storage_mode": "result_only",
@@ -440,6 +449,7 @@ class RuntimeService:
         input_payload: dict[str, Any],
         *,
         source_checksum: str,
+        watermark_checksum: str = "",
     ) -> str:
         canonical_payload = json.dumps(
             {
@@ -447,6 +457,7 @@ class RuntimeService:
                 "execution_kind": "media_derivative",
                 "input": input_payload,
                 "source_checksum": source_checksum,
+                "watermark_checksum": watermark_checksum,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -481,10 +492,14 @@ class RuntimeService:
         target_format = cloud_job_payload.get("target_format", "webp")
         max_width = int(cloud_job_payload.get("max_width", 1200))
         quality = int(cloud_job_payload.get("quality", 82))
+        watermark_options = cloud_job_payload.get("watermark")
+        watermark_options = watermark_options if isinstance(watermark_options, dict) else None
         ttl_minutes = int(media_input.get("ttl_minutes", ARTIFACT_DEFAULT_TTL_MINUTES))
 
         source_b64 = media_input.get("_source_bytes_b64", "")
         source_bytes = base64.b64decode(source_b64) if source_b64 else b""
+        watermark_b64 = media_input.get("_watermark_bytes_b64", "")
+        watermark_bytes = base64.b64decode(watermark_b64) if watermark_b64 else None
 
         if not source_bytes:
             repository.mark_run_failed(
@@ -506,6 +521,8 @@ class RuntimeService:
                 target_format=target_format,
                 max_width=max_width,
                 quality=quality,
+                watermark_bytes=watermark_bytes,
+                watermark_options=watermark_options,
             )
         except (
             MediaDerivativeSourceDecodeFailedError,

@@ -89,6 +89,7 @@ async def create_media_derivative(request: Request) -> Any:
 
     request_json_str: str | None = None
     source_bytes: bytes | None = None
+    watermark_bytes: bytes | None = None
 
     if "multipart/form-data" in content_type:
         fields: dict[str, str] = {}
@@ -124,6 +125,7 @@ async def create_media_derivative(request: Request) -> Any:
 
         request_json_str = fields.get("request")
         source_bytes = files.get("source_file")
+        watermark_bytes = files.get("watermark_file")
     else:
         request_json_str = body.decode("utf-8")
 
@@ -153,6 +155,8 @@ async def create_media_derivative(request: Request) -> Any:
             error_code = "media_derivative.invalid_format"
         elif "source_media_type" in error_message:
             error_code = "media_derivative.source_media_type_unavailable"
+        elif "watermark" in error_message:
+            error_code = "media_derivative.invalid_watermark"
         elif "ttl_minutes" in error_message:
             error_code = "media_derivative.validation_error"
         elif "quality" in error_message or "max_width" in error_message:
@@ -166,6 +170,7 @@ async def create_media_derivative(request: Request) -> Any:
         )
 
     source_artifact_id: str | None = None
+    watermark_artifact_id: str | None = None
 
     if source_bytes is not None:
         if len(source_bytes) > MAX_UPLOAD_BYTES_IMAGE:
@@ -185,6 +190,39 @@ async def create_media_derivative(request: Request) -> Any:
             trace_id=auth.trace_id,
         )
 
+    watermark = derivative_request.cloud_job_payload.watermark
+    if watermark_bytes is not None:
+        if watermark is None:
+            return _media_error_response(
+                status_code=400,
+                error_code="media_derivative.invalid_watermark",
+                message="watermark options are required when watermark_file is provided",
+                trace_id=auth.trace_id,
+            )
+        if watermark.artifact_id:
+            return _media_error_response(
+                status_code=400,
+                error_code="media_derivative.invalid_watermark",
+                message="exactly one watermark source mode is required",
+                trace_id=auth.trace_id,
+            )
+        if len(watermark_bytes) > MAX_UPLOAD_BYTES_IMAGE:
+            return _media_error_response(
+                status_code=413,
+                error_code="media_derivative.upload_too_large",
+                message="uploaded watermark file exceeds the size limit",
+                trace_id=auth.trace_id,
+            )
+    elif watermark is not None and watermark.artifact_id:
+        watermark_artifact_id = watermark.artifact_id
+    elif watermark is not None:
+        return _media_error_response(
+            status_code=400,
+            error_code="media_derivative.invalid_watermark",
+            message="watermark requires watermark_file or watermark.artifact_id",
+            trace_id=auth.trace_id,
+        )
+
     if source_artifact_id:
         with get_session(services.settings.database_url) as session:
             artifact = get_artifact(
@@ -200,6 +238,23 @@ async def create_media_derivative(request: Request) -> Any:
                     trace_id=auth.trace_id,
                 )
             source_bytes = artifact.blob_data
+            session.commit()
+
+    if watermark_artifact_id:
+        with get_session(services.settings.database_url) as session:
+            artifact = get_artifact(
+                session,
+                watermark_artifact_id,
+                site_id=auth.site_id,
+            )
+            if artifact is None or is_artifact_expired(artifact):
+                return _media_error_response(
+                    status_code=404,
+                    error_code="media_derivative.watermark_artifact_not_found",
+                    message="referenced watermark artifact not found",
+                    trace_id=auth.trace_id,
+                )
+            watermark_bytes = artifact.blob_data
             session.commit()
 
     if not source_bytes:
@@ -224,6 +279,7 @@ async def create_media_derivative(request: Request) -> Any:
             site_id=auth.site_id,
             input_payload=input_payload,
             source_bytes=source_bytes,
+            watermark_bytes=watermark_bytes,
             ttl_minutes=derivative_request.ttl_minutes,
             idempotency_key=auth.idempotency_key,
             trace_id=auth.trace_id,

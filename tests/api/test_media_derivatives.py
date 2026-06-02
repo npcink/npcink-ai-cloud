@@ -58,8 +58,14 @@ def _build_client(
     )
 
 
-def _make_png_bytes(width: int = 100, height: int = 80) -> bytes:
-    img = Image.new("RGB", (width, height), color="red")
+def _make_png_bytes(
+    width: int = 100,
+    height: int = 80,
+    *,
+    color: str | tuple[int, int, int, int] = "red",
+    mode: str = "RGB",
+) -> bytes:
+    img = Image.new(mode, (width, height), color=color)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -82,6 +88,7 @@ def _make_animated_gif_bytes() -> bytes:
 def _build_multipart_body(
     request_dict: dict,
     image_bytes: bytes,
+    watermark_bytes: bytes | None = None,
     boundary: str = "boundary123",
 ) -> tuple[bytes, str]:
     parts = []
@@ -94,6 +101,14 @@ def _build_multipart_body(
     parts.append(b"Content-Type: image/png")
     parts.append(b"")
     parts.append(image_bytes)
+    if watermark_bytes is not None:
+        parts.append(f"--{boundary}".encode())
+        parts.append(
+            b'Content-Disposition: form-data; name="watermark_file"; filename="logo.png"'
+        )
+        parts.append(b"Content-Type: image/png")
+        parts.append(b"")
+        parts.append(watermark_bytes)
     parts.append(f"--{boundary}--".encode())
     body = b"\r\n".join(parts)
     content_type = f"multipart/form-data; boundary={boundary}"
@@ -196,6 +211,273 @@ def test_response_contains_no_wordpress_write_fields(tmp_path: Path) -> None:
         response_text = json.dumps(response.json())
         for field in BLOCKED_RESPONSE_FIELDS:
             assert field not in response_text, f"blocked field '{field}' found in response"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_watermark_file_success_path(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        image_bytes = _make_png_bytes(100, 100, color="white")
+        watermark_bytes = _make_png_bytes(10, 10, color="red")
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+                "watermark": {
+                    "type": "image",
+                    "position": "bottom_right",
+                    "opacity": 1.0,
+                    "scale_percent": 20,
+                    "margin_px": 0,
+                },
+            },
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            image_bytes,
+            watermark_bytes=watermark_bytes,
+            boundary="boundary-watermark-file",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-watermark-file-001",
+            nonce="nonce-watermark-file-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 200, response.json()
+        run_id = response.json()["data"]["run_id"]
+
+        _process_queued_runs(database_url)
+
+        result_headers = build_auth_headers(
+            "GET",
+            f"/v1/runs/{run_id}/result",
+            site_id="site_alpha",
+        )
+        result_response = client.get(f"/v1/runs/{run_id}/result", headers=result_headers)
+        assert result_response.status_code == 200, result_response.json()
+        artifact = result_response.json()["data"]["result"]["artifact"]
+        assert artifact["format"] == "png"
+        artifact_id = artifact["artifact_id"]
+
+        dl_headers = build_auth_headers(
+            "GET",
+            f"/v1/runtime/artifacts/{artifact_id}/download",
+            site_id="site_alpha",
+        )
+        dl_response = client.get(
+            f"/v1/runtime/artifacts/{artifact_id}/download",
+            headers=dl_headers,
+        )
+        assert dl_response.status_code == 200
+        watermarked = Image.open(io.BytesIO(dl_response.content))
+        assert watermarked.getpixel((95, 95))[:3] == (255, 0, 0)
+    finally:
+        dispose_engine(database_url)
+
+
+def test_watermark_file_and_artifact_conflict_is_rejected(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        image_bytes = _make_png_bytes(100, 100, color="white")
+        watermark_bytes = _make_png_bytes(10, 10, color="red")
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+                "watermark": {
+                    "type": "image",
+                    "artifact_id": "art_conflicting_logo",
+                    "position": "bottom_right",
+                },
+            },
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            image_bytes,
+            watermark_bytes=watermark_bytes,
+            boundary="boundary-watermark-conflict",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-watermark-conflict-001",
+            nonce="nonce-watermark-conflict-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "media_derivative.invalid_watermark"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_watermark_artifact_must_be_same_site(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        logo_request = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 10,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+        }
+        logo_body, logo_content_type = _build_multipart_body(
+            logo_request,
+            _make_png_bytes(10, 10, color="red"),
+            boundary="boundary-watermark-artifact-logo",
+        )
+        logo_headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=logo_body,
+            idempotency_key="idem-watermark-artifact-logo-001",
+            nonce="nonce-watermark-artifact-logo-001",
+        )
+        logo_headers["content-type"] = logo_content_type
+        logo_response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=logo_body,
+            headers=logo_headers,
+        )
+        assert logo_response.status_code == 200, logo_response.json()
+        _process_queued_runs(database_url)
+
+        with get_session(database_url) as session:
+            artifact = session.query(MediaDerivativeArtifact).first()
+            assert artifact is not None
+            artifact_id = artifact.artifact_id
+
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+                "watermark": {
+                    "type": "image",
+                    "artifact_id": artifact_id,
+                    "position": "bottom_right",
+                },
+            },
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            _make_png_bytes(100, 100, color="white"),
+            boundary="boundary-watermark-cross-site",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_beta",
+            key_id="key_beta",
+            body=body,
+            idempotency_key="idem-watermark-cross-site-001",
+            nonce="nonce-watermark-cross-site-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "media_derivative.watermark_artifact_not_found"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_expired_watermark_artifact_is_rejected(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        logo_request = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 10,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+        }
+        logo_body, logo_content_type = _build_multipart_body(
+            logo_request,
+            _make_png_bytes(10, 10, color="red"),
+            boundary="boundary-watermark-expired-logo",
+        )
+        logo_headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=logo_body,
+            idempotency_key="idem-watermark-expired-logo-001",
+            nonce="nonce-watermark-expired-logo-001",
+        )
+        logo_headers["content-type"] = logo_content_type
+        logo_response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=logo_body,
+            headers=logo_headers,
+        )
+        assert logo_response.status_code == 200, logo_response.json()
+        _process_queued_runs(database_url)
+
+        with get_session(database_url) as session:
+            artifact = session.query(MediaDerivativeArtifact).first()
+            assert artifact is not None
+            artifact.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+            session.commit()
+            artifact_id = artifact.artifact_id
+
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+                "watermark": {
+                    "type": "image",
+                    "artifact_id": artifact_id,
+                    "position": "bottom_right",
+                },
+            },
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            _make_png_bytes(100, 100, color="white"),
+            boundary="boundary-watermark-expired",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-watermark-expired-001",
+            nonce="nonce-watermark-expired-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "media_derivative.watermark_artifact_not_found"
     finally:
         dispose_engine(database_url)
 

@@ -17,7 +17,8 @@ from app.domain.media_derivatives.processor import process_media_derivative
 
 
 def _make_png_bytes(width: int = 100, height: int = 80, mode: str = "RGB") -> bytes:
-    img = Image.new(mode, (width, height), color="red")
+    color = (255, 0, 0, 128) if mode == "RGBA" else "red"
+    img = Image.new(mode, (width, height), color=color)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -74,6 +75,54 @@ def test_process_original_preserves_bytes() -> None:
     assert result.output_bytes == source
     assert result.width == 50
     assert result.height == 50
+
+
+def test_process_png_applies_image_watermark() -> None:
+    source = Image.new("RGB", (100, 100), color="white")
+    source_buf = io.BytesIO()
+    source.save(source_buf, format="PNG")
+    watermark = _make_png_bytes(10, 10)
+
+    result = process_media_derivative(
+        source_bytes=source_buf.getvalue(),
+        source_media_type="image",
+        target_format="png",
+        max_width=100,
+        quality=80,
+        watermark_bytes=watermark,
+        watermark_options={
+            "position": "bottom_right",
+            "opacity": 1.0,
+            "scale_percent": 20,
+            "margin_px": 0,
+        },
+    )
+
+    output = Image.open(io.BytesIO(result.output_bytes))
+    assert output.getpixel((95, 95))[:3] == (255, 0, 0)
+
+
+def test_process_jpeg_watermark_records_alpha_flatten_warning() -> None:
+    source = _make_png_bytes(50, 50)
+    watermark = _make_png_bytes(10, 10, mode="RGBA")
+
+    result = process_media_derivative(
+        source_bytes=source,
+        source_media_type="image",
+        target_format="jpeg",
+        max_width=50,
+        quality=80,
+        watermark_bytes=watermark,
+        watermark_options={
+            "position": "center",
+            "opacity": 0.5,
+            "scale_percent": 20,
+            "margin_px": 0,
+        },
+    )
+
+    assert result.format == "jpeg"
+    assert "watermark_alpha_flattened_for_jpeg" in result.processing_warnings
 
 
 def test_process_no_resize_when_within_max_width() -> None:

@@ -6,6 +6,14 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 ALLOWED_TARGET_FORMATS = frozenset({"webp", "avif", "jpeg", "png", "original"})
 ALLOWED_SOURCE_MEDIA_TYPES = frozenset({"image"})
+ALLOWED_WATERMARK_TYPES = frozenset({"image"})
+ALLOWED_WATERMARK_POSITIONS = frozenset({
+    "top_left",
+    "top_right",
+    "bottom_left",
+    "bottom_right",
+    "center",
+})
 MAX_UPLOAD_BYTES_IMAGE = 50 * 1024 * 1024
 MAX_PIXEL_COUNT = 178_956_970
 ARTIFACT_DEFAULT_TTL_MINUTES = 30
@@ -38,6 +46,17 @@ PILLOW_FORMAT_BY_TARGET: dict[str, str] = {
 }
 
 
+class WatermarkPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["image"]
+    artifact_id: str | None = None
+    position: str = "bottom_right"
+    opacity: float = 0.75
+    scale_percent: int = 18
+    margin_px: int = 24
+
+
 class CloudJobPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -46,6 +65,7 @@ class CloudJobPayload(BaseModel):
     max_width: int = 1200
     quality: int = 82
     source_media_type: str = "image"
+    watermark: WatermarkPayload | None = None
 
 
 class SourceRef(BaseModel):
@@ -73,6 +93,20 @@ class MediaDerivativeRequest(BaseModel):
             raise ValueError("quality must be between 1 and 100")
         if not (1 <= payload.max_width <= 10000):
             raise ValueError("max_width must be between 1 and 10000")
+        if payload.watermark is not None:
+            watermark = payload.watermark
+            if watermark.type not in ALLOWED_WATERMARK_TYPES:
+                raise ValueError(f"watermark.type '{watermark.type}' is not supported")
+            if watermark.position not in ALLOWED_WATERMARK_POSITIONS:
+                raise ValueError(
+                    f"watermark.position '{watermark.position}' is not supported"
+                )
+            if not (0.0 <= watermark.opacity <= 1.0):
+                raise ValueError("watermark.opacity must be between 0.0 and 1.0")
+            if not (1 <= watermark.scale_percent <= 100):
+                raise ValueError("watermark.scale_percent must be between 1 and 100")
+            if not (0 <= watermark.margin_px <= 1000):
+                raise ValueError("watermark.margin_px must be between 0 and 1000")
         if not (ARTIFACT_MIN_TTL_MINUTES <= self.ttl_minutes <= ARTIFACT_MAX_TTL_MINUTES):
             raise ValueError(
                 f"ttl_minutes must be between "
