@@ -1,0 +1,145 @@
+# Plugin Observability v1
+
+Status: active contract
+
+Date: 2026-06-02
+
+Scope: `magick-ai-abilities`, `magick-ai-core`, `magick-ai-adapter`,
+`magick-ai-cloud-addon`, and the Cloud plugin observability read surfaces.
+
+## Boundary
+
+Plugin observability is a metadata-only monitoring contract. Local WordPress
+plugins remain the source of truth for abilities, governance, approval,
+OpenClaw projection, routing decisions, and WordPress writes. Cloud only
+receives bounded metadata from `magick-ai-cloud-addon` after the addon is
+installed, verified, and monitoring is enabled.
+
+Cloud must not use this stream to create a second plugin registry, second
+approval plane, second router truth, or second WordPress write owner.
+
+## Transport
+
+- WordPress plugins emit local events through `magick_ai_observability_event`.
+- `magick-ai-cloud-addon` is the only WordPress-side uploader.
+- If the addon is absent, unverified, or monitoring is disabled, events stay
+  local and are not uploaded.
+- Cloud receives batches at `POST /v1/observability/plugin-events`.
+- Portal reads only the current member's authorized site.
+- Admin reads may aggregate across sites through internal service auth.
+
+## Envelope
+
+Every uploaded event should include:
+
+- `schema_version`: current value `2026-06-01`.
+- `plugin_slug`: one of `magick-ai-abilities`, `magick-ai-core`,
+  `magick-ai-adapter`, or `magick-ai-cloud-addon`.
+- `plugin_version`: emitter plugin version.
+- `source`: normally `local`.
+- `event_kind`: stable dotted event name.
+- `status`: `ok`, `warning`, or `error`.
+- `emitted_at`: UTC timestamp from the emitting plugin when available.
+- `captured_at`: UTC timestamp from the addon collector when available.
+
+Recommended fields:
+
+- `event_id`: stable event id when the emitter can provide one.
+- `latency_ms`: non-negative integer latency for completed operations.
+- `error_code`: stable dotted error code when `status` is `error`.
+- `status_detail`: short redacted diagnostic label.
+- `ability_id`, `proposal_id`, `correlation_id`, `adapter_request_id`.
+- `method`, `route`, `status_code` for redacted HTTP-style adapter events.
+- Count fields such as `proposal_count`, `blocked_count`, `executed_count`,
+  and `failed_count` for batch summaries.
+
+## Forbidden Data
+
+Events must not include:
+
+- prompts, completions, generated content, or WordPress post/comment bodies
+- raw ability definitions, raw callback payloads, raw requests, or raw responses
+- API keys, secrets, cookies, nonces, authorization headers, signatures, tokens
+- customer PII beyond stable ids already required for routing and support
+- database connection strings, filesystem paths, or server environment dumps
+
+Cloud summary responses must not expose `payload_json` or any raw event payload.
+
+## Event Naming
+
+Use lowercase dotted names:
+
+`<domain>.<object>.<action>[.<outcome>]`
+
+Examples:
+
+- `abilities.catalog.changed`
+- `abilities.callback.completed`
+- `core.preflight.completed`
+- `core.preflight.blocked`
+- `adapter.openclaw.dispatch.completed`
+- `adapter.openclaw.dispatch.failed`
+- `addon.batch.uploaded`
+
+Registration-class events must be aggregated and rate-limited. Do not emit a
+per-ability registration event for every ability on every request.
+
+## Deduplication and Rate Limits
+
+Cloud deduplication uses a hash of site, key, ids, plugin slug, event kind, and
+timestamps. Emitters should provide `event_id` where practical.
+
+Registration-class events should emit only when:
+
+- the ability catalog hash changes
+- the plugin is activated
+- a manual refresh explicitly asks for it
+- the plugin version changes
+
+Same catalog hash emissions should be limited to at most once per plugin version
+per 24 hours unless a version-change rule requires a fresh event.
+
+## Read Model
+
+Cloud summaries may expose:
+
+- totals: event, ok, error, success rate, average latency, last seen
+- plugin summaries and event-kind summaries
+- hourly timeline buckets
+- site health state and attention items
+- error-code ranking and recent metadata-only errors
+
+Cloud summaries must not expose:
+
+- raw payloads
+- control actions that mutate local plugin state
+- plugin registry edits or ability publication controls
+
+## Health State
+
+Summary health state is advisory and read-only:
+
+- `ok`: recent data is present and no error pressure is detected.
+- `warning`: errors, stale reporting, missing expected plugins, or elevated
+  latency need review.
+- `error`: high error rate or severe freshness failure requires operator
+  attention.
+- `inactive`: no events are available in the selected window.
+
+Health state must not be used as proof that local WordPress execution is safe.
+It is an operations signal, not a local governance decision.
+
+## Attention Items
+
+Attention items are short, bounded diagnostics for operators and users. Each
+item should include:
+
+- `severity`: `warning` or `error`
+- `code`: stable dotted reason code
+- `title`: short display label
+- `detail`: one sentence explanation
+- optional `site_id`, `plugin_slug`, `event_kind`, `error_code`
+- optional `suggested_action`
+
+Portal may show site-scoped attention items. Admin may show cross-site attention
+items. Neither surface should expose raw payloads.

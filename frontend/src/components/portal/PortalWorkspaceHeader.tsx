@@ -11,6 +11,7 @@ export type PortalWorkspacePage =
   | 'usage'
   | 'billing'
   | 'audit'
+  | 'monitoring'
   | 'record'
   | 'sites';
 

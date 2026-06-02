@@ -37,6 +37,15 @@ ALLOWED_EVENT_FIELDS = {
     "failed_count",
 }
 
+EXPECTED_PLUGIN_SLUGS = (
+    "magick-ai-abilities",
+    "magick-ai-core",
+    "magick-ai-adapter",
+)
+ERROR_RATE_HIGH_THRESHOLD = 0.05
+LATENCY_WARNING_MS = 3000
+CATALOG_CHURN_THRESHOLD = 4
+
 
 class PluginObservabilityService:
     def __init__(self, database_url: str) -> None:
@@ -220,7 +229,25 @@ class PluginObservabilityService:
                 )
             )
 
+            timeline = self._build_timeline(
+                session,
+                base_conditions=base_conditions,
+                start_at=start_at,
+                end_at=current_time,
+            )
+
+        totals = self._build_totals(totals_row)
         plugins = self._build_plugin_summary(plugin_rows, event_kind_rows)
+        errors = [self._error_summary(row) for row in error_rows]
+        health, attention = self._build_health_and_attention(
+            totals=totals,
+            plugins=plugins,
+            errors=errors,
+            current_time=current_time,
+            window_hours=bounded_hours,
+            include_missing_plugins="" == plugin_slug,
+            site_id=site_id,
+        )
         return {
             "contract_version": "magick-plugin-observability-summary-v1",
             "generated_at": self._format_datetime(current_time),
@@ -229,9 +256,12 @@ class PluginObservabilityService:
                 "start_at": self._format_datetime(start_at),
                 "end_at": self._format_datetime(current_time),
             },
-            "totals": self._build_totals(totals_row),
+            "totals": totals,
+            "health": health,
+            "attention": attention,
             "plugins": plugins,
-            "errors": [self._error_summary(row) for row in error_rows],
+            "timeline": timeline,
+            "errors": errors,
             "recent_errors": [self._recent_error(event) for event in recent_errors],
         }
 
@@ -381,6 +411,13 @@ class PluginObservabilityService:
                 )
             )
 
+            timeline = self._build_timeline(
+                session,
+                base_conditions=base_conditions,
+                start_at=start_at,
+                end_at=current_time,
+            )
+
         events_total = int(totals_row[0] or 0)
         error_total = int(totals_row[1] or 0)
         ok_total = max(0, events_total - error_total)
@@ -391,7 +428,7 @@ class PluginObservabilityService:
         for row in site_rows:
             site_events_total = int(row[1] or 0)
             site_error_total = int(row[2] or 0)
-            sites.append({
+            site_summary = {
                 "site_id": str(row[0] or ""),
                 "events_total": site_events_total,
                 "error_total": site_error_total,
@@ -400,7 +437,16 @@ class PluginObservabilityService:
                 "avg_latency_ms": self._optional_avg(row[3]),
                 "plugin_count": int(row[4] or 0),
                 "last_seen_at": self._format_datetime(row[5]),
-            })
+            }
+            site_summary["health"] = self._build_health(
+                events_total=site_events_total,
+                error_total=site_error_total,
+                avg_latency_ms=int(site_summary["avg_latency_ms"]),
+                last_seen_at=str(site_summary["last_seen_at"]),
+                current_time=current_time,
+                window_hours=bounded_hours,
+            )
+            sites.append(site_summary)
 
         errors = []
         for row in error_rows:
@@ -413,6 +459,26 @@ class PluginObservabilityService:
                 "last_seen_at": self._format_datetime(row[5]),
             })
 
+        totals = {
+            "events_total": events_total,
+            "ok_total": ok_total,
+            "error_total": error_total,
+            "success_rate": self._success_rate(events_total, error_total),
+            "avg_latency_ms": self._optional_avg(totals_row[2]),
+            "last_seen_at": self._format_datetime(totals_row[3]),
+            "active_site_count": int(active_site_count),
+            "active_plugin_count": int(active_plugin_count),
+        }
+        health, attention = self._build_health_and_attention(
+            totals=totals,
+            plugins=plugins,
+            errors=errors,
+            current_time=current_time,
+            window_hours=bounded_hours,
+            include_missing_plugins="" == plugin_slug,
+            site_id=site_id or "",
+        )
+
         return {
             "contract_version": "magick-plugin-observability-admin-summary-v1",
             "generated_at": self._format_datetime(current_time),
@@ -421,18 +487,12 @@ class PluginObservabilityService:
                 "start_at": self._format_datetime(start_at),
                 "end_at": self._format_datetime(current_time),
             },
-            "totals": {
-                "events_total": events_total,
-                "ok_total": ok_total,
-                "error_total": error_total,
-                "success_rate": self._success_rate(events_total, error_total),
-                "avg_latency_ms": self._optional_avg(totals_row[2]),
-                "last_seen_at": self._format_datetime(totals_row[3]),
-                "active_site_count": int(active_site_count),
-                "active_plugin_count": int(active_plugin_count),
-            },
+            "totals": totals,
+            "health": health,
+            "attention": attention,
             "plugins": plugins,
             "sites": sites,
+            "timeline": timeline,
             "errors": errors,
             "recent_errors": [self._admin_recent_error(event) for event in recent_errors],
         }
@@ -570,6 +630,412 @@ class PluginObservabilityService:
                 }
             )
         return summaries
+
+    def _build_timeline(
+        self,
+        session: object,
+        *,
+        base_conditions: list[object],
+        start_at: datetime,
+        end_at: datetime,
+    ) -> list[dict[str, object]]:
+        bucket_start = self._hour_floor(start_at)
+        bucket_end = self._hour_floor(end_at)
+        bucket_count = max(
+            1,
+            int((bucket_end - bucket_start).total_seconds() // 3600) + 1,
+        )
+        buckets: dict[datetime, dict[str, object]] = {}
+        for index in range(bucket_count):
+            current_bucket = bucket_start + timedelta(hours=index)
+            buckets[current_bucket] = {
+                "bucket_start_at": self._format_datetime(current_bucket),
+                "bucket_end_at": self._format_datetime(
+                    current_bucket + timedelta(hours=1)
+                ),
+                "bucket_hours": 1,
+                "events_total": 0,
+                "ok_total": 0,
+                "error_total": 0,
+                "success_rate": 0.0,
+                "avg_latency_ms": 0,
+                "_latency_total": 0,
+                "_latency_count": 0,
+            }
+
+        rows = session.execute(  # type: ignore[attr-defined]
+            select(
+                PluginObservabilityEvent.received_at,
+                PluginObservabilityEvent.status,
+                PluginObservabilityEvent.latency_ms,
+            ).where(*base_conditions)
+        ).all()
+        for received_at, status, latency_ms in rows:
+            if not isinstance(received_at, datetime):
+                continue
+            bucket = self._hour_floor(received_at)
+            if bucket not in buckets:
+                continue
+            item = buckets[bucket]
+            events_total = int(item["events_total"]) + 1
+            error_total = int(item["error_total"]) + (
+                1 if str(status or "") == "error" else 0
+            )
+            item["events_total"] = events_total
+            item["error_total"] = error_total
+            item["ok_total"] = max(0, events_total - error_total)
+            item["success_rate"] = self._success_rate(events_total, error_total)
+            if latency_ms is not None:
+                item["_latency_total"] = int(item["_latency_total"]) + int(latency_ms)
+                item["_latency_count"] = int(item["_latency_count"]) + 1
+                item["avg_latency_ms"] = self._optional_avg(
+                    int(item["_latency_total"]) / int(item["_latency_count"])
+                )
+
+        timeline = []
+        for item in buckets.values():
+            item.pop("_latency_total", None)
+            item.pop("_latency_count", None)
+            timeline.append(item)
+        return timeline
+
+    def _hour_floor(self, value: datetime) -> datetime:
+        normalized = (
+            value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        )
+        return normalized.replace(minute=0, second=0, microsecond=0)
+
+    def _build_health_and_attention(
+        self,
+        *,
+        totals: dict[str, object],
+        plugins: list[dict[str, object]],
+        errors: list[dict[str, object]],
+        current_time: datetime,
+        window_hours: int,
+        include_missing_plugins: bool,
+        site_id: str = "",
+    ) -> tuple[dict[str, object], list[dict[str, object]]]:
+        health = self._build_health(
+            events_total=int(totals.get("events_total") or 0),
+            error_total=int(totals.get("error_total") or 0),
+            avg_latency_ms=int(totals.get("avg_latency_ms") or 0),
+            last_seen_at=str(totals.get("last_seen_at") or ""),
+            current_time=current_time,
+            window_hours=window_hours,
+        )
+        attention: list[dict[str, object]] = []
+        if health["status"] == "inactive":
+            attention.append(
+                self._attention_item(
+                    severity="warning",
+                    code="plugin_observability.inactive",
+                    title="No plugin events",
+                    detail="No plugin observability events were received in the selected window.",
+                    site_id=site_id,
+                    suggested_action=(
+                        "Verify Cloud Addon monitoring and generate local plugin activity."
+                    ),
+                )
+            )
+            return health, attention
+
+        events_total = int(totals.get("events_total") or 0)
+        error_total = int(totals.get("error_total") or 0)
+        error_rate = error_total / events_total if events_total > 0 else 0.0
+        if error_rate >= ERROR_RATE_HIGH_THRESHOLD:
+            attention.append(
+                self._attention_item(
+                    severity="error",
+                    code="plugin_observability.error_rate_high",
+                    title="High error rate",
+                    detail=f"{round(error_rate * 100, 1)} percent of plugin events are errors.",
+                    site_id=site_id,
+                    suggested_action=(
+                        "Open recent errors and inspect the highest ranked error code."
+                    ),
+                )
+            )
+        elif error_total > 0:
+            attention.append(
+                self._attention_item(
+                    severity="warning",
+                    code="plugin_observability.error_rate_elevated",
+                    title="Plugin errors present",
+                    detail="At least one plugin event reported an error in the selected window.",
+                    site_id=site_id,
+                    suggested_action="Review recent errors before treating the site as clear.",
+                )
+            )
+
+        avg_latency_ms = int(totals.get("avg_latency_ms") or 0)
+        if avg_latency_ms >= LATENCY_WARNING_MS:
+            attention.append(
+                self._attention_item(
+                    severity="warning",
+                    code="plugin_observability.latency_high",
+                    title="High average latency",
+                    detail=f"Average plugin event latency is {avg_latency_ms}ms.",
+                    site_id=site_id,
+                    suggested_action="Inspect the slow plugin and recent event kinds.",
+                )
+            )
+
+        stale_detail = self._stale_detail(
+            str(totals.get("last_seen_at") or ""),
+            current_time=current_time,
+            window_hours=window_hours,
+        )
+        if stale_detail:
+            attention.append(
+                self._attention_item(
+                    severity="warning",
+                    code="plugin_observability.reporting_stale",
+                    title="Reporting is stale",
+                    detail=stale_detail,
+                    site_id=site_id,
+                    suggested_action="Check whether the site and Cloud Addon are still active.",
+                )
+            )
+
+        for plugin in plugins:
+            plugin_events_total = int(plugin.get("events_total") or 0)
+            plugin_error_total = int(plugin.get("error_total") or 0)
+            if plugin_events_total <= 0 or plugin_error_total <= 0:
+                continue
+            plugin_error_rate = plugin_error_total / plugin_events_total
+            attention.append(
+                self._attention_item(
+                    severity=(
+                        "error"
+                        if plugin_error_rate >= ERROR_RATE_HIGH_THRESHOLD
+                        else "warning"
+                    ),
+                    code="plugin_observability.plugin_error",
+                    title="Plugin error pressure",
+                    detail=(
+                        f"{plugin.get('plugin_slug')} reported "
+                        f"{plugin_error_total} error event(s)."
+                    ),
+                    site_id=site_id,
+                    plugin_slug=str(plugin.get("plugin_slug") or ""),
+                    suggested_action="Inspect this plugin's event kinds and recent errors.",
+                )
+            )
+
+            for event_kind in list(plugin.get("event_kinds") or []):
+                if not isinstance(event_kind, dict):
+                    continue
+                if (
+                    str(event_kind.get("event_kind") or "")
+                    == "abilities.catalog.changed"
+                    and int(event_kind.get("events_total") or 0)
+                    >= CATALOG_CHURN_THRESHOLD
+                ):
+                    attention.append(
+                        self._attention_item(
+                            severity="warning",
+                            code="plugin_observability.catalog_churn",
+                            title="Ability catalog changed repeatedly",
+                            detail=(
+                                "The ability catalog changed multiple times in the "
+                                "selected window."
+                            ),
+                            site_id=site_id,
+                            plugin_slug=str(plugin.get("plugin_slug") or ""),
+                            event_kind="abilities.catalog.changed",
+                            suggested_action=(
+                                "Check for plugin activation loops or catalog refresh "
+                                "churn."
+                            ),
+                        )
+                    )
+
+        if include_missing_plugins:
+            observed = {str(plugin.get("plugin_slug") or "") for plugin in plugins}
+            missing = [slug for slug in EXPECTED_PLUGIN_SLUGS if slug not in observed]
+            if missing:
+                attention.append(
+                    self._attention_item(
+                        severity="warning",
+                        code="plugin_observability.plugin_missing",
+                        title="Expected plugin not reporting",
+                        detail="Missing plugin telemetry: " + ", ".join(missing),
+                        site_id=site_id,
+                        suggested_action=(
+                            "Confirm the plugin is installed, active, and collected "
+                            "by Cloud Addon."
+                        ),
+                    )
+                )
+
+        if errors:
+            first_error = errors[0]
+            if str(first_error.get("error_code") or ""):
+                attention.append(
+                    self._attention_item(
+                        severity="warning",
+                        code="plugin_observability.top_error",
+                        title="Top error code",
+                        detail=(
+                            f"{first_error.get('error_code')} occurred "
+                            f"{first_error.get('count')} time(s)."
+                        ),
+                        site_id=str(first_error.get("site_id") or site_id),
+                        plugin_slug=str(first_error.get("plugin_slug") or ""),
+                        event_kind=str(first_error.get("event_kind") or ""),
+                        error_code=str(first_error.get("error_code") or ""),
+                        suggested_action="Use the event catalog to route the investigation.",
+                    )
+                )
+
+        health = self._health_from_attention(health, attention)
+        return health, attention[:8]
+
+    def _build_health(
+        self,
+        *,
+        events_total: int,
+        error_total: int,
+        avg_latency_ms: int,
+        last_seen_at: str,
+        current_time: datetime,
+        window_hours: int,
+    ) -> dict[str, object]:
+        if events_total <= 0:
+            return {
+                "status": "inactive",
+                "score": 0,
+                "summary": "No plugin events in the selected window.",
+                "reasons": ["plugin_observability.inactive"],
+            }
+
+        reasons: list[str] = []
+        score = 100
+        error_rate = error_total / events_total
+        if error_rate >= ERROR_RATE_HIGH_THRESHOLD:
+            reasons.append("plugin_observability.error_rate_high")
+            score -= 50
+        elif error_total > 0:
+            reasons.append("plugin_observability.error_rate_elevated")
+            score -= 15
+
+        if avg_latency_ms >= LATENCY_WARNING_MS:
+            reasons.append("plugin_observability.latency_high")
+            score -= 15
+
+        if self._stale_detail(
+            last_seen_at,
+            current_time=current_time,
+            window_hours=window_hours,
+        ):
+            reasons.append("plugin_observability.reporting_stale")
+            score -= 20
+
+        score = max(0, min(100, score))
+        status = "ok"
+        if score < 60 or "plugin_observability.error_rate_high" in reasons:
+            status = "error"
+        elif reasons or score < 95:
+            status = "warning"
+
+        return {
+            "status": status,
+            "score": score,
+            "summary": self._health_summary(status),
+            "reasons": reasons,
+        }
+
+    def _health_from_attention(
+        self,
+        health: dict[str, object],
+        attention: list[dict[str, object]],
+    ) -> dict[str, object]:
+        if health.get("status") == "inactive":
+            return health
+        reasons = list(health.get("reasons") or [])
+        score = int(health.get("score") or 0)
+        has_error = False
+        has_warning = False
+        for item in attention:
+            code = str(item.get("code") or "")
+            if code and code not in reasons:
+                reasons.append(code)
+            severity = str(item.get("severity") or "")
+            has_error = has_error or severity == "error"
+            has_warning = has_warning or severity == "warning"
+        if any(item.get("code") == "plugin_observability.plugin_missing" for item in attention):
+            score = max(0, score - 10)
+        if any(item.get("code") == "plugin_observability.catalog_churn" for item in attention):
+            score = max(0, score - 10)
+        if has_error or score < 60:
+            status = "error"
+        elif has_warning or reasons:
+            status = "warning"
+        else:
+            status = "ok"
+        return {
+            "status": status,
+            "score": score,
+            "summary": self._health_summary(status),
+            "reasons": reasons,
+        }
+
+    def _health_summary(self, status: str) -> str:
+        if status == "error":
+            return "Error pressure needs operator attention."
+        if status == "warning":
+            return "Review the highlighted monitoring signals."
+        if status == "inactive":
+            return "No plugin events in the selected window."
+        return "Plugin telemetry is reporting normally."
+
+    def _stale_detail(
+        self,
+        last_seen_at: str,
+        *,
+        current_time: datetime,
+        window_hours: int,
+    ) -> str:
+        last_seen = self._parse_datetime(last_seen_at)
+        if not last_seen:
+            return ""
+        stale_threshold = timedelta(hours=min(24, max(2, window_hours // 4)))
+        age = current_time - last_seen
+        if age <= stale_threshold:
+            return ""
+        age_hours = round(age.total_seconds() / 3600, 1)
+        return f"Last plugin event was received {age_hours} hours ago."
+
+    def _attention_item(
+        self,
+        *,
+        severity: str,
+        code: str,
+        title: str,
+        detail: str,
+        site_id: str = "",
+        plugin_slug: str = "",
+        event_kind: str = "",
+        error_code: str = "",
+        suggested_action: str = "",
+    ) -> dict[str, object]:
+        item = {
+            "severity": severity,
+            "code": code,
+            "title": title,
+            "detail": detail,
+            "suggested_action": suggested_action,
+        }
+        if site_id:
+            item["site_id"] = site_id
+        if plugin_slug:
+            item["plugin_slug"] = plugin_slug
+        if event_kind:
+            item["event_kind"] = event_kind
+        if error_code:
+            item["error_code"] = error_code
+        return item
 
     def _error_summary(self, row: object) -> dict[str, object]:
         return {

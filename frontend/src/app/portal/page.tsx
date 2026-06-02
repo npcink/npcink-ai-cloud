@@ -11,7 +11,12 @@ import {
   getPortalSiteWordPressUrl,
 } from '@/lib/portal-site-display';
 import { cn, formatDate } from '@/lib/utils';
-import { portalClient, type PortalSiteSummaryRecord, type Site } from '@/lib/portal-client';
+import {
+  portalClient,
+  type PortalPluginObservabilitySummary,
+  type PortalSiteSummaryRecord,
+  type Site,
+} from '@/lib/portal-client';
 import {
   BackofficePageStack,
   BackofficeSectionPanel,
@@ -21,6 +26,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
 import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
 import { PortalEmptyState } from '@/components/portal/PortalPageState';
+import { PortalPluginMonitoringPanel } from '@/components/portal/PortalPluginMonitoringPanel';
 import { PortalSiteInspectorDrawer } from '@/components/portal/PortalSiteInspectorDrawer';
 
 type RestrictionItem = {
@@ -104,6 +110,10 @@ export default function PortalPage() {
   const [inspectorError, setInspectorError] = useState('');
   const [currentSiteActiveKeyCount, setCurrentSiteActiveKeyCount] = useState<number | null>(null);
   const [currentSiteSummary, setCurrentSiteSummary] = useState<PortalSiteSummaryRecord | null>(null);
+  const [currentSiteMonitoring, setCurrentSiteMonitoring] = useState<PortalPluginObservabilitySummary | null>(null);
+  const [isMonitoringLoading, setIsMonitoringLoading] = useState(false);
+  const [monitoringError, setMonitoringError] = useState('');
+  const [monitoringRefreshNonce, setMonitoringRefreshNonce] = useState(0);
   const sessionSiteIdsKey = session?.sites?.map((site) => site.site_id).join('|') || '';
 
   const handleSiteSelect = async (siteId: string) => {
@@ -160,6 +170,7 @@ export default function PortalPage() {
 
   const selectedSiteForKeyCheck =
     session?.sites?.find((site) => site.site_id === session.site_id) || session?.sites?.[0] || null;
+  const selectedSiteForMonitoringId = selectedSiteForKeyCheck?.site_id || '';
 
   useEffect(() => {
     if (!selectedSiteForKeyCheck?.site_id) {
@@ -221,6 +232,49 @@ export default function PortalPage() {
       isCancelled = true;
     };
   }, [selectedSiteForKeyCheck?.site_id]);
+
+  useEffect(() => {
+    if (!selectedSiteForMonitoringId) {
+      setCurrentSiteMonitoring(null);
+      setMonitoringError('');
+      setIsMonitoringLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsMonitoringLoading(true);
+    setMonitoringError('');
+
+    void portalClient
+      .getPluginObservability(selectedSiteForMonitoringId, { windowHours: 24 })
+      .then((response) => {
+        if (!isCancelled) {
+          setCurrentSiteMonitoring(response.data);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          console.error('Failed to load plugin monitoring:', error);
+          setCurrentSiteMonitoring(null);
+          setMonitoringError(
+            t(
+              'portal.monitoring.load_failed',
+              {},
+              'Plugin monitoring could not be loaded for the current site.'
+            )
+          );
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsMonitoringLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [monitoringRefreshNonce, selectedSiteForMonitoringId, t]);
 
   useEffect(() => {
     if (!isAuthenticated || !sessionSiteIdsKey || !session?.sites?.length) {
@@ -567,6 +621,15 @@ export default function PortalPage() {
       </section>
 
       <div className="space-y-5">
+        <PortalPluginMonitoringPanel
+          siteId={selectedSite.site_id}
+          summary={currentSiteMonitoring}
+          isLoading={isMonitoringLoading}
+          error={monitoringError}
+          compact
+          onRetry={() => setMonitoringRefreshNonce((current) => current + 1)}
+        />
+
         <BackofficeSectionPanel className="space-y-4">
           <div className="grid gap-3 lg:grid-cols-4">
             <Link href="/portal/sites?filter=active" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">

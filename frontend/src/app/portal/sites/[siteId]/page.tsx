@@ -199,6 +199,9 @@ function PortalSiteRecordContent() {
             <Link href={`/portal/usage?site=${siteId}`} className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
               {t('portal.nav_usage', {}, 'Usage')}
             </Link>
+            <Link href={`/portal/monitoring?site=${siteId}`} className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
+              {t('portal.monitoring.nav_label', {}, 'Monitoring')}
+            </Link>
             <Link href={`/portal/billing?site=${siteId}`} className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
               {t('portal.nav_package', {}, 'Package')}
             </Link>

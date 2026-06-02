@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
@@ -15,6 +15,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
+import { AnalyticsBarChart, AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
@@ -58,6 +59,7 @@ type SiteItem = {
   avgLatencyMs: number;
   pluginCount: number;
   lastSeenAt: string;
+  health: HealthSummary;
 };
 
 type ErrorItem = {
@@ -81,11 +83,44 @@ type RecentErrorItem = {
   receivedAt: string;
 };
 
+type TimelinePoint = {
+  bucketStartAt: string;
+  bucketEndAt: string;
+  bucketHours: number;
+  eventsTotal: number;
+  okTotal: number;
+  errorTotal: number;
+  successRate: number;
+  avgLatencyMs: number;
+};
+
+type HealthSummary = {
+  status: string;
+  score: number;
+  summary: string;
+  reasons: string[];
+};
+
+type AttentionItem = {
+  severity: string;
+  code: string;
+  title: string;
+  detail: string;
+  suggestedAction: string;
+  siteId: string;
+  pluginSlug: string;
+  eventKind: string;
+  errorCode: string;
+};
+
 type PluginObservabilityData = {
   generatedAt: string;
   totals: PluginObservabilityTotals;
+  health: HealthSummary;
+  attention: AttentionItem[];
   plugins: PluginItem[];
   sites: SiteItem[];
+  timeline: TimelinePoint[];
   errors: ErrorItem[];
   recentErrors: RecentErrorItem[];
   window: {
@@ -98,6 +133,7 @@ type PluginObservabilityData = {
 function normalizePluginObservability(raw: any): PluginObservabilityData {
   const totals = raw?.totals ?? {};
   const window = raw?.window ?? {};
+  const health = raw?.health ?? {};
   return {
     generatedAt: String(raw?.generated_at ?? ''),
     totals: {
@@ -110,6 +146,25 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
       activeSiteCount: Number(totals.active_site_count ?? 0),
       activePluginCount: Number(totals.active_plugin_count ?? 0),
     },
+    health: {
+      status: String(health.status ?? 'inactive'),
+      score: Number(health.score ?? 0),
+      summary: String(health.summary ?? ''),
+      reasons: Array.isArray(health.reasons) ? health.reasons.map((item: any) => String(item)) : [],
+    },
+    attention: Array.isArray(raw?.attention)
+      ? raw.attention.map((item: any) => ({
+          severity: String(item.severity ?? ''),
+          code: String(item.code ?? ''),
+          title: String(item.title ?? ''),
+          detail: String(item.detail ?? ''),
+          suggestedAction: String(item.suggested_action ?? ''),
+          siteId: String(item.site_id ?? ''),
+          pluginSlug: String(item.plugin_slug ?? ''),
+          eventKind: String(item.event_kind ?? ''),
+          errorCode: String(item.error_code ?? ''),
+        }))
+      : [],
     plugins: Array.isArray(raw?.plugins)
       ? raw.plugins.map((p: any) => ({
           pluginSlug: String(p.plugin_slug ?? ''),
@@ -133,6 +188,12 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
       : [],
     sites: Array.isArray(raw?.sites)
       ? raw.sites.map((s: any) => ({
+          health: {
+            status: String(s.health?.status ?? 'inactive'),
+            score: Number(s.health?.score ?? 0),
+            summary: String(s.health?.summary ?? ''),
+            reasons: Array.isArray(s.health?.reasons) ? s.health.reasons.map((item: any) => String(item)) : [],
+          },
           siteId: String(s.site_id ?? ''),
           eventsTotal: Number(s.events_total ?? 0),
           errorTotal: Number(s.error_total ?? 0),
@@ -141,6 +202,18 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
           avgLatencyMs: Number(s.avg_latency_ms ?? 0),
           pluginCount: Number(s.plugin_count ?? 0),
           lastSeenAt: String(s.last_seen_at ?? ''),
+        }))
+      : [],
+    timeline: Array.isArray(raw?.timeline)
+      ? raw.timeline.map((point: any) => ({
+          bucketStartAt: String(point.bucket_start_at ?? ''),
+          bucketEndAt: String(point.bucket_end_at ?? ''),
+          bucketHours: Number(point.bucket_hours ?? 1),
+          eventsTotal: Number(point.events_total ?? 0),
+          okTotal: Number(point.ok_total ?? 0),
+          errorTotal: Number(point.error_total ?? 0),
+          successRate: Number(point.success_rate ?? 0),
+          avgLatencyMs: Number(point.avg_latency_ms ?? 0),
         }))
       : [],
     errors: Array.isArray(raw?.errors)
@@ -200,6 +273,25 @@ function successRateStatus(rate: number): string {
   return 'error';
 }
 
+function attentionTone(severity: string): 'warning' | 'danger' | 'info' {
+  if (severity === 'error') return 'danger';
+  if (severity === 'warning') return 'warning';
+  return 'info';
+}
+
+function timelineLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:00`;
+}
+
+function timestampValue(value: string): number {
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+type SiteSortKey = 'errors' | 'success' | 'events' | 'latency' | 'lastSeen';
+
 function AdminPluginObservabilityContent() {
   const { t } = useLocale();
   const [data, setData] = useState<PluginObservabilityData | null>(null);
@@ -209,6 +301,7 @@ function AdminPluginObservabilityContent() {
   const [siteIdFilter, setSiteIdFilter] = useState('');
   const [siteIdInput, setSiteIdInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [siteSort, setSiteSort] = useState<SiteSortKey>('errors');
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -239,6 +332,61 @@ function AdminPluginObservabilityContent() {
   const handleSiteIdKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSiteIdSubmit();
   };
+
+  const timelineData = useMemo(
+    () =>
+      (data?.timeline || []).map((point) => ({
+        label: timelineLabel(point.bucketStartAt),
+        value: point.eventsTotal,
+        secondaryValue: point.errorTotal,
+      })),
+    [data]
+  );
+
+  const pluginErrorData = useMemo(
+    () =>
+      (data?.plugins || []).map((plugin) => ({
+        label: plugin.pluginSlug.replace('magick-ai-', ''),
+        value: plugin.errorTotal,
+        color: plugin.errorTotal > 0 ? '#f59e0b' : '#22c55e',
+      })),
+    [data]
+  );
+
+  const pluginVolumeData = useMemo(
+    () =>
+      (data?.plugins || []).map((plugin) => ({
+        label: plugin.pluginSlug.replace('magick-ai-', ''),
+        value: plugin.eventsTotal,
+        color: plugin.errorTotal > 0 ? '#f59e0b' : '#2563eb',
+      })),
+    [data]
+  );
+
+  const hasPluginErrors = pluginErrorData.some((item) => item.value > 0);
+
+  const sortedSites = useMemo(() => {
+    const sites = [...(data?.sites || [])];
+    return sites.sort((a, b) => {
+      if (siteSort === 'success') return a.successRate - b.successRate;
+      if (siteSort === 'events') return b.eventsTotal - a.eventsTotal;
+      if (siteSort === 'latency') return b.avgLatencyMs - a.avgLatencyMs;
+      if (siteSort === 'lastSeen') {
+        return timestampValue(b.lastSeenAt) - timestampValue(a.lastSeenAt);
+      }
+      return b.errorTotal - a.errorTotal || a.successRate - b.successRate;
+    });
+  }, [data, siteSort]);
+
+  const errorBySite = useMemo(() => {
+    const lookup = new Map<string, ErrorItem>();
+    for (const item of data?.errors || []) {
+      if (item.siteId && !lookup.has(item.siteId)) {
+        lookup.set(item.siteId, item);
+      }
+    }
+    return lookup;
+  }, [data]);
 
   if (error) {
     return (
@@ -272,10 +420,17 @@ function AdminPluginObservabilityContent() {
         )}
         aside={
           data ? (
-            <div className="w-full xl:w-[40rem]">
+            <div className="w-full xl:w-[48rem]">
               <BackofficeMetricStrip
-                columnsClassName="md:grid-cols-2 xl:grid-cols-4"
+                columnsClassName="md:grid-cols-2 xl:grid-cols-5"
                 items={[
+                  {
+                    label: t('admin.plugin_obs_health', {}, 'Health'),
+                    value: `${data.health.status} · ${data.health.score}`,
+                    detail: data.health.summary,
+                    toneClassName: data.health.status === 'error' ? 'text-rose-600 dark:text-rose-400' : data.health.status === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined,
+                    size: 'compact',
+                  },
                   {
                     label: t('admin.plugin_obs_events', {}, 'Events'),
                     value: formatInteger(data.totals.eventsTotal),
@@ -368,7 +523,88 @@ function AdminPluginObservabilityContent() {
         />
       ) : (
         <>
+          {data?.attention.length ? (
+            <BackofficeSectionPanel className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    {t('admin.plugin_obs_attention_label', {}, 'Attention')}
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                    {t('admin.plugin_obs_attention_title', {}, 'Current watch items')}
+                  </h2>
+                </div>
+                <BackofficeStatusBadge
+                  status={data.health.status}
+                  label={`${data.health.status} · ${data.health.score}`}
+                />
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {data.attention.slice(0, 6).map((item) => (
+                  <BackofficeStackCard key={`${item.code}-${item.siteId}-${item.pluginSlug}-${item.errorCode}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-950 dark:text-white">{item.title}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.detail}</p>
+                        {item.suggestedAction ? (
+                          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            {item.suggestedAction}
+                          </p>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {item.siteId ? <BackofficeTag>{item.siteId}</BackofficeTag> : null}
+                          {item.pluginSlug ? <BackofficeTag tone="info">{item.pluginSlug}</BackofficeTag> : null}
+                          {item.errorCode ? <BackofficeTag tone="danger">{item.errorCode}</BackofficeTag> : null}
+                        </div>
+                      </div>
+                      <BackofficeTag tone={attentionTone(item.severity)}>{item.severity}</BackofficeTag>
+                    </div>
+                  </BackofficeStackCard>
+                ))}
+              </div>
+            </BackofficeSectionPanel>
+          ) : null}
+
           <div className="grid gap-5 xl:grid-cols-2">
+            <BackofficeSectionPanel className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('admin.plugin_obs_trend_label', {}, 'Trend')}
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                  {t('admin.plugin_obs_trend_title', {}, 'Events and errors')}
+                </h2>
+              </div>
+              <AnalyticsLineChart
+                data={timelineData}
+                height={280}
+                primarySeriesName={t('admin.plugin_obs_events', {}, 'Events')}
+                secondarySeriesName={t('admin.plugin_obs_error_codes', {}, 'Errors')}
+                primaryColor="#2563eb"
+                secondaryColor="#f59e0b"
+              />
+            </BackofficeSectionPanel>
+
+            <BackofficeSectionPanel className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('admin.plugin_obs_plugin_compare_label', {}, 'Plugin comparison')}
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                  {hasPluginErrors
+                    ? t('admin.plugin_obs_plugin_error_title', {}, 'Error pressure')
+                    : t('admin.plugin_obs_plugin_volume_title', {}, 'Event volume')}
+                </h2>
+              </div>
+              <AnalyticsBarChart
+                data={hasPluginErrors ? pluginErrorData : pluginVolumeData}
+                height={280}
+                barColor={hasPluginErrors ? '#f59e0b' : '#2563eb'}
+              />
+            </BackofficeSectionPanel>
+          </div>
+
+          <div className="space-y-5">
             <BackofficeSectionPanel className="space-y-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -406,31 +642,114 @@ function AdminPluginObservabilityContent() {
             </BackofficeSectionPanel>
 
             <BackofficeSectionPanel className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('admin.plugin_obs_sites', {}, 'Sites')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('admin.plugin_obs_site_breakdown', {}, 'Site breakdown')}
-                </h2>
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    {t('admin.plugin_obs_sites', {}, 'Sites')}
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                    {t('admin.plugin_obs_site_health', {}, 'Site health')}
+                  </h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['errors', t('admin.plugin_obs_sort_errors', {}, 'Errors')],
+                    ['success', t('admin.plugin_obs_sort_success', {}, 'Success')],
+                    ['events', t('admin.plugin_obs_sort_events', {}, 'Events')],
+                    ['latency', t('admin.plugin_obs_sort_latency', {}, 'Latency')],
+                    ['lastSeen', t('admin.plugin_obs_sort_last_seen', {}, 'Last seen')],
+                  ].map(([value, label]) => (
+                    <BackofficeFilterPill
+                      key={value}
+                      active={siteSort === value}
+                      tone="info"
+                      onClick={() => setSiteSort(value as SiteSortKey)}
+                    >
+                      {label}
+                    </BackofficeFilterPill>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-3">
-                {data?.sites.map((site) => (
-                  <BackofficeStackCard key={site.siteId}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <BackofficeIdentifier value={site.siteId} className="text-sm font-semibold text-slate-950 dark:text-white" />
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                          {formatInteger(site.eventsTotal)} events &middot; {formatInteger(site.pluginCount)} plugins &middot; {site.avgLatencyMs}ms avg
-                        </p>
-                      </div>
-                      <BackofficeStatusBadge
-                        status={successRateStatus(site.successRate)}
-                        label={formatSuccessRate(site.successRate)}
-                      />
-                    </div>
-                  </BackofficeStackCard>
-                ))}
+              <BackofficeStackCard className="overflow-x-auto p-0">
+                <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
+                  <thead className="bg-slate-50/80 text-xs uppercase text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">{t('common.site', {}, 'Site')}</th>
+                      <th className="px-4 py-3 text-left font-semibold">{t('admin.plugin_obs_health', {}, 'Health')}</th>
+                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_events', {}, 'Events')}</th>
+                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_error_codes', {}, 'Errors')}</th>
+                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_success_rate', {}, 'Success rate')}</th>
+                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_avg_latency', {}, 'Avg latency')}</th>
+                      <th className="px-4 py-3 text-left font-semibold">{t('admin.plugin_obs_top_error', {}, 'Top error')}</th>
+                      <th className="px-4 py-3 text-right font-semibold">{t('admin.plugin_obs_last_seen', {}, 'Last seen')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {sortedSites.map((site) => {
+                      const topError = errorBySite.get(site.siteId);
+                      return (
+                        <tr key={site.siteId} className="align-top">
+                          <td className="px-4 py-3">
+                            <BackofficeIdentifier value={site.siteId} className="font-medium text-slate-950 dark:text-white" />
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {formatInteger(site.pluginCount)} plugins
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <BackofficeStatusBadge
+                              status={site.health.status}
+                              label={`${site.health.status} · ${site.health.score}`}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-200">
+                            {formatInteger(site.eventsTotal)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <BackofficeTag tone={site.errorTotal > 0 ? 'warning' : 'success'}>
+                              {formatInteger(site.errorTotal)}
+                            </BackofficeTag>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <BackofficeStatusBadge
+                              status={successRateStatus(site.successRate)}
+                              label={formatSuccessRate(site.successRate)}
+                              className="justify-end"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-200">
+                            {site.avgLatencyMs}ms
+                          </td>
+                          <td className="px-4 py-3">
+                            {topError ? (
+                              <div className="min-w-0">
+                                <p className="font-mono text-xs font-semibold text-rose-700 dark:text-rose-300">
+                                  {topError.errorCode}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  {topError.pluginSlug} &middot; {formatInteger(topError.count)}
+                                </p>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                {t('admin.plugin_obs_no_errors_short', {}, 'None')}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500 dark:text-slate-400">
+                            {site.lastSeenAt ? formatDate(site.lastSeenAt) : t('common.not_found')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </BackofficeStackCard>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'admin.plugin_obs_site_health_desc',
+                  {},
+                  'Sorted by operational pressure. Payloads and raw requests stay excluded.'
+                )}
               </div>
             </BackofficeSectionPanel>
           </div>

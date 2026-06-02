@@ -295,6 +295,105 @@ export interface PortalUsageSummaryPayload {
   };
 }
 
+export interface PortalPluginObservabilityTotals {
+  events_total: number;
+  ok_total: number;
+  error_total: number;
+  success_rate: number;
+  avg_latency_ms: number;
+  last_seen_at: string;
+}
+
+export interface PortalPluginObservabilityEventKind {
+  event_kind: string;
+  events_total: number;
+  error_total: number;
+  success_rate: number;
+  avg_latency_ms: number;
+  last_seen_at: string;
+}
+
+export interface PortalPluginObservabilityPlugin {
+  plugin_slug: string;
+  events_total: number;
+  ok_total: number;
+  error_total: number;
+  success_rate: number;
+  avg_latency_ms: number;
+  last_seen_at: string;
+  event_kinds: PortalPluginObservabilityEventKind[];
+}
+
+export interface PortalPluginObservabilityError {
+  plugin_slug: string;
+  event_kind: string;
+  error_code: string;
+  count: number;
+  last_seen_at: string;
+}
+
+export interface PortalPluginObservabilityRecentError {
+  plugin_slug: string;
+  event_kind: string;
+  error_code: string;
+  status: string;
+  ability_id: string;
+  proposal_id: string;
+  route: string;
+  received_at: string;
+}
+
+export interface PortalPluginObservabilityTimelinePoint {
+  bucket_start_at: string;
+  bucket_end_at: string;
+  bucket_hours: number;
+  events_total: number;
+  ok_total: number;
+  error_total: number;
+  success_rate: number;
+  avg_latency_ms: number;
+}
+
+export interface PortalPluginObservabilityHealth {
+  status: string;
+  score: number;
+  summary: string;
+  reasons: string[];
+}
+
+export interface PortalPluginObservabilityAttentionItem {
+  severity: string;
+  code: string;
+  title: string;
+  detail: string;
+  suggested_action: string;
+  site_id?: string;
+  plugin_slug?: string;
+  event_kind?: string;
+  error_code?: string;
+}
+
+export interface PortalPluginObservabilitySummary {
+  contract_version: string;
+  site_id: string;
+  account_id?: string;
+  member_ref?: string;
+  role?: string;
+  generated_at: string;
+  window: {
+    hours: number;
+    start_at: string;
+    end_at: string;
+  };
+  totals: PortalPluginObservabilityTotals;
+  health: PortalPluginObservabilityHealth;
+  attention: PortalPluginObservabilityAttentionItem[];
+  plugins: PortalPluginObservabilityPlugin[];
+  timeline: PortalPluginObservabilityTimelinePoint[];
+  errors: PortalPluginObservabilityError[];
+  recent_errors: PortalPluginObservabilityRecentError[];
+}
+
 export interface PortalAuditEvent {
   event_id: string;
   event_kind: string;
@@ -831,6 +930,26 @@ export class PortalClient {
    */
   async getUsageSummary(siteId: string): Promise<PortalEnvelope<PortalUsageSummaryPayload>> {
     return this.request('GET', `/sites/${siteId}/usage-summary`, undefined, { requireAuth: true });
+  }
+
+  async getPluginObservability(
+    siteId: string,
+    options?: {
+      windowHours?: number;
+      pluginSlug?: string;
+    }
+  ): Promise<PortalEnvelope<PortalPluginObservabilitySummary>> {
+    const params = new URLSearchParams();
+    params.set('window_hours', String(options?.windowHours || 24));
+    if (options?.pluginSlug) {
+      params.set('plugin_slug', options.pluginSlug);
+    }
+    return this.request(
+      'GET',
+      `/sites/${siteId}/plugin-observability?${params.toString()}`,
+      undefined,
+      { requireAuth: true }
+    );
   }
 
   /**

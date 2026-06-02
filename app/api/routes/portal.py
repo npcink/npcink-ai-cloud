@@ -39,6 +39,7 @@ from app.domain.commercial.customer_api_keys import (
 )
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import PORTAL_SITE_KEY_WRITE_ROLES
+from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.usage.service import UsageService
 
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
@@ -160,6 +161,8 @@ def _resolve_portal_site_summary(
         policy = service.inspect_commercial_policy(site_id)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
+    subscription = policy.get("subscription") or {}
+    subscription_metadata = subscription.get("metadata") or {}
     return {
         "site_id": site_id,
         "account_id": str(access.get("account_id") or ""),
@@ -172,9 +175,11 @@ def _resolve_portal_site_summary(
         ],
         "role": str(access.get("role") or ""),
         "site": policy.get("site"),
-        "covered_by_subscription_id": str((policy.get("subscription") or {}).get("subscription_id") or ""),
-        "subscription_status": str((policy.get("subscription") or {}).get("status") or ""),
-        "package_alias": str((((policy.get("subscription") or {}).get("metadata") or {}).get("package_alias")) or ""),
+        "covered_by_subscription_id": str(
+            subscription.get("subscription_id") or ""
+        ),
+        "subscription_status": str(subscription.get("status") or ""),
+        "package_alias": str(subscription_metadata.get("package_alias") or ""),
         "coverage": {
             "subscription": policy.get("subscription"),
             "plan_version": policy.get("plan_version"),
@@ -292,7 +297,15 @@ async def verify_portal_login_code(
         verified = _get_commercial_service(request).verify_portal_login_code(
             email=email,
             code=code,
-            max_attempts=max(1, int(get_cloud_services(request).settings.portal_login_code_max_attempts or 0)),
+            max_attempts=max(
+                1,
+                int(
+                    get_cloud_services(
+                        request
+                    ).settings.portal_login_code_max_attempts
+                    or 0
+                ),
+            ),
         )
         member_ref = str(verified.get("member_ref") or "")
         data = serialize_portal_session(
@@ -491,6 +504,50 @@ async def get_portal_site_usage_summary(request: Request, site_id: str) -> Any:
     result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal usage summary loaded",
+        data=result,
+    )
+
+
+@router.get("/sites/{site_id}/plugin-observability")
+async def get_portal_site_plugin_observability(
+    request: Request,
+    site_id: str,
+    window_hours: int = Query(default=24, ge=1, le=168),
+    plugin_slug: str = Query(default="", max_length=64),
+) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    access = _authorize_portal_site_access(
+        request,
+        site_id=site_id,
+        member_ref=auth.member_ref,
+    )
+    if isinstance(access, JSONResponse):
+        return access
+    result = PluginObservabilityService(
+        _get_commercial_service(request).database_url
+    ).get_summary(
+        site_id=site_id,
+        window_hours=window_hours,
+        plugin_slug=plugin_slug.strip(),
+    )
+    result["site_id"] = site_id
+    result["account_id"] = str(access.get("account_id") or "")
+    result["member_ref"] = auth.member_ref
+    result["identity_type"] = str(access.get("identity_type") or "")
+    result["allowed_actions"] = [
+        str(action)
+        for action in list(access.get("allowed_actions") or [])
+        if str(action).strip()
+    ]
+    result["role"] = str(access.get("role") or "")
+    return _portal_route_envelope(
+        message="portal plugin observability loaded",
         data=result,
     )
 

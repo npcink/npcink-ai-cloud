@@ -129,10 +129,19 @@ def test_admin_plugin_observability_returns_cross_site_aggregation(tmp_path: Pat
     assert "last_seen_at" in totals
     assert totals["active_site_count"] == 2
     assert totals["active_plugin_count"] == 2
+    assert data["health"]["status"] in {"warning", "error"}
+    assert data["health"]["score"] < 100
+    assert isinstance(data["attention"], list)
+    assert any(item["code"] == "plugin_observability.error_rate_high" for item in data["attention"])
     assert isinstance(data["plugins"], list)
     assert isinstance(data["sites"], list)
+    assert all("health" in site for site in data["sites"])
+    assert isinstance(data["timeline"], list)
     assert isinstance(data["errors"], list)
     assert isinstance(data["recent_errors"], list)
+    assert sum(item["events_total"] for item in data["timeline"]) == 4
+    assert sum(item["error_total"] for item in data["timeline"]) == 1
+    assert any(item["avg_latency_ms"] > 0 for item in data["timeline"])
 
 
 def test_admin_plugin_observability_rejects_without_internal_token(tmp_path: Path) -> None:
@@ -202,6 +211,10 @@ def test_admin_plugin_observability_empty_data_returns_zero_counts(tmp_path: Pat
     assert data["totals"]["error_total"] == 0
     assert data["plugins"] == []
     assert data["sites"] == []
+    assert data["health"]["status"] == "inactive"
+    assert data["attention"][0]["code"] == "plugin_observability.inactive"
+    assert data["timeline"]
+    assert sum(item["events_total"] for item in data["timeline"]) == 0
     assert data["errors"] == []
     assert data["recent_errors"] == []
 

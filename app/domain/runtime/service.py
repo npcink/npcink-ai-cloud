@@ -318,6 +318,207 @@ class RuntimeService:
                 idempotent_replay=False,
             )
 
+    def enqueue_media_derivative_run(
+        self,
+        *,
+        site_id: str,
+        input_payload: dict[str, Any],
+        source_bytes: bytes,
+        ttl_minutes: int = 30,
+        idempotency_key: str | None = None,
+        trace_id: str | None = None,
+    ) -> RuntimeExecutionResponse:
+        import base64
+
+        resolved_trace_id = trace_id or uuid4().hex
+        run_id = f"run_{uuid4().hex}"
+        resolved_idempotency_key = idempotency_key or f"auto_{uuid4().hex}"
+
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            self._require_active_site(repository, site_id)
+
+            existing = repository.get_run_by_idempotency(site_id, resolved_idempotency_key)
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
+                )
+
+            commercial_decision = self.commercial_service.authorize_runtime_request(
+                session=session,
+                site_id=site_id,
+                ability_family="vision",
+                channel="openapi",
+                execution_kind="media_derivative",
+                execution_tier="cloud",
+                data_classification="internal",
+                trace_id=resolved_trace_id,
+                idempotency_key=resolved_idempotency_key,
+                request_kind="execute",
+                run_id=run_id,
+            )
+
+            media_input = {
+                **input_payload,
+                "_source_bytes_b64": base64.b64encode(source_bytes).decode("ascii"),
+            }
+
+            policy = {
+                "storage_mode": "result_only",
+                "execution_contract": {
+                    "ability_name": "generate_optimized_media_derivative",
+                    "contract_version": "media_derivative_cloud_request.v1",
+                    "profile_id": "media_derivative.worker",
+                    "execution_pattern": "whole_run_offload",
+                    "data_classification": "internal",
+                    "storage_mode": "result_only",
+                    "timeout_seconds": 300,
+                    "retry_max": 0,
+                    "retention_ttl": 3600,
+                    "task_backend": {"enabled": True},
+                },
+            }
+
+            run = repository.create_run(
+                run_id=run_id,
+                site_id=site_id,
+                account_id=str(commercial_decision.get("account_id") or "") or None,
+                subscription_id=str(commercial_decision.get("subscription_id") or "") or None,
+                plan_version_id=str(commercial_decision.get("plan_version_id") or "") or None,
+                ability_name="generate_optimized_media_derivative",
+                ability_family="vision",
+                skill_id="",
+                workflow_id="",
+                contract_version="media_derivative_cloud_request.v1",
+                channel="openapi",
+                execution_kind="media_derivative",
+                execution_tier="cloud",
+                execution_pattern="whole_run_offload",
+                data_classification="internal",
+                profile_id="media_derivative.worker",
+                canonical_run_id=None,
+                status="queued",
+                idempotency_key=resolved_idempotency_key,
+                request_fingerprint=self._build_request_fingerprint_for_media_derivative(
+                    site_id, input_payload,
+                ),
+                trace_id=resolved_trace_id,
+                input_json={},
+                execution_input_ciphertext=encrypt_runtime_execution_input(
+                    media_input,
+                    settings=self.settings,
+                ),
+                policy_json=policy,
+                selected_provider_id="media_derivative",
+                selected_model_id="pillow",
+                selected_instance_id="cloud-worker",
+            )
+            self.commercial_service.record_run_acceptance(session=session, run=run)
+            self._publish_queue_signal(run.run_id)
+            session.commit()
+            return self._build_execution_response(
+                run,
+                repository=repository,
+                idempotent_replay=False,
+            )
+
+    def _build_request_fingerprint_for_media_derivative(
+        self,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> str:
+        canonical_payload = json.dumps(
+            {
+                "site_id": site_id,
+                "execution_kind": "media_derivative",
+                "input": input_payload,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+
+    def _execute_media_derivative_run(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+    ) -> None:
+        from app.domain.media_derivatives.artifacts import create_artifact, build_artifact_result_json
+        from app.domain.media_derivatives.contracts import ARTIFACT_DEFAULT_TTL_MINUTES
+        from app.domain.media_derivatives.errors import (
+            MediaDerivativeFormatUnavailableError,
+            MediaDerivativeSourceDecodeFailedError,
+            MediaDerivativeSourceTooLargeError,
+            MediaDerivativeAnimatedSourceUnavailableError,
+            MediaDerivativeProcessingFailedError,
+        )
+        from app.domain.media_derivatives.processor import process_media_derivative
+
+        import base64
+
+        media_input = self._get_execution_input_payload(run)
+        cloud_job_payload = media_input.get("cloud_job_payload", {})
+        source_media_type = cloud_job_payload.get("source_media_type", "image")
+        target_format = cloud_job_payload.get("target_format", "webp")
+        max_width = int(cloud_job_payload.get("max_width", 1200))
+        quality = int(cloud_job_payload.get("quality", 82))
+        ttl_minutes = int(media_input.get("ttl_minutes", ARTIFACT_DEFAULT_TTL_MINUTES))
+
+        source_b64 = media_input.get("_source_bytes_b64", "")
+        source_bytes = base64.b64decode(source_b64) if source_b64 else b""
+
+        if not source_bytes:
+            repository.mark_run_failed(
+                run,
+                error_code="media_derivative.source_decode_failed",
+                error_message="no source bytes found in media derivative run",
+            )
+            return
+
+        try:
+            result = process_media_derivative(
+                source_bytes=source_bytes,
+                source_media_type=source_media_type,
+                target_format=target_format,
+                max_width=max_width,
+                quality=quality,
+            )
+        except (
+            MediaDerivativeSourceDecodeFailedError,
+            MediaDerivativeSourceTooLargeError,
+            MediaDerivativeAnimatedSourceUnavailableError,
+            MediaDerivativeFormatUnavailableError,
+            MediaDerivativeProcessingFailedError,
+        ) as error:
+            repository.mark_run_failed(
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+            )
+            return
+
+        artifact = create_artifact(
+            session=repository.session,
+            run_id=run.run_id,
+            site_id=run.site_id,
+            result=result,
+            source_media_type=source_media_type,
+            ttl_minutes=ttl_minutes,
+        )
+        result_json = build_artifact_result_json(artifact)
+        repository.mark_run_succeeded(
+            run,
+            result_json=result_json,
+            provider_id="media_derivative",
+            model_id="pillow",
+            instance_id="cloud-worker",
+            fallback_used=False,
+        )
+
     def process_next_queued_run(self, *, timeout_seconds: int = 1) -> dict[str, object] | None:
         processed = self.process_queued_runs(max_runs=1, timeout_seconds=timeout_seconds)
         if not processed:
@@ -1514,6 +1715,10 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
     ) -> None:
+        if run.execution_kind == "media_derivative":
+            self._execute_media_derivative_run(run, repository=repository)
+            return
+
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
         candidates = self._deserialize_routing_candidates(policy)
         if not candidates:
