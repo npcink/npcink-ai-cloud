@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -814,4 +815,28 @@ class CommercialDecisionEvent(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         index=True,
+    )
+
+
+class MediaDerivativeArtifact(Base):
+    __tablename__ = "media_derivative_artifacts"
+
+    artifact_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("run_records.run_id"), index=True)
+    site_id: Mapped[str] = mapped_column(String(191), index=True)
+    storage_ref: Mapped[str] = mapped_column(String(512))
+    blob_data: Mapped[bytes] = mapped_column(LargeBinary)
+    mime_type: Mapped[str] = mapped_column(String(64))
+    format: Mapped[str] = mapped_column(String(16))
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    filesize_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    checksum: Mapped[str] = mapped_column(String(128))
+    source_media_type: Mapped[str] = mapped_column(String(16), default="image")
+    processing_warnings_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
