@@ -847,19 +847,11 @@ Add this method to the `RuntimeService` class in `app/domain/runtime/service.py`
                 run_id=run_id,
             )
 
-            execution_input_ciphertext = encrypt_runtime_execution_input(
-                input_payload,
-                settings=self.settings,
-            )
-
-            encrypted_source = encrypt_runtime_execution_input(
-                {"_source_bytes_b64": self._encode_source_bytes(source_bytes)},
-                settings=self.settings,
-            )
+            import base64
 
             media_input = {
                 **input_payload,
-                "_encrypted_source_ref": encrypted_source,
+                "_source_bytes_b64": base64.b64encode(source_bytes).decode("ascii"),
             }
 
             policy = {
@@ -921,17 +913,7 @@ Add this method to the `RuntimeService` class in `app/domain/runtime/service.py`
                 idempotent_replay=False,
             )
 
-    @staticmethod
-    def _encode_source_bytes(data: bytes) -> str:
-        import base64
-        return base64.b64encode(data).decode("ascii")
-
-    @staticmethod
-    def _decode_source_bytes(encoded: str) -> bytes:
-        import base64
-        return base64.b64decode(encoded)
-
-    def _build_request_fingerprint_for_media_derivative(
+        def _build_request_fingerprint_for_media_derivative(
         self,
         site_id: str,
         input_payload: dict[str, Any],
@@ -980,16 +962,10 @@ Add this method to `RuntimeService`, after `enqueue_media_derivative_run`:
         quality = int(cloud_job_payload.get("quality", 82))
         ttl_minutes = int(media_input.get("ttl_minutes", ARTIFACT_DEFAULT_TTL_MINUTES))
 
-        encrypted_source_ref = media_input.get("_encrypted_source_ref")
-        source_bytes = b""
-        if encrypted_source_ref and isinstance(encrypted_source_ref, str):
-            decrypted = decrypt_runtime_execution_input(
-                encrypted_source_ref,
-                settings=self.settings,
-            )
-            source_b64 = decrypted.get("_source_bytes_b64", "")
-            if source_b64:
-                source_bytes = self._decode_source_bytes(source_b64)
+        import base64
+
+        source_b64 = media_input.get("_source_bytes_b64", "")
+        source_bytes = base64.b64decode(source_b64) if source_b64 else b""
 
         if not source_bytes:
             repository.mark_run_failed(
@@ -1938,6 +1914,138 @@ def test_artifact_expires_at_is_short_ttl(tmp_path: Path) -> None:
                 expires_at = expires_at.replace(tzinfo=UTC)
             delta_minutes = (expires_at - created_at).total_seconds() / 60
             assert 15 <= delta_minutes <= 60, f"TTL {delta_minutes} min is outside 15-60 range"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_oversized_upload_returns_413(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        from app.domain.media_derivatives.contracts import MAX_UPLOAD_BYTES_IMAGE
+        oversized_bytes = b"\x00" * (MAX_UPLOAD_BYTES_IMAGE + 1)
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "webp",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+        }
+        body, content_type = _build_multipart_body(request_dict, oversized_bytes)
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-oversized-001",
+            nonce="nonce-oversized-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 413
+    finally:
+        dispose_engine(database_url)
+
+
+def test_purged_artifact_reference_is_rejected(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        image_bytes = _make_png_bytes(50, 50)
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 50,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+        }
+        body, content_type = _build_multipart_body(request_dict, image_bytes)
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-purged-001",
+            nonce="nonce-purged-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 200
+        _process_queued_runs(database_url)
+
+        with get_session(database_url) as session:
+            artifact = session.query(MediaDerivativeArtifact).first()
+            assert artifact is not None
+            artifact.purged_at = datetime.now(UTC)
+            session.commit()
+            artifact_id = artifact.artifact_id
+
+        ref_request = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "webp",
+                "max_width": 50,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+            "source": {"artifact_id": artifact_id},
+        }
+        ref_body = json.dumps(ref_request).encode()
+        ref_headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=ref_body,
+            idempotency_key="idem-purged-002",
+            nonce="nonce-purged-002",
+        )
+        ref_headers["content-type"] = "application/json"
+        ref_response = client.post("/v1/runtime/media-derivatives", content=ref_body, headers=ref_headers)
+        assert ref_response.status_code == 404
+    finally:
+        dispose_engine(database_url)
+
+
+def test_endpoint_bypasses_model_routing(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        image_bytes = _make_png_bytes(50, 50)
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "webp",
+                "max_width": 50,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+        }
+        body, content_type = _build_multipart_body(request_dict, image_bytes)
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-no-routing-001",
+            nonce="nonce-no-routing-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 200
+        run_id = response.json()["data"]["run_id"]
+
+        from app.core.models import RunRecord
+        with get_session(database_url) as session:
+            run = session.get(RunRecord, run_id)
+            assert run is not None
+            assert run.execution_kind == "media_derivative"
+            assert run.selected_provider_id == "media_derivative"
+            assert run.selected_model_id == "pillow"
     finally:
         dispose_engine(database_url)
 ```
