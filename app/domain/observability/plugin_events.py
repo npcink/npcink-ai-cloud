@@ -7,7 +7,10 @@ from typing import Any
 from sqlalchemy import case, desc, func, select
 
 from app.core.db import get_session
-from app.core.models import PluginObservabilityEvent
+from app.core.models import (
+    PluginObservabilityAttentionState,
+    PluginObservabilityEvent,
+)
 
 ALLOWED_EVENT_FIELDS = {
     "schema_version",
@@ -45,6 +48,17 @@ EXPECTED_PLUGIN_SLUGS = (
 ERROR_RATE_HIGH_THRESHOLD = 0.05
 LATENCY_WARNING_MS = 3000
 CATALOG_CHURN_THRESHOLD = 4
+ATTENTION_WORKFLOW_STATUSES = {
+    "active",
+    "acknowledged",
+    "muted",
+    "resolved",
+}
+ATTENTION_STATE_ACTIONS = {
+    "acknowledge": "acknowledged",
+    "mute": "muted",
+    "resolve": "resolved",
+}
 
 
 class PluginObservabilityService:
@@ -248,6 +262,18 @@ class PluginObservabilityService:
             include_missing_plugins="" == plugin_slug,
             site_id=site_id,
         )
+        attention, attention_workflow = self._apply_attention_states(
+            attention,
+            current_time=current_time,
+        )
+        digest = self._build_digest(
+            totals=totals,
+            plugins=plugins,
+            errors=errors,
+            attention=attention,
+            attention_workflow=attention_workflow,
+            window_hours=bounded_hours,
+        )
         return {
             "contract_version": "magick-plugin-observability-summary-v1",
             "generated_at": self._format_datetime(current_time),
@@ -259,6 +285,8 @@ class PluginObservabilityService:
             "totals": totals,
             "health": health,
             "attention": attention,
+            "attention_workflow": attention_workflow,
+            "digest": digest,
             "plugins": plugins,
             "timeline": timeline,
             "errors": errors,
@@ -478,6 +506,18 @@ class PluginObservabilityService:
             include_missing_plugins="" == plugin_slug,
             site_id=site_id or "",
         )
+        attention, attention_workflow = self._apply_attention_states(
+            attention,
+            current_time=current_time,
+        )
+        digest = self._build_digest(
+            totals=totals,
+            plugins=plugins,
+            errors=errors,
+            attention=attention,
+            attention_workflow=attention_workflow,
+            window_hours=bounded_hours,
+        )
 
         return {
             "contract_version": "magick-plugin-observability-admin-summary-v1",
@@ -490,12 +530,92 @@ class PluginObservabilityService:
             "totals": totals,
             "health": health,
             "attention": attention,
+            "attention_workflow": attention_workflow,
+            "digest": digest,
             "plugins": plugins,
             "sites": sites,
             "timeline": timeline,
             "errors": errors,
             "recent_errors": [self._admin_recent_error(event) for event in recent_errors],
         }
+
+    def update_attention_state(
+        self,
+        *,
+        attention_key: str,
+        attention_code: str,
+        action: str,
+        site_id: str = "",
+        plugin_slug: str = "",
+        event_kind: str = "",
+        error_code: str = "",
+        mute_hours: int = 24,
+        operator_note: str = "",
+        actor_ref: str = "internal",
+        now: datetime | None = None,
+    ) -> dict[str, object]:
+        current_time = (now or datetime.now(UTC)).astimezone(UTC)
+        normalized_action = str(action or "").strip().lower()
+        if normalized_action == "clear":
+            with get_session(self.database_url) as session:
+                state = session.scalar(
+                    select(PluginObservabilityAttentionState).where(
+                        PluginObservabilityAttentionState.attention_key
+                        == attention_key
+                    )
+                )
+                if state is not None:
+                    session.delete(state)
+                    session.commit()
+            return {
+                "attention_key": attention_key,
+                "workflow_status": "active",
+                "cleared": True,
+            }
+
+        workflow_status = ATTENTION_STATE_ACTIONS.get(normalized_action)
+        if workflow_status is None:
+            raise ValueError("unsupported attention state action")
+
+        bounded_mute_hours = min(720, max(1, int(mute_hours or 24)))
+        muted_until = (
+            current_time + timedelta(hours=bounded_mute_hours)
+            if workflow_status == "muted"
+            else None
+        )
+
+        with get_session(self.database_url) as session:
+            state = session.scalar(
+                select(PluginObservabilityAttentionState).where(
+                    PluginObservabilityAttentionState.attention_key == attention_key
+                )
+            )
+            if state is None:
+                state = PluginObservabilityAttentionState(
+                    attention_key=attention_key,
+                    attention_code=attention_code,
+                    site_id=site_id or None,
+                    plugin_slug=plugin_slug or None,
+                    event_kind=event_kind or None,
+                    error_code=error_code or None,
+                    workflow_status=workflow_status,
+                    muted_until=muted_until,
+                    operator_note=operator_note or None,
+                    actor_ref=actor_ref or None,
+                )
+                session.add(state)
+            else:
+                state.attention_code = attention_code or state.attention_code
+                state.site_id = site_id or state.site_id
+                state.plugin_slug = plugin_slug or state.plugin_slug
+                state.event_kind = event_kind or state.event_kind
+                state.error_code = error_code or state.error_code
+                state.workflow_status = workflow_status
+                state.muted_until = muted_until
+                state.operator_note = operator_note or None
+                state.actor_ref = actor_ref or state.actor_ref
+            session.commit()
+            return self._attention_state_summary(state, current_time=current_time)
 
     def _normalize_event(
         self,
@@ -704,6 +824,200 @@ class PluginObservabilityService:
             value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
         )
         return normalized.replace(minute=0, second=0, microsecond=0)
+
+    def _attention_key(
+        self,
+        *,
+        code: str,
+        site_id: str = "",
+        plugin_slug: str = "",
+        event_kind: str = "",
+        error_code: str = "",
+    ) -> str:
+        source = "|".join(
+            [
+                str(code or ""),
+                str(site_id or ""),
+                str(plugin_slug or ""),
+                str(event_kind or ""),
+                str(error_code or ""),
+            ]
+        )
+        return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+    def _apply_attention_states(
+        self,
+        attention: list[dict[str, object]],
+        *,
+        current_time: datetime,
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+        if not attention:
+            return attention, self._attention_workflow_summary(attention)
+
+        keys = [str(item.get("attention_key") or "") for item in attention]
+        keys = [key for key in keys if key]
+        if not keys:
+            return attention, self._attention_workflow_summary(attention)
+
+        with get_session(self.database_url) as session:
+            states = {
+                state.attention_key: state
+                for state in session.scalars(
+                    select(PluginObservabilityAttentionState).where(
+                        PluginObservabilityAttentionState.attention_key.in_(keys)
+                    )
+                )
+            }
+
+        resolved_attention = []
+        for item in attention:
+            attention_key = str(item.get("attention_key") or "")
+            state = states.get(attention_key)
+            workflow_status = "active"
+            if state is not None:
+                workflow_status = self._effective_workflow_status(
+                    state,
+                    current_time=current_time,
+                )
+                item["state"] = self._attention_state_summary(
+                    state,
+                    current_time=current_time,
+                )
+            item["workflow_status"] = workflow_status
+            resolved_attention.append(item)
+        return resolved_attention, self._attention_workflow_summary(resolved_attention)
+
+    def _effective_workflow_status(
+        self,
+        state: PluginObservabilityAttentionState,
+        *,
+        current_time: datetime,
+    ) -> str:
+        workflow_status = str(state.workflow_status or "active")
+        if workflow_status not in ATTENTION_WORKFLOW_STATUSES:
+            return "active"
+        if workflow_status == "muted":
+            muted_until = state.muted_until
+            if muted_until is None:
+                return "active"
+            normalized = (
+                muted_until.replace(tzinfo=UTC)
+                if muted_until.tzinfo is None
+                else muted_until.astimezone(UTC)
+            )
+            if normalized <= current_time:
+                return "active"
+        return workflow_status
+
+    def _attention_state_summary(
+        self,
+        state: PluginObservabilityAttentionState,
+        *,
+        current_time: datetime,
+    ) -> dict[str, object]:
+        return {
+            "attention_key": state.attention_key,
+            "attention_code": state.attention_code,
+            "workflow_status": self._effective_workflow_status(
+                state,
+                current_time=current_time,
+            ),
+            "stored_workflow_status": state.workflow_status,
+            "muted_until": self._format_datetime(state.muted_until),
+            "operator_note": state.operator_note or "",
+            "actor_ref": state.actor_ref or "",
+            "updated_at": self._format_datetime(state.updated_at),
+        }
+
+    def _attention_workflow_summary(
+        self,
+        attention: list[dict[str, object]],
+    ) -> dict[str, object]:
+        counts = {
+            "active": 0,
+            "acknowledged": 0,
+            "muted": 0,
+            "resolved": 0,
+        }
+        for item in attention:
+            status = str(item.get("workflow_status") or "active")
+            if status not in counts:
+                status = "active"
+            counts[status] += 1
+        return {
+            **counts,
+            "total": len(attention),
+            "needs_attention": counts["active"],
+        }
+
+    def _build_digest(
+        self,
+        *,
+        totals: dict[str, object],
+        plugins: list[dict[str, object]],
+        errors: list[dict[str, object]],
+        attention: list[dict[str, object]],
+        attention_workflow: dict[str, object],
+        window_hours: int,
+    ) -> dict[str, object]:
+        events_total = int(totals.get("events_total") or 0)
+        error_total = int(totals.get("error_total") or 0)
+        success_rate = float(totals.get("success_rate") or 0)
+        needs_attention = int(attention_workflow.get("needs_attention") or 0)
+        period_label = "weekly" if window_hours >= 168 else "daily"
+        top_plugin_candidate = max(
+            plugins,
+            key=lambda item: int(item.get("error_total") or 0),
+            default={},
+        )
+        top_plugin = (
+            top_plugin_candidate
+            if int(top_plugin_candidate.get("error_total") or 0) > 0
+            else {}
+        )
+        top_error = errors[0] if errors else {}
+
+        if events_total <= 0:
+            headline = "No plugin monitoring data in this window."
+        elif error_total <= 0 and needs_attention <= 0:
+            headline = "Plugin telemetry is reporting normally."
+        elif needs_attention > 0:
+            headline = f"{needs_attention} plugin monitoring item(s) need review."
+        else:
+            headline = "Plugin monitoring has handled items in this window."
+
+        bullets = [
+            f"{events_total} metadata event(s), {error_total} error event(s).",
+            f"Success rate is {round(success_rate * 100, 1)} percent.",
+        ]
+        if top_plugin:
+            bullets.append(
+                "Highest plugin error pressure: "
+                f"{top_plugin.get('plugin_slug')} "
+                f"({top_plugin.get('error_total')} error event(s))."
+            )
+        if top_error:
+            bullets.append(
+                "Top error code: "
+                f"{top_error.get('error_code')} "
+                f"({top_error.get('count')} occurrence(s))."
+            )
+        if attention:
+            bullets.append(
+                "Current watch workflow: "
+                f"{attention_workflow.get('active', 0)} open, "
+                f"{attention_workflow.get('acknowledged', 0)} acknowledged, "
+                f"{attention_workflow.get('muted', 0)} muted."
+            )
+
+        return {
+            "period_label": period_label,
+            "window_hours": window_hours,
+            "headline": headline,
+            "bullets": bullets[:5],
+            "top_plugin_slug": str(top_plugin.get("plugin_slug") or ""),
+            "top_error_code": str(top_error.get("error_code") or ""),
+        }
 
     def _build_health_and_attention(
         self,
@@ -1020,12 +1334,21 @@ class PluginObservabilityService:
         error_code: str = "",
         suggested_action: str = "",
     ) -> dict[str, object]:
+        attention_key = self._attention_key(
+            code=code,
+            site_id=site_id,
+            plugin_slug=plugin_slug,
+            event_kind=event_kind,
+            error_code=error_code,
+        )
         item = {
+            "attention_key": attention_key,
             "severity": severity,
             "code": code,
             "title": title,
             "detail": detail,
             "suggested_action": suggested_action,
+            "workflow_status": "active",
         }
         if site_id:
             item["site_id"] = site_id

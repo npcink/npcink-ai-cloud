@@ -102,15 +102,40 @@ type HealthSummary = {
 };
 
 type AttentionItem = {
+  attentionKey: string;
   severity: string;
   code: string;
   title: string;
   detail: string;
   suggestedAction: string;
+  workflowStatus: string;
   siteId: string;
   pluginSlug: string;
   eventKind: string;
   errorCode: string;
+  state: {
+    mutedUntil: string;
+    operatorNote: string;
+    updatedAt: string;
+  } | null;
+};
+
+type AttentionWorkflow = {
+  active: number;
+  acknowledged: number;
+  muted: number;
+  resolved: number;
+  total: number;
+  needsAttention: number;
+};
+
+type ObservabilityDigest = {
+  periodLabel: string;
+  windowHours: number;
+  headline: string;
+  bullets: string[];
+  topPluginSlug: string;
+  topErrorCode: string;
 };
 
 type PluginObservabilityData = {
@@ -118,6 +143,8 @@ type PluginObservabilityData = {
   totals: PluginObservabilityTotals;
   health: HealthSummary;
   attention: AttentionItem[];
+  attentionWorkflow: AttentionWorkflow;
+  digest: ObservabilityDigest;
   plugins: PluginItem[];
   sites: SiteItem[];
   timeline: TimelinePoint[];
@@ -156,15 +183,42 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
       ? raw.attention.map((item: any) => ({
           severity: String(item.severity ?? ''),
           code: String(item.code ?? ''),
+          attentionKey: String(item.attention_key ?? ''),
           title: String(item.title ?? ''),
           detail: String(item.detail ?? ''),
           suggestedAction: String(item.suggested_action ?? ''),
+          workflowStatus: String(item.workflow_status ?? 'active'),
           siteId: String(item.site_id ?? ''),
           pluginSlug: String(item.plugin_slug ?? ''),
           eventKind: String(item.event_kind ?? ''),
           errorCode: String(item.error_code ?? ''),
+          state: item.state
+            ? {
+                mutedUntil: String(item.state.muted_until ?? ''),
+                operatorNote: String(item.state.operator_note ?? ''),
+                updatedAt: String(item.state.updated_at ?? ''),
+              }
+            : null,
         }))
       : [],
+    attentionWorkflow: {
+      active: Number(raw?.attention_workflow?.active ?? 0),
+      acknowledged: Number(raw?.attention_workflow?.acknowledged ?? 0),
+      muted: Number(raw?.attention_workflow?.muted ?? 0),
+      resolved: Number(raw?.attention_workflow?.resolved ?? 0),
+      total: Number(raw?.attention_workflow?.total ?? 0),
+      needsAttention: Number(raw?.attention_workflow?.needs_attention ?? 0),
+    },
+    digest: {
+      periodLabel: String(raw?.digest?.period_label ?? ''),
+      windowHours: Number(raw?.digest?.window_hours ?? 0),
+      headline: String(raw?.digest?.headline ?? ''),
+      bullets: Array.isArray(raw?.digest?.bullets)
+        ? raw.digest.bullets.map((item: any) => String(item))
+        : [],
+      topPluginSlug: String(raw?.digest?.top_plugin_slug ?? ''),
+      topErrorCode: String(raw?.digest?.top_error_code ?? ''),
+    },
     plugins: Array.isArray(raw?.plugins)
       ? raw.plugins.map((p: any) => ({
           pluginSlug: String(p.plugin_slug ?? ''),
@@ -249,6 +303,9 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
 
 type WindowOption = 24 | 72 | 168;
 type PluginFilter = 'all' | 'magick-ai-abilities' | 'magick-ai-core' | 'magick-ai-adapter';
+type AttentionWorkflowFilter = 'active' | 'acknowledged' | 'muted' | 'resolved' | 'all';
+type AttentionSeverityFilter = 'all' | 'warning' | 'error';
+type AttentionStateAction = 'acknowledge' | 'mute' | 'resolve' | 'clear';
 
 const WINDOW_OPTIONS: { value: WindowOption; label: string }[] = [
   { value: 24, label: '24h' },
@@ -261,6 +318,20 @@ const PLUGIN_FILTER_OPTIONS: { value: PluginFilter; label: string }[] = [
   { value: 'magick-ai-abilities', label: 'Abilities' },
   { value: 'magick-ai-core', label: 'Core' },
   { value: 'magick-ai-adapter', label: 'Adapter' },
+];
+
+const ATTENTION_WORKFLOW_OPTIONS: { value: AttentionWorkflowFilter; label: string }[] = [
+  { value: 'active', label: 'Open' },
+  { value: 'acknowledged', label: 'Ack' },
+  { value: 'muted', label: 'Muted' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'all', label: 'All' },
+];
+
+const ATTENTION_SEVERITY_OPTIONS: { value: AttentionSeverityFilter; label: string }[] = [
+  { value: 'all', label: 'All severity' },
+  { value: 'error', label: 'Error' },
+  { value: 'warning', label: 'Warning' },
 ];
 
 function formatSuccessRate(rate: number): string {
@@ -302,6 +373,12 @@ function AdminPluginObservabilityContent() {
   const [siteIdInput, setSiteIdInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [siteSort, setSiteSort] = useState<SiteSortKey>('errors');
+  const [attentionWorkflowFilter, setAttentionWorkflowFilter] =
+    useState<AttentionWorkflowFilter>('active');
+  const [attentionSeverityFilter, setAttentionSeverityFilter] =
+    useState<AttentionSeverityFilter>('all');
+  const [attentionCodeFilter, setAttentionCodeFilter] = useState('all');
+  const [attentionActionKey, setAttentionActionKey] = useState('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -332,6 +409,40 @@ function AdminPluginObservabilityContent() {
   const handleSiteIdKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSiteIdSubmit();
   };
+
+  const handleAttentionStateAction = useCallback(
+    async (item: AttentionItem, action: AttentionStateAction) => {
+      if (!item.attentionKey) return;
+      setAttentionActionKey(`${item.attentionKey}-${action}`);
+      try {
+        const response = await fetch('/api/admin/plugin-observability/attention-state', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            attention_key: item.attentionKey,
+            attention_code: item.code,
+            action,
+            site_id: item.siteId,
+            plugin_slug: item.pluginSlug,
+            event_kind: item.eventKind,
+            error_code: item.errorCode,
+            mute_hours: 24,
+          }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        await loadData();
+      } catch (err) {
+        setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_load')));
+      } finally {
+        setAttentionActionKey('');
+      }
+    },
+    [loadData, t]
+  );
 
   const timelineData = useMemo(
     () =>
@@ -364,6 +475,29 @@ function AdminPluginObservabilityContent() {
   );
 
   const hasPluginErrors = pluginErrorData.some((item) => item.value > 0);
+
+  const attentionCodeOptions = useMemo(() => {
+    const codes = new Set((data?.attention || []).map((item) => item.code).filter(Boolean));
+    return ['all', ...Array.from(codes).sort()];
+  }, [data]);
+
+  const filteredAttention = useMemo(() => {
+    return (data?.attention || []).filter((item) => {
+      if (
+        attentionWorkflowFilter !== 'all' &&
+        item.workflowStatus !== attentionWorkflowFilter
+      ) {
+        return false;
+      }
+      if (attentionSeverityFilter !== 'all' && item.severity !== attentionSeverityFilter) {
+        return false;
+      }
+      if (attentionCodeFilter !== 'all' && item.code !== attentionCodeFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [attentionCodeFilter, attentionSeverityFilter, attentionWorkflowFilter, data]);
 
   const sortedSites = useMemo(() => {
     const sites = [...(data?.sites || [])];
@@ -523,6 +657,36 @@ function AdminPluginObservabilityContent() {
         />
       ) : (
         <>
+          {data?.digest.headline ? (
+            <BackofficeSectionPanel className="space-y-3">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    {t('admin.plugin_obs_digest_label', {}, 'Digest')}
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                    {data.digest.headline}
+                  </h2>
+                </div>
+                <BackofficeTag tone="info">
+                  {data.digest.periodLabel || `${data.digest.windowHours}h`}
+                </BackofficeTag>
+              </div>
+              {data.digest.bullets.length ? (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {data.digest.bullets.map((item) => (
+                    <div
+                      key={item}
+                      className="rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300"
+                    >
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </BackofficeSectionPanel>
+          ) : null}
+
           {data?.attention.length ? (
             <BackofficeSectionPanel className="space-y-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -533,15 +697,53 @@ function AdminPluginObservabilityContent() {
                   <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
                     {t('admin.plugin_obs_attention_title', {}, 'Current watch items')}
                   </h2>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    {formatInteger(data.attentionWorkflow.needsAttention)} open /{' '}
+                    {formatInteger(data.attentionWorkflow.total)} total
+                  </p>
                 </div>
                 <BackofficeStatusBadge
                   status={data.health.status}
                   label={`${data.health.status} · ${data.health.score}`}
                 />
               </div>
+              <div className="flex flex-wrap gap-2">
+                {ATTENTION_WORKFLOW_OPTIONS.map((option) => (
+                  <BackofficeFilterPill
+                    key={option.value}
+                    active={attentionWorkflowFilter === option.value}
+                    tone="info"
+                    onClick={() => setAttentionWorkflowFilter(option.value)}
+                  >
+                    {option.label}
+                  </BackofficeFilterPill>
+                ))}
+                <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+                {ATTENTION_SEVERITY_OPTIONS.map((option) => (
+                  <BackofficeFilterPill
+                    key={option.value}
+                    active={attentionSeverityFilter === option.value}
+                    tone="accent"
+                    onClick={() => setAttentionSeverityFilter(option.value)}
+                  >
+                    {option.label}
+                  </BackofficeFilterPill>
+                ))}
+                <select
+                  value={attentionCodeFilter}
+                  onChange={(event) => setAttentionCodeFilter(event.target.value)}
+                  className="h-8 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
+                >
+                  {attentionCodeOptions.map((code) => (
+                    <option key={code} value={code}>
+                      {code === 'all' ? 'All codes' : code}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="grid gap-3 lg:grid-cols-2">
-                {data.attention.slice(0, 6).map((item) => (
-                  <BackofficeStackCard key={`${item.code}-${item.siteId}-${item.pluginSlug}-${item.errorCode}`}>
+                {filteredAttention.slice(0, 8).map((item) => (
+                  <BackofficeStackCard key={item.attentionKey || `${item.code}-${item.siteId}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-semibold text-slate-950 dark:text-white">{item.title}</p>
@@ -555,6 +757,37 @@ function AdminPluginObservabilityContent() {
                           {item.siteId ? <BackofficeTag>{item.siteId}</BackofficeTag> : null}
                           {item.pluginSlug ? <BackofficeTag tone="info">{item.pluginSlug}</BackofficeTag> : null}
                           {item.errorCode ? <BackofficeTag tone="danger">{item.errorCode}</BackofficeTag> : null}
+                          <BackofficeTag tone={item.workflowStatus === 'active' ? 'warning' : 'info'}>
+                            {item.workflowStatus}
+                          </BackofficeTag>
+                          {item.state?.mutedUntil ? (
+                            <BackofficeTag tone="info">
+                              muted until {formatDate(item.state.mutedUntil)}
+                            </BackofficeTag>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(['acknowledge', 'mute', 'resolve'] as AttentionStateAction[]).map((action) => (
+                            <button
+                              key={action}
+                              type="button"
+                              className="h-7 rounded-full border border-slate-200/80 bg-white px-2.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600"
+                              disabled={attentionActionKey === `${item.attentionKey}-${action}`}
+                              onClick={() => void handleAttentionStateAction(item, action)}
+                            >
+                              {action === 'acknowledge' ? 'Ack' : action === 'mute' ? 'Mute 24h' : 'Resolve'}
+                            </button>
+                          ))}
+                          {item.workflowStatus !== 'active' ? (
+                            <button
+                              type="button"
+                              className="h-7 rounded-full border border-slate-200/80 bg-white px-2.5 text-xs font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                              disabled={attentionActionKey === `${item.attentionKey}-clear`}
+                              onClick={() => void handleAttentionStateAction(item, 'clear')}
+                            >
+                              Clear state
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                       <BackofficeTag tone={attentionTone(item.severity)}>{item.severity}</BackofficeTag>
@@ -562,6 +795,11 @@ function AdminPluginObservabilityContent() {
                   </BackofficeStackCard>
                 ))}
               </div>
+              {!filteredAttention.length ? (
+                <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
+                  {t('admin.plugin_obs_attention_filtered_empty', {}, 'No watch items match the selected filters.')}
+                </BackofficeStackCard>
+              ) : null}
             </BackofficeSectionPanel>
           ) : null}
 

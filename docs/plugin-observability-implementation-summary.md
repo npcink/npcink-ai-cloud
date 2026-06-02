@@ -19,6 +19,8 @@ Plugin observability now has a practical v1 read model for:
 - site health tables
 - error-code ranking and recent metadata-only errors
 - health score and bounded attention items
+- acknowledgement, mute, resolve, and clear-state workflow for attention items
+- daily or weekly digest text derived from the same metadata summary
 
 The Cloud monitoring surface remains read-only. It does not create a second
 ability registry, second approval plane, second router, or WordPress write
@@ -30,6 +32,8 @@ owner.
   forbidden data, read model, health states, and attention item shape.
 - `docs/plugin-observability-event-catalog.md` defines the current event
   families, error codes, and attention codes.
+- `docs/plugin-observability-emitter-examples.md` gives concrete emitter
+  examples for Abilities, Core, Adapter, and Cloud Addon.
 
 Any new emitter event should be added to the event catalog before a plugin
 starts sending it.
@@ -42,7 +46,10 @@ starts sending it.
   - Builds portal and admin summaries.
   - Adds hourly `timeline` buckets.
   - Adds top-level `health` and `attention`.
+  - Adds top-level `attention_workflow` and `digest`.
   - Adds per-site `health` in admin summaries.
+  - Stores operator workflow state in
+    `plugin_observability_attention_states`.
 
 - `app/api/routes/service.py`
   - Admin-facing summary route:
@@ -61,6 +68,8 @@ starts sending it.
   - Admin dashboard.
   - Shows health score, attention queue, event trend, plugin comparison, plugin
     breakdown, site health table, error-code ranking, and recent errors.
+  - Lets operators filter watch items and mark them acknowledged, muted,
+    resolved, or active again.
 
 - `frontend/src/app/portal/monitoring/page.tsx`
   - Dedicated Portal monitoring page for a selected site.
@@ -99,6 +108,18 @@ Current attention codes:
 
 Attention items are capped so the dashboard stays usable. They are diagnostic
 signals, not control-plane decisions.
+
+## Demo Data
+
+Use the local seed helper to create demo data for visual smoke tests:
+
+```bash
+uv run python -m app.dev.seed_plugin_observability_demo --scenario warning
+uv run python -m app.dev.seed_plugin_observability_demo --scenario error
+```
+
+Add `--init-schema` only for disposable local SQLite fixtures. Do not use it as
+a substitute for migrations in shared environments.
 
 ## Verification
 
@@ -167,6 +188,8 @@ When another AI continues this work, start in this order:
 5. Run the focused backend and frontend verification commands listed above.
 6. Use the local Portal and Admin smoke-test URLs before claiming the monitoring
    UI is visible.
+7. Use `docs/plugin-observability-emitter-examples.md` before asking plugin-side
+   agents to add or adjust emitters.
 
 Do not start by adding new charts. First confirm whether the signal is already
 represented as an event kind, error code, health reason, or attention code. If

@@ -695,6 +695,45 @@ class PluginObservabilityEvent(Base):
     )
 
 
+class PluginObservabilityAttentionState(Base):
+    __tablename__ = "plugin_observability_attention_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "attention_key",
+            name="uq_plugin_observability_attention_states_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    attention_key: Mapped[str] = mapped_column(String(64), index=True)
+    attention_code: Mapped[str] = mapped_column(String(128), index=True)
+    site_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    plugin_slug: Mapped[str | None] = mapped_column(String(64), index=True)
+    event_kind: Mapped[str | None] = mapped_column(String(96), index=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), index=True)
+    workflow_status: Mapped[str] = mapped_column(
+        String(32),
+        default="acknowledged",
+        index=True,
+    )
+    muted_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    operator_note: Mapped[str | None] = mapped_column(Text)
+    actor_ref: Mapped[str | None] = mapped_column(String(191), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        index=True,
+    )
+
+
 class HealthSnapshot(Base):
     __tablename__ = "health_snapshots"
 

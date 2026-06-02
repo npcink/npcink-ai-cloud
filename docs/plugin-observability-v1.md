@@ -107,6 +107,9 @@ Cloud summaries may expose:
 - plugin summaries and event-kind summaries
 - hourly timeline buckets
 - site health state and attention items
+- attention workflow state for operator acknowledgement, mute, resolve, and
+  clear-state actions
+- daily or weekly digest text generated from metadata-only summaries
 - error-code ranking and recent metadata-only errors
 
 Cloud summaries must not expose:
@@ -134,12 +137,42 @@ It is an operations signal, not a local governance decision.
 Attention items are short, bounded diagnostics for operators and users. Each
 item should include:
 
+- `attention_key`: stable hash for this watch item
 - `severity`: `warning` or `error`
 - `code`: stable dotted reason code
 - `title`: short display label
 - `detail`: one sentence explanation
+- `workflow_status`: `active`, `acknowledged`, `muted`, or `resolved`
 - optional `site_id`, `plugin_slug`, `event_kind`, `error_code`
 - optional `suggested_action`
+- optional `state` with `muted_until`, `operator_note`, and `updated_at`
 
 Portal may show site-scoped attention items. Admin may show cross-site attention
 items. Neither surface should expose raw payloads.
+
+## Attention Workflow
+
+The attention workflow is an operator display workflow only. It may store:
+
+- `attention_key`
+- `attention_code`
+- optional site, plugin, event-kind, and error-code dimensions
+- `workflow_status`
+- optional mute expiry and operator note
+
+It must not mutate local plugin settings, local approval state, ability
+definitions, OpenClaw routing, WordPress content, or any local execution truth.
+
+## Digest
+
+Summary responses may include a `digest` object for Portal and Admin:
+
+- `period_label`: `daily` or `weekly`
+- `window_hours`
+- `headline`
+- `bullets`
+- optional top plugin and top error identifiers
+
+Digest text is generated only from bounded metadata summaries. It must not
+include prompts, generated content, raw payloads, secrets, or PII beyond stable
+site/plugin/error identifiers already allowed by this contract.

@@ -83,6 +83,7 @@ that floods the same monitoring surface it is meant to support.
 | `plugin_observability.reporting_stale` | `warning` | Last event is stale for the selected window. |
 | `plugin_observability.latency_high` | `warning` | Average latency is at or above 3000 ms. |
 | `plugin_observability.catalog_churn` | `warning` | Ability catalog changed repeatedly in the selected window. |
+| `plugin_observability.top_error` | `warning` | Highest ranked error code is present in the selected window. |
 
 These attention codes are advisory. They do not authorize Cloud to mutate local
 plugin state or bypass local approval.

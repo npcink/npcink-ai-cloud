@@ -362,15 +362,40 @@ export interface PortalPluginObservabilityHealth {
 }
 
 export interface PortalPluginObservabilityAttentionItem {
+  attention_key: string;
   severity: string;
   code: string;
   title: string;
   detail: string;
   suggested_action: string;
+  workflow_status?: string;
+  state?: {
+    muted_until?: string;
+    operator_note?: string;
+    updated_at?: string;
+  };
   site_id?: string;
   plugin_slug?: string;
   event_kind?: string;
   error_code?: string;
+}
+
+export interface PortalPluginObservabilityAttentionWorkflow {
+  active: number;
+  acknowledged: number;
+  muted: number;
+  resolved: number;
+  total: number;
+  needs_attention: number;
+}
+
+export interface PortalPluginObservabilityDigest {
+  period_label: string;
+  window_hours: number;
+  headline: string;
+  bullets: string[];
+  top_plugin_slug: string;
+  top_error_code: string;
 }
 
 export interface PortalPluginObservabilitySummary {
@@ -388,6 +413,8 @@ export interface PortalPluginObservabilitySummary {
   totals: PortalPluginObservabilityTotals;
   health: PortalPluginObservabilityHealth;
   attention: PortalPluginObservabilityAttentionItem[];
+  attention_workflow?: PortalPluginObservabilityAttentionWorkflow;
+  digest?: PortalPluginObservabilityDigest;
   plugins: PortalPluginObservabilityPlugin[];
   timeline: PortalPluginObservabilityTimelinePoint[];
   errors: PortalPluginObservabilityError[];

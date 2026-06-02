@@ -108,6 +108,18 @@ class SubscriptionTopUpPayload(BaseModel):
     note: str = ""
 
 
+class PluginAttentionStatePayload(BaseModel):
+    attention_key: str = Field(min_length=16, max_length=128)
+    attention_code: str = Field(default="", max_length=128)
+    action: str = Field(default="acknowledge", max_length=32)
+    site_id: str = Field(default="", max_length=191)
+    plugin_slug: str = Field(default="", max_length=64)
+    event_kind: str = Field(default="", max_length=96)
+    error_code: str = Field(default="", max_length=128)
+    mute_hours: int = Field(default=24, ge=1, le=720)
+    note: str = Field(default="", max_length=512)
+
+
 def _get_commercial_service(request: Request) -> CommercialService:
     services = get_cloud_services(request)
     return CommercialService(services.settings.database_url, settings=services.settings)
@@ -237,20 +249,34 @@ def _build_runtime_explanations(
     guard = diagnostics.get("guard") if isinstance(diagnostics.get("guard"), dict) else {}
     items: list[dict[str, str]] = []
 
-    if int(callback.get("failed") or 0) > 0 or callback.get("pressure_state") in {"attention", "critical"}:
+    if int(callback.get("failed") or 0) > 0 or callback.get("pressure_state") in {
+        "attention",
+        "critical",
+    }:
         items.append(
             {
                 "state": "degraded",
-                "explain_text": "Callback delivery is already degraded. Operator follow-up should start from site runtime posture before widening provider or customer support work.",
+                "explain_text": (
+                    "Callback delivery is already degraded. Operator follow-up "
+                    "should start from site runtime posture before widening "
+                    "provider or customer support work."
+                ),
                 "next_step_kind": "site",
                 "next_step_ref": str(site_id or ""),
             }
         )
-    if int(queue.get("queued_runs") or 0) > 0 or queue.get("pressure_state") in {"attention", "critical"}:
+    if int(queue.get("queued_runs") or 0) > 0 or queue.get("pressure_state") in {
+        "attention",
+        "critical",
+    }:
         items.append(
             {
                 "state": "queued",
-                "explain_text": "Queued or backlogged runs are accumulating. Confirm the affected site first, then inspect provider or model surfaces only if the queue remains the leading blocker.",
+                "explain_text": (
+                    "Queued or backlogged runs are accumulating. Confirm the "
+                    "affected site first, then inspect provider or model surfaces "
+                    "only if the queue remains the leading blocker."
+                ),
                 "next_step_kind": "site",
                 "next_step_ref": str(site_id or ""),
             }
@@ -259,7 +285,12 @@ def _build_runtime_explanations(
         items.append(
             {
                 "state": "policy_gated",
-                "explain_text": "Recent guard events suggest a policy or throttle gate is already affecting runtime behavior. Check commercial entitlement and support visibility before treating this as a pure execution-source failure.",
+                "explain_text": (
+                    "Recent guard events suggest a policy or throttle gate is "
+                    "already affecting runtime behavior. Check commercial "
+                    "entitlement and support visibility before treating this as a "
+                    "pure execution-source failure."
+                ),
                 "next_step_kind": "subscription" if subscription_id else "account",
                 "next_step_ref": str(subscription_id or account_id or ""),
             }
@@ -269,7 +300,10 @@ def _build_runtime_explanations(
         items.append(
             {
                 "state": "ok",
-                "explain_text": "Current runtime summary does not surface an immediate operator-critical blocker.",
+                "explain_text": (
+                    "Current runtime summary does not surface an immediate "
+                    "operator-critical blocker."
+                ),
                 "next_step_kind": "site" if site_id else "account",
                 "next_step_ref": str(site_id or account_id or ""),
             }
@@ -677,7 +711,10 @@ async def upsert_plan(
                 scope_kind="plan",
                 scope_id=payload.plan_id,
                 outcome="succeeded",
-                effective_summary=f"Plan {payload.plan_id} is now saved on the commercial truth plane.",
+                effective_summary=(
+                    f"Plan {payload.plan_id} is now saved on the commercial "
+                    "truth plane."
+                ),
             ),
         ),
         revision="m6",
@@ -731,7 +768,10 @@ async def publish_plan_version(
                 scope_kind="plan_version",
                 scope_id=payload.plan_version_id,
                 outcome="succeeded",
-                effective_summary=f"Plan version {payload.plan_version_id} is now published and ready for subscription binding.",
+                effective_summary=(
+                    f"Plan version {payload.plan_version_id} is now published "
+                    "and ready for subscription binding."
+                ),
             ),
         ),
         revision="m6",
@@ -784,9 +824,16 @@ async def upsert_account_subscription(
             _build_operator_receipt(
                 event_kind="subscription.upsert",
                 scope_kind="subscription",
-                scope_id=str(result.get("subscription_id") or payload.subscription_id or account_id),
+                scope_id=str(
+                    result.get("subscription_id")
+                    or payload.subscription_id
+                    or account_id
+                ),
                 outcome="succeeded",
-                effective_summary=f"Account {account_id} now resolves to subscription {result.get('subscription_id') or payload.subscription_id or account_id}.",
+                effective_summary=(
+                    f"Account {account_id} now resolves to subscription "
+                    f"{result.get('subscription_id') or payload.subscription_id or account_id}."
+                ),
                 account_id=account_id,
             ),
         ),
@@ -823,7 +870,10 @@ async def suspend_account_subscription(request: Request, account_id: str) -> Any
                 scope_kind="subscription",
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
-                effective_summary=f"Current subscription coverage for account {account_id} is now suspended.",
+                effective_summary=(
+                    f"Current subscription coverage for account {account_id} is "
+                    "now suspended."
+                ),
                 account_id=str(result.get("account_id") or ""),
             ),
         ),
@@ -877,7 +927,8 @@ async def apply_subscription_topup(
                 scope_id=subscription_id,
                 outcome="succeeded",
                 effective_summary=(
-                    f"Subscription {subscription_id} now has operator-managed budget headroom added "
+                    f"Subscription {subscription_id} now has operator-managed "
+                    "budget headroom added "
                     f"for the current billing period"
                     + (
                         f" via pack {result.get('topup', {}).get('pack_id')}."
@@ -920,7 +971,10 @@ async def cancel_account_subscription(request: Request, account_id: str) -> Any:
                 scope_kind="subscription",
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
-                effective_summary=f"Current subscription coverage for account {account_id} is now canceled.",
+                effective_summary=(
+                    f"Current subscription coverage for account {account_id} is "
+                    "now canceled."
+                ),
                 account_id=str(result.get("account_id") or ""),
             ),
         ),
@@ -1095,7 +1149,7 @@ async def list_admin_accounts(
     request: Request,
     status: str | None = Query(default=None),
     member_ref: str | None = Query(default=None),
-    expires_before: datetime | None = Query(default=None),
+    expires_before: datetime | None = Query(default=None),  # noqa: B008
     coverage_state: str | None = Query(default=None),
     package_kind: str | None = Query(default=None),
     top_plan_id: str | None = Query(default=None),
@@ -1250,7 +1304,7 @@ async def list_admin_sites(
     status: str | None = Query(default=None),
     account_id: str | None = Query(default=None),
     subscription_status: str | None = Query(default=None),
-    expires_before: datetime | None = Query(default=None),
+    expires_before: datetime | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=100, ge=1, le=500),
     usage_window_days: int = Query(default=7, ge=1, le=90),
 ) -> Any:
@@ -1300,7 +1354,9 @@ async def get_admin_site(
         result["runtime_diagnostics"],
         site_id=site_id,
         account_id=str((result.get("account") or {}).get("account_id") or ""),
-        subscription_id=str((result.get("subscription") or {}).get("subscription_id") or ""),
+        subscription_id=str(
+            (result.get("subscription") or {}).get("subscription_id") or ""
+        ),
     )
     related_account_id = str((result.get("account") or {}).get("account_id") or "")
     related_subscription_id = str(
@@ -1316,10 +1372,23 @@ async def get_admin_site(
         "audit_href": f"/api/admin/audit-events?site_id={site_id}&limit=20",
     }
     result["commercial_follow_up"] = {
-        "entitlement_summary": "Use the linked plan and version snapshot as the current commercial entitlement boundary for this site.",
-        "budget_headroom_summary": "Budget headroom should be read before widening runtime troubleshooting, because over-limit posture can be the real blocker.",
-        "runtime_gating_summary": "If runtime posture is degraded or policy-gated, confirm whether subscription state, grace, or downgrade policy is already constraining this site.",
-        "next_operator_follow_up": "Open the current customer subscription when commercial coverage is the blocker; stay on site detail when runtime posture is the blocker.",
+        "entitlement_summary": (
+            "Use the linked plan and version snapshot as the current commercial "
+            "entitlement boundary for this site."
+        ),
+        "budget_headroom_summary": (
+            "Budget headroom should be read before widening runtime "
+            "troubleshooting, because over-limit posture can be the real blocker."
+        ),
+        "runtime_gating_summary": (
+            "If runtime posture is degraded or policy-gated, confirm whether "
+            "subscription state, grace, or downgrade policy is already "
+            "constraining this site."
+        ),
+        "next_operator_follow_up": (
+            "Open the current customer subscription when commercial coverage is "
+            "the blocker; stay on site detail when runtime posture is the blocker."
+        ),
     }
     return build_envelope(
         status="ok",
@@ -1335,7 +1404,7 @@ async def list_admin_subscriptions(
     status: str | None = Query(default=None),
     account_id: str | None = Query(default=None),
     plan_id: str | None = Query(default=None),
-    expires_before: datetime | None = Query(default=None),
+    expires_before: datetime | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
@@ -1383,9 +1452,18 @@ async def get_admin_subscription(
         ),
     }
     result["commercial_follow_up"] = {
-        "lifecycle_posture": "Read current status and grace posture first; commercial follow-up should lead before runtime debugging when the subscription is degraded.",
-        "snapshot_reconciliation_summary": "Use site detail and filtered audit evidence to confirm whether snapshot posture and current operational impact are still aligned.",
-        "next_operator_follow_up": "Open site detail for runtime and entitlement impact, or customer detail for support scope.",
+        "lifecycle_posture": (
+            "Read current status and grace posture first; commercial follow-up "
+            "should lead before runtime debugging when the subscription is degraded."
+        ),
+        "snapshot_reconciliation_summary": (
+            "Use site detail and filtered audit evidence to confirm whether "
+            "snapshot posture and current operational impact are still aligned."
+        ),
+        "next_operator_follow_up": (
+            "Open site detail for runtime and entitlement impact, or customer "
+            "detail for support scope."
+        ),
     }
     return build_envelope(
         status="ok",
@@ -1492,6 +1570,48 @@ async def get_admin_plugin_observability(
     return build_envelope(
         status="ok",
         message="plugin observability admin summary loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/admin/plugin-observability/attention-state")
+async def update_admin_plugin_observability_attention_state(
+    request: Request,
+    payload: PluginAttentionStatePayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    service = PluginObservabilityService(services.settings.database_url)
+    try:
+        result = service.update_attention_state(
+            attention_key=payload.attention_key.strip(),
+            attention_code=payload.attention_code.strip(),
+            action=payload.action.strip(),
+            site_id=payload.site_id.strip(),
+            plugin_slug=payload.plugin_slug.strip(),
+            event_kind=payload.event_kind.strip(),
+            error_code=payload.error_code.strip(),
+            mute_hours=payload.mute_hours,
+            operator_note=payload.note.strip(),
+            actor_ref="internal",
+        )
+    except ValueError as error:
+        return JSONResponse(
+            status_code=422,
+            content=build_envelope(
+                status="error",
+                error_code="plugin_observability.attention_action_invalid",
+                message=str(error),
+                trace_id=extract_trace_id(request.headers.get("traceparent", "")),
+                revision="m6",
+            ),
+        )
+    return build_envelope(
+        status="ok",
+        message="plugin observability attention state updated",
         data=result,
         revision="m6",
     )

@@ -132,7 +132,12 @@ def test_admin_plugin_observability_returns_cross_site_aggregation(tmp_path: Pat
     assert data["health"]["status"] in {"warning", "error"}
     assert data["health"]["score"] < 100
     assert isinstance(data["attention"], list)
+    assert data["attention_workflow"]["needs_attention"] == len(data["attention"])
+    assert all("attention_key" in item for item in data["attention"])
+    assert all(item["workflow_status"] == "active" for item in data["attention"])
     assert any(item["code"] == "plugin_observability.error_rate_high" for item in data["attention"])
+    assert data["digest"]["period_label"] == "daily"
+    assert data["digest"]["top_error_code"] == "abilities.callback_timeout"
     assert isinstance(data["plugins"], list)
     assert isinstance(data["sites"], list)
     assert all("health" in site for site in data["sites"])
@@ -213,10 +218,102 @@ def test_admin_plugin_observability_empty_data_returns_zero_counts(tmp_path: Pat
     assert data["sites"] == []
     assert data["health"]["status"] == "inactive"
     assert data["attention"][0]["code"] == "plugin_observability.inactive"
+    assert data["digest"]["headline"] == "No plugin monitoring data in this window."
     assert data["timeline"]
     assert sum(item["events_total"] for item in data["timeline"]) == 0
     assert data["errors"] == []
     assert data["recent_errors"] == []
+
+
+def test_admin_plugin_observability_attention_state_lifecycle(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    _seed_plugin_events(database_url)
+    summary_response = client.get(
+        "/internal/service/admin/plugin-observability?window_hours=24",
+        headers=build_internal_headers(trace_id="traceadmin0070000000000000000000"),
+    )
+    attention_item = summary_response.json()["data"]["attention"][0]
+
+    ack_response = client.post(
+        "/internal/service/admin/plugin-observability/attention-state",
+        headers=build_internal_headers(
+            idempotency_key="idem-plugin-attention-ack",
+            trace_id="traceadmin0080000000000000000000",
+        ),
+        json={
+            "attention_key": attention_item["attention_key"],
+            "attention_code": attention_item["code"],
+            "action": "acknowledge",
+            "site_id": attention_item.get("site_id", ""),
+            "plugin_slug": attention_item.get("plugin_slug", ""),
+            "event_kind": attention_item.get("event_kind", ""),
+            "error_code": attention_item.get("error_code", ""),
+            "note": "checking logs",
+        },
+    )
+    assert ack_response.status_code == 200
+    assert ack_response.json()["data"]["workflow_status"] == "acknowledged"
+
+    muted_response = client.post(
+        "/internal/service/admin/plugin-observability/attention-state",
+        headers=build_internal_headers(
+            idempotency_key="idem-plugin-attention-mute",
+            trace_id="traceadmin0090000000000000000000",
+        ),
+        json={
+            "attention_key": attention_item["attention_key"],
+            "attention_code": attention_item["code"],
+            "action": "mute",
+            "mute_hours": 2,
+        },
+    )
+    assert muted_response.status_code == 200
+    assert muted_response.json()["data"]["workflow_status"] == "muted"
+    assert muted_response.json()["data"]["muted_until"]
+
+    updated_summary = client.get(
+        "/internal/service/admin/plugin-observability?window_hours=24",
+        headers=build_internal_headers(trace_id="traceadmin0100000000000000000000"),
+    ).json()["data"]
+    updated_item = next(
+        item
+        for item in updated_summary["attention"]
+        if item["attention_key"] == attention_item["attention_key"]
+    )
+    assert updated_item["workflow_status"] == "muted"
+    assert updated_summary["attention_workflow"]["muted"] == 1
+
+    clear_response = client.post(
+        "/internal/service/admin/plugin-observability/attention-state",
+        headers=build_internal_headers(
+            idempotency_key="idem-plugin-attention-clear",
+            trace_id="traceadmin0110000000000000000000",
+        ),
+        json={
+            "attention_key": attention_item["attention_key"],
+            "attention_code": attention_item["code"],
+            "action": "clear",
+        },
+    )
+    assert clear_response.status_code == 200
+    assert clear_response.json()["data"]["workflow_status"] == "active"
+
+
+def test_admin_plugin_observability_attention_state_requires_idempotency(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(tmp_path)
+    response = client.post(
+        "/internal/service/admin/plugin-observability/attention-state",
+        headers=build_internal_headers(trace_id="traceadmin0120000000000000000000"),
+        json={
+            "attention_key": "attention-key-without-idempotency",
+            "attention_code": "plugin_observability.plugin_error",
+            "action": "acknowledge",
+        },
+    )
+    assert response.status_code in (400, 401, 409)
+    assert response.json()["status"] == "error"
 
 
 def test_admin_plugin_observability_invalid_window_hours(tmp_path: Path) -> None:

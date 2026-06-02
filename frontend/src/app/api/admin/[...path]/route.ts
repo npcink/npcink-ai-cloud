@@ -43,6 +43,12 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
   if (upperMethod === 'POST' && normalized === 'accounts') {
     return '/internal/service/accounts';
   }
+  if (
+    upperMethod === 'POST' &&
+    normalized === 'plugin-observability/attention-state'
+  ) {
+    return '/internal/service/admin/plugin-observability/attention-state';
+  }
 
   return normalized ? `/admin/${normalized}` : '/admin';
 }

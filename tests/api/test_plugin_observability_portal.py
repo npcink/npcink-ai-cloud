@@ -131,7 +131,12 @@ def test_portal_plugin_observability_returns_current_site_summary(tmp_path: Path
     assert data["totals"]["error_total"] == 1
     assert data["health"]["status"] == "error"
     assert isinstance(data["attention"], list)
+    assert "attention_workflow" in data
+    assert all("attention_key" in item for item in data["attention"])
+    assert all(item["workflow_status"] == "active" for item in data["attention"])
     assert any(item["code"] == "plugin_observability.plugin_error" for item in data["attention"])
+    assert data["digest"]["period_label"] == "daily"
+    assert data["digest"]["top_error_code"] == "adapter.dispatch_failed"
     assert {item["plugin_slug"] for item in data["plugins"]} == {
         "magick-ai-core",
         "magick-ai-adapter",

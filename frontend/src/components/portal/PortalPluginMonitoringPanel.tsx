@@ -71,6 +71,7 @@ export function PortalPluginMonitoringPanel({
   const recentErrors = summary?.recent_errors || [];
   const attention = summary?.attention || [];
   const health = summary?.health || null;
+  const digest = summary?.digest || null;
   const hasEvents = Number(totals?.events_total || 0) > 0;
   const timelineData = timeline.map((point) => ({
     label: timelineLabel(point.bucket_start_at),
@@ -193,16 +194,49 @@ export function PortalPluginMonitoringPanel({
                       key={`${item.code}-${item.plugin_slug || ''}-${item.error_code || ''}`}
                       className="rounded-xl border border-slate-200/80 bg-white/70 px-3 py-3 text-sm dark:border-slate-800 dark:bg-slate-900/40"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="font-semibold text-slate-950 dark:text-white">{item.title}</p>
-                        <BackofficeTag tone={attentionTone(item.severity)}>{item.severity}</BackofficeTag>
-                      </div>
-                      <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{item.detail}</p>
-                      {item.suggested_action ? (
+	                      <div className="flex items-start justify-between gap-2">
+	                        <p className="font-semibold text-slate-950 dark:text-white">{item.title}</p>
+	                        <BackofficeTag tone={attentionTone(item.severity)}>{item.severity}</BackofficeTag>
+	                      </div>
+	                      <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{item.detail}</p>
+	                      {item.workflow_status && item.workflow_status !== 'active' ? (
+	                        <BackofficeTag tone="info" className="mt-2">
+	                          {item.workflow_status}
+	                        </BackofficeTag>
+	                      ) : null}
+	                      {item.suggested_action ? (
                         <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
                           {item.suggested_action}
                         </p>
                       ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </BackofficeStackCard>
+          ) : null}
+
+          {digest?.headline && !compact ? (
+            <BackofficeStackCard className="space-y-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                    {t('portal.monitoring.digest_label', {}, 'Digest')}
+                  </p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
+                    {digest.headline}
+                  </h3>
+                </div>
+                <BackofficeTag tone="info">{digest.period_label || `${digest.window_hours}h`}</BackofficeTag>
+              </div>
+              {Array.isArray(digest.bullets) && digest.bullets.length ? (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {digest.bullets.slice(0, 4).map((item) => (
+                    <div
+                      key={item}
+                      className="rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300"
+                    >
+                      {item}
                     </div>
                   ))}
                 </div>
