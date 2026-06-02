@@ -86,6 +86,69 @@ Expected when the addon is absent, unverified, or monitoring is disabled:
 - Portal may show an empty monitoring state.
 - Admin may show no events for that site.
 
+## LocalWP Direct Flush
+
+When WP-CLI is unavailable in the shell, do not use Homebrew PHP directly
+against a LocalWP site. It may fail to connect to the LocalWP MySQL instance
+because `wp-config.php` uses `DB_HOST=localhost`.
+
+For the local `magick-ai.local` smoke site, use the LocalWP PHP binary and
+LocalWP MySQL socket:
+
+```bash
+'/Users/muze/Library/Application Support/Local/lightning-services/php-8.5.3+1/bin/darwin-arm64/bin/php' \
+  -d mysqli.default_socket='/Users/muze/Library/Application Support/Local/run/NPb24Zg9g/mysql/mysqld.sock' \
+  -d pdo_mysql.default_socket='/Users/muze/Library/Application Support/Local/run/NPb24Zg9g/mysql/mysqld.sock' \
+  -d display_errors=0 <<'PHP'
+<?php
+chdir('/Users/muze/Local Sites/magick-ai/app/public');
+require 'wp-load.php';
+
+for ($i = 1; $i <= 5; $i++) {
+    $result = Magick_AI_Cloud_Observability_Collector::flush_buffer();
+    echo 'flush_' . $i . '=' . wp_json_encode(
+        array(
+            'ok'             => $result['last_upload_ok'] ?? null,
+            'uploaded_at'    => $result['last_uploaded_at'] ?? null,
+            'error'          => $result['last_upload_error'] ?? null,
+            'total_uploaded' => $result['total_uploaded'] ?? null,
+            'buffer_count'   => $result['buffer_count'] ?? null,
+        ),
+        JSON_UNESCAPED_SLASHES
+    ) . "\n";
+
+    if (0 === (int) ($result['buffer_count'] ?? 0)) {
+        break;
+    }
+}
+
+$summary = Magick_AI_Cloud_Observability_Collector::refresh_summary();
+echo 'summary=' . wp_json_encode(
+    array(
+        'ok'           => $summary['last_refresh_ok'] ?? null,
+        'refreshed_at' => $summary['last_refreshed_at'] ?? null,
+        'error'        => $summary['last_refresh_error'] ?? null,
+        'events_total' => $summary['summary']['totals']['events_total'] ?? null,
+        'error_total'  => $summary['summary']['totals']['error_total'] ?? null,
+    ),
+    JSON_UNESCAPED_SLASHES
+) . "\n";
+PHP
+```
+
+Expected:
+
+- Each flush reports `ok=true`.
+- `buffer_count` decreases by up to 50 per flush.
+- Final `buffer_count` reaches `0`.
+- Summary refresh reports current `events_total` and `error_total`.
+
+If Addon status reports `X-Magick-Timestamp header is outside the accepted time
+window`, first compare the local PHP clock and Cloud API clock. If clocks match,
+trigger a fresh direct flush with the LocalWP PHP command above before assuming
+the Cloud verifier is broken. A stale timestamp error can be historical status
+from an earlier delayed upload attempt.
+
 ## Emitter Trigger Checklist
 
 ### magick-ai-abilities
@@ -353,4 +416,3 @@ OTel exporter reports local collector errors:
   requests.
 - Do not confuse OTel export retries with plugin observability ingestion
   failure.
-
