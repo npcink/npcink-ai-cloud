@@ -55,6 +55,8 @@ starts sending it.
   - Adds top-level `health` and `attention`.
   - Adds top-level `attention_workflow` and `digest`.
   - Adds per-site `health` in admin summaries.
+  - Cleans up raw plugin observability events after the configured retention
+    window, defaulting to 180 days.
   - Stores operator workflow state in
     `plugin_observability_attention_states`.
 
@@ -150,6 +152,18 @@ Run the whitespace check:
 git diff --check
 ```
 
+Run the local Cloud Addon to Cloud smoke flow:
+
+```bash
+scripts/plugin-observability-smoke.sh
+```
+
+The smoke script flushes the verified local Cloud Addon buffer, refreshes the
+cached Cloud summary, prints sent/stored/duplicate counters, and prints the
+Portal/Admin smoke URLs. It defaults to the current LocalWP and Docker Compose
+dev environment; override `MAGICK_WP_PATH`, `MAGICK_WP_PHP`,
+`MAGICK_WP_CLI`, or `MAGICK_CLOUD_POSTGRES_CONTAINER` when needed.
+
 For local visual smoke testing, use:
 
 ```bash
@@ -168,6 +182,8 @@ http://127.0.0.1:8010/portal/dev-entry?redirect=%2Fportal%2Fmonitoring
 - Keep registration-class events sparse. Emit only when the ability catalog
   changes, a plugin activates, a plugin version changes, or a manual refresh is
   requested.
+- Keep raw plugin observability retention bounded. The default retention window
+  is 180 days and should not be replaced by indefinite raw event storage.
 - Prefer new stable `event_kind`, `error_code`, or `attention` entries over
   ad-hoc display-only strings when adding high-value signals.
 

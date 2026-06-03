@@ -11,6 +11,7 @@ from app.core.db import require_database_connection
 from app.core.logging import configure_logging, get_logger
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
+from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.rollup import UsageRollupService
 from app.workers.alert_provider_degradation import run_once as run_alert_provider_degradation
@@ -36,6 +37,12 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
         settings=settings,
     ).cleanup_expired_run_results()
     return {"purged_runs": purged_runs}
+
+
+def _run_plugin_observability_cleanup(settings: Settings) -> dict[str, object]:
+    return PluginObservabilityService(settings.database_url).cleanup_expired_events(
+        retention_days=settings.plugin_observability_retention_days,
+    )
 
 
 def _run_usage_rollup(settings: Settings) -> dict[str, object]:
@@ -112,6 +119,14 @@ def cadence_task_specs() -> list[CadenceTaskSpec]:
             event_kind="runtime.retention_cleanup.cadence",
             interval_seconds=lambda settings: settings.retention_cleanup_interval_seconds,
             runner=_run_retention_cleanup,
+        ),
+        CadenceTaskSpec(
+            task_id="plugin_observability_cleanup",
+            event_kind="plugin_observability.retention_cleanup.cadence",
+            interval_seconds=lambda settings: (
+                settings.plugin_observability_cleanup_interval_seconds
+            ),
+            runner=_run_plugin_observability_cleanup,
         ),
         CadenceTaskSpec(
             task_id="usage_rollup",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -11,6 +12,7 @@ from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import PluginObservabilityEvent
 from app.core.services import CloudServices
+from app.domain.observability.plugin_events import PluginObservabilityService
 from tests.conftest import build_auth_headers, merge_json_headers, seed_site_auth
 
 
@@ -307,3 +309,78 @@ def test_plugin_observability_event_id_dedupes_timestamp_drift(tmp_path: Path) -
     with get_session(database_url) as session:
         count = session.scalar(select(func.count()).select_from(PluginObservabilityEvent))
         assert count == 1
+
+
+def test_plugin_observability_cleanup_retains_180_days(tmp_path: Path) -> None:
+    database_url, _ = _build_client(tmp_path)
+    now = datetime(2026, 6, 3, tzinfo=UTC)
+    with get_session(database_url) as session:
+        session.add_all(
+            [
+                PluginObservabilityEvent(
+                    dedupe_key="old-plugin-observability-event",
+                    site_id="site_obs",
+                    key_id="key_test",
+                    schema_version="2026-06-01",
+                    plugin_slug="magick-ai-core",
+                    plugin_version="1.0.0",
+                    source="local",
+                    event_kind="core.proposal.create",
+                    event_id="old_event",
+                    status="ok",
+                    status_detail=None,
+                    error_code=None,
+                    latency_ms=None,
+                    ability_id=None,
+                    proposal_id=None,
+                    correlation_id=None,
+                    adapter_request_id=None,
+                    method=None,
+                    route=None,
+                    status_code=None,
+                    payload_json={},
+                    emitted_at=None,
+                    captured_at=None,
+                    received_at=now - timedelta(days=181),
+                ),
+                PluginObservabilityEvent(
+                    dedupe_key="retained-plugin-observability-event",
+                    site_id="site_obs",
+                    key_id="key_test",
+                    schema_version="2026-06-01",
+                    plugin_slug="magick-ai-core",
+                    plugin_version="1.0.0",
+                    source="local",
+                    event_kind="core.proposal.create",
+                    event_id="retained_event",
+                    status="ok",
+                    status_detail=None,
+                    error_code=None,
+                    latency_ms=None,
+                    ability_id=None,
+                    proposal_id=None,
+                    correlation_id=None,
+                    adapter_request_id=None,
+                    method=None,
+                    route=None,
+                    status_code=None,
+                    payload_json={},
+                    emitted_at=None,
+                    captured_at=None,
+                    received_at=now - timedelta(days=180),
+                ),
+            ]
+        )
+        session.commit()
+
+    result = PluginObservabilityService(database_url).cleanup_expired_events(
+        retention_days=180,
+        now=now,
+    )
+
+    assert result["purged_events"] == 1
+    assert result["retention_days"] == 180
+    assert result["cutoff_at"] == "2025-12-05T00:00:00Z"
+    with get_session(database_url) as session:
+        event_ids = set(session.scalars(select(PluginObservabilityEvent.event_id)))
+    assert event_ids == {"retained_event"}

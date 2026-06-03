@@ -14,6 +14,7 @@ from app.workers.ops_cadence import build_cadence_summary
 
 STRICT_CADENCE_TASK_IDS = (
     "retention_cleanup",
+    "plugin_observability_cleanup",
     "usage_rollup",
     "router_diagnostics_summary",
     "latency_probe_summary",
@@ -57,7 +58,9 @@ class ObservabilityService:
             "tracing": {
                 "service_name": self.settings.otel_service_name,
                 "otlp_endpoint": str(self.settings.otel_exporter_otlp_endpoint or ""),
-                "otlp_configured": bool(str(self.settings.otel_exporter_otlp_endpoint or "").strip()),
+                "otlp_configured": bool(
+                    str(self.settings.otel_exporter_otlp_endpoint or "").strip()
+                ),
                 "trace_sink_otlp_endpoint": str(self.settings.otel_trace_sink_otlp_endpoint or ""),
                 "trace_sink_query_url": str(self.settings.otel_trace_query_url or ""),
                 "trace_sink_configured": bool(

@@ -1528,6 +1528,7 @@ def test_service_routes_expose_ops_cadence_summary(tmp_path: Path) -> None:
         tmp_path,
         settings_overrides={
             "retention_cleanup_interval_seconds": 60,
+            "plugin_observability_cleanup_interval_seconds": 60,
             "usage_rollup_interval_seconds": 60,
             "router_diagnostics_interval_seconds": 60,
             "latency_probe_interval_seconds": 60,
@@ -1562,9 +1563,11 @@ def test_service_routes_expose_ops_cadence_summary(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    assert payload["totals"]["tasks_total"] == 6
+    assert payload["totals"]["tasks_total"] == 8
     assert any(item["task_id"] == "retention_cleanup" for item in payload["items"])
-    retention_item = next(item for item in payload["items"] if item["task_id"] == "retention_cleanup")
+    retention_item = next(
+        item for item in payload["items"] if item["task_id"] == "retention_cleanup"
+    )
     assert retention_item["last_run_at"] != ""
     assert retention_item["freshness"] in {"fresh", "attention"}
 
@@ -1620,7 +1623,7 @@ def test_service_routes_expose_observability_summary(tmp_path: Path) -> None:
     )
     assert payload["workers"]["totals"]["workers_total"] == 3
     assert any(item["worker_id"] == "runtime_queue" for item in payload["workers"]["items"])
-    assert payload["cadence"]["totals"]["tasks_total"] == 6
+    assert payload["cadence"]["totals"]["tasks_total"] == 8
     assert "status_counts" in payload["providers"]
     assert "summary" in payload["runtime"]
     assert "backlog" in payload["runtime"]

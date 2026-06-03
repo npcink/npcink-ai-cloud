@@ -4,7 +4,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, desc, func, select
+from sqlalchemy import case, delete, desc, func, select
 
 from app.core.db import get_session
 from app.core.models import (
@@ -291,6 +291,30 @@ class PluginObservabilityService:
             "timeline": timeline,
             "errors": errors,
             "recent_errors": [self._recent_error(event) for event in recent_errors],
+        }
+
+    def cleanup_expired_events(
+        self,
+        *,
+        retention_days: int = 180,
+        now: datetime | None = None,
+    ) -> dict[str, object]:
+        current_time = (now or datetime.now(UTC)).astimezone(UTC)
+        bounded_days = max(1, int(retention_days or 180))
+        cutoff_at = current_time - timedelta(days=bounded_days)
+
+        with get_session(self.database_url) as session:
+            result = session.execute(
+                delete(PluginObservabilityEvent).where(
+                    PluginObservabilityEvent.received_at < cutoff_at
+                )
+            )
+            session.commit()
+
+        return {
+            "purged_events": int(result.rowcount or 0),
+            "retention_days": bounded_days,
+            "cutoff_at": self._format_datetime(cutoff_at),
         }
 
     def get_admin_summary(

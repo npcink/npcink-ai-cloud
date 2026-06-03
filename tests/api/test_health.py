@@ -166,6 +166,10 @@ def test_operational_ready_endpoint_requires_fresh_workers_and_cadence(tmp_path)
         )
     for task_id, event_kind in (
         ("retention_cleanup", "runtime.retention_cleanup.cadence"),
+        (
+            "plugin_observability_cleanup",
+            "plugin_observability.retention_cleanup.cadence",
+        ),
         ("usage_rollup", "usage.rollup_cadence"),
         ("router_diagnostics_summary", "router.diagnostics_summary_cadence"),
         ("latency_probe_summary", "latency.probe_summary_cadence"),

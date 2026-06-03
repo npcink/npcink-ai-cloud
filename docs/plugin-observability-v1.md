@@ -125,6 +125,16 @@ Cloud summaries must not expose:
 - control actions that mutate local plugin state
 - plugin registry edits or ability publication controls
 
+## Retention
+
+Raw `plugin_observability_events` rows are retained for 180 days by default,
+based on Cloud `received_at`. The ops cadence worker may purge rows older than
+that cutoff. Portal and Admin summaries are read models over retained
+metadata-only events; they do not require indefinite raw event storage.
+
+Retention cleanup must not call back into WordPress, mutate local plugin
+settings, or change local approval/router/write state.
+
 ## Health State
 
 Summary health state is advisory and read-only:
