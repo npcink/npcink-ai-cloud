@@ -406,7 +406,18 @@ Cloud Python still has existing static-analysis debt.
 
 ```bash
 cp .env.example .env
-docker compose -f docker-compose.dev.yml up --build
+pnpm run dev
+```
+
+`pnpm run dev` starts the local core stack only: `postgres`, `redis`, `api`,
+`frontend`, and `proxy`.
+
+Use the worker profiles only when the current task needs them:
+
+```bash
+pnpm run dev:runtime   # adds the queued runtime worker
+pnpm run dev:callback  # adds runtime and callback workers
+pnpm run dev:ops       # adds runtime, callback, and ops cadence workers
 ```
 
 Keep local-only debug credentials such as `MAGICK_CLOUD_INTERNAL_AUTH_TOKEN`,

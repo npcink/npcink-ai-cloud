@@ -66,6 +66,8 @@ services:
       - ../scripts:/scripts:ro
 
   worker:
+    profiles:
+      - runtime
     build:
       context: .
       dockerfile: Dockerfile
@@ -88,6 +90,8 @@ services:
       - .:/app
 
   callback-worker:
+    profiles:
+      - callback
     build:
       context: .
       dockerfile: Dockerfile
@@ -110,6 +114,8 @@ services:
       - .:/app
 
   ops-worker:
+    profiles:
+      - ops
     build:
       context: .
       dockerfile: Dockerfile
