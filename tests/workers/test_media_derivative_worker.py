@@ -24,6 +24,22 @@ def _make_png_bytes(width: int = 100, height: int = 80, mode: str = "RGB") -> by
     return buf.getvalue()
 
 
+def _make_cmyk_jpeg_bytes(width: int = 80, height: int = 60) -> bytes:
+    img = Image.new("CMYK", (width, height), color=(0, 128, 128, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _make_oriented_jpeg_bytes(width: int = 40, height: int = 20) -> bytes:
+    img = Image.new("RGB", (width, height), color="blue")
+    exif = img.getexif()
+    exif[274] = 6
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif.tobytes())
+    return buf.getvalue()
+
+
 def _make_animated_gif_bytes() -> bytes:
     frames = [Image.new("RGB", (10, 10), color=c) for c in ("red", "green")]
     buf = io.BytesIO()
@@ -61,6 +77,37 @@ def test_process_jpeg_flattens_alpha() -> None:
     )
     assert result.format == "jpeg"
     assert "source_alpha_flattened_for_jpeg" in result.processing_warnings
+
+
+def test_process_cmyk_jpeg_to_webp_converts_color_mode() -> None:
+    source = _make_cmyk_jpeg_bytes()
+    result = process_media_derivative(
+        source_bytes=source,
+        source_media_type="image",
+        target_format="webp",
+        max_width=80,
+        quality=80,
+    )
+    assert result.format == "webp"
+    assert result.mime_type == "image/webp"
+    assert result.width == 80
+    assert result.height == 60
+    assert "source_color_mode_converted_for_webp" in result.processing_warnings
+
+
+def test_process_applies_exif_orientation_before_output() -> None:
+    source = _make_oriented_jpeg_bytes()
+    result = process_media_derivative(
+        source_bytes=source,
+        source_media_type="image",
+        target_format="png",
+        max_width=100,
+        quality=80,
+    )
+    assert result.source_width == 40
+    assert result.source_height == 20
+    assert result.width == 20
+    assert result.height == 40
 
 
 def test_process_original_preserves_bytes() -> None:

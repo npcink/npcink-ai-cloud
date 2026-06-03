@@ -169,8 +169,14 @@ def _save_image(
         save_kwargs["quality"] = quality
         save_kwargs["optimize"] = True
     elif resolved_format == "webp":
+        if output_image.mode not in ("RGB", "RGBA"):
+            warnings.append("source_color_mode_converted_for_webp")
+            output_image = output_image.convert("RGB")
         save_kwargs["quality"] = quality
     elif resolved_format == "avif":
+        if output_image.mode not in ("RGB", "RGBA"):
+            warnings.append("source_color_mode_converted_for_avif")
+            output_image = output_image.convert("RGB")
         save_kwargs["quality"] = quality
     elif resolved_format == "png":
         save_kwargs["optimize"] = True

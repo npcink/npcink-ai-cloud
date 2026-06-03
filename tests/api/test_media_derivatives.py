@@ -535,6 +535,117 @@ def test_invalid_format_gif_returns_422(tmp_path: Path) -> None:
         dispose_engine(database_url)
 
 
+def test_invalid_watermark_position_returns_422(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "png",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+                "watermark": {
+                    "type": "image",
+                    "position": "diagonal",
+                    "opacity": 0.75,
+                    "scale_percent": 20,
+                    "margin_px": 8,
+                },
+            },
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            _make_png_bytes(100, 100),
+            watermark_bytes=_make_png_bytes(10, 10),
+            boundary="boundary-invalid-watermark-position",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-invalid-watermark-position-001",
+            nonce="nonce-invalid-watermark-position-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "media_derivative.invalid_watermark"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_quality_out_of_bounds_returns_422(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "webp",
+                "max_width": 100,
+                "quality": 0,
+                "source_media_type": "image",
+            },
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            _make_png_bytes(100, 100),
+            boundary="boundary-quality-out-of-bounds",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-quality-out-of-bounds-001",
+            nonce="nonce-quality-out-of-bounds-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "media_derivative.validation_error"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_ttl_out_of_bounds_returns_422(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    try:
+        request_dict = {
+            "request_contract_version": "media_derivative_cloud_request.v1",
+            "cloud_job_payload": {
+                "job_type": "generate_optimized_media_derivative",
+                "target_format": "webp",
+                "max_width": 100,
+                "quality": 80,
+                "source_media_type": "image",
+            },
+            "ttl_minutes": 120,
+        }
+        body, content_type = _build_multipart_body(
+            request_dict,
+            _make_png_bytes(100, 100),
+            boundary="boundary-ttl-out-of-bounds",
+        )
+        headers = build_auth_headers(
+            "POST",
+            "/v1/runtime/media-derivatives",
+            site_id="site_alpha",
+            body=body,
+            idempotency_key="idem-ttl-out-of-bounds-001",
+            nonce="nonce-ttl-out-of-bounds-001",
+        )
+        headers["content-type"] = content_type
+        response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "media_derivative.validation_error"
+    finally:
+        dispose_engine(database_url)
+
+
 def test_valid_upload_above_default_runtime_body_limit_is_accepted(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
     try:
