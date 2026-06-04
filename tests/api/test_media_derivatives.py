@@ -182,6 +182,9 @@ def test_worker_success_path(tmp_path: Path) -> None:
         assert artifact["filesize_bytes"] > 0
         assert artifact["checksum"].startswith("sha256:")
         assert artifact["mime_type"] == "image/webp"
+        assert artifact["suggested_filename"].endswith(".webp")
+        assert artifact["suggested_filename"].startswith("media-derivative-webp-")
+        assert artifact["filename_basis"]["owner"] == "wordpress_write_ability_final"
         assert artifact["processing_warnings"] == []
         with get_session(database_url) as session:
             metric = session.query(MediaDerivativeJobMetric).filter_by(run_id=run_id).one()

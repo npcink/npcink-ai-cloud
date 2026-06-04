@@ -47,6 +47,13 @@ from app.core.security import (
     REPLAY_SCOPE_PUBLIC_POST_SITE,
 )
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
+from app.domain.image_sources.contracts import (
+    IMAGE_SOURCE_ABILITIES,
+    IMAGE_SOURCE_PROFILE_ID,
+    ImageSourceContractViolation,
+    validate_image_source_runtime_contract,
+)
+from app.domain.image_sources.service import ImageSourceProviderError, ImageSourceService
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
 from app.domain.runtime.analysis_result import build_analysis_result_envelope
@@ -207,6 +214,8 @@ class RuntimeService:
         }
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
+        if self._is_image_source_request(request):
+            return self._execute_image_source_request(request)
         if self._is_site_knowledge_request(request):
             return self._execute_site_knowledge_request(request)
         if self._is_web_search_request(request):
@@ -1936,6 +1945,9 @@ class RuntimeService:
         if run.execution_kind == "media_derivative":
             self._execute_media_derivative_run(run, repository=repository)
             return
+        if self._is_image_source_run(run):
+            self._execute_image_source_run(run, repository=repository)
+            return
         if self._is_site_knowledge_run(run):
             self._execute_site_knowledge_run(run, repository=repository)
             return
@@ -2396,11 +2408,211 @@ class RuntimeService:
             fallback_used=False,
         )
 
+    def _execute_image_source_request(
+        self,
+        request: RuntimeRequest,
+    ) -> RuntimeExecutionResponse:
+        self._validate_image_source_contract(request)
+        trace_id = request.trace_id or uuid4().hex
+        run_id = f"run_{uuid4().hex}"
+        merged_policy = self._build_image_source_policy(request)
+        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            self._require_active_site(repository, request.site_id)
+
+            if request.idempotency_key:
+                existing = repository.get_run_by_idempotency(
+                    request.site_id,
+                    request.idempotency_key,
+                )
+                if existing is not None:
+                    if existing.request_fingerprint != request_fingerprint:
+                        raise RuntimeIdempotencyConflictError(
+                            request.site_id,
+                            request.idempotency_key,
+                        )
+                    session.commit()
+                    return self._build_execution_response(
+                        existing,
+                        repository=repository,
+                        idempotent_replay=True,
+                    )
+
+            commercial_decision = self.commercial_service.authorize_runtime_request(
+                session=session,
+                site_id=request.site_id,
+                ability_family=request.ability_family,
+                channel=request.channel,
+                execution_kind=request.execution_kind,
+                execution_tier=request.execution_tier,
+                data_classification=request.data_classification,
+                trace_id=trace_id,
+                idempotency_key=request.idempotency_key,
+                request_kind="execute",
+                run_id=run_id,
+            )
+            self._enforce_batch_limits(
+                request=request,
+                commercial_decision=commercial_decision,
+            )
+            merged_policy = self._apply_commercial_policy_overrides(
+                merged_policy,
+                commercial_decision=commercial_decision,
+            )
+            storage_mode = self._get_storage_mode(merged_policy)
+            run = repository.create_run(
+                run_id=run_id,
+                site_id=request.site_id,
+                account_id=str(commercial_decision.get("account_id") or "") or None,
+                subscription_id=str(commercial_decision.get("subscription_id") or "") or None,
+                plan_version_id=str(commercial_decision.get("plan_version_id") or "") or None,
+                ability_name=request.ability_name,
+                ability_family=request.ability_family,
+                skill_id=request.skill_id,
+                workflow_id=request.workflow_id,
+                contract_version=request.contract_version,
+                channel=request.channel,
+                execution_kind=request.execution_kind,
+                execution_tier=request.execution_tier,
+                execution_pattern=request.execution_pattern,
+                data_classification=request.data_classification,
+                profile_id=request.profile_id or IMAGE_SOURCE_PROFILE_ID,
+                canonical_run_id=request.canonical_run_id or None,
+                status="running",
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+                trace_id=trace_id,
+                input_json=self._prepare_input_for_storage(
+                    request.input_payload,
+                    storage_mode=storage_mode,
+                ),
+                execution_input_ciphertext=None,
+                policy_json=merged_policy,
+                selected_provider_id="image_source",
+                selected_model_id="image-source-managed",
+                selected_instance_id="cloud-runtime",
+            )
+            self.commercial_service.record_run_acceptance(session=session, run=run)
+            self._execute_image_source_run(
+                run,
+                repository=repository,
+                input_payload=request.input_payload,
+            )
+            session.commit()
+            return self._build_execution_response(
+                run,
+                repository=repository,
+                idempotent_replay=False,
+            )
+
+    def _execute_image_source_run(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any] | None = None,
+    ) -> None:
+        if self._cancel_requested_before_attempt(run, repository=repository):
+            repository.mark_run_canceled(run)
+            return
+
+        payload = (
+            input_payload
+            if isinstance(input_payload, dict)
+            else self._get_execution_input_payload(run)
+        )
+        try:
+            execution = ImageSourceService(self.settings).execute(
+                site_id=run.site_id,
+                ability_name=run.ability_name,
+                contract_version=run.contract_version or "",
+                input_payload=payload,
+                run_id=run.run_id,
+            )
+        except ImageSourceContractViolation as error:
+            repository.mark_run_failed(
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+                provider_id="image_source",
+                model_id="image-source-managed",
+                instance_id="cloud-runtime",
+                fallback_used=False,
+            )
+            return
+        except ImageSourceProviderError as error:
+            if error.usage is not None:
+                provider_call = repository.record_provider_call(
+                    run_id=run.run_id,
+                    provider_id=error.usage.provider_id,
+                    model_id=error.usage.model_id,
+                    instance_id=error.usage.instance_id,
+                    region=error.usage.region,
+                    latency_ms=error.usage.latency_ms,
+                    tokens_in=0,
+                    tokens_out=0,
+                    cost=error.usage.cost,
+                    retry_count=0,
+                    fallback_used=False,
+                    error_code=error.usage.error_code or error.error_code,
+                )
+                self.commercial_service.record_provider_call_usage(
+                    session=repository.session,
+                    run=run,
+                    provider_call=provider_call,
+                )
+            repository.mark_run_failed(
+                run,
+                error_code=error.error_code,
+                error_message=error.message,
+                provider_id="image_source",
+                model_id="image-source-managed",
+                instance_id="cloud-runtime",
+                fallback_used=False,
+            )
+            return
+
+        provider_call = repository.record_provider_call(
+            run_id=run.run_id,
+            provider_id=execution.usage.provider_id,
+            model_id=execution.usage.model_id,
+            instance_id=execution.usage.instance_id,
+            region=execution.usage.region,
+            latency_ms=execution.usage.latency_ms,
+            tokens_in=0,
+            tokens_out=0,
+            cost=execution.usage.cost,
+            retry_count=0,
+            fallback_used=False,
+            error_code=execution.usage.error_code,
+        )
+        self.commercial_service.record_provider_call_usage(
+            session=repository.session,
+            run=run,
+            provider_call=provider_call,
+        )
+        repository.mark_run_succeeded(
+            run,
+            result_json=execution.result_json,
+            provider_id="image_source",
+            model_id="image-source-managed",
+            instance_id="cloud-runtime",
+            fallback_used=False,
+        )
+
+    def _is_image_source_request(self, request: RuntimeRequest) -> bool:
+        return request.ability_name in IMAGE_SOURCE_ABILITIES
+
     def _is_site_knowledge_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in SITE_KNOWLEDGE_ABILITIES
 
     def _is_web_search_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in WEB_SEARCH_ABILITIES
+
+    def _is_image_source_run(self, run: RunRecord) -> bool:
+        return str(run.ability_name or "") in IMAGE_SOURCE_ABILITIES
 
     def _is_site_knowledge_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in SITE_KNOWLEDGE_ABILITIES
@@ -2461,6 +2673,61 @@ class RuntimeService:
                 if isinstance(policy.get("task_backend"), dict)
                 else {}
             ),
+        }
+        return policy
+
+    def _validate_image_source_contract(self, request: RuntimeRequest) -> None:
+        try:
+            validate_image_source_runtime_contract(
+                ability_name=request.ability_name,
+                contract_version=request.contract_version,
+                input_payload=request.input_payload,
+            )
+        except ImageSourceContractViolation as error:
+            raise RuntimeExecutionContractError(error.error_code, error.message) from error
+        if request.ability_name not in IMAGE_SOURCE_ABILITIES:
+            raise RuntimeExecutionContractError(
+                "image_source.unknown_ability",
+                "image source ability_name is not supported",
+            )
+        if request.execution_pattern not in {"inline", "step_offload"}:
+            raise RuntimeExecutionContractError(
+                "image_source.inline_required",
+                "image source currently supports inline-compatible execution only",
+            )
+        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
+            raise RuntimeExecutionContractError(
+                "runtime.contract_timeout_exceeded",
+                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
+            )
+        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
+            raise RuntimeExecutionContractError(
+                "runtime.contract_retry_exceeded",
+                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
+            )
+        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
+            raise RuntimeExecutionContractError(
+                "runtime.contract_retention_exceeded",
+                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
+            )
+
+    def _build_image_source_policy(self, request: RuntimeRequest) -> dict[str, object]:
+        policy = self._apply_runtime_controls(dict(request.policy), request)
+        policy["allow_fallback"] = False
+        policy["execution_contract"] = {
+            "ability_name": request.ability_name,
+            "contract_version": request.contract_version,
+            "profile_id": request.profile_id or IMAGE_SOURCE_PROFILE_ID,
+            "execution_pattern": request.execution_pattern,
+            "data_classification": request.data_classification,
+            "storage_mode": request.storage_mode,
+            "timeout_seconds": max(0, request.timeout_seconds),
+            "retry_max": max(0, request.retry_max),
+            "retention_ttl": max(0, request.retention_ttl),
+            "provider_source": "cloud_managed",
+            "candidate_contract": "image_candidate.v1",
+            "final_writes": "core_proposal_required",
+            "direct_wordpress_write": False,
         }
         return policy
 

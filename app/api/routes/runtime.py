@@ -12,6 +12,13 @@ from app.adapters.providers.registry import resolve_execution_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.security import RequestAuthContext
+from app.domain.image_sources.contracts import (
+    IMAGE_SOURCE_ABILITIES,
+    IMAGE_SOURCE_ABILITY_FAMILY,
+    IMAGE_SOURCE_DATA_CLASSIFICATION,
+    IMAGE_SOURCE_EXECUTION_KIND,
+    IMAGE_SOURCE_PROFILE_ID,
+)
 from app.domain.routing.errors import RoutingError
 from app.domain.runtime.errors import RuntimeErrorBase, RuntimeUnsupportedExecutionPatternError
 from app.domain.runtime.models import (
@@ -84,13 +91,14 @@ class RuntimePayload(BaseModel):
     channel: str = "openapi"
     execution_kind: str = ""
     execution_tier: Literal["cloud"] = "cloud"
-    execution_pattern: Literal["inline", "whole_run_offload"] = "inline"
+    execution_pattern: Literal["inline", "step_offload", "whole_run_offload"] = "inline"
     data_classification: Literal[
         "public",
         "internal",
         "pii",
         "secret",
         "public_site_content",
+        "public_reference_media",
     ] = "internal"
     storage_mode: Literal["no_store", "result_only", "full_store_with_ttl"] = "result_only"
     timeout_seconds: int = 0
@@ -103,6 +111,18 @@ class RuntimePayload(BaseModel):
     trace_id: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     policy: RuntimePolicyPayload = Field(default_factory=RuntimePolicyPayload)
+
+    @model_validator(mode="after")
+    def reject_unscoped_step_offload(self) -> RuntimePayload:
+        if (
+            self.execution_pattern == "step_offload"
+            and self.ability_name not in IMAGE_SOURCE_ABILITIES
+        ):
+            raise ValueError(
+                "execution_pattern=step_offload is only supported for managed "
+                "image-source runtime abilities"
+            )
+        return self
 
 
 def _get_runtime_service(request: Request) -> RuntimeService:
@@ -137,7 +157,10 @@ def _build_runtime_request(
         channel=payload.channel,
         execution_kind=_resolve_execution_kind(payload),
         execution_tier=payload.execution_tier,
-        execution_pattern=_normalize_runtime_execution_pattern(payload.execution_pattern),
+        execution_pattern=_normalize_runtime_execution_pattern(
+            payload.execution_pattern,
+            ability_name=payload.ability_name,
+        ),
         data_classification=_resolve_data_classification(payload),
         storage_mode=payload.storage_mode,
         timeout_seconds=max(0, payload.timeout_seconds),
@@ -162,7 +185,13 @@ def _is_web_search_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in WEB_SEARCH_ABILITIES
 
 
+def _is_image_source_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in IMAGE_SOURCE_ABILITIES
+
+
 def _resolve_ability_family(payload: RuntimePayload) -> str:
+    if _is_image_source_payload(payload):
+        return IMAGE_SOURCE_ABILITY_FAMILY
     if _is_site_knowledge_payload(payload):
         return SITE_KNOWLEDGE_ABILITY_FAMILY
     if _is_web_search_payload(payload):
@@ -171,6 +200,8 @@ def _resolve_ability_family(payload: RuntimePayload) -> str:
 
 
 def _resolve_execution_kind(payload: RuntimePayload) -> str:
+    if _is_image_source_payload(payload) and not payload.execution_kind:
+        return IMAGE_SOURCE_EXECUTION_KIND
     if _is_site_knowledge_payload(payload) and not payload.execution_kind:
         return SITE_KNOWLEDGE_EXECUTION_KIND
     if _is_web_search_payload(payload) and not payload.execution_kind:
@@ -179,6 +210,8 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
 
 
 def _resolve_profile_id(payload: RuntimePayload) -> str:
+    if _is_image_source_payload(payload) and not payload.profile_id:
+        return IMAGE_SOURCE_PROFILE_ID
     if _is_site_knowledge_payload(payload) and not payload.profile_id:
         return SITE_KNOWLEDGE_PROFILE_ID
     if _is_web_search_payload(payload) and not payload.profile_id:
@@ -187,6 +220,8 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
 
 
 def _resolve_data_classification(payload: RuntimePayload) -> str:
+    if _is_image_source_payload(payload):
+        return IMAGE_SOURCE_DATA_CLASSIFICATION
     if _is_site_knowledge_payload(payload):
         return SITE_KNOWLEDGE_DATA_CLASSIFICATION
     if _is_web_search_payload(payload):
@@ -228,9 +263,11 @@ def _resolve_trace_id(
     return auth.trace_id or uuid4().hex
 
 
-def _normalize_runtime_execution_pattern(value: str) -> str:
+def _normalize_runtime_execution_pattern(value: str, *, ability_name: str = "") -> str:
     if value == "whole_run_offload":
         return "whole_run_offload"
+    if value == "step_offload" and ability_name in IMAGE_SOURCE_ABILITIES:
+        return "step_offload"
     if value not in ("inline", "whole_run_offload"):
         raise RuntimeUnsupportedExecutionPatternError(value)
     return "inline"

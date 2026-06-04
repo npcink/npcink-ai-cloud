@@ -56,6 +56,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { href: '/admin/media-observability', label: t('admin.nav_media_observability', {}, 'Media Observability') },
     { href: '/admin/ai-advisor', label: t('admin.nav_ai_advisor', {}, 'AI Advisor') },
     { href: '/admin/web-search', label: t('admin.nav_web_search', {}, 'Web Search') },
+    { href: '/admin/image-sources', label: t('admin.nav_image_sources', {}, 'Image Sources') },
     { href: '/admin/vector-observability', label: t('admin.nav_vector_observability', {}, 'Vector Observability') },
   ];
 

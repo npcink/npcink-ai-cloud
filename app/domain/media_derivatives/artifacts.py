@@ -109,12 +109,19 @@ def build_artifact_result_json(artifact: MediaDerivativeArtifact) -> dict[str, o
         warnings = artifact.processing_warnings_json.get("warnings", [])
     elif isinstance(artifact.processing_warnings_json, list):
         warnings = artifact.processing_warnings_json
+    suggested_filename = _suggested_artifact_filename(artifact)
     return {
         "artifact": {
             "artifact_id": artifact.artifact_id,
             "artifact_reference": {"artifact_id": artifact.artifact_id},
             "download_url": f"/v1/runtime/artifacts/{artifact.artifact_id}/download",
             "expires_at": artifact.expires_at.isoformat() if artifact.expires_at else None,
+            "suggested_filename": suggested_filename,
+            "filename_basis": {
+                "owner": "wordpress_write_ability_final",
+                "strategy": "format_checksum",
+                "final_sanitize_unique_required": True,
+            },
             "mime_type": artifact.mime_type,
             "format": artifact.format,
             "width": artifact.width,
@@ -124,3 +131,23 @@ def build_artifact_result_json(artifact: MediaDerivativeArtifact) -> dict[str, o
             "processing_warnings": warnings,
         },
     }
+
+
+def _suggested_artifact_filename(artifact: MediaDerivativeArtifact) -> str:
+    extension = _extension_for_format(str(artifact.format or ""))
+    checksum = str(artifact.checksum or "")
+    if checksum.startswith("sha256:"):
+        checksum = checksum[7:]
+    checksum_part = "".join(ch for ch in checksum.lower() if ch in "0123456789abcdef")[:8]
+    if not checksum_part:
+        checksum_part = artifact.artifact_id.replace("art_", "")[:8]
+    return f"media-derivative-{str(artifact.format or 'image').lower()}-{checksum_part}.{extension}"
+
+
+def _extension_for_format(format_name: str) -> str:
+    normalized = format_name.strip().lower()
+    if normalized == "jpeg":
+        return "jpg"
+    if normalized in {"webp", "avif", "png"}:
+        return normalized
+    return "bin"

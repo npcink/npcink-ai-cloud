@@ -16,6 +16,7 @@ from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
+from app.domain.image_sources.admin_config import ImageSourceAdminConfigService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
@@ -127,6 +128,12 @@ class PluginAttentionStatePayload(BaseModel):
 class WebSearchProviderSettingsPayload(BaseModel):
     provider_mode: str = Field(default="disabled", max_length=32)
     providers: dict[str, Any] = Field(default_factory=dict)
+
+
+class ImageSourceProviderSettingsPayload(BaseModel):
+    provider_mode: str = Field(default="disabled", max_length=32)
+    providers: dict[str, Any] = Field(default_factory=dict)
+    runtime: dict[str, Any] = Field(default_factory=dict)
 
 
 class OpsSummaryDisclosureReviewPayload(BaseModel):
@@ -251,9 +258,7 @@ def _build_operator_receipt(
     account_id: str | None = None,
     site_id: str | None = None,
 ) -> dict[str, Any]:
-    resolved_account_id = str(
-        (audit_event or {}).get("account_id") or account_id or ""
-    ).strip()
+    resolved_account_id = str((audit_event or {}).get("account_id") or account_id or "").strip()
     resolved_site_id = str((audit_event or {}).get("site_id") or site_id or "").strip()
     receipt: dict[str, Any] = {
         "event_kind": event_kind,
@@ -289,9 +294,7 @@ def _build_runtime_explanations(
 ) -> list[dict[str, str]]:
     diagnostics = runtime_diagnostics or {}
     queue = diagnostics.get("queue") if isinstance(diagnostics.get("queue"), dict) else {}
-    callback = (
-        diagnostics.get("callback") if isinstance(diagnostics.get("callback"), dict) else {}
-    )
+    callback = diagnostics.get("callback") if isinstance(diagnostics.get("callback"), dict) else {}
     guard = diagnostics.get("guard") if isinstance(diagnostics.get("guard"), dict) else {}
     items: list[dict[str, str]] = []
 
@@ -758,8 +761,7 @@ async def upsert_plan(
                 scope_id=payload.plan_id,
                 outcome="succeeded",
                 effective_summary=(
-                    f"Plan {payload.plan_id} is now saved on the commercial "
-                    "truth plane."
+                    f"Plan {payload.plan_id} is now saved on the commercial truth plane."
                 ),
             ),
         ),
@@ -871,9 +873,7 @@ async def upsert_account_subscription(
                 event_kind="subscription.upsert",
                 scope_kind="subscription",
                 scope_id=str(
-                    result.get("subscription_id")
-                    or payload.subscription_id
-                    or account_id
+                    result.get("subscription_id") or payload.subscription_id or account_id
                 ),
                 outcome="succeeded",
                 effective_summary=(
@@ -917,8 +917,7 @@ async def suspend_account_subscription(request: Request, account_id: str) -> Any
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
                 effective_summary=(
-                    f"Current subscription coverage for account {account_id} is "
-                    "now suspended."
+                    f"Current subscription coverage for account {account_id} is now suspended."
                 ),
                 account_id=str(result.get("account_id") or ""),
             ),
@@ -1018,8 +1017,7 @@ async def cancel_account_subscription(request: Request, account_id: str) -> Any:
                 scope_id=str(result.get("subscription_id") or account_id),
                 outcome="succeeded",
                 effective_summary=(
-                    f"Current subscription coverage for account {account_id} is "
-                    "now canceled."
+                    f"Current subscription coverage for account {account_id} is now canceled."
                 ),
                 account_id=str(result.get("account_id") or ""),
             ),
@@ -1664,20 +1662,14 @@ async def get_admin_site(
         result["runtime_diagnostics"],
         site_id=site_id,
         account_id=str((result.get("account") or {}).get("account_id") or ""),
-        subscription_id=str(
-            (result.get("subscription") or {}).get("subscription_id") or ""
-        ),
+        subscription_id=str((result.get("subscription") or {}).get("subscription_id") or ""),
     )
     related_account_id = str((result.get("account") or {}).get("account_id") or "")
-    related_subscription_id = str(
-        (result.get("subscription") or {}).get("subscription_id") or ""
-    )
+    related_subscription_id = str((result.get("subscription") or {}).get("subscription_id") or "")
     result["related_surfaces"] = {
         "account_href": f"/admin/accounts/{related_account_id}" if related_account_id else "",
         "subscription_href": (
-            f"/admin/subscriptions/{related_subscription_id}"
-            if related_subscription_id
-            else ""
+            f"/admin/subscriptions/{related_subscription_id}" if related_subscription_id else ""
         ),
         "audit_href": f"/api/admin/audit-events?site_id={site_id}&limit=20",
     }
@@ -1962,6 +1954,40 @@ async def update_admin_web_search_providers(
     return build_envelope(
         status="ok",
         message="web search provider settings saved",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/image-source-providers")
+async def get_admin_image_source_providers(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    return build_envelope(
+        status="ok",
+        message="image source provider settings loaded",
+        data=ImageSourceAdminConfigService(services.settings).get_config(),
+        revision="m6",
+    )
+
+
+@router.post("/admin/image-source-providers")
+async def update_admin_image_source_providers(
+    request: Request,
+    payload: ImageSourceProviderSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = ImageSourceAdminConfigService(services.settings).save_config(
+        payload.model_dump(mode="json")
+    )
+    return build_envelope(
+        status="ok",
+        message="image source provider settings saved",
         data=result,
         revision="m6",
     )

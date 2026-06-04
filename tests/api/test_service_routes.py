@@ -105,11 +105,6 @@ def _runtime_service_settings(database_url: str) -> Settings:
         openrouter_api_key="",
         siliconflow_provider_enabled=False,
         siliconflow_api_key="",
-        web_search_provider="disabled",
-        web_search_tavily_api_key="",
-        web_search_bocha_api_key="",
-        web_search_jina_reader_api_key="",
-        web_search_apify_api_token="",
         site_knowledge_embedding_provider="deterministic",
     )
 
@@ -191,6 +186,73 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
     assert services.settings.web_search_bocha_api_key == "bocha-test-secret"
 
 
+def test_admin_image_source_provider_settings_are_masked_and_update_runtime(
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / ".env.local"
+    _, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "image_source_admin_env_path": str(env_path),
+            "image_source_provider": "disabled",
+        },
+    )
+
+    initial = client.get(
+        "/internal/service/admin/image-source-providers",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200
+    assert initial.json()["data"]["providers"]["unsplash"]["configured"] is False
+
+    response = client.post(
+        "/internal/service/admin/image-source-providers",
+        headers=build_internal_headers(idempotency_key="image-source-provider-save"),
+        json={
+            "provider_mode": "auto",
+            "providers": {
+                "unsplash": {
+                    "base_url": "https://api.unsplash.com",
+                    "secret": "unsplash-test-secret",
+                },
+                "pixabay": {
+                    "base_url": "https://pixabay.com/api/",
+                    "secret": "pixabay-test-secret",
+                },
+                "pexels": {
+                    "base_url": "https://api.pexels.com/v1",
+                    "secret": "pexels-test-secret",
+                },
+            },
+            "runtime": {
+                "timeout_seconds": 8,
+                "cost_per_query": 0.004,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["provider_mode"] == "auto"
+    assert data["providers"]["unsplash"]["configured"] is True
+    assert data["providers"]["pixabay"]["configured"] is True
+    assert data["providers"]["pexels"]["configured"] is True
+    assert data["boundary"]["final_writes"] == "core_proposal_required"
+    assert "unsplash-test-secret" not in json.dumps(data)
+    assert "pixabay-test-secret" not in json.dumps(data)
+    assert "pexels-test-secret" not in json.dumps(data)
+    env_text = env_path.read_text(encoding="utf-8")
+    assert "MAGICK_CLOUD_IMAGE_SOURCE_PROVIDER=auto" in env_text
+    assert "MAGICK_CLOUD_IMAGE_SOURCE_UNSPLASH_ACCESS_KEY=unsplash-test-secret" in env_text
+    assert "MAGICK_CLOUD_IMAGE_SOURCE_PIXABAY_API_KEY=pixabay-test-secret" in env_text
+    assert "MAGICK_CLOUD_IMAGE_SOURCE_PEXELS_API_KEY=pexels-test-secret" in env_text
+
+    services = client.app.state.services
+    assert services.settings.image_source_provider == "auto"
+    assert services.settings.image_source_pixabay_api_key == "pixabay-test-secret"
+    assert services.settings.image_source_timeout_seconds == 8
+
+
 def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     tmp_path: Path,
 ) -> None:
@@ -203,9 +265,7 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     now = datetime.now(UTC)
     with get_session(database_url) as session:
         subscription = session.scalar(
-            select(AccountSubscription).where(
-                AccountSubscription.account_id == "acct_site_advisor"
-            )
+            select(AccountSubscription).where(AccountSubscription.account_id == "acct_site_advisor")
         )
         assert subscription is not None
         subscription.status = SUBSCRIPTION_STATUS_PAST_DUE
@@ -331,12 +391,11 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     assert runtime_payload["evidence"][0]["ref"] == (
         "/internal/service/runtime/diagnostics/summary"
     )
-    assert {
-        item["action"] for item in runtime_payload["recommended_actions"]
-    } >= {"inspect_commercial_entitlement_and_runtime_guard"}
+    assert {item["action"] for item in runtime_payload["recommended_actions"]} >= {
+        "inspect_commercial_entitlement_and_runtime_guard"
+    }
     assert any(
-        signal["code"] == "runtime.guard_events"
-        and signal["recent_rate_limit_exceeded"] == 1
+        signal["code"] == "runtime.guard_events" and signal["recent_rate_limit_exceeded"] == 1
         for signal in runtime_payload["signals"]
     )
 
@@ -550,9 +609,7 @@ def test_service_routes_account_default_free_binding_is_explicit(tmp_path: Path)
 
     with get_session(database_url) as session:
         generic_subscription = session.scalar(
-            select(AccountSubscription).where(
-                AccountSubscription.account_id == "acct_ops_only"
-            )
+            select(AccountSubscription).where(AccountSubscription.account_id == "acct_ops_only")
         )
         free_subscription = session.scalar(
             select(AccountSubscription).where(
@@ -742,12 +799,20 @@ def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Pat
     )
     client.post(
         "/internal/service/accounts/acct_coverage/memberships",
-        json={"member_ref": "user:admin@example.com", "role": "user_admin", "metadata": {"email": "admin@example.com"}},
+        json={
+            "member_ref": "user:admin@example.com",
+            "role": "user_admin",
+            "metadata": {"email": "admin@example.com"},
+        },
         headers=build_internal_headers(idempotency_key="svc-coverage-membership-admin-001"),
     )
     client.post(
         "/internal/service/accounts/acct_coverage/memberships",
-        json={"member_ref": "user:member@example.com", "role": "user_admin", "metadata": {"email": "member@example.com"}},
+        json={
+            "member_ref": "user:member@example.com",
+            "role": "user_admin",
+            "metadata": {"email": "member@example.com"},
+        },
         headers=build_internal_headers(idempotency_key="svc-coverage-membership-member-001"),
     )
     client.post(
@@ -789,12 +854,16 @@ def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Pat
     assert data["summary"]["covered_member_count"] == 2
     assert data["summary"]["sites_needing_follow_up_count"] == 0
 
-    admin_member = next(item for item in data["members"] if item["member_ref"] == "user:admin@example.com")
+    admin_member = next(
+        item for item in data["members"] if item["member_ref"] == "user:admin@example.com"
+    )
     assert admin_member["identity_type"] == "user_admin"
     assert admin_member["role"] == "user_admin"
     assert admin_member["covered_site_count"] == 2
     assert admin_member["sites_needing_follow_up_count"] == 0
-    covered_site = next(site for site in admin_member["accessible_sites"] if site["site_id"] == "site_covered")
+    covered_site = next(
+        site for site in admin_member["accessible_sites"] if site["site_id"] == "site_covered"
+    )
     assert covered_site["covered"] is True
     assert covered_site["plan_id"] == "plan_basic"
     assert covered_site["plan_version_id"] == "plan_basic_v1"
@@ -873,8 +942,12 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     topup_response = client.post(
         "/internal/service/subscriptions/sub_growth/topup",
         json={
-            "target_period_start_at": subscription_response.json()["data"]["subscription"]["current_period_start_at"],
-            "target_period_end_at": subscription_response.json()["data"]["subscription"]["current_period_end_at"],
+            "target_period_start_at": subscription_response.json()["data"]["subscription"][
+                "current_period_start_at"
+            ],
+            "target_period_end_at": subscription_response.json()["data"]["subscription"][
+                "current_period_end_at"
+            ],
             "runs_increment": 10000,
             "tokens_increment": 2000000,
             "cost_increment": 99,
@@ -890,17 +963,17 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert plan_response.json()["data"]["receipt"]["audit_filters"]["event_kind"] == "plan.upsert"
     assert plan_response.json()["data"]["receipt"]["audit_filters"]["outcome"] == "succeeded"
     assert version_response.status_code == 200
-    assert (
-        version_response.json()["data"]["receipt"]["event_kind"]
-        == "plan_version.publish"
-    )
+    assert version_response.json()["data"]["receipt"]["event_kind"] == "plan_version.publish"
     assert (
         version_response.json()["data"]["receipt"]["audit_filters"]["event_kind"]
         == "plan_version.publish"
     )
     assert subscription_response.status_code == 200
     assert subscription_response.json()["data"]["receipt"]["event_kind"] == "subscription.upsert"
-    assert subscription_response.json()["data"]["receipt"]["audit_filters"]["account_id"] == "acct_billing"
+    assert (
+        subscription_response.json()["data"]["receipt"]["audit_filters"]["account_id"]
+        == "acct_billing"
+    )
     assert topup_response.status_code == 200
     topup_payload = topup_response.json()["data"]
     assert topup_payload["receipt"]["event_kind"] == "subscription.topup"
@@ -1023,9 +1096,9 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert usage_response.json()["data"]["totals"]["tokens_total"] > 0
     assert rebuild_response.status_code == 200
     assert rebuild_response.json()["data"]["totals"]["runs"] == 1.0
-    assert rebuild_response.json()["data"]["breakdown"]["ability_families"]["workflow"][
-        "runs"
-    ] == 1.0
+    assert (
+        rebuild_response.json()["data"]["breakdown"]["ability_families"]["workflow"]["runs"] == 1.0
+    )
     assert list_billing_response.status_code == 200
     assert len(list_billing_response.json()["data"]["items"]) == 1
     assert suspend_subscription_response.status_code == 200
@@ -1059,7 +1132,8 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert {item["request_kind"] for item in decision_items} >= {"execute", "resolve"}
     assert any(item["decision_code"] == "commercial.allowed" for item in decision_items)
     assert any(
-        item["decision_code"] in {"commercial.subscription_inactive", "commercial.entitlement_denied"}
+        item["decision_code"]
+        in {"commercial.subscription_inactive", "commercial.entitlement_denied"}
         for item in decision_items
     )
 
@@ -1260,12 +1334,22 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     assert accounts[0]["coverage_state"] == "covered"
     assert accounts[0]["primary_subscription_id"] == "sub_admin"
     assert filtered_accounts_response.status_code == 200
-    assert filtered_accounts_response.json()["data"]["filters"]["member_ref"] == "user:admin@example.com"
+    assert (
+        filtered_accounts_response.json()["data"]["filters"]["member_ref"]
+        == "user:admin@example.com"
+    )
     assert len(filtered_accounts_response.json()["data"]["items"]) == 1
     assert package_filtered_accounts_response.status_code == 200
-    assert package_filtered_accounts_response.json()["data"]["filters"]["coverage_state"] == "covered"
-    assert package_filtered_accounts_response.json()["data"]["filters"]["package_kind"] == "tier_package"
-    assert package_filtered_accounts_response.json()["data"]["filters"]["top_plan_id"] == "plan_admin"
+    assert (
+        package_filtered_accounts_response.json()["data"]["filters"]["coverage_state"] == "covered"
+    )
+    assert (
+        package_filtered_accounts_response.json()["data"]["filters"]["package_kind"]
+        == "tier_package"
+    )
+    assert (
+        package_filtered_accounts_response.json()["data"]["filters"]["top_plan_id"] == "plan_admin"
+    )
     assert len(package_filtered_accounts_response.json()["data"]["items"]) == 1
 
     assert account_detail_response.status_code == 200
@@ -1304,7 +1388,11 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     subscriptions = subscriptions_response.json()["data"]["items"]
     assert len(subscriptions) >= 1
     assert any(item["subscription"]["subscription_id"] == "sub_admin" for item in subscriptions)
-    assert all(item["account"]["account_id"] == "acct_admin" for item in subscriptions if item.get("account"))
+    assert all(
+        item["account"]["account_id"] == "acct_admin"
+        for item in subscriptions
+        if item.get("account")
+    )
     assert any(
         any(site["site_id"] == "site_primary" for site in item.get("covered_sites") or [])
         for item in subscriptions
@@ -1337,7 +1425,10 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     assert admin_plan_summary["tier_summary"]["automation_enabled"] is True
     assert admin_plan_summary["tier_summary"]["api_enabled"] is True
     assert admin_plan_summary["tier_summary"]["openclaw_enabled"] is True
-    assert "core capabilities stay available across packages" in admin_plan_summary["tier_summary"]["package_operator_note"].lower()
+    assert (
+        "core capabilities stay available across packages"
+        in admin_plan_summary["tier_summary"]["package_operator_note"].lower()
+    )
     assert admin_plan_summary["latest_version"]["plan_version_id"] == "plan_admin_v1"
     assert admin_plan_summary["published_version_count"] == 1
     assert plan_detail_response.status_code == 200
@@ -1378,7 +1469,9 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     assert filtered_subscriptions_response.json()["data"]["filters"]["plan_id"] == "plan_admin"
     assert len(filtered_subscriptions_response.json()["data"]["items"]) == 1
     assert (
-        filtered_subscriptions_response.json()["data"]["items"][0]["billing_snapshot_status"]["status"]
+        filtered_subscriptions_response.json()["data"]["items"][0]["billing_snapshot_status"][
+            "status"
+        ]
         == "fresh"
     )
     assert expiring_accounts_response.status_code == 200
@@ -1504,10 +1597,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
     )
 
     assert plans_response.status_code == 200
-    plans = {
-        item["plan"]["plan_id"]: item
-        for item in plans_response.json()["data"]["items"]
-    }
+    plans = {item["plan"]["plan_id"]: item for item in plans_response.json()["data"]["items"]}
     assert plans["starter_ops"]["tier_summary"]["tier_id"] == "starter"
     assert plans["starter_ops"]["tier_summary"]["package_alias"] == "Free"
     assert plans["starter_ops"]["tier_summary"]["monthly_included_points"] == 500
@@ -1691,9 +1781,7 @@ def test_service_routes_inspect_commercial_policy_and_reconciliation(
     )
 
     assert version_response.status_code == 200
-    assert (
-        version_response.json()["data"]["policy"]["budgets"]["runs"]["grace_requests"] == 1
-    )
+    assert version_response.json()["data"]["policy"]["budgets"]["runs"]["grace_requests"] == 1
     assert bind_response.status_code == 200
 
     execute_payload = {
@@ -1738,9 +1826,7 @@ def test_service_routes_inspect_commercial_policy_and_reconciliation(
 
     assert execute_response.status_code == 200
     assert policy_response.status_code == 200
-    assert (
-        policy_response.json()["data"]["policy"]["budgets"]["runs"]["grace_requests"] == 1
-    )
+    assert policy_response.json()["data"]["policy"]["budgets"]["runs"]["grace_requests"] == 1
     assert policy_response.json()["data"]["budget_state"]["runs"]["limit"] == 1.0
     assert reconciliation_before_response.status_code == 200
     assert "snapshot_present" in reconciliation_before_response.json()["data"]["reconciliation"]
@@ -1935,8 +2021,7 @@ def test_service_routes_expose_observability_summary(tmp_path: Path) -> None:
     assert payload["feature_flags"]["summary"]["flags_total"] >= 1
     assert payload["feature_flags"]["summary"]["overridden_total"] == 0
     assert any(
-        item["key"] == "admin.commercial_ops.enabled"
-        for item in payload["feature_flags"]["items"]
+        item["key"] == "admin.commercial_ops.enabled" for item in payload["feature_flags"]["items"]
     )
     assert payload["workers"]["totals"]["workers_total"] == 3
     assert any(item["worker_id"] == "runtime_queue" for item in payload["workers"]["items"])
@@ -2405,9 +2490,7 @@ def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
     decision_summary = decision_summary_response.json()["data"]
     assert decision_summary["totals"]["events"] >= 3
     assert decision_summary["totals"]["allow"] >= 3
-    assert any(
-        item["decision_code"] == "commercial.allowed" for item in decision_summary["groups"]
-    )
+    assert any(item["decision_code"] == "commercial.allowed" for item in decision_summary["groups"])
 
     assert abuse_guard_response.status_code == 200
     abuse_guard_payload = abuse_guard_response.json()["data"]
@@ -2849,9 +2932,7 @@ def test_service_routes_enforce_internal_guard_cooldown_after_rejects(tmp_path: 
 
     with get_session(database_url) as session:
         events = list(
-            session.scalars(
-                select(RuntimeGuardEvent).order_by(RuntimeGuardEvent.id.asc())
-            )
+            session.scalars(select(RuntimeGuardEvent).order_by(RuntimeGuardEvent.id.asc()))
         )
     assert any(event.event_code == "auth.replay_blocked" for event in events)
     assert any(event.event_code == "auth.rate_limit_exceeded" for event in events)

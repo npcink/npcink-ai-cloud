@@ -347,10 +347,10 @@ class MediaDerivativeObservabilityService:
         }
 
     def _build_health(self, totals: dict[str, object]) -> dict[str, object]:
-        jobs_total = int(totals.get("jobs_total") or 0)
-        failed_total = int(totals.get("failed_total") or 0)
-        p95 = int(totals.get("p95_processing_duration_ms") or 0)
-        active_artifact_bytes = int(totals.get("active_artifact_bytes") or 0)
+        jobs_total = _int_or_zero(totals.get("jobs_total"))
+        failed_total = _int_or_zero(totals.get("failed_total"))
+        p95 = _int_or_zero(totals.get("p95_processing_duration_ms"))
+        active_artifact_bytes = _int_or_zero(totals.get("active_artifact_bytes"))
         if jobs_total == 0:
             return {
                 "status": "inactive",
@@ -447,8 +447,18 @@ class MediaDerivativeObservabilityService:
         if value is None:
             return ""
         if isinstance(value, datetime):
-            return _to_utc(value).isoformat().replace("+00:00", "Z")
+            normalized = _to_utc(value)
+            return normalized.isoformat().replace("+00:00", "Z") if normalized is not None else ""
         return str(value)
+
+
+def _int_or_zero(value: Any) -> int:
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _duration_ms(start_at: datetime | None, end_at: datetime | None) -> int:

@@ -49,12 +49,17 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
   ) {
     return '/internal/service/admin/plugin-observability/attention-state';
   }
-
   if (
     upperMethod === 'POST' &&
     normalized === 'web-search-providers'
   ) {
     return '/internal/service/admin/web-search-providers';
+  }
+  if (
+    upperMethod === 'POST' &&
+    normalized === 'image-source-providers'
+  ) {
+    return '/internal/service/admin/image-source-providers';
   }
 
   return normalized ? `/admin/${normalized}` : '/admin';

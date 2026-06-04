@@ -230,6 +230,16 @@ class Settings(BaseSettings):
     web_search_apify_timeout_seconds: float = Field(default=30.0)
     web_search_apify_cost_per_query: float = Field(default=0.0)
     web_search_admin_env_path: str = Field(default=".env.local")
+    image_source_provider: str = Field(default="disabled")
+    image_source_unsplash_base_url: str = Field(default="https://api.unsplash.com")
+    image_source_unsplash_access_key: str | None = Field(default=None)
+    image_source_pixabay_base_url: str = Field(default="https://pixabay.com/api/")
+    image_source_pixabay_api_key: str | None = Field(default=None)
+    image_source_pexels_base_url: str = Field(default="https://api.pexels.com/v1")
+    image_source_pexels_api_key: str | None = Field(default=None)
+    image_source_timeout_seconds: float = Field(default=15.0)
+    image_source_cost_per_query: float = Field(default=0.0)
+    image_source_admin_env_path: str = Field(default=".env.local")
     openrouter_provider_enabled: bool = Field(default=False)
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openrouter_api_key: str | None = Field(default=None)
@@ -355,9 +365,7 @@ class Settings(BaseSettings):
                 "allow_dev_admin_internal_token_fallback is only allowed in development/test"
             )
         if production_like and str(self.openai_sample_catalog_profile or "").strip():
-            raise ValueError(
-                "openai_sample_catalog_profile is only allowed in development/test"
-            )
+            raise ValueError("openai_sample_catalog_profile is only allowed in development/test")
         if production_like and not str(self.admin_session_secret or "").strip():
             raise ValueError(
                 "admin_session_secret is required outside development/test environments"
@@ -385,9 +393,7 @@ class Settings(BaseSettings):
                 "portal_public_base_url is required outside development/test environments"
             )
         if production_like and not str(self.portal_jwt_secret or "").strip():
-            raise ValueError(
-                "portal_jwt_secret is required outside development/test environments"
-            )
+            raise ValueError("portal_jwt_secret is required outside development/test environments")
         if production_like and not str(self.portal_email_smtp_host or "").strip():
             raise ValueError(
                 "portal_email_smtp_host is required outside development/test environments"
@@ -520,6 +526,51 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "web_search_apify_actor_id is required when web_search_provider=apify"
                 )
+        image_source_provider = str(self.image_source_provider or "disabled").strip().lower()
+        if image_source_provider not in {"disabled", "auto", "unsplash", "pixabay", "pexels"}:
+            raise ValueError(
+                "image_source_provider must be disabled, auto, unsplash, pixabay, or pexels"
+            )
+        self.image_source_provider = image_source_provider
+        if self.image_source_timeout_seconds <= 0:
+            raise ValueError("image_source_timeout_seconds must be greater than 0")
+        if self.image_source_cost_per_query < 0:
+            raise ValueError("image_source_cost_per_query must be zero or greater")
+        if (
+            image_source_provider == "unsplash"
+            and not str(self.image_source_unsplash_access_key or "").strip()
+        ):
+            raise ValueError(
+                "image_source_unsplash_access_key is required when image_source_provider=unsplash"
+            )
+        if (
+            image_source_provider == "pixabay"
+            and not str(self.image_source_pixabay_api_key or "").strip()
+        ):
+            raise ValueError(
+                "image_source_pixabay_api_key is required when image_source_provider=pixabay"
+            )
+        if (
+            image_source_provider == "pexels"
+            and not str(self.image_source_pexels_api_key or "").strip()
+        ):
+            raise ValueError(
+                "image_source_pexels_api_key is required when image_source_provider=pexels"
+            )
+        if image_source_provider == "auto":
+            has_image_source_key = any(
+                str(value or "").strip()
+                for value in (
+                    self.image_source_unsplash_access_key,
+                    self.image_source_pixabay_api_key,
+                    self.image_source_pexels_api_key,
+                )
+            )
+            if not has_image_source_key:
+                raise ValueError(
+                    "at least one image source provider key is required when "
+                    "image_source_provider=auto"
+                )
         site_knowledge_embedding_provider = str(
             self.site_knowledge_embedding_provider or ""
         ).strip()
@@ -536,9 +587,7 @@ class Settings(BaseSettings):
             )
         site_knowledge_backend = str(self.site_knowledge_vector_backend or "").strip()
         if site_knowledge_backend not in {"postgres_json", "zilliz_cloud"}:
-            raise ValueError(
-                "site_knowledge_vector_backend must be postgres_json or zilliz_cloud"
-            )
+            raise ValueError("site_knowledge_vector_backend must be postgres_json or zilliz_cloud")
         metric_type = str(self.site_knowledge_vector_metric_type or "").strip().upper()
         if metric_type not in {"COSINE", "IP", "L2"}:
             raise ValueError("site_knowledge_vector_metric_type must be COSINE, IP, or L2")
@@ -563,15 +612,11 @@ class Settings(BaseSettings):
                 )
             model_id = str(self.site_knowledge_embedding_model or "").strip()
             configured_model_ids = {
-                item.strip()
-                for item in str(self.tei_model_ids or "").split(",")
-                if item.strip()
+                item.strip() for item in str(self.tei_model_ids or "").split(",") if item.strip()
             }
             configured_model_ids.update(f"tei/{item}" for item in list(configured_model_ids))
             if model_id not in configured_model_ids:
-                raise ValueError(
-                    "site_knowledge_embedding_model must be included in tei_model_ids"
-                )
+                raise ValueError("site_knowledge_embedding_model must be included in tei_model_ids")
         if site_knowledge_embedding_provider == "openai":
             if not str(self.openai_api_key or "").strip():
                 raise ValueError(
@@ -591,15 +636,11 @@ class Settings(BaseSettings):
             raise ValueError("openrouter_timeout_seconds must be greater than 0")
         if self.siliconflow_timeout_seconds <= 0:
             raise ValueError("siliconflow_timeout_seconds must be greater than 0")
-        if self.siliconflow_provider_enabled and not str(
-            self.siliconflow_base_url or ""
-        ).strip():
+        if self.siliconflow_provider_enabled and not str(self.siliconflow_base_url or "").strip():
             raise ValueError(
                 "siliconflow_base_url is required when siliconflow_provider_enabled is true"
             )
-        if self.siliconflow_provider_enabled and not str(
-            self.siliconflow_api_key or ""
-        ).strip():
+        if self.siliconflow_provider_enabled and not str(self.siliconflow_api_key or "").strip():
             raise ValueError(
                 "siliconflow_api_key is required when siliconflow_provider_enabled is true"
             )
