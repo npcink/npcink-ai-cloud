@@ -18,6 +18,32 @@ AUTO_SEARCH_TRIGGER_INTENTS = frozenset(
     }
 )
 AUTO_SEARCH_MODES = frozenset({"off", "auto", "required", "dry_run"})
+AUTO_SEARCH_CHANNELS = frozenset(
+    {
+        "agent_gateway",
+        "agent_gateway_direct",
+        "openapi",
+        "openclaw",
+        "openclaw_adapter",
+    }
+)
+AUTO_SEARCH_HINT_TERMS = frozenset(
+    {
+        "breaking",
+        "citation",
+        "citations",
+        "competitor",
+        "current",
+        "fact check",
+        "fact-check",
+        "latest",
+        "news",
+        "recent",
+        "source",
+        "sources",
+        "verify",
+    }
+)
 MAX_AUTO_SEARCH_RESULTS = 5
 MAX_AUTO_SEARCH_RECENCY_DAYS = 30
 
@@ -83,6 +109,7 @@ def build_automatic_web_search_plan(
     *,
     ability_name: str,
     workflow_id: str = "",
+    channel: str = "",
 ) -> AutomaticWebSearchPlan | None:
     if not isinstance(input_payload, dict):
         return None
@@ -96,11 +123,21 @@ def build_automatic_web_search_plan(
     )
     mode = _normalize_mode(policy.get("mode"))
     trigger = "search_policy"
+    channel = _normalize_channel(channel or input_payload.get("channel") or "")
 
     if not mode:
         if requires_external_evidence:
             mode = "auto"
             trigger = "requires_external_evidence"
+        elif _has_channel_auto_search_hint(
+            input_payload,
+            ability_name=ability_name,
+            workflow_id=workflow_id,
+            channel=channel,
+        ):
+            mode = "auto"
+            requires_external_evidence = True
+            trigger = "channel_external_evidence_hint"
         else:
             return None
     if mode == "off":
@@ -147,7 +184,7 @@ def build_automatic_web_search_plan(
                 MAX_AUTO_SEARCH_RECENCY_DAYS,
                 _positive_int(
                     policy.get("recency_days"),
-                    default=7,
+                    default=_default_recency_days(intent),
                     maximum=MAX_AUTO_SEARCH_RECENCY_DAYS,
                 ),
             ),
@@ -162,6 +199,8 @@ def build_automatic_web_search_plan(
 def build_automatic_web_search_success_report(
     plan: AutomaticWebSearchPlan,
     result_json: dict[str, Any],
+    *,
+    usage: Any = None,
 ) -> dict[str, Any]:
     evidence_gate = result_json.get("evidence_gate")
     evidence_gate = evidence_gate if isinstance(evidence_gate, dict) else {}
@@ -176,6 +215,7 @@ def build_automatic_web_search_success_report(
             "reader_enhancement": result_json.get("reader_enhancement")
             if isinstance(result_json.get("reader_enhancement"), dict)
             else {},
+            "usage_summary": _usage_summary(usage),
         }
     )
     return report
@@ -217,6 +257,10 @@ def _normalize_provider(value: Any) -> str:
     return provider if provider in {"auto", *WEB_SEARCH_PROVIDER_ORDER} else "auto"
 
 
+def _normalize_channel(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
 def _normalize_query(value: Any) -> str:
     return " ".join(str(value or "").split())[:500].strip()
 
@@ -224,6 +268,57 @@ def _normalize_query(value: Any) -> str:
 def _fallback_query(*, ability_name: str, workflow_id: str) -> str:
     query = " ".join(part for part in (workflow_id, ability_name) if part).strip()
     return query[:500]
+
+
+def _default_recency_days(intent: str) -> int:
+    if intent == "news":
+        return 7
+    if intent in {"competitor_research", "external_links", "fact_check", "source_discovery"}:
+        return 30
+    return 7
+
+
+def _has_channel_auto_search_hint(
+    input_payload: dict[str, Any],
+    *,
+    ability_name: str,
+    workflow_id: str,
+    channel: str,
+) -> bool:
+    detected_channel = channel
+    if detected_channel not in AUTO_SEARCH_CHANNELS:
+        caller = input_payload.get("caller")
+        caller = caller if isinstance(caller, dict) else {}
+        detected_channel = _normalize_channel(
+            caller.get("caller_type")
+            or caller.get("channel")
+            or input_payload.get("caller_type")
+            or input_payload.get("source_channel")
+        )
+    if detected_channel not in AUTO_SEARCH_CHANNELS:
+        return False
+
+    if str(ability_name or "").startswith("magick-ai-cloud/"):
+        return False
+
+    text = " ".join(
+        str(value or "")
+        for value in (
+            input_payload.get("search_intent"),
+            input_payload.get("intent"),
+            input_payload.get("topic"),
+            input_payload.get("title"),
+            input_payload.get("headline"),
+            input_payload.get("user_intent"),
+            input_payload.get("user_request"),
+            input_payload.get("request"),
+            workflow_id,
+            ability_name,
+        )
+    ).lower()
+    if not text.strip():
+        return False
+    return any(term in text for term in AUTO_SEARCH_HINT_TERMS)
 
 
 def _normalize_token(value: Any) -> str:
@@ -267,3 +362,17 @@ def _bool(value: Any) -> bool:
 
 def _hash_query(query: str) -> str:
     return hashlib.sha256(query.encode("utf-8")).hexdigest()
+
+
+def _usage_summary(usage: Any) -> dict[str, Any]:
+    if usage is None:
+        return {}
+    return {
+        "provider_id": str(getattr(usage, "provider_id", "") or ""),
+        "model_id": str(getattr(usage, "model_id", "") or ""),
+        "instance_id": str(getattr(usage, "instance_id", "") or ""),
+        "region": str(getattr(usage, "region", "") or ""),
+        "latency_ms": max(0, int(getattr(usage, "latency_ms", 0) or 0)),
+        "cost": max(0.0, float(getattr(usage, "cost", 0.0) or 0.0)),
+        "error_code": str(getattr(usage, "error_code", "") or ""),
+    }

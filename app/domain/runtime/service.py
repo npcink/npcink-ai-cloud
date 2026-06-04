@@ -2184,6 +2184,7 @@ class RuntimeService:
             input_payload,
             ability_name=run.ability_name or "",
             workflow_id=run.workflow_id or "",
+            channel=run.channel or "",
         )
         if plan is None:
             return input_payload
@@ -2216,6 +2217,16 @@ class RuntimeService:
                 error_code=error.error_code,
                 message=error.message,
             )
+            if error.usage is not None:
+                report["usage_summary"] = {
+                    "provider_id": str(getattr(error.usage, "provider_id", "") or ""),
+                    "model_id": str(getattr(error.usage, "model_id", "") or ""),
+                    "instance_id": str(getattr(error.usage, "instance_id", "") or ""),
+                    "region": str(getattr(error.usage, "region", "") or ""),
+                    "latency_ms": max(0, int(getattr(error.usage, "latency_ms", 0) or 0)),
+                    "cost": max(0.0, float(getattr(error.usage, "cost", 0.0) or 0.0)),
+                    "error_code": str(getattr(error.usage, "error_code", "") or ""),
+                }
             self._record_automatic_web_search_report(run, policy=policy, report=report)
             if plan.is_required:
                 repository.mark_run_failed(
@@ -2255,6 +2266,7 @@ class RuntimeService:
         report = build_automatic_web_search_success_report(
             plan,
             search_result.result_json,
+            usage=search_result.usage,
         )
         self._record_automatic_web_search_report(run, policy=policy, report=report)
         return attach_automatic_web_search_evidence(

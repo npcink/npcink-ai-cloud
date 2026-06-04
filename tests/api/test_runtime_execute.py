@@ -220,7 +220,7 @@ def test_runtime_auto_web_search_enriches_provider_input(
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
         web_search_provider="tavily",
-        web_search_tavily_api_key="placeholder-tavily-key",
+        web_search_tavily_api_key="redacted-placeholder",
     )
 
     def fake_search(
@@ -328,7 +328,7 @@ def test_runtime_auto_web_search_dry_run_does_not_call_search(
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
         web_search_provider="tavily",
-        web_search_tavily_api_key="placeholder-tavily-key",
+        web_search_tavily_api_key="redacted-placeholder",
     )
 
     def unexpected_search(self: WebSearchService, **kwargs: Any) -> WebSearchExecutionResult:
@@ -364,6 +364,114 @@ def test_runtime_auto_web_search_dry_run_does_not_call_search(
     assert response.provider_call_count == 1
     assert response.result["received_automatic_web_search"] is False
     assert response.result["automatic_web_search"]["status"] == "would_search"
+
+
+def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    provider = RecordingProviderAdapter()
+    init_schema(database_url)
+    CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+    settings = Settings(
+        environment="test",
+        database_url=database_url,
+        redis_url="redis://localhost:6379/0",
+        web_search_provider="tavily",
+        web_search_tavily_api_key="redacted-placeholder",
+    )
+    captured_input: dict[str, Any] = {}
+
+    def fake_search(
+        self: WebSearchService,
+        *,
+        site_id: str,
+        ability_name: str,
+        contract_version: str,
+        input_payload: dict[str, Any],
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        captured_input.update(input_payload)
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "external_web_evidence",
+                "status": "ready",
+                "provider": "tavily",
+                "intent": input_payload["intent"],
+                "query_hash": "hash-only",
+                "query_chars": len(input_payload["query"]),
+                "evidence_gate": {
+                    "status": "passed",
+                    "source_count": 1,
+                    "allows_web_grounded_assertion": True,
+                },
+                "results": [
+                    {
+                        "title": "Fact check source",
+                        "url": "https://example.com/fact-check",
+                        "snippet": "External source.",
+                        "score": 1.0,
+                        "source": "tavily",
+                        "write_posture": "suggestion_only",
+                        "direct_wordpress_write": False,
+                    }
+                ],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="tavily",
+                model_id="web-search",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=31,
+                cost=0.002,
+            ),
+        )
+
+    monkeypatch.setattr(WebSearchService, "execute", fake_search)
+
+    response = RuntimeService(
+        database_url,
+        settings=settings,
+        providers={"openai": provider},
+    ).execute(
+        RuntimeRequest(
+            site_id="site_alpha",
+            ability_name="openclaw.site_audit",
+            ability_family="openclaw",
+            channel="openclaw",
+            execution_kind="text",
+            profile_id="text.balanced",
+            contract_version="v1",
+            input_payload={
+                "topic": "Verify latest WordPress AI search claims",
+                "intent": "fact_check",
+                "caller": {"caller_type": "openclaw_adapter"},
+            },
+            policy={"allow_fallback": True},
+        )
+    )
+
+    assert response.status == "succeeded"
+    assert response.provider_call_count == 2
+    assert captured_input["max_results"] == 3
+    assert captured_input["recency_days"] == 30
+    assert captured_input["enhance_with_reader"] is False
+    raw_result = response.result["_cloud_raw_result"]
+    assert raw_result["automatic_web_search"]["trigger"] == "channel_external_evidence_hint"
+    assert raw_result["automatic_web_search"]["usage_summary"]["provider_id"] == "tavily"
+    assert raw_result["automatic_web_search"]["usage_summary"]["latency_ms"] == 31
+    assert provider.requests[0].input_payload["cloud_evidence"]["web_search"]["report"][
+        "result_count"
+    ] == 1
 
 
 def test_execute_route_runs_and_supports_idempotency(tmp_path: Path) -> None:
