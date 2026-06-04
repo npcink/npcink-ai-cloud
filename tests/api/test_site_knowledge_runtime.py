@@ -228,6 +228,26 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     sync_result = _execute(client, _sync_payload(), idempotency_key="sync-then-search")
     run_id = sync_result["json"]["data"]["run_id"]
 
+    queued_status = _execute(
+        client,
+        {
+            "ability_name": "magick-ai-cloud/site-knowledge-status",
+            "contract_version": "site_knowledge_status.v1",
+            "execution_pattern": "inline",
+            "data_classification": "public_site_content",
+            "storage_mode": "result_only",
+            "input": {
+                "contract_version": "site_knowledge_status.v1",
+                "include_coverage": True,
+                "write_posture": "suggestion_only",
+            },
+        },
+        idempotency_key="status-while-sync-queued",
+    )["json"]["data"]["result"]
+    assert queued_status["status"] == "syncing"
+    assert queued_status["active_run"]["run_id"] == run_id
+    assert queued_status["progress"]["stage"] == "queued"
+
     worker = RuntimeService(
         database_url,
         settings=settings,
@@ -241,6 +261,13 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
         "status": "succeeded",
         "trace_id": sync_result["json"]["data"]["trace_id"],
     }
+    worker_result = RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+    ).get_run_result(run_id, site_id="site_alpha")
+    assert worker_result["result"]["progress"]["stage"] == "completed"
+    assert worker_result["result"]["progress"]["percent"] == 100
 
     search_result = _execute(
         client,
@@ -281,6 +308,8 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert status_data["coverage"]["indexed_chunks"] >= 1
     assert status_data["coverage"]["post_type_coverage"] == {"post": 1.0}
     assert status_data["coverage"]["source_type_coverage"] == {"post": 1.0}
+    assert status_data["progress"]["stage"] == "completed"
+    assert status_data["progress"]["percent"] == 100
     with get_session(database_url) as session:
         index_metric = session.query(SiteKnowledgeIndexJobMetric).one()
         search_metric = session.query(SiteKnowledgeSearchMetric).one()

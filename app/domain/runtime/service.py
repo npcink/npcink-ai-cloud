@@ -101,6 +101,7 @@ from app.domain.runtime.models import (
 from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_ABILITIES,
+    SITE_KNOWLEDGE_STATUS_ABILITY,
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
     validate_site_knowledge_runtime_contract,
@@ -401,7 +402,11 @@ class RuntimeService:
                 data_classification=request.data_classification,
                 trace_id=trace_id,
                 idempotency_key=request.idempotency_key,
-                request_kind="execute",
+                request_kind=(
+                    "status"
+                    if request.ability_name == SITE_KNOWLEDGE_STATUS_ABILITY
+                    else "execute"
+                ),
                 run_id=run_id,
             )
             self._enforce_batch_limits(
@@ -2316,11 +2321,29 @@ class RuntimeService:
             else self._get_execution_input_payload(run)
         )
         execution_started_at = datetime.now(UTC)
+
+        def record_progress(progress: dict[str, Any]) -> None:
+            run.result_json = {
+                "artifact_type": "site_knowledge_sync_progress",
+                "composition_role": "site_knowledge_sync_progress",
+                "status": str(progress.get("status") or "running"),
+                "run_id": run.run_id,
+                "progress": progress,
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            }
+            flag_modified(run, "result_json")
+            repository.session.flush()
+            repository.session.commit()
+
         try:
             result_json = SiteKnowledgeService(
                 repository.session,
                 settings=self.settings,
                 providers=self.providers,
+                progress_callback=record_progress
+                if run.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY
+                else None,
             ).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,

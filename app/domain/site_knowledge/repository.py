@@ -200,6 +200,22 @@ class SiteKnowledgeRepository:
         )
         return int(count or 0) > 0
 
+    def latest_active_sync(self, site_id: str) -> RunRecord | None:
+        return self.session.scalar(
+            select(RunRecord)
+            .where(
+                RunRecord.site_id == site_id,
+                RunRecord.ability_name == "magick-ai-cloud/site-knowledge-sync",
+                RunRecord.status.in_(("queued", "running")),
+            )
+            .order_by(
+                RunRecord.processing_started_at.desc(),
+                RunRecord.started_at.desc(),
+                RunRecord.run_id.desc(),
+            )
+            .limit(1)
+        )
+
     def latest_failed_sync(self, site_id: str) -> RunRecord | None:
         return self.session.scalar(
             select(RunRecord)

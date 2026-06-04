@@ -398,7 +398,7 @@ class CommercialServiceRuntimeMixin:
         active_runs = repository.count_active_runs(site_id)
         concurrency = self._normalize_concurrency(snapshot.concurrency_json)
         max_active_runs = self._coerce_int(concurrency.get("max_active_runs"))
-        if max_active_runs > 0 and active_runs >= max_active_runs:
+        if request_kind == "execute" and max_active_runs > 0 and active_runs >= max_active_runs:
             error = RuntimeConcurrencyExceededError(site_id, max_active_runs)
             self._record_commercial_decision_in_session(
                 repository=repository,

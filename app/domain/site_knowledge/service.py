@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -43,6 +44,7 @@ CHUNK_OVERLAP_CHARS = 120
 DEFAULT_EVIDENCE_MIN_SCORE = 0.25
 DEFAULT_REQUIRED_EVIDENCE_SOURCES = 1
 ALLOWED_NO_HIT_POLICIES = frozenset({"abstain", "fallback_to_general", "return_empty"})
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 class SiteKnowledgeService:
@@ -52,9 +54,11 @@ class SiteKnowledgeService:
         *,
         settings: Settings | None = None,
         providers: dict[str, ProviderAdapter] | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.providers = providers or {}
+        self.progress_callback = progress_callback
         self.repository = SiteKnowledgeRepository(session)
         self.vector_backend = build_vector_backend(self.settings)
         self.embedding_provider_id = str(
@@ -106,9 +110,24 @@ class SiteKnowledgeService:
         documents = documents if isinstance(documents, list) else []
         comments = input_payload.get("comments")
         comments = comments if isinstance(comments, list) else []
+        total_documents = len(documents) + len(comments)
 
         deleted_entries = 0
+        self._emit_sync_progress(
+            status="running",
+            stage="preparing",
+            message="Preparing public site content for indexing.",
+            sync_mode=sync_mode,
+            total_documents=total_documents,
+        )
         if sync_mode == "delete":
+            self._emit_sync_progress(
+                status="running",
+                stage="cleaning",
+                message="Removing existing Cloud index entries.",
+                sync_mode=sync_mode,
+                total_documents=total_documents,
+            )
             if self.vector_backend is not None:
                 if post_ids:
                     self.vector_backend.delete_post_indexes(site_id, post_ids)
@@ -119,6 +138,15 @@ class SiteKnowledgeService:
                 if post_ids
                 else self.repository.delete_site_index(site_id)
             )
+            self._emit_sync_progress(
+                status="completed",
+                stage="completed",
+                message="Index cleanup completed.",
+                sync_mode=sync_mode,
+                total_documents=total_documents,
+                deleted_entries=deleted_entries,
+                percent=100,
+            )
             return self._sync_response(
                 status="completed",
                 run_id=run_id,
@@ -128,9 +156,25 @@ class SiteKnowledgeService:
                 indexed_chunks=0,
                 failed_documents=0,
                 deleted_entries=deleted_entries,
+                progress=self._sync_progress(
+                    status="completed",
+                    stage="completed",
+                    message="Index cleanup completed.",
+                    sync_mode=sync_mode,
+                    total_documents=total_documents,
+                    deleted_entries=deleted_entries,
+                    percent=100,
+                ),
             )
 
         if sync_mode == "rebuild":
+            self._emit_sync_progress(
+                status="running",
+                stage="cleaning",
+                message="Clearing old site index before rebuilding.",
+                sync_mode=sync_mode,
+                total_documents=total_documents,
+            )
             if self.vector_backend is not None:
                 if post_ids:
                     self.vector_backend.delete_post_indexes(site_id, post_ids)
@@ -142,6 +186,13 @@ class SiteKnowledgeService:
                 else self.repository.delete_site_index(site_id)
             )
         elif sync_mode == "refresh" and post_ids:
+            self._emit_sync_progress(
+                status="running",
+                stage="cleaning",
+                message="Clearing selected old index entries before refreshing.",
+                sync_mode=sync_mode,
+                total_documents=total_documents,
+            )
             if self.vector_backend is not None:
                 self.vector_backend.delete_post_indexes(site_id, post_ids)
             deleted_entries = self.repository.delete_post_indexes(site_id, post_ids)
@@ -150,9 +201,23 @@ class SiteKnowledgeService:
         indexed_documents = 0
         indexed_chunks = 0
         failed_documents = 0
+        processed_documents = 0
 
         for raw_document in [*documents, *comments]:
             document = raw_document if isinstance(raw_document, dict) else {}
+            self._emit_sync_progress(
+                status="running",
+                stage="embedding",
+                message="Chunking content and creating embeddings.",
+                sync_mode=sync_mode,
+                processed_documents=processed_documents,
+                total_documents=total_documents,
+                accepted_documents=accepted_documents,
+                indexed_documents=indexed_documents,
+                indexed_chunks=indexed_chunks,
+                failed_documents=failed_documents,
+                deleted_entries=deleted_entries,
+            )
             normalized = (
                 _normalize_public_comment(document)
                 if _looks_like_comment_document(document)
@@ -160,11 +225,13 @@ class SiteKnowledgeService:
             )
             if normalized is None:
                 failed_documents += 1
+                processed_documents += 1
                 continue
             if (
                 normalized["source_type"] == "comment"
                 and not self.settings.site_knowledge_comments_enabled
             ):
+                processed_documents += 1
                 continue
             accepted_documents += 1
             chunks = self._build_chunks(
@@ -175,7 +242,21 @@ class SiteKnowledgeService:
             )
             if not chunks:
                 failed_documents += 1
+                processed_documents += 1
                 continue
+            self._emit_sync_progress(
+                status="running",
+                stage="writing",
+                message="Writing chunks to the Cloud index.",
+                sync_mode=sync_mode,
+                processed_documents=processed_documents,
+                total_documents=total_documents,
+                accepted_documents=accepted_documents,
+                indexed_documents=indexed_documents,
+                indexed_chunks=indexed_chunks,
+                failed_documents=failed_documents,
+                deleted_entries=deleted_entries,
+            )
             if self.vector_backend is not None:
                 self.vector_backend.upsert_chunks(
                     site_id=site_id,
@@ -216,6 +297,36 @@ class SiteKnowledgeService:
             )
             indexed_documents += 1
             indexed_chunks += len(chunks)
+            processed_documents += 1
+            self._emit_sync_progress(
+                status="running",
+                stage="embedding",
+                message="Indexing is still running.",
+                sync_mode=sync_mode,
+                processed_documents=processed_documents,
+                total_documents=total_documents,
+                accepted_documents=accepted_documents,
+                indexed_documents=indexed_documents,
+                indexed_chunks=indexed_chunks,
+                failed_documents=failed_documents,
+                deleted_entries=deleted_entries,
+            )
+
+        progress = self._sync_progress(
+            status="completed",
+            stage="completed",
+            message="Index is ready for search.",
+            sync_mode=sync_mode,
+            processed_documents=processed_documents,
+            total_documents=total_documents,
+            accepted_documents=accepted_documents,
+            indexed_documents=indexed_documents,
+            indexed_chunks=indexed_chunks,
+            failed_documents=failed_documents,
+            deleted_entries=deleted_entries,
+            percent=100,
+        )
+        self._emit_sync_progress(**progress)
 
         return self._sync_response(
             status="completed",
@@ -226,6 +337,7 @@ class SiteKnowledgeService:
             indexed_chunks=indexed_chunks,
             failed_documents=failed_documents,
             deleted_entries=deleted_entries,
+            progress=progress,
         )
 
     def status(self, *, site_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -233,9 +345,10 @@ class SiteKnowledgeService:
         indexed_posts = self.repository.count_documents(site_id)
         indexed_chunks = self.repository.count_chunks(site_id)
         last_sync_at = self.repository.last_sync_at(site_id)
+        active_run = self.repository.latest_active_sync(site_id)
 
         status = "ready" if indexed_chunks > 0 else "empty"
-        if self.repository.has_running_sync(site_id):
+        if active_run is not None:
             status = "syncing"
         elif indexed_chunks == 0 and self.repository.latest_failed_sync(site_id) is not None:
             status = "failed"
@@ -258,11 +371,19 @@ class SiteKnowledgeService:
                 for source_type in sorted(self.repository.source_type_counts(site_id))
             }
 
+        progress = self._status_progress(
+            status=status,
+            coverage=coverage,
+            active_run=active_run,
+        )
+
         return {
             "artifact_type": "site_knowledge_status",
             "composition_role": "site_knowledge_status",
             "status": status,
             "coverage": coverage,
+            "progress": progress,
+            "active_run": _serialize_active_run(active_run) if active_run is not None else {},
             "write_posture": "suggestion_only",
             "direct_wordpress_write": False,
         }
@@ -500,6 +621,100 @@ class SiteKnowledgeService:
             return float(self.settings.openai_timeout_seconds)
         return float(self.settings.tei_timeout_seconds)
 
+    def _sync_progress(
+        self,
+        *,
+        status: str,
+        stage: str,
+        message: str,
+        sync_mode: str,
+        processed_documents: int = 0,
+        total_documents: int = 0,
+        accepted_documents: int = 0,
+        indexed_documents: int = 0,
+        indexed_chunks: int = 0,
+        failed_documents: int = 0,
+        deleted_entries: int = 0,
+        percent: int | None = None,
+    ) -> dict[str, Any]:
+        total = max(0, int(total_documents))
+        processed = max(0, int(processed_documents))
+        resolved_percent = (
+            max(0, min(100, int(percent)))
+            if percent is not None
+            else (min(99, int(processed / total * 100)) if total > 0 else 0)
+        )
+        return {
+            "status": status,
+            "stage": stage,
+            "message": message,
+            "sync_mode": sync_mode,
+            "processed_documents": processed,
+            "total_documents": total,
+            "accepted_documents": max(0, int(accepted_documents)),
+            "indexed_documents": max(0, int(indexed_documents)),
+            "indexed_chunks": max(0, int(indexed_chunks)),
+            "failed_documents": max(0, int(failed_documents)),
+            "deleted_entries": max(0, int(deleted_entries)),
+            "percent": resolved_percent,
+            "updated_at": _serialize_datetime(datetime.now(UTC)),
+        }
+
+    def _emit_sync_progress(self, **progress: Any) -> None:
+        if self.progress_callback is None:
+            return
+        payload = progress if "updated_at" in progress else self._sync_progress(**progress)
+        self.progress_callback(payload)
+
+    def _status_progress(
+        self,
+        *,
+        status: str,
+        coverage: dict[str, Any],
+        active_run: Any | None,
+    ) -> dict[str, Any]:
+        if active_run is not None:
+            progress = _progress_from_run(active_run)
+            if progress:
+                return progress
+            stage = "queued" if active_run.status == "queued" else "preparing"
+            return self._sync_progress(
+                status=active_run.status,
+                stage=stage,
+                message=(
+                    "Waiting for Cloud worker to start."
+                    if stage == "queued"
+                    else "Cloud indexing is running."
+                ),
+                sync_mode="refresh",
+                percent=0,
+            )
+        if status == "ready":
+            return self._sync_progress(
+                status="completed",
+                stage="completed",
+                message="Index is ready for search.",
+                sync_mode="refresh",
+                processed_documents=int(coverage.get("indexed_posts") or 0),
+                total_documents=int(coverage.get("indexed_posts") or 0),
+                indexed_documents=int(coverage.get("indexed_posts") or 0),
+                indexed_chunks=int(coverage.get("indexed_chunks") or 0),
+                percent=100,
+            )
+        if status == "failed":
+            return self._sync_progress(
+                status="failed",
+                stage="failed",
+                message="Indexing failed. Refresh again or check Cloud logs.",
+                sync_mode="refresh",
+            )
+        return self._sync_progress(
+            status="empty",
+            stage="not_started",
+            message="Index has not been started yet.",
+            sync_mode="refresh",
+        )
+
     def _search_vector_backend(
         self,
         *,
@@ -537,6 +752,7 @@ class SiteKnowledgeService:
         indexed_chunks: int,
         failed_documents: int,
         deleted_entries: int,
+        progress: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "artifact_type": "site_knowledge_sync_request",
@@ -551,6 +767,22 @@ class SiteKnowledgeService:
                 "failed_documents": failed_documents,
                 "deleted_entries": deleted_entries,
             },
+            "progress": progress
+            if isinstance(progress, dict)
+            else self._sync_progress(
+                status=status,
+                stage="completed" if status == "completed" else status,
+                message="Index is ready for search." if status == "completed" else "",
+                sync_mode=sync_mode,
+                processed_documents=indexed_documents + failed_documents,
+                total_documents=accepted_documents + failed_documents,
+                accepted_documents=accepted_documents,
+                indexed_documents=indexed_documents,
+                indexed_chunks=indexed_chunks,
+                failed_documents=failed_documents,
+                deleted_entries=deleted_entries,
+                percent=100 if status == "completed" else None,
+            ),
             "write_posture": "suggestion_only",
             "direct_wordpress_write": False,
         }
@@ -738,6 +970,21 @@ def _serialize_datetime(value: datetime | None) -> str:
     if value is None:
         return ""
     return value.isoformat()
+
+
+def _progress_from_run(run: Any) -> dict[str, Any]:
+    result_json = run.result_json if isinstance(run.result_json, dict) else {}
+    progress = result_json.get("progress")
+    return progress if isinstance(progress, dict) else {}
+
+
+def _serialize_active_run(run: Any) -> dict[str, Any]:
+    return {
+        "run_id": str(run.run_id or ""),
+        "status": str(run.status or ""),
+        "started_at": _serialize_datetime(run.started_at),
+        "processing_started_at": _serialize_datetime(run.processing_started_at),
+    }
 
 
 def _lexical_bonus(query: str, chunk_text: str, title: str) -> float:
