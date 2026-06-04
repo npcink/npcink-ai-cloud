@@ -52,35 +52,41 @@ def _build_client(
     init_schema(database_url)
     CatalogService(database_url).refresh_catalog()
 
-    settings = Settings(
-        _env_file=None,
-        project_name="Magick AI Cloud Test",
-        environment="test",
-        database_url=database_url,
-        redis_url="redis://localhost:6379/0",
-        internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
-        admin_session_secret=TEST_ADMIN_SESSION_SECRET,
-        portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
-        openai_api_key="",
-        anthropic_api_key="",
-        litellm_provider_enabled=False,
-        litellm_api_key="",
-        vllm_provider_enabled=False,
-        vllm_api_key="",
-        tei_provider_enabled=False,
-        tei_api_key="",
-        openrouter_provider_enabled=False,
-        openrouter_api_key="",
-        siliconflow_provider_enabled=False,
-        siliconflow_api_key="",
-        web_search_provider="disabled",
-        web_search_tavily_api_key="",
-        web_search_bocha_api_key="",
-        web_search_jina_reader_api_key="",
-        web_search_apify_api_token="",
-        site_knowledge_embedding_provider="deterministic",
-        **(settings_overrides or {}),
-    )
+    settings_kwargs = {
+        "_env_file": None,
+        "project_name": "Magick AI Cloud Test",
+        "environment": "test",
+        "database_url": database_url,
+        "redis_url": "redis://localhost:6379/0",
+        "internal_auth_token": TEST_INTERNAL_AUTH_TOKEN,
+        "admin_session_secret": TEST_ADMIN_SESSION_SECRET,
+        "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+        "openai_api_key": "",
+        "anthropic_api_key": "",
+        "litellm_provider_enabled": False,
+        "litellm_api_key": "",
+        "vllm_provider_enabled": False,
+        "vllm_api_key": "",
+        "tei_provider_enabled": False,
+        "tei_api_key": "",
+        "openrouter_provider_enabled": False,
+        "openrouter_api_key": "",
+        "siliconflow_provider_enabled": False,
+        "siliconflow_api_key": "",
+        "web_search_provider": "disabled",
+        "web_search_tavily_api_key": "",
+        "web_search_bocha_api_key": "",
+        "web_search_jina_reader_api_key": "",
+        "web_search_apify_api_token": "",
+        "image_source_provider": "disabled",
+        "image_source_auto_strategy": "first_available",
+        "image_source_unsplash_access_key": "",
+        "image_source_pixabay_api_key": "",
+        "image_source_pexels_api_key": "",
+        "site_knowledge_embedding_provider": "deterministic",
+    }
+    settings_kwargs.update(settings_overrides or {})
+    settings = Settings(**settings_kwargs)
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
 
@@ -227,6 +233,7 @@ def test_admin_image_source_provider_settings_are_masked_and_update_runtime(
             "runtime": {
                 "timeout_seconds": 8,
                 "cost_per_query": 0.004,
+                "auto_strategy": "random",
             },
         },
     )
@@ -234,6 +241,8 @@ def test_admin_image_source_provider_settings_are_masked_and_update_runtime(
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["provider_mode"] == "auto"
+    assert data["auto_strategy"] == "random"
+    assert data["runtime"]["auto_strategy"] == "random"
     assert data["providers"]["unsplash"]["configured"] is True
     assert data["providers"]["pixabay"]["configured"] is True
     assert data["providers"]["pexels"]["configured"] is True
@@ -243,12 +252,14 @@ def test_admin_image_source_provider_settings_are_masked_and_update_runtime(
     assert "pexels-test-secret" not in json.dumps(data)
     env_text = env_path.read_text(encoding="utf-8")
     assert "MAGICK_CLOUD_IMAGE_SOURCE_PROVIDER=auto" in env_text
+    assert "MAGICK_CLOUD_IMAGE_SOURCE_AUTO_STRATEGY=random" in env_text
     assert "MAGICK_CLOUD_IMAGE_SOURCE_UNSPLASH_ACCESS_KEY=unsplash-test-secret" in env_text
     assert "MAGICK_CLOUD_IMAGE_SOURCE_PIXABAY_API_KEY=pixabay-test-secret" in env_text
     assert "MAGICK_CLOUD_IMAGE_SOURCE_PEXELS_API_KEY=pexels-test-secret" in env_text
 
     services = client.app.state.services
     assert services.settings.image_source_provider == "auto"
+    assert services.settings.image_source_auto_strategy == "random"
     assert services.settings.image_source_pixabay_api_key == "pixabay-test-secret"
     assert services.settings.image_source_timeout_seconds == 8
 

@@ -11,6 +11,7 @@ PROVIDER_MODES = ("disabled", "auto", "unsplash", "pixabay", "pexels")
 
 ENV_KEYS = {
     "provider": "MAGICK_CLOUD_IMAGE_SOURCE_PROVIDER",
+    "auto_strategy": "MAGICK_CLOUD_IMAGE_SOURCE_AUTO_STRATEGY",
     "unsplash_base_url": "MAGICK_CLOUD_IMAGE_SOURCE_UNSPLASH_BASE_URL",
     "unsplash_access_key": "MAGICK_CLOUD_IMAGE_SOURCE_UNSPLASH_ACCESS_KEY",
     "pixabay_base_url": "MAGICK_CLOUD_IMAGE_SOURCE_PIXABAY_BASE_URL",
@@ -34,8 +35,10 @@ class ImageSourceAdminConfigService:
 
     def get_config(self) -> dict[str, Any]:
         provider_mode = str(self.settings.image_source_provider or "disabled")
+        auto_strategy = str(self.settings.image_source_auto_strategy or "first_available")
         return {
             "provider_mode": provider_mode,
+            "auto_strategy": auto_strategy,
             "env_path": str(self.settings.image_source_admin_env_path or ".env.local"),
             "requires_worker_restart_after_save": True,
             "providers": {
@@ -66,6 +69,7 @@ class ImageSourceAdminConfigService:
             "runtime": {
                 "timeout_seconds": float(self.settings.image_source_timeout_seconds),
                 "cost_per_query": float(self.settings.image_source_cost_per_query),
+                "auto_strategy": auto_strategy,
             },
             "boundary": {
                 "owner": "cloud_runtime",
@@ -136,8 +140,17 @@ class ImageSourceAdminConfigService:
         pixabay = _dict(providers.get("pixabay"))
         pexels = _dict(providers.get("pexels"))
         runtime = _dict(payload.get("runtime"))
+        auto_strategy = str(
+            payload.get("auto_strategy")
+            or runtime.get("auto_strategy")
+            or self.settings.image_source_auto_strategy
+            or "first_available"
+        ).strip().lower()
+        if auto_strategy not in {"first_available", "random"}:
+            auto_strategy = "first_available"
         return {
             "provider": provider,
+            "auto_strategy": auto_strategy,
             "unsplash_base_url": _value(
                 unsplash,
                 "base_url",
@@ -171,6 +184,10 @@ class ImageSourceAdminConfigService:
 
     def _apply_to_settings(self, env: dict[str, str]) -> None:
         self.settings.image_source_provider = env.get(ENV_KEYS["provider"], "disabled")
+        self.settings.image_source_auto_strategy = env.get(
+            ENV_KEYS["auto_strategy"],
+            "first_available",
+        )
         self.settings.image_source_unsplash_base_url = env.get(
             ENV_KEYS["unsplash_base_url"],
             "",

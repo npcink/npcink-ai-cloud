@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import random
 import time
 from dataclasses import dataclass
 from typing import Any, cast
@@ -21,6 +22,7 @@ from app.domain.image_sources.contracts import (
 MAX_QUERY_CHARS = 300
 MAX_TEXT_CHARS = 300
 MAX_PROVIDER_RESULTS = 30
+AUTO_PROVIDER_ORDER = ("unsplash", "pixabay", "pexels")
 
 
 @dataclass(slots=True)
@@ -224,7 +226,9 @@ class PixabayImageSourceProvider(_BaseImageProvider):
                 "image_source.pixabay_key_missing",
                 "Cloud-managed Pixabay API key is not configured",
             )
-        base_url = str(self.settings.image_source_pixabay_base_url or "").strip().rstrip("/")
+        base_url = str(self.settings.image_source_pixabay_base_url or "").strip()
+        if base_url and not base_url.endswith("/"):
+            base_url = f"{base_url}/"
         params: dict[str, Any] = {
             "key": api_key,
             "q": query,
@@ -331,19 +335,28 @@ def _resolve_provider(settings: Settings, requested_provider: str) -> str:
             "image_source.provider_not_configured",
             "Cloud-managed image source provider is not configured",
         )
-    if configured_provider == "auto":
-        for provider_id in ("unsplash", "pixabay", "pexels"):
-            if _provider_has_key(settings, provider_id):
-                configured_provider = provider_id
-                break
     if requested_provider not in {"auto", "cloud"}:
         configured_provider = requested_provider
+    elif configured_provider == "auto":
+        configured_provider = _resolve_auto_provider(settings)
     if configured_provider not in {"unsplash", "pixabay", "pexels"}:
         raise ImageSourceProviderError(
             "image_source.provider_not_configured",
             "Cloud-managed image source provider is not configured",
         )
     return configured_provider
+
+
+def _resolve_auto_provider(settings: Settings) -> str:
+    available_provider_ids = [
+        provider_id
+        for provider_id in AUTO_PROVIDER_ORDER
+        if _provider_has_key(settings, provider_id)
+    ]
+    strategy = str(settings.image_source_auto_strategy or "first_available").strip().lower()
+    if strategy == "random" and available_provider_ids:
+        return random.choice(available_provider_ids)
+    return available_provider_ids[0] if available_provider_ids else "auto"
 
 
 def _build_provider(provider_id: str, settings: Settings) -> _BaseImageProvider:

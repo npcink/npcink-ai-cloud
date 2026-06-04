@@ -13,10 +13,12 @@ from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 from app.core.services import CloudServices
+from app.domain.image_sources import service as image_source_service
 from app.domain.image_sources.service import (
     ImageSourceExecutionResult,
     ImageSourceProviderUsage,
     ImageSourceService,
+    PixabayImageSourceProvider,
     UnsplashImageSourceProvider,
 )
 from tests.conftest import (
@@ -306,3 +308,92 @@ def test_image_source_candidate_suggested_filename_is_safe(monkeypatch: Any) -> 
     assert "commercial" not in candidate["suggested_filename"]
     assert "secret" not in candidate["suggested_filename"]
     assert "secret=value" not in candidate["suggested_filename"]
+
+
+def test_pixabay_provider_preserves_api_endpoint_trailing_slash(monkeypatch: Any) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+        admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+        portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
+        image_source_provider="pixabay",
+        image_source_pixabay_base_url="https://pixabay.com/api",
+        image_source_pixabay_api_key="placeholder-pixabay-key",
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_request_json(
+        self: PixabayImageSourceProvider,
+        *,
+        started: float,
+        method: str,
+        url: str,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        captured["url"] = url
+        captured["params"] = params or {}
+        return {
+            "hits": [
+                {
+                    "id": 123,
+                    "tags": "wordpress, editorial",
+                    "largeImageURL": "https://cdn.pixabay.com/photo.jpg",
+                    "previewURL": "https://cdn.pixabay.com/photo-thumb.jpg",
+                    "pageURL": "https://pixabay.com/photos/wordpress-123/",
+                    "user": "Pixabay Creator",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(PixabayImageSourceProvider, "_request_json", fake_request_json)
+
+    execution = ImageSourceService(settings).execute(
+        site_id="site_alpha",
+        ability_name="magick-ai-toolbox/search-image-source",
+        contract_version="image_source_cloud_request.v1",
+        input_payload={
+            "contract_version": "image_source_cloud_request.v1",
+            "query": "wordpress hero image",
+            "provider": "pixabay",
+            "orientation": "landscape",
+            "candidate_contract": "image_candidate.v1",
+        },
+        run_id="run_image_source_pixabay",
+    )
+
+    assert captured["url"] == "https://pixabay.com/api/"
+    assert captured["params"]["orientation"] == "horizontal"
+    candidate = execution.result_json["images"][0]
+    assert candidate["provider"] == "pixabay"
+    assert candidate["thumbnail_url"] == "https://cdn.pixabay.com/photo-thumb.jpg"
+
+
+def test_image_source_auto_random_selects_configured_provider(monkeypatch: Any) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+        admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+        portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
+        image_source_provider="auto",
+        image_source_auto_strategy="random",
+        image_source_unsplash_access_key="",
+        image_source_pixabay_api_key="placeholder-pixabay-key",
+        image_source_pexels_api_key="placeholder-pexels-key",
+    )
+    choices: list[tuple[str, ...]] = []
+
+    def fake_choice(provider_ids: list[str]) -> str:
+        choices.append(tuple(provider_ids))
+        return "pexels"
+
+    monkeypatch.setattr(image_source_service.random, "choice", fake_choice)
+
+    assert image_source_service._resolve_provider(settings, "auto") == "pexels"
+    assert choices == [("pixabay", "pexels")]
+    assert image_source_service._resolve_provider(settings, "pixabay") == "pixabay"
+    assert choices == [("pixabay", "pexels")]

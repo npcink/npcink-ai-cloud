@@ -231,6 +231,7 @@ class Settings(BaseSettings):
     web_search_apify_cost_per_query: float = Field(default=0.0)
     web_search_admin_env_path: str = Field(default=".env.local")
     image_source_provider: str = Field(default="disabled")
+    image_source_auto_strategy: str = Field(default="first_available")
     image_source_unsplash_base_url: str = Field(default="https://api.unsplash.com")
     image_source_unsplash_access_key: str | None = Field(default=None)
     image_source_pixabay_base_url: str = Field(default="https://pixabay.com/api/")
@@ -532,6 +533,12 @@ class Settings(BaseSettings):
                 "image_source_provider must be disabled, auto, unsplash, pixabay, or pexels"
             )
         self.image_source_provider = image_source_provider
+        image_source_auto_strategy = (
+            str(self.image_source_auto_strategy or "first_available").strip().lower()
+        )
+        if image_source_auto_strategy not in {"first_available", "random"}:
+            raise ValueError("image_source_auto_strategy must be first_available or random")
+        self.image_source_auto_strategy = image_source_auto_strategy
         if self.image_source_timeout_seconds <= 0:
             raise ValueError("image_source_timeout_seconds must be greater than 0")
         if self.image_source_cost_per_query < 0:
