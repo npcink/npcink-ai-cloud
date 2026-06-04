@@ -1,18 +1,31 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
+from app.adapters.providers.base import (
+    ProviderAdapter,
+    ProviderExecutionError,
+    ProviderExecutionRequest,
+)
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.service import UsageService
 
 ADVISOR_VERSION = "internal-ai-advisor-v1"
+SUMMARIZER_VERSION = "internal-ops-summarizer-v1"
 
 
 class InternalAIAdvisorService:
-    def __init__(self, database_url: str) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        providers: dict[str, ProviderAdapter] | None = None,
+    ) -> None:
         self.database_url = database_url
+        self.providers = providers or {}
 
     def get_runtime_advisor(
         self,
@@ -307,6 +320,315 @@ class InternalAIAdvisorService:
             source={"router_recommendation": recommendation},
         )
 
+    def get_ops_summary(
+        self,
+        *,
+        scope: str,
+        site_id: str | None = None,
+        draft_kind: str = "support_reply",
+        recent_minutes: int = 60,
+        usage_window_days: int = 7,
+        audit_window_minutes: int = 1440,
+        range_filter: str = "24h",
+        limit: int = 25,
+        provider_id: str = "",
+        model_id: str = "internal-ops-summarizer",
+    ) -> dict[str, Any]:
+        advisor = self._resolve_advisor_payload(
+            scope=scope,
+            site_id=site_id,
+            recent_minutes=recent_minutes,
+            usage_window_days=usage_window_days,
+            audit_window_minutes=audit_window_minutes,
+            range_filter=range_filter,
+            limit=limit,
+        )
+        redacted_context = self._build_redacted_summarizer_context(
+            advisor,
+            draft_kind=draft_kind,
+        )
+        deterministic = self._build_deterministic_ops_summary(
+            redacted_context,
+            draft_kind=draft_kind,
+        )
+
+        provider = self._select_provider(provider_id)
+        if provider is None:
+            return {
+                **deterministic,
+                "generation": {
+                    "mode": "deterministic_fallback",
+                    "provider_id": "",
+                    "model_id": "",
+                    "error_code": "",
+                },
+            }
+
+        try:
+            llm_result = provider.execute(
+                ProviderExecutionRequest(
+                    run_id=f"advisor_{scope}_{int(datetime.now(UTC).timestamp())}",
+                    site_id=site_id or "internal",
+                    ability_name="internal_ops_summarizer",
+                    profile_id="internal.ops.summarizer",
+                    execution_kind="text",
+                    model_id=model_id,
+                    instance_id=f"{provider.provider_id}:internal-ops-summarizer",
+                    endpoint_variant="chat_completions",
+                    trace_id="internal_ops_summarizer",
+                    input_payload=self._build_summarizer_input_payload(
+                        redacted_context,
+                        draft_kind=draft_kind,
+                    ),
+                    policy={
+                        "data_contract": SUMMARIZER_VERSION,
+                        "customer_content_allowed": False,
+                    },
+                    timeout_ms=12_000,
+                )
+            )
+        except ProviderExecutionError as error:
+            return {
+                **deterministic,
+                "generation": {
+                    "mode": "deterministic_fallback",
+                    "provider_id": provider.provider_id,
+                    "model_id": model_id,
+                    "error_code": error.error_code,
+                },
+            }
+
+        parsed = self._parse_llm_summary_output(
+            str(llm_result.output.get("output_text") or ""),
+            fallback=deterministic,
+        )
+        return {
+            **parsed,
+            "generation": {
+                "mode": "llm",
+                "provider_id": provider.provider_id,
+                "model_id": model_id,
+                "error_code": "",
+                "tokens_in": llm_result.tokens_in,
+                "tokens_out": llm_result.tokens_out,
+                "cost": llm_result.cost,
+            },
+        }
+
+    def _resolve_advisor_payload(
+        self,
+        *,
+        scope: str,
+        site_id: str | None,
+        recent_minutes: int,
+        usage_window_days: int,
+        audit_window_minutes: int,
+        range_filter: str,
+        limit: int,
+    ) -> dict[str, Any]:
+        normalized_scope = str(scope or "").strip().lower()
+        if normalized_scope in {"runtime", "runtime_operations"}:
+            return self.get_runtime_advisor(
+                site_id=site_id,
+                recent_minutes=recent_minutes,
+            )
+        if normalized_scope in {"commercial", "commercial_operations"}:
+            return self.get_commercial_advisor(
+                usage_window_days=usage_window_days,
+                audit_window_minutes=audit_window_minutes,
+            )
+        if normalized_scope in {"routing", "routing_operations"}:
+            if not str(site_id or "").strip():
+                raise ValueError("site_id is required for routing ops summary")
+            return self.get_routing_advisor(
+                site_id=str(site_id or "").strip(),
+                filters={"range": range_filter, "limit": limit},
+            )
+        raise ValueError("scope must be runtime, commercial, or routing")
+
+    def _build_redacted_summarizer_context(
+        self,
+        advisor: dict[str, Any],
+        *,
+        draft_kind: str,
+    ) -> dict[str, Any]:
+        return {
+            "summarizer_version": SUMMARIZER_VERSION,
+            "draft_kind": _normalize_draft_kind(draft_kind),
+            "advisor": {
+                "advisor_version": str(advisor.get("advisor_version") or ""),
+                "scope": str(advisor.get("scope") or ""),
+                "status": str(advisor.get("status") or ""),
+                "severity": str(advisor.get("severity") or ""),
+                "headline": str(advisor.get("headline") or ""),
+                "summary": str(advisor.get("summary") or ""),
+                "confidence": str(advisor.get("confidence") or ""),
+                "evidence": [
+                    {
+                        "kind": str(item.get("kind") or ""),
+                        "ref": str(item.get("ref") or ""),
+                        "label": str(item.get("label") or ""),
+                    }
+                    for item in _list(advisor.get("evidence"))
+                    if isinstance(item, dict)
+                ][:6],
+                "recommended_actions": [
+                    {
+                        "action": str(item.get("action") or ""),
+                        "requires_operator": bool(item.get("requires_operator")),
+                    }
+                    for item in _list(advisor.get("recommended_actions"))
+                    if isinstance(item, dict)
+                ][:6],
+                "signals": [
+                    self._redact_signal(signal)
+                    for signal in _list(advisor.get("signals"))
+                    if isinstance(signal, dict)
+                ][:8],
+            },
+            "forbidden": [
+                "do_not_generate_customer_article_or_marketing_content",
+                "do_not_write_or_modify_wordpress",
+                "do_not_claim_operator_action_was_taken",
+                "do_not_include_secrets_prompts_payloads_or_callback_bodies",
+            ],
+        }
+
+    def _redact_signal(self, signal: dict[str, Any]) -> dict[str, Any]:
+        allowed_keys = {
+            "code",
+            "state",
+            "count",
+            "failed",
+            "queued_runs",
+            "recent_events",
+            "recent_rate_limit_exceeded",
+            "recent_replay_blocked",
+            "within_7_days",
+            "within_30_days",
+            "recommended_profile_ids",
+            "avoid_provider_ids",
+            "avoid_profile_ids",
+        }
+        return {
+            key: value
+            for key, value in signal.items()
+            if key in allowed_keys and _is_json_scalar_or_list(value)
+        }
+
+    def _build_summarizer_input_payload(
+        self,
+        redacted_context: dict[str, Any],
+        *,
+        draft_kind: str,
+    ) -> dict[str, Any]:
+        return {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You write internal cloud operations summaries only. "
+                        "Do not generate articles, SEO content, WordPress content, "
+                        "or customer-facing claims that action has already been taken. "
+                        "Return strict JSON with keys operator_summary, support_draft, "
+                        "operator_next_step, and safety_note."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task": _normalize_draft_kind(draft_kind),
+                            "redacted_context": redacted_context,
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                },
+            ],
+            "params": {
+                "temperature": 0.2,
+                "max_tokens": 320,
+                "response_format": {"type": "json_object"},
+            },
+        }
+
+    def _build_deterministic_ops_summary(
+        self,
+        redacted_context: dict[str, Any],
+        *,
+        draft_kind: str,
+    ) -> dict[str, Any]:
+        advisor = _dict(redacted_context.get("advisor"))
+        actions = _list(advisor.get("recommended_actions"))
+        first_action = (
+            str(_dict(actions[0]).get("action") or "continue_monitoring")
+            if actions
+            else "continue_monitoring"
+        )
+        headline = str(advisor.get("headline") or "Cloud advisor summary")
+        summary = str(advisor.get("summary") or "Review the linked evidence.")
+        support_draft = (
+            "We are reviewing a cloud service signal for your site. "
+            "The current evidence points to an operational condition, and our "
+            "team will follow up after checking the referenced diagnostics."
+        )
+        if _normalize_draft_kind(draft_kind) == "operator_summary":
+            support_draft = ""
+
+        return {
+            "summarizer_version": SUMMARIZER_VERSION,
+            "draft_kind": _normalize_draft_kind(draft_kind),
+            "scope": str(advisor.get("scope") or ""),
+            "status": str(advisor.get("status") or ""),
+            "severity": str(advisor.get("severity") or ""),
+            "headline": headline,
+            "operator_summary": f"{headline}: {summary}",
+            "support_draft": support_draft,
+            "operator_next_step": first_action,
+            "safety_note": (
+                "Internal ops draft only. It does not generate customer content, "
+                "write WordPress, or execute operator actions."
+            ),
+            "evidence": _list(advisor.get("evidence")),
+            "source_context": redacted_context,
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+
+    def _select_provider(self, provider_id: str) -> ProviderAdapter | None:
+        normalized_provider_id = str(provider_id or "").strip()
+        if not normalized_provider_id:
+            return None
+        return self.providers.get(normalized_provider_id)
+
+    def _parse_llm_summary_output(
+        self,
+        output_text: str,
+        *,
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            parsed = json.loads(output_text)
+        except json.JSONDecodeError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        operator_summary = str(parsed.get("operator_summary") or "").strip()
+        support_draft = str(parsed.get("support_draft") or "").strip()
+        operator_next_step = str(parsed.get("operator_next_step") or "").strip()
+        safety_note = str(parsed.get("safety_note") or "").strip()
+        if not operator_summary and output_text.strip():
+            operator_summary = output_text.strip()[:1000]
+
+        return {
+            **fallback,
+            "operator_summary": operator_summary or fallback["operator_summary"],
+            "support_draft": support_draft or fallback["support_draft"],
+            "operator_next_step": operator_next_step or fallback["operator_next_step"],
+            "safety_note": safety_note or fallback["safety_note"],
+        }
+
     def _advisor_payload(
         self,
         *,
@@ -384,3 +706,18 @@ def _float(value: Any) -> float:
 def _max_severity(current: str, candidate: str) -> str:
     order = {"info": 0, "warning": 1, "error": 2}
     return candidate if order.get(candidate, 0) > order.get(current, 0) else current
+
+
+def _normalize_draft_kind(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"operator_summary", "support_reply"}:
+        return normalized
+    return "support_reply"
+
+
+def _is_json_scalar_or_list(value: Any) -> bool:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return True
+    if isinstance(value, list):
+        return all(isinstance(item, (str, int, float, bool)) for item in value[:12])
+    return False

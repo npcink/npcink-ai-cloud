@@ -66,8 +66,8 @@ The first implementation phase should stay narrow:
      adoption.
 
 The first landed implementation is an on-demand read API over existing Cloud
-summaries. It does not persist advisor snapshots and does not call a model until
-a separate redacted prompt contract is approved.
+summaries. It does not persist advisor snapshots. It may call a configured
+provider only through the Internal Ops Summarizer contract below.
 
 ## Data Sources
 
@@ -125,6 +125,42 @@ Rules:
 - `confidence` is a product hint, not an authorization decision.
 - Advisor text must stay short enough for admin and support workflows.
 
+## Internal Ops Summarizer
+
+Internal Ops Summarizer is the only LLM-backed surface allowed in this contract.
+It produces internal operator summaries and editable support reply drafts from
+redacted advisor context.
+
+Allowed:
+
+- use advisor `scope`, `status`, `severity`, `headline`, `summary`,
+  `confidence`, evidence refs, signal codes/counts, and recommended action ids
+- produce `operator_summary`, `support_draft`, `operator_next_step`, and
+  `safety_note`
+- fall back to deterministic template text when no provider is configured or a
+  provider call fails
+
+Forbidden:
+
+- generate articles, SEO content, product descriptions, blog drafts, marketing
+  copy, or WordPress content
+- send raw advisor `source`, raw runtime diagnostics, raw plugin payloads,
+  prompts, completions, callback bodies, secrets, request/response bodies, or
+  WordPress content to a model
+- claim that an operator action has already been taken
+- send drafts automatically to customers
+- write WordPress or mutate Cloud commercial/router state
+
+Initial API:
+
+- `GET /internal/service/advisor/ops-summary`
+
+The response must identify whether text came from a provider or deterministic
+fallback using `generation.mode`. This mode is advisory evidence, not
+authorization to execute anything.
+Provider execution requires an explicit `provider_id`; otherwise the endpoint
+must return deterministic fallback text.
+
 ## Storage
 
 The first phase may store generated advisor snapshots in PostgreSQL read-model
@@ -156,6 +192,7 @@ Initial API surfaces should be internal and bounded:
 - `GET /internal/service/advisor/runtime`
 - `GET /internal/service/advisor/commercial`
 - `GET /internal/service/advisor/routing`
+- `GET /internal/service/advisor/ops-summary`
 - optional subject-scoped variants under existing admin site/account detail
   read APIs
 
@@ -209,6 +246,8 @@ An implementation is acceptable only if:
 - no raw customer content, secrets, prompts, completions, callback bodies, or
   plugin payloads are sent to advisor storage or surfaced in responses
 - advisor endpoints are internal/operator scoped
+- LLM prompts contain only redacted advisor context and never raw `source`
+  payloads
 - recommendations include evidence references
 - no new control-plane surface is created
 - no forbidden infrastructure is introduced

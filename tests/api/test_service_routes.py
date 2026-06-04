@@ -222,6 +222,10 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
         "/internal/service/advisor/routing?site_id=site_advisor",
         headers=build_internal_headers(),
     )
+    ops_summary_response = client.get(
+        "/internal/service/advisor/ops-summary?scope=runtime&site_id=site_advisor",
+        headers=build_internal_headers(),
+    )
 
     assert unauthenticated.status_code == 401
     assert runtime_response.status_code == 200
@@ -257,6 +261,14 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     assert routing_payload["status"] == "ready"
     assert "text.balanced" in routing_payload["signals"][0]["recommended_profile_ids"]
     assert routing_payload["evidence"][0]["kind"] == "router_recommendation_summary"
+
+    assert ops_summary_response.status_code == 200
+    ops_summary_payload = ops_summary_response.json()["data"]
+    assert ops_summary_payload["summarizer_version"] == "internal-ops-summarizer-v1"
+    assert ops_summary_payload["generation"]["mode"] == "deterministic_fallback"
+    assert ops_summary_payload["support_draft"]
+    assert "article" not in ops_summary_payload["support_draft"].lower()
+    assert "write WordPress" in ops_summary_payload["safety_note"]
 
     dispose_engine(database_url)
 
