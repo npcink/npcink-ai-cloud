@@ -209,6 +209,11 @@ class Settings(BaseSettings):
     site_knowledge_zilliz_database: str | None = Field(default=None)
     site_knowledge_zilliz_collection: str = Field(default="magick_site_knowledge_chunks")
     site_knowledge_zilliz_timeout_seconds: float = Field(default=10.0)
+    web_search_provider: str = Field(default="disabled")
+    web_search_tavily_base_url: str = Field(default="https://api.tavily.com")
+    web_search_tavily_api_key: str | None = Field(default=None)
+    web_search_tavily_timeout_seconds: float = Field(default=15.0)
+    web_search_tavily_cost_per_query: float = Field(default=0.0)
     openrouter_provider_enabled: bool = Field(default=False)
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openrouter_api_key: str | None = Field(default=None)
@@ -445,6 +450,23 @@ class Settings(BaseSettings):
             raise ValueError("site_knowledge_embedding_dimensions must be greater than 0")
         if self.site_knowledge_zilliz_timeout_seconds <= 0:
             raise ValueError("site_knowledge_zilliz_timeout_seconds must be greater than 0")
+        web_search_provider = str(self.web_search_provider or "disabled").strip().lower()
+        if web_search_provider not in {"disabled", "tavily"}:
+            raise ValueError("web_search_provider must be disabled or tavily")
+        self.web_search_provider = web_search_provider
+        if self.web_search_tavily_timeout_seconds <= 0:
+            raise ValueError("web_search_tavily_timeout_seconds must be greater than 0")
+        if self.web_search_tavily_cost_per_query < 0:
+            raise ValueError("web_search_tavily_cost_per_query must be zero or greater")
+        if web_search_provider == "tavily":
+            if not str(self.web_search_tavily_base_url or "").strip():
+                raise ValueError(
+                    "web_search_tavily_base_url is required when web_search_provider=tavily"
+                )
+            if not str(self.web_search_tavily_api_key or "").strip():
+                raise ValueError(
+                    "web_search_tavily_api_key is required when web_search_provider=tavily"
+                )
         site_knowledge_embedding_provider = str(
             self.site_knowledge_embedding_provider or ""
         ).strip()

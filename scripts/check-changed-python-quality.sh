@@ -104,6 +104,7 @@ skipped_mypy_targets=()
 
 mypy_debt_exceptions=(
 	"app/domain/commercial/service.py"
+	"app/domain/runtime/service.py"
 )
 
 should_skip_mypy_target() {

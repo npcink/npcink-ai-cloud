@@ -28,6 +28,13 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_PROFILE_ID,
     SITE_KNOWLEDGE_SYNC_ABILITY,
 )
+from app.domain.web_search.contracts import (
+    WEB_SEARCH_ABILITIES,
+    WEB_SEARCH_ABILITY_FAMILY,
+    WEB_SEARCH_DATA_CLASSIFICATION,
+    WEB_SEARCH_EXECUTION_KIND,
+    WEB_SEARCH_PROFILE_ID,
+)
 
 router = APIRouter(prefix="/v1/runtime", tags=["runtime"])
 
@@ -151,27 +158,39 @@ def _is_site_knowledge_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in SITE_KNOWLEDGE_ABILITIES
 
 
+def _is_web_search_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in WEB_SEARCH_ABILITIES
+
+
 def _resolve_ability_family(payload: RuntimePayload) -> str:
     if _is_site_knowledge_payload(payload):
         return SITE_KNOWLEDGE_ABILITY_FAMILY
+    if _is_web_search_payload(payload):
+        return WEB_SEARCH_ABILITY_FAMILY
     return payload.ability_family
 
 
 def _resolve_execution_kind(payload: RuntimePayload) -> str:
     if _is_site_knowledge_payload(payload) and not payload.execution_kind:
         return SITE_KNOWLEDGE_EXECUTION_KIND
+    if _is_web_search_payload(payload) and not payload.execution_kind:
+        return WEB_SEARCH_EXECUTION_KIND
     return payload.execution_kind
 
 
 def _resolve_profile_id(payload: RuntimePayload) -> str:
     if _is_site_knowledge_payload(payload) and not payload.profile_id:
         return SITE_KNOWLEDGE_PROFILE_ID
+    if _is_web_search_payload(payload) and not payload.profile_id:
+        return WEB_SEARCH_PROFILE_ID
     return payload.profile_id
 
 
 def _resolve_data_classification(payload: RuntimePayload) -> str:
     if _is_site_knowledge_payload(payload):
         return SITE_KNOWLEDGE_DATA_CLASSIFICATION
+    if _is_web_search_payload(payload):
+        return WEB_SEARCH_DATA_CLASSIFICATION
     return payload.data_classification
 
 

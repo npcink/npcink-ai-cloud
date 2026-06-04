@@ -224,3 +224,27 @@ first establish a real vector evidence loop, then add lightweight ontology read
 models such as topic clusters, entities, FAQ candidates, content relationships,
 and category/tag mappings. Heavy graph infrastructure and new orchestration
 systems remain deferred.
+
+## Real-Chain Smoke
+
+Use the local real-chain smoke after configuring Cloud-managed vector settings
+in `.env.local` or the deployment secret manager:
+
+```bash
+pnpm run smoke:site-knowledge
+```
+
+The smoke validates the running dev `api` and `worker` containers with the
+current Cloud env:
+
+- `zilliz_cloud` vector backend
+- `BAAI/bge-m3` embeddings through the configured Cloud embedding provider
+- queued `site-knowledge-sync` processed by the runtime worker
+- inline `site-knowledge-search` with `evidence_gate.status=passed`
+- inline `site-knowledge-status` reporting indexed chunks
+- `suggestion_only` and `direct_wordpress_write=false`
+
+Smoke evidence is written under `.tmp/site-knowledge-real-chain-smoke/` and must
+not be committed. Evidence contains only redacted configuration and pass/fail
+counts; it must not include provider keys, Cloud secrets, raw embeddings, query
+text, or chunk text.

@@ -19,6 +19,7 @@
     "seed:dev": "docker compose -f docker-compose.dev.yml run --rm api python -m app.dev.seed_runtime --site-id site_smoke --key-id key_default --secret magick-cloud-test-secret",
     "seed:smoke": "pnpm run seed:dev",
     "smoke:local-alpha": "bash scripts/local-alpha-smoke.sh",
+    "smoke:site-knowledge": "bash scripts/site-knowledge-real-chain-smoke.sh",
     "smoke:media-derivative:wp": "bash scripts/media-derivative-wordpress-e2e-smoke.sh",
     "drill:provider-failure": "bash scripts/local-alpha-provider-failure-drill.sh",
     "drill:callback-failure": "bash scripts/local-alpha-callback-failure-drill.sh",

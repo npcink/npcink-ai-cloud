@@ -1,0 +1,405 @@
+from __future__ import annotations
+
+import hashlib
+import time
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlsplit
+
+import httpx
+
+from app.core.config import Settings
+from app.domain.web_search.contracts import (
+    ALLOWED_WEB_SEARCH_INTENTS,
+    WebSearchContractViolation,
+    coerce_positive_int,
+    validate_web_search_runtime_contract,
+)
+
+MAX_QUERY_CHARS = 500
+MAX_RESULT_TITLE_CHARS = 220
+MAX_RESULT_SNIPPET_CHARS = 600
+MAX_DOMAIN_FILTERS = 10
+
+
+@dataclass(slots=True)
+class WebSearchProviderUsage:
+    provider_id: str
+    model_id: str
+    instance_id: str
+    region: str
+    latency_ms: int
+    cost: float = 0.0
+    error_code: str | None = None
+
+
+@dataclass(slots=True)
+class WebSearchExecutionResult:
+    result_json: dict[str, Any]
+    usage: WebSearchProviderUsage
+
+
+class WebSearchProviderError(RuntimeError):
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        *,
+        usage: WebSearchProviderUsage | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.message = message
+        self.usage = usage
+
+
+class WebSearchService:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def execute(
+        self,
+        *,
+        site_id: str,
+        ability_name: str,
+        contract_version: str,
+        input_payload: dict[str, Any],
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        validate_web_search_runtime_contract(
+            ability_name=ability_name,
+            contract_version=contract_version,
+            input_payload=input_payload,
+        )
+        query = _normalize_text(input_payload.get("query"), limit=MAX_QUERY_CHARS)
+        if not query:
+            raise WebSearchContractViolation(
+                "web_search.query_required",
+                "web search query is required",
+            )
+        provider_id = str(self.settings.web_search_provider or "disabled").strip().lower()
+        if provider_id != "tavily":
+            raise WebSearchProviderError(
+                "web_search.provider_not_configured",
+                "Cloud-managed web search provider is not configured",
+            )
+
+        options = _build_options(input_payload)
+        return TavilyWebSearchProvider(self.settings).search(
+            query=query,
+            options=options,
+            site_id=site_id,
+            run_id=run_id,
+        )
+
+
+class TavilyWebSearchProvider:
+    provider_id = "tavily"
+    model_id = "web-search"
+    instance_id = "cloud-managed"
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def search(
+        self,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        api_key = str(self.settings.web_search_tavily_api_key or "").strip()
+        if not api_key:
+            raise WebSearchProviderError(
+                "web_search.tavily_api_key_missing",
+                "Cloud-managed Tavily API key is not configured",
+            )
+        base_url = str(self.settings.web_search_tavily_base_url or "").strip().rstrip("/")
+        endpoint = f"{base_url}/search"
+        max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
+        request_body: dict[str, Any] = {
+            "api_key": api_key,
+            "query": query,
+            "search_depth": str(options.get("search_depth") or "basic"),
+            "max_results": max_results,
+            "include_answer": False,
+            "include_raw_content": False,
+        }
+        if int(options.get("recency_days") or 0) > 0:
+            request_body["days"] = int(options.get("recency_days") or 0)
+        if options.get("language"):
+            request_body["language"] = str(options["language"])
+        if options.get("region"):
+            request_body["region"] = str(options["region"])
+        if options.get("allowed_domains"):
+            request_body["include_domains"] = list(options["allowed_domains"])
+        if options.get("blocked_domains"):
+            request_body["exclude_domains"] = list(options["blocked_domains"])
+
+        started = time.monotonic()
+        try:
+            timeout_seconds = float(self.settings.web_search_tavily_timeout_seconds)
+            with httpx.Client(timeout=timeout_seconds) as client:
+                response = client.post(endpoint, json=request_body)
+                response.raise_for_status()
+        except httpx.TimeoutException as error:
+            usage = self._usage(started, error_code="provider.timeout")
+            raise WebSearchProviderError(
+                "provider.timeout",
+                "Tavily web search timed out",
+                usage=usage,
+            ) from error
+        except httpx.HTTPStatusError as error:
+            usage = self._usage(started, error_code=_map_tavily_error(error.response))
+            raise WebSearchProviderError(
+                usage.error_code or "web_search.tavily_http_error",
+                _extract_http_error_message(error.response),
+                usage=usage,
+            ) from error
+        except httpx.RequestError as error:
+            usage = self._usage(started, error_code="provider.network_error")
+            raise WebSearchProviderError(
+                "provider.network_error",
+                "Tavily web search request failed",
+                usage=usage,
+            ) from error
+
+        usage = self._usage(started)
+        try:
+            payload = response.json()
+        except ValueError as error:
+            usage.error_code = "provider.invalid_response"
+            raise WebSearchProviderError(
+                "provider.invalid_response",
+                "Tavily web search returned invalid JSON",
+                usage=usage,
+            ) from error
+        raw_results = payload.get("results") if isinstance(payload, dict) else []
+        if not isinstance(raw_results, list):
+            raw_results = []
+        intent = str(options.get("intent") or "general_research")
+        results = _normalize_results(raw_results, intent=intent)
+        evidence_policy = _resolve_evidence_policy(options.get("evidence_policy"))
+        results = _apply_evidence_policy(results, evidence_policy)
+        result_json = {
+            "artifact_type": "web_search_results",
+            "composition_role": "external_web_evidence",
+            "status": "ready",
+            "provider": self.provider_id,
+            "intent": str(options.get("intent") or "general_research"),
+            "query_hash": _hash_query(query),
+            "query_chars": len(query),
+            "evidence_gate": _evidence_gate(results, evidence_policy),
+            "results": results,
+            "sources": [
+                {
+                    "title": str(item.get("title") or ""),
+                    "url": str(item.get("url") or ""),
+                    "source": self.provider_id,
+                }
+                for item in results
+            ],
+            "write_posture": "suggestion_only",
+            "direct_wordpress_write": False,
+        }
+        return WebSearchExecutionResult(result_json=result_json, usage=usage)
+
+    def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
+        return WebSearchProviderUsage(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            instance_id=self.instance_id,
+            region=str(self.settings.deployment_region or "unspecified"),
+            latency_ms=max(0, int((time.monotonic() - started) * 1000)),
+            cost=max(0.0, float(self.settings.web_search_tavily_cost_per_query or 0.0)),
+            error_code=error_code,
+        )
+
+
+def _build_options(input_payload: dict[str, Any]) -> dict[str, Any]:
+    intent = str(input_payload.get("intent") or "general_research").strip()
+    if intent not in ALLOWED_WEB_SEARCH_INTENTS:
+        intent = "general_research"
+    return {
+        "intent": intent,
+        "max_results": coerce_positive_int(input_payload.get("max_results"), default=5, maximum=10),
+        "recency_days": max(0, min(30, _coerce_int(input_payload.get("recency_days")))),
+        "language": _normalize_token(input_payload.get("language"), limit=16),
+        "region": _normalize_token(input_payload.get("region"), limit=16),
+        "search_depth": _normalize_search_depth(input_payload.get("search_depth")),
+        "allowed_domains": _normalize_domain_list(input_payload.get("allowed_domains")),
+        "blocked_domains": _normalize_domain_list(input_payload.get("blocked_domains")),
+        "evidence_policy": input_payload.get("evidence_policy"),
+    }
+
+
+def _normalize_results(raw_results: list[Any], *, intent: str) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for raw in raw_results:
+        if not isinstance(raw, dict):
+            continue
+        title = _normalize_text(raw.get("title"), limit=MAX_RESULT_TITLE_CHARS)
+        url = _normalize_url(raw.get("url"))
+        snippet = _normalize_text(
+            raw.get("content") or raw.get("snippet"),
+            limit=MAX_RESULT_SNIPPET_CHARS,
+        )
+        if not url and not title and not snippet:
+            continue
+        normalized.append(
+            {
+                "title": title or "Untitled result",
+                "url": url,
+                "snippet": snippet,
+                "score": _coerce_score(raw.get("score")),
+                "source": "tavily",
+                "suggested_use": _suggested_use(intent),
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            }
+        )
+    return normalized
+
+
+def _resolve_evidence_policy(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    min_score = _coerce_float(raw.get("min_score"), default=0.0)
+    required_sources = coerce_positive_int(raw.get("required_sources"), default=1, maximum=5)
+    no_hit_policy = str(raw.get("no_hit_policy") or "abstain").strip()
+    if no_hit_policy not in {"abstain", "fallback_to_general"}:
+        no_hit_policy = "abstain"
+    return {
+        "min_score": max(0.0, min(1.0, min_score)),
+        "required_sources": required_sources,
+        "no_hit_policy": no_hit_policy,
+    }
+
+
+def _apply_evidence_policy(
+    results: list[dict[str, Any]],
+    evidence_policy: dict[str, Any],
+) -> list[dict[str, Any]]:
+    min_score = float(evidence_policy.get("min_score") or 0.0)
+    return [item for item in results if float(item.get("score") or 0.0) >= min_score]
+
+
+def _evidence_gate(
+    results: list[dict[str, Any]],
+    evidence_policy: dict[str, Any],
+) -> dict[str, Any]:
+    source_count = len([item for item in results if str(item.get("url") or "")])
+    required_sources = int(evidence_policy.get("required_sources") or 1)
+    passed = source_count >= required_sources
+    return {
+        "status": "passed" if passed else "insufficient_evidence",
+        "min_score": float(evidence_policy.get("min_score") or 0.0),
+        "required_sources": required_sources,
+        "source_count": source_count,
+        "no_hit_policy": str(evidence_policy.get("no_hit_policy") or "abstain"),
+        "allows_web_grounded_assertion": passed,
+        "guidance": (
+            "Use returned web sources as external grounding evidence."
+            if passed
+            else "Do not state time-sensitive or external facts as verified from web search."
+        ),
+    }
+
+
+def _suggested_use(intent: str) -> str:
+    return {
+        "fact_check": "verify_external_fact",
+        "news": "time_sensitive_context",
+        "writing_context": "external_writing_context",
+        "competitor_research": "competitor_context",
+        "source_discovery": "source_candidate",
+        "external_links": "external_link_candidate",
+    }.get(intent, "external_research")
+
+
+def _normalize_domain_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    domains: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        domain = str(item or "").strip().lower()
+        if "://" in domain:
+            parsed = urlsplit(domain)
+            domain = parsed.netloc.lower()
+        domain = domain.strip("/")
+        if not domain or "/" in domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+        if len(domains) >= MAX_DOMAIN_FILTERS:
+            break
+    return domains
+
+
+def _normalize_search_depth(value: Any) -> str:
+    depth = str(value or "basic").strip().lower()
+    return depth if depth in {"basic", "advanced"} else "basic"
+
+
+def _normalize_text(value: Any, *, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip()
+
+
+def _normalize_token(value: Any, *, limit: int) -> str:
+    return _normalize_text(value, limit=limit).replace(" ", "")
+
+
+def _normalize_url(value: Any) -> str:
+    url = str(value or "").strip()
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return url
+
+
+def _coerce_score(value: Any) -> float:
+    return max(0.0, min(1.0, _coerce_float(value, default=1.0)))
+
+
+def _coerce_float(value: Any, *, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hash_query(query: str) -> str:
+    return hashlib.sha256(query.encode("utf-8")).hexdigest()
+
+
+def _map_tavily_error(response: httpx.Response) -> str:
+    if response.status_code in {401, 403}:
+        return "provider.auth_invalid"
+    if response.status_code == 429:
+        return "provider.rate_limited"
+    if response.status_code >= 500:
+        return "provider.unavailable"
+    return "web_search.tavily_http_error"
+
+
+def _extract_http_error_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    if isinstance(payload, dict):
+        message = str(payload.get("message") or payload.get("error") or "").strip()
+        if message:
+            return message[:200]
+    return f"Tavily web search failed with HTTP {response.status_code}"
