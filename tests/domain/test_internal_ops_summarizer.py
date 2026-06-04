@@ -406,6 +406,23 @@ def test_ops_summary_caches_ai_analysis_until_refresh_or_expiry(tmp_path: Path) 
     assert history_item["ai_disclosure"]["reviewed_by"] == "platform:tester"
     assert "source_context" not in json.dumps(history_item)
 
+    value_metrics = service.get_ops_summary_value_metrics(
+        site_id="site_ops_summary_cache",
+        scope="runtime",
+        window_days=7,
+    )
+    assert value_metrics["value_metrics_version"] == "internal-ops-summary-value-v1"
+    assert value_metrics["filters"]["scope"] == "runtime_operations"
+    assert value_metrics["totals"]["analysis_requests"] == 3
+    assert value_metrics["totals"]["ai_called"] == 1
+    assert value_metrics["totals"]["cache_hits"] == 2
+    assert value_metrics["totals"]["request_cost"] == 0.001
+    assert value_metrics["totals"]["estimated_cache_savings"] == 0.002
+    assert value_metrics["review"]["cached_ai_items"] == 1
+    assert value_metrics["review"]["human_confirmed"] == 1
+    assert value_metrics["rates"]["confirmed_rate"] == 1.0
+    assert value_metrics["value_signal"]["status"] == "promising"
+
     refreshed = service.get_ops_summary(
         scope="runtime",
         site_id="site_ops_summary_cache",

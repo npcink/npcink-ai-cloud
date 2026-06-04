@@ -172,6 +172,7 @@ Initial API:
 - `GET /internal/service/advisor/ops-summary-preview`
 - `POST /internal/service/advisor/ops-summary-review`
 - `GET /internal/service/advisor/ops-summary-history`
+- `GET /internal/service/advisor/ops-summary-value`
 - `GET /portal/v1/sites/{site_id}/ai-insights/history`
 - `POST /portal/v1/sites/{site_id}/ai-insights/analyze`
 
@@ -243,6 +244,32 @@ run sites, ability families, provider/model breakdown, knowledge search
 breakdown, and usage totals. These fields are aggregate or identifier-only
 diagnostic evidence. They must not include raw request input, result payloads,
 callback bodies, secrets, prompts, or WordPress content.
+
+## AI Value Metrics
+
+`GET /internal/service/advisor/ops-summary-value` is an internal-only evaluation
+surface for deciding whether AI analysis is worth continued spend. It reads
+advisor audit events and cached summary disclosure state. It does not call a
+provider and does not expose data to Portal users.
+
+Allowed metrics:
+
+- analysis request count
+- live AI call count
+- cached AI reuse count and estimated cache savings
+- deterministic fallback, provider error, and blocked counts
+- token and provider cost totals for internal operators
+- review status counts: `needs_review`, `human_confirmed`, `edited_after_ai`
+- top provider/model internal cost breakdown
+
+`human_confirmed` is the first implementation's "adopted/useful" proxy.
+`edited_after_ai` means AI helped but the output required human changes. A later
+workflow may replace this proxy with stronger evidence such as linked tickets,
+operator actions, or customer retention impact.
+
+This value surface must remain internal. Customer-facing Portal pages must not
+show provider prices, cost mapping, token usage, cache keys, or upstream model
+identity.
 
 ## AI Analysis Cache
 

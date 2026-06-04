@@ -1452,6 +1452,31 @@ async def list_ops_summary_history(
     )
 
 
+@router.get("/advisor/ops-summary-value")
+async def get_ops_summary_value_metrics(
+    request: Request,
+    site_id: str | None = Query(default=None, max_length=191),
+    scope: str = Query(default="", max_length=64),
+    window_days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=10, ge=1, le=50),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = _get_advisor_service(request).get_ops_summary_value_metrics(
+        site_id=site_id,
+        scope=scope,
+        window_days=window_days,
+        limit=limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="ops summary value metrics loaded",
+        data=result,
+        revision="m1",
+    )
+
+
 @router.get("/admin/accounts")
 async def list_admin_accounts(
     request: Request,

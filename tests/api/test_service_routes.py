@@ -381,6 +381,10 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
         "/internal/service/advisor/ops-summary-preview?scope=runtime&site_id=site_advisor",
         headers=build_internal_headers(),
     )
+    ops_summary_value_response = client.get(
+        "/internal/service/advisor/ops-summary-value?scope=runtime&site_id=site_advisor",
+        headers=build_internal_headers(),
+    )
 
     assert unauthenticated.status_code == 401
     assert runtime_response.status_code == 200
@@ -440,6 +444,18 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     assert preview_payload["comparison"]["ai_called"] is False
     assert preview_payload["comparison"]["value_check"] == "pass_provider_id_to_test_llm"
     assert preview_payload["safety"]["wordpress_write_allowed"] is False
+
+    assert ops_summary_value_response.status_code == 200
+    value_payload = ops_summary_value_response.json()["data"]
+    assert value_payload["value_metrics_version"] == "internal-ops-summary-value-v1"
+    assert value_payload["filters"]["scope"] == "runtime_operations"
+    assert value_payload["totals"]["analysis_requests"] >= 1
+    assert value_payload["totals"]["deterministic_fallbacks"] >= 1
+    assert value_payload["value_signal"]["status"] in {
+        "not_using_ai",
+        "monitor",
+        "insufficient_data",
+    }
 
     dispose_engine(database_url)
 

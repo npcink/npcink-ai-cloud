@@ -134,6 +134,82 @@ type AdvisorHistoryItem = {
   };
 };
 
+type AdvisorValueMetrics = {
+  valueMetricsVersion: string;
+  window: {
+    days: number;
+    startAt: string;
+    endAt: string;
+  };
+  totals: {
+    analysisRequests: number;
+    aiUsed: number;
+    aiCalled: number;
+    cacheHits: number;
+    deterministicFallbacks: number;
+    providerErrors: number;
+    blocked: number;
+    tokensIn: number;
+    tokensOut: number;
+    tokensTotal: number;
+    cost: number;
+    requestCost: number;
+    estimatedCacheSavings: number;
+  };
+  rates: {
+    aiUsageRate: number;
+    aiCallRate: number;
+    cacheHitRate: number;
+    fallbackRate: number;
+    reviewRate: number;
+    confirmedRate: number;
+    editedAfterAiRate: number;
+    averageLiveRequestCost: number;
+  };
+  review: {
+    cachedAiItems: number;
+    needsReview: number;
+    humanConfirmed: number;
+    editedAfterAi: number;
+    reviewed: number;
+  };
+  valueSignal: {
+    status: string;
+    headline: string;
+    nextStep: string;
+  };
+  breakdown: {
+    byGenerationMode: Record<string, number>;
+    byOutcome: Record<string, number>;
+    byProvider: Array<{
+      providerId: string;
+      requests: number;
+      aiCalls: number;
+      cost: number;
+    }>;
+    byModel: Array<{
+      modelId: string;
+      requests: number;
+      aiCalls: number;
+      cost: number;
+    }>;
+  };
+  recentEvents: Array<{
+    createdAt: string;
+    siteId: string;
+    scope: string;
+    outcome: string;
+    generationMode: string;
+    providerId: string;
+    modelId: string;
+    tokensIn: number;
+    tokensOut: number;
+    cost: number;
+    cacheHit: boolean;
+    errorCode: string;
+  }>;
+};
+
 const SCOPE_OPTIONS = [
   { label: 'Operations', value: 'operations' },
   { label: 'Runtime', value: 'runtime' },
@@ -283,8 +359,102 @@ function normalizeHistoryItem(raw: any): AdvisorHistoryItem {
   };
 }
 
+function normalizeValueMetrics(raw: any): AdvisorValueMetrics {
+  const totals = raw?.totals ?? {};
+  const rates = raw?.rates ?? {};
+  const review = raw?.review ?? {};
+  const valueSignal = raw?.value_signal ?? {};
+  const breakdown = raw?.breakdown ?? {};
+  const window = raw?.window ?? {};
+  return {
+    valueMetricsVersion: String(raw?.value_metrics_version ?? ''),
+    window: {
+      days: Number(window.days ?? 0),
+      startAt: String(window.start_at ?? ''),
+      endAt: String(window.end_at ?? ''),
+    },
+    totals: {
+      analysisRequests: Number(totals.analysis_requests ?? 0),
+      aiUsed: Number(totals.ai_used ?? 0),
+      aiCalled: Number(totals.ai_called ?? 0),
+      cacheHits: Number(totals.cache_hits ?? 0),
+      deterministicFallbacks: Number(totals.deterministic_fallbacks ?? 0),
+      providerErrors: Number(totals.provider_errors ?? 0),
+      blocked: Number(totals.blocked ?? 0),
+      tokensIn: Number(totals.tokens_in ?? 0),
+      tokensOut: Number(totals.tokens_out ?? 0),
+      tokensTotal: Number(totals.tokens_total ?? 0),
+      cost: Number(totals.cost ?? 0),
+      requestCost: Number(totals.request_cost ?? 0),
+      estimatedCacheSavings: Number(totals.estimated_cache_savings ?? 0),
+    },
+    rates: {
+      aiUsageRate: Number(rates.ai_usage_rate ?? 0),
+      aiCallRate: Number(rates.ai_call_rate ?? 0),
+      cacheHitRate: Number(rates.cache_hit_rate ?? 0),
+      fallbackRate: Number(rates.fallback_rate ?? 0),
+      reviewRate: Number(rates.review_rate ?? 0),
+      confirmedRate: Number(rates.confirmed_rate ?? 0),
+      editedAfterAiRate: Number(rates.edited_after_ai_rate ?? 0),
+      averageLiveRequestCost: Number(rates.average_live_request_cost ?? 0),
+    },
+    review: {
+      cachedAiItems: Number(review.cached_ai_items ?? 0),
+      needsReview: Number(review.needs_review ?? 0),
+      humanConfirmed: Number(review.human_confirmed ?? 0),
+      editedAfterAi: Number(review.edited_after_ai ?? 0),
+      reviewed: Number(review.reviewed ?? 0),
+    },
+    valueSignal: {
+      status: String(valueSignal.status ?? ''),
+      headline: String(valueSignal.headline ?? ''),
+      nextStep: String(valueSignal.next_step ?? ''),
+    },
+    breakdown: {
+      byGenerationMode: breakdown.by_generation_mode ?? {},
+      byOutcome: breakdown.by_outcome ?? {},
+      byProvider: Array.isArray(breakdown.by_provider)
+        ? breakdown.by_provider.map((item: any) => ({
+            providerId: String(item.provider_id ?? ''),
+            requests: Number(item.requests ?? 0),
+            aiCalls: Number(item.ai_calls ?? 0),
+            cost: Number(item.cost ?? 0),
+          }))
+        : [],
+      byModel: Array.isArray(breakdown.by_model)
+        ? breakdown.by_model.map((item: any) => ({
+            modelId: String(item.model_id ?? ''),
+            requests: Number(item.requests ?? 0),
+            aiCalls: Number(item.ai_calls ?? 0),
+            cost: Number(item.cost ?? 0),
+          }))
+        : [],
+    },
+    recentEvents: Array.isArray(raw?.recent_events)
+      ? raw.recent_events.map((item: any) => ({
+          createdAt: String(item.created_at ?? ''),
+          siteId: String(item.site_id ?? ''),
+          scope: String(item.scope ?? ''),
+          outcome: String(item.outcome ?? ''),
+          generationMode: String(item.generation_mode ?? ''),
+          providerId: String(item.provider_id ?? ''),
+          modelId: String(item.model_id ?? ''),
+          tokensIn: Number(item.tokens_in ?? 0),
+          tokensOut: Number(item.tokens_out ?? 0),
+          cost: Number(item.cost ?? 0),
+          cacheHit: Boolean(item.cache_hit),
+          errorCode: String(item.error_code ?? ''),
+        }))
+      : [],
+  };
+}
+
 function formatCost(value: number): string {
   return `$${Number(value || 0).toFixed(6)}`;
+}
+
+function formatPercent(value: number): string {
+  return `${(Number(value || 0) * 100).toFixed(1)}%`;
 }
 
 function valueCheckLabel(value: string): string {
@@ -610,19 +780,149 @@ function HistoryRow({ item }: { item: AdvisorHistoryItem }) {
   );
 }
 
+function valueSignalBadge(value: string): string {
+  if (value === 'promising') return 'success';
+  if (value === 'needs_review_loop' || value === 'provider_blocked') return 'warning';
+  if (value === 'not_using_ai' || value === 'insufficient_data') return 'inactive';
+  return 'inactive';
+}
+
+function ValueMetricsPanel({ valueMetrics }: { valueMetrics: AdvisorValueMetrics | null }) {
+  if (!valueMetrics) {
+    return null;
+  }
+  const topProvider = valueMetrics.breakdown.byProvider[0];
+  const topModel = valueMetrics.breakdown.byModel[0];
+  return (
+    <BackofficeSectionPanel className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            Value tracking
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            {valueMetrics.valueSignal.headline || 'AI value is not measured yet'}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {valueMetrics.valueSignal.nextStep || 'Run manual analyses and review outputs before expanding AI usage.'}
+          </p>
+        </div>
+        <BackofficeStatusBadge
+          label={valueMetrics.valueSignal.status || 'unknown'}
+          status={valueSignalBadge(valueMetrics.valueSignal.status)}
+        />
+      </div>
+
+      <BackofficeMetricStrip
+        columnsClassName="md:grid-cols-2 xl:grid-cols-5"
+        items={[
+          {
+            label: 'Requests',
+            value: formatNumber(valueMetrics.totals.analysisRequests),
+            detail: `${valueMetrics.window.days || 7} day window`,
+          },
+          {
+            label: 'AI called',
+            value: formatNumber(valueMetrics.totals.aiCalled),
+            detail: `${formatPercent(valueMetrics.rates.aiCallRate)} live call rate`,
+          },
+          {
+            label: 'Cache hit',
+            value: formatPercent(valueMetrics.rates.cacheHitRate),
+            detail: `${formatNumber(valueMetrics.totals.cacheHits)} cached analyses`,
+          },
+          {
+            label: 'Request cost',
+            value: formatCost(valueMetrics.totals.requestCost),
+            detail: `${formatCost(valueMetrics.totals.estimatedCacheSavings)} estimated saved`,
+            size: 'compact',
+          },
+          {
+            label: 'Confirmed',
+            value: formatPercent(valueMetrics.rates.confirmedRate),
+            detail: `${formatNumber(valueMetrics.review.humanConfirmed)} confirmed / ${formatNumber(valueMetrics.review.cachedAiItems)} AI items`,
+          },
+        ]}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)]">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <BackofficeStackCard>
+            <MiniMetric
+              label="Needs review"
+              value={formatNumber(valueMetrics.review.needsReview)}
+            />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric
+              label="Edited after AI"
+              value={formatNumber(valueMetrics.review.editedAfterAi)}
+            />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric
+              label="Fallbacks"
+              value={formatNumber(valueMetrics.totals.deterministicFallbacks)}
+            />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric
+              label="Provider errors"
+              value={formatNumber(valueMetrics.totals.providerErrors)}
+            />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric
+              label="Top provider"
+              value={topProvider ? `${topProvider.providerId} · ${formatCost(topProvider.cost)}` : '-'}
+            />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric
+              label="Top model"
+              value={topModel ? `${topModel.modelId} · ${formatCost(topModel.cost)}` : '-'}
+            />
+          </BackofficeStackCard>
+        </div>
+        <BackofficeStackCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Recent AI events
+          </p>
+          <div className="mt-3 space-y-2">
+            {valueMetrics.recentEvents.slice(0, 4).map((item, index) => (
+              <div key={`${item.createdAt}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                <span className="truncate text-slate-600 dark:text-slate-300">
+                  {item.generationMode || '-'} · {item.outcome || '-'}
+                </span>
+                <span className="shrink-0 font-mono text-slate-500 dark:text-slate-400">
+                  {formatCost(item.cost)}
+                </span>
+              </div>
+            ))}
+            {!valueMetrics.recentEvents.length ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No advisor usage events in this window.</p>
+            ) : null}
+          </div>
+        </BackofficeStackCard>
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
 function AdminAiAdvisorContent() {
   const { t } = useLocale();
   const [data, setData] = useState<AdvisorPreviewData | null>(null);
   const [historyItems, setHistoryItems] = useState<AdvisorHistoryItem[]>([]);
+  const [valueMetrics, setValueMetrics] = useState<AdvisorValueMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [scope, setScope] = useState('operations');
   const [siteIdInput, setSiteIdInput] = useState('');
   const [siteId, setSiteId] = useState('');
-  const [providerIdInput, setProviderIdInput] = useState('openai');
-  const [providerId, setProviderId] = useState('openai');
-  const [modelIdInput, setModelIdInput] = useState('deepseek-v4-flash');
-  const [modelId, setModelId] = useState('deepseek-v4-flash');
+  const [providerIdInput, setProviderIdInput] = useState('');
+  const [providerId, setProviderId] = useState('');
+  const [modelIdInput, setModelIdInput] = useState('');
+  const [modelId, setModelId] = useState('');
   const [forceRefresh, setForceRefresh] = useState(false);
   const [reviewingDisclosure, setReviewingDisclosure] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
@@ -651,60 +951,94 @@ function AdminAiAdvisorContent() {
     setHistoryItems(items);
   }, [data?.ai.scope, data?.baseline.scope, siteId]);
 
+  const loadValueMetrics = useCallback(
+    async (resolvedScope = scope) => {
+      const valueParams = new URLSearchParams();
+      valueParams.set('window_days', '7');
+      valueParams.set('limit', '10');
+      if (resolvedScope) {
+        valueParams.set('scope', resolvedScope);
+      }
+      if (siteId.trim()) {
+        valueParams.set('site_id', siteId.trim());
+      }
+      const valueResponse = await fetch(`/api/admin/advisor/ops-summary-value?${valueParams.toString()}`, {
+        credentials: 'include',
+      });
+      const valuePayload = await valueResponse.json();
+      if (!valueResponse.ok || valuePayload?.status === 'error') {
+        throw valuePayload;
+      }
+      setValueMetrics(normalizeValueMetrics(valuePayload?.data ?? {}));
+    },
+    [scope, siteId]
+  );
+
   const loadPreview = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams();
-      params.set('scope', scope);
-      if (siteId.trim()) {
-        params.set('site_id', siteId.trim());
-      }
-      if (providerId.trim()) {
-        params.set('provider_id', providerId.trim());
-      }
-      if (modelId.trim()) {
-        params.set('model_id', modelId.trim());
-      }
-      if (forceRefresh) {
-        params.set('force_refresh', 'true');
+      let nextData: AdvisorPreviewData | null = null;
+      try {
+        const params = new URLSearchParams();
+        params.set('scope', scope);
+        if (siteId.trim()) {
+          params.set('site_id', siteId.trim());
+        }
+        if (providerId.trim()) {
+          params.set('provider_id', providerId.trim());
+        }
+        if (modelId.trim()) {
+          params.set('model_id', modelId.trim());
+        }
+        if (forceRefresh) {
+          params.set('force_refresh', 'true');
+        }
+
+        const response = await fetch(`/api/admin/advisor/ops-summary-preview?${params.toString()}`, {
+          credentials: 'include',
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.status === 'error') {
+          throw payload;
+        }
+        nextData = normalizePreview(payload?.data ?? {});
+        setData(nextData);
+      } catch (previewError) {
+        setData(null);
+        setError(resolveUiErrorMessage(previewError, t('error.failed_load')));
       }
 
-      const response = await fetch(`/api/admin/advisor/ops-summary-preview?${params.toString()}`, {
-        credentials: 'include',
+      const resolvedScope = nextData?.ai.scope || nextData?.baseline.scope || scope;
+      await loadValueMetrics(resolvedScope).catch(() => {
+        setValueMetrics(null);
       });
-      const payload = await response.json();
-      if (!response.ok || payload?.status === 'error') {
-        throw payload;
+
+      if (nextData) {
+        const historyParams = new URLSearchParams();
+        historyParams.set('limit', '10');
+        if (resolvedScope) {
+          historyParams.set('scope', resolvedScope);
+        }
+        if (siteId.trim()) {
+          historyParams.set('site_id', siteId.trim());
+        }
+        const historyResponse = await fetch(`/api/admin/advisor/ops-summary-history?${historyParams.toString()}`, {
+          credentials: 'include',
+        });
+        const historyPayload = await historyResponse.json();
+        if (historyResponse.ok && historyPayload?.status !== 'error') {
+          setHistoryItems(
+            Array.isArray(historyPayload?.data?.items)
+              ? historyPayload.data.items.map((item: any) => normalizeHistoryItem(item))
+              : []
+          );
+        }
       }
-      const nextData = normalizePreview(payload?.data ?? {});
-      setData(nextData);
-      const historyParams = new URLSearchParams();
-      historyParams.set('limit', '10');
-      if (nextData.ai.scope || nextData.baseline.scope) {
-        historyParams.set('scope', nextData.ai.scope || nextData.baseline.scope);
-      }
-      if (siteId.trim()) {
-        historyParams.set('site_id', siteId.trim());
-      }
-      const historyResponse = await fetch(`/api/admin/advisor/ops-summary-history?${historyParams.toString()}`, {
-        credentials: 'include',
-      });
-      const historyPayload = await historyResponse.json();
-      if (historyResponse.ok && historyPayload?.status !== 'error') {
-        setHistoryItems(
-          Array.isArray(historyPayload?.data?.items)
-            ? historyPayload.data.items.map((item: any) => normalizeHistoryItem(item))
-            : []
-        );
-      }
-    } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_load')));
-      setData(null);
     } finally {
       setLoading(false);
     }
-  }, [forceRefresh, modelId, providerId, scope, siteId, t]);
+  }, [forceRefresh, loadValueMetrics, modelId, providerId, scope, siteId, t]);
 
   useEffect(() => {
     void loadPreview();
@@ -763,6 +1097,7 @@ function AdminAiAdvisorContent() {
           });
         }
         await loadHistory().catch(() => undefined);
+        setReloadKey((current) => current + 1);
       } catch (err) {
         setError(resolveUiErrorMessage(err, t('error.failed_save')));
       } finally {
@@ -808,7 +1143,7 @@ function AdminAiAdvisorContent() {
     return <LoadingFallback />;
   }
 
-  if (error) {
+  if (error && !valueMetrics) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-md text-center">
@@ -893,7 +1228,7 @@ function AdminAiAdvisorContent() {
             onClick={() => {
               setSiteId(siteIdInput.trim());
               setProviderId(providerIdInput.trim());
-              setModelId(modelIdInput.trim() || 'deepseek-v4-flash');
+              setModelId(modelIdInput.trim());
               setReloadKey((current) => current + 1);
             }}
             disabled={loading}
@@ -906,6 +1241,14 @@ function AdminAiAdvisorContent() {
           <p className="mt-3 text-xs font-semibold text-emerald-600 dark:text-emerald-300">{copyMessage}</p>
         ) : null}
       </BackofficePrimaryPanel>
+
+      {error ? (
+        <BackofficeSectionPanel className="border border-amber-200 bg-amber-50/80 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/35 dark:text-amber-100">
+          {error}
+        </BackofficeSectionPanel>
+      ) : null}
+
+      <ValueMetricsPanel valueMetrics={valueMetrics} />
 
       {data ? (
         <>

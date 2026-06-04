@@ -873,6 +873,229 @@ class InternalAIAdvisorService:
             },
         }
 
+    def get_ops_summary_value_metrics(
+        self,
+        *,
+        site_id: str | None = None,
+        scope: str = "",
+        window_days: int = 7,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        bounded_window_days = min(90, max(1, int(window_days or 7)))
+        bounded_limit = min(50, max(1, int(limit or 10)))
+        normalized_site_id = str(site_id or "").strip()
+        normalized_scope = _normalize_advisor_scope(scope)
+        now = datetime.now(UTC)
+        window_start = now - timedelta(days=bounded_window_days)
+
+        conditions = [
+            ServiceAuditEvent.event_kind == "internal_advisor.ops_summary",
+            ServiceAuditEvent.created_at >= window_start,
+        ]
+        if normalized_site_id:
+            conditions.append(ServiceAuditEvent.site_id == normalized_site_id)
+        if normalized_scope:
+            conditions.append(ServiceAuditEvent.scope_id == normalized_scope)
+
+        projection_conditions = [
+            SiteServiceProjection.projection_kind == "internal_ops_summary_cache",
+            SiteServiceProjection.generated_at >= window_start,
+        ]
+        if normalized_site_id:
+            projection_conditions.append(SiteServiceProjection.site_id == normalized_site_id)
+
+        with get_session(self.database_url) as session:
+            audit_events = list(
+                session.scalars(
+                    select(ServiceAuditEvent)
+                    .where(*conditions)
+                    .order_by(ServiceAuditEvent.created_at.desc(), ServiceAuditEvent.id.desc())
+                    .limit(500)
+                )
+            )
+            projections = list(
+                session.scalars(
+                    select(SiteServiceProjection)
+                    .where(*projection_conditions)
+                    .order_by(
+                        SiteServiceProjection.generated_at.desc(),
+                        SiteServiceProjection.projection_id.desc(),
+                    )
+                    .limit(500)
+                )
+            )
+
+        by_generation_mode: dict[str, int] = {}
+        by_outcome: dict[str, int] = {}
+        by_provider: dict[str, dict[str, Any]] = {}
+        by_model: dict[str, dict[str, Any]] = {}
+        recent_events: list[dict[str, Any]] = []
+        totals = {
+            "analysis_requests": 0,
+            "ai_used": 0,
+            "ai_called": 0,
+            "cache_hits": 0,
+            "deterministic_fallbacks": 0,
+            "provider_errors": 0,
+            "blocked": 0,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "tokens_total": 0,
+            "cost": 0.0,
+            "request_cost": 0.0,
+            "estimated_cache_savings": 0.0,
+        }
+
+        live_costs: list[float] = []
+        for event in audit_events:
+            payload = _dict(event.payload_json)
+            generation_mode = str(payload.get("generation_mode") or "").strip()
+            outcome = str(event.outcome or "").strip()
+            provider_id = str(payload.get("provider_id") or "").strip()
+            model_id = str(payload.get("model_id") or "").strip()
+            tokens_in = _int(payload.get("tokens_in"))
+            tokens_out = _int(payload.get("tokens_out"))
+            cost = _float(payload.get("cost"))
+            cache_hit = generation_mode == "llm_cached" or outcome == "cache_hit"
+
+            totals["analysis_requests"] += 1
+            totals["tokens_in"] += tokens_in
+            totals["tokens_out"] += tokens_out
+            totals["cost"] += cost
+            totals["request_cost"] += 0.0 if cache_hit else cost
+            if generation_mode in {"llm", "llm_cached"}:
+                totals["ai_used"] += 1
+            if generation_mode == "llm":
+                totals["ai_called"] += 1
+                live_costs.append(cost)
+            if cache_hit:
+                totals["cache_hits"] += 1
+            if generation_mode == "deterministic_fallback":
+                totals["deterministic_fallbacks"] += 1
+            if outcome == "provider_error":
+                totals["provider_errors"] += 1
+            if outcome == "blocked":
+                totals["blocked"] += 1
+
+            by_generation_mode[generation_mode or "unknown"] = (
+                by_generation_mode.get(generation_mode or "unknown", 0) + 1
+            )
+            by_outcome[outcome or "unknown"] = by_outcome.get(outcome or "unknown", 0) + 1
+            if provider_id:
+                provider_item = by_provider.setdefault(
+                    provider_id,
+                    {"provider_id": provider_id, "requests": 0, "ai_calls": 0, "cost": 0.0},
+                )
+                provider_item["requests"] += 1
+                provider_item["cost"] += cost
+                if generation_mode == "llm":
+                    provider_item["ai_calls"] += 1
+            if model_id:
+                model_item = by_model.setdefault(
+                    model_id,
+                    {"model_id": model_id, "requests": 0, "ai_calls": 0, "cost": 0.0},
+                )
+                model_item["requests"] += 1
+                model_item["cost"] += cost
+                if generation_mode == "llm":
+                    model_item["ai_calls"] += 1
+            if len(recent_events) < bounded_limit:
+                recent_events.append(
+                    {
+                        "created_at": _format_datetime(event.created_at),
+                        "site_id": str(event.site_id or ""),
+                        "scope": str(event.scope_id or ""),
+                        "outcome": outcome,
+                        "generation_mode": generation_mode,
+                        "provider_id": provider_id,
+                        "model_id": model_id,
+                        "tokens_in": tokens_in,
+                        "tokens_out": tokens_out,
+                        "cost": cost,
+                        "cache_hit": cache_hit,
+                        "error_code": str(payload.get("error_code") or ""),
+                    }
+                )
+
+        totals["tokens_total"] = totals["tokens_in"] + totals["tokens_out"]
+        average_live_cost = sum(live_costs) / len(live_costs) if live_costs else 0.0
+        totals["estimated_cache_savings"] = average_live_cost * totals["cache_hits"]
+        request_count = max(1, totals["analysis_requests"])
+        review_counts = {
+            "cached_ai_items": 0,
+            "needs_review": 0,
+            "human_confirmed": 0,
+            "edited_after_ai": 0,
+            "reviewed": 0,
+        }
+        for projection in projections:
+            history_item = _ops_summary_history_item(projection)
+            if normalized_scope and str(history_item.get("scope") or "") != normalized_scope:
+                continue
+            disclosure = _dict(history_item.get("ai_disclosure"))
+            if not bool(disclosure.get("generated_by_ai")):
+                continue
+            review_counts["cached_ai_items"] += 1
+            review_status = str(disclosure.get("review_status") or "").strip()
+            if review_status in review_counts:
+                review_counts[review_status] += 1
+            if review_status in {"human_confirmed", "edited_after_ai"}:
+                review_counts["reviewed"] += 1
+
+        cached_ai_items = max(1, review_counts["cached_ai_items"])
+        rates = {
+            "ai_usage_rate": totals["ai_used"] / request_count,
+            "ai_call_rate": totals["ai_called"] / request_count,
+            "cache_hit_rate": totals["cache_hits"] / request_count,
+            "fallback_rate": totals["deterministic_fallbacks"] / request_count,
+            "review_rate": review_counts["reviewed"] / cached_ai_items,
+            "confirmed_rate": review_counts["human_confirmed"] / cached_ai_items,
+            "edited_after_ai_rate": review_counts["edited_after_ai"] / cached_ai_items,
+            "average_live_request_cost": average_live_cost,
+        }
+        value_signal = _build_ops_summary_value_signal(
+            analysis_requests=totals["analysis_requests"],
+            ai_called=totals["ai_called"],
+            cache_hits=totals["cache_hits"],
+            provider_errors=totals["provider_errors"],
+            review_rate=rates["review_rate"],
+            confirmed_rate=rates["confirmed_rate"],
+            request_cost=totals["request_cost"],
+        )
+        return {
+            "value_metrics_version": "internal-ops-summary-value-v1",
+            "window": {
+                "days": bounded_window_days,
+                "start_at": window_start.isoformat(),
+                "end_at": now.isoformat(),
+            },
+            "filters": {
+                "site_id": normalized_site_id,
+                "scope": normalized_scope,
+                "limit": bounded_limit,
+            },
+            "totals": totals,
+            "rates": rates,
+            "review": review_counts,
+            "value_signal": value_signal,
+            "breakdown": {
+                "by_generation_mode": by_generation_mode,
+                "by_outcome": by_outcome,
+                "by_provider": sorted(
+                    by_provider.values(),
+                    key=lambda item: (
+                        -_float(item.get("cost")),
+                        str(item.get("provider_id") or ""),
+                    ),
+                ),
+                "by_model": sorted(
+                    by_model.values(),
+                    key=lambda item: (-_float(item.get("cost")), str(item.get("model_id") or "")),
+                ),
+            },
+            "recent_events": recent_events,
+        }
+
     def _get_cached_ops_summary(self, *, cache_key: str) -> dict[str, Any] | None:
         now = datetime.now(UTC)
         projection_id = _ops_summary_cache_projection_id(cache_key)
@@ -1760,6 +1983,81 @@ def _normalize_draft_kind(value: str) -> str:
     if normalized in {"operator_summary", "support_reply"}:
         return normalized
     return "support_reply"
+
+
+def _normalize_advisor_scope(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"runtime", "runtime_operations"}:
+        return "runtime_operations"
+    if normalized in {"commercial", "commercial_operations"}:
+        return "commercial_operations"
+    if normalized in {"routing", "routing_operations"}:
+        return "routing_operations"
+    if normalized in {"operations", "operations_analysis", "ops"}:
+        return "operations_analysis"
+    return normalized
+
+
+def _build_ops_summary_value_signal(
+    *,
+    analysis_requests: int,
+    ai_called: int,
+    cache_hits: int,
+    provider_errors: int,
+    review_rate: float,
+    confirmed_rate: float,
+    request_cost: float,
+) -> dict[str, str]:
+    if analysis_requests <= 0:
+        return {
+            "status": "insufficient_data",
+            "headline": "No AI analysis usage yet",
+            "next_step": (
+                "Run a few manual AI analyses, then review cost, cache reuse, "
+                "and human confirmation."
+            ),
+        }
+    if provider_errors > 0 and ai_called == 0:
+        return {
+            "status": "provider_blocked",
+            "headline": "Provider calls are not producing usable AI output",
+            "next_step": "Fix provider configuration or allowlist before judging value.",
+        }
+    if ai_called == 0 and cache_hits == 0:
+        return {
+            "status": "not_using_ai",
+            "headline": "Current traffic is not exercising the AI branch",
+            "next_step": (
+                "Enable an allowlisted provider or run preview with a provider id "
+                "to measure AI value."
+            ),
+        }
+    if confirmed_rate >= 0.5:
+        return {
+            "status": "promising",
+            "headline": "Human confirmations suggest the AI analysis is useful",
+            "next_step": (
+                "Keep the feature manual-triggered and watch cache hit rate before "
+                "expanding user exposure."
+            ),
+        }
+    if review_rate <= 0.0 and request_cost > 0:
+        return {
+            "status": "needs_review_loop",
+            "headline": "AI is costing money before operators confirm value",
+            "next_step": (
+                "Require operators to mark useful, edited, or rejected outputs "
+                "before increasing traffic."
+            ),
+        }
+    return {
+        "status": "monitor",
+        "headline": "AI value is still inconclusive",
+        "next_step": (
+            "Collect more manual analyses and compare confirmation rate against "
+            "request cost."
+        ),
+    }
 
 
 def _range_to_hours(value: str) -> int:
