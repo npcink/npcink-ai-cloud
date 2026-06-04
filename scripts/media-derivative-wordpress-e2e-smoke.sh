@@ -44,6 +44,7 @@ fi
 
 echo "== WordPress media derivative E2E smoke =="
 cd "${WP_PATH}"
+set +e
 SMOKE_JSON="$(MAGICK_MEDIA_DERIVATIVE_E2E_CLEANUP="${CLEANUP}" "${PHP_BIN}" \
 	-d error_reporting=8191 \
 	-d "mysqli.default_socket=${MYSQL_SOCKET}" \
@@ -74,16 +75,40 @@ function mde2e_rest($method, $route, $params = array()) {
 	);
 }
 
+function mde2e_assert_ability_input_field($ability_id, $field, array $required_enum_values = array()) {
+	$ability = mde2e_rest("GET", "/wp-abilities/v1/abilities/" . $ability_id);
+	mde2e_assert($ability["ok"] && 200 === (int) ($ability["status"] ?? 0), "ability_contract_fetch", array("ability_id" => $ability_id, "ability" => $ability));
+
+	$schema = is_array($ability["data"]["input_schema"] ?? null) ? $ability["data"]["input_schema"] : array();
+	$properties = is_array($schema["properties"] ?? null) ? $schema["properties"] : array();
+	$field_schema = is_array($properties[$field] ?? null) ? $properties[$field] : array();
+	mde2e_assert(!empty($field_schema), "ability_contract_field_missing", array(
+		"ability_id" => $ability_id,
+		"field" => $field,
+		"input_properties" => array_keys($properties),
+	));
+
+	if (!empty($required_enum_values)) {
+		$enum = array_values(array_map("strval", is_array($field_schema["enum"] ?? null) ? $field_schema["enum"] : array()));
+		$missing = array_values(array_diff($required_enum_values, $enum));
+		mde2e_assert(empty($missing), "ability_contract_enum_missing", array(
+			"ability_id" => $ability_id,
+			"field" => $field,
+			"enum" => $enum,
+			"missing" => $missing,
+		));
+	}
+}
+
 function mde2e_fail($stage, $data) {
-	echo wp_json_encode(
+	throw new RuntimeException(wp_json_encode(
 		array(
 			"success" => false,
 			"failed_stage" => $stage,
 			"data" => $data,
 		),
 		JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
-	) . "\n";
-	exit(1);
+	));
 }
 
 function mde2e_assert($condition, $stage, $data) {
@@ -152,38 +177,74 @@ function mde2e_unlink_upload($relative_file) {
 	}
 }
 
-function mde2e_cleanup_stale_smoke_media() {
+function mde2e_smoke_media_attachment_ids() {
 	global $wpdb;
 
-	$deleted_attachments = 0;
-	$deleted_files = 0;
-	$attachment_ids = $wpdb->get_col(
-		$wpdb->prepare(
-			"select ID from {$wpdb->posts} where post_type = %s and (post_name like %s or post_name like %s or post_title like %s or post_name like %s or post_title like %s)",
-			"attachment",
-			"magick-e2e-media-derivative-%",
-			"magick-ai-e2e-media-derivative-%",
-			"Magick AI media derivative smoke%",
-			"magick-media-derivative-smoke-%",
-			"magick-media-derivative-smoke-%"
+	return array_map(
+		"absint",
+		(array) $wpdb->get_col(
+			$wpdb->prepare(
+				"select distinct p.ID
+				from {$wpdb->posts} p
+				left join {$wpdb->postmeta} pm
+					on p.ID = pm.post_id
+					and pm.meta_key in (%s, %s)
+				where p.post_type = %s
+					and (
+						p.post_name like %s
+						or p.post_name like %s
+						or p.post_title like %s
+						or p.post_name like %s
+						or p.post_title like %s
+						or pm.meta_value like %s
+						or pm.meta_value like %s
+						or pm.meta_value like %s
+					)",
+				"_wp_attached_file",
+				"_magick_ai_cloud_media_derivative_e2e_run_id",
+				"attachment",
+				"magick-e2e-media-derivative-%",
+				"magick-ai-e2e-media-derivative-%",
+				"Magick AI media derivative smoke%",
+				"magick-media-derivative-smoke-%",
+				"magick-media-derivative-smoke-%",
+				"%magick-e2e-media-derivative-%",
+				"%magick-ai-e2e-media-derivative-%",
+				"%magick-media-derivative-smoke-%"
+			)
 		)
 	);
+}
 
-	foreach (array_map("absint", (array) $attachment_ids) as $attachment_id) {
+function mde2e_smoke_media_file_paths() {
+	$uploads = wp_upload_dir();
+	$basedir = is_array($uploads) && !empty($uploads["basedir"]) ? untrailingslashit((string) $uploads["basedir"]) : "";
+	if ("" === $basedir) {
+		return array();
+	}
+
+	$paths = array();
+	foreach (array("magick-e2e-media-derivative-*", "magick-ai-e2e-media-derivative-*", "magick-media-derivative-smoke-*") as $pattern) {
+		$paths = array_merge($paths, (array) glob($basedir . "/20[0-9][0-9]/*/" . $pattern));
+		$paths = array_merge($paths, (array) glob($basedir . "/magick-ai-backups/20[0-9][0-9]/*/" . $pattern));
+	}
+
+	return array_values(array_filter(array_unique($paths), "is_file"));
+}
+
+function mde2e_cleanup_stale_smoke_media() {
+	$deleted_attachments = 0;
+	$deleted_files = 0;
+
+	foreach (mde2e_smoke_media_attachment_ids() as $attachment_id) {
 		if ($attachment_id > 0 && false !== wp_delete_attachment($attachment_id, true)) {
 			$deleted_attachments++;
 		}
 	}
 
-	$uploads = wp_upload_dir();
-	$basedir = is_array($uploads) && !empty($uploads["basedir"]) ? untrailingslashit((string) $uploads["basedir"]) : "";
-	if ("" !== $basedir) {
-		foreach (array("magick-e2e-media-derivative-*", "magick-ai-e2e-media-derivative-*", "magick-media-derivative-smoke-*") as $pattern) {
-			foreach ((array) glob($basedir . "/20[0-9][0-9]/*/" . $pattern) as $path) {
-				if (is_file($path) && @unlink($path)) {
-					$deleted_files++;
-				}
-			}
+	foreach (mde2e_smoke_media_file_paths() as $path) {
+		if (@unlink($path)) {
+			$deleted_files++;
 		}
 	}
 
@@ -193,6 +254,17 @@ function mde2e_cleanup_stale_smoke_media() {
 	);
 }
 
+function mde2e_assert_no_smoke_media_leaks() {
+	$attachment_ids = array_values(array_filter(mde2e_smoke_media_attachment_ids()));
+	$file_paths = mde2e_smoke_media_file_paths();
+	if (!empty($attachment_ids) || !empty($file_paths)) {
+		mde2e_fail("cleanup_leak_guard", array(
+			"attachment_ids" => $attachment_ids,
+			"file_paths" => $file_paths,
+		));
+	}
+}
+
 $cleanup = "1" === (string) getenv("MAGICK_MEDIA_DERIVATIVE_E2E_CLEANUP");
 $stale_cleanup = $cleanup ? mde2e_cleanup_stale_smoke_media() : array("attachments" => 0, "files" => 0);
 $created_pages = array();
@@ -200,8 +272,11 @@ $created_attachment_id = 0;
 $created_option_names = array();
 $created_theme_mod_names = array();
 $created_relative_files = array();
+$mde2e_failure_json = "";
 
 try {
+	mde2e_assert_ability_input_field("magick-ai/replace-media-file", "mode", array("replace", "rollback"));
+
 	$upload = wp_upload_dir();
 	$dir = trailingslashit($upload["path"]);
 	if (!is_dir($dir)) {
@@ -239,6 +314,7 @@ try {
 	require_once ABSPATH . "wp-admin/includes/image.php";
 	wp_update_attachment_metadata($attachment_id, wp_generate_attachment_metadata($attachment_id, $path));
 	$created_attachment_id = (int) $attachment_id;
+	update_post_meta($created_attachment_id, "_magick_ai_cloud_media_derivative_e2e_run_id", $stamp);
 
 	$before_url = wp_get_attachment_url($attachment_id);
 	$before_rel = (string) get_post_meta($attachment_id, "_wp_attached_file", true);
@@ -445,6 +521,8 @@ try {
 		),
 		JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
 	) . "\n";
+} catch (Throwable $e) {
+	$mde2e_failure_json = $e->getMessage();
 } finally {
 	if ($cleanup) {
 		foreach ($created_pages as $page_id) {
@@ -462,10 +540,29 @@ try {
 		foreach (array_unique(array_filter($created_relative_files)) as $relative_file) {
 			mde2e_unlink_upload($relative_file);
 		}
+		mde2e_cleanup_stale_smoke_media();
 	}
 }
+
+if ($cleanup) {
+	try {
+		mde2e_assert_no_smoke_media_leaks();
+	} catch (Throwable $e) {
+		$mde2e_failure_json = $e->getMessage();
+	}
+}
+
+if ("" !== $mde2e_failure_json) {
+	echo $mde2e_failure_json . "\n";
+	exit(1);
+}
 ')"
+SMOKE_STATUS=$?
+set -e
 echo "${SMOKE_JSON}"
+if [ "${SMOKE_STATUS}" -ne 0 ]; then
+	exit "${SMOKE_STATUS}"
+fi
 
 if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx "${POSTGRES_CONTAINER}"; then
 	RUN_ID="$(SMOKE_JSON="${SMOKE_JSON}" python3 - <<'PY'
