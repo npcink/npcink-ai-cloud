@@ -19,6 +19,7 @@ from app.core.models import (
     RuntimeGuardEvent,
     ServiceAuditEvent,
     SiteKnowledgeSearchMetric,
+    SiteServiceProjection,
 )
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.catalog.service import CatalogService
@@ -228,11 +229,15 @@ def test_ops_summary_preview_compares_baseline_and_ai_branch(tmp_path: Path) -> 
         "ai_mode": "llm",
         "requested_provider_id": provider.provider_id,
         "model_id": "ops-model",
+        "ai_used": True,
         "ai_called": True,
+        "cache_hit": False,
+        "cache_status": "miss",
         "text_changed": True,
         "tokens_in": 20,
         "tokens_out": 16,
         "cost": 0.001,
+        "request_cost": 0.001,
         "error_code": "",
         "value_check": "review_ai_output",
     }
@@ -247,6 +252,100 @@ def test_ops_summary_preview_compares_baseline_and_ai_branch(tmp_path: Path) -> 
         ).scalars().all()
     assert len(audit_events) == 1
     assert (audit_events[0].payload_json or {})["generation_mode"] == "llm"
+
+    dispose_engine(database_url)
+
+
+def test_ops_summary_caches_ai_analysis_until_refresh_or_expiry(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_ops_summary_cache",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve", "stats:read"],
+    )
+    with get_session(database_url) as session:
+        session.add(
+            RuntimeGuardEvent(
+                auth_surface="public",
+                scope_kind="site",
+                scope_id="site_ops_summary_cache",
+                site_id="site_ops_summary_cache",
+                key_id="key_default",
+                client_ref="127.0.0.1",
+                event_code="auth.rate_limit_exceeded",
+                status_code=429,
+                method="POST",
+                path="/v1/runtime/execute",
+                trace_id="ops-summary-cache-trace",
+                payload_json={"raw": "cache prompt must stay redacted"},
+                created_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+    provider = _DraftProvider()
+    service = InternalAIAdvisorService(
+        database_url,
+        providers={provider.provider_id: provider},
+        allowed_summarizer_provider_ids={provider.provider_id},
+    )
+    first = service.get_ops_summary(
+        scope="runtime",
+        site_id="site_ops_summary_cache",
+        provider_id=provider.provider_id,
+        model_id="ops-model",
+        cache_ttl_seconds=1800,
+    )
+    second = service.get_ops_summary(
+        scope="runtime",
+        site_id="site_ops_summary_cache",
+        provider_id=provider.provider_id,
+        model_id="ops-model",
+        cache_ttl_seconds=1800,
+    )
+
+    assert len(provider.requests) == 1
+    assert first["generation"]["mode"] == "llm"
+    assert first["generation"]["cache_status"] == "miss"
+    assert first["generation"]["request_cost"] == 0.001
+    assert second["generation"]["mode"] == "llm_cached"
+    assert second["generation"]["cache_status"] == "hit"
+    assert second["generation"]["cache_hit"] is True
+    assert second["generation"]["request_cost"] == 0.0
+    assert second["operator_summary"] == first["operator_summary"]
+
+    with get_session(database_url) as session:
+        projection = session.execute(
+            select(SiteServiceProjection).where(
+                SiteServiceProjection.projection_kind == "internal_ops_summary_cache"
+            )
+        ).scalar_one()
+        projection_payload = projection.payload_json or {}
+        audit_events = session.execute(
+            select(ServiceAuditEvent)
+            .where(ServiceAuditEvent.event_kind == "internal_advisor.ops_summary")
+            .order_by(ServiceAuditEvent.id)
+        ).scalars().all()
+    assert projection.site_id == "site_ops_summary_cache"
+    assert projection_payload["prompt_saved"] is False
+    assert projection_payload["raw_payload_saved"] is False
+    assert projection_payload["summary"]["operator_summary"] == first["operator_summary"]
+    assert [event.outcome for event in audit_events] == ["success", "cache_hit"]
+    assert (audit_events[1].payload_json or {})["generation_mode"] == "llm_cached"
+
+    refreshed = service.get_ops_summary(
+        scope="runtime",
+        site_id="site_ops_summary_cache",
+        provider_id=provider.provider_id,
+        model_id="ops-model",
+        force_refresh=True,
+        cache_ttl_seconds=1800,
+    )
+    assert len(provider.requests) == 2
+    assert refreshed["generation"]["mode"] == "llm"
+    assert refreshed["generation"]["cache_status"] == "miss"
 
     dispose_engine(database_url)
 

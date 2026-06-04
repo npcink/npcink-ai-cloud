@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -16,6 +17,7 @@ from app.core.models import (
     ProviderCallRecord,
     RunRecord,
     ServiceAuditEvent,
+    SiteServiceProjection,
 )
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.service import RuntimeService
@@ -555,6 +557,8 @@ class InternalAIAdvisorService:
         provider_id: str = "",
         model_id: str = "internal-ops-summarizer",
         record_audit: bool = True,
+        force_refresh: bool = False,
+        cache_ttl_seconds: int = 1800,
     ) -> dict[str, Any]:
         advisor = self._resolve_advisor_payload(
             scope=scope,
@@ -629,6 +633,36 @@ class InternalAIAdvisorService:
                 },
             }
 
+        cache_key = _build_ops_summary_cache_key(
+            scope=normalized_scope,
+            site_id=site_id,
+            draft_kind=normalized_draft_kind,
+            recent_minutes=recent_minutes,
+            usage_window_days=usage_window_days,
+            audit_window_minutes=audit_window_minutes,
+            range_filter=range_filter,
+            limit=limit,
+            provider_id=provider.provider_id,
+            model_id=model_id,
+        )
+        if cache_ttl_seconds > 0 and not force_refresh:
+            cached = self._get_cached_ops_summary(cache_key=cache_key)
+            if cached is not None:
+                self._maybe_record_summarizer_audit_event(
+                    record_audit=record_audit,
+                    event={
+                        "scope": normalized_scope,
+                        "site_id": site_id,
+                        "draft_kind": normalized_draft_kind,
+                        "provider_id": provider.provider_id,
+                        "model_id": model_id,
+                        "generation_mode": "llm_cached",
+                        "outcome": "cache_hit",
+                        "error_code": "",
+                    },
+                )
+                return cached
+
         try:
             llm_result = provider.execute(
                 ProviderExecutionRequest(
@@ -699,7 +733,7 @@ class InternalAIAdvisorService:
                 "cost": llm_result.cost,
             },
         )
-        return {
+        live_result = {
             **parsed,
             "generation": {
                 "mode": "llm",
@@ -709,8 +743,20 @@ class InternalAIAdvisorService:
                 "tokens_in": llm_result.tokens_in,
                 "tokens_out": llm_result.tokens_out,
                 "cost": llm_result.cost,
+                "request_cost": llm_result.cost,
+                "cache_status": "miss",
+                "cache_hit": False,
+                "cache_key": cache_key,
             },
         }
+        if cache_ttl_seconds > 0:
+            self._store_cached_ops_summary(
+                cache_key=cache_key,
+                payload=live_result,
+                cache_ttl_seconds=cache_ttl_seconds,
+                site_id=site_id,
+            )
+        return live_result
 
     def get_ops_summary_preview(
         self,
@@ -725,6 +771,8 @@ class InternalAIAdvisorService:
         limit: int = 25,
         provider_id: str = "",
         model_id: str = "internal-ops-summarizer",
+        force_refresh: bool = False,
+        cache_ttl_seconds: int = 1800,
     ) -> dict[str, Any]:
         baseline = self.get_ops_summary(
             scope=scope,
@@ -751,6 +799,8 @@ class InternalAIAdvisorService:
             provider_id=provider_id,
             model_id=model_id,
             record_audit=True,
+            force_refresh=force_refresh,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
         comparison = _build_ops_summary_comparison(
             baseline=baseline,
@@ -771,6 +821,79 @@ class InternalAIAdvisorService:
                 "requires_operator_review": True,
             },
         }
+
+    def _get_cached_ops_summary(self, *, cache_key: str) -> dict[str, Any] | None:
+        now = datetime.now(UTC)
+        projection_id = _ops_summary_cache_projection_id(cache_key)
+        with get_session(self.database_url) as session:
+            projection = session.get(SiteServiceProjection, projection_id)
+            if projection is None or _to_utc(projection.fresh_until) <= now:
+                return None
+            payload = _dict(projection.payload_json)
+        cached = _dict(payload.get("summary"))
+        if not cached:
+            return None
+        generation = {
+            **_dict(cached.get("generation")),
+            "mode": "llm_cached",
+            "cache_status": "hit",
+            "cache_hit": True,
+            "cache_key": cache_key,
+            "cache_generated_at": str(payload.get("generated_at") or ""),
+            "cache_expires_at": str(payload.get("fresh_until") or ""),
+            "request_cost": 0.0,
+        }
+        return {
+            **cached,
+            "generation": generation,
+        }
+
+    def _store_cached_ops_summary(
+        self,
+        *,
+        cache_key: str,
+        payload: dict[str, Any],
+        cache_ttl_seconds: int,
+        site_id: str | None,
+    ) -> None:
+        now = datetime.now(UTC)
+        fresh_until = now + timedelta(seconds=min(86400, max(60, int(cache_ttl_seconds))))
+        projection_id = _ops_summary_cache_projection_id(cache_key)
+        cache_payload = {
+            "cache_version": "internal-ops-summary-cache-v1",
+            "cache_key": cache_key,
+            "prompt_saved": False,
+            "raw_payload_saved": False,
+            "summary": payload,
+            "generated_at": now.isoformat(),
+            "fresh_until": fresh_until.isoformat(),
+        }
+        with get_session(self.database_url) as session:
+            projection = session.get(SiteServiceProjection, projection_id)
+            if projection is None:
+                projection = SiteServiceProjection(
+                    projection_id=projection_id,
+                    site_id=str(site_id or "").strip() or "__platform__",
+                    projection_kind="internal_ops_summary_cache",
+                    payload_json=cache_payload,
+                    generated_at=now,
+                    fresh_until=fresh_until,
+                    source_revision=SUMMARIZER_VERSION,
+                    generation_ms=0,
+                    last_error=None,
+                    last_error_at=None,
+                )
+                session.add(projection)
+            else:
+                projection.site_id = str(site_id or "").strip() or "__platform__"
+                projection.payload_json = cache_payload
+                projection.generated_at = now
+                projection.fresh_until = fresh_until
+                projection.source_revision = SUMMARIZER_VERSION
+                projection.generation_ms = 0
+                projection.last_error = None
+                projection.last_error_at = None
+            session.commit()
 
     def _resolve_advisor_payload(
         self,
@@ -1488,10 +1611,53 @@ def _range_to_hours(value: str) -> int:
     return 24
 
 
+def _to_utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.fromtimestamp(0, UTC)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _format_datetime(value: Any) -> str:
     if isinstance(value, datetime):
         return value.astimezone(UTC).isoformat()
     return ""
+
+
+def _build_ops_summary_cache_key(
+    *,
+    scope: str,
+    site_id: str | None,
+    draft_kind: str,
+    recent_minutes: int,
+    usage_window_days: int,
+    audit_window_minutes: int,
+    range_filter: str,
+    limit: int,
+    provider_id: str,
+    model_id: str,
+) -> str:
+    payload = {
+        "version": SUMMARIZER_VERSION,
+        "scope": str(scope or ""),
+        "site_id": str(site_id or ""),
+        "draft_kind": str(draft_kind or ""),
+        "recent_minutes": max(1, int(recent_minutes or 0)),
+        "usage_window_days": max(1, int(usage_window_days or 0)),
+        "audit_window_minutes": max(1, int(audit_window_minutes or 0)),
+        "range": str(range_filter or ""),
+        "limit": max(1, int(limit or 0)),
+        "provider_id": str(provider_id or ""),
+        "model_id": str(model_id or ""),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _ops_summary_cache_projection_id(cache_key: str) -> str:
+    return f"internal-ops-summary-cache:{cache_key[:64]}"
 
 
 def _parse_json_object_text(value: str) -> dict[str, Any]:
@@ -1531,6 +1697,9 @@ def _build_ops_summary_comparison(
     tokens_in = _int(ai_generation.get("tokens_in"))
     tokens_out = _int(ai_generation.get("tokens_out"))
     cost = _float(ai_generation.get("cost"))
+    request_cost = _float(ai_generation.get("request_cost"))
+    cache_hit = bool(ai_generation.get("cache_hit"))
+    cache_status = str(ai_generation.get("cache_status") or "")
     text_changed = any(
         str(baseline.get(field) or "").strip() != str(ai.get(field) or "").strip()
         for field in (
@@ -1540,9 +1709,11 @@ def _build_ops_summary_comparison(
             "safety_note",
         )
     )
-    ai_called = str(ai_generation.get("mode") or "") == "llm"
+    ai_mode = str(ai_generation.get("mode") or "")
+    ai_called = ai_mode == "llm"
+    ai_used = ai_mode in {"llm", "llm_cached"}
     error_code = str(ai_generation.get("error_code") or "")
-    if ai_called and text_changed:
+    if ai_used and text_changed:
         value_check = "review_ai_output"
     elif requested_provider_id and error_code == "provider_not_allowlisted":
         value_check = "configure_provider_allowlist"
@@ -1555,14 +1726,18 @@ def _build_ops_summary_comparison(
 
     return {
         "baseline_mode": str(baseline_generation.get("mode") or ""),
-        "ai_mode": str(ai_generation.get("mode") or ""),
+        "ai_mode": ai_mode,
         "requested_provider_id": str(requested_provider_id or ""),
         "model_id": str(model_id or ""),
+        "ai_used": ai_used,
         "ai_called": ai_called,
+        "cache_hit": cache_hit,
+        "cache_status": cache_status,
         "text_changed": text_changed,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "cost": cost,
+        "request_cost": request_cost,
         "error_code": error_code,
         "value_check": value_check,
     }

@@ -1291,6 +1291,8 @@ async def get_ops_summary_advisor(
     limit: int = Query(default=25, ge=1, le=1000),
     provider_id: str = Query(default="", max_length=64),
     model_id: str = Query(default="internal-ops-summarizer", max_length=191),
+    force_refresh: bool = Query(default=False),
+    cache_ttl_seconds: int = Query(default=1800, ge=0, le=86400),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
@@ -1307,6 +1309,8 @@ async def get_ops_summary_advisor(
             limit=limit,
             provider_id=provider_id,
             model_id=model_id,
+            force_refresh=force_refresh,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
     except ValueError as error:
         return JSONResponse(
@@ -1340,6 +1344,8 @@ async def get_ops_summary_preview_advisor(
     limit: int = Query(default=25, ge=1, le=1000),
     provider_id: str = Query(default="", max_length=64),
     model_id: str = Query(default="internal-ops-summarizer", max_length=191),
+    force_refresh: bool = Query(default=False),
+    cache_ttl_seconds: int = Query(default=1800, ge=0, le=86400),
 ) -> Any:
     auth = await authorize_internal_request(request, require_idempotency=False)
     if auth is not None:
@@ -1356,6 +1362,8 @@ async def get_ops_summary_preview_advisor(
             limit=limit,
             provider_id=provider_id,
             model_id=model_id,
+            force_refresh=force_refresh,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
     except ValueError as error:
         return JSONResponse(

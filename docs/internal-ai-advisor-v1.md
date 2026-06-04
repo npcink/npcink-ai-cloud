@@ -186,8 +186,10 @@ provider/model ids, token counts, cost, and error code. Audit payloads must not
 store prompts, model output text, customer content, or WordPress content.
 
 The preview endpoint returns both deterministic baseline text and the provider
-attempt result, plus a compact comparison (`ai_called`, `text_changed`,
-`tokens_in`, `tokens_out`, `cost`, `value_check`). It exists only to help
+attempt result, plus a compact comparison (`ai_used`, `ai_called`, `cache_hit`,
+`cache_status`, `text_changed`, `tokens_in`, `tokens_out`, `cost`,
+`request_cost`, `value_check`). `ai_called` means the current request reached the
+provider. `ai_used` also covers cached AI output. It exists only to help
 operators decide whether LLM participation is worth enabling for this workflow.
 
 Operations preview also includes redacted drilldown evidence for failed runs,
@@ -195,6 +197,25 @@ run sites, ability families, provider/model breakdown, knowledge search
 breakdown, and usage totals. These fields are aggregate or identifier-only
 diagnostic evidence. They must not include raw request input, result payloads,
 callback bodies, secrets, prompts, or WordPress content.
+
+## AI Analysis Cache
+
+AI operations analysis should not call the provider on every page refresh.
+`/advisor/ops-summary` and `/advisor/ops-summary-preview` use a 30 minute
+default cache (`cache_ttl_seconds=1800`). Operators may pass
+`force_refresh=true` to bypass the cache and refresh the cached analysis, or
+`cache_ttl_seconds=0` to disable caching for a request.
+
+The cache key covers summarizer version, scope, site id, draft kind, window
+parameters, provider id, and model id. Cache hits return generation mode
+`llm_cached`, `cache_hit=true`, and `request_cost=0.0`. The original provider
+cost remains in `cost` so internal operators can compare saved spend.
+
+Cache storage must use the service read-model boundary. It may store the
+redacted AI summary and redacted drilldown evidence, but it must not store raw
+prompts, raw provider payloads, secrets, callback bodies, or WordPress content.
+The cache is an internal operator efficiency mechanism, not a WordPress-side
+state machine and not a second control plane.
 
 ## Provider Pricing
 
@@ -219,7 +240,9 @@ DeepSeek pricing snapshot:
 
 Recommendation: keep this mapping as a narrow adapter fallback for internal cost
 visibility, but move provider pricing into catalog metadata or an internal
-pricing table before external billing decisions depend on it.
+pricing table before external billing decisions depend on it. End customers
+should buy the AI analysis service capability, not see upstream token API price
+tables in the product surface.
 
 ## Storage
 

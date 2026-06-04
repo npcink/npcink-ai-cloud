@@ -23,6 +23,10 @@ type SummaryBranch = {
     tokens_in?: number;
     tokens_out?: number;
     cost?: number;
+    request_cost?: number;
+    cache_status?: string;
+    cache_hit?: boolean;
+    cache_expires_at?: string;
   };
   headline: string;
   operator_summary: string;
@@ -53,11 +57,15 @@ type AdvisorPreviewData = {
     aiMode: string;
     requestedProviderId: string;
     modelId: string;
+    aiUsed: boolean;
     aiCalled: boolean;
+    cacheHit: boolean;
+    cacheStatus: string;
     textChanged: boolean;
     tokensIn: number;
     tokensOut: number;
     cost: number;
+    requestCost: number;
     errorCode: string;
     valueCheck: string;
   };
@@ -88,6 +96,10 @@ function normalizeBranch(raw: any): SummaryBranch {
       tokens_in: Number(generation.tokens_in ?? 0),
       tokens_out: Number(generation.tokens_out ?? 0),
       cost: Number(generation.cost ?? 0),
+      request_cost: Number(generation.request_cost ?? generation.cost ?? 0),
+      cache_status: String(generation.cache_status ?? ''),
+      cache_hit: Boolean(generation.cache_hit),
+      cache_expires_at: String(generation.cache_expires_at ?? ''),
     },
     headline: String(raw?.headline ?? ''),
     operator_summary: String(raw?.operator_summary ?? ''),
@@ -132,11 +144,15 @@ function normalizePreview(raw: any): AdvisorPreviewData {
       aiMode: String(comparison.ai_mode ?? ''),
       requestedProviderId: String(comparison.requested_provider_id ?? ''),
       modelId: String(comparison.model_id ?? ''),
+      aiUsed: Boolean(comparison.ai_used),
       aiCalled: Boolean(comparison.ai_called),
+      cacheHit: Boolean(comparison.cache_hit),
+      cacheStatus: String(comparison.cache_status ?? ''),
       textChanged: Boolean(comparison.text_changed),
       tokensIn: Number(comparison.tokens_in ?? 0),
       tokensOut: Number(comparison.tokens_out ?? 0),
       cost: Number(comparison.cost ?? 0),
+      requestCost: Number(comparison.request_cost ?? comparison.cost ?? 0),
       errorCode: String(comparison.error_code ?? ''),
       valueCheck: String(comparison.value_check ?? ''),
     },
@@ -188,7 +204,7 @@ function BranchPanel({
   accent: 'baseline' | 'ai';
 }) {
   const generationStatus =
-    branch.generation.mode === 'llm'
+    branch.generation.mode === 'llm' || branch.generation.mode === 'llm_cached'
       ? 'success'
       : branch.generation.error_code
         ? 'warning'
@@ -229,7 +245,14 @@ function BranchPanel({
       <div className="mt-auto grid gap-3 border-t border-slate-200/80 pt-4 text-sm dark:border-slate-800 sm:grid-cols-3">
         <MiniMetric label="Provider" value={branch.generation.provider_id || '-'} />
         <MiniMetric label="Model" value={branch.generation.model_id || '-'} />
-        <MiniMetric label="Error" value={branch.generation.error_code || '-'} />
+        <MiniMetric
+          label="Cache"
+          value={
+            branch.generation.cache_hit
+              ? `hit until ${branch.generation.cache_expires_at || '-'}`
+              : branch.generation.cache_status || 'none'
+          }
+        />
       </div>
     </BackofficeSectionPanel>
   );
@@ -282,6 +305,7 @@ function AdminAiAdvisorContent() {
   const [providerId, setProviderId] = useState('openai');
   const [modelIdInput, setModelIdInput] = useState('deepseek-v4-flash');
   const [modelId, setModelId] = useState('deepseek-v4-flash');
+  const [forceRefresh, setForceRefresh] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const loadPreview = useCallback(async () => {
@@ -299,6 +323,9 @@ function AdminAiAdvisorContent() {
       if (modelId.trim()) {
         params.set('model_id', modelId.trim());
       }
+      if (forceRefresh) {
+        params.set('force_refresh', 'true');
+      }
 
       const response = await fetch(`/api/admin/advisor/ops-summary-preview?${params.toString()}`, {
         credentials: 'include',
@@ -314,7 +341,7 @@ function AdminAiAdvisorContent() {
     } finally {
       setLoading(false);
     }
-  }, [modelId, providerId, scope, siteId, t]);
+  }, [forceRefresh, modelId, providerId, scope, siteId, t]);
 
   useEffect(() => {
     void loadPreview();
@@ -324,15 +351,15 @@ function AdminAiAdvisorContent() {
     const comparison = data?.comparison;
     return [
       {
-        label: 'AI called',
-        value: comparison?.aiCalled ? 'Yes' : 'No',
-        detail: valueCheckLabel(comparison?.valueCheck || ''),
-        toneClassName: comparison?.aiCalled ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-300',
+        label: 'AI used',
+        value: comparison?.aiUsed ? 'Yes' : 'No',
+        detail: comparison?.cacheHit ? 'Served from cache' : comparison?.aiCalled ? 'Live provider call' : valueCheckLabel(comparison?.valueCheck || ''),
+        toneClassName: comparison?.aiUsed ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-300',
       },
       {
-        label: 'Text changed',
-        value: comparison?.textChanged ? 'Yes' : 'No',
-        detail: 'Baseline vs AI branch',
+        label: 'Cache',
+        value: comparison?.cacheHit ? 'Hit' : comparison?.cacheStatus === 'miss' ? 'Miss' : '-',
+        detail: forceRefresh ? 'Force refresh on' : 'Default TTL 30 min',
       },
       {
         label: 'Tokens',
@@ -340,13 +367,17 @@ function AdminAiAdvisorContent() {
         detail: `${formatNumber(comparison?.tokensIn || 0)} in / ${formatNumber(comparison?.tokensOut || 0)} out`,
       },
       {
-        label: 'Cost',
-        value: formatCost(comparison?.cost || 0),
-        detail: comparison?.errorCode ? `Error: ${comparison.errorCode}` : 'Provider reported cost',
+        label: 'Request cost',
+        value: formatCost(comparison?.requestCost || 0),
+        detail: comparison?.cacheHit
+          ? `Cached result, original ${formatCost(comparison?.cost || 0)}`
+          : comparison?.errorCode
+            ? `Error: ${comparison.errorCode}`
+            : 'This page load',
         size: 'compact' as const,
       },
     ];
-  }, [data]);
+  }, [data, forceRefresh]);
 
   if (loading && !data) {
     return <LoadingFallback />;
@@ -423,6 +454,15 @@ function AdminAiAdvisorContent() {
             placeholder="model_id"
             className="h-8 w-56 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs text-slate-700 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
           />
+          <label className="flex h-8 items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={forceRefresh}
+              onChange={(event) => setForceRefresh(event.target.checked)}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            Force refresh
+          </label>
           <button
             type="button"
             onClick={() => {
@@ -470,6 +510,9 @@ function AdminAiAdvisorContent() {
                 </BackofficeStackCard>
                 <BackofficeStackCard>
                   <MiniMetric label="AI mode" value={data.comparison.aiMode || '-'} />
+                </BackofficeStackCard>
+                <BackofficeStackCard>
+                  <MiniMetric label="Cache hit" value={data.comparison.cacheHit ? 'yes' : 'no'} />
                 </BackofficeStackCard>
                 <BackofficeStackCard>
                   <MiniMetric label="Requested provider" value={data.comparison.requestedProviderId || '-'} />
