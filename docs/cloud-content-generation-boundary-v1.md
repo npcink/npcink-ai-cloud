@@ -143,6 +143,8 @@ The design target is to support compliance by default:
 
 - generated content should support visible and/or machine-readable AI labeling
   where required by the target jurisdiction
+- AI output disclosure must follow
+  [AI Generated Content Disclosure v1](ai-generated-content-disclosure-v1.md)
 - content-generation runs should be auditable
 - sensitive input should respect `data_classification` and `storage_mode`
 - personal data and user-generated content should not be sent to providers

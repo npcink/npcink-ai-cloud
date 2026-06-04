@@ -174,6 +174,11 @@ Initial API:
 The response must identify whether text came from a provider or deterministic
 fallback using `generation.mode`. This mode is advisory evidence, not
 authorization to execute anything.
+Every text-bearing summary response must also include `ai_disclosure` as
+defined by [AI Generated Content Disclosure v1](ai-generated-content-disclosure-v1.md).
+For `llm` and `llm_cached`, the output must be visibly labeled as Magick AI
+generated and must remain in `needs_review` status until a human confirmation
+event exists.
 Provider execution requires both:
 
 - `MAGICK_CLOUD_INTERNAL_OPS_SUMMARIZER_PROVIDER_ALLOWLIST` includes the
