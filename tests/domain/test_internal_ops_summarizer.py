@@ -5,13 +5,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
 from app.adapters.providers.base import (
     ProviderCatalogSnapshot,
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import RuntimeGuardEvent
+from app.core.models import RuntimeGuardEvent, ServiceAuditEvent
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.catalog.service import CatalogService
 from tests.conftest import seed_site_auth
@@ -88,6 +90,7 @@ def test_ops_summary_llm_prompt_uses_redacted_advisor_context(tmp_path: Path) ->
     result = InternalAIAdvisorService(
         database_url,
         providers={provider.provider_id: provider},
+        allowed_summarizer_provider_ids={provider.provider_id},
     ).get_ops_summary(
         scope="runtime",
         site_id="site_ops_summary",
@@ -105,6 +108,67 @@ def test_ops_summary_llm_prompt_uses_redacted_advisor_context(tmp_path: Path) ->
     assert "do_not_generate_customer_article_or_marketing_content" in (
         prompt_context["redacted_context"]["forbidden"]
     )
+    with get_session(database_url) as session:
+        audit_event = session.execute(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "internal_advisor.ops_summary"
+            )
+        ).scalar_one()
+        audit_payload = audit_event.payload_json or {}
+        audit_text = json.dumps(audit_payload)
+    assert audit_event.outcome == "success"
+    assert audit_payload["generation_mode"] == "llm"
+    assert audit_payload["provider_id"] == provider.provider_id
+    assert audit_payload["model_id"] == "ops-model"
+    assert audit_payload["tokens_in"] == 20
+    assert audit_payload["tokens_out"] == 16
+    assert audit_payload["cost"] == 0.001
+    assert audit_payload["prompt_saved"] is False
+    assert audit_payload["output_text_saved"] is False
+    assert "support_draft" not in audit_text
+    assert "must stay out" not in audit_text
+
+    dispose_engine(database_url)
+
+
+def test_ops_summary_provider_must_be_allowlisted(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_site_auth(
+        database_url,
+        site_id="site_ops_summary",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve", "stats:read"],
+    )
+
+    provider = _DraftProvider()
+    result = InternalAIAdvisorService(
+        database_url,
+        providers={provider.provider_id: provider},
+        allowed_summarizer_provider_ids={"different_provider"},
+    ).get_ops_summary(
+        scope="runtime",
+        site_id="site_ops_summary",
+        provider_id=provider.provider_id,
+        model_id="ops-model",
+    )
+
+    assert result["generation"]["mode"] == "deterministic_fallback"
+    assert result["generation"]["error_code"] == "provider_not_allowlisted"
+    assert not provider.requests
+    with get_session(database_url) as session:
+        audit_event = session.execute(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind == "internal_advisor.ops_summary"
+            )
+        ).scalar_one()
+        audit_payload = audit_event.payload_json or {}
+    assert audit_event.outcome == "blocked"
+    assert audit_payload["generation_mode"] == "deterministic_fallback"
+    assert audit_payload["provider_id"] == provider.provider_id
+    assert audit_payload["error_code"] == "provider_not_allowlisted"
+    assert audit_payload["prompt_saved"] is False
+    assert audit_payload["output_text_saved"] is False
 
     dispose_engine(database_url)
 

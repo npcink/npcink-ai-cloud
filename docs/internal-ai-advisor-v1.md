@@ -158,8 +158,16 @@ Initial API:
 The response must identify whether text came from a provider or deterministic
 fallback using `generation.mode`. This mode is advisory evidence, not
 authorization to execute anything.
-Provider execution requires an explicit `provider_id`; otherwise the endpoint
-must return deterministic fallback text.
+Provider execution requires both:
+
+- `MAGICK_CLOUD_INTERNAL_OPS_SUMMARIZER_PROVIDER_ALLOWLIST` includes the
+  provider id
+- the request explicitly passes that `provider_id`
+
+Otherwise the endpoint must return deterministic fallback text. Each request
+must write an internal `service_audit_events` row with generation mode,
+provider/model ids, token counts, cost, and error code. Audit payloads must not
+store prompts, model output text, customer content, or WordPress content.
 
 ## Storage
 

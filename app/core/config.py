@@ -197,6 +197,7 @@ class Settings(BaseSettings):
     tei_model_ids: str = Field(default="")
     tei_region: str = Field(default="self-hosted")
     tei_context_window: int = Field(default=8192)
+    internal_ops_summarizer_provider_allowlist: str = Field(default="")
     openrouter_provider_enabled: bool = Field(default=False)
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openrouter_api_key: str | None = Field(default=None)

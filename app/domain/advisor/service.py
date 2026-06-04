@@ -9,6 +9,8 @@ from app.adapters.providers.base import (
     ProviderExecutionError,
     ProviderExecutionRequest,
 )
+from app.core.db import get_session
+from app.core.models import ServiceAuditEvent
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.service import UsageService
@@ -23,9 +25,15 @@ class InternalAIAdvisorService:
         database_url: str,
         *,
         providers: dict[str, ProviderAdapter] | None = None,
+        allowed_summarizer_provider_ids: set[str] | None = None,
     ) -> None:
         self.database_url = database_url
         self.providers = providers or {}
+        self.allowed_summarizer_provider_ids = {
+            str(provider_id).strip()
+            for provider_id in (allowed_summarizer_provider_ids or set())
+            if str(provider_id).strip()
+        }
 
     def get_runtime_advisor(
         self,
@@ -352,15 +360,52 @@ class InternalAIAdvisorService:
             draft_kind=draft_kind,
         )
 
-        provider = self._select_provider(provider_id)
-        if provider is None:
+        normalized_scope = str(advisor.get("scope") or scope or "").strip()
+        normalized_draft_kind = _normalize_draft_kind(draft_kind)
+        requested_provider_id = str(provider_id or "").strip()
+        if requested_provider_id and not self._is_summarizer_provider_allowed(
+            requested_provider_id
+        ):
+            self._record_summarizer_audit_event(
+                scope=normalized_scope,
+                site_id=site_id,
+                draft_kind=normalized_draft_kind,
+                provider_id=requested_provider_id,
+                model_id=model_id,
+                generation_mode="deterministic_fallback",
+                outcome="blocked",
+                error_code="provider_not_allowlisted",
+            )
             return {
                 **deterministic,
                 "generation": {
                     "mode": "deterministic_fallback",
-                    "provider_id": "",
-                    "model_id": "",
-                    "error_code": "",
+                    "provider_id": requested_provider_id,
+                    "model_id": model_id,
+                    "error_code": "provider_not_allowlisted",
+                },
+            }
+
+        provider = self._select_provider(requested_provider_id)
+        if provider is None:
+            error_code = "provider_not_configured" if requested_provider_id else ""
+            self._record_summarizer_audit_event(
+                scope=normalized_scope,
+                site_id=site_id,
+                draft_kind=normalized_draft_kind,
+                provider_id=requested_provider_id,
+                model_id=model_id if requested_provider_id else "",
+                generation_mode="deterministic_fallback",
+                outcome="fallback",
+                error_code=error_code,
+            )
+            return {
+                **deterministic,
+                "generation": {
+                    "mode": "deterministic_fallback",
+                    "provider_id": requested_provider_id,
+                    "model_id": model_id if requested_provider_id else "",
+                    "error_code": error_code,
                 },
             }
 
@@ -388,6 +433,19 @@ class InternalAIAdvisorService:
                 )
             )
         except ProviderExecutionError as error:
+            self._record_summarizer_audit_event(
+                scope=normalized_scope,
+                site_id=site_id,
+                draft_kind=normalized_draft_kind,
+                provider_id=provider.provider_id,
+                model_id=model_id,
+                generation_mode="deterministic_fallback",
+                outcome="provider_error",
+                error_code=error.error_code,
+                tokens_in=error.tokens_in,
+                tokens_out=error.tokens_out,
+                cost=error.cost,
+            )
             return {
                 **deterministic,
                 "generation": {
@@ -401,6 +459,19 @@ class InternalAIAdvisorService:
         parsed = self._parse_llm_summary_output(
             str(llm_result.output.get("output_text") or ""),
             fallback=deterministic,
+        )
+        self._record_summarizer_audit_event(
+            scope=normalized_scope,
+            site_id=site_id,
+            draft_kind=normalized_draft_kind,
+            provider_id=provider.provider_id,
+            model_id=model_id,
+            generation_mode="llm",
+            outcome="success",
+            error_code="",
+            tokens_in=llm_result.tokens_in,
+            tokens_out=llm_result.tokens_out,
+            cost=llm_result.cost,
         )
         return {
             **parsed,
@@ -600,6 +671,51 @@ class InternalAIAdvisorService:
         if not normalized_provider_id:
             return None
         return self.providers.get(normalized_provider_id)
+
+    def _is_summarizer_provider_allowed(self, provider_id: str) -> bool:
+        normalized_provider_id = str(provider_id or "").strip()
+        return normalized_provider_id in self.allowed_summarizer_provider_ids
+
+    def _record_summarizer_audit_event(
+        self,
+        *,
+        scope: str,
+        site_id: str | None,
+        draft_kind: str,
+        provider_id: str,
+        model_id: str,
+        generation_mode: str,
+        outcome: str,
+        error_code: str,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost: float = 0.0,
+    ) -> None:
+        with get_session(self.database_url) as session:
+            session.add(
+                ServiceAuditEvent(
+                    site_id=str(site_id or "").strip() or None,
+                    scope_kind="advisor_scope",
+                    scope_id=str(scope or "").strip() or None,
+                    event_kind="internal_advisor.ops_summary",
+                    outcome=outcome,
+                    actor_kind="internal_token",
+                    payload_json={
+                        "summarizer_version": SUMMARIZER_VERSION,
+                        "draft_kind": _normalize_draft_kind(draft_kind),
+                        "generation_mode": generation_mode,
+                        "provider_id": str(provider_id or ""),
+                        "model_id": str(model_id or ""),
+                        "error_code": str(error_code or ""),
+                        "tokens_in": max(0, int(tokens_in or 0)),
+                        "tokens_out": max(0, int(tokens_out or 0)),
+                        "cost": max(0.0, float(cost or 0.0)),
+                        "prompt_saved": False,
+                        "output_text_saved": False,
+                    },
+                )
+            )
+            session.commit()
 
     def _parse_llm_summary_output(
         self,

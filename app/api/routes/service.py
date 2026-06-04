@@ -144,7 +144,14 @@ def _get_advisor_service(request: Request) -> InternalAIAdvisorService:
     return InternalAIAdvisorService(
         services.settings.database_url,
         providers=services.providers,
+        allowed_summarizer_provider_ids=_csv_set(
+            services.settings.internal_ops_summarizer_provider_allowlist
+        ),
     )
+
+
+def _csv_set(value: str) -> set[str]:
+    return {item.strip() for item in str(value or "").split(",") if item.strip()}
 
 
 def _service_error_response(
