@@ -577,6 +577,49 @@ def test_sync_ignores_non_publish_documents(tmp_path: Path) -> None:
     assert {chunk.post_id for chunk in chunks} == {123}
 
 
+def test_targeted_refresh_prunes_missing_public_document(tmp_path: Path) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+
+    initial_result = _execute(client, _sync_payload(), idempotency_key="targeted-prune-initial")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+    assert initial_result["status_code"] == 200
+    with get_session(database_url) as session:
+        assert {chunk.post_id for chunk in session.query(SiteKnowledgeChunk).all()} == {123}
+
+    refresh_payload = _sync_payload()
+    input_payload = refresh_payload["input"]
+    assert isinstance(input_payload, dict)
+    input_payload["post_ids"] = [123]
+    input_payload["documents"] = []
+
+    refresh_result = _execute(
+        client,
+        refresh_payload,
+        idempotency_key="targeted-prune-refresh",
+    )
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+    worker_result = RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+    ).get_run_result(refresh_result["json"]["data"]["run_id"], site_id="site_alpha")
+
+    assert worker_result["result"]["sync"]["deleted_entries"] > 0
+    assert worker_result["result"]["sync"]["indexed_documents"] == 0
+    with get_session(database_url) as session:
+        assert list(session.query(SiteKnowledgeChunk).all()) == []
+
+
 def test_comments_are_opt_in_and_source_filtered(tmp_path: Path) -> None:
     database_url, settings, runtime_queue, client = _build_client(tmp_path)
     payload = _sync_payload()

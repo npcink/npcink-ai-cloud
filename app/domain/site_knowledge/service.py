@@ -141,6 +141,10 @@ class SiteKnowledgeService:
                 if post_ids
                 else self.repository.delete_site_index(site_id)
             )
+        elif sync_mode == "refresh" and post_ids:
+            if self.vector_backend is not None:
+                self.vector_backend.delete_post_indexes(site_id, post_ids)
+            deleted_entries = self.repository.delete_post_indexes(site_id, post_ids)
 
         accepted_documents = 0
         indexed_documents = 0
