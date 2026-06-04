@@ -14,6 +14,10 @@ RUN_MIGRATIONS="${MAGICK_MEDIA_DERIVATIVE_E2E_RUN_MIGRATIONS:-1}"
 RESTART_WORKER="${MAGICK_MEDIA_DERIVATIVE_E2E_RESTART_WORKER:-1}"
 CLEANUP="${MAGICK_MEDIA_DERIVATIVE_E2E_CLEANUP:-1}"
 
+# E2E media must remain easy to identify and safe to purge. The generated
+# source asset uses a smoke-only prefix plus UTC timestamp and md5(file) suffix:
+# magick-e2e-media-derivative-{yyyymmddhhmmss}-{hash8}.png
+
 fail() {
 	echo "[fail] $*" >&2
 	exit 1
@@ -148,7 +152,49 @@ function mde2e_unlink_upload($relative_file) {
 	}
 }
 
+function mde2e_cleanup_stale_smoke_media() {
+	global $wpdb;
+
+	$deleted_attachments = 0;
+	$deleted_files = 0;
+	$attachment_ids = $wpdb->get_col(
+		$wpdb->prepare(
+			"select ID from {$wpdb->posts} where post_type = %s and (post_name like %s or post_name like %s or post_title like %s or post_name like %s or post_title like %s)",
+			"attachment",
+			"magick-e2e-media-derivative-%",
+			"magick-ai-e2e-media-derivative-%",
+			"Magick AI media derivative smoke%",
+			"magick-media-derivative-smoke-%",
+			"magick-media-derivative-smoke-%"
+		)
+	);
+
+	foreach (array_map("absint", (array) $attachment_ids) as $attachment_id) {
+		if ($attachment_id > 0 && false !== wp_delete_attachment($attachment_id, true)) {
+			$deleted_attachments++;
+		}
+	}
+
+	$uploads = wp_upload_dir();
+	$basedir = is_array($uploads) && !empty($uploads["basedir"]) ? untrailingslashit((string) $uploads["basedir"]) : "";
+	if ("" !== $basedir) {
+		foreach (array("magick-e2e-media-derivative-*", "magick-ai-e2e-media-derivative-*", "magick-media-derivative-smoke-*") as $pattern) {
+			foreach ((array) glob($basedir . "/20[0-9][0-9]/*/" . $pattern) as $path) {
+				if (is_file($path) && @unlink($path)) {
+					$deleted_files++;
+				}
+			}
+		}
+	}
+
+	return array(
+		"attachments" => $deleted_attachments,
+		"files" => $deleted_files,
+	);
+}
+
 $cleanup = "1" === (string) getenv("MAGICK_MEDIA_DERIVATIVE_E2E_CLEANUP");
+$stale_cleanup = $cleanup ? mde2e_cleanup_stale_smoke_media() : array("attachments" => 0, "files" => 0);
 $created_pages = array();
 $created_attachment_id = 0;
 $created_option_names = array();
@@ -163,7 +209,7 @@ try {
 	}
 
 	$stamp = gmdate("YmdHis");
-	$filename = "magick-ai-e2e-media-derivative-" . $stamp . ".png";
+	$filename = "magick-e2e-media-derivative-" . $stamp . "-pending.png";
 	$path = $dir . $filename;
 	$image = imagecreatetruecolor(800, 450);
 	$bg = imagecolorallocate($image, 60, 70, 85);
@@ -176,6 +222,13 @@ try {
 	imagestring($image, 5, 265, 212, "Magick AI Media Smoke", $text);
 	imagepng($image, $path);
 	imagedestroy($image);
+	$file_hash = substr(md5_file($path), 0, 8);
+	$filename = sanitize_file_name("magick-e2e-media-derivative-" . $stamp . "-" . $file_hash . ".png");
+	$hashed_path = $dir . $filename;
+	if ($hashed_path !== $path) {
+		rename($path, $hashed_path);
+		$path = $hashed_path;
+	}
 
 	$filetype = wp_check_filetype($filename, null);
 	$attachment_id = wp_insert_attachment(array(
@@ -388,6 +441,7 @@ try {
 				"contains_derivative_url" => false !== strpos(is_wp_error($page_http) ? "" : (string) wp_remote_retrieve_body($page_http), $after_url),
 			),
 			"rollback_history_count" => count(get_post_meta($attachment_id, "_magick_ai_media_file_replacement_history", true) ?: array()),
+			"stale_smoke_cleanup" => $stale_cleanup,
 		),
 		JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
 	) . "\n";
