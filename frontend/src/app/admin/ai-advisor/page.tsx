@@ -210,6 +210,15 @@ type AdvisorValueMetrics = {
   }>;
 };
 
+type ScenarioCheck = {
+  key: string;
+  title: string;
+  status: string;
+  headline: string;
+  evidence: string;
+  aiValue: string;
+};
+
 const SCOPE_OPTIONS = [
   { label: 'Operations', value: 'operations' },
   { label: 'Runtime', value: 'runtime' },
@@ -455,6 +464,37 @@ function formatCost(value: number): string {
 
 function formatPercent(value: number): string {
   return `${(Number(value || 0) * 100).toFixed(1)}%`;
+}
+
+function formatRatio(value: unknown): string {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) {
+    return '0.0%';
+  }
+  return `${(numeric * 100).toFixed(1)}%`;
+}
+
+function humanizeKey(value: string): string {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getSignal(branch: SummaryBranch, code: string): Record<string, string | number | boolean | null> {
+  return branch.source_context.advisor.signals.find((signal) => signal.code === code) ?? {};
+}
+
+function getDrilldownRows(branch: SummaryBranch, key: string): Array<Record<string, ScalarValue>> {
+  const value = branch.source_context.advisor.drilldown[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function textContainsAny(text: string, candidates: Array<string | number | null | undefined>): boolean {
+  const normalized = text.toLowerCase();
+  return candidates.some((candidate) => {
+    const value = String(candidate ?? '').trim().toLowerCase();
+    return Boolean(value && normalized.includes(value));
+  });
 }
 
 function valueCheckLabel(value: string): string {
@@ -778,6 +818,345 @@ function HistoryRow({ item }: { item: AdvisorHistoryItem }) {
       </div>
     </div>
   );
+}
+
+function EffectComparisonPanel({ data }: { data: AdvisorPreviewData }) {
+  const runtime = getSignal(data.ai, 'ops.runtime_quality');
+  const usage = getSignal(data.ai, 'ops.usage_cost');
+  const knowledge = getSignal(data.ai, 'ops.knowledge_quality');
+  const failedRun = getDrilldownRows(data.ai, 'failed_runs')[0];
+  const aiText = [
+    data.ai.headline,
+    data.ai.operator_summary,
+    data.ai.support_draft,
+    data.ai.operator_next_step,
+  ].join(' ');
+  const aiMentionsRun = textContainsAny(aiText, [
+    String(failedRun?.run_id ?? ''),
+    String(failedRun?.site_id ?? ''),
+    String(failedRun?.error_code ?? ''),
+    String(failedRun?.ability_name ?? ''),
+  ]);
+  const aiAddedSpecificity = data.comparison.textChanged && aiMentionsRun;
+
+  return (
+    <BackofficeSectionPanel className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            Effect check
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            Data, rule result, and AI result side by side
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+            This view uses the same cloud operations evidence for both branches, so the visible difference is the AI
+            layer&apos;s interpretation and next-step wording.
+          </p>
+        </div>
+        <BackofficeStatusBadge
+          label={data.comparison.aiUsed ? 'ai participated' : 'rule only'}
+          status={data.comparison.aiUsed ? 'success' : 'inactive'}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ComparisonColumn
+          eyebrow="Raw operations data"
+          title={failedRun ? String(failedRun.error_code || 'Runtime signal') : 'Current operations signal'}
+          statusLabel={`${formatNumber(Number(runtime.total_runs || 0))} runs`}
+          status={Number(runtime.failed_runs || 0) > 0 ? 'warning' : 'success'}
+          rows={[
+            ['Failed runs', formatNumber(Number(runtime.failed_runs || 0))],
+            ['Failure rate', formatRatio(runtime.run_failure_rate)],
+            ['Guard events', formatNumber(Number(runtime.guard_events || 0))],
+            ['Knowledge no-hit', formatRatio(knowledge.knowledge_no_hit_rate)],
+            ['Usage events', formatNumber(Number(usage.usage_events || 0))],
+          ]}
+          detail={
+            failedRun
+              ? [
+                  `run_id: ${String(failedRun.run_id || '-')}`,
+                  `site_id: ${String(failedRun.site_id || '-')}`,
+                  `ability: ${String(failedRun.ability_family || '-')}/${String(failedRun.ability_name || '-')}`,
+                ]
+              : ['No failed run detail in the current window.']
+          }
+        />
+        <ComparisonColumn
+          eyebrow="Rule analysis"
+          title={data.baseline.headline || 'Rule baseline'}
+          statusLabel={data.baseline.generation.mode || 'rule'}
+          status="inactive"
+          rows={[
+            ['Mode', data.baseline.generation.mode || '-'],
+            ['Status', data.baseline.status || '-'],
+            ['Severity', data.baseline.severity || '-'],
+            ['Next step', data.baseline.operator_next_step || '-'],
+          ]}
+          detail={[data.baseline.operator_summary || 'No rule summary.']}
+        />
+        <ComparisonColumn
+          eyebrow="AI analysis"
+          title={data.ai.headline || 'AI output'}
+          statusLabel={data.comparison.aiCalled ? 'live ai' : data.comparison.cacheHit ? 'cached ai' : 'not called'}
+          status={data.comparison.aiUsed ? 'success' : 'inactive'}
+          rows={[
+            ['Mode', data.ai.generation.mode || '-'],
+            ['Model', data.comparison.modelId || data.ai.generation.model_id || '-'],
+            ['Cost', formatCost(data.comparison.requestCost || 0)],
+            ['AI changed text', data.comparison.textChanged ? 'yes' : 'no'],
+          ]}
+          detail={[
+            data.ai.operator_summary || 'No AI summary.',
+            aiAddedSpecificity
+              ? 'AI added concrete run, site, error, or ability details.'
+              : 'No extra concrete identifier was detected in this output.',
+          ]}
+        />
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
+function ComparisonColumn({
+  eyebrow,
+  title,
+  statusLabel,
+  status,
+  rows,
+  detail,
+}: {
+  eyebrow: string;
+  title: string;
+  statusLabel: string;
+  status: string;
+  rows: Array<[string, string]>;
+  detail: string[];
+}) {
+  return (
+    <div className="flex min-h-[22rem] flex-col rounded-xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800 dark:bg-slate-950/35">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            {eyebrow}
+          </p>
+          <h3 className="mt-2 text-base font-semibold leading-6 text-slate-950 dark:text-white">{title}</h3>
+        </div>
+        <BackofficeStatusBadge label={statusLabel} status={status} />
+      </div>
+      <div className="mt-4 grid gap-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-start justify-between gap-3 text-sm">
+            <span className="text-slate-500 dark:text-slate-400">{label}</span>
+            <span className="max-w-[12rem] truncate text-right font-mono text-xs text-slate-800 dark:text-slate-100">
+              {value}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-auto space-y-2 border-t border-slate-200/80 pt-4 dark:border-slate-800">
+        {detail.map((item, index) => (
+          <p key={`${eyebrow}-${index}`} className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {item}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AiParticipationPanel({ data }: { data: AdvisorPreviewData }) {
+  const inputTypes = buildAiInputTypes(data.ai);
+  const valueBullets = buildAiValueBullets(data);
+  return (
+    <BackofficeSectionPanel className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            AI participation proof
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            What was sent to AI and what changed
+          </h2>
+        </div>
+        <BackofficeStatusBadge
+          label={data.comparison.aiCalled ? 'live call' : data.comparison.cacheHit ? 'cache hit' : 'not called'}
+          status={data.comparison.aiUsed ? 'success' : 'inactive'}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <BackofficeStackCard>
+            <MiniMetric label="Provider adapter" value={data.comparison.requestedProviderId || data.ai.generation.provider_id || '-'} />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric label="Model" value={data.comparison.modelId || data.ai.generation.model_id || '-'} />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric label="Tokens" value={`${formatNumber(data.comparison.tokensIn)} in / ${formatNumber(data.comparison.tokensOut)} out`} />
+          </BackofficeStackCard>
+          <BackofficeStackCard>
+            <MiniMetric label="Request cost" value={formatCost(data.comparison.requestCost || 0)} />
+          </BackofficeStackCard>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <EvidenceList title="Input data types" items={inputTypes} empty="No redacted input types detected." />
+          <EvidenceList title="AI added value" items={valueBullets} empty="No AI-specific difference detected yet." />
+        </div>
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
+function EvidenceList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{title}</p>
+      <div className="mt-3 space-y-2">
+        {items.length ? (
+          items.map((item) => (
+            <p key={item} className="text-sm leading-6 text-slate-700 dark:text-slate-200">
+              {item}
+            </p>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500 dark:text-slate-400">{empty}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function buildAiInputTypes(branch: SummaryBranch): string[] {
+  const signals = branch.source_context.advisor.signals;
+  const drilldown = branch.source_context.advisor.drilldown;
+  const items: string[] = [];
+  if (signals.some((signal) => signal.code === 'ops.runtime_quality')) {
+    items.push('Runtime run quality: run counts, failures, callbacks, guard events.');
+  }
+  if (Array.isArray(drilldown.failed_runs) && drilldown.failed_runs.length > 0) {
+    items.push('Failed run drilldown: run id, site id, ability, error code, selected provider/model.');
+  }
+  if (signals.some((signal) => signal.code === 'ops.knowledge_quality')) {
+    items.push('Knowledge search health: no-hit rate, search failures, indexed documents and chunks.');
+  }
+  if (signals.some((signal) => signal.code === 'ops.provider_quality')) {
+    items.push('Provider quality: provider calls, error rate, fallback count, latency.');
+  }
+  if (signals.some((signal) => signal.code === 'ops.usage_cost')) {
+    items.push('Usage and cost signal: usage events, meter quantity, reported/provider cost.');
+  }
+  return items;
+}
+
+function buildAiValueBullets(data: AdvisorPreviewData): string[] {
+  const failedRun = getDrilldownRows(data.ai, 'failed_runs')[0];
+  const aiText = [
+    data.ai.headline,
+    data.ai.operator_summary,
+    data.ai.support_draft,
+    data.ai.operator_next_step,
+  ].join(' ');
+  const bullets: string[] = [];
+  if (data.comparison.aiCalled) {
+    bullets.push('A live provider call generated this analysis instead of only using deterministic rules.');
+  } else if (data.comparison.cacheHit) {
+    bullets.push('A previous AI analysis was reused from cache, avoiding another provider call.');
+  }
+  if (data.comparison.textChanged) {
+    bullets.push('AI changed the operator-facing summary or next-step wording.');
+  }
+  if (
+    failedRun &&
+    textContainsAny(aiText, [
+      String(failedRun.run_id ?? ''),
+      String(failedRun.error_code ?? ''),
+      String(failedRun.site_id ?? ''),
+      String(failedRun.ability_name ?? ''),
+    ])
+  ) {
+    bullets.push('AI surfaced concrete failed-run identifiers that an operator can inspect directly.');
+  }
+  if (data.ai.operator_next_step && data.ai.operator_next_step !== data.baseline.operator_next_step) {
+    bullets.push('AI proposed a more specific operator next step than the rule baseline.');
+  }
+  return bullets;
+}
+
+function ScenarioChecksPanel({ data }: { data: AdvisorPreviewData }) {
+  const scenarios = buildScenarioChecks(data);
+  return (
+    <BackofficeSectionPanel className="space-y-5">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+          Fixed scenarios
+        </p>
+        <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+          Three repeatable ways to judge AI usefulness
+        </h2>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-3">
+        {scenarios.map((scenario) => (
+          <BackofficeStackCard key={scenario.key} className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">{scenario.title}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{scenario.headline}</p>
+              </div>
+              <BackofficeStatusBadge label={scenario.status} status={scenario.status === 'active' ? 'warning' : 'inactive'} />
+            </div>
+            <div className="space-y-2 border-t border-slate-200/80 pt-3 dark:border-slate-800">
+              <MiniMetric label="Evidence" value={scenario.evidence} />
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{scenario.aiValue}</p>
+            </div>
+          </BackofficeStackCard>
+        ))}
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
+function buildScenarioChecks(data: AdvisorPreviewData): ScenarioCheck[] {
+  const runtime = getSignal(data.ai, 'ops.runtime_quality');
+  const knowledge = getSignal(data.ai, 'ops.knowledge_quality');
+  const provider = getSignal(data.ai, 'ops.provider_quality');
+  const failedRun = getDrilldownRows(data.ai, 'failed_runs')[0];
+  const providerCalls = Number(provider.provider_calls || 0);
+  const providerErrorRate = Number(provider.provider_error_rate || 0);
+  const avgLatency = Number(provider.avg_latency_ms || 0);
+
+  return [
+    {
+      key: 'runtime_failure',
+      title: 'Runtime failure analysis',
+      status: Number(runtime.failed_runs || 0) > 0 ? 'active' : 'quiet',
+      headline: failedRun
+        ? `${String(failedRun.site_id || 'site')} has ${String(failedRun.error_code || 'a failed run')}.`
+        : 'No failed runtime run in the current window.',
+      evidence: `${formatNumber(Number(runtime.failed_runs || 0))} failed / ${formatNumber(Number(runtime.total_runs || 0))} runs`,
+      aiValue: failedRun
+        ? 'AI should explain the likely failure path and point to the concrete run/operator action.'
+        : 'AI should stay quiet or confirm no runtime failure driver.',
+    },
+    {
+      key: 'knowledge_no_hit',
+      title: 'Knowledge no-hit analysis',
+      status: Number(knowledge.knowledge_no_hits || 0) > 0 ? 'active' : 'quiet',
+      headline: `${formatNumber(Number(knowledge.knowledge_searches || 0))} searches, ${formatRatio(knowledge.knowledge_no_hit_rate)} no-hit rate.`,
+      evidence: `${formatNumber(Number(knowledge.indexed_documents || 0))} docs / ${formatNumber(Number(knowledge.indexed_chunks || 0))} chunks`,
+      aiValue: 'AI should connect no-hit patterns to indexing, content coverage, or query-intent gaps.',
+    },
+    {
+      key: 'provider_cost_latency',
+      title: 'Provider cost or latency anomaly',
+      status: providerErrorRate > 0 || avgLatency > 0 || providerCalls > 0 ? 'active' : 'quiet',
+      headline: `${formatNumber(providerCalls)} provider calls, ${formatRatio(providerErrorRate)} error rate.`,
+      evidence: `${formatNumber(avgLatency)} ms avg latency`,
+      aiValue: 'AI should separate provider degradation from app/runtime failures before recommending action.',
+    },
+  ];
 }
 
 function valueSignalBadge(value: string): string {
@@ -1236,6 +1615,21 @@ function AdminAiAdvisorContent() {
           >
             {loading ? 'Loading' : 'Run preview'}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSiteId(siteIdInput.trim());
+              setProviderIdInput('openai');
+              setProviderId('openai');
+              setModelIdInput('deepseek-v4-flash');
+              setModelId('deepseek-v4-flash');
+              setReloadKey((current) => current + 1);
+            }}
+            disabled={loading}
+            className="h-8 rounded-full border border-blue-200 bg-blue-50 px-4 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-900/70 dark:bg-blue-950/35 dark:text-blue-300"
+          >
+            Run DeepSeek comparison
+          </button>
         </div>
         {copyMessage ? (
           <p className="mt-3 text-xs font-semibold text-emerald-600 dark:text-emerald-300">{copyMessage}</p>
@@ -1246,6 +1640,14 @@ function AdminAiAdvisorContent() {
         <BackofficeSectionPanel className="border border-amber-200 bg-amber-50/80 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/35 dark:text-amber-100">
           {error}
         </BackofficeSectionPanel>
+      ) : null}
+
+      {data ? (
+        <>
+          <EffectComparisonPanel data={data} />
+          <AiParticipationPanel data={data} />
+          <ScenarioChecksPanel data={data} />
+        </>
       ) : null}
 
       <ValueMetricsPanel valueMetrics={valueMetrics} />
