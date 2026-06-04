@@ -453,15 +453,14 @@ function AdminAiAdvisorContent() {
                 <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">Execution boundary</h2>
               </div>
               <div className="space-y-3">
-                <SafetyRow label="Prompt saved" active={data.safety.promptSaved} inverted />
-                <SafetyRow label="Output text saved" active={data.safety.outputTextSaved} inverted />
-                <SafetyRow label="WordPress write allowed" active={data.safety.wordpressWriteAllowed} inverted />
+                <SafetyRow label="Prompt storage blocked" ok={!data.safety.promptSaved} />
+                <SafetyRow label="Output text storage blocked" ok={!data.safety.outputTextSaved} />
+                <SafetyRow label="WordPress writes blocked" ok={!data.safety.wordpressWriteAllowed} />
                 <SafetyRow
-                  label="Customer article generation"
-                  active={data.safety.customerArticleGenerationAllowed}
-                  inverted
+                  label="Customer article generation blocked"
+                  ok={!data.safety.customerArticleGenerationAllowed}
                 />
-                <SafetyRow label="Operator review required" active={data.safety.requiresOperatorReview} />
+                <SafetyRow label="Operator review required" ok={data.safety.requiresOperatorReview} />
               </div>
             </BackofficeSectionPanel>
           </div>
@@ -473,14 +472,11 @@ function AdminAiAdvisorContent() {
 
 function SafetyRow({
   label,
-  active,
-  inverted = false,
+  ok,
 }: {
   label: string;
-  active: boolean;
-  inverted?: boolean;
+  ok: boolean;
 }) {
-  const ok = inverted ? !active : active;
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/35">
       <span className="text-sm text-slate-700 dark:text-slate-200">{label}</span>
