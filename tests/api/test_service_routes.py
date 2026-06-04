@@ -73,6 +73,11 @@ def _build_client(
         openrouter_api_key="",
         siliconflow_provider_enabled=False,
         siliconflow_api_key="",
+        web_search_provider="disabled",
+        web_search_tavily_api_key="",
+        web_search_bocha_api_key="",
+        web_search_jina_reader_api_key="",
+        web_search_apify_api_token="",
         site_knowledge_embedding_provider="deterministic",
         **(settings_overrides or {}),
     )
@@ -100,8 +105,90 @@ def _runtime_service_settings(database_url: str) -> Settings:
         openrouter_api_key="",
         siliconflow_provider_enabled=False,
         siliconflow_api_key="",
+        web_search_provider="disabled",
+        web_search_tavily_api_key="",
+        web_search_bocha_api_key="",
+        web_search_jina_reader_api_key="",
+        web_search_apify_api_token="",
         site_knowledge_embedding_provider="deterministic",
     )
+
+
+def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / ".env.local"
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "web_search_admin_env_path": str(env_path),
+        },
+    )
+
+    initial = client.get(
+        "/internal/service/admin/web-search-providers",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200
+    assert initial.json()["data"]["providers"]["tavily"]["configured"] is False
+
+    response = client.post(
+        "/internal/service/admin/web-search-providers",
+        headers=build_internal_headers(idempotency_key="web-search-provider-save"),
+        json={
+            "provider_mode": "auto",
+            "providers": {
+                "tavily": {
+                    "base_url": "https://api.tavily.com",
+                    "secret": "tvly-test-secret",
+                    "timeout_seconds": 9,
+                    "cost": 0.001,
+                },
+                "bocha": {
+                    "base_url": "https://api.bochaai.com/v1",
+                    "secret": "bocha-test-secret",
+                    "timeout_seconds": 11,
+                    "cost": 0.002,
+                },
+                "jina_reader": {
+                    "enabled": True,
+                    "base_url": "https://r.jina.ai",
+                    "secret": "jina-test-secret",
+                    "timeout_seconds": 7,
+                    "max_pages": 3,
+                    "cost": 0.0003,
+                },
+                "apify": {
+                    "base_url": "https://api.apify.com/v2",
+                    "secret": "apify-test-token",
+                    "actor_id": "apify/google-search-scraper",
+                    "timeout_seconds": 30,
+                    "cost": 0.01,
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["provider_mode"] == "auto"
+    assert data["providers"]["tavily"]["configured"] is True
+    assert data["providers"]["bocha"]["configured"] is True
+    assert data["providers"]["jina_reader"]["enabled"] is True
+    assert "tvly-test-secret" not in json.dumps(data)
+    assert "bocha-test-secret" not in json.dumps(data)
+    assert "jina-test-secret" not in json.dumps(data)
+    assert "apify-test-token" not in json.dumps(data)
+    env_text = env_path.read_text(encoding="utf-8")
+    assert "MAGICK_CLOUD_WEB_SEARCH_PROVIDER=auto" in env_text
+    assert "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY=tvly-test-secret" in env_text
+    assert "MAGICK_CLOUD_WEB_SEARCH_BOCHA_API_KEY=bocha-test-secret" in env_text
+    assert "MAGICK_CLOUD_WEB_SEARCH_JINA_READER_API_KEY=jina-test-secret" in env_text
+    assert "MAGICK_CLOUD_WEB_SEARCH_APIFY_API_TOKEN=apify-test-token" in env_text
+
+    services = client.app.state.services
+    assert services.settings.web_search_provider == "auto"
+    assert services.settings.web_search_bocha_api_key == "bocha-test-secret"
 
 
 def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(

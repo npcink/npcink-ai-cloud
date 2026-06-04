@@ -14,6 +14,8 @@ from app.core.db import get_session, init_schema
 from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 from app.core.services import CloudServices
 from app.domain.web_search.service import (
+    ApifyWebSearchProvider,
+    BochaWebSearchProvider,
     TavilyWebSearchProvider,
     WebSearchExecutionResult,
     WebSearchProviderUsage,
@@ -31,7 +33,11 @@ def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{tmp_path / 'web-search.sqlite3'}"
 
 
-def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
+def _build_client(
+    tmp_path: Path,
+    *,
+    settings_overrides: dict[str, object] | None = None,
+) -> tuple[str, TestClient]:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
     seed_site_auth(
@@ -39,18 +45,22 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
         site_id="site_alpha",
         scopes=["runtime:execute", "runtime:read"],
     )
-    settings = Settings(
-        _env_file=None,
-        project_name="Magick AI Cloud Web Search Test",
-        environment="test",
-        database_url=database_url,
-        redis_url="redis://localhost:6379/0",
-        admin_session_secret=TEST_ADMIN_SESSION_SECRET,
-        portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
-        web_search_provider="tavily",
-        web_search_tavily_api_key="placeholder-tavily-key",
-        web_search_tavily_cost_per_query=0.002,
-    )
+    settings_kwargs: dict[str, object] = {
+        "project_name": "Magick AI Cloud Web Search Test",
+        "environment": "test",
+        "database_url": database_url,
+        "redis_url": "redis://localhost:6379/0",
+        "admin_session_secret": TEST_ADMIN_SESSION_SECRET,
+        "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+        "web_search_provider": "tavily",
+        "web_search_tavily_api_key": "placeholder-tavily-key",
+        "web_search_bocha_api_key": "",
+        "web_search_jina_reader_api_key": "",
+        "web_search_apify_api_token": "",
+        "web_search_tavily_cost_per_query": 0.002,
+    }
+    settings_kwargs.update(settings_overrides or {})
+    settings = Settings(_env_file=None, **settings_kwargs)
     client = TestClient(
         create_app(
             CloudServices(
@@ -218,6 +228,155 @@ def test_cloud_managed_web_search_executes_and_records_provider_usage(
             "cost",
         ]
         assert all(event.ability_family == "knowledge" for event in meter_events)
+
+
+def test_cloud_managed_web_search_uses_bocha_provider(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "web_search_provider": "bocha",
+            "web_search_bocha_api_key": "placeholder-bocha-key",
+        },
+    )
+
+    def fake_search(
+        self: BochaWebSearchProvider,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "external_web_evidence",
+                "status": "ready",
+                "provider": "bocha",
+                "intent": options["intent"],
+                "query_hash": "hash-only",
+                "query_chars": len(query),
+                "evidence_gate": {
+                    "status": "passed",
+                    "allows_web_grounded_assertion": True,
+                    "source_count": 1,
+                },
+                "results": [
+                    {
+                        "title": "Bocha source",
+                        "url": "https://example.cn/source",
+                        "snippet": "A source returned by Bocha.",
+                        "score": 0.9,
+                        "source": "bocha",
+                        "write_posture": "suggestion_only",
+                        "direct_wordpress_write": False,
+                    }
+                ],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="bocha",
+                model_id="web-search",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=9,
+                cost=0.0,
+            ),
+        )
+
+    monkeypatch.setattr(BochaWebSearchProvider, "search", fake_search)
+
+    response = _execute(client, _payload(), idempotency_key="web-search-bocha")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["result"]["provider"] == "bocha"
+    with get_session(database_url) as session:
+        provider_calls = list(
+            session.scalars(
+                select(ProviderCallRecord).where(ProviderCallRecord.run_id == data["run_id"])
+            )
+        )
+        assert provider_calls[0].provider_id == "bocha"
+
+
+def test_cloud_managed_web_search_uses_apify_provider(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "web_search_provider": "apify",
+            "web_search_apify_api_token": "placeholder-apify-token",
+            "web_search_apify_actor_id": "apify/google-search-scraper",
+        },
+    )
+
+    def fake_search(
+        self: ApifyWebSearchProvider,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "external_web_evidence",
+                "status": "ready",
+                "provider": "apify",
+                "intent": options["intent"],
+                "query_hash": "hash-only",
+                "query_chars": len(query),
+                "evidence_gate": {
+                    "status": "passed",
+                    "allows_web_grounded_assertion": True,
+                    "source_count": 1,
+                },
+                "results": [
+                    {
+                        "title": "Apify source",
+                        "url": "https://example.com/apify-source",
+                        "snippet": "A source returned by Apify.",
+                        "score": 1.0,
+                        "source": "apify",
+                        "write_posture": "suggestion_only",
+                        "direct_wordpress_write": False,
+                    }
+                ],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="apify",
+                model_id="web-search",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=14,
+                cost=0.0,
+            ),
+        )
+
+    monkeypatch.setattr(ApifyWebSearchProvider, "search", fake_search)
+
+    response = _execute(client, _payload(), idempotency_key="web-search-apify")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["result"]["provider"] == "apify"
+    with get_session(database_url) as session:
+        provider_calls = list(
+            session.scalars(
+                select(ProviderCallRecord).where(ProviderCallRecord.run_id == data["run_id"])
+            )
+        )
+        assert provider_calls[0].provider_id == "apify"
 
 
 def test_web_search_rejects_provider_keys_in_runtime_input(tmp_path: Path) -> None:

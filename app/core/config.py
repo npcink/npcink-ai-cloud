@@ -214,6 +214,22 @@ class Settings(BaseSettings):
     web_search_tavily_api_key: str | None = Field(default=None)
     web_search_tavily_timeout_seconds: float = Field(default=15.0)
     web_search_tavily_cost_per_query: float = Field(default=0.0)
+    web_search_bocha_base_url: str = Field(default="https://api.bochaai.com/v1")
+    web_search_bocha_api_key: str | None = Field(default=None)
+    web_search_bocha_timeout_seconds: float = Field(default=15.0)
+    web_search_bocha_cost_per_query: float = Field(default=0.0)
+    web_search_jina_reader_enabled: bool = Field(default=False)
+    web_search_jina_reader_base_url: str = Field(default="https://r.jina.ai")
+    web_search_jina_reader_api_key: str | None = Field(default=None)
+    web_search_jina_reader_timeout_seconds: float = Field(default=15.0)
+    web_search_jina_reader_max_pages: int = Field(default=2)
+    web_search_jina_reader_cost_per_page: float = Field(default=0.0)
+    web_search_apify_base_url: str = Field(default="https://api.apify.com/v2")
+    web_search_apify_api_token: str | None = Field(default=None)
+    web_search_apify_actor_id: str = Field(default="apify/google-search-scraper")
+    web_search_apify_timeout_seconds: float = Field(default=30.0)
+    web_search_apify_cost_per_query: float = Field(default=0.0)
+    web_search_admin_env_path: str = Field(default=".env.local")
     openrouter_provider_enabled: bool = Field(default=False)
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openrouter_api_key: str | None = Field(default=None)
@@ -451,13 +467,28 @@ class Settings(BaseSettings):
         if self.site_knowledge_zilliz_timeout_seconds <= 0:
             raise ValueError("site_knowledge_zilliz_timeout_seconds must be greater than 0")
         web_search_provider = str(self.web_search_provider or "disabled").strip().lower()
-        if web_search_provider not in {"disabled", "tavily"}:
-            raise ValueError("web_search_provider must be disabled or tavily")
+        allowed_web_search_providers = {"disabled", "auto", "tavily", "bocha", "apify"}
+        if web_search_provider not in allowed_web_search_providers:
+            raise ValueError("web_search_provider must be disabled, auto, tavily, bocha, or apify")
         self.web_search_provider = web_search_provider
         if self.web_search_tavily_timeout_seconds <= 0:
             raise ValueError("web_search_tavily_timeout_seconds must be greater than 0")
         if self.web_search_tavily_cost_per_query < 0:
             raise ValueError("web_search_tavily_cost_per_query must be zero or greater")
+        if self.web_search_bocha_timeout_seconds <= 0:
+            raise ValueError("web_search_bocha_timeout_seconds must be greater than 0")
+        if self.web_search_bocha_cost_per_query < 0:
+            raise ValueError("web_search_bocha_cost_per_query must be zero or greater")
+        if self.web_search_jina_reader_timeout_seconds <= 0:
+            raise ValueError("web_search_jina_reader_timeout_seconds must be greater than 0")
+        if self.web_search_jina_reader_max_pages <= 0:
+            raise ValueError("web_search_jina_reader_max_pages must be greater than 0")
+        if self.web_search_jina_reader_cost_per_page < 0:
+            raise ValueError("web_search_jina_reader_cost_per_page must be zero or greater")
+        if self.web_search_apify_timeout_seconds <= 0:
+            raise ValueError("web_search_apify_timeout_seconds must be greater than 0")
+        if self.web_search_apify_cost_per_query < 0:
+            raise ValueError("web_search_apify_cost_per_query must be zero or greater")
         if web_search_provider == "tavily":
             if not str(self.web_search_tavily_base_url or "").strip():
                 raise ValueError(
@@ -466,6 +497,28 @@ class Settings(BaseSettings):
             if not str(self.web_search_tavily_api_key or "").strip():
                 raise ValueError(
                     "web_search_tavily_api_key is required when web_search_provider=tavily"
+                )
+        if web_search_provider == "bocha":
+            if not str(self.web_search_bocha_base_url or "").strip():
+                raise ValueError(
+                    "web_search_bocha_base_url is required when web_search_provider=bocha"
+                )
+            if not str(self.web_search_bocha_api_key or "").strip():
+                raise ValueError(
+                    "web_search_bocha_api_key is required when web_search_provider=bocha"
+                )
+        if web_search_provider == "apify":
+            if not str(self.web_search_apify_base_url or "").strip():
+                raise ValueError(
+                    "web_search_apify_base_url is required when web_search_provider=apify"
+                )
+            if not str(self.web_search_apify_api_token or "").strip():
+                raise ValueError(
+                    "web_search_apify_api_token is required when web_search_provider=apify"
+                )
+            if not str(self.web_search_apify_actor_id or "").strip():
+                raise ValueError(
+                    "web_search_apify_actor_id is required when web_search_provider=apify"
                 )
         site_knowledge_embedding_provider = str(
             self.site_knowledge_embedding_provider or ""

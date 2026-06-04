@@ -25,6 +25,7 @@ from app.domain.runtime.models import (
 )
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
+from app.domain.web_search.admin_config import WebSearchAdminConfigService
 from app.workers.ops_cadence import build_cadence_summary
 
 router = APIRouter(prefix="/internal/service", tags=["service"])
@@ -121,6 +122,11 @@ class PluginAttentionStatePayload(BaseModel):
     error_code: str = Field(default="", max_length=128)
     mute_hours: int = Field(default=24, ge=1, le=720)
     note: str = Field(default="", max_length=512)
+
+
+class WebSearchProviderSettingsPayload(BaseModel):
+    provider_mode: str = Field(default="disabled", max_length=32)
+    providers: dict[str, Any] = Field(default_factory=dict)
 
 
 class OpsSummaryDisclosureReviewPayload(BaseModel):
@@ -1922,6 +1928,40 @@ async def get_admin_vector_observability(
     return build_envelope(
         status="ok",
         message="vector observability admin summary loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/web-search-providers")
+async def get_admin_web_search_providers(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    return build_envelope(
+        status="ok",
+        message="web search provider settings loaded",
+        data=WebSearchAdminConfigService(services.settings).get_config(),
+        revision="m6",
+    )
+
+
+@router.post("/admin/web-search-providers")
+async def update_admin_web_search_providers(
+    request: Request,
+    payload: WebSearchProviderSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = WebSearchAdminConfigService(services.settings).save_config(
+        payload.model_dump(mode="json")
+    )
+    return build_envelope(
+        status="ok",
+        message="web search provider settings saved",
         data=result,
         revision="m6",
     )

@@ -50,6 +50,13 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
     return '/internal/service/admin/plugin-observability/attention-state';
   }
 
+  if (
+    upperMethod === 'POST' &&
+    normalized === 'web-search-providers'
+  ) {
+    return '/internal/service/admin/web-search-providers';
+  }
+
   return normalized ? `/admin/${normalized}` : '/admin';
 }
 

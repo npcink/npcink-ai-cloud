@@ -4,7 +4,7 @@ import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -20,6 +20,7 @@ MAX_QUERY_CHARS = 500
 MAX_RESULT_TITLE_CHARS = 220
 MAX_RESULT_SNIPPET_CHARS = 600
 MAX_DOMAIN_FILTERS = 10
+WEB_SEARCH_PROVIDER_ORDER = ("tavily", "bocha", "apify")
 
 
 @dataclass(slots=True)
@@ -77,19 +78,63 @@ class WebSearchService:
                 "web_search.query_required",
                 "web search query is required",
             )
-        provider_id = str(self.settings.web_search_provider or "disabled").strip().lower()
-        if provider_id != "tavily":
+        options = _build_options(input_payload)
+        requested_provider = str(options.get("provider") or "").strip().lower()
+        provider_id = (
+            requested_provider
+            or str(self.settings.web_search_provider or "disabled").strip().lower()
+        )
+        if provider_id == "disabled":
+            raise WebSearchProviderError(
+                "web_search.provider_not_configured",
+                "Cloud-managed web search provider is not configured",
+            )
+        providers = (
+            [provider_id]
+            if provider_id != "auto"
+            else [
+                item
+                for item in WEB_SEARCH_PROVIDER_ORDER
+                if _provider_configured(self.settings, item)
+            ]
+        )
+        if not providers:
             raise WebSearchProviderError(
                 "web_search.provider_not_configured",
                 "Cloud-managed web search provider is not configured",
             )
 
-        options = _build_options(input_payload)
-        return TavilyWebSearchProvider(self.settings).search(
-            query=query,
-            options=options,
-            site_id=site_id,
-            run_id=run_id,
+        errors: list[dict[str, str]] = []
+        for candidate in providers:
+            try:
+                result = _build_provider(self.settings, candidate).search(
+                    query=query,
+                    options=options,
+                    site_id=site_id,
+                    run_id=run_id,
+                )
+            except WebSearchProviderError as error:
+                if provider_id != "auto":
+                    raise
+                errors.append(
+                    {
+                        "provider": candidate,
+                        "error_code": error.error_code,
+                        "message": error.message,
+                    }
+                )
+                continue
+            if errors:
+                result.result_json["provider_fallback_errors"] = errors
+            return _enhance_with_jina_reader(
+                settings=self.settings,
+                result=result,
+                options=options,
+            )
+
+        raise WebSearchProviderError(
+            "web_search.provider_fallback_exhausted",
+            "Cloud-managed web search providers failed",
         )
 
 
@@ -179,30 +224,16 @@ class TavilyWebSearchProvider:
         if not isinstance(raw_results, list):
             raw_results = []
         intent = str(options.get("intent") or "general_research")
-        results = _normalize_results(raw_results, intent=intent)
+        results = _normalize_results(raw_results, intent=intent, provider_id=self.provider_id)
         evidence_policy = _resolve_evidence_policy(options.get("evidence_policy"))
         results = _apply_evidence_policy(results, evidence_policy)
-        result_json = {
-            "artifact_type": "web_search_results",
-            "composition_role": "external_web_evidence",
-            "status": "ready",
-            "provider": self.provider_id,
-            "intent": str(options.get("intent") or "general_research"),
-            "query_hash": _hash_query(query),
-            "query_chars": len(query),
-            "evidence_gate": _evidence_gate(results, evidence_policy),
-            "results": results,
-            "sources": [
-                {
-                    "title": str(item.get("title") or ""),
-                    "url": str(item.get("url") or ""),
-                    "source": self.provider_id,
-                }
-                for item in results
-            ],
-            "write_posture": "suggestion_only",
-            "direct_wordpress_write": False,
-        }
+        result_json = _build_result_json(
+            provider_id=self.provider_id,
+            query=query,
+            options=options,
+            results=results,
+            evidence_policy=evidence_policy,
+        )
         return WebSearchExecutionResult(result_json=result_json, usage=usage)
 
     def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
@@ -217,12 +248,228 @@ class TavilyWebSearchProvider:
         )
 
 
+class BochaWebSearchProvider:
+    provider_id = "bocha"
+    model_id = "web-search"
+    instance_id = "cloud-managed"
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def search(
+        self,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        api_key = str(self.settings.web_search_bocha_api_key or "").strip()
+        if not api_key:
+            raise WebSearchProviderError(
+                "web_search.bocha_api_key_missing",
+                "Cloud-managed Bocha API key is not configured",
+            )
+        base_url = str(self.settings.web_search_bocha_base_url or "").strip().rstrip("/")
+        endpoint = f"{base_url}/web-search"
+        max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
+        request_body: dict[str, Any] = {
+            "query": query,
+            "count": max_results,
+            "summary": True,
+        }
+        if int(options.get("recency_days") or 0) > 0:
+            request_body["freshness"] = f"{int(options['recency_days'])}d"
+
+        started = time.monotonic()
+        try:
+            with httpx.Client(
+                timeout=float(self.settings.web_search_bocha_timeout_seconds)
+            ) as client:
+                response = client.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=request_body,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as error:
+            usage = self._usage(started, error_code="provider.timeout")
+            raise WebSearchProviderError(
+                "provider.timeout",
+                "Bocha web search timed out",
+                usage=usage,
+            ) from error
+        except httpx.HTTPStatusError as error:
+            usage = self._usage(started, error_code=_map_provider_http_error(error.response))
+            raise WebSearchProviderError(
+                usage.error_code or "web_search.bocha_http_error",
+                _extract_http_error_message(error.response),
+                usage=usage,
+            ) from error
+        except httpx.RequestError as error:
+            usage = self._usage(started, error_code="provider.network_error")
+            raise WebSearchProviderError(
+                "provider.network_error",
+                "Bocha web search request failed",
+                usage=usage,
+            ) from error
+
+        usage = self._usage(started)
+        payload = _json_payload(response, provider_id=self.provider_id, usage=usage)
+        raw_results = payload.get("webPages", {}).get("value") if isinstance(payload, dict) else []
+        if not isinstance(raw_results, list):
+            raw_results = []
+        intent = str(options.get("intent") or "general_research")
+        results = _normalize_results(
+            raw_results,
+            intent=intent,
+            provider_id=self.provider_id,
+            title_keys=("name", "title"),
+            url_keys=("url",),
+            snippet_keys=("snippet", "summary", "content"),
+        )
+        evidence_policy = _resolve_evidence_policy(options.get("evidence_policy"))
+        results = _apply_evidence_policy(results, evidence_policy)
+        return WebSearchExecutionResult(
+            result_json=_build_result_json(
+                provider_id=self.provider_id,
+                query=query,
+                options=options,
+                results=results,
+                evidence_policy=evidence_policy,
+            ),
+            usage=usage,
+        )
+
+    def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
+        return WebSearchProviderUsage(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            instance_id=self.instance_id,
+            region=str(self.settings.deployment_region or "unspecified"),
+            latency_ms=max(0, int((time.monotonic() - started) * 1000)),
+            cost=max(0.0, float(self.settings.web_search_bocha_cost_per_query or 0.0)),
+            error_code=error_code,
+        )
+
+
+class ApifyWebSearchProvider:
+    provider_id = "apify"
+    model_id = "web-search"
+    instance_id = "cloud-managed"
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def search(
+        self,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        api_token = str(self.settings.web_search_apify_api_token or "").strip()
+        actor_id = str(self.settings.web_search_apify_actor_id or "").strip()
+        if not api_token:
+            raise WebSearchProviderError(
+                "web_search.apify_api_token_missing",
+                "Cloud-managed Apify API token is not configured",
+            )
+        if not actor_id:
+            raise WebSearchProviderError(
+                "web_search.apify_actor_missing",
+                "Cloud-managed Apify actor is not configured",
+            )
+        base_url = str(self.settings.web_search_apify_base_url or "").strip().rstrip("/")
+        endpoint = f"{base_url}/acts/{quote(actor_id, safe='')}/run-sync-get-dataset-items"
+        max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
+        request_body = {
+            "queries": [query],
+            "maxResults": max_results,
+            "resultsPerPage": max_results,
+            "maxPagesPerQuery": 1,
+            "language": str(options.get("language") or ""),
+            "countryCode": str(options.get("region") or ""),
+        }
+        started = time.monotonic()
+        try:
+            with httpx.Client(
+                timeout=float(self.settings.web_search_apify_timeout_seconds)
+            ) as client:
+                response = client.post(endpoint, params={"token": api_token}, json=request_body)
+                response.raise_for_status()
+        except httpx.TimeoutException as error:
+            usage = self._usage(started, error_code="provider.timeout")
+            raise WebSearchProviderError(
+                "provider.timeout",
+                "Apify web search timed out",
+                usage=usage,
+            ) from error
+        except httpx.HTTPStatusError as error:
+            usage = self._usage(started, error_code=_map_provider_http_error(error.response))
+            raise WebSearchProviderError(
+                usage.error_code or "web_search.apify_http_error",
+                _extract_http_error_message(error.response),
+                usage=usage,
+            ) from error
+        except httpx.RequestError as error:
+            usage = self._usage(started, error_code="provider.network_error")
+            raise WebSearchProviderError(
+                "provider.network_error",
+                "Apify web search request failed",
+                usage=usage,
+            ) from error
+
+        usage = self._usage(started)
+        payload = _json_payload(response, provider_id=self.provider_id, usage=usage)
+        raw_results = payload if isinstance(payload, list) else payload.get("items", [])
+        if not isinstance(raw_results, list):
+            raw_results = []
+        intent = str(options.get("intent") or "general_research")
+        results = _normalize_results(
+            raw_results,
+            intent=intent,
+            provider_id=self.provider_id,
+            title_keys=("title", "name"),
+            url_keys=("url", "link"),
+            snippet_keys=("description", "snippet", "text", "content"),
+        )
+        evidence_policy = _resolve_evidence_policy(options.get("evidence_policy"))
+        results = _apply_evidence_policy(results, evidence_policy)
+        return WebSearchExecutionResult(
+            result_json=_build_result_json(
+                provider_id=self.provider_id,
+                query=query,
+                options=options,
+                results=results,
+                evidence_policy=evidence_policy,
+            ),
+            usage=usage,
+        )
+
+    def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
+        return WebSearchProviderUsage(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            instance_id=self.instance_id,
+            region=str(self.settings.deployment_region or "unspecified"),
+            latency_ms=max(0, int((time.monotonic() - started) * 1000)),
+            cost=max(0.0, float(self.settings.web_search_apify_cost_per_query or 0.0)),
+            error_code=error_code,
+        )
+
+
 def _build_options(input_payload: dict[str, Any]) -> dict[str, Any]:
     intent = str(input_payload.get("intent") or "general_research").strip()
     if intent not in ALLOWED_WEB_SEARCH_INTENTS:
         intent = "general_research"
+    provider = str(input_payload.get("provider") or "").strip().lower()
+    if provider not in {"", "auto", *WEB_SEARCH_PROVIDER_ORDER}:
+        provider = ""
     return {
         "intent": intent,
+        "provider": provider,
         "max_results": coerce_positive_int(input_payload.get("max_results"), default=5, maximum=10),
         "recency_days": max(0, min(30, _coerce_int(input_payload.get("recency_days")))),
         "language": _normalize_token(input_payload.get("language"), limit=16),
@@ -230,19 +477,168 @@ def _build_options(input_payload: dict[str, Any]) -> dict[str, Any]:
         "search_depth": _normalize_search_depth(input_payload.get("search_depth")),
         "allowed_domains": _normalize_domain_list(input_payload.get("allowed_domains")),
         "blocked_domains": _normalize_domain_list(input_payload.get("blocked_domains")),
+        "enhance_with_reader": bool(input_payload.get("enhance_with_reader")),
         "evidence_policy": input_payload.get("evidence_policy"),
     }
 
 
-def _normalize_results(raw_results: list[Any], *, intent: str) -> list[dict[str, Any]]:
+def _build_provider(
+    settings: Settings,
+    provider_id: str,
+) -> TavilyWebSearchProvider | BochaWebSearchProvider | ApifyWebSearchProvider:
+    if provider_id == "tavily":
+        return TavilyWebSearchProvider(settings)
+    if provider_id == "bocha":
+        return BochaWebSearchProvider(settings)
+    if provider_id == "apify":
+        return ApifyWebSearchProvider(settings)
+    raise WebSearchProviderError(
+        "web_search.provider_not_supported",
+        "Cloud-managed web search provider is not supported",
+    )
+
+
+def _provider_configured(settings: Settings, provider_id: str) -> bool:
+    if provider_id == "tavily":
+        return bool(str(settings.web_search_tavily_api_key or "").strip())
+    if provider_id == "bocha":
+        return bool(str(settings.web_search_bocha_api_key or "").strip())
+    if provider_id == "apify":
+        return bool(
+            str(settings.web_search_apify_api_token or "").strip()
+            and str(settings.web_search_apify_actor_id or "").strip()
+        )
+    return False
+
+
+def _build_result_json(
+    *,
+    provider_id: str,
+    query: str,
+    options: dict[str, Any],
+    results: list[dict[str, Any]],
+    evidence_policy: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "artifact_type": "web_search_results",
+        "composition_role": "external_web_evidence",
+        "status": "ready",
+        "provider": provider_id,
+        "intent": str(options.get("intent") or "general_research"),
+        "query_hash": _hash_query(query),
+        "query_chars": len(query),
+        "evidence_gate": _evidence_gate(results, evidence_policy),
+        "results": results,
+        "sources": [
+            {
+                "title": str(item.get("title") or ""),
+                "url": str(item.get("url") or ""),
+                "source": provider_id,
+            }
+            for item in results
+        ],
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+
+
+def _enhance_with_jina_reader(
+    *,
+    settings: Settings,
+    result: WebSearchExecutionResult,
+    options: dict[str, Any],
+) -> WebSearchExecutionResult:
+    if not (
+        bool(settings.web_search_jina_reader_enabled) or bool(options.get("enhance_with_reader"))
+    ):
+        return result
+    base_url = str(settings.web_search_jina_reader_base_url or "").strip().rstrip("/")
+    if not base_url:
+        return result
+    max_pages = max(1, min(5, int(settings.web_search_jina_reader_max_pages or 1)))
+    headers = {"Accept": "text/plain"}
+    api_key = str(settings.web_search_jina_reader_api_key or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    enhanced = 0
+    errors: list[dict[str, str]] = []
+    started = time.monotonic()
+    with httpx.Client(timeout=float(settings.web_search_jina_reader_timeout_seconds)) as client:
+        for item in result.result_json.get("results", [])[:max_pages]:
+            if not isinstance(item, dict):
+                continue
+            url = _normalize_url(item.get("url"))
+            if not url:
+                continue
+            try:
+                response = client.get(f"{base_url}/{url}", headers=headers)
+                response.raise_for_status()
+            except (httpx.TimeoutException, httpx.HTTPError) as error:
+                errors.append(
+                    {
+                        "url_hash": _hash_query(url),
+                        "error_code": "provider.reader_error",
+                        "message": str(error)[:160],
+                    }
+                )
+                continue
+            excerpt = _normalize_text(response.text, limit=1200)
+            if not excerpt:
+                continue
+            item["reader_status"] = "ready"
+            item["reader_excerpt"] = excerpt
+            item["reader_provider"] = "jina_reader"
+            enhanced += 1
+
+    result.result_json["reader_enhancement"] = {
+        "provider": "jina_reader",
+        "status": "ready" if enhanced else "no_enhancement",
+        "enhanced_count": enhanced,
+        "error_count": len(errors),
+        "errors": errors[:5],
+    }
+    result.usage.cost += (
+        max(0.0, float(settings.web_search_jina_reader_cost_per_page or 0.0)) * enhanced
+    )
+    result.usage.latency_ms += max(0, int((time.monotonic() - started) * 1000))
+    return result
+
+
+def _json_payload(
+    response: httpx.Response,
+    *,
+    provider_id: str,
+    usage: WebSearchProviderUsage,
+) -> Any:
+    try:
+        return response.json()
+    except ValueError as error:
+        usage.error_code = "provider.invalid_response"
+        raise WebSearchProviderError(
+            "provider.invalid_response",
+            f"{provider_id} web search returned invalid JSON",
+            usage=usage,
+        ) from error
+
+
+def _normalize_results(
+    raw_results: list[Any],
+    *,
+    intent: str,
+    provider_id: str,
+    title_keys: tuple[str, ...] = ("title",),
+    url_keys: tuple[str, ...] = ("url",),
+    snippet_keys: tuple[str, ...] = ("content", "snippet"),
+) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for raw in raw_results:
         if not isinstance(raw, dict):
             continue
-        title = _normalize_text(raw.get("title"), limit=MAX_RESULT_TITLE_CHARS)
-        url = _normalize_url(raw.get("url"))
+        title = _normalize_text(_first_value(raw, title_keys), limit=MAX_RESULT_TITLE_CHARS)
+        url = _normalize_url(_first_value(raw, url_keys))
         snippet = _normalize_text(
-            raw.get("content") or raw.get("snippet"),
+            _first_value(raw, snippet_keys),
             limit=MAX_RESULT_SNIPPET_CHARS,
         )
         if not url and not title and not snippet:
@@ -253,7 +649,7 @@ def _normalize_results(raw_results: list[Any], *, intent: str) -> list[dict[str,
                 "url": url,
                 "snippet": snippet,
                 "score": _coerce_score(raw.get("score")),
-                "source": "tavily",
+                "source": provider_id,
                 "suggested_use": _suggested_use(intent),
                 "write_posture": "suggestion_only",
                 "direct_wordpress_write": False,
@@ -353,6 +749,14 @@ def _normalize_token(value: Any, *, limit: int) -> str:
     return _normalize_text(value, limit=limit).replace(" ", "")
 
 
+def _first_value(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = raw.get(key)
+        if value:
+            return value
+    return ""
+
+
 def _normalize_url(value: Any) -> str:
     url = str(value or "").strip()
     parsed = urlsplit(url)
@@ -384,6 +788,10 @@ def _hash_query(query: str) -> str:
 
 
 def _map_tavily_error(response: httpx.Response) -> str:
+    return _map_provider_http_error(response)
+
+
+def _map_provider_http_error(response: httpx.Response) -> str:
     if response.status_code in {401, 403}:
         return "provider.auth_invalid"
     if response.status_code == 429:

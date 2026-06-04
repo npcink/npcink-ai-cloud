@@ -41,19 +41,44 @@ registry.
 - Cloud must not return provider keys, Cloud secrets, WordPress credentials,
   request headers, or full sensitive request payloads.
 
-## Cloud-Managed Provider
+## Cloud-Managed Providers
 
-MVP provider support is Tavily:
+MVP provider support is Cloud-owned and configured only by Cloud operators:
 
-- `MAGICK_CLOUD_WEB_SEARCH_PROVIDER`: `disabled` or `tavily`
+- `MAGICK_CLOUD_WEB_SEARCH_PROVIDER`: `disabled`, `auto`, `tavily`, `bocha`, or
+  `apify`
 - `MAGICK_CLOUD_WEB_SEARCH_TAVILY_BASE_URL`: default `https://api.tavily.com`
 - `MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY`: required when provider is `tavily`
 - `MAGICK_CLOUD_WEB_SEARCH_TAVILY_TIMEOUT_SECONDS`: default `15`
 - `MAGICK_CLOUD_WEB_SEARCH_TAVILY_COST_PER_QUERY`: optional shadow cost for
   provider-call usage records
+- `MAGICK_CLOUD_WEB_SEARCH_BOCHA_BASE_URL`: default
+  `https://api.bochaai.com/v1`
+- `MAGICK_CLOUD_WEB_SEARCH_BOCHA_API_KEY`: required when provider is `bocha`
+- `MAGICK_CLOUD_WEB_SEARCH_BOCHA_TIMEOUT_SECONDS`: default `15`
+- `MAGICK_CLOUD_WEB_SEARCH_BOCHA_COST_PER_QUERY`: optional shadow cost
+- `MAGICK_CLOUD_WEB_SEARCH_APIFY_BASE_URL`: default `https://api.apify.com/v2`
+- `MAGICK_CLOUD_WEB_SEARCH_APIFY_API_TOKEN`: required when provider is `apify`
+- `MAGICK_CLOUD_WEB_SEARCH_APIFY_ACTOR_ID`: default
+  `apify/google-search-scraper`
+- `MAGICK_CLOUD_WEB_SEARCH_APIFY_TIMEOUT_SECONDS`: default `30`
+- `MAGICK_CLOUD_WEB_SEARCH_APIFY_COST_PER_QUERY`: optional shadow cost
+- `MAGICK_CLOUD_WEB_SEARCH_JINA_READER_ENABLED`: enables selected URL reader
+  enhancement after Tavily, Bocha, or Apify returns result URLs
+- `MAGICK_CLOUD_WEB_SEARCH_JINA_READER_BASE_URL`: default `https://r.jina.ai`
+- `MAGICK_CLOUD_WEB_SEARCH_JINA_READER_API_KEY`: optional/required depending on
+  the Cloud operator's Jina Reader account policy
+- `MAGICK_CLOUD_WEB_SEARCH_JINA_READER_MAX_PAGES`: default `2`, capped at `5`
+- `MAGICK_CLOUD_WEB_SEARCH_ADMIN_ENV_PATH`: local operator settings file path
+  for the Cloud admin provider settings page
 
-The WordPress-side Tavily API key path may remain available as local BYOK or
-fallback, but the default customer path should use Cloud-managed search.
+The Cloud admin page `/admin/web-search` may update these runtime settings. It
+must not expose plaintext secrets after save. Saving updates the current API
+process settings and writes the configured env file; queue workers should be
+restarted after provider changes so queued runs see the same configuration.
+
+The WordPress-side search key path is intentionally removed from Toolbox. The
+default customer path uses Cloud-managed search.
 
 ## Input Shape
 
@@ -68,12 +93,14 @@ fallback, but the default customer path should use Cloud-managed search.
     "contract_version": "web_search.v1",
     "query": "latest WordPress AI search trends",
     "intent": "general_research",
+    "provider": "auto",
     "max_results": 5,
     "recency_days": 7,
     "language": "en",
     "region": "US",
     "allowed_domains": [],
     "blocked_domains": [],
+    "enhance_with_reader": false,
     "evidence_policy": {
       "min_score": 0,
       "required_sources": 1,
