@@ -389,6 +389,23 @@ def test_ops_summary_caches_ai_analysis_until_refresh_or_expiry(tmp_path: Path) 
     assert review_payload["prompt_saved"] is False
     assert review_payload["output_text_saved"] is False
 
+    history = service.list_ops_summary_history(
+        site_id="site_ops_summary_cache",
+        scope="runtime_operations",
+        limit=5,
+    )
+    assert history["history_version"] == "internal-ops-summary-history-v1"
+    assert len(history["items"]) == 1
+    history_item = history["items"][0]
+    assert history_item["cache_key"] == first["generation"]["cache_key"]
+    assert history_item["scope"] == "runtime_operations"
+    assert history_item["site_id"] == "site_ops_summary_cache"
+    assert history_item["generation"]["mode"] == "llm"
+    assert history_item["generation"]["cost"] == 0.001
+    assert history_item["ai_disclosure"]["review_status"] == "human_confirmed"
+    assert history_item["ai_disclosure"]["reviewed_by"] == "platform:tester"
+    assert "source_context" not in json.dumps(history_item)
+
     refreshed = service.get_ops_summary(
         scope="runtime",
         site_id="site_ops_summary_cache",

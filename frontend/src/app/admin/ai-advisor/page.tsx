@@ -29,6 +29,7 @@ type SummaryBranch = {
     cache_expires_at?: string;
     cache_key?: string;
   };
+  scope: string;
   ai_disclosure: {
     version: string;
     content_origin: string;
@@ -98,6 +99,41 @@ type AdvisorPreviewData = {
   };
 };
 
+type AdvisorHistoryItem = {
+  cacheKey: string;
+  siteId: string;
+  scope: string;
+  status: string;
+  severity: string;
+  headline: string;
+  operatorSummary: string;
+  operatorNextStep: string;
+  draftKind: string;
+  generatedAt: string;
+  freshUntil: string;
+  isStale: boolean;
+  generation: {
+    mode: string;
+    providerId: string;
+    modelId: string;
+    tokensIn: number;
+    tokensOut: number;
+    cost: number;
+    requestCost: number;
+    cacheStatus: string;
+    cacheHit: boolean;
+  };
+  aiDisclosure: {
+    contentOrigin: string;
+    generatedByAi: boolean;
+    visibleLabel: string;
+    reviewStatus: string;
+    reviewedBy: string;
+    reviewedAt: string;
+    sourceGenerationMode: string;
+  };
+};
+
 const SCOPE_OPTIONS = [
   { label: 'Operations', value: 'operations' },
   { label: 'Runtime', value: 'runtime' },
@@ -123,6 +159,7 @@ function normalizeBranch(raw: any): SummaryBranch {
       cache_expires_at: String(generation.cache_expires_at ?? ''),
       cache_key: String(generation.cache_key ?? ''),
     },
+    scope: String(raw?.scope ?? ''),
     ai_disclosure: {
       version: String(disclosure.version ?? ''),
       content_origin: String(disclosure.content_origin ?? ''),
@@ -203,6 +240,45 @@ function normalizePreview(raw: any): AdvisorPreviewData {
       wordpressWriteAllowed: Boolean(safety.wordpress_write_allowed),
       customerArticleGenerationAllowed: Boolean(safety.customer_article_generation_allowed),
       requiresOperatorReview: Boolean(safety.requires_operator_review),
+    },
+  };
+}
+
+function normalizeHistoryItem(raw: any): AdvisorHistoryItem {
+  const generation = raw?.generation ?? {};
+  const disclosure = raw?.ai_disclosure ?? {};
+  return {
+    cacheKey: String(raw?.cache_key ?? ''),
+    siteId: String(raw?.site_id ?? ''),
+    scope: String(raw?.scope ?? ''),
+    status: String(raw?.status ?? ''),
+    severity: String(raw?.severity ?? ''),
+    headline: String(raw?.headline ?? ''),
+    operatorSummary: String(raw?.operator_summary ?? ''),
+    operatorNextStep: String(raw?.operator_next_step ?? ''),
+    draftKind: String(raw?.draft_kind ?? ''),
+    generatedAt: String(raw?.generated_at ?? ''),
+    freshUntil: String(raw?.fresh_until ?? ''),
+    isStale: Boolean(raw?.is_stale),
+    generation: {
+      mode: String(generation.mode ?? ''),
+      providerId: String(generation.provider_id ?? ''),
+      modelId: String(generation.model_id ?? ''),
+      tokensIn: Number(generation.tokens_in ?? 0),
+      tokensOut: Number(generation.tokens_out ?? 0),
+      cost: Number(generation.cost ?? 0),
+      requestCost: Number(generation.request_cost ?? 0),
+      cacheStatus: String(generation.cache_status ?? ''),
+      cacheHit: Boolean(generation.cache_hit),
+    },
+    aiDisclosure: {
+      contentOrigin: String(disclosure.content_origin ?? ''),
+      generatedByAi: Boolean(disclosure.generated_by_ai),
+      visibleLabel: String(disclosure.visible_label ?? ''),
+      reviewStatus: String(disclosure.review_status ?? ''),
+      reviewedBy: String(disclosure.reviewed_by ?? ''),
+      reviewedAt: String(disclosure.reviewed_at ?? ''),
+      sourceGenerationMode: String(disclosure.source_generation_mode ?? ''),
     },
   };
 }
@@ -475,9 +551,69 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function HistoryPanel({ items }: { items: AdvisorHistoryItem[] }) {
+  return (
+    <BackofficeSectionPanel className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            History
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">AI analysis history</h2>
+        </div>
+        <BackofficeStatusBadge label={`${items.length} stored`} status={items.length ? 'success' : 'inactive'} />
+      </div>
+      <div className="space-y-3">
+        {items.length ? (
+          items.map((item) => <HistoryRow key={item.cacheKey || `${item.generatedAt}-${item.headline}`} item={item} />)
+        ) : (
+          <p className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-300">
+            No stored AI analysis has been generated for this filter yet.
+          </p>
+        )}
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
+function HistoryRow({ item }: { item: AdvisorHistoryItem }) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">{item.headline || 'AI analysis'}</p>
+            <BackofficeStatusBadge
+              label={reviewStatusLabel(item.aiDisclosure.reviewStatus)}
+              status={reviewStatusBadge(item.aiDisclosure.reviewStatus)}
+            />
+            {item.isStale ? <BackofficeStatusBadge label="stale" status="warning" /> : null}
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {item.operatorSummary || 'No summary stored.'}
+          </p>
+        </div>
+        <div className="grid min-w-[18rem] gap-2 text-right text-xs text-slate-500 dark:text-slate-400">
+          <span>{item.generatedAt || '-'}</span>
+          <span className="font-mono">
+            {item.generation.mode || '-'} · {formatCost(item.generation.cost)}
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 border-t border-slate-200/80 pt-3 dark:border-slate-800 sm:grid-cols-4">
+        <MiniMetric label="Scope" value={item.scope || '-'} />
+        <MiniMetric label="Site" value={item.siteId || 'platform'} />
+        <MiniMetric label="Model" value={item.generation.modelId || '-'} />
+        <MiniMetric label="Next step" value={item.operatorNextStep || '-'} />
+      </div>
+    </div>
+  );
+}
+
 function AdminAiAdvisorContent() {
   const { t } = useLocale();
   const [data, setData] = useState<AdvisorPreviewData | null>(null);
+  const [historyItems, setHistoryItems] = useState<AdvisorHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [scope, setScope] = useState('operations');
@@ -491,6 +627,29 @@ function AdminAiAdvisorContent() {
   const [reviewingDisclosure, setReviewingDisclosure] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+
+  const loadHistory = useCallback(async () => {
+    const params = new URLSearchParams();
+    params.set('limit', '10');
+    const resolvedScope = data?.ai.scope || data?.baseline.scope || '';
+    if (resolvedScope) {
+      params.set('scope', resolvedScope);
+    }
+    if (siteId.trim()) {
+      params.set('site_id', siteId.trim());
+    }
+    const response = await fetch(`/api/admin/advisor/ops-summary-history?${params.toString()}`, {
+      credentials: 'include',
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.status === 'error') {
+      throw payload;
+    }
+    const items = Array.isArray(payload?.data?.items)
+      ? payload.data.items.map((item: any) => normalizeHistoryItem(item))
+      : [];
+    setHistoryItems(items);
+  }, [data?.ai.scope, data?.baseline.scope, siteId]);
 
   const loadPreview = useCallback(async () => {
     setLoading(true);
@@ -518,7 +677,27 @@ function AdminAiAdvisorContent() {
       if (!response.ok || payload?.status === 'error') {
         throw payload;
       }
-      setData(normalizePreview(payload?.data ?? {}));
+      const nextData = normalizePreview(payload?.data ?? {});
+      setData(nextData);
+      const historyParams = new URLSearchParams();
+      historyParams.set('limit', '10');
+      if (nextData.ai.scope || nextData.baseline.scope) {
+        historyParams.set('scope', nextData.ai.scope || nextData.baseline.scope);
+      }
+      if (siteId.trim()) {
+        historyParams.set('site_id', siteId.trim());
+      }
+      const historyResponse = await fetch(`/api/admin/advisor/ops-summary-history?${historyParams.toString()}`, {
+        credentials: 'include',
+      });
+      const historyPayload = await historyResponse.json();
+      if (historyResponse.ok && historyPayload?.status !== 'error') {
+        setHistoryItems(
+          Array.isArray(historyPayload?.data?.items)
+            ? historyPayload.data.items.map((item: any) => normalizeHistoryItem(item))
+            : []
+        );
+      }
     } catch (err) {
       setError(resolveUiErrorMessage(err, t('error.failed_load')));
       setData(null);
@@ -583,13 +762,14 @@ function AdminAiAdvisorContent() {
             };
           });
         }
+        await loadHistory().catch(() => undefined);
       } catch (err) {
         setError(resolveUiErrorMessage(err, t('error.failed_save')));
       } finally {
         setReviewingDisclosure(false);
       }
     },
-    [data?.ai, t]
+    [data?.ai, loadHistory, t]
   );
 
   const metricItems = useMemo(() => {
@@ -778,6 +958,7 @@ function AdminAiAdvisorContent() {
               </div>
             </BackofficeSectionPanel>
           </div>
+          <HistoryPanel items={historyItems} />
           <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
             <BackofficeSectionPanel className="space-y-4">
               <div>

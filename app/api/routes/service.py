@@ -1425,6 +1425,29 @@ async def review_ops_summary_disclosure(
     )
 
 
+@router.get("/advisor/ops-summary-history")
+async def list_ops_summary_history(
+    request: Request,
+    site_id: str | None = Query(default=None, max_length=191),
+    scope: str = Query(default="", max_length=64),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    result = _get_advisor_service(request).list_ops_summary_history(
+        site_id=site_id,
+        scope=scope,
+        limit=limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="ops summary history loaded",
+        data=result,
+        revision="m1",
+    )
+
+
 @router.get("/admin/accounts")
 async def list_admin_accounts(
     request: Request,

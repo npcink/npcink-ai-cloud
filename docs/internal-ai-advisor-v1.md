@@ -171,6 +171,7 @@ Initial API:
 - `GET /internal/service/advisor/ops-summary`
 - `GET /internal/service/advisor/ops-summary-preview`
 - `POST /internal/service/advisor/ops-summary-review`
+- `GET /internal/service/advisor/ops-summary-history`
 
 The response must identify whether text came from a provider or deterministic
 fallback using `generation.mode`. This mode is advisory evidence, not
@@ -183,6 +184,11 @@ event exists.
 Human confirmation is scoped to the cached analysis entry and updates only
 `ai_disclosure.review_status`; it does not approve WordPress writes, send drafts
 to customers, or mutate Cloud commercial/router state.
+History listing is read-only and sourced from stored summary cache projections.
+It may expose headline, operator summary excerpt, generation metadata, internal
+cost, cache freshness, and AI disclosure review state. It must not expose raw
+prompts, raw provider payloads, full `source_context`, callback bodies, secrets,
+or WordPress content.
 Provider execution requires both:
 
 - `MAGICK_CLOUD_INTERNAL_OPS_SUMMARIZER_PROVIDER_ALLOWLIST` includes the

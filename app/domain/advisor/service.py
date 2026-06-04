@@ -828,6 +828,51 @@ class InternalAIAdvisorService:
             },
         }
 
+    def list_ops_summary_history(
+        self,
+        *,
+        site_id: str | None = None,
+        scope: str = "",
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        bounded_limit = min(100, max(1, int(limit or 20)))
+        normalized_site_id = str(site_id or "").strip()
+        normalized_scope = str(scope or "").strip()
+        conditions = [SiteServiceProjection.projection_kind == "internal_ops_summary_cache"]
+        if normalized_site_id:
+            conditions.append(SiteServiceProjection.site_id == normalized_site_id)
+        with get_session(self.database_url) as session:
+            projections = list(
+                session.scalars(
+                    select(SiteServiceProjection)
+                    .where(*conditions)
+                    .order_by(
+                        SiteServiceProjection.generated_at.desc(),
+                        SiteServiceProjection.projection_id.desc(),
+                    )
+                    .limit(bounded_limit * 3)
+                )
+            )
+
+        items: list[dict[str, Any]] = []
+        for projection in projections:
+            item = _ops_summary_history_item(projection)
+            if normalized_scope and str(item.get("scope") or "") != normalized_scope:
+                continue
+            items.append(item)
+            if len(items) >= bounded_limit:
+                break
+
+        return {
+            "history_version": "internal-ops-summary-history-v1",
+            "items": items,
+            "filters": {
+                "site_id": normalized_site_id,
+                "scope": normalized_scope,
+                "limit": bounded_limit,
+            },
+        }
+
     def _get_cached_ops_summary(self, *, cache_key: str) -> dict[str, Any] | None:
         now = datetime.now(UTC)
         projection_id = _ops_summary_cache_projection_id(cache_key)
@@ -1775,6 +1820,55 @@ def _build_ops_summary_cache_key(
 
 def _ops_summary_cache_projection_id(cache_key: str) -> str:
     return f"internal-ops-summary-cache:{cache_key[:64]}"
+
+
+def _ops_summary_history_item(projection: SiteServiceProjection) -> dict[str, Any]:
+    payload = _dict(projection.payload_json)
+    summary = _dict(payload.get("summary"))
+    generation = _dict(summary.get("generation"))
+    disclosure = _dict(summary.get("ai_disclosure"))
+    cache_key = str(payload.get("cache_key") or generation.get("cache_key") or "")
+    cost = _float(generation.get("cost"))
+    request_cost = _float(generation.get("request_cost"))
+    return {
+        "projection_id": str(projection.projection_id or ""),
+        "cache_key": cache_key,
+        "site_id": "" if projection.site_id == "__platform__" else str(projection.site_id or ""),
+        "scope": str(summary.get("scope") or ""),
+        "status": str(summary.get("status") or ""),
+        "severity": str(summary.get("severity") or ""),
+        "headline": str(summary.get("headline") or ""),
+        "operator_summary": str(summary.get("operator_summary") or "")[:600],
+        "operator_next_step": str(summary.get("operator_next_step") or ""),
+        "draft_kind": str(summary.get("draft_kind") or ""),
+        "generated_at": str(
+            payload.get("generated_at") or _format_datetime(projection.generated_at)
+        ),
+        "fresh_until": str(payload.get("fresh_until") or _format_datetime(projection.fresh_until)),
+        "is_stale": _to_utc(projection.fresh_until) <= datetime.now(UTC),
+        "generation": {
+            "mode": str(generation.get("mode") or ""),
+            "provider_id": str(generation.get("provider_id") or ""),
+            "model_id": str(generation.get("model_id") or ""),
+            "tokens_in": _int(generation.get("tokens_in")),
+            "tokens_out": _int(generation.get("tokens_out")),
+            "cost": cost,
+            "request_cost": request_cost,
+            "cache_status": str(generation.get("cache_status") or ""),
+            "cache_hit": bool(generation.get("cache_hit")),
+        },
+        "ai_disclosure": {
+            "version": str(disclosure.get("version") or ""),
+            "content_origin": str(disclosure.get("content_origin") or ""),
+            "generated_by_ai": bool(disclosure.get("generated_by_ai")),
+            "visible_label": str(disclosure.get("visible_label") or ""),
+            "visible_notice": str(disclosure.get("visible_notice") or ""),
+            "review_status": str(disclosure.get("review_status") or ""),
+            "reviewed_by": str(disclosure.get("reviewed_by") or ""),
+            "reviewed_at": str(disclosure.get("reviewed_at") or ""),
+            "source_generation_mode": str(disclosure.get("source_generation_mode") or ""),
+        },
+    }
 
 
 def _build_ai_disclosure(
