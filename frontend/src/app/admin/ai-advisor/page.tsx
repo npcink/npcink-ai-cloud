@@ -36,9 +36,13 @@ type SummaryBranch = {
       scope: string;
       evidence: Array<{ kind: string; ref: string; label: string }>;
       signals: Array<Record<string, string | number | boolean | null>>;
+      drilldown: Record<string, DrilldownValue>;
     };
   };
 };
+
+type ScalarValue = string | number | boolean | null;
+type DrilldownValue = Array<Record<string, ScalarValue>> | Record<string, ScalarValue | Record<string, ScalarValue>>;
 
 type AdvisorPreviewData = {
   previewVersion: string;
@@ -107,6 +111,10 @@ function normalizeBranch(raw: any): SummaryBranch {
               .filter((item: any) => item && typeof item === 'object')
               .map((item: any) => item as Record<string, string | number | boolean | null>)
           : [],
+        drilldown:
+          raw?.source_context?.advisor?.drilldown && typeof raw.source_context.advisor.drilldown === 'object'
+            ? (raw.source_context.advisor.drilldown as Record<string, DrilldownValue>)
+            : {},
       },
     },
   };
@@ -501,6 +509,7 @@ function AdminAiAdvisorContent() {
 function SignalPanel({ branch }: { branch: SummaryBranch }) {
   const signals = branch.source_context.advisor.signals;
   const evidence = branch.source_context.advisor.evidence;
+  const drilldown = branch.source_context.advisor.drilldown;
   return (
     <BackofficeSectionPanel className="space-y-4">
       <div>
@@ -518,6 +527,7 @@ function SignalPanel({ branch }: { branch: SummaryBranch }) {
           </p>
         )}
       </div>
+      <DrilldownPanel drilldown={drilldown} />
       <div className="border-t border-slate-200/80 pt-4 dark:border-slate-800">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
           Sources
@@ -535,6 +545,99 @@ function SignalPanel({ branch }: { branch: SummaryBranch }) {
         </div>
       </div>
     </BackofficeSectionPanel>
+  );
+}
+
+function DrilldownPanel({ drilldown }: { drilldown: Record<string, DrilldownValue> }) {
+  const sections = [
+    { key: 'failed_runs', label: 'Failed runs' },
+    { key: 'run_sites', label: 'Run sites' },
+    { key: 'ability_families', label: 'Ability families' },
+    { key: 'provider_breakdown', label: 'Providers' },
+    { key: 'model_breakdown', label: 'Models' },
+    { key: 'knowledge_sites', label: 'Knowledge sites' },
+    { key: 'knowledge_intents', label: 'Knowledge intents' },
+  ];
+  const visibleSections = sections.filter((section) => {
+    const value = drilldown[section.key];
+    return Array.isArray(value) && value.length > 0;
+  });
+  const usage = drilldown.usage && !Array.isArray(drilldown.usage) ? drilldown.usage : null;
+
+  if (!visibleSections.length && !usage) {
+    return null;
+  }
+
+  return (
+    <div className="border-t border-slate-200/80 pt-4 dark:border-slate-800">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+        Operations drilldown
+      </p>
+      <div className="mt-3 space-y-4">
+        {visibleSections.map((section) => (
+          <DrilldownSection
+            key={section.key}
+            label={section.label}
+            rows={drilldown[section.key] as Array<Record<string, ScalarValue>>}
+          />
+        ))}
+        {usage ? <UsageDrilldown value={usage} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function DrilldownSection({
+  label,
+  rows,
+}: {
+  label: string;
+  rows: Array<Record<string, ScalarValue>>;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{label}</p>
+      <div className="mt-2 overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800">
+        {rows.map((row, index) => (
+          <div
+            key={`${label}-${index}`}
+            className="grid gap-x-4 gap-y-2 border-t border-slate-200/70 bg-white/70 px-3 py-2 first:border-t-0 dark:border-slate-800 dark:bg-slate-950/35 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {Object.entries(row).map(([key, value]) => (
+              <div key={key} className="min-w-0">
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                  {key}
+                </p>
+                <p className="mt-1 truncate font-mono text-xs text-slate-700 dark:text-slate-200">
+                  {String(value ?? '-')}
+                </p>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UsageDrilldown({
+  value,
+}: {
+  value: Record<string, ScalarValue | Record<string, ScalarValue>>;
+}) {
+  const totals = value.totals && typeof value.totals === 'object' ? value.totals : {};
+  return (
+    <div>
+      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Usage</p>
+      <div className="mt-2 rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/35">
+        <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+          <MiniMetric label="Events" value={String(value.event_count ?? '-')} />
+          {Object.entries(totals).map(([key, item]) => (
+            <MiniMetric key={key} label={key} value={String(item ?? '-')} />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

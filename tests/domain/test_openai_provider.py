@@ -215,6 +215,52 @@ def test_openai_adapter_executes_chat_completions_over_http() -> None:
     assert result.cost == 0.000012
 
 
+def test_openai_adapter_estimates_deepseek_cache_aware_pricing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/chat/completions")
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-v4-flash",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": "deepseek response",
+                        },
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 3000,
+                    "prompt_cache_hit_tokens": 1000,
+                    "prompt_cache_miss_tokens": 2000,
+                    "completion_tokens": 3000,
+                },
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant="chat_completions",
+        model_id="deepseek-v4-flash",
+        input_payload={"messages": [{"role": "user", "content": "ops summary"}]},
+    )
+    request.price_input = None
+    request.price_output = None
+    result = adapter.execute(request)
+
+    assert result.tokens_in == 3000
+    assert result.tokens_out == 3000
+    assert result.cost == 0.001123
+    assert result.output["usage"]["prompt_cache_hit_tokens"] == 1000
+
+
 def test_openai_adapter_executes_responses_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/responses")

@@ -849,6 +849,7 @@ class InternalAIAdvisorService:
                     for signal in _list(advisor.get("signals"))
                     if isinstance(signal, dict)
                 ][:8],
+                "drilldown": self._build_redacted_advisor_drilldown(advisor),
             },
             "forbidden": [
                 "do_not_generate_customer_article_or_marketing_content",
@@ -906,6 +907,102 @@ class InternalAIAdvisorService:
             if key in allowed_keys and _is_json_scalar_or_list(value)
         }
 
+    def _build_redacted_advisor_drilldown(
+        self,
+        advisor: dict[str, Any],
+    ) -> dict[str, Any]:
+        if str(advisor.get("scope") or "") != "operations_analysis":
+            return {}
+        source = _dict(advisor.get("source"))
+        runtime = _dict(source.get("runtime"))
+        runs = _dict(runtime.get("runs"))
+        provider = _dict(source.get("provider"))
+        site_knowledge = _dict(source.get("site_knowledge"))
+        commercial = _dict(source.get("commercial"))
+
+        return {
+            "failed_runs": [
+                _pick_fields(
+                    item,
+                    {
+                        "run_id",
+                        "site_id",
+                        "ability_name",
+                        "ability_family",
+                        "status",
+                        "error_code",
+                        "selected_provider_id",
+                        "selected_model_id",
+                        "started_at",
+                    },
+                )
+                for item in _list(runs.get("recent_failed_runs"))[:8]
+                if isinstance(item, dict)
+            ],
+            "run_sites": [
+                _pick_fields(item, {"site_id", "run_count", "failed_runs", "last_run_at"})
+                for item in _list(runs.get("top_sites"))[:8]
+                if isinstance(item, dict)
+            ],
+            "ability_families": [
+                _pick_fields(item, {"ability_family", "run_count", "failed_runs"})
+                for item in _list(runs.get("ability_families"))[:8]
+                if isinstance(item, dict)
+            ],
+            "provider_breakdown": [
+                _pick_fields(
+                    item,
+                    {
+                        "provider_id",
+                        "call_count",
+                        "error_count",
+                        "cost",
+                        "avg_latency_ms",
+                        "last_call_at",
+                    },
+                )
+                for item in _list(provider.get("providers"))[:8]
+                if isinstance(item, dict)
+            ],
+            "model_breakdown": [
+                _pick_fields(item, {"model_id", "call_count", "cost"})
+                for item in _list(provider.get("models"))[:8]
+                if isinstance(item, dict)
+            ],
+            "knowledge_sites": [
+                _pick_fields(
+                    item,
+                    {
+                        "site_id",
+                        "queries_total",
+                        "no_hit_total",
+                        "no_hit_rate",
+                        "avg_latency_ms",
+                        "document_count",
+                        "chunk_count",
+                        "last_search_finished_at",
+                    },
+                )
+                for item in _list(site_knowledge.get("top_sites"))[:8]
+                if isinstance(item, dict)
+            ],
+            "knowledge_intents": [
+                _pick_fields(
+                    item,
+                    {"intent", "queries_total", "no_hit_total", "no_hit_rate", "avg_latency_ms"},
+                )
+                for item in _list(site_knowledge.get("top_intents"))[:8]
+                if isinstance(item, dict)
+            ],
+            "usage": {
+                "event_count": _int(_dict(commercial.get("recent_usage")).get("event_count")),
+                "totals": _pick_fields(
+                    _dict(_dict(commercial.get("recent_usage")).get("totals")),
+                    {"runs", "tokens", "cost", "quantity"},
+                ),
+            },
+        }
+
     def _build_summarizer_input_payload(
         self,
         redacted_context: dict[str, Any],
@@ -938,7 +1035,7 @@ class InternalAIAdvisorService:
             ],
             "params": {
                 "temperature": 0.2,
-                "max_tokens": 600,
+                "max_tokens": 900,
                 "response_format": {"type": "json_object"},
             },
         }
@@ -1127,6 +1224,14 @@ class InternalAIAdvisorService:
                 .order_by(desc(func.count(RunRecord.run_id)))
                 .limit(5)
             ).all()
+            recent_failed_runs = list(
+                session.scalars(
+                    select(RunRecord)
+                    .where(*conditions, RunRecord.status == "failed")
+                    .order_by(RunRecord.started_at.desc(), RunRecord.run_id.desc())
+                    .limit(8)
+                )
+            )
 
         total_runs = _int(totals[0])
         failed_runs = _int(totals[2])
@@ -1156,6 +1261,20 @@ class InternalAIAdvisorService:
                     "failed_runs": _int(row[2]),
                 }
                 for row in ability_rows
+            ],
+            "recent_failed_runs": [
+                {
+                    "run_id": run.run_id,
+                    "site_id": run.site_id,
+                    "ability_name": run.ability_name,
+                    "ability_family": run.ability_family,
+                    "status": run.status,
+                    "error_code": run.error_code or "",
+                    "selected_provider_id": run.selected_provider_id or "",
+                    "selected_model_id": run.selected_model_id or "",
+                    "started_at": _format_datetime(run.started_at),
+                }
+                for run in recent_failed_runs
             ],
         }
 
@@ -1318,6 +1437,14 @@ def _dedupe_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _pick_fields(value: dict[str, Any], allowed_keys: set[str]) -> dict[str, Any]:
+    return {
+        key: item
+        for key, item in value.items()
+        if key in allowed_keys and _is_json_scalar_or_list(item)
+    }
 
 
 def _list(value: Any) -> list[Any]:

@@ -14,6 +14,31 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
+
+DEEPSEEK_MODEL_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
+    "deepseek-v4-flash": {
+        "input_cache_hit": 0.0028,
+        "input_cache_miss": 0.14,
+        "output": 0.28,
+    },
+    "deepseek-chat": {
+        "input_cache_hit": 0.0028,
+        "input_cache_miss": 0.14,
+        "output": 0.28,
+    },
+    "deepseek-reasoner": {
+        "input_cache_hit": 0.0028,
+        "input_cache_miss": 0.14,
+        "output": 0.28,
+    },
+    "deepseek-v4-pro": {
+        "input_cache_hit": 0.003625,
+        "input_cache_miss": 0.435,
+        "output": 0.87,
+    },
+}
+
+
 class OpenAIProviderAdapter:
     provider_id = "openai"
     display_name = "OpenAI Compatible"
@@ -334,13 +359,14 @@ class OpenAIProviderAdapter:
                 "embedding": embedding if isinstance(embedding, list) else [],
                 "dimensions": len(embedding) if isinstance(embedding, list) else 0,
                 "model_id": response_json.get("model", request.model_id),
+                "usage": usage if isinstance(usage, dict) else {},
             }
             return ProviderExecutionResult(
                 output=output,
                 latency_ms=latency_ms,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
-                cost=self._estimate_cost(request, tokens_in, tokens_out),
+                cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
             )
 
         if request.endpoint_variant == "responses":
@@ -351,6 +377,7 @@ class OpenAIProviderAdapter:
                 "output_text": output_text,
                 "messages": [{"role": "assistant", "content": output_text}],
                 "model_id": response_json.get("model", request.model_id),
+                "usage": usage if isinstance(usage, dict) else {},
             }
             if isinstance(response_output, list):
                 output["output"] = response_output
@@ -371,7 +398,7 @@ class OpenAIProviderAdapter:
                 latency_ms=latency_ms,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
-                cost=self._estimate_cost(request, tokens_in, tokens_out),
+                cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
                 finish_reason=self._extract_responses_finish_reason(response_json),
             )
 
@@ -384,6 +411,7 @@ class OpenAIProviderAdapter:
             "output_text": output_text,
             "messages": [message] if isinstance(message, dict) else [],
             "model_id": response_json.get("model", request.model_id),
+            "usage": usage if isinstance(usage, dict) else {},
         }
         tokens_in = self._coerce_int(usage.get("prompt_tokens"))
         tokens_out = self._coerce_int(usage.get("completion_tokens"))
@@ -392,7 +420,7 @@ class OpenAIProviderAdapter:
             latency_ms=latency_ms,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            cost=self._estimate_cost(request, tokens_in, tokens_out),
+            cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
             finish_reason=(
                 first_choice.get("finish_reason", "stop")
                 if isinstance(first_choice, dict)
@@ -953,13 +981,72 @@ class OpenAIProviderAdapter:
         request: ProviderExecutionRequest,
         tokens_in: int,
         tokens_out: int,
+        *,
+        usage: dict[str, Any] | None = None,
     ) -> float:
+        deepseek_cost = self._estimate_deepseek_cost(
+            request=request,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            usage=usage or {},
+        )
+        if deepseek_cost is not None:
+            return deepseek_cost
+
         if request.price_input is None and request.price_output is None:
             return 0.0
 
         input_cost = ((request.price_input or 0.0) * tokens_in) / 1_000_000
         output_cost = ((request.price_output or 0.0) * tokens_out) / 1_000_000
         return round(input_cost + output_cost, 6)
+
+    def _estimate_deepseek_cost(
+        self,
+        *,
+        request: ProviderExecutionRequest,
+        tokens_in: int,
+        tokens_out: int,
+        usage: dict[str, Any],
+    ) -> float | None:
+        pricing = DEEPSEEK_MODEL_PRICING_PER_MILLION.get(
+            self._normalize_deepseek_model_id(request.model_id)
+        )
+        if pricing is None:
+            return None
+
+        cache_hit_tokens = self._coerce_int(
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cache_hit_tokens")
+            or usage.get("input_cache_hit_tokens")
+        )
+        cache_miss_tokens = self._coerce_int(
+            usage.get("prompt_cache_miss_tokens")
+            or usage.get("cache_miss_tokens")
+            or usage.get("input_cache_miss_tokens")
+        )
+        if cache_hit_tokens == 0 and cache_miss_tokens == 0:
+            cache_miss_tokens = max(0, int(tokens_in or 0))
+
+        input_hit_cost = (
+            pricing["input_cache_hit"] * max(0, cache_hit_tokens)
+        ) / 1_000_000
+        input_miss_cost = (
+            pricing["input_cache_miss"] * max(0, cache_miss_tokens)
+        ) / 1_000_000
+        output_cost = (pricing["output"] * max(0, int(tokens_out or 0))) / 1_000_000
+        return round(input_hit_cost + input_miss_cost + output_cost, 6)
+
+    def _normalize_deepseek_model_id(self, model_id: str) -> str:
+        normalized = str(model_id or "").strip().lower()
+        if "/" in normalized:
+            normalized = normalized.rsplit("/", 1)[-1]
+        if ":" in normalized:
+            normalized = normalized.rsplit(":", 1)[-1]
+        if normalized.startswith("deepseek-v4-flash"):
+            return "deepseek-v4-flash"
+        if normalized.startswith("deepseek-v4-pro"):
+            return "deepseek-v4-pro"
+        return normalized
 
     def _maybe_raise_simulated_error(self, request: ProviderExecutionRequest) -> None:
         input_payload = request.input_payload

@@ -190,6 +190,37 @@ attempt result, plus a compact comparison (`ai_called`, `text_changed`,
 `tokens_in`, `tokens_out`, `cost`, `value_check`). It exists only to help
 operators decide whether LLM participation is worth enabling for this workflow.
 
+Operations preview also includes redacted drilldown evidence for failed runs,
+run sites, ability families, provider/model breakdown, knowledge search
+breakdown, and usage totals. These fields are aggregate or identifier-only
+diagnostic evidence. They must not include raw request input, result payloads,
+callback bodies, secrets, prompts, or WordPress content.
+
+## Provider Pricing
+
+OpenAI-compatible providers should estimate upstream cost from the provider
+usage payload whenever possible. DeepSeek uses cache-aware input pricing, so the
+adapter must prefer `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`
+when they are present. If those fields are missing, the conservative fallback is
+to price all input tokens as cache-miss input.
+
+DeepSeek pricing snapshot:
+
+- Source: `https://api-docs.deepseek.com/quick_start/pricing`
+- Checked: 2026-06-04
+- Unit: USD per 1M tokens
+- `deepseek-v4-flash`: input cache hit `$0.0028`, input cache miss `$0.14`,
+  output `$0.28`
+- `deepseek-v4-pro`: input cache hit `$0.003625`, input cache miss `$0.435`,
+  output `$0.87`
+- Compatibility names `deepseek-chat` and `deepseek-reasoner` currently map to
+  `deepseek-v4-flash`, but the provider page says they will be deprecated on
+  2026-07-24 15:59 UTC.
+
+Recommendation: keep this mapping as a narrow adapter fallback for internal cost
+visibility, but move provider pricing into catalog metadata or an internal
+pricing table before external billing decisions depend on it.
+
 ## Storage
 
 The first phase may store generated advisor snapshots in PostgreSQL read-model

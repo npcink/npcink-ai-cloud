@@ -349,12 +349,18 @@ def test_operations_summary_uses_real_operating_metrics_for_ai_prompt(tmp_path: 
     runtime_signal = next(item for item in signals if item["code"] == "ops.runtime_quality")
     provider_signal = next(item for item in signals if item["code"] == "ops.provider_quality")
     knowledge_signal = next(item for item in signals if item["code"] == "ops.knowledge_quality")
+    drilldown = prompt_context["redacted_context"]["advisor"]["drilldown"]
     assert runtime_signal["total_runs"] == 6
     assert runtime_signal["failed_runs"] == 1
     assert provider_signal["provider_errors"] == 1
     assert provider_signal["fallbacks"] == 1
     assert knowledge_signal["knowledge_searches"] == 4
     assert knowledge_signal["knowledge_no_hit_rate"] == 1.0
+    assert drilldown["failed_runs"][0]["run_id"] == "run_ops_metrics_failed"
+    assert drilldown["failed_runs"][0]["error_code"] == "provider.timeout"
+    assert drilldown["run_sites"][0]["site_id"] == "site_ops_metrics"
+    assert drilldown["provider_breakdown"][0]["provider_id"] == "openai"
+    assert drilldown["knowledge_sites"][0]["no_hit_rate"] == 1.0
     assert "input_json" not in json.dumps(prompt_context)
     assert "result_json" not in json.dumps(prompt_context)
 
