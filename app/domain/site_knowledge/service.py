@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import html
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -41,10 +43,22 @@ from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 
 MAX_CHUNK_CHARS = 900
 CHUNK_OVERLAP_CHARS = 120
-DEFAULT_EVIDENCE_MIN_SCORE = 0.25
+MAX_DOCUMENT_CONTENT_CHARS = 50000
+MAX_CHUNKS_PER_DOCUMENT = 64
+DEFAULT_EVIDENCE_MIN_SCORE = 0.45
 DEFAULT_REQUIRED_EVIDENCE_SOURCES = 1
 ALLOWED_NO_HIT_POLICIES = frozenset({"abstain", "fallback_to_general", "return_empty"})
 ProgressCallback = Callable[[dict[str, Any]], None]
+
+STYLE_SCRIPT_BLOCK_PATTERN = re.compile(
+    r"<(?:style|script)\b[^>]*>.*?</(?:style|script)>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+CSS_RULE_PATTERN = re.compile(
+    r"(?:@[a-z][a-z0-9_-]*\s+[^{]{0,160}|[.#]?[a-z_][a-z0-9_-]*)\s*\{[^{}]{0,1200}\}",
+    flags=re.IGNORECASE,
+)
 
 
 class SiteKnowledgeService:
@@ -201,6 +215,7 @@ class SiteKnowledgeService:
         indexed_documents = 0
         indexed_chunks = 0
         failed_documents = 0
+        truncated_documents = 0
         processed_documents = 0
 
         for raw_document in [*documents, *comments]:
@@ -244,6 +259,13 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
+            document_truncated = bool(normalized.get("content_truncated")) or any(
+                bool((chunk.get("metadata") or {}).get("chunk_limit_truncated"))
+                for chunk in chunks
+                if isinstance(chunk.get("metadata"), dict)
+            )
+            if document_truncated:
+                truncated_documents += 1
             self._emit_sync_progress(
                 status="running",
                 stage="writing",
@@ -263,10 +285,12 @@ class SiteKnowledgeService:
                     chunks=[
                         {
                             **chunk,
-                            "post_id": int(normalized["post_id"]),
+                            "post_id": _coerce_int(normalized.get("post_id"), default=0),
                             "source_type": str(normalized["source_type"]),
-                            "source_id": int(normalized["source_id"]),
-                            "parent_post_id": int(normalized["parent_post_id"] or 0),
+                            "source_id": _coerce_int(normalized.get("source_id"), default=0),
+                            "parent_post_id": _coerce_int(
+                                normalized.get("parent_post_id"), default=0
+                            ),
                             "post_type": str(normalized["post_type"]),
                             "post_status": str(normalized["post_status"]),
                             "title": str(normalized["title"]),
@@ -278,12 +302,12 @@ class SiteKnowledgeService:
                 )
             self.repository.upsert_document_with_chunks(
                 site_id=site_id,
-                post_id=int(normalized["post_id"]),
+                post_id=_coerce_int(normalized.get("post_id"), default=0),
                 source_type=str(normalized["source_type"]),
-                source_id=int(normalized["source_id"]),
+                source_id=_coerce_int(normalized.get("source_id"), default=0),
                 parent_post_id=(
-                    int(normalized["parent_post_id"])
-                    if normalized["parent_post_id"] is not None
+                    _coerce_int(normalized.get("parent_post_id"), default=0)
+                    if normalized.get("parent_post_id") is not None
                     else None
                 ),
                 post_type=str(normalized["post_type"]),
@@ -293,6 +317,20 @@ class SiteKnowledgeService:
                 modified_gmt=str(normalized["modified_gmt"]),
                 content_hash=str(normalized["content_hash"]),
                 run_id=run_id,
+                metadata={
+                    "content_truncated": bool(normalized.get("content_truncated")),
+                    "chunk_limit_truncated": any(
+                        bool((chunk.get("metadata") or {}).get("chunk_limit_truncated"))
+                        for chunk in chunks
+                        if isinstance(chunk.get("metadata"), dict)
+                    ),
+                    "truncated": document_truncated,
+                    "source_content_chars": int(normalized.get("source_content_chars") or 0),
+                    "indexed_content_chars": int(normalized.get("indexed_content_chars") or 0),
+                    "max_content_chars": MAX_DOCUMENT_CONTENT_CHARS,
+                    "chunk_count": len(chunks),
+                    "max_chunks": MAX_CHUNKS_PER_DOCUMENT,
+                },
                 chunks=chunks,
             )
             indexed_documents += 1
@@ -336,6 +374,7 @@ class SiteKnowledgeService:
             indexed_documents=indexed_documents,
             indexed_chunks=indexed_chunks,
             failed_documents=failed_documents,
+            truncated_documents=truncated_documents,
             deleted_entries=deleted_entries,
             progress=progress,
         )
@@ -356,6 +395,7 @@ class SiteKnowledgeService:
         coverage = {
             "indexed_posts": indexed_posts,
             "indexed_chunks": indexed_chunks,
+            "truncated_documents": self.repository.count_truncated_documents(site_id),
             "last_sync_at": _serialize_datetime(last_sync_at),
             "has_stale_content": False,
             "post_type_coverage": {},
@@ -438,9 +478,11 @@ class SiteKnowledgeService:
             current_post_id=current_post_id,
             max_results=max_results,
             intent=intent,
+            query=query,
         )
         if results is not None:
             results = _apply_evidence_policy(results, evidence_policy)
+            results = _rank_search_results_for_query(query, results)[:max_results]
             return {
                 "artifact_type": "site_knowledge_results",
                 "composition_role": "site_knowledge_context",
@@ -478,10 +520,12 @@ class SiteKnowledgeService:
                 chunk_text=chunk.chunk_text,
                 score=score,
                 intent=intent,
+                query=query,
             )
-            for score, chunk in scored[:max_results]
+            for score, chunk in scored
         ]
         results = _apply_evidence_policy(results, evidence_policy)
+        results = _rank_search_results_for_query(query, results)[:max_results]
 
         return {
             "artifact_type": "site_knowledge_results",
@@ -516,9 +560,11 @@ class SiteKnowledgeService:
         if not source_text:
             return []
 
-        chunks = []
+        chunks: list[dict[str, object]] = []
         start = 0
         while start < len(source_text):
+            if len(chunks) >= MAX_CHUNKS_PER_DOCUMENT:
+                break
             text = source_text[start : start + MAX_CHUNK_CHARS].strip()
             if text:
                 chunks.append(
@@ -535,12 +581,22 @@ class SiteKnowledgeService:
                         "metadata": {
                             "source": "wordpress_public_excerpt",
                             "content_hash": str(document.get("content_hash") or ""),
+                            "content_truncated": bool(document.get("content_truncated")),
+                            "max_content_chars": MAX_DOCUMENT_CONTENT_CHARS,
+                            "max_chunks": MAX_CHUNKS_PER_DOCUMENT,
                         },
                     }
                 )
             if start + MAX_CHUNK_CHARS >= len(source_text):
                 break
             start += MAX_CHUNK_CHARS - CHUNK_OVERLAP_CHARS
+        chunk_limit_truncated = start < len(source_text) and len(chunks) >= MAX_CHUNKS_PER_DOCUMENT
+        if chunk_limit_truncated:
+            for chunk in chunks:
+                metadata = chunk.get("metadata")
+                if isinstance(metadata, dict):
+                    metadata["chunk_limit_truncated"] = True
+                    metadata["max_chunks"] = MAX_CHUNKS_PER_DOCUMENT
         return chunks
 
     def _embed_text(
@@ -726,6 +782,7 @@ class SiteKnowledgeService:
         current_post_id: int,
         max_results: int,
         intent: str,
+        query: str,
     ) -> list[dict[str, object]] | None:
         backend: SiteKnowledgeVectorBackend | None = self.vector_backend
         if backend is None:
@@ -737,9 +794,9 @@ class SiteKnowledgeService:
             statuses=statuses,
             source_types=source_types,
             current_post_id=current_post_id,
-            limit=max_results,
+            limit=min(max(1, max_results * 4), 80),
         )
-        return [_serialize_vector_hit(hit, intent=intent) for hit in hits]
+        return [_serialize_vector_hit(hit, intent=intent, query=query) for hit in hits]
 
     def _sync_response(
         self,
@@ -752,6 +809,7 @@ class SiteKnowledgeService:
         indexed_chunks: int,
         failed_documents: int,
         deleted_entries: int,
+        truncated_documents: int = 0,
         progress: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
@@ -765,6 +823,7 @@ class SiteKnowledgeService:
                 "indexed_documents": indexed_documents,
                 "indexed_chunks": indexed_chunks,
                 "failed_documents": failed_documents,
+                "truncated_documents": truncated_documents,
                 "deleted_entries": deleted_entries,
             },
             "progress": progress
@@ -799,10 +858,23 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
     ):
         return None
 
-    title = " ".join(str(document.get("title") or "").split())
+    title = _normalize_site_knowledge_text(document.get("title"), max_chars=500)
     url = str(document.get("url") or "").strip()
-    excerpt = " ".join(str(document.get("excerpt") or "").split())
-    content_excerpt = " ".join(str(document.get("content_excerpt") or "").split())
+    excerpt = _normalize_site_knowledge_text(
+        document.get("excerpt"),
+        max_chars=2000,
+        remove_markup_noise=True,
+    )
+    content_excerpt = _normalize_site_knowledge_text(
+        document.get("content_excerpt"),
+        max_chars=MAX_DOCUMENT_CONTENT_CHARS,
+        remove_markup_noise=True,
+    )
+    source_content_chars = _normalized_site_knowledge_text_length(
+        document.get("content_excerpt"),
+        remove_markup_noise=True,
+    )
+    indexed_content_chars = len(content_excerpt)
     content_hash = str(document.get("content_hash") or "").strip()
     if not content_hash:
         content_hash = hashlib.sha256(
@@ -816,11 +888,14 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
         "parent_post_id": post_id,
         "post_type": post_type,
         "post_status": post_status,
-        "title": title[:500],
+        "title": title,
         "url": url[:2000],
         "modified_gmt": str(document.get("modified_gmt") or "").strip()[:64],
-        "excerpt": excerpt[:2000],
-        "content_excerpt": content_excerpt[:12000],
+        "excerpt": excerpt,
+        "content_excerpt": content_excerpt,
+        "source_content_chars": source_content_chars,
+        "indexed_content_chars": indexed_content_chars,
+        "content_truncated": source_content_chars > indexed_content_chars,
         "content_hash": content_hash[:128],
     }
 
@@ -832,7 +907,11 @@ def _normalize_public_comment(document: dict[str, Any]) -> dict[str, object] | N
     if comment_id <= 0 or post_id <= 0 or comment_status not in PUBLIC_COMMENT_STATUSES:
         return None
 
-    content_excerpt = " ".join(str(document.get("content_excerpt") or "").split())
+    content_excerpt = _normalize_site_knowledge_text(
+        document.get("content_excerpt"),
+        max_chars=4000,
+        remove_markup_noise=True,
+    )
     content_hash = str(document.get("content_hash") or "").strip()
     if not content_hash:
         content_hash = hashlib.sha256(
@@ -851,9 +930,43 @@ def _normalize_public_comment(document: dict[str, Any]) -> dict[str, object] | N
         "url": url[:2000],
         "modified_gmt": str(document.get("created_gmt") or "").strip()[:64],
         "excerpt": "",
-        "content_excerpt": content_excerpt[:4000],
+        "content_excerpt": content_excerpt,
         "content_hash": content_hash[:128],
     }
+
+
+def _normalize_site_knowledge_text(
+    value: Any,
+    *,
+    max_chars: int,
+    remove_markup_noise: bool = False,
+) -> str:
+    text = html.unescape(str(value or ""))
+    if remove_markup_noise:
+        text = _remove_markup_noise(text)
+    return " ".join(text.split())[:max_chars]
+
+
+def _normalized_site_knowledge_text_length(
+    value: Any,
+    *,
+    remove_markup_noise: bool = False,
+) -> int:
+    text = html.unescape(str(value or ""))
+    if remove_markup_noise:
+        text = _remove_markup_noise(text)
+    return len(" ".join(text.split()))
+
+
+def _remove_markup_noise(text: str) -> str:
+    cleaned = STYLE_SCRIPT_BLOCK_PATTERN.sub(" ", text)
+    cleaned = HTML_TAG_PATTERN.sub(" ", cleaned)
+    for _ in range(6):
+        next_cleaned = CSS_RULE_PATTERN.sub(" ", cleaned)
+        if next_cleaned == cleaned:
+            break
+        cleaned = next_cleaned
+    return cleaned
 
 
 def _looks_like_comment_document(document: dict[str, Any]) -> bool:
@@ -908,7 +1021,7 @@ def _apply_evidence_policy(
     results: list[dict[str, object]],
     evidence_policy: dict[str, object],
 ) -> list[dict[str, object]]:
-    min_score = float(evidence_policy.get("min_score") or 0.0)
+    min_score = _coerce_float(evidence_policy.get("min_score"), default=0.0)
     return [
         result
         for result in results
@@ -920,12 +1033,12 @@ def _evidence_gate(
     results: list[dict[str, object]],
     evidence_policy: dict[str, object],
 ) -> dict[str, object]:
-    required_sources = int(evidence_policy.get("required_sources") or 1)
+    required_sources = _coerce_int(evidence_policy.get("required_sources"), default=1)
     no_hit_policy = str(evidence_policy.get("no_hit_policy") or "abstain")
     passed = len(results) >= required_sources
     return {
         "status": "passed" if passed else "insufficient_evidence",
-        "min_score": round(float(evidence_policy.get("min_score") or 0.0), 4),
+        "min_score": round(_coerce_float(evidence_policy.get("min_score"), default=0.0), 4),
         "required_sources": required_sources,
         "source_count": len(results),
         "no_hit_policy": no_hit_policy,
@@ -996,6 +1109,74 @@ def _lexical_bonus(query: str, chunk_text: str, title: str) -> float:
     return min(0.2, matches / max(1, len(query_terms)) * 0.2)
 
 
+def _query_match_info(query: str, chunk_text: str) -> dict[str, object]:
+    normalized_query = " ".join(str(query or "").split())
+    text = str(chunk_text or "")
+    if not normalized_query or not text:
+        return {
+            "match_type": "semantic",
+            "exact_query_match": False,
+            "match_count": 0,
+            "match_context": text[:360],
+        }
+
+    text_lower = text.lower()
+    query_lower = normalized_query.lower()
+    positions = _substring_positions(text_lower, query_lower)
+    if positions:
+        return {
+            "match_type": "exact",
+            "exact_query_match": True,
+            "match_count": len(positions),
+            "match_context": _match_context(text, positions[0], len(normalized_query)),
+        }
+
+    return {
+        "match_type": "semantic",
+        "exact_query_match": False,
+        "match_count": 0,
+        "match_context": text[:360],
+    }
+
+
+def _rank_search_results_for_query(
+    query: str,
+    results: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    if not query.strip():
+        return results
+    return sorted(
+        results,
+        key=lambda result: (
+            0 if bool(result.get("exact_query_match")) else 1,
+            -int(result.get("match_count") or 0),
+            -_coerce_float(result.get("score"), default=0.0),
+            _coerce_int(result.get("post_id"), default=0),
+        ),
+    )
+
+
+def _substring_positions(text: str, needle: str) -> list[int]:
+    if not text or not needle:
+        return []
+    positions: list[int] = []
+    start = 0
+    while True:
+        index = text.find(needle, start)
+        if index < 0:
+            return positions
+        positions.append(index)
+        start = index + max(1, len(needle))
+
+
+def _match_context(text: str, position: int, match_length: int) -> str:
+    start = max(0, position - 140)
+    end = min(len(text), position + match_length + 180)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text) else ""
+    return f"{prefix}{text[start:end].strip()}{suffix}"
+
+
 def _reason_for_intent(intent: str) -> str:
     if intent == "site_search":
         return "The indexed passage may answer a site-content question with source context."
@@ -1039,7 +1220,12 @@ def _suggested_use_for_intent(intent: str) -> str:
     }.get(intent, "reference_snippet")
 
 
-def _serialize_vector_hit(hit: VectorSearchHit, *, intent: str) -> dict[str, object]:
+def _serialize_vector_hit(
+    hit: VectorSearchHit,
+    *,
+    intent: str,
+    query: str = "",
+) -> dict[str, object]:
     return _serialize_search_result(
         post_id=hit.post_id,
         source_type=hit.source_type,
@@ -1050,6 +1236,7 @@ def _serialize_vector_hit(hit: VectorSearchHit, *, intent: str) -> dict[str, obj
         chunk_text=hit.chunk_text,
         score=hit.score,
         intent=intent,
+        query=query,
     )
 
 
@@ -1064,7 +1251,9 @@ def _serialize_search_result(
     chunk_text: str,
     score: float,
     intent: str,
+    query: str = "",
 ) -> dict[str, object]:
+    match = _query_match_info(query, chunk_text)
     result: dict[str, object] = {
         "post_id": post_id,
         "source_type": source_type,
@@ -1074,6 +1263,10 @@ def _serialize_search_result(
         "url": url,
         "chunk": chunk_text[:1200],
         "score": round(score, 4),
+        "match_type": match["match_type"],
+        "exact_query_match": match["exact_query_match"],
+        "match_count": match["match_count"],
+        "match_context": match["match_context"],
         "reason": _reason_for_intent(intent),
         "suggested_use": _suggested_use_for_intent(intent),
     }

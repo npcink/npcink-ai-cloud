@@ -13,6 +13,9 @@ class SiteKnowledgeRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def _rowcount(self, result: object) -> int:
+        return int(getattr(result, "rowcount", 0) or 0)
+
     def delete_site_index(self, site_id: str) -> int:
         chunk_result = self.session.execute(
             delete(SiteKnowledgeChunk).where(SiteKnowledgeChunk.site_id == site_id)
@@ -21,7 +24,7 @@ class SiteKnowledgeRepository:
             delete(SiteKnowledgeDocument).where(SiteKnowledgeDocument.site_id == site_id)
         )
         self.session.flush()
-        return int(chunk_result.rowcount or 0) + int(document_result.rowcount or 0)
+        return self._rowcount(chunk_result) + self._rowcount(document_result)
 
     def delete_post_indexes(self, site_id: str, post_ids: list[int]) -> int:
         normalized_post_ids = [post_id for post_id in post_ids if post_id > 0]
@@ -53,10 +56,10 @@ class SiteKnowledgeRepository:
         )
         self.session.flush()
         return (
-            int(chunk_result.rowcount or 0)
-            + int(comment_chunk_result.rowcount or 0)
-            + int(document_result.rowcount or 0)
-            + int(comment_document_result.rowcount or 0)
+            self._rowcount(chunk_result)
+            + self._rowcount(comment_chunk_result)
+            + self._rowcount(document_result)
+            + self._rowcount(comment_document_result)
         )
 
     def upsert_document_with_chunks(
@@ -74,9 +77,11 @@ class SiteKnowledgeRepository:
         modified_gmt: str,
         content_hash: str,
         run_id: str,
+        metadata: dict[str, Any] | None = None,
         chunks: list[dict[str, Any]],
     ) -> None:
         now = datetime.now(UTC)
+        document_metadata = metadata if isinstance(metadata, dict) else {}
         document = self.session.scalar(
             select(SiteKnowledgeDocument).where(
                 SiteKnowledgeDocument.site_id == site_id,
@@ -98,7 +103,7 @@ class SiteKnowledgeRepository:
                 modified_gmt=modified_gmt,
                 content_hash=content_hash,
                 last_sync_run_id=run_id,
-                metadata_json={},
+                metadata_json=document_metadata,
                 last_indexed_at=now,
             )
             self.session.add(document)
@@ -113,7 +118,7 @@ class SiteKnowledgeRepository:
             document.modified_gmt = modified_gmt
             document.content_hash = content_hash
             document.last_sync_run_id = run_id
-            document.metadata_json = {}
+            document.metadata_json = document_metadata
             document.last_indexed_at = now
 
         self.session.execute(
@@ -165,6 +170,18 @@ class SiteKnowledgeRepository:
                 )
             )
             or 0
+        )
+
+    def count_truncated_documents(self, site_id: str) -> int:
+        documents = self.session.scalars(
+            select(SiteKnowledgeDocument.metadata_json).where(
+                SiteKnowledgeDocument.site_id == site_id
+            )
+        )
+        return sum(
+            1
+            for metadata in documents
+            if isinstance(metadata, dict) and metadata.get("truncated") is True
         )
 
     def last_sync_at(self, site_id: str) -> datetime | None:

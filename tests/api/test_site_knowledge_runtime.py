@@ -25,6 +25,11 @@ from app.core.models import (
 )
 from app.core.services import CloudServices
 from app.domain.runtime.service import RuntimeService
+from app.domain.site_knowledge.service import (
+    _apply_evidence_policy,
+    _rank_search_results_for_query,
+    _resolve_evidence_policy,
+)
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_PORTAL_JWT_SECRET,
@@ -83,16 +88,19 @@ def _build_client(
         key_id="key_beta",
         scopes=["runtime:execute", "runtime:read"],
     )
-    settings = Settings(
-        _env_file=None,
-        project_name="Magick AI Cloud Site Knowledge Test",
-        environment="test",
-        database_url=database_url,
-        redis_url="redis://localhost:6379/0",
-        admin_session_secret=TEST_ADMIN_SESSION_SECRET,
-        portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
-        **(settings_overrides or {}),
-    )
+    settings_kwargs = {
+        "project_name": "Magick AI Cloud Site Knowledge Test",
+        "environment": "test",
+        "database_url": database_url,
+        "redis_url": "redis://localhost:6379/0",
+        "admin_session_secret": TEST_ADMIN_SESSION_SECRET,
+        "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+        "site_knowledge_comments_enabled": False,
+        "site_knowledge_embedding_provider": "deterministic",
+        "site_knowledge_vector_backend": "postgres_json",
+    }
+    settings_kwargs.update(settings_overrides or {})
+    settings = Settings(_env_file=None, **settings_kwargs)
     runtime_queue = InMemoryRuntimeQueue()
     client = TestClient(
         create_app(
@@ -554,6 +562,46 @@ def test_search_evidence_policy_can_filter_low_confidence_results(tmp_path: Path
     assert data["direct_wordpress_write"] is False
 
 
+def test_default_search_evidence_policy_filters_weak_matches() -> None:
+    policy = _resolve_evidence_policy(None)
+
+    filtered = _apply_evidence_policy(
+        [
+            {"post_id": 109, "score": 0.3761},
+            {"post_id": 4312, "score": 0.5107},
+        ],
+        policy,
+    )
+
+    assert policy["min_score"] == 0.45
+    assert [result["post_id"] for result in filtered] == [4312]
+
+
+def test_search_ranking_prioritizes_exact_query_matches() -> None:
+    ranked = _rank_search_results_for_query(
+        "AI 摘要",
+        [
+            {
+                "post_id": 4312,
+                "score": 0.5114,
+                "match_type": "semantic",
+                "exact_query_match": False,
+                "match_count": 0,
+            },
+            {
+                "post_id": 4312,
+                "score": 0.5099,
+                "match_type": "exact",
+                "exact_query_match": True,
+                "match_count": 1,
+            },
+        ],
+    )
+
+    assert ranked[0]["exact_query_match"] is True
+    assert ranked[0]["match_type"] == "exact"
+
+
 def test_forbidden_write_fields_fail_closed(tmp_path: Path) -> None:
     _, _, _, client = _build_client(tmp_path)
     payload = _search_payload("publish this")
@@ -604,6 +652,107 @@ def test_sync_ignores_non_publish_documents(tmp_path: Path) -> None:
     with get_session(database_url) as session:
         chunks = list(session.query(SiteKnowledgeChunk).all())
     assert {chunk.post_id for chunk in chunks} == {123}
+
+
+def test_sync_strips_style_script_noise_before_indexing(tmp_path: Path) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    payload = _sync_payload()
+    input_payload = payload["input"]
+    assert isinstance(input_payload, dict)
+    documents = input_payload["documents"]
+    assert isinstance(documents, list)
+    documents[0] = {
+        "post_id": 321,
+        "post_type": "page",
+        "post_status": "publish",
+        "title": "AI 摘要 &#8211; 页面",
+        "url": "https://example.test/ai-summary",
+        "modified_gmt": "2026-06-03 02:00:00",
+        "excerpt": "<style>.hero { opacity: 0; }</style>AI 摘要页面说明",
+        "content_excerpt": (
+            "<script>alert('secret')</script>"
+            "@keyframes fadeInUp { from { opacity: 0; transform: translateY(40px); } "
+            "to { opacity: 1; transform: translateY(0); } } "
+            "AI 摘要用于给文章提供站内上下文。"
+        ),
+        "content_hash": "hash-ai-summary-noisy-page",
+    }
+
+    _execute(client, payload, idempotency_key="strip-noise-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+
+    with get_session(database_url) as session:
+        chunk = session.query(SiteKnowledgeChunk).one()
+    assert "AI 摘要" in chunk.chunk_text
+    assert "&#8211;" not in chunk.chunk_text
+    assert "@keyframes" not in chunk.chunk_text
+    assert "opacity" not in chunk.chunk_text
+    assert "alert" not in chunk.chunk_text
+
+
+def test_sync_caps_long_documents_and_reports_truncation(tmp_path: Path) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    payload = _sync_payload()
+    input_payload = payload["input"]
+    assert isinstance(input_payload, dict)
+    documents = input_payload["documents"]
+    assert isinstance(documents, list)
+    documents[0] = {
+        "post_id": 654,
+        "post_type": "post",
+        "post_status": "publish",
+        "title": "Long AI 摘要 guide",
+        "url": "https://example.test/long-ai-summary",
+        "modified_gmt": "2026-06-03 02:00:00",
+        "excerpt": "Long public article.",
+        "content_excerpt": "AI 摘要 " * 12000,
+        "content_hash": "hash-long-ai-summary",
+    }
+
+    sync_result = _execute(client, payload, idempotency_key="long-doc-truncation-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+    worker_result = RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+    ).get_run_result(sync_result["json"]["data"]["run_id"], site_id="site_alpha")
+
+    assert worker_result["result"]["sync"]["truncated_documents"] == 1
+    assert worker_result["result"]["sync"]["indexed_chunks"] <= 64
+    assert worker_result["result"]["sync"]["indexed_chunks"] > 1
+    status_result = _execute(
+        client,
+        {
+            "ability_name": "magick-ai-cloud/site-knowledge-status",
+            "contract_version": "site_knowledge_status.v1",
+            "execution_pattern": "inline",
+            "data_classification": "public_site_content",
+            "storage_mode": "result_only",
+            "input": {
+                "contract_version": "site_knowledge_status.v1",
+                "include_coverage": True,
+                "write_posture": "suggestion_only",
+            },
+        },
+        idempotency_key="long-doc-truncation-status",
+    )
+    assert status_result["json"]["data"]["result"]["coverage"]["truncated_documents"] == 1
+    with get_session(database_url) as session:
+        chunks = list(session.query(SiteKnowledgeChunk).all())
+        metadata = chunks[0].metadata_json
+    assert len(chunks) <= 64
+    assert isinstance(metadata, dict)
+    assert metadata["max_chunks"] == 64
 
 
 def test_targeted_refresh_prunes_missing_public_document(tmp_path: Path) -> None:
@@ -715,6 +864,9 @@ def test_zilliz_backend_requires_cloud_managed_credentials(tmp_path: Path) -> No
             database_url=_sqlite_url(tmp_path),
             redis_url="redis://localhost:6379/0",
             site_knowledge_vector_backend="zilliz_cloud",
+            site_knowledge_zilliz_uri="",
+            site_knowledge_zilliz_token="",
+            site_knowledge_zilliz_collection="",
         )
 
     settings = Settings(
