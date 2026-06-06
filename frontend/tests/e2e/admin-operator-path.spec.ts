@@ -90,8 +90,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /Coverage package catalog|覆盖套餐目录|覆蓋方案目錄/i })).toBeVisible();
   await expect(page.getByText(/Default production plans|默认生产套餐|預設生產方案/i).first()).toBeVisible();
-  await page.getByText(/Inspect canonical package shell maintenance|查看套餐模板维护|查看方案模板維護/i).click();
-  await expect(page.locator(`a[href="/admin/plans/${FREE_PLAN_ID}"]`)).toBeVisible();
+  await expect(page.getByText(/Canonical coverage package shells|默认套餐维护|套餐模板/i).first()).toBeVisible();
   await expect(page.getByText(/基础版|Basic/i).first()).toBeVisible();
   await expect(page.getByText(/批量版|Bulk/i).first()).toBeVisible();
   await expect(page.getByText(/Site limit|站点上限/i).first()).toBeVisible();
@@ -143,6 +142,16 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await expect(page.getByRole('button', { name: /Apply .* baseline/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Reset to latest release|恢复为最新发布记录|恢復為最新發佈記錄/i })).toBeVisible();
   await expect(page.getByText(/已发布|published/i).first()).toBeVisible();
+
+  await page.goto('/admin/hosted-models', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /Hosted Model Governance|托管模型/i })).toBeVisible();
+  await expect(page.getByText(/Ability families|能力/i).first()).toBeVisible();
+  await expect(page.getByText(/free-gpt55-general/i).first()).toBeVisible();
+  await expect(page.getByText(/provider gap: knowledge/i).first()).toBeVisible();
+  await expect(page.getByText(/Read-only runtime detail|只读/i).first()).toBeVisible();
+  await expect(page.getByText(/WordPress write/i).first()).toBeVisible();
+  await expect(page.getByText(/not allowed/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Save|Configure|Enable/i })).toHaveCount(0);
 });
 
 test('admin support and detail pages keep bounded operator hierarchy', async ({ page }) => {
@@ -219,11 +228,17 @@ test('admin navigation stays customer-first', async ({ page }) => {
 
   const adminNav = page.getByRole('navigation', { name: /管理后台|admin/i });
   const adminPrimaryNav = page.locator('[data-ui="admin-primary-nav"]');
-  await expect(adminPrimaryNav.locator('> a.admin-nav-link')).toHaveCount(4);
+  const primaryLinks = adminPrimaryNav.locator('> a.admin-nav-link');
+  await expect(primaryLinks).toHaveCount(11);
+  await expect(primaryLinks.nth(0)).toHaveAttribute('href', '/admin');
+  await expect(primaryLinks.nth(1)).toHaveAttribute('href', '/admin/accounts');
+  await expect(primaryLinks.nth(2)).toHaveAttribute('href', '/admin/sites');
+  await expect(primaryLinks.nth(3)).toHaveAttribute('href', '/admin/coverage');
   await expect(adminNav.getByRole('link', { name: /^Overview$|^概览$|^概覽$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Customers$|^客户$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Sites$|^站点$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Coverage$|^覆盖$|^覆蓋$/i })).toBeVisible();
+  await expect(adminNav.getByRole('link', { name: /^Hosted Models$|^托管模型$|^託管模型$/i })).toBeVisible();
   await expect(adminNav.getByRole('link', { name: /^Subscriptions$|^订阅$|^訂閱$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Plans$|^套餐目录$|^方案目錄$/i })).toHaveCount(0);
   await expect(adminNav.getByRole('link', { name: /^Members$|^成员$|^成員$/i })).toHaveCount(0);

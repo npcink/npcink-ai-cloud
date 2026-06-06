@@ -58,6 +58,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { href: '/admin/web-search', label: t('admin.nav_web_search', {}, 'Web Search') },
     { href: '/admin/image-sources', label: t('admin.nav_image_sources', {}, 'Image Sources') },
     { href: '/admin/vector-observability', label: t('admin.nav_vector_observability', {}, 'Vector Observability') },
+    { href: '/admin/hosted-models', label: t('admin.nav_hosted_models', {}, 'Hosted Models') },
   ];
 
   const isActive = (href: string) => {

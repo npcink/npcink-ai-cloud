@@ -452,9 +452,17 @@ def test_hosted_model_governance_diagnostics_summarizes_runtime_families(
         f"?site_id={site_id}&recent_minutes=60&limit=10",
         headers=build_internal_headers(),
     )
+    admin_alias_response = client.get(
+        "/internal/service/admin/hosted-model-governance"
+        f"?site_id={site_id}&recent_minutes=10080&limit=10",
+        headers=build_internal_headers(),
+    )
 
     assert response.status_code == 200
+    assert admin_alias_response.status_code == 200
     data = response.json()["data"]
+    assert admin_alias_response.json()["data"]["totals"]["runs"] == 3
+    assert admin_alias_response.json()["data"]["filters"]["recent_minutes"] == 10080
     assert data["totals"]["runs"] == 3
     assert data["totals"]["provider_calls"] == 2
     assert data["boundary"]["direct_wordpress_write"] is False
