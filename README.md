@@ -12,6 +12,17 @@ Magick AI Cloud is the runtime enhancement layer for the local Magick AI plugin.
 It is not a second control plane, a second source of truth, or a SaaS
 replacement for the plugin.
 
+Current focus lock:
+
+- main target: prove the user-facing hosted GPT5.5 text loop through the normal
+  runtime/toolbox path
+- keep only minimum usage, error, and provider evidence needed to support that
+  loop
+- pause new admin governance pages, dashboards, reports, alert-ranking
+  expansion, and commercial front-office work until the core AI path is proven
+- do not add new orchestration infrastructure or move local plugin truth into
+  Cloud
+
 Current repository status is a strong-contraction cleanup baseline:
 - orchestration, task-packs, prompt/preset advisor, and portal thick features
   have been removed

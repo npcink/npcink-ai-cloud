@@ -9,10 +9,41 @@ Scope: local development, mini/remote preview, and pre-release Cloud validation
 This plan records the next execution order while Magick AI Cloud is still under
 local development and has no external users.
 
-The current objective is not GA release and not a customer-facing commercial
-front office. The objective is to prove the internal alpha loop:
+The current objective is not GA release, not a customer-facing commercial front
+office, and not a broader admin/observability build-out. The objective is to
+prove the core AI capability loop:
 
-`local plugin -> Cloud API key -> hosted runtime request -> worker execution -> usage/billing evidence -> admin/portal/ops visibility`
+`local plugin -> Cloud API key -> hosted GPT5.5 request -> worker execution -> result callback -> minimum usage/error evidence`
+
+## Focus Reset - 2026-06-06
+
+Current main target: core hosted AI capability, starting with GPT5.5 text.
+
+Reason:
+
+- The product needs a clear user-facing AI capability before more operator
+  surfaces add value.
+- Free or near-free GPT5.5 is useful only if users can reliably use it through
+  the normal toolbox/runtime path.
+- Admin governance, cadence rollups, dashboards, and sorting are now treated as
+  a minimum safety layer, not the main development direction.
+
+Completion signal:
+
+- A normal user path can trigger a hosted GPT5.5 text request and receive the
+  result without operator intervention.
+- Provider timeout, HTTP failure, invalid response, entitlement rejection, and
+  callback failure produce readable minimum errors.
+- The run writes enough usage/error evidence for support and cost safety, but
+  no new admin page, report, control plane, or governance workflow is required.
+
+Paused until the core loop is proven:
+
+- new admin governance pages
+- richer governance alert ranking
+- dashboard/report/export work
+- multi-model expansion beyond the next capability needed by the user path
+- commercial front-office work
 
 ## Boundary
 
@@ -41,29 +72,33 @@ Not in this plan:
 
 | Work item | Impact | Difficulty | Unlocks later work | Decision |
 | --- | --- | --- | --- | --- |
-| Current branch and validation baseline | High | Low | Yes | Do first |
-| Internal alpha end-to-end loop | High | Medium | Yes | Main target |
-| Runtime and ops minimum hardening | High | Medium/High | Yes | Do after alpha loop has evidence |
-| Bounded frontend polish | Medium | Medium | No | Do after runtime evidence is stable |
+| Core GPT5.5 hosted text loop | High | Medium | Yes | Main target |
+| Current branch and validation baseline | High | Low | Yes | Keep as support work |
+| Minimum runtime error/usage evidence | High | Medium | Yes | Do only as needed by the core loop |
+| Internal alpha end-to-end loop | High | Medium | Yes | Keep, but narrow to the user AI path |
+| Bounded frontend polish | Medium | Medium | No | Do only when it improves the core user path |
+| Admin governance and dashboards | Low for current phase | Medium | No | Pause after current safety baseline |
 | Customer-facing commercial front office | Low for current phase | High | No | Defer |
 | Heavy orchestration or new infrastructure | Negative for current phase | High | No | Do not start |
 
 ## Main Target
 
-Current main target: internal alpha end-to-end loop.
+Current main target: core hosted GPT5.5 text loop inside the internal alpha path.
 
 Reason:
 
 - There are no external users yet.
-- The highest risk is not missing front-office features; it is an unproven runtime/service chain.
-- A working alpha loop gives concrete evidence for the next hardening work.
+- The highest risk is not missing front-office or admin features; it is whether
+  users can actually invoke the hosted AI capability through the intended path.
+- A working GPT5.5 text loop gives concrete evidence for the next capability
+  expansion.
 
 Completion signal:
 
-- A local or mini environment can complete:
-  `admin login -> provider configured -> portal user login -> API key -> WordPress addon save key -> signed hosted runtime request -> usage/billing/ops evidence visible`.
+- A local or mini environment can complete the narrow core path:
+  `provider configured -> API key -> WordPress/addon toolbox trigger -> signed hosted GPT5.5 runtime request -> callback/result visible -> minimum usage/error evidence`.
 - `GET /health/operational-ready` reports ready in the target environment.
-- Worker heartbeat, ops cadence, provider health, runtime diagnostics, and usage/billing state are inspectable.
+- Worker heartbeat, provider health, runtime diagnostics, and usage state are inspectable.
 - Failure modes identify the broken layer: provider, auth, worker, callback, entitlement, billing, or environment config.
 
 ## Execution Order
