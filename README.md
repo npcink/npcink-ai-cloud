@@ -45,6 +45,7 @@ Operational references:
 - [docs/cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md)
 - [docs/cloud-bulk-article-run-v1.md](docs/cloud-bulk-article-run-v1.md)
 - [docs/cloud-agent-positioning-v1.md](docs/cloud-agent-positioning-v1.md)
+- [docs/cloud-agent-feedback-contract-v1.md](docs/cloud-agent-feedback-contract-v1.md)
 - [docs/internal-ai-advisor-v1.md](docs/internal-ai-advisor-v1.md)
 
 ## Test Entry For Agents

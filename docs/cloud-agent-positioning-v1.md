@@ -31,6 +31,16 @@ The product posture is:
 
 `controlled Agentic runtime, not cloud Agent control plane`
 
+For customer-facing Agent scenarios, the differentiating loop is:
+
+`Cloud Agent recommendation + local governance + feedback for Cloud evaluation`
+
+Cloud may improve Agent quality from structured customer review outcomes, but
+those outcomes must feed evaluation and recommendation loops before they affect
+production behavior. Feedback must not become Cloud-side approval, preflight, or
+WordPress write truth. The feedback contract is defined in
+[cloud-agent-feedback-contract-v1.md](cloud-agent-feedback-contract-v1.md).
+
 ## Boundary
 
 Local WordPress, Core, and the plugin stack remain responsible for:
@@ -50,6 +60,7 @@ Magick AI Cloud may be responsible for:
 - usage, health, diagnostics, and service evidence
 - evidence-backed recommendations
 - structured `proposal_input` or suggestion handoff payloads
+- structured Agent feedback aggregation for evaluation and quality improvement
 
 Cloud must not become responsible for:
 
@@ -61,6 +72,8 @@ Cloud must not become responsible for:
 - automatic routing profile adoption
 - automatic commercial state mutation
 - automatic WordPress content, settings, or WooCommerce writes
+- automatic production prompt, preset, router, or profile mutation from
+  feedback events
 
 ## Agent vs Workflow
 
@@ -216,11 +229,21 @@ Why this first:
 - it creates visible customer value without direct WordPress writes
 - it proves evidence-backed composition
 - it keeps local Core as proposal, approval, and write owner
+- it creates the first measurable Agent quality loop through local review
+  feedback
 
 Initial implementation note: Site Knowledge search results expose this as an
 additive `agent_handoff` object on the existing runtime response. The handoff
 does not create a new `/agents` route, registry, scheduler, workflow engine, or
 Cloud-side write authority.
+
+The next extension is structured local feedback, not broader autonomy:
+
+```text
+agent_handoff -> local review outcome -> cloud_agent_feedback.v1 -> eval rollup
+```
+
+This keeps the Agent optimizable while preserving local governance.
 
 Alternative first scenario:
 
@@ -248,3 +271,5 @@ Before shipping any Cloud Agent:
 - secrets, raw prompts, callbacks, and WordPress content are not exposed through
   advisor or portal detail surfaces
 - tests cover forbidden policy/write fields and fail-closed behavior
+- any feedback collection follows `cloud_agent_feedback.v1` and feeds eval or
+  recommendation first, not automatic production mutation
