@@ -26,6 +26,10 @@ export type OperatorWatchItem = {
   value: string;
 };
 
+type OperatorWatchItemDraft = OperatorWatchItem & {
+  priority: number;
+};
+
 type BuildRuntimeSignalLabels = {
   queuedRuns: string;
   runningRuns: string;
@@ -53,6 +57,13 @@ type BuildWatchItemInputs = {
   expiringSubscriptionsIn7Days: number;
   attentionSubscriptionsCount: number;
   firstAttentionReason: string;
+  hostedModelGovernance: {
+    status: string;
+    alertCount: number;
+    firstAlertTitle: string;
+    firstAlertSummary: string;
+    summary: string;
+  };
   formatValue: (value: number) => string;
   copy: {
     callbackTitle: string;
@@ -63,6 +74,8 @@ type BuildWatchItemInputs = {
     expiryReason: string;
     attentionTitle: string;
     attentionFallbackReason: string;
+    hostedTitle: string;
+    hostedReason: string;
   };
 };
 
@@ -171,7 +184,7 @@ export function buildAdminRuntimeSignals(
 export function buildAdminOperatorWatchItems(
   inputs: BuildWatchItemInputs
 ): OperatorWatchItem[] {
-  const items: OperatorWatchItem[] = [];
+  const items: OperatorWatchItemDraft[] = [];
 
   if (inputs.runtimeSummary.callbackFailed > 0) {
     items.push({
@@ -180,6 +193,7 @@ export function buildAdminOperatorWatchItems(
       severity: 'action-needed',
       reason: inputs.copy.callbackReason,
       value: inputs.formatValue(inputs.runtimeSummary.callbackFailed),
+      priority: 10,
     });
   }
 
@@ -190,6 +204,7 @@ export function buildAdminOperatorWatchItems(
       severity: inputs.runtimeSummary.guardEvents >= 25 ? 'action-needed' : 'warn',
       reason: inputs.copy.guardReason,
       value: inputs.formatValue(inputs.runtimeSummary.guardEvents),
+      priority: inputs.runtimeSummary.guardEvents >= 25 ? 20 : 40,
     });
   }
 
@@ -200,6 +215,7 @@ export function buildAdminOperatorWatchItems(
       severity: 'warn',
       reason: inputs.copy.expiryReason,
       value: inputs.formatValue(inputs.expiringSubscriptionsIn7Days),
+      priority: 50,
     });
   }
 
@@ -212,10 +228,34 @@ export function buildAdminOperatorWatchItems(
         inputs.firstAttentionReason ||
         inputs.copy.attentionFallbackReason,
       value: inputs.formatValue(inputs.attentionSubscriptionsCount),
+      priority: 30,
     });
   }
 
-  return items;
+  if (inputs.hostedModelGovernance.status === 'error' || inputs.hostedModelGovernance.status === 'warning') {
+    const severity = inputs.hostedModelGovernance.status === 'error' ? 'action-needed' : 'warn';
+    items.push({
+      title: inputs.hostedModelGovernance.firstAlertTitle || inputs.copy.hostedTitle,
+      scope: 'hosted.model_governance',
+      severity,
+      reason:
+        inputs.hostedModelGovernance.firstAlertSummary ||
+        inputs.hostedModelGovernance.summary ||
+        inputs.copy.hostedReason,
+      value: inputs.formatValue(Math.max(inputs.hostedModelGovernance.alertCount, 1)),
+      priority: severity === 'action-needed' ? 15 : 35,
+    });
+  }
+
+  return items
+    .sort((left, right) => left.priority - right.priority)
+    .map((item) => ({
+      title: item.title,
+      scope: item.scope,
+      severity: item.severity,
+      reason: item.reason,
+      value: item.value,
+    }));
 }
 
 export function operatorSeverityClasses(severity: OperatorSeverity): string {

@@ -30,6 +30,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('link', { name: /Open customer coverage|打开客户覆盖|打開客戶覆蓋/i }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: /Are hosted model capabilities covered today\?|托管模型/i })).toBeVisible();
   await expect(page.getByText(/Hosted model provider call coverage gap/i).first()).toBeVisible();
+  await expect(page.locator('p', { hasText: /Hosted model provider call coverage gap/i })).toHaveCount(2);
   await expect(page.locator('a[href="/admin/hosted-models"]').first()).toBeVisible();
 
   await page.goto('/admin/coverage');

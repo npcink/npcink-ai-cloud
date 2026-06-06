@@ -275,6 +275,13 @@ function AdminOverviewContent() {
     expiringSubscriptionsIn7Days: overview.expiringSubscriptions.in7Days,
     attentionSubscriptionsCount: overview.attentionSubscriptions.length,
     firstAttentionReason: overview.attentionSubscriptions[0]?.reason || '',
+    hostedModelGovernance: {
+      status: overview.hostedModelGovernance.status,
+      alertCount: overview.hostedModelGovernance.alertCount,
+      firstAlertTitle: overview.hostedModelGovernance.alerts[0]?.title || '',
+      firstAlertSummary: overview.hostedModelGovernance.alerts[0]?.summary || '',
+      summary: overview.hostedModelGovernance.summary,
+    },
     formatValue: formatInteger,
     copy: {
       callbackTitle: t('admin.watch_callback_title'),
@@ -285,6 +292,12 @@ function AdminOverviewContent() {
       expiryReason: t('admin.watch_expiry_reason'),
       attentionTitle: t('admin.watch_attention_title'),
       attentionFallbackReason: t('admin.watch_attention_reason'),
+      hostedTitle: t('admin.watch_hosted_governance_title', {}, 'Hosted model governance needs review'),
+      hostedReason: t(
+        'admin.watch_hosted_governance_reason',
+        {},
+        'Hosted model telemetry or metering coverage needs review before traffic expands.'
+      ),
     },
   });
 
@@ -382,15 +395,23 @@ function AdminOverviewContent() {
         : '/admin/subscriptions',
   }));
   const runtimeRiskItems = operatorWatchItems.filter((item) =>
-    item.scope.startsWith('runtime.') || item.scope.startsWith('queue.') || item.scope.startsWith('guard.')
+    item.scope.startsWith('runtime.') || item.scope.startsWith('queue.') || item.scope.startsWith('request.')
   );
+  const firstOperatorWatchItem = operatorWatchItems[0];
+  const firstOperatorWatchScope = firstOperatorWatchItem?.scope || '';
   const attentionNotes = operatorWatchItems.slice(0, 2);
   const primaryActionHref =
-    statusTone === 'error' || commercialItems.length > 0 || overview.expiringSubscriptions.in7Days > 0
-      ? '/admin/subscriptions'
-      : '/admin/sites';
+    firstOperatorWatchScope.startsWith('hosted.')
+      ? '/admin/hosted-models'
+      : firstOperatorWatchScope.startsWith('runtime.') || firstOperatorWatchScope.startsWith('request.')
+        ? '/admin/sites'
+        : statusTone === 'error' || commercialItems.length > 0 || overview.expiringSubscriptions.in7Days > 0
+          ? '/admin/subscriptions'
+          : '/admin/sites';
   const primaryActionLabel =
-    primaryActionHref === '/admin/subscriptions'
+    primaryActionHref === '/admin/hosted-models'
+      ? t('admin.home_primary_action_hosted_models', {}, 'Inspect hosted models')
+      : primaryActionHref === '/admin/subscriptions'
       ? t('admin.home_primary_action_coverage', {}, 'Review coverage')
       : t('admin.home_primary_action_sites', {}, 'Review sites');
   const secondaryActionHref =
