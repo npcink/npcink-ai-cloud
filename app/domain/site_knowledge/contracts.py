@@ -36,6 +36,7 @@ ALLOWED_SEARCH_INTENTS = frozenset(
         "faq_candidates",
         "content_gap_analysis",
         "duplicate_check",
+        "writing_support_plan",
     }
 )
 ALLOWED_SYNC_MODES = frozenset({"refresh", "rebuild", "delete"})

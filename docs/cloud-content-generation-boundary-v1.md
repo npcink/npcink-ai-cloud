@@ -51,6 +51,10 @@ governance boundary:
 - translation drafts
 - SEO title, excerpt, meta description, tags, and category suggestions
 - media alt text and caption suggestions
+- writer preparation support plans that organize existing site evidence,
+  source-review tasks, coverage decisions, internal-link follow-up, and media
+  follow-up, without returning article titles, article bodies, SEO copy, or
+  `article_write_plan` candidates
 - WooCommerce product description drafts
 - comment reply suggestions when the result is reviewed before posting
 - compliance checks, sensitive-content checks, PII checks, and AI-label

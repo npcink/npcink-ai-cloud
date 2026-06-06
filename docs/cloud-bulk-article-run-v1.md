@@ -53,6 +53,10 @@ Cloud may still provide non-writing service functions:
 - entitlement and usage detail;
 - service status;
 - provider/runtime infrastructure for approved non-writing tasks;
+- site-knowledge writing preparation metadata, such as source evidence,
+  pre-draft review tasks, coverage decisions, internal-link follow-up, and
+  media follow-up, provided it does not include article titles, article bodies,
+  SEO copy, or `article_write_plan` candidates;
 - metadata-only observability and operational summaries.
 
 Cloud status, run records, queues, and workers must not become article workflow

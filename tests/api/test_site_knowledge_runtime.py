@@ -494,6 +494,55 @@ def test_high_value_intents_return_advisory_product_metadata(tmp_path: Path) -> 
     assert duplicate["direct_wordpress_write"] is False
 
 
+def test_writing_support_plan_returns_pre_draft_assistance_without_article_generation(
+    tmp_path: Path,
+) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    _execute(client, _sync_payload(), idempotency_key="writing-support-plan-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+
+    support = _execute(
+        client,
+        _search_payload(
+            "How should I prepare a useful article about Cloud vector knowledge?",
+            intent="writing_support_plan",
+        ),
+        idempotency_key="writing-support-plan-search",
+    )["json"]["data"]["result"]
+
+    assert support["intent"] == "writing_support_plan"
+    assert support["workflow_support"] == {
+        "workflow": "writer_preparation_support",
+        "wordpress_write_owner": "wordpress_local",
+        "cloud_output": "pre_draft_support_plan",
+        "body_generation_owner": "local_ability_recipe",
+    }
+    assert support["direct_wordpress_write"] is False
+    assert support["write_posture"] == "suggestion_only"
+    assert support["results"][0]["suggested_use"] == "writing_support_evidence"
+    assert support["results"][0]["planning_mode"] == "wordpress_local_only"
+    writing_support = support["results"][0]["writing_support"]
+    assert writing_support["evidence_source"]["post_id"] == 123
+    assert writing_support["writer_next_action"] == "use_as_preparation_material_before_drafting"
+    assert writing_support["pre_draft_tasks"] == [
+        "verify_facts_against_source",
+        "decide_expand_existing_or_write_new_coverage",
+        "collect_internal_link_and_media_candidates",
+    ]
+    assert writing_support["blocked_outputs"] == [
+        "article_body",
+        "article_title",
+        "seo_copy",
+        "article_write_plan",
+        "direct_wordpress_write",
+    ]
+
+
 def test_empty_index_search_returns_ready_empty_results(tmp_path: Path) -> None:
     database_url, _, _, client = _build_client(tmp_path)
 

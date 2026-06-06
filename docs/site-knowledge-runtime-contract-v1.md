@@ -178,6 +178,12 @@ Supported first workflows:
 - `writing_context`: generation context enrichment. Results include
   `context_role`, `citation`, and `usage_guidance` so the generation flow can
   cite site-owned context before drafting.
+- `writing_support_plan`: writer preparation support. Results include
+  `writing_support`, `pre_draft_tasks`, `evidence_source`,
+  `planning_mode=wordpress_local_only`, and `blocked_outputs` so editors can
+  move faster on source review, coverage decisions, internal links, and media
+  follow-up without Cloud producing article titles, article bodies, SEO copy,
+  or `article_write_plan` candidates.
 - `internal_links`: editor link recommendation. Results include
   `anchor_text_candidates`, `link_target`, `suggested_action`, and
   `insert_mode=wordpress_local_only`.

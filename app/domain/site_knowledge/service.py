@@ -1302,6 +1302,11 @@ def _reason_for_intent(intent: str) -> str:
         return "The indexed passage is related to the requested refresh context."
     if intent == "writing_context":
         return "The indexed passage can provide site-specific writing context."
+    if intent == "writing_support_plan":
+        return (
+            "The indexed passage can reduce writing preparation work without "
+            "becoming an article draft."
+        )
     if intent == "image_context":
         return "The indexed passage can inform image context or media planning."
     return "Topic and intent are closely related."
@@ -1316,6 +1321,7 @@ def _suggested_use_for_intent(intent: str) -> str:
         "faq_candidates": "faq_candidate",
         "content_gap_analysis": "gap_evidence",
         "duplicate_check": "duplicate_or_conflict_candidate",
+        "writing_support_plan": "writing_support_evidence",
     }.get(intent, "reference_snippet")
 
 
@@ -1471,6 +1477,35 @@ def _serialize_search_result(
                 "planning_mode": "wordpress_local_only",
             }
         )
+    elif intent == "writing_support_plan":
+        result.update(
+            {
+                "writing_support": {
+                    "source_role": _writing_support_source_role(score),
+                    "evidence_source": {
+                        "post_id": post_id,
+                        "source_type": source_type,
+                        "source_id": source_id,
+                        "title": title,
+                        "url": url,
+                    },
+                    "pre_draft_tasks": [
+                        "verify_facts_against_source",
+                        "decide_expand_existing_or_write_new_coverage",
+                        "collect_internal_link_and_media_candidates",
+                    ],
+                    "writer_next_action": "use_as_preparation_material_before_drafting",
+                    "blocked_outputs": [
+                        "article_body",
+                        "article_title",
+                        "seo_copy",
+                        "article_write_plan",
+                        "direct_wordpress_write",
+                    ],
+                },
+                "planning_mode": "wordpress_local_only",
+            }
+        )
     if intent in {"refresh_suggestions", "duplicate_check"}:
         result["duplicate_check"] = {
             "risk": _duplicate_risk_for_score(score),
@@ -1524,6 +1559,13 @@ def _workflow_support_for_intent(intent: str) -> dict[str, object]:
             "workflow": "generation_context_enrichment",
             "wordpress_write_owner": "wordpress_local",
             "cloud_output": "reference_context",
+        }
+    if intent == "writing_support_plan":
+        return {
+            "workflow": "writer_preparation_support",
+            "wordpress_write_owner": "wordpress_local",
+            "cloud_output": "pre_draft_support_plan",
+            "body_generation_owner": "local_ability_recipe",
         }
     if intent == "refresh_suggestions":
         return {
@@ -1585,3 +1627,11 @@ def _cluster_role_for_score(score: float) -> str:
     if score >= 0.7:
         return "supporting_reference"
     return "loose_related_reference"
+
+
+def _writing_support_source_role(score: float) -> str:
+    if score >= 0.85:
+        return "primary_existing_coverage"
+    if score >= 0.7:
+        return "supporting_context"
+    return "background_or_gap_signal"
