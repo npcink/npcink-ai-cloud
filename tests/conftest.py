@@ -61,6 +61,7 @@ from app.core.security import (
     build_hmac_signature,
     build_secret_hash,
 )
+from app.core.secrets import encrypt_site_api_signing_secret
 from app.domain.commercial.service import CommercialService
 
 TEST_SECRET = "magick-cloud-test-secret-for-hmac-sha256-32b"
@@ -118,6 +119,18 @@ def seed_site_auth(
         assert api_key is not None
         api_key.site_id = site_id
         api_key.secret_hash = build_secret_hash(secret)
+        api_key.signing_secret_ciphertext = encrypt_site_api_signing_secret(
+            secret,
+            settings=Settings(
+                _env_file=None,
+                environment="test",
+                database_url=database_url,
+                redis_url="redis://localhost:6379/0",
+                internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
+                admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+                portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
+            ),
+        )
         api_key.scopes_json = scopes or []
         api_key.status = key_status
         api_key.expires_at = expires_at
