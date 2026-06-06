@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import json
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-import pytest
-from sqlalchemy import select
 
 from app.adapters.notifications.base import PortalEmailSender
 from app.api.main import create_app
@@ -98,7 +94,7 @@ def test_catalog_routes_return_seeded_models(tmp_path: Path) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["data"]["total"] == 3
+    assert payload["data"]["total"] == 4
     assert "recommended_sets" in payload["data"]
     assert payload["data"]["platform_models"]["surface"] == "platform_models"
     assert payload["message"] == "platform models loaded"

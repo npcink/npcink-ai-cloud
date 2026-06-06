@@ -174,9 +174,9 @@ def test_usage_service_aggregates_instance_profile_and_summary_windows(tmp_path:
     assert usage_summary["windows"]["today"]["provider_calls_total"] == 3
     assert usage_summary["windows"]["rolling_24h"]["runs_total"] == 3
     assert usage_summary["windows"]["rolling_24h"]["provider_calls_total"] == 4
-    assert usage_summary["health"]["instances_total"] == 5
-    assert usage_summary["health"]["healthy_total"] == 5
-    assert usage_summary["health"]["avg_score"] == 0.9333
+    assert usage_summary["health"]["instances_total"] == 6
+    assert usage_summary["health"]["healthy_total"] == 6
+    assert usage_summary["health"]["avg_score"] == 0.9444
 
     dispose_engine(database_url)
 
@@ -417,6 +417,5 @@ def test_usage_service_builds_prompt_governance_recommendation_summaries(
         assert payload["evidence"]["logs_summary"]["total"] >= 1
 
     dispose_engine(database_url)
-
 
 

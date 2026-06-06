@@ -12,6 +12,7 @@ from app.adapters.providers.base import (
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.core.db import dispose_engine, init_schema
 from app.domain.catalog.service import CatalogService
+from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_PROFILE_ID
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from tests.conftest import seed_site_auth
@@ -46,7 +47,7 @@ def test_refresh_catalog_creates_revision_and_models(tmp_path: Path) -> None:
 
     assert refresh_result["refreshed_count"] == 1
     assert refresh_result["revision"].startswith("catalog-")
-    assert models["total"] == 3
+    assert models["total"] == 4
 
     dispose_engine(database_url)
 
@@ -77,7 +78,7 @@ def test_list_models_returns_recommended_sets_and_profile_filter(tmp_path: Path)
 
     assert "recommended_sets" in all_models
     assert all_models["platform_models"]["surface"] == "platform_models"
-    assert all_models["platform_models"]["total"] == 3
+    assert all_models["platform_models"]["total"] == 4
     assert all_models["recommended_sets"]["text.balanced"]["model_ids"] == [
         "gpt-4.1-mini"
     ]
@@ -91,6 +92,9 @@ def test_list_models_returns_recommended_sets_and_profile_filter(tmp_path: Path)
         "text.quality",
     ]
     assert balanced_models["items"][0]["recommended_rank"] == 1
+    assert all_models["recommended_sets"][GROK_IMAGINE_IMAGE_PROFILE_ID]["model_ids"] == [
+        "grok-imagine-image-quality"
+    ]
 
     dispose_engine(database_url)
 

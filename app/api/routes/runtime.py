@@ -13,6 +13,13 @@ from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.security import RequestAuthContext
 from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
+from app.domain.image_generation.contracts import (
+    IMAGE_GENERATION_ABILITIES,
+    IMAGE_GENERATION_ABILITY_FAMILY,
+    IMAGE_GENERATION_DATA_CLASSIFICATION,
+    IMAGE_GENERATION_EXECUTION_KIND,
+    IMAGE_GENERATION_PROFILE_ID,
+)
 from app.domain.image_sources.contracts import (
     IMAGE_SOURCE_ABILITIES,
     IMAGE_SOURCE_ABILITY_FAMILY,
@@ -197,6 +204,10 @@ def _is_image_source_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in IMAGE_SOURCE_ABILITIES
 
 
+def _is_image_generation_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in IMAGE_GENERATION_ABILITIES
+
+
 def _is_media_batch_plan_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in MEDIA_BATCH_PLAN_ABILITIES
 
@@ -204,6 +215,8 @@ def _is_media_batch_plan_payload(payload: RuntimePayload) -> bool:
 def _resolve_ability_family(payload: RuntimePayload) -> str:
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_ABILITY_FAMILY
+    if _is_image_generation_payload(payload):
+        return IMAGE_GENERATION_ABILITY_FAMILY
     if _is_image_source_payload(payload):
         return IMAGE_SOURCE_ABILITY_FAMILY
     if _is_site_knowledge_payload(payload):
@@ -216,6 +229,8 @@ def _resolve_ability_family(payload: RuntimePayload) -> str:
 def _resolve_execution_kind(payload: RuntimePayload) -> str:
     if _is_media_batch_plan_payload(payload) and not payload.execution_kind:
         return MEDIA_BATCH_PLAN_EXECUTION_KIND
+    if _is_image_generation_payload(payload) and not payload.execution_kind:
+        return IMAGE_GENERATION_EXECUTION_KIND
     if _is_image_source_payload(payload) and not payload.execution_kind:
         return IMAGE_SOURCE_EXECUTION_KIND
     if _is_site_knowledge_payload(payload) and not payload.execution_kind:
@@ -228,6 +243,8 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
 def _resolve_profile_id(payload: RuntimePayload) -> str:
     if _is_media_batch_plan_payload(payload) and not payload.profile_id:
         return MEDIA_BATCH_PLAN_PROFILE_ID
+    if _is_image_generation_payload(payload) and not payload.profile_id:
+        return IMAGE_GENERATION_PROFILE_ID
     if _is_image_source_payload(payload) and not payload.profile_id:
         return IMAGE_SOURCE_PROFILE_ID
     if _is_site_knowledge_payload(payload) and not payload.profile_id:
@@ -245,6 +262,8 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
 def _resolve_data_classification(payload: RuntimePayload) -> str:
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_DATA_CLASSIFICATION
+    if _is_image_generation_payload(payload):
+        return IMAGE_GENERATION_DATA_CLASSIFICATION
     if _is_image_source_payload(payload):
         return IMAGE_SOURCE_DATA_CLASSIFICATION
     if _is_site_knowledge_payload(payload):

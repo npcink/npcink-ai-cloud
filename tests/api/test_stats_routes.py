@@ -160,13 +160,19 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
 
     projection_end = seeded_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     projection_start = projection_end - timedelta(hours=24)
-    UsageRollupService(database_url, now_factory=lambda: projection_end).store_router_performance_snapshot_batches(
+    UsageRollupService(
+        database_url,
+        now_factory=lambda: projection_end,
+    ).store_router_performance_snapshot_batches(
         site_ids=["site_alpha"],
         start_at=projection_start,
         end_at=projection_end,
     )
 
-    UsageRollupService(database_url, now_factory=lambda: seeded_now).store_router_diagnostics_batches(
+    UsageRollupService(
+        database_url,
+        now_factory=lambda: seeded_now,
+    ).store_router_diagnostics_batches(
         site_ids=["site_alpha"],
         recent_minutes=60,
         config_revision="windowed-metrics",
@@ -335,13 +341,17 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
 
     assert usage_payload["windows"]["today"]["runs_total"] == 2
     assert usage_payload["windows"]["today"]["provider_calls_total"] == 3
-    assert usage_payload["health"]["healthy_total"] == 5
-    assert usage_payload["health"]["avg_score"] == 0.9
+    assert usage_payload["health"]["healthy_total"] == 6
+    assert usage_payload["health"]["avg_score"] == 0.9167
     assert projection_payload["source"] == "cloud_router_performance_snapshot"
     assert projection_payload["site_id"] == "site_alpha"
-    assert projection_payload["window"]["start_gmt"] == projection_start.strftime("%Y-%m-%d %H:00:00")
+    assert projection_payload["window"]["start_gmt"] == projection_start.strftime(
+        "%Y-%m-%d %H:00:00"
+    )
     assert projection_payload["window"]["end_gmt"] == projection_end.strftime("%Y-%m-%d %H:00:00")
-    assert projection_payload["cursor"]["next_end_gmt"] == projection_end.strftime("%Y-%m-%d %H:00:00")
+    assert projection_payload["cursor"]["next_end_gmt"] == projection_end.strftime(
+        "%Y-%m-%d %H:00:00"
+    )
     rows = projection_payload["rows"]
     assert len(rows) >= 2
     assert all(row["ability_id"] == "magick-ai/workflows/generate-post-draft" for row in rows)
@@ -378,14 +388,33 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
     assert diagnostics_payload["report"]["quality_regressions"]["reason"] == "cloud_runtime_summary"
     assert diagnostics_payload["report"]["regressions"]["items"][0]["kind"] == "callback_failed"
     assert diagnostics_payload["report"]["regressions"]["items"][0]["run_id"] != ""
-    assert diagnostics_payload["report"]["regressions"]["items"][0]["details"]["ability_name"] == "magick-ai/workflows/generate-post-draft"
-    assert diagnostics_payload["report"]["regressions"]["items"][0]["details"]["channel"] == "openapi"
-    assert diagnostics_payload["report"]["quality_regressions"]["items"][0]["kind"] == "callback_due"
+    assert diagnostics_payload["report"]["regressions"]["items"][0]["details"][
+        "ability_name"
+    ] == "magick-ai/workflows/generate-post-draft"
+    assert (
+        diagnostics_payload["report"]["regressions"]["items"][0]["details"]["channel"]
+        == "openapi"
+    )
+    assert (
+        diagnostics_payload["report"]["quality_regressions"]["items"][0]["kind"]
+        == "callback_due"
+    )
     assert diagnostics_payload["report"]["quality_regressions"]["items"][0]["run_id"] != ""
     assert diagnostics_payload["report"]["quality_regressions"]["items"][1]["kind"] == "guard_event"
-    assert diagnostics_payload["report"]["quality_regressions"]["items"][1]["event_code"] == "auth.rate_limit_exceeded"
-    assert diagnostics_payload["report"]["quality_regressions"]["items"][1]["details"]["status_code"] == 429
-    assert diagnostics_payload["report"]["quality_regressions"]["items"][1]["details"]["path"] == "/v1/runtime/execute"
+    assert (
+        diagnostics_payload["report"]["quality_regressions"]["items"][1]["event_code"]
+        == "auth.rate_limit_exceeded"
+    )
+    assert (
+        diagnostics_payload["report"]["quality_regressions"]["items"][1]["details"][
+            "status_code"
+        ]
+        == 429
+    )
+    assert (
+        diagnostics_payload["report"]["quality_regressions"]["items"][1]["details"]["path"]
+        == "/v1/runtime/execute"
+    )
     assert "recommended_provider_ids" in recommendation_payload
     assert "recommended_profile_ids" in recommendation_payload
     assert "summary_lines" in recommendation_payload
@@ -594,7 +623,10 @@ def test_logs_analytics_routes_return_cloud_projection_payloads(tmp_path: Path) 
 def test_router_diagnostics_summary_exposes_runtime_case_details(tmp_path: Path) -> None:
     database_url, client, seeded_now = _build_client(tmp_path)
 
-    UsageRollupService(database_url, now_factory=lambda: seeded_now).store_router_diagnostics_batches(
+    UsageRollupService(
+        database_url,
+        now_factory=lambda: seeded_now,
+    ).store_router_diagnostics_batches(
         site_ids=["site_alpha"],
         recent_minutes=60,
         config_revision="case-details",
@@ -624,14 +656,25 @@ def test_router_diagnostics_summary_exposes_runtime_case_details(tmp_path: Path)
     assert payload["source"] == "cloud_router_diagnostics"
     assert payload["report"]["regressions"]["items"][0]["kind"] == "callback_failed"
     assert payload["report"]["regressions"]["items"][0]["run_id"] != ""
-    assert payload["report"]["regressions"]["items"][0]["details"]["ability_name"] == "magick-ai/workflows/generate-post-draft"
+    assert payload["report"]["regressions"]["items"][0]["details"][
+        "ability_name"
+    ] == "magick-ai/workflows/generate-post-draft"
     assert payload["report"]["regressions"]["items"][0]["details"]["selected_instance_id"] != ""
     assert payload["report"]["quality_regressions"]["items"][0]["kind"] == "callback_due"
     assert payload["report"]["quality_regressions"]["items"][0]["run_id"] != ""
     assert payload["report"]["quality_regressions"]["items"][1]["kind"] == "guard_event"
-    assert payload["report"]["quality_regressions"]["items"][1]["event_code"] == "auth.rate_limit_exceeded"
-    assert payload["report"]["quality_regressions"]["items"][1]["details"]["auth_surface"] == "openapi"
-    assert payload["report"]["quality_regressions"]["items"][1]["details"]["trace_id"] == "trace-guard-1"
+    assert (
+        payload["report"]["quality_regressions"]["items"][1]["event_code"]
+        == "auth.rate_limit_exceeded"
+    )
+    assert (
+        payload["report"]["quality_regressions"]["items"][1]["details"]["auth_surface"]
+        == "openapi"
+    )
+    assert (
+        payload["report"]["quality_regressions"]["items"][1]["details"]["trace_id"]
+        == "trace-guard-1"
+    )
 
     dispose_engine(database_url)
 
@@ -725,7 +768,10 @@ def test_router_performance_snapshot_exposes_first_tranche_deferred_dimensions(
 
     projection_end = seeded_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     projection_start = projection_end - timedelta(hours=24)
-    UsageRollupService(database_url, now_factory=lambda: projection_end).store_router_performance_snapshot_batches(
+    UsageRollupService(
+        database_url,
+        now_factory=lambda: projection_end,
+    ).store_router_performance_snapshot_batches(
         site_ids=["site_alpha"],
         start_at=projection_start,
         end_at=projection_end,
@@ -814,7 +860,10 @@ def test_router_performance_snapshot_prefers_delivery_buffer_when_present(
 
     projection_end = seeded_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     projection_start = projection_end - timedelta(hours=24)
-    UsageRollupService(database_url, now_factory=lambda: projection_end).store_router_performance_snapshot_batches(
+    UsageRollupService(
+        database_url,
+        now_factory=lambda: projection_end,
+    ).store_router_performance_snapshot_batches(
         site_ids=["site_alpha"],
         start_at=projection_start,
         end_at=projection_end,

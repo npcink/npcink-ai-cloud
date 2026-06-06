@@ -10,6 +10,13 @@ from urllib.parse import unquote, urlsplit
 import httpx
 
 from app.core.config import Settings
+from app.domain.image_generation.contracts import (
+    IMAGE_GENERATION_CLOUD_ABILITY,
+    IMAGE_GENERATION_CONTRACT,
+    IMAGE_GENERATION_EXECUTION_KIND,
+    IMAGE_GENERATION_PROFILE_ID,
+    IMAGE_GENERATION_RESULT_CONTRACT,
+)
 from app.domain.image_sources.contracts import (
     ALLOWED_IMAGE_SOURCE_ORIENTATIONS,
     ALLOWED_IMAGE_SOURCE_PROVIDERS,
@@ -528,6 +535,11 @@ def _build_result(
     candidates = [
         item for item in candidates if item.get("download_url") or item.get("source_url")
     ][: int(options["per_page"])]
+    query_hash = _hash_text(query)
+    ai_generation_handoff = _build_ai_generation_handoff(
+        query_hash=query_hash,
+        options=options,
+    )
     result_json = {
         "artifact_type": "image_source_candidates",
         "composition_role": "image_source_candidates",
@@ -538,21 +550,191 @@ def _build_result(
         "resolved_provider": provider_id,
         "auto_strategy": auto_strategy,
         "candidate_contract_version": IMAGE_CANDIDATE_CONTRACT,
-        "query_hash": _hash_text(query),
+        "query_hash": query_hash,
         "query_chars": len(query),
         "active_sources": [{"provider": provider_id, "count": len(candidates)}],
         "provider_errors": [],
         "images": candidates,
         "candidates": candidates,
+        "ai_generation_handoff": ai_generation_handoff,
         "handoff": {
             "candidate_contract": IMAGE_CANDIDATE_CONTRACT,
             "final_writes": "core_proposal_required",
             "direct_wordpress_write": False,
+            "available_actions": [ai_generation_handoff],
         },
         "write_posture": "suggestion_only",
         "direct_wordpress_write": False,
     }
     return ImageSourceExecutionResult(result_json=result_json, usage=usage)
+
+
+def _build_ai_generation_handoff(
+    *,
+    query_hash: str,
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "action_id": "ai_generate_image",
+        "action_kind": "runtime_handoff",
+        "trigger": "manual_user_action",
+        "label": "ai_generate",
+        "runtime": {
+            "ability_name": IMAGE_GENERATION_CLOUD_ABILITY,
+            "contract_version": IMAGE_GENERATION_CONTRACT,
+            "profile_id": IMAGE_GENERATION_PROFILE_ID,
+            "execution_kind": IMAGE_GENERATION_EXECUTION_KIND,
+            "execution_pattern": "inline",
+            "ability_family": "vision",
+            "data_classification": "internal",
+            "storage_mode": "result_only",
+            "policy": {"allow_fallback": False},
+        },
+        "input_contract": IMAGE_GENERATION_CONTRACT,
+        "result_contract": IMAGE_GENERATION_RESULT_CONTRACT,
+        "input_defaults": {
+            "contract_version": IMAGE_GENERATION_CONTRACT,
+            "aspect_ratio": _default_generation_aspect_ratio(
+                str(options.get("orientation") or "")
+            ),
+            "resolution": "high",
+            "response_format": "url",
+            "n": 1,
+        },
+        "required_local_fields": ["prompt"],
+        "local_prompt_sources": [
+            "image_source_runtime_input.query",
+            "post_title",
+            "post_excerpt",
+            "selected_text_context",
+        ],
+        "prompt_prefill_plan": _build_prompt_prefill_plan(options),
+        "batch_generation_plan": _build_batch_generation_plan(options),
+        "source_context": {
+            "query_hash": query_hash,
+            "purpose": str(options.get("purpose") or "image_reference_candidate"),
+            "orientation": str(options.get("orientation") or ""),
+        },
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+
+
+def _build_batch_generation_plan(options: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "mode": "local_reviewed_batch_plan",
+        "status": "available_with_local_orchestration",
+        "owner": "local_plugin_control_plane",
+        "requires_entitlement": True,
+        "requires_user_review": True,
+        "requires_per_item_prompt_review": True,
+        "default_item_count": 1,
+        "max_items_per_user_action": min(10, max(1, int(options.get("per_page") or 1))),
+        "recommended_execution_pattern": "inline",
+        "future_execution_pattern": "whole_run_offload",
+        "queue_owner": "cloud_runtime_worker",
+        "quota_owner": "cloud_runtime_entitlement",
+        "result_owner": "cloud_runtime_result",
+        "write_owner": "local_wordpress_approval_flow",
+        "direct_wordpress_write": False,
+        "do_not_autorun": True,
+        "failure_policy": {
+            "partial_results_allowed": True,
+            "failed_items_require_user_retry": True,
+        },
+    }
+
+
+def _build_prompt_prefill_plan(options: dict[str, Any]) -> dict[str, Any]:
+    orientation = str(options.get("orientation") or "").strip().lower()
+    purpose = str(options.get("purpose") or "image_reference_candidate").strip()
+    return {
+        "mode": "local_context_prefill",
+        "owner": "local_plugin_ui",
+        "requires_user_review": True,
+        "max_prompt_chars": 1200,
+        "source_priority": [
+            "user_edited_prompt",
+            "image_source_runtime_input.query",
+            "post_title",
+            "post_excerpt",
+            "selected_text_context",
+        ],
+        "local_prompt_fields": [
+            {
+                "field": "subject",
+                "required": True,
+                "sources": ["user_edited_prompt", "image_source_runtime_input.query"],
+                "max_chars": 220,
+            },
+            {
+                "field": "context",
+                "required": False,
+                "sources": ["post_title", "post_excerpt", "selected_text_context"],
+                "max_chars": 420,
+            },
+            {
+                "field": "composition",
+                "required": False,
+                "default": _composition_hint(orientation),
+                "max_chars": 180,
+            },
+            {
+                "field": "style",
+                "required": False,
+                "default": _style_hint(purpose),
+                "max_chars": 180,
+            },
+            {
+                "field": "constraints",
+                "required": False,
+                "default": (
+                    "No text overlays, no logos, no direct trademark use unless "
+                    "supplied by the user."
+                ),
+                "max_chars": 180,
+            },
+        ],
+        "assembly": {
+            "format": "plain_text_sections",
+            "section_order": ["subject", "context", "composition", "style", "constraints"],
+            "joiner": ". ",
+        },
+        "safety": {
+            "must_review_before_execute": True,
+            "do_not_autorun": True,
+            "do_not_include_secrets": True,
+            "do_not_include_wordpress_credentials": True,
+            "direct_wordpress_write": False,
+        },
+    }
+
+
+def _composition_hint(orientation: str) -> str:
+    normalized = str(orientation or "").strip().lower()
+    if normalized == "portrait":
+        return "Portrait composition, clear central subject, editorial crop."
+    if normalized in {"square", "squarish"}:
+        return "Square composition, balanced subject placement, clean margins."
+    return "Wide editorial hero composition, clear focal point, usable negative space."
+
+
+def _style_hint(purpose: str) -> str:
+    normalized = str(purpose or "").strip().lower()
+    if "product" in normalized:
+        return "Professional product photography, natural lighting, realistic materials."
+    if "featured" in normalized or "hero" in normalized:
+        return "Editorial hero image, polished but realistic, publication-ready."
+    return "Realistic editorial image, natural lighting, high visual clarity."
+
+
+def _default_generation_aspect_ratio(orientation: str) -> str:
+    normalized = str(orientation or "").strip().lower()
+    if normalized == "portrait":
+        return "3:4"
+    if normalized in {"square", "squarish"}:
+        return "1:1"
+    return "16:9"
 
 
 def _normalize_text(value: Any, *, limit: int) -> str:

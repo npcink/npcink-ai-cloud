@@ -44,7 +44,12 @@ from app.core.security import (
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
-from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID, FREE_GPT55_TEXT_PROFILE_ID
+from app.domain.hosted_model_defaults import (
+    FREE_GPT55_MODEL_ID,
+    FREE_GPT55_TEXT_PROFILE_ID,
+    GROK_IMAGINE_IMAGE_MODEL_ID,
+    GROK_IMAGINE_IMAGE_PROFILE_ID,
+)
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.web_search.service import (
@@ -669,6 +674,94 @@ def test_execute_route_defaults_text_requests_to_free_gpt55(tmp_path: Path) -> N
     assert provider.requests
     assert provider.requests[0].profile_id == FREE_GPT55_TEXT_PROFILE_ID
     assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
+
+    dispose_engine(database_url)
+
+
+def test_execute_route_defaults_image_generation_to_grok_imagine(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "magick-ai-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "A clean product photo of a red running shoe",
+            "aspect_ratio": "16:9",
+            "resolution": "high",
+            "response_format": "url",
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-generation-default-001",
+            nonce="nonce-image-generation-default-001",
+            trace_id="1234567890abcdef1234567890abcd01",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["profile_id"] == GROK_IMAGINE_IMAGE_PROFILE_ID
+    assert data["model_id"] == GROK_IMAGINE_IMAGE_MODEL_ID
+    assert data["execution_context"]["ability_family"] == "vision"
+    assert data["execution_context"]["data_classification"] == "internal"
+    assert data["result"]["artifact_type"] == "image_generation_candidates"
+    assert data["result"]["direct_wordpress_write"] is False
+    assert data["result"]["images"][0]["mime_type"] == "image/png"
+
+    dispose_engine(database_url)
+
+
+def test_execute_route_rejects_image_generation_write_controls(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "magick-ai-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "A clean product photo of a red running shoe",
+            "direct_wordpress_write": True,
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-generation-reject-001",
+            nonce="nonce-image-generation-reject-001",
+            trace_id="1234567890abcdef1234567890abcd02",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["error_code"] == "image_generation.write_or_secret_field_forbidden"
 
     dispose_engine(database_url)
 

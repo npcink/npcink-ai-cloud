@@ -147,6 +147,7 @@ class LiteLLMGatewayProviderAdapter(OpenAIProviderAdapter):
                     endpoint_variant=endpoint_variant,
                     region="gateway",
                     capability_tags=self._build_catalog_capability_tags(
+                        upstream_model_id,
                         feature,
                         tier,
                         {"metadata": {"capability_tags": ["litellm", "gateway"]}},

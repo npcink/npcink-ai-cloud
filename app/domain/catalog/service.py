@@ -10,7 +10,10 @@ from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.models import ProviderCallRecord
 from app.domain.health.scoring import assess_instance_health
-from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
+from app.domain.hosted_model_defaults import (
+    FREE_GPT55_TEXT_PROFILE_ID,
+    GROK_IMAGINE_IMAGE_PROFILE_ID,
+)
 
 DEFAULT_RECOMMENDED_PROFILE_IDS = (
     FREE_GPT55_TEXT_PROFILE_ID,
@@ -18,6 +21,7 @@ DEFAULT_RECOMMENDED_PROFILE_IDS = (
     "text.balanced",
     "text.quality",
     "vision.default",
+    GROK_IMAGINE_IMAGE_PROFILE_ID,
     "embed.default",
 )
 
@@ -444,6 +448,10 @@ class CatalogService:
             "text.balanced": ("text", ["balanced", "economy", "quality"]),
             "text.quality": ("text", ["quality", "balanced"]),
             "vision.default": ("vision", ["default", "quality"]),
+            GROK_IMAGINE_IMAGE_PROFILE_ID: (
+                "image_generation",
+                ["grok-imagine", "quality", "default"],
+            ),
             "embed.default": ("embedding", ["default", "embedding"]),
         }
 

@@ -29,6 +29,10 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
                         "id": "text-embedding-3-small",
                         "context_window": 8192,
                     },
+                    {
+                        "id": "grok-imagine-image-quality",
+                        "feature": "image_generation",
+                    },
                 ]
             },
         )
@@ -44,14 +48,17 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
     assert [model.model_id for model in snapshot.models] == [
         "gpt-4.1-mini",
         "gpt-4.1",
+        "grok-imagine-image-quality",
         "text-embedding-3-small",
     ]
     assert snapshot.models[0].instances[0].endpoint_variant == "chat_completions"
     assert snapshot.models[0].instances[0].capability_tags == ["text", "balanced"]
     assert snapshot.models[1].feature == "vision"
     assert snapshot.models[1].instances[0].endpoint_variant == "responses"
-    assert snapshot.models[2].feature == "embedding"
-    assert snapshot.models[2].instances[0].endpoint_variant == "embeddings"
+    assert snapshot.models[2].feature == "image_generation"
+    assert snapshot.models[2].instances[0].endpoint_variant == "image_generations"
+    assert snapshot.models[3].feature == "embedding"
+    assert snapshot.models[3].instances[0].endpoint_variant == "embeddings"
 
 
 def test_openai_adapter_rejects_sample_catalog_when_fallback_is_disabled() -> None:
@@ -80,6 +87,19 @@ def test_openai_adapter_free_gpt55_sample_catalog_profile() -> None:
     assert snapshot.models[0].instances[0].endpoint_variant == "responses"
     assert "free-gpt55" in snapshot.models[0].instances[0].capability_tags
     assert "hosted-free" in snapshot.models[0].instances[0].capability_tags
+
+
+def test_openai_adapter_sample_catalog_includes_grok_image_generation() -> None:
+    adapter = OpenAIProviderAdapter()
+
+    snapshot = adapter.fetch_catalog()
+    model = next(
+        item for item in snapshot.models if item.model_id == "grok-imagine-image-quality"
+    )
+
+    assert model.feature == "image_generation"
+    assert model.instances[0].endpoint_variant == "image_generations"
+    assert "grok-imagine" in model.instances[0].capability_tags
 
 
 def test_openai_adapter_tags_free_gpt55_from_http_catalog() -> None:
@@ -386,6 +406,62 @@ def test_openai_adapter_executes_embeddings_over_http() -> None:
     assert result.output["dimensions"] == 4
     assert result.tokens_in == 4
     assert result.tokens_out == 0
+
+
+def test_openai_adapter_executes_image_generation_over_http() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/images/generations")
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["model"] == "grok-imagine-image-quality"
+        assert payload["prompt"] == "A clean product photo of a red running shoe"
+        assert payload["aspect_ratio"] == "16:9"
+        assert payload["resolution"] == "high"
+        assert payload["response_format"] == "url"
+        assert payload["n"] == 2
+        return httpx.Response(
+            200,
+            json={
+                "model": "grok-imagine-image-quality",
+                "data": [
+                    {
+                        "url": "https://example.test/generated-one.png",
+                        "revised_prompt": "A clean studio product photo",
+                        "mime_type": "image/png",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 12,
+                    "cost_in_usd_ticks": 130000,
+                },
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = adapter.execute(
+        _build_request(
+            execution_kind="image_generation",
+            endpoint_variant="image_generations",
+            model_id="grok-imagine-image-quality",
+            input_payload={
+                "prompt": "A clean product photo of a red running shoe",
+                "aspect_ratio": "16:9",
+                "resolution": "high",
+                "response_format": "url",
+                "n": 2,
+            },
+        )
+    )
+
+    assert result.output["artifact_type"] == "image_generation_candidates"
+    assert result.output["direct_wordpress_write"] is False
+    assert result.output["images"][0]["url"] == "https://example.test/generated-one.png"
+    assert result.tokens_in == 12
+    assert result.tokens_out == 0
+    assert result.cost == 0.0013
 
 
 def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_format() -> None:

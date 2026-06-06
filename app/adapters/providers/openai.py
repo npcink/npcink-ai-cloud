@@ -14,6 +14,7 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
+from app.domain.image_generation.contracts import IMAGE_GENERATION_RESULT_CONTRACT
 
 DEEPSEEK_MODEL_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
     "deepseek-v4-flash": {
@@ -167,6 +168,36 @@ class OpenAIProviderAdapter:
                         capability_tags=["embedding", "default"],
                         is_default=True,
                         weight=100,
+                    )
+                ],
+            ),
+            CatalogModelSeed(
+                model_id="grok-imagine-image-quality",
+                family="grok-imagine",
+                feature="image_generation",
+                status="available",
+                context_window=None,
+                price_input=None,
+                price_output=None,
+                fallback_candidate=False,
+                raw_json={
+                    "tier": "quality",
+                    "surface": "image_generation",
+                    "response_formats": ["url", "b64_json"],
+                },
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="openai-global-grok-imagine-image-quality",
+                        endpoint_variant="image_generations",
+                        region="global",
+                        capability_tags=[
+                            "image_generation",
+                            "default",
+                            "quality",
+                            "grok-imagine",
+                        ],
+                        is_default=True,
+                        weight=120,
                     )
                 ],
             ),
@@ -350,6 +381,14 @@ class OpenAIProviderAdapter:
                 embedding_payload["encoding_format"] = options["encoding_format"]
             return "/embeddings", embedding_payload
 
+        if request.endpoint_variant == "image_generations":
+            image_payload: dict[str, Any] = {
+                "model": runtime_model_id,
+                "prompt": self._resolve_image_generation_prompt(options),
+            }
+            self._apply_image_generation_request_options(image_payload, options)
+            return "/images/generations", image_payload
+
         if request.endpoint_variant == "responses":
             responses_payload: dict[str, Any] = {
                 "model": runtime_model_id,
@@ -402,6 +441,54 @@ class OpenAIProviderAdapter:
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
+            )
+
+        if request.endpoint_variant == "image_generations":
+            data = response_json.get("data")
+            images: list[dict[str, Any]] = []
+            if isinstance(data, list):
+                for index, item in enumerate(data, start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    image: dict[str, Any] = {
+                        "index": index,
+                        "url": str(item.get("url") or ""),
+                        "b64_json": str(item.get("b64_json") or ""),
+                        "mime_type": str(item.get("mime_type") or "image/png"),
+                        "revised_prompt": str(item.get("revised_prompt") or ""),
+                    }
+                    if item.get("width") is not None:
+                        image["width"] = self._coerce_int(item.get("width"))
+                    if item.get("height") is not None:
+                        image["height"] = self._coerce_int(item.get("height"))
+                    images.append(image)
+            usage = response_json.get("usage", {})
+            tokens_in = (
+                self._coerce_int(usage.get("prompt_tokens"))
+                if isinstance(usage, dict)
+                else 0
+            )
+            cost = self._extract_image_generation_cost(usage)
+            usage_for_cost = usage if isinstance(usage, dict) else {}
+            output = {
+                "artifact_type": "image_generation_candidates",
+                "contract_version": IMAGE_GENERATION_RESULT_CONTRACT,
+                "model_id": response_json.get("model", request.model_id),
+                "images": images,
+                "provider_response_format": "b64_json"
+                if any(image.get("b64_json") for image in images)
+                else "url",
+                "direct_wordpress_write": False,
+                "usage": usage if isinstance(usage, dict) else {},
+            }
+            return ProviderExecutionResult(
+                output=output,
+                latency_ms=latency_ms,
+                tokens_in=tokens_in,
+                tokens_out=0,
+                cost=cost
+                if cost > 0
+                else self._estimate_cost(request, tokens_in, 0, usage=usage_for_cost),
             )
 
         if request.endpoint_variant == "responses":
@@ -480,6 +567,25 @@ class OpenAIProviderAdapter:
             }
             tokens_out = 0
             latency_ms += 10
+        elif request.execution_kind == "image_generation":
+            output = {
+                "artifact_type": "image_generation_candidates",
+                "contract_version": IMAGE_GENERATION_RESULT_CONTRACT,
+                "model_id": request.model_id,
+                "images": [
+                    {
+                        "index": 1,
+                        "url": f"https://example.invalid/magick-ai/{request.run_id}.png",
+                        "b64_json": "",
+                        "mime_type": "image/png",
+                        "revised_prompt": source_text,
+                    }
+                ],
+                "provider_response_format": "url",
+                "direct_wordpress_write": False,
+            }
+            tokens_out = 0
+            latency_ms += 120
         elif request.execution_kind == "vision":
             output_text = f"[hosted:{request.model_id}] vision summary for {source_text}"
             output = {
@@ -544,6 +650,11 @@ class OpenAIProviderAdapter:
             "tools",
             "tool_choice",
             "thinking",
+            "prompt",
+            "aspect_ratio",
+            "resolution",
+            "quality",
+            "size",
         ):
             if key in payload and key not in options:
                 options[key] = payload[key]
@@ -621,6 +732,54 @@ class OpenAIProviderAdapter:
             payload["reasoning"] = reasoning
         if reasoning is not None and isinstance(reasoning.get("max_reasoning_tokens"), int):
             payload["max_reasoning_tokens"] = reasoning["max_reasoning_tokens"]
+
+    def _apply_image_generation_request_options(
+        self,
+        payload: dict[str, Any],
+        options: dict[str, Any],
+    ) -> None:
+        if isinstance(options.get("n"), int):
+            payload["n"] = max(1, min(10, int(options["n"])))
+        for key in (
+            "aspect_ratio",
+            "resolution",
+            "response_format",
+            "quality",
+            "size",
+            "user",
+        ):
+            value = options.get(key)
+            if isinstance(value, str) and value.strip():
+                payload[key] = value.strip()
+        if isinstance(options.get("metadata"), dict):
+            payload["metadata"] = options["metadata"]
+        if isinstance(options.get("extra"), dict):
+            for key, value in options["extra"].items():
+                if isinstance(key, str) and key not in payload:
+                    payload[key] = value
+
+    def _resolve_image_generation_prompt(self, options: dict[str, Any]) -> str:
+        prompt = options.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+        text = options.get("text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+        input_value = options.get("input")
+        if isinstance(input_value, str) and input_value.strip():
+            return input_value.strip()
+        messages = options.get("messages")
+        if isinstance(messages, list):
+            collected: list[str] = []
+            for message in messages:
+                if not isinstance(message, dict):
+                    continue
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    collected.append(content.strip())
+            if collected:
+                return "\n".join(collected)
+        return ""
 
     def _normalize_reasoning(self, value: object) -> dict[str, Any] | None:
         if not isinstance(value, dict):
@@ -808,7 +967,7 @@ class OpenAIProviderAdapter:
         )
 
     def _catalog_sort_key(self, model_seed: CatalogModelSeed) -> tuple[int, int, str]:
-        feature_rank = {"text": 0, "vision": 1, "embedding": 2}.get(
+        feature_rank = {"text": 0, "vision": 1, "image_generation": 2, "embedding": 3}.get(
             model_seed.feature,
             99,
         )
@@ -833,8 +992,28 @@ class OpenAIProviderAdapter:
         )
         if isinstance(explicit_feature, str):
             normalized_feature = explicit_feature.strip().lower()
-            if normalized_feature in {"embedding", "text", "vision"}:
+            if normalized_feature in {"embedding", "text", "vision", "image_generation"}:
                 return normalized_feature
+            if normalized_feature in {"image", "images"}:
+                return "image_generation"
+
+        mode = self._lookup_nested(payload, ("mode",), ("metadata", "mode"))
+        if isinstance(mode, str) and mode.strip().lower() in {
+            "image",
+            "image_generation",
+        }:
+            return "image_generation"
+
+        if any(keyword in model_key for keyword in ("grok-imagine", "image-quality")):
+            return "image_generation"
+
+        output_modalities = set(self._collect_catalog_output_modalities(payload))
+        if "image" in output_modalities:
+            return "image_generation"
+
+        capability_values = set(self._collect_catalog_capability_values(payload))
+        if "image_generation" in capability_values:
+            return "image_generation"
 
         if "embedding" in model_key:
             return "embedding"
@@ -867,7 +1046,7 @@ class OpenAIProviderAdapter:
 
         if feature == "embedding":
             return "default"
-        if feature == "vision":
+        if feature in {"vision", "image_generation"}:
             return "quality"
 
         model_key = model_id.lower()
@@ -974,6 +1153,8 @@ class OpenAIProviderAdapter:
     def _select_catalog_endpoint_variant(self, feature: str, tier: str) -> str:
         if feature == "embedding":
             return "embeddings"
+        if feature == "image_generation":
+            return "image_generations"
         if feature == "vision" or tier == "quality":
             return "responses"
         return "chat_completions"
@@ -988,6 +1169,8 @@ class OpenAIProviderAdapter:
         tags: list[str] = [feature]
         if feature == "embedding":
             tags.append("default")
+        elif feature == "image_generation":
+            tags.extend(["default", "quality"])
         elif feature == "vision":
             tags.extend(["default", "quality"])
         else:
@@ -1021,6 +1204,30 @@ class OpenAIProviderAdapter:
 
         return tags
 
+    def _collect_catalog_output_modalities(self, payload: dict[str, Any]) -> list[str]:
+        values: list[str] = []
+        raw = payload.get("output_modalities")
+        if isinstance(raw, list):
+            values.extend(str(item).strip().lower() for item in raw if str(item).strip())
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            raw = metadata.get("output_modalities")
+            if isinstance(raw, list):
+                values.extend(str(item).strip().lower() for item in raw if str(item).strip())
+        return values
+
+    def _collect_catalog_capability_values(self, payload: dict[str, Any]) -> list[str]:
+        values: list[str] = []
+        for raw in (
+            payload.get("capabilities"),
+            payload.get("capability_tags"),
+            self._lookup_nested(payload, ("metadata", "capabilities")),
+            self._lookup_nested(payload, ("metadata", "capability_tags")),
+        ):
+            if isinstance(raw, list):
+                values.extend(str(item).strip().lower() for item in raw if str(item).strip())
+        return values
+
     def _catalog_weight_for_tier(self, tier: str) -> int:
         return {
             "economy": 80,
@@ -1028,6 +1235,18 @@ class OpenAIProviderAdapter:
             "quality": 120,
             "default": 100,
         }.get(tier, 100)
+
+    def _extract_image_generation_cost(self, usage: Any) -> float:
+        if not isinstance(usage, dict):
+            return 0.0
+        for key in ("cost_usd", "cost"):
+            value = self._coerce_float(usage.get(key))
+            if value is not None and value > 0:
+                return round(value, 6)
+        ticks = self._coerce_float(usage.get("cost_in_usd_ticks"))
+        if ticks is not None and ticks > 0:
+            return round(ticks / 100_000_000, 6)
+        return 0.0
 
     def _estimate_cost(
         self,

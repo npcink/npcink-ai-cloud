@@ -304,10 +304,26 @@ def test_image_source_candidate_suggested_filename_is_safe(monkeypatch: Any) -> 
     assert candidate["suggested_filename"].startswith("unsplash-image-")
     assert candidate["suggested_filename"].endswith(".webp")
     assert candidate["filename_basis"]["owner"] == "wordpress_write_ability_final"
+    handoff = execution.result_json["ai_generation_handoff"]
+    assert handoff["trigger"] == "manual_user_action"
+    assert handoff["runtime"]["ability_name"] == "magick-ai-cloud/generate-image"
+    assert handoff["runtime"]["profile_id"] == "image.grok-imagine-quality"
+    assert handoff["runtime"]["execution_kind"] == "image_generation"
+    assert handoff["input_defaults"]["aspect_ratio"] == "16:9"
+    assert handoff["required_local_fields"] == ["prompt"]
+    assert handoff["prompt_prefill_plan"]["mode"] == "local_context_prefill"
+    assert handoff["prompt_prefill_plan"]["owner"] == "local_plugin_ui"
+    assert handoff["prompt_prefill_plan"]["requires_user_review"] is True
+    assert handoff["prompt_prefill_plan"]["safety"]["do_not_autorun"] is True
+    assert handoff["batch_generation_plan"]["mode"] == "local_reviewed_batch_plan"
+    assert handoff["batch_generation_plan"]["owner"] == "local_plugin_control_plane"
+    assert handoff["batch_generation_plan"]["do_not_autorun"] is True
+    assert handoff["direct_wordpress_write"] is False
     assert "prompt" not in candidate["suggested_filename"]
     assert "commercial" not in candidate["suggested_filename"]
     assert "secret" not in candidate["suggested_filename"]
     assert "secret=value" not in candidate["suggested_filename"]
+    assert "secret commercial launch prompt" not in json.dumps(execution.result_json)
 
 
 def test_pixabay_provider_preserves_api_endpoint_trailing_slash(monkeypatch: Any) -> None:
@@ -370,9 +386,117 @@ def test_pixabay_provider_preserves_api_endpoint_trailing_slash(monkeypatch: Any
     assert execution.result_json["requested_provider_mode"] == "pixabay"
     assert execution.result_json["resolved_provider"] == "pixabay"
     assert execution.result_json["auto_strategy"] == "first_available"
+    assert execution.result_json["handoff"]["available_actions"][0]["action_id"] == (
+        "ai_generate_image"
+    )
     candidate = execution.result_json["images"][0]
     assert candidate["provider"] == "pixabay"
     assert candidate["thumbnail_url"] == "https://cdn.pixabay.com/photo-thumb.jpg"
+
+
+def test_image_source_ai_generation_handoff_uses_orientation_defaults() -> None:
+    result = image_source_service._build_result(
+        provider_id="unsplash",
+        auto_strategy="first_available",
+        query="private product prompt",
+        options={
+            "per_page": 1,
+            "provider": "unsplash",
+            "orientation": "portrait",
+            "purpose": "featured_image_reference",
+        },
+        candidates=[],
+        usage=ImageSourceProviderUsage(
+            provider_id="unsplash",
+            model_id="image-source-search",
+            instance_id="cloud-managed",
+            region="unspecified",
+            latency_ms=0,
+        ),
+    )
+
+    handoff = result.result_json["ai_generation_handoff"]
+    assert handoff["input_defaults"]["aspect_ratio"] == "3:4"
+    assert handoff["runtime"]["policy"] == {"allow_fallback": False}
+    assert handoff["source_context"]["query_hash"]
+    prefill_plan = handoff["prompt_prefill_plan"]
+    assert prefill_plan["source_priority"][0] == "user_edited_prompt"
+    assert prefill_plan["local_prompt_fields"][2]["field"] == "composition"
+    assert "Portrait composition" in prefill_plan["local_prompt_fields"][2]["default"]
+    assert prefill_plan["safety"]["must_review_before_execute"] is True
+    assert prefill_plan["safety"]["direct_wordpress_write"] is False
+    assert "private product prompt" not in json.dumps(result.result_json)
+
+
+def test_image_source_ai_generation_prefill_plan_tracks_product_purpose() -> None:
+    result = image_source_service._build_result(
+        provider_id="unsplash",
+        auto_strategy="first_available",
+        query="product lifestyle image",
+        options={
+            "per_page": 1,
+            "provider": "unsplash",
+            "orientation": "square",
+            "purpose": "product_gallery_image",
+        },
+        candidates=[],
+        usage=ImageSourceProviderUsage(
+            provider_id="unsplash",
+            model_id="image-source-search",
+            instance_id="cloud-managed",
+            region="unspecified",
+            latency_ms=0,
+        ),
+    )
+
+    handoff = result.result_json["ai_generation_handoff"]
+    prefill_plan = handoff["prompt_prefill_plan"]
+    assert handoff["input_defaults"]["aspect_ratio"] == "1:1"
+    assert "Professional product photography" in prefill_plan["local_prompt_fields"][3][
+        "default"
+    ]
+    assert prefill_plan["assembly"]["section_order"] == [
+        "subject",
+        "context",
+        "composition",
+        "style",
+        "constraints",
+    ]
+    assert "product lifestyle image" not in json.dumps(result.result_json)
+
+
+def test_image_source_ai_generation_batch_plan_is_bounded_and_local_owned() -> None:
+    result = image_source_service._build_result(
+        provider_id="unsplash",
+        auto_strategy="first_available",
+        query="article image set",
+        options={
+            "per_page": 25,
+            "provider": "unsplash",
+            "orientation": "landscape",
+            "purpose": "article_media_set",
+        },
+        candidates=[],
+        usage=ImageSourceProviderUsage(
+            provider_id="unsplash",
+            model_id="image-source-search",
+            instance_id="cloud-managed",
+            region="unspecified",
+            latency_ms=0,
+        ),
+    )
+
+    batch_plan = result.result_json["ai_generation_handoff"]["batch_generation_plan"]
+    assert batch_plan["status"] == "available_with_local_orchestration"
+    assert batch_plan["requires_entitlement"] is True
+    assert batch_plan["requires_user_review"] is True
+    assert batch_plan["requires_per_item_prompt_review"] is True
+    assert batch_plan["max_items_per_user_action"] == 10
+    assert batch_plan["recommended_execution_pattern"] == "inline"
+    assert batch_plan["future_execution_pattern"] == "whole_run_offload"
+    assert batch_plan["write_owner"] == "local_wordpress_approval_flow"
+    assert batch_plan["direct_wordpress_write"] is False
+    assert batch_plan["failure_policy"]["partial_results_allowed"] is True
 
 
 def test_image_source_auto_random_selects_configured_provider(monkeypatch: Any) -> None:

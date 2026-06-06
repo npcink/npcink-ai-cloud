@@ -227,6 +227,11 @@ Before shipping content-generation features:
 - define quota, concurrency, and request-size limits
 - define result retention and audit fields
 - define AI-labeling handoff fields
+- for image generation, return artifact candidates only; WordPress media import,
+  featured image assignment, insertion, and publication remain local approval
+  and write flows
+- when exposing AI generation from image-source suggestions, follow
+  [Image Source AI Generation Handoff v1](image-source-ai-generation-handoff-v1.md)
 - define suspension and key-revocation operator path
 - update tests for prohibited policy ingress and fail-closed behavior
 - run Cloud boundary review before adding any new admin, portal, or public API
