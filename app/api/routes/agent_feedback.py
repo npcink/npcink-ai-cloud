@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
@@ -117,6 +117,34 @@ async def record_agent_feedback(
     return build_envelope(
         status="ok",
         message="agent feedback accepted for eval",
+        data=result,
+        trace_id=auth.trace_id,
+        revision="m1",
+    )
+
+
+@router.get("/summary")
+async def get_agent_feedback_summary(
+    request: Request,
+    window_hours: int = Query(default=24, ge=1, le=168),
+) -> Any:
+    auth = await authorize_public_request(
+        request,
+        require_idempotency=False,
+        required_scope="stats:read",
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+
+    result = await run_in_threadpool(
+        _get_feedback_service(request).get_summary,
+        site_id=auth.site_id,
+        window_hours=window_hours,
+    )
+
+    return build_envelope(
+        status="ok",
+        message="agent feedback summary loaded",
         data=result,
         trace_id=auth.trace_id,
         revision="m1",

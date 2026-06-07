@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+from sqlalchemy import select
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
+from app.core.models import UsageMeterEvent
 from app.domain.agent_feedback.contracts import (
+    AGENT_FEEDBACK_CONTRACT_VERSION,
     AGENT_FEEDBACK_EVENT_KIND,
     AGENT_FEEDBACK_EXECUTION_KIND,
     AGENT_FEEDBACK_METER_PREFIX,
@@ -88,6 +92,59 @@ class AgentFeedbackService:
             "trace_id": trace_id,
         }
 
+    def get_summary(self, *, site_id: str, window_hours: int) -> dict[str, Any]:
+        window_hours = max(1, min(168, int(window_hours or 24)))
+        since = datetime.now(UTC) - timedelta(hours=window_hours)
+
+        with get_session(self.database_url) as session:
+            events = list(
+                session.scalars(
+                    select(UsageMeterEvent)
+                    .where(UsageMeterEvent.site_id == site_id)
+                    .where(UsageMeterEvent.event_kind == AGENT_FEEDBACK_EVENT_KIND)
+                    .where(UsageMeterEvent.created_at >= since)
+                    .order_by(UsageMeterEvent.created_at.desc(), UsageMeterEvent.id.desc())
+                )
+            )
+
+        outcomes: dict[str, int] = {}
+        labels: dict[str, int] = {}
+        source_runtimes: dict[str, int] = {}
+        local_surfaces: dict[str, int] = {}
+        for event in events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            self._increment(outcomes, str(payload.get("local_outcome") or "unknown"))
+            self._increment(source_runtimes, str(payload.get("source_runtime") or "unknown"))
+            self._increment(local_surfaces, str(payload.get("local_surface") or "unknown"))
+            for label in self._string_list(payload.get("feedback_labels")):
+                self._increment(labels, label)
+
+        total = len(events)
+        return {
+            "artifact_type": "cloud_agent_feedback_summary",
+            "contract_version": AGENT_FEEDBACK_CONTRACT_VERSION,
+            "site_id": site_id,
+            "window_hours": window_hours,
+            "events_total": total,
+            "outcomes": outcomes,
+            "labels": labels,
+            "source_runtimes": source_runtimes,
+            "local_surfaces": local_surfaces,
+            "rates": {
+                "accepted_rate": self._rate(
+                    outcomes.get("accepted", 0) + outcomes.get("edited_before_accept", 0),
+                    total,
+                ),
+                "evidence_useful_rate": self._rate(labels.get("evidence_useful", 0), total),
+                "evidence_weak_rate": self._rate(labels.get("evidence_weak", 0), total),
+                "wrong_next_step_rate": self._rate(labels.get("wrong_next_step", 0), total),
+            },
+            "production_mutation": False,
+            "approval_truth": "wordpress_local",
+            "preflight_truth": "wordpress_local",
+            "final_write_truth": "wordpress_local",
+        }
+
     @staticmethod
     def _string_list(value: object) -> list[str]:
         if not isinstance(value, list):
@@ -107,6 +164,17 @@ class AgentFeedbackService:
         if str(payload.get("operator_note") or "").strip():
             return "tenant_scoped_unredacted"
         return "aggregate_safe"
+
+    @staticmethod
+    def _increment(bucket: dict[str, int], key: str) -> None:
+        normalized = key.strip() or "unknown"
+        bucket[normalized] = bucket.get(normalized, 0) + 1
+
+    @staticmethod
+    def _rate(count: int, total: int) -> float:
+        if total <= 0:
+            return 0.0
+        return round(count / total, 4)
 
     @staticmethod
     def _format_datetime(value: datetime | None) -> str:

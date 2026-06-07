@@ -31,7 +31,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     seed_site_auth(
         database_url,
         site_id="site_alpha",
-        scopes=["runtime:execute", "runtime:read"],
+        scopes=["runtime:execute", "runtime:read", "stats:read"],
     )
     settings = Settings(
         _env_file=None,
@@ -89,6 +89,18 @@ def _post_feedback(
     return client.post("/v1/agent-feedback/events", content=body, headers=headers)
 
 
+def _get_feedback_summary(client: TestClient, *, window_hours: int = 24) -> object:
+    path = f"/v1/agent-feedback/summary?window_hours={window_hours}"
+    headers = build_auth_headers(
+        "GET",
+        path,
+        site_id="site_alpha",
+        key_id="key_default",
+        trace_id="agentfeedbacksummary000000000",
+    )
+    return client.get(path, headers=headers)
+
+
 def test_agent_feedback_event_is_accepted_for_eval(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -142,6 +154,46 @@ def test_agent_feedback_idempotency_dedupes_meter_event(tmp_path: Path) -> None:
     assert first.json()["data"]["feedback_event_id"] == second.json()["data"]["feedback_event_id"]
     with get_session(database_url) as session:
         assert len(list(session.scalars(select(UsageMeterEvent)))) == 1
+
+
+def test_agent_feedback_summary_rolls_up_outcomes_and_labels(tmp_path: Path) -> None:
+    _database_url, client = _build_client(tmp_path)
+
+    accepted = _post_feedback(
+        client,
+        _feedback_payload(
+            local_outcome="accepted",
+            feedback_labels=["evidence_useful", "operator_confidence_high"],
+        ),
+        idempotency_key="agent-feedback-summary-accepted",
+    )
+    rejected = _post_feedback(
+        client,
+        _feedback_payload(
+            local_outcome="rejected",
+            feedback_labels=["evidence_weak", "wrong_next_step"],
+        ),
+        idempotency_key="agent-feedback-summary-rejected",
+    )
+    response = _get_feedback_summary(client, window_hours=24)
+
+    assert accepted.status_code == 200
+    assert rejected.status_code == 200
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["artifact_type"] == "cloud_agent_feedback_summary"
+    assert data["contract_version"] == "cloud_agent_feedback.v1"
+    assert data["events_total"] == 2
+    assert data["outcomes"] == {"rejected": 1, "accepted": 1}
+    assert data["labels"]["evidence_useful"] == 1
+    assert data["labels"]["evidence_weak"] == 1
+    assert data["labels"]["wrong_next_step"] == 1
+    assert data["rates"]["accepted_rate"] == 0.5
+    assert data["rates"]["evidence_useful_rate"] == 0.5
+    assert data["rates"]["evidence_weak_rate"] == 0.5
+    assert data["rates"]["wrong_next_step_rate"] == 0.5
+    assert data["production_mutation"] is False
+    assert data["approval_truth"] == "wordpress_local"
 
 
 def test_agent_feedback_rejects_write_authority_fields(tmp_path: Path) -> None:
