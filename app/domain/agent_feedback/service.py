@@ -111,13 +111,30 @@ class AgentFeedbackService:
         labels: dict[str, int] = {}
         source_runtimes: dict[str, int] = {}
         local_surfaces: dict[str, int] = {}
+        trend: dict[str, dict[str, int]] = {}
+        scenarios: dict[str, dict[str, Any]] = {}
+        rejection_reasons: dict[str, int] = {}
         for event in events:
             payload = event.payload_json if isinstance(event.payload_json, dict) else {}
-            self._increment(outcomes, str(payload.get("local_outcome") or "unknown"))
-            self._increment(source_runtimes, str(payload.get("source_runtime") or "unknown"))
-            self._increment(local_surfaces, str(payload.get("local_surface") or "unknown"))
-            for label in self._string_list(payload.get("feedback_labels")):
+            outcome = str(payload.get("local_outcome") or "unknown").strip() or "unknown"
+            source_runtime = str(payload.get("source_runtime") or "unknown").strip() or "unknown"
+            local_surface = str(payload.get("local_surface") or "unknown").strip() or "unknown"
+            feedback_labels = self._string_list(payload.get("feedback_labels"))
+            self._increment(outcomes, outcome)
+            self._increment(source_runtimes, source_runtime)
+            self._increment(local_surfaces, local_surface)
+            self._increment_trend_bucket(trend, event.created_at, outcome, feedback_labels)
+            self._increment_scenario(
+                scenarios,
+                local_surface,
+                source_runtime,
+                outcome,
+                feedback_labels,
+            )
+            for label in feedback_labels:
                 self._increment(labels, label)
+                if self._is_rejected_outcome(outcome):
+                    self._increment(rejection_reasons, label)
 
         total = len(events)
         return {
@@ -130,6 +147,23 @@ class AgentFeedbackService:
             "labels": labels,
             "source_runtimes": source_runtimes,
             "local_surfaces": local_surfaces,
+            "scenarios": self._scenario_summary(scenarios),
+            "quality_trend": self._trend_summary(trend),
+            "low_quality_labels": self._top_counts(
+                labels,
+                allowed={
+                    "evidence_weak",
+                    "wrong_intent",
+                    "wrong_next_step",
+                    "missing_context",
+                    "unsafe_or_overreaching",
+                    "too_generic",
+                    "duplicate_suggestion",
+                    "not_relevant_to_site",
+                    "operator_confidence_low",
+                },
+            ),
+            "rejection_reasons": self._top_counts(rejection_reasons),
             "rates": {
                 "accepted_rate": self._rate(
                     outcomes.get("accepted", 0) + outcomes.get("edited_before_accept", 0),
@@ -169,6 +203,130 @@ class AgentFeedbackService:
     def _increment(bucket: dict[str, int], key: str) -> None:
         normalized = key.strip() or "unknown"
         bucket[normalized] = bucket.get(normalized, 0) + 1
+
+    @classmethod
+    def _increment_trend_bucket(
+        cls,
+        trend: dict[str, dict[str, int]],
+        created_at: datetime | None,
+        outcome: str,
+        labels: list[str],
+    ) -> None:
+        if created_at is None:
+            bucket_at = datetime.now(UTC)
+        else:
+            bucket_at = (
+                created_at
+                if created_at.tzinfo is not None
+                else created_at.replace(tzinfo=UTC)
+            )
+        bucket_key = bucket_at.astimezone(UTC).strftime("%Y-%m-%dT%H:00:00Z")
+        bucket = trend.setdefault(
+            bucket_key,
+            {
+                "events_total": 0,
+                "accepted": 0,
+                "rejected": 0,
+                "evidence_weak": 0,
+                "wrong_next_step": 0,
+            },
+        )
+        bucket["events_total"] += 1
+        if outcome in {"accepted", "edited_before_accept"}:
+            bucket["accepted"] += 1
+        if cls._is_rejected_outcome(outcome):
+            bucket["rejected"] += 1
+        if "evidence_weak" in labels:
+            bucket["evidence_weak"] += 1
+        if "wrong_next_step" in labels:
+            bucket["wrong_next_step"] += 1
+
+    @classmethod
+    def _increment_scenario(
+        cls,
+        scenarios: dict[str, dict[str, Any]],
+        local_surface: str,
+        source_runtime: str,
+        outcome: str,
+        labels: list[str],
+    ) -> None:
+        scenario = scenarios.setdefault(
+            local_surface,
+            {
+                "local_surface": local_surface,
+                "source_runtime": source_runtime,
+                "events_total": 0,
+                "outcomes": {},
+                "labels": {},
+            },
+        )
+        scenario["events_total"] += 1
+        cls._increment(scenario["outcomes"], outcome)
+        for label in labels:
+            cls._increment(scenario["labels"], label)
+
+    @classmethod
+    def _scenario_summary(cls, scenarios: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        summary: list[dict[str, Any]] = []
+        for scenario in scenarios.values():
+            total = int(scenario["events_total"])
+            outcomes = dict(scenario["outcomes"])
+            labels = dict(scenario["labels"])
+            summary.append(
+                {
+                    "local_surface": scenario["local_surface"],
+                    "source_runtime": scenario["source_runtime"],
+                    "events_total": total,
+                    "outcomes": outcomes,
+                    "labels": labels,
+                    "accepted_rate": cls._rate(
+                        int(outcomes.get("accepted", 0))
+                        + int(outcomes.get("edited_before_accept", 0)),
+                        total,
+                    ),
+                    "evidence_weak_rate": cls._rate(int(labels.get("evidence_weak", 0)), total),
+                    "wrong_next_step_rate": cls._rate(
+                        int(labels.get("wrong_next_step", 0)),
+                        total,
+                    ),
+                }
+            )
+        return sorted(
+            summary,
+            key=lambda item: (-int(item["events_total"]), str(item["local_surface"])),
+        )
+
+    @staticmethod
+    def _trend_summary(trend: dict[str, dict[str, int]]) -> list[dict[str, int | str]]:
+        return [
+            {"bucket": bucket, **counts}
+            for bucket, counts in sorted(trend.items(), key=lambda item: item[0])
+        ]
+
+    @staticmethod
+    def _top_counts(
+        counts: dict[str, int],
+        allowed: set[str] | None = None,
+    ) -> list[dict[str, int | str]]:
+        items = (
+            (key, value)
+            for key, value in counts.items()
+            if value > 0 and (allowed is None or key in allowed)
+        )
+        return [
+            {"label": key, "count": value}
+            for key, value in sorted(items, key=lambda item: (-item[1], item[0]))[:8]
+        ]
+
+    @staticmethod
+    def _is_rejected_outcome(outcome: str) -> bool:
+        return outcome in {
+            "rejected",
+            "blocked_by_policy",
+            "blocked_by_missing_input",
+            "ignored",
+            "expired",
+        }
 
     @staticmethod
     def _rate(count: int, total: int) -> float:

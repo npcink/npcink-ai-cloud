@@ -171,7 +171,7 @@ def test_agent_feedback_summary_rolls_up_outcomes_and_labels(tmp_path: Path) -> 
         client,
         _feedback_payload(
             local_outcome="rejected",
-            feedback_labels=["evidence_weak", "wrong_next_step"],
+            feedback_labels=["evidence_weak", "wrong_next_step", "operator_confidence_low"],
         ),
         idempotency_key="agent-feedback-summary-rejected",
     )
@@ -192,6 +192,23 @@ def test_agent_feedback_summary_rolls_up_outcomes_and_labels(tmp_path: Path) -> 
     assert data["rates"]["evidence_useful_rate"] == 0.5
     assert data["rates"]["evidence_weak_rate"] == 0.5
     assert data["rates"]["wrong_next_step_rate"] == 0.5
+    assert data["low_quality_labels"] == [
+        {"label": "evidence_weak", "count": 1},
+        {"label": "operator_confidence_low", "count": 1},
+        {"label": "wrong_next_step", "count": 1},
+    ]
+    assert data["rejection_reasons"] == [
+        {"label": "evidence_weak", "count": 1},
+        {"label": "operator_confidence_low", "count": 1},
+        {"label": "wrong_next_step", "count": 1},
+    ]
+    assert data["scenarios"][0]["local_surface"] == "toolbox_site_knowledge"
+    assert data["scenarios"][0]["events_total"] == 2
+    assert data["scenarios"][0]["accepted_rate"] == 0.5
+    assert len(data["quality_trend"]) == 1
+    assert data["quality_trend"][0]["events_total"] == 2
+    assert data["quality_trend"][0]["accepted"] == 1
+    assert data["quality_trend"][0]["rejected"] == 1
     assert data["production_mutation"] is False
     assert data["approval_truth"] == "wordpress_local"
 
