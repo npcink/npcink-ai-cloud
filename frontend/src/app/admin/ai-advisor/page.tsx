@@ -59,6 +59,7 @@ type SummaryBranch = {
   source_context: {
     advisor: {
       scope: string;
+      agent_handoff: AgentHandoff;
       evidence: Array<{ kind: string; ref: string; label: string }>;
       signals: Array<Record<string, string | number | boolean | null>>;
       drilldown: Record<string, DrilldownValue>;
@@ -68,6 +69,22 @@ type SummaryBranch = {
 
 type ScalarValue = string | number | boolean | null;
 type DrilldownValue = Array<Record<string, ScalarValue>> | Record<string, ScalarValue | Record<string, ScalarValue>>;
+
+type AgentHandoff = {
+  agentId: string;
+  agentVersion: string;
+  agentRole: string;
+  handoffType: string;
+  handoffOwner: string;
+  requiresOperatorReview: boolean;
+  directWordPressWrite: boolean;
+  executionPattern: string;
+  storageMode: string;
+  allowedActions: string[];
+  stopConditions: string[];
+  forbiddenActions: string[];
+  failClosedBehavior: string;
+};
 
 type AdvisorPreviewData = {
   previewVersion: string;
@@ -229,6 +246,7 @@ const SCOPE_OPTIONS = [
 function normalizeBranch(raw: any): SummaryBranch {
   const generation = raw?.generation ?? {};
   const disclosure = raw?.ai_disclosure ?? {};
+  const handoff = raw?.source_context?.advisor?.agent_handoff ?? {};
   return {
     generation: {
       mode: String(generation.mode ?? ''),
@@ -274,6 +292,7 @@ function normalizeBranch(raw: any): SummaryBranch {
     source_context: {
       advisor: {
         scope: String(raw?.source_context?.advisor?.scope ?? ''),
+        agent_handoff: normalizeAgentHandoff(handoff),
         evidence: Array.isArray(raw?.source_context?.advisor?.evidence)
           ? raw.source_context.advisor.evidence.map((item: any) => ({
               kind: String(item?.kind ?? ''),
@@ -292,6 +311,24 @@ function normalizeBranch(raw: any): SummaryBranch {
             : {},
       },
     },
+  };
+}
+
+function normalizeAgentHandoff(raw: any): AgentHandoff {
+  return {
+    agentId: String(raw?.agent_id ?? ''),
+    agentVersion: String(raw?.agent_version ?? ''),
+    agentRole: String(raw?.agent_role ?? ''),
+    handoffType: String(raw?.handoff_type ?? ''),
+    handoffOwner: String(raw?.handoff_owner ?? ''),
+    requiresOperatorReview: Boolean(raw?.requires_operator_review),
+    directWordPressWrite: Boolean(raw?.direct_wordpress_write),
+    executionPattern: String(raw?.execution_pattern ?? ''),
+    storageMode: String(raw?.storage_mode ?? ''),
+    allowedActions: Array.isArray(raw?.allowed_actions) ? raw.allowed_actions.map(String) : [],
+    stopConditions: Array.isArray(raw?.stop_conditions) ? raw.stop_conditions.map(String) : [],
+    forbiddenActions: Array.isArray(raw?.forbidden_actions) ? raw.forbidden_actions.map(String) : [],
+    failClosedBehavior: String(raw?.fail_closed_behavior ?? ''),
   };
 }
 
@@ -1118,6 +1155,83 @@ function ScenarioChecksPanel({ data }: { data: AdvisorPreviewData }) {
   );
 }
 
+function AgentHandoffPanel({ handoff }: { handoff: AgentHandoff }) {
+  const hasHandoff = Boolean(handoff.agentId || handoff.handoffType || handoff.agentRole);
+  if (!hasHandoff) {
+    return null;
+  }
+
+  return (
+    <BackofficeSectionPanel className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            Agent handoff
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            Internal advisor agent boundary
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            Read-only operator recommendation metadata from the redacted advisor context.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <BackofficeStatusBadge
+            label={handoff.directWordPressWrite ? 'write allowed' : 'write blocked'}
+            status={handoff.directWordPressWrite ? 'error' : 'success'}
+          />
+          <BackofficeStatusBadge
+            label={handoff.requiresOperatorReview ? 'review required' : 'review optional'}
+            status={handoff.requiresOperatorReview ? 'warning' : 'inactive'}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BackofficeStackCard>
+          <MiniMetric label="Agent" value={handoff.agentId || '-'} />
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <MiniMetric label="Version" value={handoff.agentVersion || '-'} />
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <MiniMetric label="Handoff" value={handoff.handoffType || '-'} />
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <MiniMetric label="Owner" value={handoff.handoffOwner || '-'} />
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <MiniMetric label="Pattern" value={handoff.executionPattern || '-'} />
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <MiniMetric label="Storage" value={handoff.storageMode || '-'} />
+        </BackofficeStackCard>
+        <BackofficeStackCard className="md:col-span-2">
+          <MiniMetric label="Fail closed" value={handoff.failClosedBehavior || '-'} />
+        </BackofficeStackCard>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <EvidenceList
+          title="Allowed actions"
+          items={handoff.allowedActions.map(humanizeKey)}
+          empty="No allowed actions declared."
+        />
+        <EvidenceList
+          title="Stop conditions"
+          items={handoff.stopConditions.map(humanizeKey)}
+          empty="No stop conditions declared."
+        />
+        <EvidenceList
+          title="Forbidden actions"
+          items={handoff.forbiddenActions.map(humanizeKey)}
+          empty="No forbidden actions declared."
+        />
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
 function buildScenarioChecks(data: AdvisorPreviewData): ScenarioCheck[] {
   const runtime = getSignal(data.ai, 'ops.runtime_quality');
   const knowledge = getSignal(data.ai, 'ops.knowledge_quality');
@@ -1647,6 +1761,7 @@ function AdminAiAdvisorContent() {
           <EffectComparisonPanel data={data} />
           <AiParticipationPanel data={data} />
           <ScenarioChecksPanel data={data} />
+          <AgentHandoffPanel handoff={data.ai.source_context.advisor.agent_handoff} />
         </>
       ) : null}
 

@@ -548,6 +548,13 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert analysis["generation"]["cache_status"] == "miss"
     assert analysis["ai_disclosure"]["generated_by_ai"] is True
     assert analysis["ai_disclosure"]["brand_label"] == "Magick AI"
+    assert analysis["agent_handoff"]["agent_id"] == "internal_ops_advisor_agent"
+    assert analysis["agent_handoff"]["handoff_type"] == "operator_recommendation"
+    assert analysis["agent_handoff"]["requires_operator_review"] is True
+    assert analysis["agent_handoff"]["direct_wordpress_write"] is False
+    assert "automatic_commercial_state_mutation" in analysis["agent_handoff"][
+        "forbidden_actions"
+    ]
     assert first_data["safety"] == {
         "manual_trigger_required": True,
         "prompt_saved": False,
@@ -591,6 +598,9 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     history_data = history.json()["data"]
     assert len(history_data["items"]) == 1
     assert history_data["items"][0]["ai_disclosure"]["generated_by_ai"] is True
+    assert history_data["items"][0]["agent_handoff"]["agent_id"] == (
+        "internal_ops_advisor_agent"
+    )
     history_serialized = json.dumps(history_data)
     assert "provider_id" not in history_serialized
     assert "model_id" not in history_serialized

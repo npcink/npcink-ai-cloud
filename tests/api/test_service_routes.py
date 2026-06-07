@@ -696,6 +696,12 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     ops_summary_payload = ops_summary_response.json()["data"]
     assert ops_summary_payload["summarizer_version"] == "internal-ops-summarizer-v1"
     assert ops_summary_payload["generation"]["mode"] == "deterministic_fallback"
+    assert ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["agent_id"] == (
+        "internal_ops_advisor_agent"
+    )
+    assert ops_summary_payload["source_context"]["advisor"]["agent_handoff"][
+        "direct_wordpress_write"
+    ] is False
     assert ops_summary_payload["support_draft"]
     assert "article" not in ops_summary_payload["support_draft"].lower()
     assert "write WordPress" in ops_summary_payload["safety_note"]

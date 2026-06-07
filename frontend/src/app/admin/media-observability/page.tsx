@@ -227,6 +227,104 @@ function statusForSuccess(successRate: number, failures: number): string {
   return 'ok';
 }
 
+function MediaWorkflowMetadataPanel() {
+  const steps = [
+    'Validate media derivative request',
+    'Queue runtime worker job',
+    'Process static image derivative',
+    'Store short TTL artifact',
+    'Return artifact reference for local review',
+  ];
+  const stopConditions = [
+    'Invalid source',
+    'Unsupported format',
+    'Artifact TTL expired',
+    'Local approval required',
+  ];
+
+  return (
+    <BackofficeSectionPanel className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            Workflow metadata
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            Media derivative artifact generation
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            Fixed worker workflow for temporary image derivatives. Cloud returns an artifact reference; local WordPress remains the approval and write owner.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <BackofficeStatusBadge label="whole run offload" status="active" />
+          <BackofficeStatusBadge label="write blocked" status="success" />
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <BackofficeStackCard>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            Workflow
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
+            media_derivative_artifact_generation
+          </p>
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            Version
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
+            media_derivative_workflow.v1
+          </p>
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            Contract
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
+            media_derivative_cloud_request.v1
+          </p>
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            Handoff
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
+            wordpress_local
+          </p>
+        </BackofficeStackCard>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <BackofficeStackCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Steps
+          </p>
+          <div className="mt-3 space-y-2">
+            {steps.map((step) => (
+              <p key={step} className="text-sm leading-6 text-slate-700 dark:text-slate-200">
+                {step}
+              </p>
+            ))}
+          </div>
+        </BackofficeStackCard>
+        <BackofficeStackCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Stop conditions
+          </p>
+          <div className="mt-3 space-y-2">
+            {stopConditions.map((condition) => (
+              <p key={condition} className="text-sm leading-6 text-slate-700 dark:text-slate-200">
+                {condition}
+              </p>
+            ))}
+          </div>
+        </BackofficeStackCard>
+      </div>
+    </BackofficeSectionPanel>
+  );
+}
+
 function AdminMediaObservabilityContent() {
   const { t } = useLocale();
   const [data, setData] = useState<MediaObservabilityData | null>(null);
@@ -437,6 +535,8 @@ function AdminMediaObservabilityContent() {
         />
       ) : (
         <>
+          <MediaWorkflowMetadataPanel />
+
           <div className="grid gap-5 xl:grid-cols-3">
             <BackofficeSectionPanel className="space-y-4 xl:col-span-2">
               <div className="flex items-start justify-between gap-3">

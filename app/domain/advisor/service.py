@@ -1335,6 +1335,7 @@ class InternalAIAdvisorService:
                 "headline": str(advisor.get("headline") or ""),
                 "summary": str(advisor.get("summary") or ""),
                 "confidence": str(advisor.get("confidence") or ""),
+                "agent_handoff": _redacted_agent_handoff(advisor.get("agent_handoff")),
                 "evidence": [
                     {
                         "kind": str(item.get("kind") or ""),
@@ -1585,6 +1586,7 @@ class InternalAIAdvisorService:
                 "Internal ops draft only. It does not generate customer content, "
                 "write WordPress, or execute operator actions."
             ),
+            "agent_handoff": _redacted_agent_handoff(advisor.get("agent_handoff")),
             "evidence": _list(advisor.get("evidence")),
             "source_context": redacted_context,
             "generated_at": datetime.now(UTC).isoformat(),
@@ -1929,6 +1931,39 @@ def _action(action: str) -> dict[str, Any]:
     return {"action": action, "requires_operator": True}
 
 
+def _redacted_agent_handoff(value: Any) -> dict[str, Any]:
+    handoff = _dict(value)
+    if not handoff:
+        return {}
+    return {
+        "agent_id": str(handoff.get("agent_id") or ""),
+        "agent_version": str(handoff.get("agent_version") or ""),
+        "agent_role": str(handoff.get("agent_role") or ""),
+        "handoff_type": str(handoff.get("handoff_type") or ""),
+        "handoff_owner": str(handoff.get("handoff_owner") or ""),
+        "requires_operator_review": bool(handoff.get("requires_operator_review")),
+        "direct_wordpress_write": bool(handoff.get("direct_wordpress_write")),
+        "execution_pattern": str(handoff.get("execution_pattern") or ""),
+        "storage_mode": str(handoff.get("storage_mode") or ""),
+        "allowed_actions": [
+            str(item)
+            for item in _list(handoff.get("allowed_actions"))[:8]
+            if str(item).strip()
+        ],
+        "stop_conditions": [
+            str(item)
+            for item in _list(handoff.get("stop_conditions"))[:8]
+            if str(item).strip()
+        ],
+        "forbidden_actions": [
+            str(item)
+            for item in _list(handoff.get("forbidden_actions"))[:10]
+            if str(item).strip()
+        ],
+        "fail_closed_behavior": str(handoff.get("fail_closed_behavior") or ""),
+    }
+
+
 def _advisor_agent_handoff(scope: str) -> dict[str, Any]:
     normalized_scope = str(scope or "").strip() or "runtime_operations"
     return {
@@ -2201,6 +2236,7 @@ def _ops_summary_history_item(projection: SiteServiceProjection) -> dict[str, An
             "reviewed_at": str(disclosure.get("reviewed_at") or ""),
             "source_generation_mode": str(disclosure.get("source_generation_mode") or ""),
         },
+        "agent_handoff": _redacted_agent_handoff(summary.get("agent_handoff")),
     }
 
 

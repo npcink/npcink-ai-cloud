@@ -66,6 +66,10 @@ function getGenerationLabel(
   return t('portal.ai_insights.mode_rule_analysis', {}, 'Rule analysis');
 }
 
+function formatBoundaryToken(value: string): string {
+  return String(value || '-').replace(/_/g, ' ');
+}
+
 function AIContentLabel({ analysis }: { analysis: PortalAIInsightAnalysis | PortalAIInsightHistoryItem }) {
   const { t } = useLocale();
   const disclosure = analysis.ai_disclosure;
@@ -175,7 +179,78 @@ function AnalysisPanel({
       {analysis.safety_note ? (
         <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">{analysis.safety_note}</p>
       ) : null}
+      <AgentBoundaryPanel analysis={analysis} />
     </BackofficeSectionPanel>
+  );
+}
+
+function AgentBoundaryPanel({ analysis }: { analysis: PortalAIInsightAnalysis }) {
+  const { t } = useLocale();
+  const handoff = analysis.agent_handoff;
+  if (!handoff?.agent_id) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 rounded-[1rem] border border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            {t('portal.ai_insights.agent_boundary', {}, 'Agent boundary')}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+            {handoff.agent_id}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {formatBoundaryToken(handoff.handoff_type)} · {formatBoundaryToken(handoff.handoff_owner)}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <BackofficeStatusBadge
+            status={handoff.direct_wordpress_write ? 'error' : 'success'}
+            label={
+              handoff.direct_wordpress_write
+                ? t('portal.ai_insights.write_allowed', {}, 'write allowed')
+                : t('portal.ai_insights.write_blocked', {}, 'write blocked')
+            }
+          />
+          <BackofficeStatusBadge
+            status={handoff.requires_operator_review ? 'warning' : 'inactive'}
+            label={
+              handoff.requires_operator_review
+                ? t('portal.ai_insights.review_required', {}, 'review required')
+                : t('portal.ai_insights.review_optional', {}, 'review optional')
+            }
+          />
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            {t('portal.ai_insights.execution_pattern', {}, 'Execution')}
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
+            {handoff.execution_pattern || '-'}
+          </p>
+        </div>
+        <div>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            {t('portal.ai_insights.storage_mode', {}, 'Storage')}
+          </p>
+          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
+            {handoff.storage_mode || '-'}
+          </p>
+        </div>
+        <div>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            {t('portal.ai_insights.fail_closed', {}, 'Fail closed')}
+          </p>
+          <p className="mt-1 text-xs text-slate-700 dark:text-slate-200">
+            {formatBoundaryToken(handoff.fail_closed_behavior)}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -327,6 +402,7 @@ function PortalAIInsightsContent() {
                     is_stale: false,
                     generation: response.data.analysis.generation,
                     ai_disclosure: response.data.analysis.ai_disclosure,
+                    agent_handoff: response.data.analysis.agent_handoff,
                   },
                   ...current.items,
                 ].slice(0, 10),
@@ -489,6 +565,7 @@ function PortalAIInsightsContent() {
           generated_at: item.generated_at,
           generation: item.generation,
           ai_disclosure: item.ai_disclosure,
+          agent_handoff: item.agent_handoff,
         })} />
       </div>
 

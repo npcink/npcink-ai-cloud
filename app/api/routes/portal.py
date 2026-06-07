@@ -237,6 +237,7 @@ def _portal_ai_summary(summary: dict[str, Any]) -> dict[str, Any]:
         ),
         "generation": _portal_ai_generation(generation or {}),
         "ai_disclosure": _portal_ai_disclosure(disclosure or {}),
+        "agent_handoff": _portal_ai_agent_handoff(summary.get("agent_handoff")),
     }
 
 
@@ -256,6 +257,38 @@ def _portal_ai_history_item(item: dict[str, Any]) -> dict[str, Any]:
         "is_stale": bool(item.get("is_stale")),
         "generation": _portal_ai_generation(generation or {}),
         "ai_disclosure": _portal_ai_disclosure(disclosure or {}),
+        "agent_handoff": _portal_ai_agent_handoff(item.get("agent_handoff")),
+    }
+
+
+def _portal_ai_agent_handoff(value: Any) -> dict[str, Any]:
+    handoff = value if isinstance(value, dict) else {}
+    return {
+        "agent_id": str(handoff.get("agent_id") or ""),
+        "agent_version": str(handoff.get("agent_version") or ""),
+        "agent_role": str(handoff.get("agent_role") or ""),
+        "handoff_type": str(handoff.get("handoff_type") or ""),
+        "handoff_owner": str(handoff.get("handoff_owner") or ""),
+        "requires_operator_review": bool(handoff.get("requires_operator_review")),
+        "direct_wordpress_write": bool(handoff.get("direct_wordpress_write")),
+        "execution_pattern": str(handoff.get("execution_pattern") or ""),
+        "storage_mode": str(handoff.get("storage_mode") or ""),
+        "allowed_actions": [
+            str(item)
+            for item in _object_list(handoff.get("allowed_actions"))[:6]
+            if str(item).strip()
+        ],
+        "stop_conditions": [
+            str(item)
+            for item in _object_list(handoff.get("stop_conditions"))[:6]
+            if str(item).strip()
+        ],
+        "forbidden_actions": [
+            str(item)
+            for item in _object_list(handoff.get("forbidden_actions"))[:8]
+            if str(item).strip()
+        ],
+        "fail_closed_behavior": str(handoff.get("fail_closed_behavior") or ""),
     }
 
 

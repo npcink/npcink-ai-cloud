@@ -690,6 +690,22 @@ export interface PortalAIInsightGeneration {
   cache_expires_at: string;
 }
 
+export interface PortalAIInsightAgentHandoff {
+  agent_id: string;
+  agent_version: string;
+  agent_role: string;
+  handoff_type: string;
+  handoff_owner: string;
+  requires_operator_review: boolean;
+  direct_wordpress_write: boolean;
+  execution_pattern: string;
+  storage_mode: string;
+  allowed_actions: string[];
+  stop_conditions: string[];
+  forbidden_actions: string[];
+  fail_closed_behavior: string;
+}
+
 export interface PortalAIInsightAnalysis {
   summary_version: string;
   scope: string;
@@ -702,6 +718,7 @@ export interface PortalAIInsightAnalysis {
   generated_at: string;
   generation: PortalAIInsightGeneration;
   ai_disclosure: PortalAIInsightDisclosure;
+  agent_handoff: PortalAIInsightAgentHandoff;
 }
 
 export interface PortalAIInsightHistoryItem {
@@ -717,6 +734,7 @@ export interface PortalAIInsightHistoryItem {
   is_stale: boolean;
   generation: PortalAIInsightGeneration;
   ai_disclosure: PortalAIInsightDisclosure;
+  agent_handoff: PortalAIInsightAgentHandoff;
 }
 
 export interface PortalAIInsightSafety {
