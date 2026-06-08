@@ -75,7 +75,7 @@ class AgentFeedbackContractViolation(ValueError):
 def find_forbidden_agent_feedback_field(value: Any, *, prefix: str = "") -> str:
     if isinstance(value, dict):
         for key, item in value.items():
-            normalized_key = str(key)
+            normalized_key = str(key or "").strip().lower()
             current_path = f"{prefix}.{normalized_key}" if prefix else normalized_key
             if normalized_key in FORBIDDEN_AGENT_FEEDBACK_KEYS:
                 return current_path

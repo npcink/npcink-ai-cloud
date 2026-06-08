@@ -7,6 +7,8 @@ import httpx
 
 from app.core.config import Settings
 
+MAX_RERANK_DOCUMENT_CHARS = 1600
+
 
 class SiteKnowledgeRerankError(RuntimeError):
     def __init__(self, error_code: str, message: str) -> None:
@@ -127,7 +129,7 @@ class JinaSiteKnowledgeReranker:
 def _document_text(result: dict[str, object]) -> str:
     title = str(result.get("title") or "").strip()
     context = str(result.get("match_context") or result.get("chunk") or "").strip()
-    return "\n".join(part for part in (title, context) if part)
+    return "\n".join(part for part in (title, context) if part)[:MAX_RERANK_DOCUMENT_CHARS]
 
 
 def _parse_jina_results(value: Any, *, candidate_count: int) -> list[tuple[int, float]]:

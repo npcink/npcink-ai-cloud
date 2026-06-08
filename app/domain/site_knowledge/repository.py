@@ -275,6 +275,7 @@ class SiteKnowledgeRepository:
         statuses: list[str],
         source_types: list[str],
         current_post_id: int,
+        limit: int,
     ) -> list[SiteKnowledgeChunk]:
         statement = select(SiteKnowledgeChunk).where(SiteKnowledgeChunk.site_id == site_id)
         if post_types:
@@ -285,4 +286,8 @@ class SiteKnowledgeRepository:
             statement = statement.where(SiteKnowledgeChunk.source_type.in_(source_types))
         if current_post_id > 0:
             statement = statement.where(SiteKnowledgeChunk.post_id != current_post_id)
-        return list(self.session.scalars(statement.order_by(SiteKnowledgeChunk.indexed_at.desc())))
+        return list(
+            self.session.scalars(
+                statement.order_by(SiteKnowledgeChunk.indexed_at.desc()).limit(max(1, limit))
+            )
+        )

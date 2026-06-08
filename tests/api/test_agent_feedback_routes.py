@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -12,6 +13,7 @@ from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import UsageMeterEvent
 from app.core.services import CloudServices
+from app.domain.agent_feedback import service as agent_feedback_service_module
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_PORTAL_JWT_SECRET,
@@ -264,6 +266,21 @@ def test_agent_feedback_rejects_write_authority_fields(tmp_path: Path) -> None:
         assert len(list(session.scalars(select(UsageMeterEvent)))) == 0
 
 
+def test_agent_feedback_rejects_mixed_case_write_authority_fields(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    response = _post_feedback(
+        client,
+        _feedback_payload(Direct_WordPress_Write=True),
+        idempotency_key="agent-feedback-mixed-case-write-field",
+    )
+
+    assert response.status_code == 422
+    assert "write authority" in response.text
+    with get_session(database_url) as session:
+        assert len(list(session.scalars(select(UsageMeterEvent)))) == 0
+
+
 def test_agent_feedback_rejects_unknown_label(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -277,3 +294,31 @@ def test_agent_feedback_rejects_unknown_label(tmp_path: Path) -> None:
     assert "feedback label is not supported" in response.text
     with get_session(database_url) as session:
         assert len(list(session.scalars(select(UsageMeterEvent)))) == 0
+
+
+def test_agent_feedback_summary_reports_limited_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _database_url, client = _build_client(tmp_path)
+    monkeypatch.setattr(agent_feedback_service_module, "AGENT_FEEDBACK_SUMMARY_MAX_EVENTS", 1)
+    first = _post_feedback(
+        client,
+        _feedback_payload(local_outcome="accepted"),
+        idempotency_key="agent-feedback-limited-a",
+    )
+    second = _post_feedback(
+        client,
+        _feedback_payload(local_outcome="rejected"),
+        idempotency_key="agent-feedback-limited-b",
+    )
+
+    response = _get_feedback_summary(client, window_hours=24)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["events_total"] == 1
+    assert data["limited"] is True
+    assert data["max_events"] == 1

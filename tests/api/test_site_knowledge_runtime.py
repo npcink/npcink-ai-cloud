@@ -29,12 +29,19 @@ from app.core.models import (
 from app.core.services import CloudServices
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.rerankers import (
+    MAX_RERANK_DOCUMENT_CHARS,
     JinaSiteKnowledgeReranker,
     SiteKnowledgeRerankError,
 )
 from app.domain.site_knowledge.service import (
+    MAX_FALLBACK_SEARCH_CHUNKS,
+    MAX_SEARCH_QUERY_CHARS,
+    MAX_SYNC_POST_IDS,
     SiteKnowledgeService,
     _apply_evidence_policy,
+    _coerce_post_ids,
+    _filter_string_list,
+    _normalize_search_query,
     _rank_search_results_for_query,
     _resolve_evidence_policy,
 )
@@ -223,6 +230,20 @@ def _search_payload(
     }
 
 
+def test_site_knowledge_search_input_helpers_bound_user_controlled_lists() -> None:
+    assert _normalize_search_query("  AI   摘要  " + ("x" * 900)) == (
+        "AI 摘要 " + ("x" * 900)
+    )[:MAX_SEARCH_QUERY_CHARS]
+    post_ids = _coerce_post_ids([1, "2", 1, 0, -3, *range(3, MAX_SYNC_POST_IDS + 50)])
+    assert post_ids[0:3] == [1, 2, 3]
+    assert len(post_ids) == MAX_SYNC_POST_IDS
+    assert len(post_ids) == len(set(post_ids))
+    assert _filter_string_list(
+        ["post", "page", "post", "attachment", "comment", "page"],
+        allowed=frozenset({"post", "page", "comment"}),
+    ) == ["post", "page", "comment"]
+
+
 def test_toolbox_exact_sync_payload_queues_without_routing_fields(tmp_path: Path) -> None:
     _, _, _, client = _build_client(tmp_path)
 
@@ -343,6 +364,42 @@ def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
     assert snapshots
     assert snapshots[-1].document_count == 1
     assert snapshots[-1].chunk_count >= 1
+
+
+def test_site_knowledge_postgres_fallback_search_uses_chunk_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, settings, _, _ = _build_client(tmp_path)
+    captured: dict[str, object] = {}
+
+    def _list_search_chunks(self: object, **kwargs: object) -> list[object]:
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        "app.domain.site_knowledge.repository.SiteKnowledgeRepository.list_search_chunks",
+        _list_search_chunks,
+    )
+
+    with get_session(database_url) as session:
+        service = SiteKnowledgeService(session, settings=settings)
+        result = service.search(
+            site_id="site_alpha",
+            run_id="run-fallback-limit",
+            input_payload={
+                "contract_version": "site_knowledge_search.v1",
+                "query": "AI 摘要" + ("x" * 800),
+                "intent": "site_search",
+                "max_results": 8,
+                "filters": {"source_types": ["post", "post", "page"]},
+                "write_posture": "suggestion_only",
+            },
+        )
+
+    assert result["status"] == "ready"
+    assert captured["limit"] == MAX_FALLBACK_SEARCH_CHUNKS
+    assert captured["source_types"] == ["post", "page"]
 
 
 def test_search_intents_return_product_workflow_metadata(tmp_path: Path) -> None:
@@ -766,7 +823,7 @@ def test_jina_reranker_reorders_candidates_without_exposing_key(
             {
                 "post_id": 2,
                 "title": "Strong",
-                "chunk": "AI 摘要 is discussed here.",
+                "chunk": "AI 摘要 is discussed here." + ("x" * 3000),
                 "score": 0.6,
             },
         ],
@@ -788,6 +845,10 @@ def test_jina_reranker_reorders_candidates_without_exposing_key(
     assert kwargs["json"]["model"] == "jina-reranker-v3"
     assert kwargs["json"]["query"] == "AI 摘要"
     assert kwargs["json"]["return_documents"] is False
+    assert (
+        max(len(document) for document in kwargs["json"]["documents"])
+        <= MAX_RERANK_DOCUMENT_CHARS
+    )
     assert kwargs["headers"]["Authorization"] == "Bearer unit-test-redacted"
 
 

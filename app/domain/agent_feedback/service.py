@@ -15,6 +15,8 @@ from app.domain.agent_feedback.contracts import (
     AGENT_FEEDBACK_METER_PREFIX,
 )
 
+AGENT_FEEDBACK_SUMMARY_MAX_EVENTS = 5000
+
 
 class AgentFeedbackService:
     def __init__(self, database_url: str) -> None:
@@ -104,8 +106,12 @@ class AgentFeedbackService:
                     .where(UsageMeterEvent.event_kind == AGENT_FEEDBACK_EVENT_KIND)
                     .where(UsageMeterEvent.created_at >= since)
                     .order_by(UsageMeterEvent.created_at.desc(), UsageMeterEvent.id.desc())
+                    .limit(AGENT_FEEDBACK_SUMMARY_MAX_EVENTS + 1)
                 )
             )
+        limited = len(events) > AGENT_FEEDBACK_SUMMARY_MAX_EVENTS
+        if limited:
+            events = events[:AGENT_FEEDBACK_SUMMARY_MAX_EVENTS]
 
         outcomes: dict[str, int] = {}
         labels: dict[str, int] = {}
@@ -143,6 +149,8 @@ class AgentFeedbackService:
             "site_id": site_id,
             "window_hours": window_hours,
             "events_total": total,
+            "limited": limited,
+            "max_events": AGENT_FEEDBACK_SUMMARY_MAX_EVENTS,
             "outcomes": outcomes,
             "labels": labels,
             "source_runtimes": source_runtimes,

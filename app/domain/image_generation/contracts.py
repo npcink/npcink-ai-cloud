@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_PROFILE_ID
@@ -21,6 +22,10 @@ ALLOWED_IMAGE_GENERATION_ASPECT_RATIOS = frozenset(
     {"1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 )
 ALLOWED_IMAGE_GENERATION_RESOLUTIONS = frozenset({"", "low", "medium", "high"})
+IMAGE_GENERATION_MAX_PROMPT_CHARS = 4000
+IMAGE_GENERATION_MAX_IMAGES = 4
+IMAGE_GENERATION_MAX_CONTEXT_CHARS = 6000
+IMAGE_GENERATION_CONTEXT_FIELDS = frozenset({"media_context", "review", "source_handoff"})
 
 FORBIDDEN_IMAGE_GENERATION_KEYS = frozenset(
     {
@@ -99,6 +104,18 @@ def validate_image_generation_runtime_contract(
             "image_generation.prompt_required",
             "image generation prompt is required",
         )
+    if len(prompt) > IMAGE_GENERATION_MAX_PROMPT_CHARS:
+        raise ImageGenerationContractViolation(
+            "image_generation.prompt_too_long",
+            "image generation prompt must be "
+            f"{IMAGE_GENERATION_MAX_PROMPT_CHARS} characters or fewer",
+        )
+    image_count = _coerce_int(input_payload.get("n"), default=1)
+    if image_count < 1 or image_count > IMAGE_GENERATION_MAX_IMAGES:
+        raise ImageGenerationContractViolation(
+            "image_generation.image_count_invalid",
+            f"image generation n must be between 1 and {IMAGE_GENERATION_MAX_IMAGES}",
+        )
     response_format = str(input_payload.get("response_format") or "url").strip()
     if response_format not in ALLOWED_IMAGE_GENERATION_RESPONSE_FORMATS:
         raise ImageGenerationContractViolation(
@@ -117,6 +134,21 @@ def validate_image_generation_runtime_contract(
             "image_generation.resolution_invalid",
             "image generation resolution must be low, medium, or high",
         )
+    for field in IMAGE_GENERATION_CONTEXT_FIELDS:
+        if field not in input_payload:
+            continue
+        context_value = input_payload.get(field)
+        if not isinstance(context_value, dict):
+            raise ImageGenerationContractViolation(
+                "image_generation.context_invalid",
+                f"image generation {field} must be an object",
+            )
+        if _serialized_size(context_value) > IMAGE_GENERATION_MAX_CONTEXT_CHARS:
+            raise ImageGenerationContractViolation(
+                "image_generation.context_too_large",
+                f"image generation {field} must serialize to "
+                f"{IMAGE_GENERATION_MAX_CONTEXT_CHARS} characters or fewer",
+            )
 
 
 def find_forbidden_image_generation_field(value: Any, *, path: str = "") -> str:
@@ -137,3 +169,17 @@ def find_forbidden_image_generation_field(value: Any, *, path: str = "") -> str:
             if nested:
                 return nested
     return ""
+
+
+def _coerce_int(value: Any, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _serialized_size(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    except (TypeError, ValueError):
+        return IMAGE_GENERATION_MAX_CONTEXT_CHARS + 1

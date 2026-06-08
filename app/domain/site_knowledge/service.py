@@ -52,6 +52,10 @@ MAX_CHUNK_CHARS = 900
 CHUNK_OVERLAP_CHARS = 120
 MAX_DOCUMENT_CONTENT_CHARS = 50000
 MAX_CHUNKS_PER_DOCUMENT = 64
+MAX_SEARCH_QUERY_CHARS = 500
+MAX_SEARCH_FILTER_ITEMS = 20
+MAX_SYNC_POST_IDS = 1000
+MAX_FALLBACK_SEARCH_CHUNKS = 5000
 DEFAULT_EVIDENCE_MIN_SCORE = 0.45
 DEFAULT_REQUIRED_EVIDENCE_SOURCES = 1
 ALLOWED_NO_HIT_POLICIES = frozenset({"abstain", "fallback_to_general", "return_empty"})
@@ -535,7 +539,7 @@ class SiteKnowledgeService:
         input_payload: dict[str, Any],
         run_id: str,
     ) -> dict[str, Any]:
-        query = " ".join(str(input_payload.get("query") or "").split())
+        query = _normalize_search_query(input_payload.get("query"))
         if not query:
             raise SiteKnowledgeContractViolation(
                 "site_knowledge.query_required",
@@ -615,6 +619,7 @@ class SiteKnowledgeService:
             statuses=statuses or ["publish"],
             source_types=source_types,
             current_post_id=current_post_id,
+            limit=MAX_FALLBACK_SEARCH_CHUNKS,
         ):
             embedding = chunk.embedding_json if isinstance(chunk.embedding_json, list) else []
             score = cosine_similarity(query_embedding, [float(value) for value in embedding])
@@ -1232,10 +1237,15 @@ def _coerce_post_ids(value: Any) -> list[int]:
     if not isinstance(value, list):
         return []
     post_ids = []
+    seen = set()
     for item in value:
         post_id = _coerce_int(item, default=0)
-        if post_id > 0:
-            post_ids.append(post_id)
+        if post_id <= 0 or post_id in seen:
+            continue
+        post_ids.append(post_id)
+        seen.add(post_id)
+        if len(post_ids) >= MAX_SYNC_POST_IDS:
+            break
     return post_ids
 
 
@@ -1243,11 +1253,20 @@ def _filter_string_list(value: Any, *, allowed: frozenset[str]) -> list[str]:
     if not isinstance(value, list):
         return []
     results = []
+    seen = set()
     for item in value:
         normalized = str(item or "").strip().lower()
-        if normalized in allowed:
-            results.append(normalized)
+        if normalized not in allowed or normalized in seen:
+            continue
+        results.append(normalized)
+        seen.add(normalized)
+        if len(results) >= MAX_SEARCH_FILTER_ITEMS:
+            break
     return results
+
+
+def _normalize_search_query(value: Any) -> str:
+    return " ".join(str(value or "").split())[:MAX_SEARCH_QUERY_CHARS]
 
 
 def _resolve_evidence_policy(value: Any) -> dict[str, object]:

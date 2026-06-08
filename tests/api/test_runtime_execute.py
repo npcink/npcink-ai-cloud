@@ -766,6 +766,68 @@ def test_execute_route_rejects_image_generation_write_controls(
     dispose_engine(database_url)
 
 
+def test_execute_route_rejects_oversized_image_generation_inputs(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "magick-ai-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "x" * 4001,
+            "n": 1,
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-generation-prompt-too-long",
+            nonce="nonce-image-generation-prompt-too-long",
+            trace_id="1234567890abcdef1234567890abcd03",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["error_code"] == "image_generation.prompt_too_long"
+
+    payload["input"] = {
+        "contract_version": "image_generation_request.v1",
+        "prompt": "A clean product photo",
+        "n": 5,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-image-generation-too-many",
+            nonce="nonce-image-generation-too-many",
+            trace_id="1234567890abcdef1234567890abcd04",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["error_code"] == "image_generation.image_count_invalid"
+
+    dispose_engine(database_url)
+
+
 def test_execute_route_rejects_step_offload_public_ingress(
     tmp_path: Path,
 ) -> None:
