@@ -555,6 +555,16 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert "automatic_commercial_state_mutation" in analysis["agent_handoff"][
         "forbidden_actions"
     ]
+    assert analysis["agent_registry_metadata"]["agent_id"] == (
+        "internal_ops_advisor_agent"
+    )
+    assert analysis["agent_registry_metadata"]["agent_role"] == analysis[
+        "agent_handoff"
+    ]["agent_role"]
+    assert analysis["agent_registry_metadata"]["direct_wordpress_write"] is False
+    assert "cloud_workflow_truth" in analysis["agent_registry_metadata"][
+        "forbidden_actions"
+    ]
     assert first_data["safety"] == {
         "manual_trigger_required": True,
         "prompt_saved": False,
@@ -599,6 +609,9 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert len(history_data["items"]) == 1
     assert history_data["items"][0]["ai_disclosure"]["generated_by_ai"] is True
     assert history_data["items"][0]["agent_handoff"]["agent_id"] == (
+        "internal_ops_advisor_agent"
+    )
+    assert history_data["items"][0]["agent_registry_metadata"]["agent_id"] == (
         "internal_ops_advisor_agent"
     )
     history_serialized = json.dumps(history_data)

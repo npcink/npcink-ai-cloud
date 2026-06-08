@@ -36,6 +36,7 @@ from app.api.routes.service import (
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
     MEDIA_DERIVATIVE_WORKFLOW_ID,
+    get_agent_handoff_metadata,
     get_workflow_metadata,
 )
 from app.domain.commercial.customer_api_keys import (
@@ -242,6 +243,9 @@ def _portal_ai_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "generation": _portal_ai_generation(generation or {}),
         "ai_disclosure": _portal_ai_disclosure(disclosure or {}),
         "agent_handoff": _portal_ai_agent_handoff(summary.get("agent_handoff")),
+        "agent_registry_metadata": _portal_ai_agent_registry_metadata(
+            summary.get("agent_handoff")
+        ),
     }
 
 
@@ -262,7 +266,23 @@ def _portal_ai_history_item(item: dict[str, Any]) -> dict[str, Any]:
         "generation": _portal_ai_generation(generation or {}),
         "ai_disclosure": _portal_ai_disclosure(disclosure or {}),
         "agent_handoff": _portal_ai_agent_handoff(item.get("agent_handoff")),
+        "agent_registry_metadata": _portal_ai_agent_registry_metadata(
+            item.get("agent_handoff")
+        ),
     }
+
+
+def _portal_ai_agent_registry_metadata(value: Any) -> dict[str, Any]:
+    handoff = _portal_ai_agent_handoff(value)
+    agent_id = handoff.get("agent_id", "")
+    if not agent_id:
+        return {}
+    return _portal_ai_agent_handoff(
+        get_agent_handoff_metadata(
+            agent_id,
+            agent_role=handoff.get("agent_role") or None,
+        )
+    )
 
 
 def _portal_ai_agent_handoff(value: Any) -> dict[str, Any]:

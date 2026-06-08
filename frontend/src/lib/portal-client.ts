@@ -739,6 +739,7 @@ export interface PortalAIInsightAnalysis {
   generation: PortalAIInsightGeneration;
   ai_disclosure: PortalAIInsightDisclosure;
   agent_handoff: PortalAIInsightAgentHandoff;
+  agent_registry_metadata: PortalAIInsightAgentHandoff;
 }
 
 export interface PortalAIInsightHistoryItem {
@@ -755,6 +756,7 @@ export interface PortalAIInsightHistoryItem {
   generation: PortalAIInsightGeneration;
   ai_disclosure: PortalAIInsightDisclosure;
   agent_handoff: PortalAIInsightAgentHandoff;
+  agent_registry_metadata: PortalAIInsightAgentHandoff;
 }
 
 export interface PortalAIInsightSafety {

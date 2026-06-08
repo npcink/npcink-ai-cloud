@@ -70,6 +70,14 @@ function formatBoundaryToken(value: string): string {
   return String(value || '-').replace(/_/g, ' ');
 }
 
+function getAgentBoundaryMetadata(
+  analysis: PortalAIInsightAnalysis | PortalAIInsightHistoryItem
+) {
+  return analysis.agent_registry_metadata?.agent_id
+    ? analysis.agent_registry_metadata
+    : analysis.agent_handoff;
+}
+
 function AIContentLabel({ analysis }: { analysis: PortalAIInsightAnalysis | PortalAIInsightHistoryItem }) {
   const { t } = useLocale();
   const disclosure = analysis.ai_disclosure;
@@ -186,7 +194,7 @@ function AnalysisPanel({
 
 function AgentBoundaryPanel({ analysis }: { analysis: PortalAIInsightAnalysis }) {
   const { t } = useLocale();
-  const handoff = analysis.agent_handoff;
+  const handoff = getAgentBoundaryMetadata(analysis);
   if (!handoff?.agent_id) {
     return null;
   }
@@ -403,6 +411,7 @@ function PortalAIInsightsContent() {
                     generation: response.data.analysis.generation,
                     ai_disclosure: response.data.analysis.ai_disclosure,
                     agent_handoff: response.data.analysis.agent_handoff,
+                    agent_registry_metadata: response.data.analysis.agent_registry_metadata,
                   },
                   ...current.items,
                 ].slice(0, 10),
@@ -566,6 +575,7 @@ function PortalAIInsightsContent() {
           generation: item.generation,
           ai_disclosure: item.ai_disclosure,
           agent_handoff: item.agent_handoff,
+          agent_registry_metadata: item.agent_registry_metadata,
         })} />
       </div>
 
