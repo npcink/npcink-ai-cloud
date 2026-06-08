@@ -4109,8 +4109,13 @@ class RuntimeService:
                     "role": "user",
                     "content": (
                         "Return JSON with key prompt_candidates, an array of 1 to 3 "
-                        "objects. Each object must include id, label, visual_strategy, "
-                        "and prompt. Prompts must be publication-safe, concrete, and "
+                        "objects. Each object must include id, label, direction_type, "
+                        "visual_strategy, reason, and prompt. Use direction_type values "
+                        "like editorial_scene, conceptual_metaphor, workflow_detail, "
+                        "or article_cover so the editor can show distinct visual choices. "
+                        "reason must briefly explain why the direction fits the selected "
+                        "paragraph and nearby article context. Prompts must be "
+                        "publication-safe, concrete, and "
                         "must explicitly forbid visible text, letters, numbers, logos, "
                         "watermarks, screenshots, and copied article wording.\n\n"
                         f"Context:\n{json.dumps(planner_context, ensure_ascii=False)}"
@@ -4156,7 +4161,10 @@ class RuntimeService:
                 {
                     "id": str(item.get("id") or f"llm_prompt_{index}")[:80],
                     "label": str(item.get("label") or f"LLM prompt {index}")[:80],
+                    "direction_type": str(item.get("direction_type") or "")[:80],
                     "visual_strategy": str(item.get("visual_strategy") or "")[:160],
+                    "reason": str(item.get("reason") or "")[:220],
+                    "image_use": str(item.get("image_use") or "")[:80],
                     "prompt": prompt,
                 }
             )

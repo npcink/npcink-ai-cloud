@@ -140,7 +140,9 @@ class PromptPlannerProvider(OpenAIProviderAdapter):
                             {
                                 "id": "llm_editorial_scene",
                                 "label": "LLM editorial scene",
+                                "direction_type": "editorial_scene",
                                 "visual_strategy": "Use related site evidence as context.",
+                                "reason": "Fits the selected paragraph because it turns answer quality planning into a reviewable editorial scene.",
                                 "prompt": (
                                     "Create an original editorial image about answer "
                                     "quality planning, using a desk with research notes "
@@ -516,6 +518,8 @@ def test_image_source_runtime_uses_llm_prompt_planner_when_text_profile_is_avail
     assert result["visual_brief"]["llm_prompt_planner"]["status"] == "ready"
     assert result["prompt_candidates"][0]["source"] == "cloud_llm_prompt_planner"
     assert result["prompt_candidates"][0]["planner_profile_id"] == "text.free-gpt55"
+    assert result["prompt_candidates"][0]["direction_type"] == "editorial_scene"
+    assert "selected paragraph" in result["prompt_candidates"][0]["reason"]
     assert "answer quality planning" in result["prompt_candidates"][0]["prompt"]
     assert planner_provider.requests
     assert planner_provider.requests[0].profile_id == "text.free-gpt55"

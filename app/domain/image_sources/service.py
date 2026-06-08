@@ -767,6 +767,9 @@ def _build_prompt_candidates(
         (
             "editorial_scene",
             "Editorial scene",
+            "editorial_scene",
+            "Concrete editorial scene",
+            "Best when the selected paragraph needs a natural article image that illustrates the idea without turning it into a diagram.",
             (
                 "Create an original editorial image for a WordPress article. "
                 f"Semantic context: {subject}. "
@@ -781,6 +784,9 @@ def _build_prompt_candidates(
         (
             "conceptual_metaphor",
             "Conceptual metaphor",
+            "conceptual_metaphor",
+            "Abstract idea through objects",
+            "Best for SEO/AEO/GEO or strategy concepts that are too abstract for literal photography.",
             (
                 "Create an original conceptual editorial image for the selected paragraph. "
                 f"Topic context: {subject}. "
@@ -793,6 +799,9 @@ def _build_prompt_candidates(
         (
             "workspace_detail",
             "Workspace detail",
+            "workflow_detail",
+            "Grounded workflow detail",
+            "Best when the image should support a paragraph as a quiet contextual detail rather than a hero image.",
             (
                 "Create a grounded editorial workspace image that supports this article section. "
                 f"Context to interpret: {subject}. "
@@ -807,6 +816,9 @@ def _build_prompt_candidates(
         {
             "id": prompt_id,
             "label": label,
+            "direction_type": direction_type,
+            "visual_strategy": visual_strategy,
+            "reason": reason,
             "prompt": _normalize_text(prompt, limit=1200),
             "source": "cloud_visual_brief",
             "evidence_refs": _site_context_evidence_refs(
@@ -816,7 +828,7 @@ def _build_prompt_candidates(
             "write_posture": "candidate_only",
             "direct_wordpress_write": False,
         }
-        for prompt_id, label, prompt in prompts
+        for prompt_id, label, direction_type, visual_strategy, reason, prompt in prompts
     ]
 
 
@@ -1051,10 +1063,16 @@ def _normalize_llm_prompt_plan(value: Any) -> dict[str, Any]:
                 "label": _normalize_text(candidate.get("label"), limit=80)
                 or f"LLM prompt {index}",
                 "prompt": prompt,
+                "direction_type": _normalize_token(
+                    candidate.get("direction_type"),
+                    limit=80,
+                ),
                 "visual_strategy": _normalize_text(
                     candidate.get("visual_strategy"),
                     limit=160,
                 ),
+                "reason": _normalize_text(candidate.get("reason"), limit=220),
+                "image_use": _normalize_token(candidate.get("image_use"), limit=80),
             }
         )
     return {
@@ -1086,10 +1104,16 @@ def _prompt_candidates_from_llm_plan(
                 "label": _normalize_text(candidate.get("label"), limit=80)
                 or "LLM visual prompt",
                 "prompt": prompt,
+                "direction_type": _normalize_token(
+                    candidate.get("direction_type"),
+                    limit=80,
+                ),
                 "visual_strategy": _normalize_text(
                     candidate.get("visual_strategy"),
                     limit=160,
                 ),
+                "reason": _normalize_text(candidate.get("reason"), limit=220),
+                "image_use": _normalize_token(candidate.get("image_use"), limit=80),
                 "source": "cloud_llm_prompt_planner",
                 "planner_profile_id": str(llm_prompt_plan.get("profile_id") or ""),
                 "planner_model_id": str(llm_prompt_plan.get("model_id") or ""),
