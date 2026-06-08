@@ -16,6 +16,12 @@ const validChangeClassification = new Set( [
 	'cloud detail',
 	'forbidden',
 ] );
+const registryMetadataPath = path.join(
+	cloudRoot,
+	'app',
+	'domain',
+	'agent_workflow_metadata.py'
+);
 
 function readText( filePath ) {
 	return fs.readFileSync( filePath, 'utf8' );
@@ -95,6 +101,32 @@ function globToRegExp( pattern ) {
 
 function matchesPattern( file, pattern ) {
 	return globToRegExp( pattern ).test( file );
+}
+
+function isAdminPortalFrontendSource( file ) {
+	return (
+		/^frontend\/src\/app\/(?:admin|portal)\//u.test( file ) &&
+		/\.(?:js|jsx|ts|tsx)$/u.test( file )
+	);
+}
+
+function loadAgentWorkflowRegistryTokens() {
+	const source = readTextIfExists( registryMetadataPath );
+	const tokens = [];
+	const patterns = [
+		/(?:REGISTRY_VERSION|[A-Z0-9_]*(?:AGENT_ID|WORKFLOW_ID))\s*=\s*"([^"]+)"/gu,
+		/(?:agent_version|workflow_version)\s*=\s*"([^"]+)"/gu,
+	];
+
+	for ( const pattern of patterns ) {
+		let match = pattern.exec( source );
+		while ( match ) {
+			tokens.push( String( match[ 1 ] || '' ).trim() );
+			match = pattern.exec( source );
+		}
+	}
+
+	return orderedUniq( tokens );
 }
 
 function parseContractFile( filePath ) {
@@ -259,6 +291,7 @@ function checkCloudAntiDrift( { contractPath, files } ) {
 			human_review_required_missing: [],
 			executable_seam_without_backstop: [],
 			forbidden_active_surfaces: [],
+			registry_metadata_hardcoding: [],
 		},
 		notes: [],
 	};
@@ -335,6 +368,23 @@ function checkCloudAntiDrift( { contractPath, files } ) {
 		);
 	}
 
+	const registryMetadataTokens = loadAgentWorkflowRegistryTokens();
+	const hardcodedRegistryMetadata = orderedUniq(
+		functionalChangedFileContents.flatMap( ( item ) => {
+			if ( ! isAdminPortalFrontendSource( item.file ) ) {
+				return [];
+			}
+			return registryMetadataTokens.filter(
+				( token ) => token && item.source.includes( token )
+			).map( ( token ) => `${ item.file }:${ token }` );
+		} )
+	);
+	if ( hardcodedRegistryMetadata.length > 0 ) {
+		result.violations.registry_metadata_hardcoding.push(
+			`Admin/Portal source hardcodes Agent/Workflow registry metadata; use the backend registry projection instead: ${ hardcodedRegistryMetadata.join( ', ' ) }`
+		);
+	}
+
 	if ( touchesHighRisk && humanReviewRequired !== true ) {
 		result.violations.human_review_required_missing.push(
 			'high-risk cloud surface touched but human_review_required is not true'
@@ -398,7 +448,8 @@ if ( require.main === module ) {
 		result.violations.missing_required_gates.length > 0 ||
 		result.violations.human_review_required_missing.length > 0 ||
 		result.violations.executable_seam_without_backstop.length > 0 ||
-		result.violations.forbidden_active_surfaces.length > 0;
+		result.violations.forbidden_active_surfaces.length > 0 ||
+		result.violations.registry_metadata_hardcoding.length > 0;
 
 	if ( wantsJson ) {
 		console.log( JSON.stringify( result, null, 2 ) );

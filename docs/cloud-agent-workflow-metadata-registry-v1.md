@@ -86,4 +86,5 @@ Use these checks for registry drift:
 
 - `.venv/bin/python -m pytest tests/api/test_service_routes.py::test_admin_agent_workflow_metadata_registry_is_read_only`
 - `.venv/bin/python -m pytest tests/api/test_service_routes.py::test_internal_ai_advisor_routes_are_internal_and_evidence_backed`
+- `pnpm run test:anti-drift`
 - `pnpm run check:agent-workflow-metadata`
