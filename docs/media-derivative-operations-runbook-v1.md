@@ -30,6 +30,10 @@ and rollback authority stay in the local WordPress/Core path.
    WordPress write owner.
 8. Cloud exposes read-only admin/portal observability for processing health.
 
+The workflow display metadata for this flow is sourced from the Cloud read-only
+Agent/Workflow metadata registry as `media_derivative_artifact_generation`.
+Runtime artifact data and approval/write decisions remain outside that registry.
+
 ## Supported Inputs And Outputs
 
 Supported source media type:

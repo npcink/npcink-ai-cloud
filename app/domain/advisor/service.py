@@ -1140,6 +1140,7 @@ class InternalAIAdvisorService:
             **cached,
             "generation": generation,
             "ai_disclosure": ai_disclosure,
+            "agent_registry_metadata": _agent_registry_metadata(cached),
         }
 
     def review_ops_summary_disclosure(
@@ -1591,6 +1592,7 @@ class InternalAIAdvisorService:
                 "write WordPress, or execute operator actions."
             ),
             "agent_handoff": _redacted_agent_handoff(advisor.get("agent_handoff")),
+            "agent_registry_metadata": _agent_registry_metadata(advisor),
             "evidence": _list(advisor.get("evidence")),
             "source_context": redacted_context,
             "generated_at": datetime.now(UTC).isoformat(),
@@ -1976,6 +1978,21 @@ def _advisor_agent_handoff(scope: str) -> dict[str, Any]:
     )
 
 
+def _agent_registry_metadata(value: Any) -> dict[str, Any]:
+    handoff = _redacted_agent_handoff(
+        _dict(value).get("agent_registry_metadata") or _dict(value).get("agent_handoff")
+    )
+    agent_id = str(handoff.get("agent_id") or "").strip()
+    if not agent_id:
+        return {}
+    return _redacted_agent_handoff(
+        get_agent_handoff_metadata(
+            agent_id,
+            agent_role=str(handoff.get("agent_role") or "").strip() or None,
+        )
+    )
+
+
 def _evidence(kind: str, ref: str, label: str) -> dict[str, str]:
     return {"kind": kind, "ref": ref, "label": label}
 
@@ -2216,6 +2233,7 @@ def _ops_summary_history_item(projection: SiteServiceProjection) -> dict[str, An
             "source_generation_mode": str(disclosure.get("source_generation_mode") or ""),
         },
         "agent_handoff": _redacted_agent_handoff(summary.get("agent_handoff")),
+        "agent_registry_metadata": _agent_registry_metadata(summary),
     }
 
 

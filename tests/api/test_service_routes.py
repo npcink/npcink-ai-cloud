@@ -742,6 +742,16 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     assert ops_summary_payload["source_context"]["advisor"]["agent_handoff"][
         "direct_wordpress_write"
     ] is False
+    assert ops_summary_payload["agent_registry_metadata"]["agent_id"] == (
+        "internal_ops_advisor_agent"
+    )
+    assert ops_summary_payload["agent_registry_metadata"]["agent_role"] == (
+        ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["agent_role"]
+    )
+    assert ops_summary_payload["agent_registry_metadata"]["direct_wordpress_write"] is False
+    assert "cloud_workflow_truth" in ops_summary_payload["agent_registry_metadata"][
+        "forbidden_actions"
+    ]
     assert ops_summary_payload["support_draft"]
     assert "article" not in ops_summary_payload["support_draft"].lower()
     assert "write WordPress" in ops_summary_payload["safety_note"]

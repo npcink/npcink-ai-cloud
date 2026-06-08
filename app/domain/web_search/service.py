@@ -9,6 +9,11 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from app.core.config import Settings
+from app.domain.agent_workflow_metadata import (
+    WEB_SEARCH_EVIDENCE_WORKFLOW_ID,
+    get_workflow_metadata,
+    registry_metadata_tokens,
+)
 from app.domain.web_search.contracts import (
     ALLOWED_WEB_SEARCH_INTENTS,
     WEB_SEARCH_ABILITY,
@@ -588,30 +593,20 @@ def _attach_web_search_workflow_metadata(
 
 
 def _web_search_workflow_metadata(options: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "workflow_id": "external_web_evidence_preflight",
-        "workflow_version": "web_search_evidence_workflow.v1",
-        "workflow_kind": "fixed_evidence_workflow",
-        "triggering_ability": WEB_SEARCH_ABILITY,
-        "triggering_contract": WEB_SEARCH_CONTRACT,
-        "intent": str(options.get("intent") or "general_research"),
-        "cloud_output": "external_web_evidence",
-        "handoff_owner": "wordpress_local",
-        "write_posture": "suggestion_only",
-        "direct_wordpress_write": False,
-        "steps": [
-            "validate_runtime_contract",
-            "select_cloud_managed_search_provider",
-            "normalize_and_score_sources",
-            "apply_evidence_gate",
-            "return_suggestion_only_evidence",
-        ],
-        "stop_conditions": [
-            "provider_not_configured",
-            "provider_fallback_exhausted",
-            "insufficient_evidence",
-        ],
-    }
+    metadata = dict(get_workflow_metadata(WEB_SEARCH_EVIDENCE_WORKFLOW_ID))
+    metadata.update(
+        {
+            "workflow_kind": "fixed_evidence_workflow",
+            "triggering_ability": WEB_SEARCH_ABILITY,
+            "triggering_contract": WEB_SEARCH_CONTRACT,
+            "intent": str(options.get("intent") or "general_research"),
+            "cloud_output": "external_web_evidence",
+            "write_posture": "suggestion_only",
+            "steps": registry_metadata_tokens(metadata.get("steps")),
+            "stop_conditions": registry_metadata_tokens(metadata.get("stop_conditions")),
+        }
+    )
+    return metadata
 
 
 def _enhance_with_jina_reader(

@@ -255,9 +255,13 @@ the first bounded Agentic handoff shape for:
 site_knowledge -> suggestion_only -> local proposal
 ```
 
-The handoff is not a new Cloud Agent platform, registry, route, workflow truth,
-or WordPress write authority. It is a structured local handoff hint embedded in
+The handoff's static identity and boundary fields come from the Cloud read-only
+Agent/Workflow metadata registry. Runtime evidence and proposal inputs remain in
 the existing runtime result.
+
+The handoff is not a new Cloud Agent platform, writable registry, route,
+workflow truth, or WordPress write authority. It is a structured local handoff
+hint embedded in the existing runtime result.
 
 For proposal-capable intents, such as `content_gap_analysis`, `internal_links`,
 `refresh_suggestions`, `faq_candidates`, `related_content`, `duplicate_check`,

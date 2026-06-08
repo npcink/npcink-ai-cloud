@@ -7,6 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.models import MediaDerivativeArtifact
+from app.domain.agent_workflow_metadata import (
+    MEDIA_DERIVATIVE_WORKFLOW_ID,
+    get_workflow_metadata,
+    registry_metadata_tokens,
+)
 from app.domain.media_derivatives.contracts import ARTIFACT_DEFAULT_TTL_MINUTES
 from app.domain.media_derivatives.processor import MediaDerivativeResult
 
@@ -111,31 +116,7 @@ def build_artifact_result_json(artifact: MediaDerivativeArtifact) -> dict[str, o
         warnings = artifact.processing_warnings_json
     suggested_filename = _suggested_artifact_filename(artifact)
     return {
-        "workflow_metadata": {
-            "workflow_id": "media_derivative_artifact_generation",
-            "workflow_version": "media_derivative_workflow.v1",
-            "workflow_kind": "fixed_worker_workflow",
-            "triggering_ability": "generate_optimized_media_derivative",
-            "triggering_contract": "media_derivative_cloud_request.v1",
-            "execution_pattern": "whole_run_offload",
-            "cloud_output": "temporary_derivative_artifact",
-            "handoff_owner": "wordpress_local",
-            "write_posture": "artifact_only",
-            "direct_wordpress_write": False,
-            "steps": [
-                "validate_media_derivative_request",
-                "queue_runtime_worker_job",
-                "process_static_image_derivative",
-                "store_short_ttl_artifact",
-                "return_artifact_reference_for_local_review",
-            ],
-            "stop_conditions": [
-                "invalid_source",
-                "unsupported_format",
-                "artifact_ttl_expired",
-                "local_approval_required",
-            ],
-        },
+        "workflow_metadata": _media_derivative_workflow_metadata(),
         "artifact": {
             "artifact_id": artifact.artifact_id,
             "artifact_reference": {"artifact_id": artifact.artifact_id},
@@ -167,6 +148,22 @@ def _suggested_artifact_filename(artifact: MediaDerivativeArtifact) -> str:
     if not checksum_part:
         checksum_part = artifact.artifact_id.replace("art_", "")[:8]
     return f"media-derivative-{str(artifact.format or 'image').lower()}-{checksum_part}.{extension}"
+
+
+def _media_derivative_workflow_metadata() -> dict[str, object]:
+    metadata = dict(get_workflow_metadata(MEDIA_DERIVATIVE_WORKFLOW_ID))
+    metadata.update(
+        {
+            "workflow_kind": "fixed_worker_workflow",
+            "triggering_ability": "generate_optimized_media_derivative",
+            "triggering_contract": "media_derivative_cloud_request.v1",
+            "cloud_output": "temporary_derivative_artifact",
+            "write_posture": "artifact_only",
+            "steps": registry_metadata_tokens(metadata.get("steps")),
+            "stop_conditions": registry_metadata_tokens(metadata.get("stop_conditions")),
+        }
+    )
+    return metadata
 
 
 def _extension_for_format(format_name: str) -> str:

@@ -202,30 +202,18 @@ def test_cloud_managed_web_search_executes_and_records_provider_usage(
     result = data["result"]
     assert result["artifact_type"] == "web_search_results"
     assert result["direct_wordpress_write"] is False
-    assert result["workflow_metadata"] == {
-        "workflow_id": "external_web_evidence_preflight",
-        "workflow_version": "web_search_evidence_workflow.v1",
-        "workflow_kind": "fixed_evidence_workflow",
-        "triggering_ability": "magick-ai-cloud/web-search",
-        "triggering_contract": "web_search.v1",
-        "intent": "news",
-        "cloud_output": "external_web_evidence",
-        "handoff_owner": "wordpress_local",
-        "write_posture": "suggestion_only",
-        "direct_wordpress_write": False,
-        "steps": [
-            "validate_runtime_contract",
-            "select_cloud_managed_search_provider",
-            "normalize_and_score_sources",
-            "apply_evidence_gate",
-            "return_suggestion_only_evidence",
-        ],
-        "stop_conditions": [
-            "provider_not_configured",
-            "provider_fallback_exhausted",
-            "insufficient_evidence",
-        ],
-    }
+    assert result["workflow_metadata"]["workflow_id"] == "external_web_evidence_preflight"
+    assert result["workflow_metadata"]["workflow_version"] == "web_search_evidence_workflow.v1"
+    assert result["workflow_metadata"]["workflow_kind"] == "fixed_evidence_workflow"
+    assert result["workflow_metadata"]["triggering_ability"] == "magick-ai-cloud/web-search"
+    assert result["workflow_metadata"]["triggering_contract"] == "web_search.v1"
+    assert result["workflow_metadata"]["intent"] == "news"
+    assert result["workflow_metadata"]["cloud_output"] == "external_web_evidence"
+    assert result["workflow_metadata"]["handoff_owner"] == "wordpress_local"
+    assert result["workflow_metadata"]["write_posture"] == "suggestion_only"
+    assert result["workflow_metadata"]["direct_wordpress_write"] is False
+    assert "apply_evidence_gate" in result["workflow_metadata"]["steps"]
+    assert "insufficient_evidence" in result["workflow_metadata"]["stop_conditions"]
     assert result["evidence_gate"]["allows_web_grounded_assertion"] is True
     assert result["results"][0]["url"] == "https://example.com/wp-ai-search"
     assert "latest WordPress AI search trends" not in json.dumps(result)

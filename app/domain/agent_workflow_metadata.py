@@ -260,3 +260,28 @@ def get_agent_workflow_registry() -> dict[str, object]:
         "agents": list_agent_handoff_metadata(),
         "workflows": list_workflow_metadata(),
     }
+
+
+def registry_metadata_tokens(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    tokens: list[str] = []
+    for value in values:
+        token = _registry_metadata_token(str(value or ""))
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _registry_metadata_token(value: str) -> str:
+    parts: list[str] = []
+    previous_was_separator = True
+    for character in value.strip().lower():
+        if character.isalnum():
+            parts.append(character)
+            previous_was_separator = False
+            continue
+        if not previous_was_separator:
+            parts.append("_")
+            previous_was_separator = True
+    return "".join(parts).strip("_")
