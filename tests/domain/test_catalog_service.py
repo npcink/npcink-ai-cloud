@@ -12,7 +12,10 @@ from app.adapters.providers.base import (
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.core.db import dispose_engine, init_schema
 from app.domain.catalog.service import CatalogService
-from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_PROFILE_ID
+from app.domain.hosted_model_defaults import (
+    GROK_IMAGINE_IMAGE_MODEL_ID,
+    GROK_IMAGINE_IMAGE_PROFILE_ID,
+)
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from tests.conftest import seed_site_auth
@@ -118,6 +121,83 @@ def test_free_gpt55_profile_filters_to_free_hosted_model(tmp_path: Path) -> None
     assert models["total"] == 1
     assert models["items"][0]["model_id"] == "gpt-5.5"
     assert "text.free-gpt55" in models["items"][0]["recommended_profiles"]
+
+    dispose_engine(database_url)
+
+
+def test_grok_image_quality_profile_filters_to_exact_image_model(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    snapshot = ProviderCatalogSnapshot(
+        provider_id="openai",
+        display_name="OpenAI Compatible",
+        adapter_type="openai",
+        models=[
+            CatalogModelSeed(
+                model_id="grok-imagine-image",
+                family="grok-imagine",
+                feature="image_generation",
+                status="available",
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="openai-global-grok-imagine-image",
+                        endpoint_variant="image_generations",
+                        region="global",
+                        capability_tags=["image_generation", "default", "quality"],
+                        weight=100,
+                    )
+                ],
+            ),
+            CatalogModelSeed(
+                model_id=GROK_IMAGINE_IMAGE_MODEL_ID,
+                family="grok-imagine",
+                feature="image_generation",
+                status="available",
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="openai-global-grok-imagine-image-quality",
+                        endpoint_variant="image_generations",
+                        region="global",
+                        capability_tags=["image_generation", "default", "quality"],
+                        weight=100,
+                    )
+                ],
+            ),
+            CatalogModelSeed(
+                model_id="grok-imagine-video",
+                family="grok-imagine",
+                feature="image_generation",
+                status="available",
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="openai-global-grok-imagine-video",
+                        endpoint_variant="image_generations",
+                        region="global",
+                        capability_tags=["image_generation", "default", "quality"],
+                        weight=100,
+                    )
+                ],
+            ),
+        ],
+    )
+    service = CatalogService(
+        database_url,
+        providers={"openai": SequenceCatalogProvider([snapshot])},
+    )
+
+    service.refresh_catalog()
+    models = service.list_models(recommended_for=GROK_IMAGINE_IMAGE_PROFILE_ID)
+
+    recommended_set = models["recommended_sets"][GROK_IMAGINE_IMAGE_PROFILE_ID]
+    assert recommended_set["model_ids"] == [GROK_IMAGINE_IMAGE_MODEL_ID]
+    assert recommended_set["instance_ids"] == [
+        "openai-global-grok-imagine-image-quality"
+    ]
+    assert models["total"] == 1
+    assert models["items"][0]["model_id"] == GROK_IMAGINE_IMAGE_MODEL_ID
 
     dispose_engine(database_url)
 

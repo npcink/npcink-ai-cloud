@@ -422,8 +422,11 @@ class CatalogService:
         def select_candidates(
             execution_kind: str,
             ordered_tiers: list[str],
+            *,
+            exact_model_id: str | None = None,
         ) -> list[str]:
             scored: list[tuple[int, int, str]] = []
+            instances_by_id = {instance.instance_id: instance for instance in instances}
 
             for instance in instances:
                 tags = set(instance.capability_tags)
@@ -438,6 +441,16 @@ class CatalogService:
                     continue
 
                 scored.append((tier_rank, -instance.weight, instance.instance_id))
+
+            if exact_model_id:
+                exact_scored = [
+                    item
+                    for item in scored
+                    if instances_by_id[item[2]].model_id == exact_model_id
+                ]
+                if exact_scored:
+                    exact_scored.sort()
+                    return [instance_id for _, _, instance_id in exact_scored]
 
             scored.sort()
             return [instance_id for _, _, instance_id in scored]
@@ -456,7 +469,15 @@ class CatalogService:
         }
 
         for profile_id, (execution_kind, ordered_tiers) in profile_specs.items():
-            candidate_instance_ids = select_candidates(execution_kind, ordered_tiers)
+            candidate_instance_ids = select_candidates(
+                execution_kind,
+                ordered_tiers,
+                exact_model_id=(
+                    GROK_IMAGINE_IMAGE_PROFILE_ID
+                    if profile_id == GROK_IMAGINE_IMAGE_PROFILE_ID
+                    else None
+                ),
+            )
             repository.upsert_routing_profile(
                 profile_id=profile_id,
                 execution_kind=execution_kind,
