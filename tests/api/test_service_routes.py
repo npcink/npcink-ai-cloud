@@ -149,6 +149,7 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
                     "base_url": "https://api.tavily.com",
                     "secret": "tvly-test-secret",
                     "secret_pool": ["tvly-pool-a", "tvly-pool-b"],
+                    "secret_pool_labels": ["account-a", "account-b"],
                     "timeout_seconds": 9,
                     "cost": 0.001,
                 },
@@ -182,6 +183,7 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
     assert data["provider_mode"] == "auto"
     assert data["providers"]["tavily"]["configured"] is True
     assert data["providers"]["tavily"]["key_pool_count"] == 2
+    assert data["providers"]["tavily"]["key_pool_labels"] == ["account-a", "account-b"]
     assert data["providers"]["bocha"]["configured"] is True
     assert data["providers"]["jina_reader"]["enabled"] is True
     assert data["workflow_metadata"]["workflow_version"] == ("web_search_evidence_workflow.v1")
@@ -195,6 +197,7 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
     assert "MAGICK_CLOUD_WEB_SEARCH_PROVIDER=auto" in env_text
     assert "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY=tvly-test-secret" in env_text
     assert "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEYS=tvly-pool-a,tvly-pool-b" in env_text
+    assert "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY_LABELS=account-a,account-b" in env_text
     assert "MAGICK_CLOUD_WEB_SEARCH_BOCHA_API_KEY=bocha-test-secret" in env_text
     assert "MAGICK_CLOUD_WEB_SEARCH_JINA_READER_API_KEY=jina-test-secret" in env_text
     assert "MAGICK_CLOUD_WEB_SEARCH_APIFY_API_TOKEN=apify-test-token" in env_text
@@ -202,6 +205,7 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
     services = client.app.state.services
     assert services.settings.web_search_provider == "auto"
     assert services.settings.web_search_tavily_api_keys == "tvly-pool-a,tvly-pool-b"
+    assert services.settings.web_search_tavily_api_key_labels == "account-a,account-b"
     assert services.settings.web_search_bocha_api_key == "bocha-test-secret"
 
 

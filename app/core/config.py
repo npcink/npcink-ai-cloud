@@ -238,6 +238,7 @@ class Settings(BaseSettings):
     web_search_tavily_base_url: str = Field(default="https://api.tavily.com")
     web_search_tavily_api_key: str | None = Field(default=None)
     web_search_tavily_api_keys: str | None = Field(default=None)
+    web_search_tavily_api_key_labels: str | None = Field(default=None)
     web_search_tavily_timeout_seconds: float = Field(default=15.0)
     web_search_tavily_cost_per_query: float = Field(default=0.0)
     web_search_bocha_base_url: str = Field(default="https://api.bochaai.com/v1")

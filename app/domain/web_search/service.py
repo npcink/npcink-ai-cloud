@@ -199,7 +199,10 @@ class TavilyWebSearchProvider:
         last_error_message = "Tavily web search request failed"
 
         for _attempt in range(len(api_keys)):
-            selection = _select_tavily_api_key(api_keys)
+            selection = _select_tavily_api_key(
+                api_keys,
+                labels=_tavily_api_key_labels(self.settings, len(api_keys)),
+            )
             request_body: dict[str, Any] = {
                 "api_key": str(selection["api_key"]),
                 "query": query,
@@ -293,6 +296,8 @@ class TavilyWebSearchProvider:
                 "failover_count": len(key_errors),
                 "errors": key_errors[:5],
             }
+            if str(selection.get("label") or "").strip():
+                result_json["provider_key_pool"]["selected_key_label"] = str(selection["label"])
         return WebSearchExecutionResult(result_json=result_json, usage=usage)
 
     def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
@@ -586,7 +591,18 @@ def _tavily_api_key_pool(settings: Settings) -> list[str]:
     return keys
 
 
-def _select_tavily_api_key(api_keys: list[str]) -> dict[str, object]:
+def _tavily_api_key_labels(settings: Settings, key_count: int) -> list[str]:
+    labels = [
+        item.strip()
+        for item in re.split(r"[\n,;]+", str(settings.web_search_tavily_api_key_labels or ""))
+    ]
+    labels = [item for item in labels if item]
+    if key_count <= 0:
+        return []
+    return labels[:key_count] + [""] * max(0, key_count - len(labels))
+
+
+def _select_tavily_api_key(api_keys: list[str], *, labels: list[str] | None = None) -> dict[str, object]:
     fingerprints = [_hash_tavily_key(item) for item in api_keys]
     pool_id = hashlib.sha256("|".join(fingerprints).encode("utf-8")).hexdigest()[:16]
     now = time.monotonic()
@@ -608,6 +624,7 @@ def _select_tavily_api_key(api_keys: list[str]) -> dict[str, object]:
         "key_count": len(api_keys),
         "fingerprint": fingerprints[selected],
         "pool_id": pool_id,
+        "label": labels[selected] if labels and selected < len(labels) else "",
     }
 
 

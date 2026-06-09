@@ -61,6 +61,10 @@ MVP provider support is Cloud-owned and configured only by Cloud operators:
   rotates keys in memory with round-robin selection and temporarily skips keys
   that return auth, rate-limit, timeout, network, or provider-unavailable
   failures. WordPress users never submit these keys through runtime requests.
+- `MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY_LABELS`: optional Cloud-operator
+  labels for the Tavily key pool, aligned to `TAVILY_API_KEYS` order. Values may
+  be comma-, semicolon-, or newline-separated. Labels are operational metadata;
+  do not put provider secrets in labels.
 - `MAGICK_CLOUD_WEB_SEARCH_TAVILY_TIMEOUT_SECONDS`: default `15`
 - `MAGICK_CLOUD_WEB_SEARCH_TAVILY_COST_PER_QUERY`: optional shadow cost for
   provider-call usage records

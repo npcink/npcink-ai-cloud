@@ -15,6 +15,7 @@ ENV_KEYS = {
     "tavily_base_url": "MAGICK_CLOUD_WEB_SEARCH_TAVILY_BASE_URL",
     "tavily_api_key": "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY",
     "tavily_api_keys": "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEYS",
+    "tavily_api_key_labels": "MAGICK_CLOUD_WEB_SEARCH_TAVILY_API_KEY_LABELS",
     "tavily_timeout_seconds": "MAGICK_CLOUD_WEB_SEARCH_TAVILY_TIMEOUT_SECONDS",
     "tavily_cost_per_query": "MAGICK_CLOUD_WEB_SEARCH_TAVILY_COST_PER_QUERY",
     "bocha_base_url": "MAGICK_CLOUD_WEB_SEARCH_BOCHA_BASE_URL",
@@ -65,7 +66,10 @@ class WebSearchAdminConfigService:
                     extra={
                         "key_pool_count": len(
                             _secret_pool(self.settings.web_search_tavily_api_keys)
-                        )
+                        ),
+                        "key_pool_labels": _label_pool(
+                            self.settings.web_search_tavily_api_key_labels
+                        ),
                     },
                 ),
                 "bocha": self._provider_state(
@@ -180,6 +184,7 @@ class WebSearchAdminConfigService:
             "clear_tavily_api_key": bool(tavily.get("clear_secret")),
             "tavily_api_keys": _secret_pool_value(tavily, "secret_pool"),
             "clear_tavily_api_keys": bool(tavily.get("clear_secret_pool")),
+            "tavily_api_key_labels": _label_pool_value(tavily, "secret_pool_labels"),
             "tavily_timeout_seconds": _positive_float(
                 tavily.get("timeout_seconds"), self.settings.web_search_tavily_timeout_seconds
             ),
@@ -228,6 +233,9 @@ class WebSearchAdminConfigService:
         self.settings.web_search_tavily_base_url = env.get(ENV_KEYS["tavily_base_url"], "")
         self.settings.web_search_tavily_api_key = env.get(ENV_KEYS["tavily_api_key"], "")
         self.settings.web_search_tavily_api_keys = env.get(ENV_KEYS["tavily_api_keys"], "")
+        self.settings.web_search_tavily_api_key_labels = env.get(
+            ENV_KEYS["tavily_api_key_labels"], ""
+        )
         self.settings.web_search_tavily_timeout_seconds = _positive_float(
             env.get(ENV_KEYS["tavily_timeout_seconds"]), 15
         )
@@ -335,6 +343,20 @@ def _secret_pool_value(payload: dict[str, Any], key: str) -> str:
     if key not in payload:
         return ""
     return ",".join(_secret_pool(payload.get(key)))
+
+
+def _label_pool(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_items = [str(item) for item in value]
+    else:
+        raw_items = re.split(r"[\n,;]+", str(value or ""))
+    return [item.strip() for item in raw_items if item.strip()]
+
+
+def _label_pool_value(payload: dict[str, Any], key: str) -> str:
+    if key not in payload:
+        return ""
+    return ",".join(_label_pool(payload.get(key)))
 
 
 def _positive_float(value: Any, default: Any) -> float:

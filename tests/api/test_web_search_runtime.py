@@ -291,6 +291,7 @@ def test_tavily_key_pool_rotates_without_exposing_keys(monkeypatch: Any) -> None
             web_search_provider="tavily",
             web_search_tavily_api_key="",
             web_search_tavily_api_keys="tvly-pool-a\ntvly-pool-b",
+            web_search_tavily_api_key_labels="account-a\naccount-b",
         )
     )
 
@@ -310,7 +311,9 @@ def test_tavily_key_pool_rotates_without_exposing_keys(monkeypatch: Any) -> None
     assert seen_keys == ["tvly-pool-a", "tvly-pool-b"]
     assert first.result_json["provider_key_pool"]["key_count"] == 2
     assert first.result_json["provider_key_pool"]["selected_key_index"] == 1
+    assert first.result_json["provider_key_pool"]["selected_key_label"] == "account-a"
     assert second.result_json["provider_key_pool"]["selected_key_index"] == 2
+    assert second.result_json["provider_key_pool"]["selected_key_label"] == "account-b"
     assert "tvly-pool-a" not in json.dumps(first.result_json)
     assert "tvly-pool-b" not in json.dumps(second.result_json)
 
@@ -359,6 +362,7 @@ def test_tavily_key_pool_fails_over_after_rate_limit(monkeypatch: Any) -> None:
             environment="test",
             web_search_provider="tavily",
             web_search_tavily_api_keys="tvly-limited,tvly-healthy",
+            web_search_tavily_api_key_labels="limited-account,healthy-account",
         )
     ).search(
         query="latest WordPress AI search trends",
@@ -371,6 +375,7 @@ def test_tavily_key_pool_fails_over_after_rate_limit(monkeypatch: Any) -> None:
     key_pool = result.result_json["provider_key_pool"]
     assert key_pool["key_count"] == 2
     assert key_pool["selected_key_index"] == 2
+    assert key_pool["selected_key_label"] == "healthy-account"
     assert key_pool["attempt_count"] == 2
     assert key_pool["failover_count"] == 1
     assert key_pool["errors"][0]["error_code"] == "provider.rate_limited"
