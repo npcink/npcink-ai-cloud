@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 import httpx
 
@@ -50,7 +51,7 @@ def _build_traceparent(trace_id: str) -> str:
     normalized = "".join(ch for ch in trace_id.lower() if ch in "0123456789abcdef")
     if len(normalized) != 32:
         normalized = hashlib.sha256(trace_id.encode("utf-8")).hexdigest()[:32]
-    parent_id = hashlib.sha256(f"{normalized}|parent".encode("utf-8")).hexdigest()[:16]
+    parent_id = hashlib.sha256(f"{normalized}|parent".encode()).hexdigest()[:16]
     return f"00-{normalized}-{parent_id}-01"
 
 
@@ -140,9 +141,7 @@ def _dispatch_callback(
     raw_body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     timestamp = str(int(datetime.now(UTC).timestamp()))
     callback_id = hashlib.sha256(
-        f"{site_id}|{payload.get('generated_at', '')}|{payload.get('config_revision', '')}".encode(
-            "utf-8"
-        )
+        f"{site_id}|{payload.get('generated_at', '')}|{payload.get('config_revision', '')}".encode()
     ).hexdigest()[:32]
     traceparent = _build_traceparent(_build_trace_id(f"{site_id}|{callback_id}|{CALLBACK_EVENT}"))
     canonical = _callback_canonical(
@@ -259,9 +258,7 @@ def run_once(
         "delivery_owner": str(sink_result.get("delivery_owner") or ""),
         "rollup_scope_kind": str(sink_result.get("scope_kind") or ""),
         "regressions_total": _coerce_int(sink_result.get("regressions_total")),
-        "quality_regressions_total": _coerce_int(
-            sink_result.get("quality_regressions_total")
-        ),
+        "quality_regressions_total": _coerce_int(sink_result.get("quality_regressions_total")),
         "callback_attempted_total": callback_attempted_total,
         "callback_delivered_total": callback_delivered_total,
         "callback_failed_total": callback_failed_total,

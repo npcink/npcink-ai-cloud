@@ -217,9 +217,7 @@ DEFAULT_FREE_PLAN_VERSION_ID = "plan_free_v1"
 DEFAULT_FREE_PLAN_KIND = "default_free"
 DEFAULT_FREE_PLAN_SOURCE = "production_default_free_shell_v1"
 DEFAULT_FREE_SUBSCRIPTION_SOURCE = "production_default_free_bind_v1"
-CANONICAL_TIER_PLAN_IDS = {
-    tier_id: (tier_id, f"{tier_id}_v1") for tier_id in PLAN_TIER_REGISTRY
-}
+CANONICAL_TIER_PLAN_IDS = {tier_id: (tier_id, f"{tier_id}_v1") for tier_id in PLAN_TIER_REGISTRY}
 OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
     "pack_small": {
         "pack_id": "pack_small",
@@ -488,7 +486,9 @@ def _normalize_portal_site_url(value: str) -> tuple[str, str]:
     canonical = f"{parsed.scheme.lower() or 'https'}://{hostname}"
     if path not in {"", "/"}:
         canonical = f"{canonical}{path.rstrip('/')}"
-    return canonical, hostname + (f"{path.rstrip('/').replace('/', '-')}" if path not in {"", "/"} else "")
+    return canonical, hostname + (
+        f"{path.rstrip('/').replace('/', '-')}" if path not in {"", "/"} else ""
+    )
 
 
 def _extract_site_wordpress_url(site: Site) -> str:
@@ -534,7 +534,6 @@ def assert_platform_admin_capability(
     return normalized_role
 
 
-
 from app.domain.commercial.mixins import (
     CommercialServiceAccountMixin,
     CommercialServiceAdminMixin,
@@ -556,6 +555,7 @@ class CommercialService(
     CommercialServiceAuditMixin,
 ):
     """Commercial service facade composed from domain-specific mixins."""
+
     pass
 
 

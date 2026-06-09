@@ -47,7 +47,7 @@ def _build_trace_id(seed: str) -> str:
 
 
 def _build_traceparent(trace_id: str) -> str:
-    parent_id = hashlib.sha256(f"{trace_id}|parent".encode("utf-8")).hexdigest()[:16]
+    parent_id = hashlib.sha256(f"{trace_id}|parent".encode()).hexdigest()[:16]
     return f"00-{trace_id}-{parent_id}-01"
 
 
@@ -156,7 +156,9 @@ def _dispatch_callback(
         "traceparent": traceparent,
     }
 
-    with httpx.Client(timeout=timeout_seconds, transport=transport, follow_redirects=False) as client:
+    with httpx.Client(
+        timeout=timeout_seconds, transport=transport, follow_redirects=False
+    ) as client:
         response = client.post(callback_url, content=body, headers=headers)
 
     return {

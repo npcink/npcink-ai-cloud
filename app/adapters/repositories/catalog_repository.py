@@ -79,8 +79,10 @@ class CatalogRepository:
         return self.session.get(CatalogModel, model_id)
 
     def list_instances_for_model(self, model_id: str) -> list[CatalogInstance]:
-        statement = select(CatalogInstance).where(CatalogInstance.model_id == model_id).order_by(
-            CatalogInstance.instance_id.asc()
+        statement = (
+            select(CatalogInstance)
+            .where(CatalogInstance.model_id == model_id)
+            .order_by(CatalogInstance.instance_id.asc())
         )
         return list(self.session.scalars(statement))
 

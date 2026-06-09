@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import os
+import socket
 from datetime import UTC, datetime
 
 import jwt
+import pytest
 from sqlalchemy import select
 
 if not os.environ.get("MAGICK_CLOUD_INTERNAL_AUTH_TOKEN", "").strip():
-    os.environ["MAGICK_CLOUD_INTERNAL_AUTH_TOKEN"] = (
-        "magick-cloud-internal-test-token-32b"
-    )
+    os.environ["MAGICK_CLOUD_INTERNAL_AUTH_TOKEN"] = "magick-cloud-internal-test-token-32b"
 if not os.environ.get("MAGICK_CLOUD_ADMIN_SESSION_SECRET", "").strip():
-    os.environ["MAGICK_CLOUD_ADMIN_SESSION_SECRET"] = (
-        "magick-cloud-ops-session-secret-32b"
-    )
+    os.environ["MAGICK_CLOUD_ADMIN_SESSION_SECRET"] = "magick-cloud-ops-session-secret-32b"
 if not os.environ.get("MAGICK_CLOUD_PORTAL_JWT_SECRET", "").strip():
-    os.environ["MAGICK_CLOUD_PORTAL_JWT_SECRET"] = (
-        "magick-cloud-portal-jwt-secret-32b"
-    )
+    os.environ["MAGICK_CLOUD_PORTAL_JWT_SECRET"] = "magick-cloud-portal-jwt-secret-32b"
 for _provider_env_name in (
     "MAGICK_CLOUD_OPENAI_API_KEY",
     "MAGICK_CLOUD_OPENAI_COMPATIBLE_API_KEY",
@@ -55,13 +51,13 @@ from app.core.models import (
     Site,
     SiteApiKey,
 )
+from app.core.secrets import encrypt_site_api_signing_secret
 from app.core.security import (
     build_body_digest,
     build_canonical_request,
     build_hmac_signature,
     build_secret_hash,
 )
-from app.core.secrets import encrypt_site_api_signing_secret
 from app.domain.commercial.service import CommercialService
 
 TEST_SECRET = "magick-cloud-test-secret-for-hmac-sha256-32b"
@@ -69,6 +65,31 @@ TEST_KEY_ID = "key_default"
 TEST_INTERNAL_AUTH_TOKEN = "magick-cloud-internal-test-token-32b"
 TEST_ADMIN_SESSION_SECRET = "magick-cloud-ops-session-secret-32b"
 TEST_PORTAL_JWT_SECRET = "magick-cloud-portal-jwt-secret-32b"
+
+
+@pytest.fixture
+def allow_example_callback_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_getaddrinfo = socket.getaddrinfo
+
+    def fake_getaddrinfo(
+        host: object,
+        port: object,
+        *args: object,
+        **kwargs: object,
+    ) -> list[tuple[int, int, int, str, tuple[str, object]]]:
+        if str(host).lower().rstrip(".") == "example.com":
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("93.184.216.34", port or 443),
+                )
+            ]
+        return original_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 
 
 def seed_site_auth(

@@ -5,20 +5,20 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
+    SITE_STATUS_SUSPENDED,
     CatalogInstance,
     HealthSnapshot,
     ProviderCallRecord,
     RunRecord,
-    SITE_STATUS_SUSPENDED,
 )
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.rollup import LATENCY_PROBE_BATCH_SCOPE
-from app.adapters.repositories.stats_repository import StatsRepository
 from app.workers.latency_probe_summary import run_once
 from tests.conftest import seed_site_auth
 

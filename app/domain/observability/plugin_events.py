@@ -79,8 +79,7 @@ class PluginObservabilityService:
     ) -> dict[str, object]:
         current_time = (received_at or datetime.now(UTC)).astimezone(UTC)
         normalized_events = [
-            self._normalize_event(site_id=site_id, key_id=key_id, event=event)
-            for event in events
+            self._normalize_event(site_id=site_id, key_id=key_id, event=event) for event in events
         ]
         dedupe_keys = [event["dedupe_key"] for event in normalized_events]
 
@@ -357,17 +356,23 @@ class PluginObservabilityService:
                 ).where(*base_conditions)
             ).one()
 
-            active_site_count = session.execute(
-                select(
-                    func.count(func.distinct(PluginObservabilityEvent.site_id))
-                ).where(*base_conditions)
-            ).scalar() or 0
+            active_site_count = (
+                session.execute(
+                    select(func.count(func.distinct(PluginObservabilityEvent.site_id))).where(
+                        *base_conditions
+                    )
+                ).scalar()
+                or 0
+            )
 
-            active_plugin_count = session.execute(
-                select(
-                    func.count(func.distinct(PluginObservabilityEvent.plugin_slug))
-                ).where(*base_conditions)
-            ).scalar() or 0
+            active_plugin_count = (
+                session.execute(
+                    select(func.count(func.distinct(PluginObservabilityEvent.plugin_slug))).where(
+                        *base_conditions
+                    )
+                ).scalar()
+                or 0
+            )
 
             plugin_rows = session.execute(
                 select(
@@ -506,14 +511,16 @@ class PluginObservabilityService:
 
         errors: list[dict[str, object]] = []
         for row in error_rows:
-            errors.append({
-                "site_id": str(row[0] or "") or None,
-                "plugin_slug": str(row[1] or ""),
-                "event_kind": str(row[2] or ""),
-                "error_code": str(row[3] or ""),
-                "count": int(row[4] or 0),
-                "last_seen_at": self._format_datetime(row[5]),
-            })
+            errors.append(
+                {
+                    "site_id": str(row[0] or "") or None,
+                    "plugin_slug": str(row[1] or ""),
+                    "event_kind": str(row[2] or ""),
+                    "error_code": str(row[3] or ""),
+                    "count": int(row[4] or 0),
+                    "last_seen_at": self._format_datetime(row[5]),
+                }
+            )
 
         totals = {
             "events_total": events_total,
@@ -588,8 +595,7 @@ class PluginObservabilityService:
             with get_session(self.database_url) as session:
                 state = session.scalar(
                     select(PluginObservabilityAttentionState).where(
-                        PluginObservabilityAttentionState.attention_key
-                        == attention_key
+                        PluginObservabilityAttentionState.attention_key == attention_key
                     )
                 )
                 if state is not None:
@@ -833,9 +839,7 @@ class PluginObservabilityService:
             current_bucket = bucket_start + timedelta(hours=index)
             buckets[current_bucket] = {
                 "bucket_start_at": self._format_datetime(current_bucket),
-                "bucket_end_at": self._format_datetime(
-                    current_bucket + timedelta(hours=1)
-                ),
+                "bucket_end_at": self._format_datetime(current_bucket + timedelta(hours=1)),
                 "bucket_hours": 1,
                 "events_total": 0,
                 "ok_total": 0,
@@ -872,9 +876,7 @@ class PluginObservabilityService:
                 item["_latency_total"] = self._coerce_int(
                     item.get("_latency_total")
                 ) + self._coerce_int(latency_ms)
-                item["_latency_count"] = self._coerce_int(
-                    item.get("_latency_count")
-                ) + 1
+                item["_latency_count"] = self._coerce_int(item.get("_latency_count")) + 1
                 item["avg_latency_ms"] = self._optional_avg(
                     self._coerce_int(item.get("_latency_total"))
                     / self._coerce_int(item.get("_latency_count"), default=1)
@@ -888,9 +890,7 @@ class PluginObservabilityService:
         return timeline
 
     def _hour_floor(self, value: datetime) -> datetime:
-        normalized = (
-            value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-        )
+        normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
         return normalized.replace(minute=0, second=0, microsecond=0)
 
     def _attention_key(
@@ -1189,15 +1189,12 @@ class PluginObservabilityService:
             attention.append(
                 self._attention_item(
                     severity=(
-                        "error"
-                        if plugin_error_rate >= ERROR_RATE_HIGH_THRESHOLD
-                        else "warning"
+                        "error" if plugin_error_rate >= ERROR_RATE_HIGH_THRESHOLD else "warning"
                     ),
                     code="plugin_observability.plugin_error",
                     title="Plugin error pressure",
                     detail=(
-                        f"{plugin.get('plugin_slug')} reported "
-                        f"{plugin_error_total} error event(s)."
+                        f"{plugin.get('plugin_slug')} reported {plugin_error_total} error event(s)."
                     ),
                     site_id=site_id,
                     plugin_slug=str(plugin.get("plugin_slug") or ""),
@@ -1207,10 +1204,8 @@ class PluginObservabilityService:
 
             for event_kind in self._dict_items(plugin.get("event_kinds")):
                 if (
-                    str(event_kind.get("event_kind") or "")
-                    == "abilities.catalog.changed"
-                    and self._coerce_int(event_kind.get("events_total"))
-                    >= CATALOG_CHURN_THRESHOLD
+                    str(event_kind.get("event_kind") or "") == "abilities.catalog.changed"
+                    and self._coerce_int(event_kind.get("events_total")) >= CATALOG_CHURN_THRESHOLD
                 ):
                     attention.append(
                         self._attention_item(
@@ -1218,15 +1213,13 @@ class PluginObservabilityService:
                             code="plugin_observability.catalog_churn",
                             title="Ability catalog changed repeatedly",
                             detail=(
-                                "The ability catalog changed multiple times in the "
-                                "selected window."
+                                "The ability catalog changed multiple times in the selected window."
                             ),
                             site_id=site_id,
                             plugin_slug=str(plugin.get("plugin_slug") or ""),
                             event_kind="abilities.catalog.changed",
                             suggested_action=(
-                                "Check for plugin activation loops or catalog refresh "
-                                "churn."
+                                "Check for plugin activation loops or catalog refresh churn."
                             ),
                         )
                     )
@@ -1243,8 +1236,7 @@ class PluginObservabilityService:
                         detail="Missing plugin telemetry: " + ", ".join(missing),
                         site_id=site_id,
                         suggested_action=(
-                            "Confirm the plugin is installed, active, and collected "
-                            "by Cloud Addon."
+                            "Confirm the plugin is installed, active, and collected by Cloud Addon."
                         ),
                     )
                 )

@@ -183,9 +183,7 @@ class ObservabilityService:
             status_counts[status] += 1
             if status in {"degraded", "unhealthy"}:
                 degraded_provider_ids.add(str(instance.provider_id))
-            measured_at = self._normalize_datetime(
-                getattr(latest_snapshot, "measured_at", None)
-            )
+            measured_at = self._normalize_datetime(getattr(latest_snapshot, "measured_at", None))
             if measured_at is not None and (
                 last_measured_at is None or measured_at > last_measured_at
             ):

@@ -251,10 +251,13 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
         return SITE_KNOWLEDGE_PROFILE_ID
     if _is_web_search_payload(payload) and not payload.profile_id:
         return WEB_SEARCH_PROFILE_ID
-    if (
-        not payload.profile_id
-        and payload.ability_family in {"text", "openclaw", "workflow", "automation", "mcp"}
-    ):
+    if not payload.profile_id and payload.ability_family in {
+        "text",
+        "openclaw",
+        "workflow",
+        "automation",
+        "mcp",
+    }:
         return FREE_GPT55_TEXT_PROFILE_ID
     return payload.profile_id
 
@@ -291,9 +294,7 @@ def _resolve_task_backend(payload: RuntimePayload) -> dict[str, Any]:
 
 def _resolve_idempotency_key(request: Request, payload: RuntimePayload) -> str:
     return (
-        request.headers.get("Idempotency-Key")
-        or payload.idempotency_key
-        or f"auto_{uuid4().hex}"
+        request.headers.get("Idempotency-Key") or payload.idempotency_key or f"auto_{uuid4().hex}"
     )
 
 

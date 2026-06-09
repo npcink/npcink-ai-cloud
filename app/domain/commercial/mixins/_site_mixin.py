@@ -1,4 +1,5 @@
 """Commercial service: site and site-key operations mixin."""
+
 from __future__ import annotations
 
 import secrets
@@ -57,7 +58,6 @@ from app.domain.commercial.service import (
 
 
 class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
-
     def provision_site(
         self,
         *,
@@ -150,7 +150,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "wordpress site url could not be converted into a stable site id",
             )
         normalized_site_id = f"site_{site_slug}"
-        resolved_site_name = str(site_name or "").strip() or urlsplit(canonical_wordpress_url).hostname or normalized_site_id
+        resolved_site_name = (
+            str(site_name or "").strip()
+            or urlsplit(canonical_wordpress_url).hostname
+            or normalized_site_id
+        )
         now = self.now_factory()
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -229,9 +233,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             payload = {
                 "account_id": normalized_account_id,
                 "member_ref": normalized_member_ref,
-                "identity_type": _resolve_identity_type(
-                    str(getattr(membership, "role", "") or "")
-                ),
+                "identity_type": _resolve_identity_type(str(getattr(membership, "role", "") or "")),
                 "role": str(getattr(membership, "role", "") or ""),
                 "wordpress_url": canonical_wordpress_url,
                 "site": self._serialize_site(site),
@@ -239,13 +241,19 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "commercial_onboarding": {
                     "auto_bound": False,
                     "tier_id": service._infer_plan_tier_id(
-                        {"plan_id": subscription.plan_id, "metadata": subscription.metadata_json or {}},
+                        {
+                            "plan_id": subscription.plan_id,
+                            "metadata": subscription.metadata_json or {},
+                        },
                         [],
                     ),
                     "package_alias": str(
                         (subscription.metadata_json or {}).get("package_alias")
                         or service._build_plan_tier_summary(
-                            {"plan_id": subscription.plan_id, "metadata": subscription.metadata_json or {}},
+                            {
+                                "plan_id": subscription.plan_id,
+                                "metadata": subscription.metadata_json or {},
+                            },
                             [],
                         ).get("package_alias")
                         or ""
@@ -447,7 +455,9 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
 
             metadata = dict(site.metadata_json or {})
             runtime_callbacks = metadata.get("runtime_callbacks")
-            runtime_callbacks = dict(runtime_callbacks) if isinstance(runtime_callbacks, dict) else {}
+            runtime_callbacks = (
+                dict(runtime_callbacks) if isinstance(runtime_callbacks, dict) else {}
+            )
             normalized_terminal = cast(Any, self)._normalize_runtime_terminal_callback(
                 terminal_callback
             )
@@ -473,9 +483,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             }
             runtime_callbacks["terminal"] = stored_terminal
             metadata["runtime_callbacks"] = runtime_callbacks
-            metadata["runtime_terminal_callback_enabled"] = bool(
-                normalized_terminal.get("enabled")
-            )
+            metadata["runtime_terminal_callback_enabled"] = bool(normalized_terminal.get("enabled"))
             metadata["runtime_terminal_callback_url"] = str(
                 normalized_terminal.get("callback_url") or ""
             )
@@ -821,9 +829,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             "site_id": site.site_id,
             "account_id": site.account_id,
             "member_ref": str(getattr(membership, "member_ref", "") or ""),
-            "identity_type": _resolve_identity_type(
-                str(getattr(membership, "role", "") or "")
-            ),
+            "identity_type": _resolve_identity_type(str(getattr(membership, "role", "") or "")),
             "allowed_actions": _resolve_portal_allowed_actions(
                 str(getattr(membership, "role", "") or "")
             ),
@@ -851,7 +857,9 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "allowed_actions": _resolve_portal_allowed_actions(
                             str(getattr(membership, "role", "") or "")
                         ),
-                        "role": _normalize_customer_membership_role(str(getattr(membership, "role", "") or "")),
+                        "role": _normalize_customer_membership_role(
+                            str(getattr(membership, "role", "") or "")
+                        ),
                         "site": self._serialize_site(site),
                     }
                 )
@@ -912,7 +920,9 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 site_ids=site_ids,
                 since=usage_since,
             )
-            latest_billing_by_site = repository.get_latest_billing_snapshots_by_site(site_ids=site_ids)
+            latest_billing_by_site = repository.get_latest_billing_snapshots_by_site(
+                site_ids=site_ids
+            )
 
         service = cast(Any, self)
         latest_subscription_by_account = service._latest_subscription_map(subscriptions)
@@ -997,8 +1007,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             "site": self._serialize_site(site),
             "account": service._serialize_account(account) if account is not None else None,
             "memberships": [
-                service._serialize_account_membership(membership)
-                for membership in memberships
+                service._serialize_account_membership(membership) for membership in memberships
             ],
             "site_keys": [self._serialize_site_key(item) for item in keys],
             "subscription": (
@@ -1020,12 +1029,15 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             site = repository.get_site(site_id)
             if site is None:
-                raise CommercialNotFoundError("service.site_not_found", f"site '{site_id}' was not found")
+                raise CommercialNotFoundError(
+                    "service.site_not_found", f"site '{site_id}' was not found"
+                )
             keys = repository.list_site_keys(site_id, limit=100)
             active_keys = [item for item in keys if item.status == SITE_API_KEY_STATUS_ACTIVE]
             recent_events = repository.list_service_audit_events(site_id=site_id, limit=20)
             failed_events = [
-                item for item in recent_events
+                item
+                for item in recent_events
                 if str(item.outcome or "").lower() in {"error", "denied", "failed"}
             ]
             latest_key_usage = max(
@@ -1082,14 +1094,18 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "wordpress_url": wordpress_url,
                 "active_key_count": len(active_keys),
                 "latest_key_used_at": self._serialize_datetime(latest_key_usage),
-                "latest_auth_failure_at": self._serialize_datetime(failed_events[0].created_at if failed_events else None),
+                "latest_auth_failure_at": self._serialize_datetime(
+                    failed_events[0].created_at if failed_events else None
+                ),
                 "key_summary": {
                     "total": len(keys),
                     "active": len(active_keys),
                     "latest_used_at": self._serialize_datetime(latest_key_usage),
                     "expiring_soon": expiring_soon,
                 },
-                "recent_failures": [self._serialize_service_audit_event(item) for item in failed_events[:5]],
+                "recent_failures": [
+                    self._serialize_service_audit_event(item) for item in failed_events[:5]
+                ],
                 "checks": checks,
             }
 

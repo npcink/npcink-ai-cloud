@@ -137,9 +137,7 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
     assert initial.json()["data"]["workflow_metadata"]["workflow_id"] == (
         "external_web_evidence_preflight"
     )
-    assert (
-        initial.json()["data"]["workflow_metadata"]["direct_wordpress_write"] is False
-    )
+    assert initial.json()["data"]["workflow_metadata"]["direct_wordpress_write"] is False
 
     response = client.post(
         "/internal/service/admin/web-search-providers",
@@ -184,9 +182,7 @@ def test_admin_web_search_provider_settings_are_masked_and_update_runtime(
     assert data["providers"]["tavily"]["configured"] is True
     assert data["providers"]["bocha"]["configured"] is True
     assert data["providers"]["jina_reader"]["enabled"] is True
-    assert data["workflow_metadata"]["workflow_version"] == (
-        "web_search_evidence_workflow.v1"
-    )
+    assert data["workflow_metadata"]["workflow_version"] == ("web_search_evidence_workflow.v1")
     assert "tvly-test-secret" not in json.dumps(data)
     assert "bocha-test-secret" not in json.dumps(data)
     assert "jina-test-secret" not in json.dumps(data)
@@ -216,19 +212,11 @@ def test_admin_agent_workflow_metadata_registry_is_read_only(tmp_path: Path) -> 
     assert data["registry_version"] == "cloud-agent-workflow-metadata.v1"
     agents = {item["agent_id"]: item for item in data["agents"]}
     assert "internal_ops_advisor_agent" in agents
-    assert agents["site_knowledge_suggestion_agent"]["handoff_owner"] == (
-        "wordpress_local"
-    )
-    assert agents["site_knowledge_suggestion_agent"][
-        "direct_wordpress_write"
-    ] is False
+    assert agents["site_knowledge_suggestion_agent"]["handoff_owner"] == ("wordpress_local")
+    assert agents["site_knowledge_suggestion_agent"]["direct_wordpress_write"] is False
     workflows = {item["workflow_id"]: item for item in data["workflows"]}
-    assert workflows["external_web_evidence_preflight"]["handoff_owner"] == (
-        "wordpress_local"
-    )
-    assert workflows["media_derivative_artifact_generation"][
-        "direct_wordpress_write"
-    ] is False
+    assert workflows["external_web_evidence_preflight"]["handoff_owner"] == ("wordpress_local")
+    assert workflows["media_derivative_artifact_generation"]["direct_wordpress_write"] is False
 
     unauthorized = client.get("/internal/service/admin/agent-workflow-metadata")
     assert unauthorized.status_code in (401, 403)
@@ -483,9 +471,7 @@ def test_hosted_model_governance_diagnostics_summarizes_runtime_families(
             )
         session.commit()
 
-    unauthenticated = client.get(
-        "/internal/service/runtime/diagnostics/hosted-model-governance"
-    )
+    unauthenticated = client.get("/internal/service/runtime/diagnostics/hosted-model-governance")
     assert unauthenticated.status_code == 401
 
     response = client.get(
@@ -687,9 +673,10 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     assert runtime_payload["agent_handoff"]["requires_operator_review"] is True
     assert runtime_payload["agent_handoff"]["direct_wordpress_write"] is False
     assert runtime_payload["agent_handoff"]["execution_pattern"] == "inline"
-    assert "automatic_commercial_state_mutation" in runtime_payload["agent_handoff"][
-        "forbidden_actions"
-    ]
+    assert (
+        "automatic_commercial_state_mutation"
+        in runtime_payload["agent_handoff"]["forbidden_actions"]
+    )
     assert runtime_payload["status"] == "attention"
     assert runtime_payload["evidence"][0]["ref"] == (
         "/internal/service/runtime/diagnostics/summary"
@@ -739,19 +726,22 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
     assert ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["agent_id"] == (
         "internal_ops_advisor_agent"
     )
-    assert ops_summary_payload["source_context"]["advisor"]["agent_handoff"][
-        "direct_wordpress_write"
-    ] is False
+    assert (
+        ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["direct_wordpress_write"]
+        is False
+    )
     assert ops_summary_payload["agent_registry_metadata"]["agent_id"] == (
         "internal_ops_advisor_agent"
     )
-    assert ops_summary_payload["agent_registry_metadata"]["agent_role"] == (
-        ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["agent_role"]
+    assert (
+        ops_summary_payload["agent_registry_metadata"]["agent_role"]
+        == (ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["agent_role"])
     )
     assert ops_summary_payload["agent_registry_metadata"]["direct_wordpress_write"] is False
-    assert "cloud_workflow_truth" in ops_summary_payload["agent_registry_metadata"][
-        "forbidden_actions"
-    ]
+    assert (
+        "cloud_workflow_truth"
+        in ops_summary_payload["agent_registry_metadata"]["forbidden_actions"]
+    )
     assert ops_summary_payload["support_draft"]
     assert "article" not in ops_summary_payload["support_draft"].lower()
     assert "write WordPress" in ops_summary_payload["safety_note"]
@@ -1657,9 +1647,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
         "inactive",
     }
     assert (
-        overview["hosted_model_governance"]["alert_summary"]["boundary"][
-            "direct_wordpress_write"
-        ]
+        overview["hosted_model_governance"]["alert_summary"]["boundary"]["direct_wordpress_write"]
         is False
     )
     assert overview["runtime_operator_explanations"]
@@ -2452,6 +2440,7 @@ def test_service_routes_observability_summary_surfaces_feature_flag_overrides(
 
 def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
     tmp_path: Path,
+    allow_example_callback_dns: None,
 ) -> None:
     database_url, client = _build_client(
         tmp_path,
@@ -2917,6 +2906,7 @@ def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
 
 def test_service_routes_runtime_callback_dispatch_recovery_is_operator_visible(
     tmp_path: Path,
+    allow_example_callback_dns: None,
 ) -> None:
     callback_requests: list[dict[str, object]] = []
 

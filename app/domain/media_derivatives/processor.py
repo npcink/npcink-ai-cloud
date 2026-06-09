@@ -241,9 +241,7 @@ def _save_image(
     if target_format == "original":
         source_format = str(image.format or "").lower()
         resolved_format = (
-            source_format
-            if source_format in MIME_TYPE_BY_FORMAT
-            else DEFAULT_ORIGINAL_FORMAT
+            source_format if source_format in MIME_TYPE_BY_FORMAT else DEFAULT_ORIGINAL_FORMAT
         )
         pillow_format = PILLOW_FORMAT_BY_TARGET[resolved_format]
         if not source_format or source_format not in MIME_TYPE_BY_FORMAT:

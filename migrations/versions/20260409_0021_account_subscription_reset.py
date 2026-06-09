@@ -13,8 +13,12 @@ depends_on = None
 
 def upgrade() -> None:
     op.drop_index("ix_site_entitlement_snapshots_status", table_name="site_entitlement_snapshots")
-    op.drop_index("ix_site_entitlement_snapshots_plan_version_id", table_name="site_entitlement_snapshots")
-    op.drop_index("ix_site_entitlement_snapshots_subscription_id", table_name="site_entitlement_snapshots")
+    op.drop_index(
+        "ix_site_entitlement_snapshots_plan_version_id", table_name="site_entitlement_snapshots"
+    )
+    op.drop_index(
+        "ix_site_entitlement_snapshots_subscription_id", table_name="site_entitlement_snapshots"
+    )
     op.drop_index("ix_site_entitlement_snapshots_site_id", table_name="site_entitlement_snapshots")
     op.drop_table("site_entitlement_snapshots")
 
@@ -58,7 +62,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_account_subscriptions_account_id", "account_subscriptions", ["account_id"])
     op.create_index("ix_account_subscriptions_plan_id", "account_subscriptions", ["plan_id"])
-    op.create_index("ix_account_subscriptions_plan_version_id", "account_subscriptions", ["plan_version_id"])
+    op.create_index(
+        "ix_account_subscriptions_plan_version_id", "account_subscriptions", ["plan_version_id"]
+    )
     op.create_index("ix_account_subscriptions_status", "account_subscriptions", ["status"])
     op.create_index(
         "uq_account_subscriptions_one_active_per_account",

@@ -5,14 +5,14 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import HealthSnapshot, ProviderCallRecord, RunRecord, SITE_STATUS_SUSPENDED
+from app.core.models import SITE_STATUS_SUSPENDED, HealthSnapshot, ProviderCallRecord, RunRecord
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.rollup import ALERT_EVALUATE_BATCH_SCOPE
-from app.adapters.repositories.stats_repository import StatsRepository
 from app.workers.alert_provider_degradation import run_once
 from tests.conftest import seed_site_auth
 

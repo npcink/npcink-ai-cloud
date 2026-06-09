@@ -5,8 +5,7 @@ import socket
 import httpx
 import pytest
 
-from app.adapters.callbacks.base import RuntimeCallbackDispatchError
-from app.adapters.callbacks.base import RuntimeCallbackDispatchRequest
+from app.adapters.callbacks.base import RuntimeCallbackDispatchError, RuntimeCallbackDispatchRequest
 from app.adapters.callbacks.http import HttpRuntimeCallbackDispatcher
 from app.core.callback_security import (
     RuntimeCallbackTargetValidationError,

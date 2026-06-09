@@ -191,12 +191,8 @@ class UsageRollupService:
                         "rollup_key": rollup_key,
                         "scope_id": scope_id,
                         "rows_total": len(rows),
-                        "request_total": sum(
-                            _coerce_int(row.get("request_total")) for row in rows
-                        ),
-                        "success_total": sum(
-                            _coerce_int(row.get("success_total")) for row in rows
-                        ),
+                        "request_total": sum(_coerce_int(row.get("request_total")) for row in rows),
+                        "success_total": sum(_coerce_int(row.get("success_total")) for row in rows),
                         "guard_fail_total": sum(
                             _coerce_int(row.get("guard_fail_total")) for row in rows
                         ),
@@ -218,12 +214,8 @@ class UsageRollupService:
             "sites_total": len(site_batches),
             "stored_batches_total": len(site_batches),
             "rows_total": sum(_coerce_int(item.get("rows_total")) for item in site_batches),
-            "request_total": sum(
-                _coerce_int(item.get("request_total")) for item in site_batches
-            ),
-            "success_total": sum(
-                _coerce_int(item.get("success_total")) for item in site_batches
-            ),
+            "request_total": sum(_coerce_int(item.get("request_total")) for item in site_batches),
+            "success_total": sum(_coerce_int(item.get("success_total")) for item in site_batches),
             "guard_fail_total": sum(
                 _coerce_int(item.get("guard_fail_total")) for item in site_batches
             ),
@@ -350,8 +342,7 @@ class UsageRollupService:
                 _coerce_int(item.get("regressions_count")) for item in site_batches
             ),
             "quality_regressions_total": sum(
-                _coerce_int(item.get("quality_regressions_count"))
-                for item in site_batches
+                _coerce_int(item.get("quality_regressions_count")) for item in site_batches
             ),
             "site_batches": site_batches,
         }
@@ -428,12 +419,8 @@ class UsageRollupService:
                             "runtime": "hosted_profile",
                             "profile_id": "",
                             "sample_count": _coerce_int(summary.get("today_calls")),
-                            "latency_ms_p50": _coerce_int(
-                                summary.get("latency_ms_p50")
-                            ),
-                            "latency_ms_p95": _coerce_int(
-                                summary.get("latency_ms_p95")
-                            ),
+                            "latency_ms_p50": _coerce_int(summary.get("latency_ms_p50")),
+                            "latency_ms_p95": _coerce_int(summary.get("latency_ms_p95")),
                             "health": {
                                 "status": str(summary.get("health_status") or ""),
                                 "score": _coerce_int(summary.get("health_score")),
@@ -483,15 +470,11 @@ class UsageRollupService:
                         "healthy_total": sum(
                             1
                             for item in instances
-                            if str(_dict_value(item.get("health")).get("status") or "")
-                            == "healthy"
+                            if str(_dict_value(item.get("health")).get("status") or "") == "healthy"
                         ),
                         "avg_latency_ms": int(
                             round(
-                                sum(
-                                    _coerce_int(item.get("latency_ms_p50"))
-                                    for item in instances
-                                )
+                                sum(_coerce_int(item.get("latency_ms_p50")) for item in instances)
                                 / len(instances)
                             )
                         )
@@ -517,9 +500,7 @@ class UsageRollupService:
                 _coerce_int(item.get("instances_total")) for item in site_batches
             ),
             "ready_total": sum(_coerce_int(item.get("ready_total")) for item in site_batches),
-            "healthy_total": sum(
-                _coerce_int(item.get("healthy_total")) for item in site_batches
-            ),
+            "healthy_total": sum(_coerce_int(item.get("healthy_total")) for item in site_batches),
             "site_batches": site_batches,
         }
 
@@ -611,6 +592,7 @@ class UsageRollupService:
                 }
 
         return None
+
     def store_alert_provider_degradation_batches(
         self,
         *,
@@ -667,9 +649,7 @@ class UsageRollupService:
                         "rollup_key": rollup_key,
                         "scope_id": scope_id,
                         "events_total": len(events),
-                        "touched_rule_types": _string_list(
-                            payload.get("touched_rule_types")
-                        ),
+                        "touched_rule_types": _string_list(payload.get("touched_rule_types")),
                         "providers": [
                             str(_dict_value(event.get("summary")).get("provider") or "").strip()
                             for event in events
@@ -694,6 +674,7 @@ class UsageRollupService:
             "events_total": sum(_coerce_int(item.get("events_total")) for item in site_batches),
             "site_batches": site_batches,
         }
+
     def get_alert_provider_degradation_batch(
         self,
         *,
@@ -863,10 +844,7 @@ class UsageRollupService:
         start_at: datetime,
         end_at: datetime,
     ) -> str:
-        return (
-            f"{start_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"__{end_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-        )
+        return f"{start_at.strftime('%Y-%m-%dT%H:%M:%SZ')}__{end_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
     def _build_router_diagnostics_scope_id(
         self,
@@ -874,10 +852,7 @@ class UsageRollupService:
         generated_at: datetime,
         recent_minutes: int,
     ) -> str:
-        return (
-            f"{generated_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"__{recent_minutes}m"
-        )
+        return f"{generated_at.strftime('%Y-%m-%dT%H:%M:%SZ')}__{recent_minutes}m"
 
     def _build_latency_probe_scope_id(
         self,
@@ -885,11 +860,7 @@ class UsageRollupService:
         start_at: datetime,
         end_at: datetime,
     ) -> str:
-        return (
-            f"{start_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"__{end_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-        )
-
+        return f"{start_at.strftime('%Y-%m-%dT%H:%M:%SZ')}__{end_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
     def _build_alert_evaluate_scope_id(
         self,
@@ -897,7 +868,4 @@ class UsageRollupService:
         start_at: datetime,
         end_at: datetime,
     ) -> str:
-        return (
-            f"{start_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"__{end_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-        )
+        return f"{start_at.strftime('%Y-%m-%dT%H:%M:%SZ')}__{end_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"

@@ -298,20 +298,17 @@ class SiteKnowledgeService:
                 quota_limited = True
                 processed_documents += 1
                 continue
-            if (
-                not existing_document
-                and site_document_count
-                >= int(self.settings.site_knowledge_max_indexed_documents_per_site)
+            if not existing_document and site_document_count >= int(
+                self.settings.site_knowledge_max_indexed_documents_per_site
             ):
                 skipped_documents += 1
                 skipped_due_to_quota += 1
                 quota_limited = True
                 processed_documents += 1
                 continue
-            available_site_chunks = (
-                int(self.settings.site_knowledge_max_indexed_chunks_per_site)
-                - max(0, site_chunk_count - existing_chunks)
-            )
+            available_site_chunks = int(
+                self.settings.site_knowledge_max_indexed_chunks_per_site
+            ) - max(0, site_chunk_count - existing_chunks)
             allowed_chunks = min(
                 MAX_CHUNKS_PER_DOCUMENT,
                 remaining_run_chunks,
@@ -335,9 +332,8 @@ class SiteKnowledgeService:
                 failed_documents += 1
                 processed_documents += 1
                 continue
-            if (
-                allowed_chunks < MAX_CHUNKS_PER_DOCUMENT
-                and _chunks_include_limit_truncation(chunks)
+            if allowed_chunks < MAX_CHUNKS_PER_DOCUMENT and _chunks_include_limit_truncation(
+                chunks
             ):
                 quota_limited = True
             document_truncated = bool(
@@ -1141,9 +1137,7 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
     indexed_content_chars = len(content_excerpt)
     content_hash = str(document.get("content_hash") or "").strip()
     if not content_hash:
-        content_hash = hashlib.sha256(
-            f"{title}|{excerpt}|{content_excerpt}".encode()
-        ).hexdigest()
+        content_hash = hashlib.sha256(f"{title}|{excerpt}|{content_excerpt}".encode()).hexdigest()
 
     return {
         "post_id": post_id,
@@ -1301,9 +1295,7 @@ def _apply_evidence_policy(
 ) -> list[dict[str, object]]:
     min_score = _coerce_float(evidence_policy.get("min_score"), default=0.0)
     return [
-        result
-        for result in results
-        if _coerce_float(result.get("score"), default=0.0) >= min_score
+        result for result in results if _coerce_float(result.get("score"), default=0.0) >= min_score
     ]
 
 
@@ -1337,8 +1329,7 @@ def _insufficient_evidence_guidance(no_hit_policy: str) -> str:
         )
     if no_hit_policy == "return_empty":
         return (
-            "Return no grounded answer because the site knowledge index had "
-            "insufficient evidence."
+            "Return no grounded answer because the site knowledge index had insufficient evidence."
         )
     return "Abstain or ask for more source material; do not invent site-specific facts."
 
@@ -1468,8 +1459,7 @@ def _reason_for_intent(intent: str) -> str:
         return "The indexed passage may answer a site-content question with source context."
     if intent == "faq_candidates":
         return (
-            "The indexed passage may reveal a repeated question or answerable "
-            "site FAQ candidate."
+            "The indexed passage may reveal a repeated question or answerable site FAQ candidate."
         )
     if intent == "related_content":
         return "The indexed passage is related and may support topic cluster planning."
@@ -1787,9 +1777,7 @@ def _agent_handoff_for_search(
     evidence_gate: dict[str, object],
     results: list[dict[str, object]],
 ) -> dict[str, object]:
-    handoff_type = (
-        "proposal_input" if intent in PROPOSAL_HANDOFF_INTENTS else "suggestion_only"
-    )
+    handoff_type = "proposal_input" if intent in PROPOSAL_HANDOFF_INTENTS else "suggestion_only"
     evidence_refs = _agent_evidence_refs(results)
     proposal_input: dict[str, object] = {}
     if handoff_type == "proposal_input":
@@ -1812,9 +1800,7 @@ def _agent_handoff_for_search(
 
     agent_metadata = get_agent_handoff_metadata(SITE_KNOWLEDGE_SUGGESTION_AGENT_ID)
     return {
-        "agent_id": str(
-            agent_metadata.get("agent_id") or SITE_KNOWLEDGE_SUGGESTION_AGENT_ID
-        ),
+        "agent_id": str(agent_metadata.get("agent_id") or SITE_KNOWLEDGE_SUGGESTION_AGENT_ID),
         "agent_version": str(agent_metadata.get("agent_version") or ""),
         "agent_role": str(agent_metadata.get("agent_role") or ""),
         "triggering_ability": SITE_KNOWLEDGE_SEARCH_ABILITY,

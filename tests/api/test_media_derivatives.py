@@ -119,9 +119,7 @@ def _build_multipart_body(
     parts.append(image_bytes)
     if watermark_bytes is not None:
         parts.append(f"--{boundary}".encode())
-        parts.append(
-            b'Content-Disposition: form-data; name="watermark_file"; filename="logo.png"'
-        )
+        parts.append(b'Content-Disposition: form-data; name="watermark_file"; filename="logo.png"')
         parts.append(b"Content-Type: image/png")
         parts.append(b"")
         parts.append(watermark_bytes)
@@ -574,9 +572,7 @@ def test_text_watermark_success_path_without_watermark_artifact(tmp_path: Path) 
         assert dl_response.status_code == 200
         watermarked = Image.open(io.BytesIO(dl_response.content)).convert("RGB")
         top_right_pixels = [
-            watermarked.getpixel((x, y))
-            for x in range(50, 100)
-            for y in range(0, 40)
+            watermarked.getpixel((x, y)) for x in range(50, 100) for y in range(0, 40)
         ]
         assert any(pixel != (255, 255, 255) for pixel in top_right_pixels)
         with get_session(database_url) as session:

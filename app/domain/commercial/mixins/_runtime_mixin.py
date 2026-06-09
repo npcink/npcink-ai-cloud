@@ -1,4 +1,5 @@
 """Commercial service: runtime authorization and policy mixin."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -46,7 +47,6 @@ from app.domain.runtime.errors import (
 
 
 class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
-
     def provision_runtime_baseline(
         self,
         *,
@@ -73,10 +73,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 status=ACCOUNT_STATUS_ACTIVE,
                 metadata_json={"source": "seed_runtime"},
             )
-            if (
-                plan_id == DEFAULT_FREE_PLAN_ID
-                and plan_version_id == DEFAULT_FREE_PLAN_VERSION_ID
-            ):
+            if plan_id == DEFAULT_FREE_PLAN_ID and plan_version_id == DEFAULT_FREE_PLAN_VERSION_ID:
                 service._ensure_plan_free_version_in_session(repository=repository)
             else:
                 repository.upsert_plan(
@@ -156,7 +153,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             "key_id": key_id,
             "scopes": scopes,
         }
-
 
     def authorize_runtime_request(
         self,
@@ -361,8 +357,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 session.commit()
                 raise error
             if not any(
-                action.get("kind") == subscription_action.get("kind")
-                for action in policy_actions
+                action.get("kind") == subscription_action.get("kind") for action in policy_actions
             ):
                 policy_actions.append(subscription_action)
 
@@ -394,9 +389,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 idempotency_key=idempotency_key,
                 payload_json={
                     "reason": "entitlement_miss",
-                    "entitlements": service._normalize_entitlements(
-                        snapshot.entitlements_json
-                    ),
+                    "entitlements": service._normalize_entitlements(snapshot.entitlements_json),
                 },
             )
             session.commit()
@@ -546,7 +539,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         )
         return decision
 
-
     def record_run_acceptance(
         self,
         *,
@@ -572,7 +564,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             dedupe_key=f"run:{run.run_id}:runs",
             payload_json={"status": run.status},
         )
-
 
     def record_provider_call_usage(
         self,
@@ -637,7 +628,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 payload_json=base_payload,
             )
 
-
     def _resolve_budget_policy_action(
         self,
         *,
@@ -690,7 +680,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             ),
         }
 
-
     def _merge_runtime_policy_overrides(
         self,
         base: object,
@@ -712,7 +701,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             merged[key] = value
         return merged
 
-
     def _resolve_allow_decision_code(self, policy_actions: list[dict[str, object]]) -> str:
         for action in policy_actions:
             decision_code = str(action.get("decision_code") or "")
@@ -727,7 +715,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             if decision_code:
                 return decision_code
         return "commercial.allowed"
-
 
     def _entitlements_allow(
         self,
@@ -755,7 +742,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 return False
         return True
 
-
     def _assert_budget(self, meter_key: str, current_total: float, budget_value: object) -> None:
         limit = self._coerce_float(budget_value)
         if limit <= 0:
@@ -763,7 +749,6 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         if current_total < limit:
             return
         raise RuntimeQuotaExceededError(meter_key, limit)
-
 
     def _normalize_runtime_terminal_callback(
         self,
@@ -774,8 +759,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         key_id = str(raw.get("key_id") or "").strip()
         secret = str(raw.get("secret") or "").strip()
         callback_id = (
-            str(raw.get("callback_id") or "runtime_terminal").strip()
-            or "runtime_terminal"
+            str(raw.get("callback_id") or "runtime_terminal").strip() or "runtime_terminal"
         )
         return {
             "enabled": bool(raw.get("enabled")),

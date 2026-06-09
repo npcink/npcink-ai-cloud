@@ -307,7 +307,9 @@ class CommercialRepository:
                 PortalLoginCode.consumed_at.is_(None),
                 PortalLoginCode.expires_at > current,
             )
-        statement = statement.order_by(PortalLoginCode.created_at.desc(), PortalLoginCode.code_id.desc())
+        statement = statement.order_by(
+            PortalLoginCode.created_at.desc(), PortalLoginCode.code_id.desc()
+        )
         if limit is not None and limit > 0:
             statement = statement.limit(limit)
         return list(self.session.scalars(statement))
@@ -943,7 +945,9 @@ class CommercialRepository:
             AccountEntitlementSnapshot.status == "active",
         )
         if subscription_id:
-            statement = statement.where(AccountEntitlementSnapshot.subscription_id == subscription_id)
+            statement = statement.where(
+                AccountEntitlementSnapshot.subscription_id == subscription_id
+            )
         statement = statement.order_by(
             AccountEntitlementSnapshot.generated_at.desc(),
             AccountEntitlementSnapshot.id.desc(),
@@ -951,9 +955,13 @@ class CommercialRepository:
         return self.session.scalar(statement)
 
     def count_active_runs(self, site_id: str) -> int:
-        statement = select(func.count()).select_from(RunRecord).where(
-            RunRecord.site_id == site_id,
-            RunRecord.status.in_(("queued", "running")),
+        statement = (
+            select(func.count())
+            .select_from(RunRecord)
+            .where(
+                RunRecord.site_id == site_id,
+                RunRecord.status.in_(("queued", "running")),
+            )
         )
         return int(self.session.scalar(statement) or 0)
 
@@ -1181,9 +1189,13 @@ class CommercialRepository:
         before: datetime,
         statuses: list[str] | None = None,
     ) -> int:
-        statement = select(func.count()).select_from(AccountSubscription).where(
-            AccountSubscription.current_period_end_at.is_not(None),
-            AccountSubscription.current_period_end_at <= before,
+        statement = (
+            select(func.count())
+            .select_from(AccountSubscription)
+            .where(
+                AccountSubscription.current_period_end_at.is_not(None),
+                AccountSubscription.current_period_end_at <= before,
+            )
         )
         if statuses:
             statement = statement.where(AccountSubscription.status.in_(statuses))

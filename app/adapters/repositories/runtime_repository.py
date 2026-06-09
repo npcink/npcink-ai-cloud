@@ -154,8 +154,7 @@ class RuntimeRepository:
 
     def claim_run_if_queued(self, run_id: str) -> RunRecord | None:
         return self._claim_queued_run(
-            update(RunRecord)
-            .where(
+            update(RunRecord).where(
                 RunRecord.run_id == run_id,
                 RunRecord.status == "queued",
             )
@@ -351,9 +350,11 @@ class RuntimeRepository:
         return record
 
     def list_provider_calls(self, run_id: str) -> list[ProviderCallRecord]:
-        statement = select(ProviderCallRecord).where(
-            ProviderCallRecord.run_id == run_id
-        ).order_by(ProviderCallRecord.id.asc())
+        statement = (
+            select(ProviderCallRecord)
+            .where(ProviderCallRecord.run_id == run_id)
+            .order_by(ProviderCallRecord.id.asc())
+        )
         return list(self.session.scalars(statement))
 
     def purge_expired_run_results(self, *, now: datetime | None = None) -> int:
@@ -723,9 +724,7 @@ class RuntimeRepository:
         else:
             return []
 
-        return list(
-            self.session.scalars(statement.order_by(*order_by).limit(max(1, limit)))
-        )
+        return list(self.session.scalars(statement.order_by(*order_by).limit(max(1, limit))))
 
     def summarize_replay_receipts(
         self,
@@ -786,8 +785,10 @@ class RuntimeRepository:
         site_id: str | None = None,
         event_code: str | None = None,
     ) -> int:
-        statement = select(func.count()).select_from(RuntimeGuardEvent).where(
-            RuntimeGuardEvent.created_at >= since
+        statement = (
+            select(func.count())
+            .select_from(RuntimeGuardEvent)
+            .where(RuntimeGuardEvent.created_at >= since)
         )
         if site_id:
             statement = statement.where(RuntimeGuardEvent.site_id == site_id)

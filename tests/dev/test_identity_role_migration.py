@@ -137,10 +137,14 @@ def test_identity_role_collapse_migration_rewrites_historical_values(tmp_path: P
 
         with engine.connect() as connection:
             membership_role = connection.execute(
-                text("SELECT role FROM account_memberships WHERE member_ref = 'user:legacy@example.com'")
+                text(
+                    "SELECT role FROM account_memberships WHERE member_ref = 'user:legacy@example.com'"
+                )
             ).scalar_one()
             platform_role = connection.execute(
-                text("SELECT role FROM platform_admin_identities WHERE admin_ref = 'platform:legacy'")
+                text(
+                    "SELECT role FROM platform_admin_identities WHERE admin_ref = 'platform:legacy'"
+                )
             ).scalar_one()
             impersonation_role = connection.execute(
                 text(

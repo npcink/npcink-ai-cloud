@@ -92,9 +92,10 @@ def bootstrap_portal_site(
             "service.portal_account_not_found",
             f"site '{site_id}' is not bound to an account",
         )
-    if not isinstance(subscription, dict) or not str(
-        subscription.get("subscription_id") or ""
-    ).strip():
+    if (
+        not isinstance(subscription, dict)
+        or not str(subscription.get("subscription_id") or "").strip()
+    ):
         raise CommercialNotFoundError(
             "service.subscription_not_found",
             f"no subscription was found for site '{site_id}'",
@@ -115,9 +116,7 @@ def bootstrap_portal_site(
     usage_summary = UsageService(settings.database_url).get_usage_summary(site_id=site_id)
     usage_meter = commercial_service.inspect_usage_meter(site_id)
     billing_snapshot = (
-        commercial_service.rebuild_billing_snapshot(site_id)
-        if rebuild_billing_snapshot
-        else None
+        commercial_service.rebuild_billing_snapshot(site_id) if rebuild_billing_snapshot else None
     )
     billing_snapshots = commercial_service.list_billing_snapshots(site_id)
     entitlements = commercial_service.inspect_commercial_policy(site_id)

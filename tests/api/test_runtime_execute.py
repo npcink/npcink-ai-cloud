@@ -475,9 +475,10 @@ def test_runtime_auto_web_search_uses_openclaw_external_evidence_hint(
     assert raw_result["automatic_web_search"]["trigger"] == "channel_external_evidence_hint"
     assert raw_result["automatic_web_search"]["usage_summary"]["provider_id"] == "tavily"
     assert raw_result["automatic_web_search"]["usage_summary"]["latency_ms"] == 31
-    assert provider.requests[0].input_payload["cloud_evidence"]["web_search"]["report"][
-        "result_count"
-    ] == 1
+    assert (
+        provider.requests[0].input_payload["cloud_evidence"]["web_search"]["report"]["result_count"]
+        == 1
+    )
 
 
 def test_execute_route_runs_and_supports_idempotency(tmp_path: Path) -> None:
@@ -2453,7 +2454,10 @@ def test_execute_route_worker_can_drain_multiple_queued_runs_in_one_poll_cycle(
     dispose_engine(database_url)
 
 
-def test_callback_delivery_worker_dispatches_terminal_run_payload(tmp_path: Path) -> None:
+def test_callback_delivery_worker_dispatches_terminal_run_payload(
+    tmp_path: Path,
+    allow_example_callback_dns: None,
+) -> None:
     callback_requests: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -2570,7 +2574,10 @@ def test_callback_delivery_worker_dispatches_terminal_run_payload(tmp_path: Path
     dispose_engine(database_url)
 
 
-def test_callback_delivery_worker_retries_retryable_failures(tmp_path: Path) -> None:
+def test_callback_delivery_worker_retries_retryable_failures(
+    tmp_path: Path,
+    allow_example_callback_dns: None,
+) -> None:
     attempt_counter = {"count": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:

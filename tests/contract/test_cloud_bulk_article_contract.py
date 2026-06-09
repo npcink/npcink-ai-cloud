@@ -45,8 +45,7 @@ def test_cloud_bulk_article_contract_prohibits_cloud_writing_generation() -> Non
 
 def test_cloud_bulk_article_contract_does_not_add_public_publish_route() -> None:
     source_text = "\n".join(
-        path.read_text(encoding="utf-8", errors="ignore")
-        for path in (ROOT / "app").rglob("*.py")
+        path.read_text(encoding="utf-8", errors="ignore") for path in (ROOT / "app").rglob("*.py")
     )
 
     forbidden_fragments = (

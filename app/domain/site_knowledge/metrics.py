@@ -253,8 +253,7 @@ class SiteKnowledgeObservabilityService:
             ),
             "intents": [self._intent_summary(row) for row in intent_rows],
             "sites": [
-                self._site_summary(row, latest_snapshots=latest_snapshots)
-                for row in site_rows
+                self._site_summary(row, latest_snapshots=latest_snapshots) for row in site_rows
             ],
             "index_snapshots": [
                 self._snapshot_summary(snapshot) for snapshot in latest_snapshots.values()
@@ -300,9 +299,7 @@ class SiteKnowledgeObservabilityService:
         document_count = sum(
             int(snapshot.document_count or 0) for snapshot in latest_snapshots.values()
         )
-        chunk_count = sum(
-            int(snapshot.chunk_count or 0) for snapshot in latest_snapshots.values()
-        )
+        chunk_count = sum(int(snapshot.chunk_count or 0) for snapshot in latest_snapshots.values())
         return {
             "index_jobs_total": index_jobs_total,
             "index_succeeded_total": int(index_row[1] or 0),
@@ -346,9 +343,7 @@ class SiteKnowledgeObservabilityService:
             "intent": str(row[0] or ""),
             "queries_total": queries_total,
             "no_hit_total": no_hit_total,
-            "no_hit_rate": round(no_hit_total / max(1, queries_total), 4)
-            if queries_total
-            else 0.0,
+            "no_hit_rate": round(no_hit_total / max(1, queries_total), 4) if queries_total else 0.0,
             "avg_top1_score": round(float(row[3] or 0.0), 4),
             "avg_latency_ms": self._optional_avg(row[4]),
         }
@@ -367,17 +362,13 @@ class SiteKnowledgeObservabilityService:
             "site_id": site_id,
             "queries_total": queries_total,
             "no_hit_total": no_hit_total,
-            "no_hit_rate": round(no_hit_total / max(1, queries_total), 4)
-            if queries_total
-            else 0.0,
+            "no_hit_rate": round(no_hit_total / max(1, queries_total), 4) if queries_total else 0.0,
             "avg_top1_score": round(float(row[3] or 0.0), 4),
             "avg_latency_ms": self._optional_avg(row[4]),
             "last_search_finished_at": self._format_datetime(row[5]),
             "document_count": int(snapshot.document_count or 0) if snapshot else 0,
             "chunk_count": int(snapshot.chunk_count or 0) if snapshot else 0,
-            "last_indexed_at": self._format_datetime(snapshot.last_indexed_at)
-            if snapshot
-            else "",
+            "last_indexed_at": self._format_datetime(snapshot.last_indexed_at) if snapshot else "",
         }
 
     def _snapshot_summary(self, snapshot: SiteKnowledgeIndexSnapshot) -> dict[str, object]:
@@ -435,8 +426,7 @@ class SiteKnowledgeObservabilityService:
             "status": status,
             "score": max(0, score),
             "summary": (
-                f"{queries_total} searches, {no_hit_rate * 100:.1f}% no-hit, "
-                f"P95 {p95_latency} ms."
+                f"{queries_total} searches, {no_hit_rate * 100:.1f}% no-hit, P95 {p95_latency} ms."
             ),
         }
 
@@ -482,14 +472,16 @@ class SiteKnowledgeObservabilityService:
         for index in range(bucket_count):
             bucket_start = start_at + timedelta(seconds=bucket_seconds * index)
             bucket = buckets[index]
-            timeline.append({
-                "bucket_start_at": self._format_datetime(bucket_start),
-                "index_jobs_total": bucket["index_jobs_total"],
-                "indexed_chunks_total": bucket["indexed_chunks_total"],
-                "search_queries_total": bucket["search_queries_total"],
-                "no_hit_total": bucket["no_hit_total"],
-                "failed_total": bucket["failed_total"],
-            })
+            timeline.append(
+                {
+                    "bucket_start_at": self._format_datetime(bucket_start),
+                    "index_jobs_total": bucket["index_jobs_total"],
+                    "indexed_chunks_total": bucket["indexed_chunks_total"],
+                    "search_queries_total": bucket["search_queries_total"],
+                    "no_hit_total": bucket["no_hit_total"],
+                    "failed_total": bucket["failed_total"],
+                }
+            )
         return timeline
 
     def _bucket_index(
@@ -544,9 +536,7 @@ def _record_index_job_metric(
     error_code: str = "",
 ) -> None:
     metric = session.scalar(
-        select(SiteKnowledgeIndexJobMetric).where(
-            SiteKnowledgeIndexJobMetric.run_id == run.run_id
-        )
+        select(SiteKnowledgeIndexJobMetric).where(SiteKnowledgeIndexJobMetric.run_id == run.run_id)
     )
     if metric is None:
         metric = SiteKnowledgeIndexJobMetric(run_id=run.run_id)
@@ -586,9 +576,7 @@ def _record_search_metric(
     error_code: str = "",
 ) -> None:
     metric = session.scalar(
-        select(SiteKnowledgeSearchMetric).where(
-            SiteKnowledgeSearchMetric.run_id == run.run_id
-        )
+        select(SiteKnowledgeSearchMetric).where(SiteKnowledgeSearchMetric.run_id == run.run_id)
     )
     if metric is None:
         metric = SiteKnowledgeSearchMetric(run_id=run.run_id)
@@ -596,9 +584,7 @@ def _record_search_metric(
     results_value = result_json.get("results")
     results = results_value if isinstance(results_value, list) else []
     scores = [
-        _coerce_float(item.get("score"), default=0.0)
-        for item in results
-        if isinstance(item, dict)
+        _coerce_float(item.get("score"), default=0.0) for item in results if isinstance(item, dict)
     ]
     query = " ".join(str(input_payload.get("query") or "").split())
     metric.site_id = run.site_id
@@ -606,9 +592,9 @@ def _record_search_metric(
     metric.subscription_id = run.subscription_id or None
     metric.status = status or run.status
     metric.error_code = error_code or run.error_code or None
-    metric.intent = str(
-        result_json.get("intent") or input_payload.get("intent") or "site_search"
-    )[:64]
+    metric.intent = str(result_json.get("intent") or input_payload.get("intent") or "site_search")[
+        :64
+    ]
     metric.result_count = len(results)
     metric.no_hit = len(results) == 0
     metric.top1_score = round(float(scores[0] if scores else 0.0), 4)
@@ -667,11 +653,7 @@ def _safe_filter_summary(value: Any) -> dict[str, object]:
 def _safe_string_list(value: Any, *, limit: int) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [
-        str(item).strip()[:64]
-        for item in value[:limit]
-        if str(item).strip()
-    ]
+    return [str(item).strip()[:64] for item in value[:limit] if str(item).strip()]
 
 
 def _query_hash(query: str) -> str:

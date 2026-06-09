@@ -51,9 +51,7 @@ class LiteLLMGatewayProviderAdapter(OpenAIProviderAdapter):
                 f"provider catalog refresh failed with {error.response.status_code}: {message}"
             ) from error
         except httpx.RequestError as error:
-            raise RuntimeError(
-                f"provider catalog refresh network error: {error}"
-            ) from error
+            raise RuntimeError(f"provider catalog refresh network error: {error}") from error
 
         response_json = response.json()
         raw_models = response_json.get("data")
@@ -116,20 +114,15 @@ class LiteLLMGatewayProviderAdapter(OpenAIProviderAdapter):
             feature=feature,
             status=status,
             context_window=self._coerce_int(
-                info.get("max_input_tokens")
-                or info.get("max_tokens")
-                or info.get("context_window")
+                info.get("max_input_tokens") or info.get("max_tokens") or info.get("context_window")
             ),
             price_input=self._coerce_float(
-                info.get("input_cost_per_token")
-                or info.get("input_cost_per_second")
+                info.get("input_cost_per_token") or info.get("input_cost_per_second")
             ),
             price_output=self._coerce_float(info.get("output_cost_per_token")),
             is_deprecated=False,
             fallback_candidate=(
-                feature == "text"
-                and tier in {"economy", "balanced"}
-                and status == "available"
+                feature == "text" and tier in {"economy", "balanced"} and status == "available"
             ),
             raw_json={
                 "catalog_source": "litellm_gateway",

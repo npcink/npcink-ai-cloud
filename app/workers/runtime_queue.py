@@ -90,8 +90,7 @@ def main() -> None:
                 else "repairing"
                 if (
                     _coerce_int(auto_repair.get("requeued_stale_queued_total")) > 0
-                    or _coerce_int(auto_repair.get("running_stale_operator_queue_total"))
-                    > 0
+                    or _coerce_int(auto_repair.get("running_stale_operator_queue_total")) > 0
                 )
                 else "idle"
             )
@@ -108,18 +107,14 @@ def main() -> None:
                 },
             )
             if not results:
-                requeued_total = _coerce_int(
-                    auto_repair.get("requeued_stale_queued_total")
-                )
+                requeued_total = _coerce_int(auto_repair.get("requeued_stale_queued_total"))
                 if requeued_total > 0:
                     logger.info(
                         "runtime queue auto-requeued stale queued runs: count=%s run_ids=%s",
                         requeued_total,
                         [
                             item.get("run_id")
-                            for item in _dict_items(
-                                auto_repair.get("requeued_stale_queued")
-                            )
+                            for item in _dict_items(auto_repair.get("requeued_stale_queued"))
                         ],
                     )
                 running_stale_total = _coerce_int(
@@ -132,9 +127,7 @@ def main() -> None:
                         running_stale_total,
                         [
                             item.get("run_id")
-                            for item in _dict_items(
-                                auto_repair.get("running_stale_operator_queue")
-                            )
+                            for item in _dict_items(auto_repair.get("running_stale_operator_queue"))
                         ],
                     )
                 continue

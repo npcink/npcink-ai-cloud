@@ -71,11 +71,7 @@ def main() -> None:
         settings.database_url,
         providers=build_provider_adapters(settings),
     )
-    scopes = [
-        scope.strip()
-        for scope in args.scopes.split(",")
-        if scope.strip()
-    ]
+    scopes = [scope.strip() for scope in args.scopes.split(",") if scope.strip()]
 
     result: dict[str, object] = {
         "environment": settings.environment,

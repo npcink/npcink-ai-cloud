@@ -50,9 +50,7 @@ def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
     )
     fixed_now = datetime(2026, 3, 12, 8, 0, tzinfo=UTC)
     with get_session(database_url) as session:
-        run = session.scalar(
-            select(RunRecord).where(RunRecord.run_id == runtime_result.run_id)
-        )
+        run = session.scalar(select(RunRecord).where(RunRecord.run_id == runtime_result.run_id))
         assert run is not None
         run.started_at = fixed_now.replace(hour=7, minute=50)
         run.finished_at = fixed_now.replace(hour=7, minute=50)
@@ -77,10 +75,10 @@ def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
 
     assert result["counts"] == {
         "summary": 2,
-        "profile": 10,
-        "instance": 10,
+        "profile": 14,
+        "instance": 12,
     }
-    assert result["rollups_total"] == 22
+    assert result["rollups_total"] == 28
 
     with get_session(database_url) as session:
         repository = StatsRepository(session)
@@ -142,9 +140,7 @@ def test_usage_rollup_service_stores_router_performance_projection_batches(
 
     fixed_now = datetime(2026, 3, 24, 9, 20, tzinfo=UTC)
     with get_session(database_url) as session:
-        run = session.scalar(
-            select(RunRecord).where(RunRecord.run_id == runtime_result.run_id)
-        )
+        run = session.scalar(select(RunRecord).where(RunRecord.run_id == runtime_result.run_id))
         assert run is not None
         run.started_at = fixed_now.replace(hour=8, minute=15)
         run.finished_at = fixed_now.replace(hour=8, minute=15)
@@ -221,9 +217,7 @@ def test_usage_rollup_service_stores_router_diagnostics_projection_batches(
 
     fixed_now = datetime(2026, 3, 24, 9, 20, tzinfo=UTC)
     with get_session(database_url) as session:
-        run = session.scalar(
-            select(RunRecord).where(RunRecord.run_id == runtime_result.run_id)
-        )
+        run = session.scalar(select(RunRecord).where(RunRecord.run_id == runtime_result.run_id))
         assert run is not None
         run.started_at = fixed_now - timedelta(minutes=20)
         run.finished_at = fixed_now - timedelta(minutes=19)
@@ -288,9 +282,7 @@ def test_usage_rollup_service_stores_latency_probe_projection_batches(
 
     fixed_now = datetime(2026, 3, 24, 9, 20, tzinfo=UTC)
     with get_session(database_url) as session:
-        run = session.scalar(
-            select(RunRecord).where(RunRecord.run_id == runtime_result.run_id)
-        )
+        run = session.scalar(select(RunRecord).where(RunRecord.run_id == runtime_result.run_id))
         assert run is not None
         run.started_at = fixed_now - timedelta(minutes=30)
         run.finished_at = fixed_now - timedelta(minutes=30)
@@ -491,8 +483,6 @@ def test_usage_rollup_service_stores_hosted_model_governance_batch(
     assert stored_batch.payload_json["delivery"]["scope_kind"] == (
         HOSTED_MODEL_GOVERNANCE_BATCH_SCOPE
     )
-    assert stored_batch.payload_json["alert_summary"]["boundary"][
-        "direct_wordpress_write"
-    ] is False
+    assert stored_batch.payload_json["alert_summary"]["boundary"]["direct_wordpress_write"] is False
 
     dispose_engine(database_url)

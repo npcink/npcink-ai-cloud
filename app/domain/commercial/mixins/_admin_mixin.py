@@ -1,4 +1,5 @@
 """Commercial service: admin and platform operations mixin."""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -40,7 +41,6 @@ from app.domain.commercial.mixins._billing_mixin import (
 
 
 class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
-
     def upsert_platform_admin_identity(
         self,
         *,
@@ -89,7 +89,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             session.commit()
             return payload
 
-
     def resolve_platform_admin_identity(
         self,
         *,
@@ -134,7 +133,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 )
             return cast(Any, self)._serialize_platform_admin_identity(identity)
 
-
     def delete_platform_admin_identity(
         self,
         *,
@@ -168,7 +166,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )
             session.commit()
             return payload
-
 
     def get_admin_overview(
         self,
@@ -222,7 +219,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 limit=5,
             )
 
-        def _serialize_overview_subscription(subscription: AccountSubscription) -> dict[str, object]:
+        def _serialize_overview_subscription(
+            subscription: AccountSubscription,
+        ) -> dict[str, object]:
             matched_account = next(
                 (account for account in accounts if account.account_id == subscription.account_id),
                 None,
@@ -258,7 +257,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 and expires_at <= now + timedelta(days=30)
             )
 
-        plan_counts = Counter(subscription.plan_id for subscription in subscriptions if subscription.plan_id)
+        plan_counts = Counter(
+            subscription.plan_id for subscription in subscriptions if subscription.plan_id
+        )
         status_counts = Counter(
             subscription.status for subscription in subscriptions if subscription.status
         )
@@ -301,9 +302,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "within_7_days": expiring_in_7_days,
                 "within_30_days": expiring_in_30_days,
                 "within_7_days_expires_before": self._serialize_datetime(now + timedelta(days=7)),
-                "within_30_days_expires_before": self._serialize_datetime(
-                    now + timedelta(days=30)
-                ),
+                "within_30_days_expires_before": self._serialize_datetime(now + timedelta(days=30)),
                 "items": expiring_subscription_items,
             },
             "attention_subscriptions": attention_subscription_items,
@@ -312,8 +311,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 for status, count in sorted(status_counts.items())
             ],
             "plan_distribution": [
-                {"plan_id": plan_id, "count": count}
-                for plan_id, count in plan_counts.most_common()
+                {"plan_id": plan_id, "count": count} for plan_id, count in plan_counts.most_common()
             ],
             "recent_usage": {
                 "window_days": max(1, usage_window_days),
@@ -329,7 +327,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "items": recent_decisions,
             },
         }
-
 
     def get_commercial_shadow_pricing_summary(
         self,
@@ -372,8 +369,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         def ensure_item(raw_ability_key: str, raw_ability_family: str) -> dict[str, object]:
             resolved_ability_family = str(raw_ability_family or "unknown").strip() or "unknown"
             resolved_ability_key = (
-                str(raw_ability_key or "").strip()
-                or f"{resolved_ability_family}/unclassified"
+                str(raw_ability_key or "").strip() or f"{resolved_ability_family}/unclassified"
             )
             item = items_by_key.get(resolved_ability_key)
             if item is not None:
@@ -437,8 +433,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             provider_cost = self._coerce_float(item.get("provider_cost"))
             shadow_revenue = round(
                 runs_total * self._coerce_float(item.get("base_run_price"))
-                + (tokens_total / 1000.0)
-                * self._coerce_float(item.get("per_1k_tokens_price")),
+                + (tokens_total / 1000.0) * self._coerce_float(item.get("per_1k_tokens_price")),
                 6,
             )
             margin_delta = round(shadow_revenue - provider_cost, 6)
@@ -446,7 +441,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "ability_key": item["ability_key"],
                 "ability_family": item["ability_family"],
                 "runs": runs_total,
-                    "provider_calls": self._coerce_int(item.get("provider_calls")),
+                "provider_calls": self._coerce_int(item.get("provider_calls")),
                 "tokens_total": round(tokens_total, 6),
                 "provider_cost": round(provider_cost, 6),
                 "shadow_revenue": shadow_revenue,
@@ -478,9 +473,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             family_item["runs"] = self._coerce_int(family_item.get("runs")) + runs_total
             family_item["provider_calls"] = self._coerce_int(
                 family_item.get("provider_calls")
-            ) + self._coerce_int(
-                item.get("provider_calls")
-            )
+            ) + self._coerce_int(item.get("provider_calls"))
             family_item["tokens_total"] = round(
                 self._coerce_float(family_item.get("tokens_total")) + tokens_total,
                 6,
@@ -516,9 +509,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             reverse=True,
         )
         attention_items = [
-            item
-            for item in ability_items
-            if str(item.get("tariff_source") or "") != "ability"
+            item for item in ability_items if str(item.get("tariff_source") or "") != "ability"
         ][:resolved_limit]
 
         return {
@@ -560,7 +551,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "attention_items": attention_items,
         }
 
-
     def list_admin_accounts(
         self,
         *,
@@ -600,9 +590,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             accounts = repository.list_accounts(
                 status=status,
                 account_ids=(
-                    sorted(filtered_account_ids)
-                    if filtered_account_ids is not None
-                    else None
+                    sorted(filtered_account_ids) if filtered_account_ids is not None else None
                 ),
                 limit=None if coverage_state or package_kind or top_plan_id else limit,
             )
@@ -684,7 +672,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "total": len(items),
         }
 
-
     def get_admin_account(self, account_id: str) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -717,7 +704,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ],
         }
 
-
     def get_admin_account_member_plan_coverage(self, account_id: str) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -732,9 +718,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
 
         sites_by_id = {
-            str(site.site_id or ""): site
-            for site in sites
-            if str(site.site_id or "").strip()
+            str(site.site_id or ""): site for site in sites if str(site.site_id or "").strip()
         }
         service = cast(Any, self)
         latest_subscription_by_account = service._latest_subscription_map(subscriptions)
@@ -754,14 +738,24 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             for accessible_site in serialized_accessible_sites:
                 site_id = str(accessible_site.get("site_id") or "").strip()
                 site = sites_by_id.get(site_id)
-                subscription = latest_subscription_by_account.get(str(getattr(site, "account_id", "") or "").strip())
+                subscription = latest_subscription_by_account.get(
+                    str(getattr(site, "account_id", "") or "").strip()
+                )
                 covered = _subscription_counts_as_covered(subscription)
                 if covered:
                     member_has_covered_site = True
                 else:
                     follow_up_site_ids.add(site_id)
-                plan_id = str(getattr(subscription, "plan_id", "") or "").strip() if subscription is not None else ""
-                plan_version_id = str(getattr(subscription, "plan_version_id", "") or "").strip() if subscription is not None else ""
+                plan_id = (
+                    str(getattr(subscription, "plan_id", "") or "").strip()
+                    if subscription is not None
+                    else ""
+                )
+                plan_version_id = (
+                    str(getattr(subscription, "plan_version_id", "") or "").strip()
+                    if subscription is not None
+                    else ""
+                )
                 package_summary = service._build_subscription_package_summary(
                     subscription,
                     site_count=1,
@@ -769,17 +763,25 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 accessible_sites_payload.append(
                     {
                         "site_id": site_id,
-                        "site_name": str(getattr(site, "name", "") or accessible_site.get("name") or site_id),
-                        "site_status": str(getattr(site, "status", "") or accessible_site.get("status") or ""),
+                        "site_name": str(
+                            getattr(site, "name", "") or accessible_site.get("name") or site_id
+                        ),
+                        "site_status": str(
+                            getattr(site, "status", "") or accessible_site.get("status") or ""
+                        ),
                         "plan_id": plan_id,
                         "plan_version_id": plan_version_id,
                         "package_alias": str(package_summary.get("package_alias") or ""),
-                        "display_package_label": str(package_summary.get("display_package_label") or ""),
+                        "display_package_label": str(
+                            package_summary.get("display_package_label") or ""
+                        ),
                         "package_kind": str(package_summary.get("package_kind") or ""),
                         "coverage_state": str(package_summary.get("coverage_state") or ""),
                         "covered": covered,
                         "coverage": {
-                            "covered_by_subscription_id": str(getattr(subscription, "subscription_id", "") or ""),
+                            "covered_by_subscription_id": str(
+                                getattr(subscription, "subscription_id", "") or ""
+                            ),
                             "status": str(getattr(subscription, "status", "") or ""),
                             "package_kind": str(package_summary.get("package_kind") or ""),
                             "coverage_state": str(package_summary.get("coverage_state") or ""),
@@ -795,20 +797,21 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "member_ref": str(serialized_membership.get("member_ref") or ""),
                     "email": str(serialized_membership.get("email") or ""),
                     "identity_type": str(
-                        serialized_membership.get("identity_type")
-                        or IDENTITY_TYPE_USER_ADMIN
+                        serialized_membership.get("identity_type") or IDENTITY_TYPE_USER_ADMIN
                     ),
                     "allowed_actions": [
                         str(action)
-                        for action in list(
-                            serialized_membership.get("allowed_actions") or []
-                        )
+                        for action in list(serialized_membership.get("allowed_actions") or [])
                         if str(action).strip()
                     ],
                     "role": str(serialized_membership.get("role") or ""),
                     "status": str(serialized_membership.get("status") or ""),
-                    "covered_site_count": sum(1 for site in accessible_sites_payload if bool(site.get("covered"))),
-                    "sites_needing_follow_up_count": sum(1 for site in accessible_sites_payload if not bool(site.get("covered"))),
+                    "covered_site_count": sum(
+                        1 for site in accessible_sites_payload if bool(site.get("covered"))
+                    ),
+                    "sites_needing_follow_up_count": sum(
+                        1 for site in accessible_sites_payload if not bool(site.get("covered"))
+                    ),
                     "accessible_sites": accessible_sites_payload,
                 }
             )
@@ -818,11 +821,12 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "summary": {
                 "member_count": len(members_payload),
                 "covered_member_count": covered_member_count,
-                "sites_needing_follow_up_count": len([site_id for site_id in follow_up_site_ids if site_id]),
+                "sites_needing_follow_up_count": len(
+                    [site_id for site_id in follow_up_site_ids if site_id]
+                ),
             },
             "members": members_payload,
         }
-
 
     def list_admin_account_members(
         self,
@@ -871,7 +875,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "items": items,
         }
 
-
     def get_admin_account_member(
         self,
         *,
@@ -904,7 +907,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ),
         }
 
-
     def list_admin_platform_admin_identities(
         self,
         *,
@@ -933,7 +935,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 for identity in identities
             ],
         }
-
 
     def _resolve_shadow_tariff(
         self,

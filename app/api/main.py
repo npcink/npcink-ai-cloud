@@ -92,10 +92,7 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
             str(request.headers.get("x-forwarded-host") or "").split(",", 1)[0].strip().lower()
         )
         forwarded_proto = (
-            str(request.headers.get("x-forwarded-proto") or "")
-            .split(",", 1)[0]
-            .strip()
-            .lower()
+            str(request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip().lower()
         )
         origin = settings._normalize_origin(request.headers.get("origin") or "")
         referer = settings._normalize_origin(request.headers.get("referer") or "")

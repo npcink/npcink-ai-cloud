@@ -106,9 +106,7 @@ async def create_media_derivative(request: Request) -> Any:
 
         def _on_file(file: Any) -> None:
             name = (
-                file.field_name.decode()
-                if isinstance(file.field_name, bytes)
-                else file.field_name
+                file.field_name.decode() if isinstance(file.field_name, bytes) else file.field_name
             )
             file.file_object.seek(0)
             files[name] = file.file_object.read()

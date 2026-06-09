@@ -155,9 +155,9 @@ class SiteKnowledgeRepository:
     def count_documents(self, site_id: str) -> int:
         return int(
             self.session.scalar(
-                select(func.count()).select_from(SiteKnowledgeDocument).where(
-                    SiteKnowledgeDocument.site_id == site_id
-                )
+                select(func.count())
+                .select_from(SiteKnowledgeDocument)
+                .where(SiteKnowledgeDocument.site_id == site_id)
             )
             or 0
         )
@@ -165,16 +165,18 @@ class SiteKnowledgeRepository:
     def count_chunks(self, site_id: str) -> int:
         return int(
             self.session.scalar(
-                select(func.count()).select_from(SiteKnowledgeChunk).where(
-                    SiteKnowledgeChunk.site_id == site_id
-                )
+                select(func.count())
+                .select_from(SiteKnowledgeChunk)
+                .where(SiteKnowledgeChunk.site_id == site_id)
             )
             or 0
         )
 
     def document_exists(self, *, site_id: str, source_type: str, source_id: int) -> bool:
         count = self.session.scalar(
-            select(func.count()).select_from(SiteKnowledgeDocument).where(
+            select(func.count())
+            .select_from(SiteKnowledgeDocument)
+            .where(
                 SiteKnowledgeDocument.site_id == site_id,
                 SiteKnowledgeDocument.source_type == source_type,
                 SiteKnowledgeDocument.source_id == source_id,
@@ -185,7 +187,9 @@ class SiteKnowledgeRepository:
     def count_chunks_for_source(self, *, site_id: str, source_type: str, source_id: int) -> int:
         return int(
             self.session.scalar(
-                select(func.count()).select_from(SiteKnowledgeChunk).where(
+                select(func.count())
+                .select_from(SiteKnowledgeChunk)
+                .where(
                     SiteKnowledgeChunk.site_id == site_id,
                     SiteKnowledgeChunk.source_type == source_type,
                     SiteKnowledgeChunk.source_id == source_id,
@@ -231,7 +235,9 @@ class SiteKnowledgeRepository:
 
     def has_running_sync(self, site_id: str) -> bool:
         count = self.session.scalar(
-            select(func.count()).select_from(RunRecord).where(
+            select(func.count())
+            .select_from(RunRecord)
+            .where(
                 RunRecord.site_id == site_id,
                 RunRecord.ability_name == "magick-ai-cloud/site-knowledge-sync",
                 RunRecord.status.in_(("queued", "running")),

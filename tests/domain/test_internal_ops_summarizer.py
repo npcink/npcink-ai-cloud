@@ -118,8 +118,9 @@ def test_ops_summary_llm_prompt_uses_redacted_advisor_context(tmp_path: Path) ->
     assert "source" not in prompt_context["redacted_context"]["advisor"]
     assert "payload_json" not in json.dumps(prompt_context)
     assert "must stay out" not in json.dumps(prompt_context)
-    assert "do_not_generate_customer_article_or_marketing_content" in (
-        prompt_context["redacted_context"]["forbidden"]
+    assert (
+        "do_not_generate_customer_article_or_marketing_content"
+        in (prompt_context["redacted_context"]["forbidden"])
     )
     with get_session(database_url) as session:
         audit_event = session.execute(
@@ -260,11 +261,15 @@ def test_ops_summary_preview_compares_baseline_and_ai_branch(tmp_path: Path) -> 
     assert result["safety"]["wordpress_write_allowed"] is False
     assert len(provider.requests) == 1
     with get_session(database_url) as session:
-        audit_events = session.execute(
-            select(ServiceAuditEvent).where(
-                ServiceAuditEvent.event_kind == "internal_advisor.ops_summary"
+        audit_events = (
+            session.execute(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.event_kind == "internal_advisor.ops_summary"
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert len(audit_events) == 1
     assert (audit_events[0].payload_json or {})["generation_mode"] == "llm"
 
@@ -343,11 +348,15 @@ def test_ops_summary_caches_ai_analysis_until_refresh_or_expiry(tmp_path: Path) 
             )
         ).scalar_one()
         projection_payload = projection.payload_json or {}
-        audit_events = session.execute(
-            select(ServiceAuditEvent)
-            .where(ServiceAuditEvent.event_kind == "internal_advisor.ops_summary")
-            .order_by(ServiceAuditEvent.id)
-        ).scalars().all()
+        audit_events = (
+            session.execute(
+                select(ServiceAuditEvent)
+                .where(ServiceAuditEvent.event_kind == "internal_advisor.ops_summary")
+                .order_by(ServiceAuditEvent.id)
+            )
+            .scalars()
+            .all()
+        )
     assert projection.site_id == "site_ops_summary_cache"
     assert projection_payload["prompt_saved"] is False
     assert projection_payload["raw_payload_saved"] is False

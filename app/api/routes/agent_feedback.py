@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -24,7 +24,10 @@ router = APIRouter(prefix="/v1/agent-feedback", tags=["agent-feedback"])
 class AgentFeedbackPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    contract_version: Literal["cloud_agent_feedback.v1"] = AGENT_FEEDBACK_CONTRACT_VERSION
+    contract_version: Literal["cloud_agent_feedback.v1"] = cast(
+        Literal["cloud_agent_feedback.v1"],
+        AGENT_FEEDBACK_CONTRACT_VERSION,
+    )
     site_id: str | None = Field(default=None, max_length=191)
     agent_id: str = Field(min_length=1, max_length=96)
     agent_version: str = Field(default="", max_length=64)

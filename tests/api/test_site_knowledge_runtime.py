@@ -231,9 +231,10 @@ def _search_payload(
 
 
 def test_site_knowledge_search_input_helpers_bound_user_controlled_lists() -> None:
-    assert _normalize_search_query("  AI   摘要  " + ("x" * 900)) == (
-        "AI 摘要 " + ("x" * 900)
-    )[:MAX_SEARCH_QUERY_CHARS]
+    assert (
+        _normalize_search_query("  AI   摘要  " + ("x" * 900))
+        == ("AI 摘要 " + ("x" * 900))[:MAX_SEARCH_QUERY_CHARS]
+    )
     post_ids = _coerce_post_ids([1, "2", 1, 0, -3, *range(3, MAX_SYNC_POST_IDS + 50)])
     assert post_ids[0:3] == [1, 2, 3]
     assert len(post_ids) == MAX_SYNC_POST_IDS
@@ -517,9 +518,7 @@ def test_high_value_intents_return_advisory_product_metadata(tmp_path: Path) -> 
     assert faq["workflow_support"]["workflow"] == "faq_candidate_mining"
     assert faq["results"][0]["source_type"] == "comment"
     assert faq["results"][0]["suggested_use"] == "faq_candidate"
-    assert faq["results"][0]["faq_candidate"]["source_signal"] == (
-        "approved_comment_question"
-    )
+    assert faq["results"][0]["faq_candidate"]["source_signal"] == ("approved_comment_question")
     assert faq["results"][0]["faq_mode"] == "wordpress_local_only"
 
     gap = _execute(
@@ -533,9 +532,7 @@ def test_high_value_intents_return_advisory_product_metadata(tmp_path: Path) -> 
     assert gap["workflow_support"]["workflow"] == "content_gap_analysis"
     assert gap["workflow_support"]["cloud_output"] == "gap_evidence"
     assert gap["agent_handoff"]["agent_id"] == "site_knowledge_suggestion_agent"
-    assert gap["agent_handoff"]["triggering_ability"] == (
-        "magick-ai-cloud/site-knowledge-search"
-    )
+    assert gap["agent_handoff"]["triggering_ability"] == ("magick-ai-cloud/site-knowledge-search")
     assert gap["agent_handoff"]["triggering_contract"] == "site_knowledge_search.v1"
     assert gap["agent_handoff"]["handoff_type"] == "proposal_input"
     assert gap["agent_handoff"]["handoff_owner"] == "wordpress_local"
@@ -568,13 +565,9 @@ def test_high_value_intents_return_advisory_product_metadata(tmp_path: Path) -> 
         idempotency_key="duplicate-check-search",
     )["json"]["data"]["result"]
     assert duplicate["workflow_support"]["workflow"] == "publish_preflight_duplicate_check"
-    assert duplicate["workflow_support"]["cloud_output"] == (
-        "duplicate_or_conflict_candidates"
-    )
+    assert duplicate["workflow_support"]["cloud_output"] == ("duplicate_or_conflict_candidates")
     assert duplicate["results"][0]["suggested_use"] == "duplicate_or_conflict_candidate"
-    assert duplicate["results"][0]["duplicate_check"]["review_mode"] == (
-        "wordpress_local_only"
-    )
+    assert duplicate["results"][0]["duplicate_check"]["review_mode"] == ("wordpress_local_only")
     assert duplicate["direct_wordpress_write"] is False
 
 
@@ -846,8 +839,7 @@ def test_jina_reranker_reorders_candidates_without_exposing_key(
     assert kwargs["json"]["query"] == "AI 摘要"
     assert kwargs["json"]["return_documents"] is False
     assert (
-        max(len(document) for document in kwargs["json"]["documents"])
-        <= MAX_RERANK_DOCUMENT_CHARS
+        max(len(document) for document in kwargs["json"]["documents"]) <= MAX_RERANK_DOCUMENT_CHARS
     )
     assert kwargs["headers"]["Authorization"] == "Bearer unit-test-redacted"
 
@@ -1346,9 +1338,7 @@ def test_sync_uses_cloud_managed_tei_embedding_provider(tmp_path: Path) -> None:
     with get_session(database_url) as session:
         chunk = session.query(SiteKnowledgeChunk).one()
         provider_calls = list(
-            session.scalars(
-                select(ProviderCallRecord).where(ProviderCallRecord.run_id == run_id)
-            )
+            session.scalars(select(ProviderCallRecord).where(ProviderCallRecord.run_id == run_id))
         )
         meter_events = list(
             session.scalars(

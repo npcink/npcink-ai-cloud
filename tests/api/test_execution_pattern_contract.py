@@ -39,9 +39,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
         redis_url="redis://localhost:6379/0",
         internal_auth_token=TEST_INTERNAL_AUTH_TOKEN,
     )
-    return database_url, TestClient(
-        create_app(CloudServices(settings=settings, providers={}))
-    )
+    return database_url, TestClient(create_app(CloudServices(settings=settings, providers={})))
 
 
 def test_orchestrated_execution_pattern_rejected_by_schema(tmp_path: Path):
@@ -130,6 +128,6 @@ def test_openapi_schema_execution_pattern_excludes_orchestrated(tmp_path: Path):
         pattern_prop = runtime_payload.get("properties", {}).get("execution_pattern", {})
         enum_values = pattern_prop.get("enum", [])
         assert "orchestrated" not in enum_values
-        assert set(enum_values) == {"inline", "whole_run_offload"}
+        assert set(enum_values) == {"inline", "step_offload", "whole_run_offload"}
     finally:
         dispose_engine(database_url)

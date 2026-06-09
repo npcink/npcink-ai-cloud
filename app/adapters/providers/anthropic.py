@@ -172,9 +172,7 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
                 f"provider catalog refresh failed with {error.response.status_code}: {message}"
             ) from error
         except httpx.RequestError as error:
-            raise RuntimeError(
-                f"provider catalog refresh network error: {error}"
-            ) from error
+            raise RuntimeError(f"provider catalog refresh network error: {error}") from error
 
         response_json = response.json()
         raw_models = response_json.get("data")
@@ -448,9 +446,7 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
                     continue
 
                 normalized_role = role if role in {"user", "assistant"} else "user"
-                normalized_messages.append(
-                    {"role": normalized_role, "content": content}
-                )
+                normalized_messages.append({"role": normalized_role, "content": content})
 
         if not normalized_messages:
             source_text = self._collect_source_text(payload) or "empty input"
@@ -460,9 +456,7 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
         if isinstance(explicit_system, str) and explicit_system.strip():
             system_fragments.insert(0, explicit_system.strip())
 
-        system_text = "\n\n".join(
-            fragment for fragment in system_fragments if fragment
-        )
+        system_text = "\n\n".join(fragment for fragment in system_fragments if fragment)
         return system_text, normalized_messages
 
     def _normalize_message_content(self, content: Any) -> str | list[dict[str, str]]:

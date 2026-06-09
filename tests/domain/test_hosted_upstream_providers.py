@@ -131,9 +131,7 @@ def test_vllm_provider_works_without_api_key_and_namespaces_model_ids() -> None:
     )
 
     snapshot = adapter.fetch_catalog()
-    assert [model.model_id for model in snapshot.models] == [
-        "vllm/Qwen/Qwen2.5-7B-Instruct"
-    ]
+    assert [model.model_id for model in snapshot.models] == ["vllm/Qwen/Qwen2.5-7B-Instruct"]
 
     result = adapter.execute(
         _build_request(

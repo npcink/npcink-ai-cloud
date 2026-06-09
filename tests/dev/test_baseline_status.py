@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
-
 from app.core.config import Settings
 from app.core.db import dispose_engine, init_schema
 from app.dev.baseline_status import evaluate_remote_baseline_status, load_remote_baseline_status
@@ -56,7 +54,9 @@ def test_baseline_status_returns_structured_config_failure_for_missing_prod_secr
     assert report["status"] == "fail"
     assert report["failures"] == ["settings_validation_error"]
     assert report["config_errors"]
-    assert any("admin_session_secret is required" in item["message"] for item in report["config_errors"])
+    assert any(
+        "admin_session_secret is required" in item["message"] for item in report["config_errors"]
+    )
     assert report["schema"]["missing_tables"] == []
     assert report["alembic"]["expected_heads"]
 
@@ -81,6 +81,6 @@ def test_baseline_status_returns_structured_config_failure_for_missing_portal_em
 
     assert report["status"] == "fail"
     assert report["failures"] == ["settings_validation_error"]
-    assert any("portal_email_smtp_host is required" in item["message"] for item in report["config_errors"])
-
-
+    assert any(
+        "portal_email_smtp_host is required" in item["message"] for item in report["config_errors"]
+    )

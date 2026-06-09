@@ -114,9 +114,7 @@ def build_provider_adapters_with_overrides(
 
     if settings.tei_provider_enabled:
         tei_model_ids = [
-            item.strip()
-            for item in str(settings.tei_model_ids or "").split(",")
-            if item.strip()
+            item.strip() for item in str(settings.tei_model_ids or "").split(",") if item.strip()
         ]
         providers[TEIProviderAdapter.provider_id] = TEIProviderAdapter(
             base_url=str(settings.tei_base_url or "").strip(),
@@ -146,7 +144,6 @@ def build_provider_adapters_with_overrides(
         )
 
     return providers
-
 
 
 def _allow_sample_provider_fallback(settings: Settings) -> bool:

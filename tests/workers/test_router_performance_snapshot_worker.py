@@ -1,21 +1,21 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import json
 
 import httpx
 from sqlalchemy import select
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import ProviderCallRecord, RunRecord, SITE_STATUS_SUSPENDED
+from app.core.models import SITE_STATUS_SUSPENDED, ProviderCallRecord, RunRecord
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.rollup import ROUTER_PERFORMANCE_BATCH_SCOPE
-from app.adapters.repositories.stats_repository import StatsRepository
 from app.workers.router_performance_snapshot import run_once
 from tests.conftest import seed_site_auth
 
@@ -202,7 +202,10 @@ def test_router_performance_snapshot_worker_dispatches_optional_callback_when_co
     assert summary["callback_failed_total"] == 0
     assert len(delivered_requests) == 1
     delivered = delivered_requests[0]
-    assert delivered["url"] == "https://wp.example.test/wp-json/magick-ai/open/v1/router/performance-snapshot/callback"
+    assert (
+        delivered["url"]
+        == "https://wp.example.test/wp-json/magick-ai/open/v1/router/performance-snapshot/callback"
+    )
     assert delivered["headers"]["x-magick-cloud-event"] == "router.performance_snapshot.batch"
     assert delivered["headers"]["x-magick-key-id"] == "kp_alpha"
     assert delivered["body"]["window"]["end_gmt"] == "2026-03-24 09:00:00"

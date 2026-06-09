@@ -249,10 +249,7 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
         ),
     )
     alert_query = (
-        "window_minutes=30"
-        "&min_requests=1"
-        "&error_rate_threshold=0.25"
-        "&latency_ms_threshold=1"
+        "window_minutes=30&min_requests=1&error_rate_threshold=0.25&latency_ms_threshold=1"
     )
     alert_response = client.get(
         f"/v1/alerts/provider-degradation?{alert_query}",
@@ -331,10 +328,7 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
     assert hosted_profile_metadata_payload["candidate_total"] >= 1
     assert "pricing" in hosted_profile_metadata_payload
     assert "capability_tags" in hosted_profile_metadata_payload
-    assert (
-        hosted_instance_metadata_payload["instance_id"]
-        == "openai-us-east-text-balanced"
-    )
+    assert hosted_instance_metadata_payload["instance_id"] == "openai-us-east-text-balanced"
     assert "capability_tags" in hosted_instance_metadata_payload
     assert "price_input" in hosted_instance_metadata_payload
     assert "price_output" in hosted_instance_metadata_payload
@@ -388,16 +382,15 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
     assert diagnostics_payload["report"]["quality_regressions"]["reason"] == "cloud_runtime_summary"
     assert diagnostics_payload["report"]["regressions"]["items"][0]["kind"] == "callback_failed"
     assert diagnostics_payload["report"]["regressions"]["items"][0]["run_id"] != ""
-    assert diagnostics_payload["report"]["regressions"]["items"][0]["details"][
-        "ability_name"
-    ] == "magick-ai/workflows/generate-post-draft"
     assert (
-        diagnostics_payload["report"]["regressions"]["items"][0]["details"]["channel"]
-        == "openapi"
+        diagnostics_payload["report"]["regressions"]["items"][0]["details"]["ability_name"]
+        == "magick-ai/workflows/generate-post-draft"
     )
     assert (
-        diagnostics_payload["report"]["quality_regressions"]["items"][0]["kind"]
-        == "callback_due"
+        diagnostics_payload["report"]["regressions"]["items"][0]["details"]["channel"] == "openapi"
+    )
+    assert (
+        diagnostics_payload["report"]["quality_regressions"]["items"][0]["kind"] == "callback_due"
     )
     assert diagnostics_payload["report"]["quality_regressions"]["items"][0]["run_id"] != ""
     assert diagnostics_payload["report"]["quality_regressions"]["items"][1]["kind"] == "guard_event"
@@ -406,9 +399,7 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
         == "auth.rate_limit_exceeded"
     )
     assert (
-        diagnostics_payload["report"]["quality_regressions"]["items"][1]["details"][
-            "status_code"
-        ]
+        diagnostics_payload["report"]["quality_regressions"]["items"][1]["details"]["status_code"]
         == 429
     )
     assert (
@@ -500,10 +491,7 @@ def test_alert_provider_degradation_prefers_delivery_buffer_when_present(
     )
 
     alert_query = (
-        "window_minutes=30"
-        "&min_requests=1"
-        "&error_rate_threshold=0.25"
-        "&latency_ms_threshold=1"
+        "window_minutes=30&min_requests=1&error_rate_threshold=0.25&latency_ms_threshold=1"
     )
     response = client.get(
         f"/v1/alerts/provider-degradation?{alert_query}",
@@ -532,12 +520,7 @@ def test_logs_analytics_routes_return_cloud_projection_payloads(tmp_path: Path) 
     database_url, client, seeded_now = _build_client(tmp_path)
     window_start = (seeded_now - timedelta(hours=1)).strftime("%Y-%m-%d%%20%H:%M:%S")
     window_end = seeded_now.strftime("%Y-%m-%d%%20%H:%M:%S")
-    logs_query = (
-        "range=24h"
-        f"&start_gmt={window_start}"
-        f"&end_gmt={window_end}"
-        "&status=all"
-    )
+    logs_query = f"range=24h&start_gmt={window_start}&end_gmt={window_end}&status=all"
 
     summary_response = client.get(
         f"/v1/logs/analytics/summary?{logs_query}",
@@ -618,8 +601,6 @@ def test_logs_analytics_routes_return_cloud_projection_payloads(tmp_path: Path) 
     dispose_engine(database_url)
 
 
-
-
 def test_router_diagnostics_summary_exposes_runtime_case_details(tmp_path: Path) -> None:
     database_url, client, seeded_now = _build_client(tmp_path)
 
@@ -656,9 +637,10 @@ def test_router_diagnostics_summary_exposes_runtime_case_details(tmp_path: Path)
     assert payload["source"] == "cloud_router_diagnostics"
     assert payload["report"]["regressions"]["items"][0]["kind"] == "callback_failed"
     assert payload["report"]["regressions"]["items"][0]["run_id"] != ""
-    assert payload["report"]["regressions"]["items"][0]["details"][
-        "ability_name"
-    ] == "magick-ai/workflows/generate-post-draft"
+    assert (
+        payload["report"]["regressions"]["items"][0]["details"]["ability_name"]
+        == "magick-ai/workflows/generate-post-draft"
+    )
     assert payload["report"]["regressions"]["items"][0]["details"]["selected_instance_id"] != ""
     assert payload["report"]["quality_regressions"]["items"][0]["kind"] == "callback_due"
     assert payload["report"]["quality_regressions"]["items"][0]["run_id"] != ""
@@ -668,8 +650,7 @@ def test_router_diagnostics_summary_exposes_runtime_case_details(tmp_path: Path)
         == "auth.rate_limit_exceeded"
     )
     assert (
-        payload["report"]["quality_regressions"]["items"][1]["details"]["auth_surface"]
-        == "openapi"
+        payload["report"]["quality_regressions"]["items"][1]["details"]["auth_surface"] == "openapi"
     )
     assert (
         payload["report"]["quality_regressions"]["items"][1]["details"]["trace_id"]

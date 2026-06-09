@@ -40,9 +40,7 @@ def upgrade() -> None:
             ),
         )
 
-    existing_indexes = {
-        index["name"] for index in inspector.get_indexes("runtime_guard_events")
-    }
+    existing_indexes = {index["name"] for index in inspector.get_indexes("runtime_guard_events")}
     index_specs = [
         ("ix_runtime_guard_events_auth_surface", ["auth_surface"]),
         ("ix_runtime_guard_events_scope_kind", ["scope_kind"]),

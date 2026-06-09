@@ -29,19 +29,16 @@ class VectorSearchHit:
 
 
 class SiteKnowledgeVectorBackend(Protocol):
-    def delete_site_index(self, site_id: str) -> None:
-        ...
+    def delete_site_index(self, site_id: str) -> None: ...
 
-    def delete_post_indexes(self, site_id: str, post_ids: list[int]) -> None:
-        ...
+    def delete_post_indexes(self, site_id: str, post_ids: list[int]) -> None: ...
 
     def upsert_chunks(
         self,
         *,
         site_id: str,
         chunks: list[dict[str, Any]],
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def search(
         self,
@@ -53,8 +50,7 @@ class SiteKnowledgeVectorBackend(Protocol):
         source_types: list[str],
         current_post_id: int,
         limit: int,
-    ) -> list[VectorSearchHit]:
-        ...
+    ) -> list[VectorSearchHit]: ...
 
 
 def build_vector_backend(settings: Settings) -> SiteKnowledgeVectorBackend | None:
@@ -113,10 +109,7 @@ class ZillizCloudSiteKnowledgeBackend:
             return
         post_ids_expr = ", ".join(str(post_id) for post_id in normalized_post_ids)
         self._delete(
-            expr=(
-                f'site_id == "{_escape_expr_string(site_id)}" '
-                f"and post_id in [{post_ids_expr}]"
-            )
+            expr=(f'site_id == "{_escape_expr_string(site_id)}" and post_id in [{post_ids_expr}]')
         )
 
     def upsert_chunks(

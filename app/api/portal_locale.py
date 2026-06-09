@@ -16,13 +16,13 @@ def resolve_portal_email_locale(request: Request, explicit_locale: str = "") -> 
         if not value:
             continue
         lowered = value.lower()
-        if lowered in {"zh", "zh-cn", "zh_hans", "zh-hans", "zh_cn"} or lowered.startswith(
-            "zh-cn"
-        ):
+        if lowered in {"zh", "zh-cn", "zh_hans", "zh-hans", "zh_cn"} or lowered.startswith("zh-cn"):
             return "zh-CN"
-        if lowered in {"zh-tw", "zh_hant", "zh-hant", "zh_tw", "zh-hk"} or lowered.startswith(
-            "zh-tw"
-        ) or lowered.startswith("zh-hk"):
+        if (
+            lowered in {"zh-tw", "zh_hant", "zh-hant", "zh_tw", "zh-hk"}
+            or lowered.startswith("zh-tw")
+            or lowered.startswith("zh-hk")
+        ):
             return "zh-TW"
         if lowered.startswith("en"):
             return "en"

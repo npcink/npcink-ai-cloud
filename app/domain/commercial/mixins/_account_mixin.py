@@ -1,4 +1,5 @@
 """Commercial service: account and membership operations mixin."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -47,7 +48,6 @@ from app.domain.commercial.service import (
 
 
 class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
-
     def upsert_account(
         self,
         *,
@@ -173,12 +173,12 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                     f"account '{account_id}' was not found",
                 )
 
-            membership = repository.get_account_membership(account_id=account_id, member_ref=member_ref)
+            membership = repository.get_account_membership(
+                account_id=account_id, member_ref=member_ref
+            )
             existing_metadata = dict(getattr(membership, "metadata_json", None) or {})
             invite_count = int(existing_metadata.get("invite_count") or 0)
-            member_role = _canonicalize_customer_membership_role_for_write(
-                requested_role
-            )
+            member_role = _canonicalize_customer_membership_role_for_write(requested_role)
             pending_metadata = {
                 **existing_metadata,
                 "source": existing_metadata.get("source") or "admin_invite_member",
@@ -219,9 +219,13 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                     "last_invited_at": invited_at,
                     "invite_expires_at": invite_expires_at,
                     "last_delivery_status": PORTAL_INVITE_DELIVERY_FAILED,
-                    "last_delivery_error_code": str(getattr(error, "error_code", "") or "portal.email_delivery_failed"),
+                    "last_delivery_error_code": str(
+                        getattr(error, "error_code", "") or "portal.email_delivery_failed"
+                    ),
                     "last_delivery_error_message": str(
-                        getattr(error, "message", "") or str(error) or "portal invite delivery failed"
+                        getattr(error, "message", "")
+                        or str(error)
+                        or "portal invite delivery failed"
                     ),
                 }
                 repository.upsert_account_membership(
@@ -354,10 +358,15 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             last_invited_at = str(metadata.get("last_invited_at") or "").strip()
             if last_invited_at:
                 try:
-                    previous_invited_at = datetime.fromisoformat(last_invited_at.replace("Z", "+00:00"))
+                    previous_invited_at = datetime.fromisoformat(
+                        last_invited_at.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     previous_invited_at = None
-                if previous_invited_at is not None and int((now_dt - previous_invited_at).total_seconds()) < 60:
+                if (
+                    previous_invited_at is not None
+                    and int((now_dt - previous_invited_at).total_seconds()) < 60
+                ):
                     raise CommercialPermissionError(
                         "service.account_membership_invite_rate_limited",
                         "invite was sent too recently; wait before resending",
@@ -383,9 +392,13 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                     "invite_count": invite_count,
                     "last_invited_at": now_value,
                     "last_delivery_status": PORTAL_INVITE_DELIVERY_FAILED,
-                    "last_delivery_error_code": str(getattr(error, "error_code", "") or "portal.email_delivery_failed"),
+                    "last_delivery_error_code": str(
+                        getattr(error, "error_code", "") or "portal.email_delivery_failed"
+                    ),
                     "last_delivery_error_message": str(
-                        getattr(error, "message", "") or str(error) or "portal invite delivery failed"
+                        getattr(error, "message", "")
+                        or str(error)
+                        or "portal invite delivery failed"
                     ),
                 }
                 repository.upsert_account_membership(
@@ -703,7 +716,9 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                     "allowed_actions": _resolve_portal_allowed_actions(
                         str(getattr(membership, "role", "") or "")
                     ),
-                    "role": _normalize_customer_membership_role(str(getattr(membership, "role", "") or "")),
+                    "role": _normalize_customer_membership_role(
+                        str(getattr(membership, "role", "") or "")
+                    ),
                     "status": membership.status,
                     "site": cast(Any, self)._serialize_site(site),
                 }
@@ -756,9 +771,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             )
 
         account_items = [
-            item
-            for item in list(account_contexts.get("items") or [])
-            if isinstance(item, dict)
+            item for item in list(account_contexts.get("items") or []) if isinstance(item, dict)
         ]
         roles = sorted(
             {
@@ -768,13 +781,10 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             }
         )
         accessible_sites_count = sum(
-            max(0, int(item.get("site_count") or 0))
-            for item in account_items
+            max(0, int(item.get("site_count") or 0)) for item in account_items
         )
         identity_metadata = (
-            dict(getattr(identity, "metadata_json", None) or {})
-            if identity is not None
-            else {}
+            dict(getattr(identity, "metadata_json", None) or {}) if identity is not None else {}
         )
         return {
             "member_ref": normalized_member_ref,
@@ -801,9 +811,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             "memberships": [
                 {
                     "account_id": str(item.get("account_id") or ""),
-                    "identity_type": str(
-                        item.get("identity_type") or IDENTITY_TYPE_USER_ADMIN
-                    ),
+                    "identity_type": str(item.get("identity_type") or IDENTITY_TYPE_USER_ADMIN),
                     "allowed_actions": [
                         str(action)
                         for action in list(item.get("allowed_actions") or [])
@@ -946,9 +954,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 "tier_id": "starter",
                 "package_alias": PLAN_TIER_REGISTRY["starter"].get("package_alias") or "Free",
                 "plan_kind": DEFAULT_FREE_PLAN_KIND,
-                "site_limit": self._coerce_int(
-                    PLAN_TIER_REGISTRY["starter"].get("site_limit")
-                )
+                "site_limit": self._coerce_int(PLAN_TIER_REGISTRY["starter"].get("site_limit"))
                 or 1,
             },
         )
@@ -992,12 +998,9 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 f"account '{account_id}' was not found",
             )
         requested_tier_id = str((metadata_json or {}).get("tier_id") or plan_id).strip()
-        if (
-            requested_tier_id in PLAN_TIER_REGISTRY
-            and (
-                repository.get_plan(plan_id) is None
-                or repository.get_plan_version(plan_version_id) is None
-            )
+        if requested_tier_id in PLAN_TIER_REGISTRY and (
+            repository.get_plan(plan_id) is None
+            or repository.get_plan_version(plan_version_id) is None
         ):
             service = cast(Any, self)
             ensured_plan_id, ensured_plan_version_id = service._ensure_plan_tier_version_in_session(
@@ -1091,9 +1094,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 str(getattr(membership, "member_ref", "") or ""),
                 metadata,
             ),
-            "identity_type": _resolve_identity_type(
-                str(getattr(membership, "role", "") or "")
-            ),
+            "identity_type": _resolve_identity_type(str(getattr(membership, "role", "") or "")),
             "allowed_actions": _resolve_portal_allowed_actions(
                 str(getattr(membership, "role", "") or "")
             ),
@@ -1102,22 +1103,16 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             "invite_state": str(metadata.get("invite_state") or ""),
             "invite_count": invite_count,
             "invited_at": self._serialize_datetime(cast(Any, metadata.get("invited_at"))),
-            "last_invited_at": self._serialize_datetime(
-                cast(Any, metadata.get("last_invited_at"))
-            ),
+            "last_invited_at": self._serialize_datetime(cast(Any, metadata.get("last_invited_at"))),
             "invite_expires_at": self._serialize_datetime(
                 cast(Any, metadata.get("invite_expires_at"))
             ),
             "last_delivery_status": str(metadata.get("last_delivery_status") or ""),
             "last_delivery_error_code": str(metadata.get("last_delivery_error_code") or ""),
             "last_delivery_error_message": str(metadata.get("last_delivery_error_message") or ""),
-            "last_login_at": self._serialize_datetime(
-                cast(Any, metadata.get("last_login_at"))
-            ),
+            "last_login_at": self._serialize_datetime(cast(Any, metadata.get("last_login_at"))),
             "enabled_at": self._serialize_datetime(cast(Any, metadata.get("enabled_at"))),
-            "disabled_at": self._serialize_datetime(
-                cast(Any, metadata.get("disabled_at"))
-            ),
+            "disabled_at": self._serialize_datetime(cast(Any, metadata.get("disabled_at"))),
             "disabled_reason": str(metadata.get("disabled_reason") or ""),
             "accessible_sites": [
                 {
@@ -1145,9 +1140,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             "name": str(getattr(account, "name", "") or ""),
             "status": str(getattr(account, "status", "") or ""),
             "member_ref": str(getattr(membership, "member_ref", "") or ""),
-            "identity_type": _resolve_identity_type(
-                str(getattr(membership, "role", "") or "")
-            ),
+            "identity_type": _resolve_identity_type(str(getattr(membership, "role", "") or "")),
             "allowed_actions": _resolve_portal_allowed_actions(
                 str(getattr(membership, "role", "") or "")
             ),
@@ -1177,7 +1170,10 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             if not account_id:
                 continue
             account = repository.get_account(account_id)
-            if account is None or str(getattr(account, "status", "") or "") != ACCOUNT_STATUS_ACTIVE:
+            if (
+                account is None
+                or str(getattr(account, "status", "") or "") != ACCOUNT_STATUS_ACTIVE
+            ):
                 continue
             items.append((account, membership))
         items.sort(

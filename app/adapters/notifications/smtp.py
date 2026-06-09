@@ -78,7 +78,9 @@ class SmtpPortalEmailSender(PortalEmailSender):
         locale: str = "zh-CN",
     ) -> None:
         message = EmailMessage()
-        message["Subject"] = self._build_login_code_subject(project_name=project_name, locale=locale)
+        message["Subject"] = self._build_login_code_subject(
+            project_name=project_name, locale=locale
+        )
         message["From"] = self._format_from_header()
         message["To"] = recipient_email
         if self.reply_to:

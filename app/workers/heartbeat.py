@@ -114,11 +114,13 @@ def build_worker_heartbeat_summary(
         CommercialService(
             settings.database_url,
             settings=settings,
-        ).list_service_audit_events(
+        )
+        .list_service_audit_events(
             event_kind=WORKER_HEARTBEAT_EVENT_KIND,
             outcome="succeeded",
             limit=max(20, len(effective_worker_ids) * 10),
-        ).get("items")
+        )
+        .get("items")
     )
 
     latest_by_worker: dict[str, dict[str, object]] = {}
@@ -161,9 +163,7 @@ def build_worker_heartbeat_summary(
                 "freshness": freshness,
                 "status": str(payload.get("status") or ""),
                 "last_seen_at": str(
-                    payload.get("recorded_at")
-                    or (latest_event or {}).get("created_at")
-                    or ""
+                    payload.get("recorded_at") or (latest_event or {}).get("created_at") or ""
                 ),
                 "age_seconds": age_seconds,
             }

@@ -252,9 +252,7 @@ def serialize_portal_session(
         "member_ref": member_ref,
         "account_id": selected_account_id,
         "identity_type": (
-            str(account_items[0].get("identity_type") or "")
-            if account_items
-            else ""
+            str(account_items[0].get("identity_type") or "") if account_items else ""
         ),
         "allowed_actions": sorted(
             {

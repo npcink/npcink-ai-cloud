@@ -96,10 +96,7 @@ def build_analysis_result_envelope(
     analysis_type = "proposal_input" if requires_local_approval else "report"
 
     if requires_local_approval:
-        summary = (
-            "Provider output contained write-completion language;"
-            " local approval required."
-        )
+        summary = "Provider output contained write-completion language; local approval required."
         cloud_raw_result = _sanitize_raw_result(result)
     else:
         summary = raw_text[:2000] if raw_text else ""
@@ -142,21 +139,16 @@ def _ensure_analysis_envelope_fields(
         result["analysis_type"] = "proposal_input"
         if _detect_write_completion_language(raw_text):
             result["summary"] = (
-                "Provider output contained write-completion language;"
-                " local approval required."
+                "Provider output contained write-completion language; local approval required."
             )
         if "_cloud_raw_result" in result:
-            result["_cloud_raw_result"] = _sanitize_raw_result(
-                result["_cloud_raw_result"]
-            )
+            result["_cloud_raw_result"] = _sanitize_raw_result(result["_cloud_raw_result"])
 
     if "proposal_handoff" not in result:
         result["proposal_handoff"] = _extract_proposal_handoff(input_payload)
     else:
         existing_handoff = (
-            dict(result["proposal_handoff"])
-            if isinstance(result["proposal_handoff"], dict)
-            else {}
+            dict(result["proposal_handoff"]) if isinstance(result["proposal_handoff"], dict) else {}
         )
         for key, value in _extract_proposal_handoff(input_payload).items():
             if key not in existing_handoff:

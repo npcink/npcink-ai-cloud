@@ -19,6 +19,8 @@ PUBLIC_PACKAGE_BY_TIER = {
     "pro": "Pro",
     "agency": "Agency",
 }
+
+
 def _get_commercial_service(request: Request) -> CommercialService:
     services = get_cloud_services(request)
     return CommercialService(services.settings.database_url, settings=services.settings)

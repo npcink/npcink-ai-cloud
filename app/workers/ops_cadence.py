@@ -110,12 +110,12 @@ def _run_hosted_model_governance_summary(settings: Settings) -> dict[str, object
         limit=settings.hosted_model_governance_worker_limit,
     )
     return {
-        "stored_batches_total": int(result.get("stored_batches_total") or 0),
+        "stored_batches_total": _coerce_int(result.get("stored_batches_total")),
         "status": str(result.get("status") or ""),
-        "alert_count": int(result.get("alert_count") or 0),
-        "runs": int(result.get("runs") or 0),
-        "provider_calls": int(result.get("provider_calls") or 0),
-        "meter_events": int(result.get("meter_events") or 0),
+        "alert_count": _coerce_int(result.get("alert_count")),
+        "runs": _coerce_int(result.get("runs")),
+        "provider_calls": _coerce_int(result.get("provider_calls")),
+        "meter_events": _coerce_int(result.get("meter_events")),
         "rollup_scope_kind": str(result.get("scope_kind") or ""),
     }
 

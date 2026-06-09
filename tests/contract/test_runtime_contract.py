@@ -901,9 +901,7 @@ def test_runtime_internal_diagnostics_shape_exposes_pressure_and_stale_issue_kin
         "provider.rate_limited"
     )
     assert summary_payload["data"]["failures"]["dominant_error"]["error_stage"] == "provider"
-    assert summary_payload["data"]["operator_guidance"]["primary_reason"] == (
-        "callback_delivery"
-    )
+    assert summary_payload["data"]["operator_guidance"]["primary_reason"] == ("callback_delivery")
     assert any(
         item["action"] == "inspect_provider_credentials_quota_and_health"
         for item in summary_payload["data"]["operator_guidance"]["suggested_actions"]
@@ -1103,10 +1101,7 @@ def test_runtime_internal_abuse_guard_contract_exposes_watchlist_and_scope_sever
         "reason_codes",
         "event_code_breakdown",
     }.issubset(set(watchlist_item.keys()))
-    assert (
-        "request_count" in watchlist_item
-        or "event_count" in watchlist_item
-    )
+    assert "request_count" in watchlist_item or "event_count" in watchlist_item
 
     dispose_engine(database_url)
 

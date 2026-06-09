@@ -552,19 +552,13 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     assert analysis["agent_handoff"]["handoff_type"] == "operator_recommendation"
     assert analysis["agent_handoff"]["requires_operator_review"] is True
     assert analysis["agent_handoff"]["direct_wordpress_write"] is False
-    assert "automatic_commercial_state_mutation" in analysis["agent_handoff"][
-        "forbidden_actions"
-    ]
-    assert analysis["agent_registry_metadata"]["agent_id"] == (
-        "internal_ops_advisor_agent"
+    assert "automatic_commercial_state_mutation" in analysis["agent_handoff"]["forbidden_actions"]
+    assert analysis["agent_registry_metadata"]["agent_id"] == ("internal_ops_advisor_agent")
+    assert (
+        analysis["agent_registry_metadata"]["agent_role"] == analysis["agent_handoff"]["agent_role"]
     )
-    assert analysis["agent_registry_metadata"]["agent_role"] == analysis[
-        "agent_handoff"
-    ]["agent_role"]
     assert analysis["agent_registry_metadata"]["direct_wordpress_write"] is False
-    assert "cloud_workflow_truth" in analysis["agent_registry_metadata"][
-        "forbidden_actions"
-    ]
+    assert "cloud_workflow_truth" in analysis["agent_registry_metadata"]["forbidden_actions"]
     assert first_data["safety"] == {
         "manual_trigger_required": True,
         "prompt_saved": False,
@@ -608,9 +602,7 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
     history_data = history.json()["data"]
     assert len(history_data["items"]) == 1
     assert history_data["items"][0]["ai_disclosure"]["generated_by_ai"] is True
-    assert history_data["items"][0]["agent_handoff"]["agent_id"] == (
-        "internal_ops_advisor_agent"
-    )
+    assert history_data["items"][0]["agent_handoff"]["agent_id"] == ("internal_ops_advisor_agent")
     assert history_data["items"][0]["agent_registry_metadata"]["agent_id"] == (
         "internal_ops_advisor_agent"
     )
@@ -1799,9 +1791,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert entitlements_response.status_code == 200
     assert entitlements_response.json()["data"]["site"]["site_id"] == "site_portal_reads"
-    assert (
-        entitlements_response.json()["data"]["policy"]["subscription"]["grace_period_days"] == 0
-    )
+    assert entitlements_response.json()["data"]["policy"]["subscription"]["grace_period_days"] == 0
 
     audit_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-summary",
@@ -1834,9 +1824,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert reconciliation_response.status_code == 200
     assert reconciliation_response.json()["data"]["site_id"] == "site_portal_reads"
-    assert (
-        reconciliation_response.json()["data"]["reconciliation"]["snapshot_present"] is True
-    )
+    assert reconciliation_response.json()["data"]["reconciliation"]["snapshot_present"] is True
 
     denied_response = client.get(
         "/portal/v1/sites/site_portal_reads/summary",

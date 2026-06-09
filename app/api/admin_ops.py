@@ -30,9 +30,11 @@ class ResolvedAdminSession:
         fallback_role: str = PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
     ) -> ResolvedAdminSession:
         identity_metadata = identity.get("metadata")
-        revocable = not bool(identity_metadata.get("bootstrap")) if isinstance(
-            identity_metadata, dict
-        ) else True
+        revocable = (
+            not bool(identity_metadata.get("bootstrap"))
+            if isinstance(identity_metadata, dict)
+            else True
+        )
         return cls(
             platform_admin_ref=str(identity.get("admin_ref") or fallback_admin_ref),
             role=str(identity.get("role") or fallback_role),
@@ -85,5 +87,3 @@ def resolve_admin_login_identity(
         bootstrap_role=PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
         allow_bootstrap=(platform_admin_ref == bootstrap_admin_ref),
     )
-
-

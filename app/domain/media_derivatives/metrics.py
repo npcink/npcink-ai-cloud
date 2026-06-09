@@ -34,9 +34,7 @@ def record_media_derivative_job_metric(
     started_processing_at = _to_utc(run.processing_started_at) or processing_started_at
     output_bytes = int(result.filesize_bytes if result is not None else 0)
     compression_ratio = (
-        (int(source_bytes) - output_bytes) / max(1, int(source_bytes))
-        if source_bytes
-        else 0.0
+        (int(source_bytes) - output_bytes) / max(1, int(source_bytes)) if source_bytes else 0.0
     )
     metric = session.scalar(
         select(MediaDerivativeJobMetric).where(MediaDerivativeJobMetric.run_id == run.run_id)
@@ -80,9 +78,7 @@ def record_media_derivative_artifact_download(
 ) -> None:
     current_time = downloaded_at or datetime.now(UTC)
     metric = session.scalar(
-        select(MediaDerivativeJobMetric).where(
-            MediaDerivativeJobMetric.artifact_id == artifact_id
-        )
+        select(MediaDerivativeJobMetric).where(MediaDerivativeJobMetric.artifact_id == artifact_id)
     )
     if metric is None:
         return
@@ -159,8 +155,7 @@ class MediaDerivativeObservabilityService:
             if target_format:
                 storage_statement = storage_statement.join(
                     MediaDerivativeJobMetric,
-                    MediaDerivativeJobMetric.artifact_id
-                    == MediaDerivativeArtifact.artifact_id,
+                    MediaDerivativeJobMetric.artifact_id == MediaDerivativeArtifact.artifact_id,
                 ).where(MediaDerivativeJobMetric.target_format == target_format)
             storage_row = session.execute(storage_statement).one()
 
@@ -353,9 +348,7 @@ class MediaDerivativeObservabilityService:
             media_policy_value = policy.get("media_derivative")
             media_policy = media_policy_value if isinstance(media_policy_value, dict) else {}
             batch_context_value = media_policy.get("batch_context")
-            batch_context = (
-                batch_context_value if isinstance(batch_context_value, dict) else {}
-            )
+            batch_context = batch_context_value if isinstance(batch_context_value, dict) else {}
             batch_id = str(batch_context.get("batch_id") or "")
             if not batch_id:
                 continue
@@ -527,10 +520,7 @@ class MediaDerivativeObservabilityService:
         return {
             "status": status,
             "score": max(0, score),
-            "summary": (
-                f"{jobs_total} jobs, {failure_rate * 100:.1f}% failed, "
-                f"P95 {p95} ms."
-            ),
+            "summary": (f"{jobs_total} jobs, {failure_rate * 100:.1f}% failed, P95 {p95} ms."),
         }
 
     def _build_timeline(
@@ -566,14 +556,16 @@ class MediaDerivativeObservabilityService:
         for index in range(bucket_count):
             bucket_start = start_at + timedelta(seconds=bucket_seconds * index)
             bucket = buckets[index]
-            timeline.append({
-                "bucket_start_at": self._format_datetime(bucket_start),
-                "jobs_total": bucket["jobs_total"],
-                "failed_total": bucket["failed_total"],
-                "bytes_saved_total": (
-                    bucket["source_bytes_total"] - bucket["output_bytes_total"]
-                ),
-            })
+            timeline.append(
+                {
+                    "bucket_start_at": self._format_datetime(bucket_start),
+                    "jobs_total": bucket["jobs_total"],
+                    "failed_total": bucket["failed_total"],
+                    "bytes_saved_total": (
+                        bucket["source_bytes_total"] - bucket["output_bytes_total"]
+                    ),
+                }
+            )
         return timeline
 
     def _success_rate(self, total: int, failed: int) -> float:

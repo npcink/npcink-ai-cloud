@@ -177,7 +177,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_commercial_decision_events_created_at", table_name="commercial_decision_events")
+    op.drop_index(
+        "ix_commercial_decision_events_created_at", table_name="commercial_decision_events"
+    )
     op.drop_index("ix_commercial_decision_events_trace_id", table_name="commercial_decision_events")
     op.drop_index(
         "ix_commercial_decision_events_data_classification",

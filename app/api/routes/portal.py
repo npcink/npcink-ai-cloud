@@ -221,9 +221,7 @@ def _portal_ai_generation(generation: dict[str, Any]) -> dict[str, Any]:
 def _portal_ai_summary(summary: dict[str, Any]) -> dict[str, Any]:
     generation = summary.get("generation") if isinstance(summary.get("generation"), dict) else {}
     disclosure = (
-        summary.get("ai_disclosure")
-        if isinstance(summary.get("ai_disclosure"), dict)
-        else {}
+        summary.get("ai_disclosure") if isinstance(summary.get("ai_disclosure"), dict) else {}
     )
     return {
         "summary_version": str(summary.get("summarizer_version") or "internal-ops-summarizer-v1"),
@@ -243,9 +241,7 @@ def _portal_ai_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "generation": _portal_ai_generation(generation or {}),
         "ai_disclosure": _portal_ai_disclosure(disclosure or {}),
         "agent_handoff": _portal_ai_agent_handoff(summary.get("agent_handoff")),
-        "agent_registry_metadata": _portal_ai_agent_registry_metadata(
-            summary.get("agent_handoff")
-        ),
+        "agent_registry_metadata": _portal_ai_agent_registry_metadata(summary.get("agent_handoff")),
     }
 
 
@@ -266,9 +262,7 @@ def _portal_ai_history_item(item: dict[str, Any]) -> dict[str, Any]:
         "generation": _portal_ai_generation(generation or {}),
         "ai_disclosure": _portal_ai_disclosure(disclosure or {}),
         "agent_handoff": _portal_ai_agent_handoff(item.get("agent_handoff")),
-        "agent_registry_metadata": _portal_ai_agent_registry_metadata(
-            item.get("agent_handoff")
-        ),
+        "agent_registry_metadata": _portal_ai_agent_registry_metadata(item.get("agent_handoff")),
     }
 
 
@@ -363,9 +357,7 @@ def _resolve_portal_site_summary(
         ],
         "role": str(access.get("role") or ""),
         "site": policy.get("site"),
-        "covered_by_subscription_id": str(
-            subscription.get("subscription_id") or ""
-        ),
+        "covered_by_subscription_id": str(subscription.get("subscription_id") or ""),
         "subscription_status": str(subscription.get("status") or ""),
         "package_alias": str(subscription_metadata.get("package_alias") or ""),
         "coverage": {
@@ -406,12 +398,9 @@ async def request_portal_login_code(
     ttl_seconds = resolve_portal_login_code_ttl_seconds(get_cloud_services(request).settings)
     email_sender = get_cloud_services(request).portal_email_sender
     environment = str(get_cloud_services(request).settings.environment or "").strip().lower()
-    allow_development_code = (
-        environment in {"development", "test"}
-        and (
-            str(request.headers.get("x-magick-dev-login-code") or "").strip() == "1"
-            or str(request.headers.get("x-magick-debug-portal-link") or "").strip() == "1"
-        )
+    allow_development_code = environment in {"development", "test"} and (
+        str(request.headers.get("x-magick-dev-login-code") or "").strip() == "1"
+        or str(request.headers.get("x-magick-debug-portal-link") or "").strip() == "1"
     )
     try:
         issued = _get_commercial_service(request).issue_portal_login_code(
@@ -451,15 +440,9 @@ async def request_portal_login_code(
         message="portal login code issued",
         data={
             "email": str(issued.get("email") or ""),
-            "delivery": (
-                "development_code" if allow_development_code else "email"
-            ),
+            "delivery": ("development_code" if allow_development_code else "email"),
             "expires_in_seconds": ttl_seconds,
-            "code": (
-                str(issued.get("code") or "")
-                if allow_development_code
-                else ""
-            ),
+            "code": (str(issued.get("code") or "") if allow_development_code else ""),
         },
     )
 
@@ -487,12 +470,7 @@ async def verify_portal_login_code(
             code=code,
             max_attempts=max(
                 1,
-                int(
-                    get_cloud_services(
-                        request
-                    ).settings.portal_login_code_max_attempts
-                    or 0
-                ),
+                int(get_cloud_services(request).settings.portal_login_code_max_attempts or 0),
             ),
         )
         member_ref = str(verified.get("member_ref") or "")
@@ -685,9 +663,7 @@ async def get_portal_site_usage_summary(request: Request, site_id: str) -> Any:
     result["member_ref"] = auth.member_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
-        str(action)
-        for action in _object_list(access.get("allowed_actions"))
-        if str(action).strip()
+        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
     ]
     result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
@@ -730,9 +706,7 @@ async def get_portal_site_monitoring_overview(
     result["member_ref"] = auth.member_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
-        str(action)
-        for action in _object_list(access.get("allowed_actions"))
-        if str(action).strip()
+        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
     ]
     result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
@@ -762,9 +736,7 @@ async def get_portal_site_plugin_observability(
     )
     if isinstance(access, JSONResponse):
         return access
-    result = PluginObservabilityService(
-        _get_commercial_service(request).database_url
-    ).get_summary(
+    result = PluginObservabilityService(_get_commercial_service(request).database_url).get_summary(
         site_id=site_id,
         window_hours=window_hours,
         plugin_slug=plugin_slug.strip(),
@@ -774,9 +746,7 @@ async def get_portal_site_plugin_observability(
     result["member_ref"] = auth.member_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
-        str(action)
-        for action in _object_list(access.get("allowed_actions"))
-        if str(action).strip()
+        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
     ]
     result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
@@ -824,9 +794,7 @@ async def get_portal_site_media_observability(
     result["member_ref"] = auth.member_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
-        str(action)
-        for action in _object_list(access.get("allowed_actions"))
-        if str(action).strip()
+        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
     ]
     result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
@@ -867,9 +835,7 @@ async def get_portal_site_vector_observability(
     result["member_ref"] = auth.member_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
-        str(action)
-        for action in _object_list(access.get("allowed_actions"))
-        if str(action).strip()
+        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
     ]
     result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
@@ -1029,6 +995,7 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
             "generated_at": policy.get("generated_at"),
         },
     )
+
 
 @router.get("/sites/{site_id}/audit-summary")
 async def get_portal_site_audit_summary(request: Request, site_id: str) -> Any:

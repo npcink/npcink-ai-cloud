@@ -84,9 +84,7 @@ class ProviderExecutionError(Exception):
         self.error_code = error_code
         self.message = message
         self.retryable = (
-            get_error_taxonomy(error_code).retryable
-            if retryable is None
-            else retryable
+            get_error_taxonomy(error_code).retryable if retryable is None else retryable
         )
         self.tokens_in = max(0, int(tokens_in))
         self.tokens_out = max(0, int(tokens_out))
@@ -98,8 +96,6 @@ class ProviderAdapter(Protocol):
     display_name: str
     adapter_type: str
 
-    def fetch_catalog(self) -> ProviderCatalogSnapshot:
-        ...
+    def fetch_catalog(self) -> ProviderCatalogSnapshot: ...
 
-    def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
-        ...
+    def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult: ...

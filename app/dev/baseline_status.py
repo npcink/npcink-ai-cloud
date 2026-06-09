@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -168,7 +169,9 @@ def evaluate_remote_baseline_status(
         alembic_version_present = "alembic_version" in existing_tables
         database_versions = (
             sorted(
-                session.execute(text("SELECT version_num FROM alembic_version ORDER BY version_num"))
+                session.execute(
+                    text("SELECT version_num FROM alembic_version ORDER BY version_num")
+                )
                 .scalars()
                 .all()
             )

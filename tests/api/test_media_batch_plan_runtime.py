@@ -63,8 +63,7 @@ def _payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     input_payload: dict[str, Any] = {
         "contract_version": "media_derivative_batch_plan_request.v1",
         "user_request": (
-            "把 2026 年 4 月媒体库大图转换成 PNG，最大宽度 1600，"
-            "质量 82，加右下角 LOGO 水印"
+            "把 2026 年 4 月媒体库大图转换成 PNG，最大宽度 1600，质量 82，加右下角 LOGO 水印"
         ),
         "site_context": {"current_date": "2026-06-05T00:00:00Z"},
     }

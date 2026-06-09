@@ -15,9 +15,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
-    plan_version_columns = {
-        column["name"] for column in inspector.get_columns("plan_versions")
-    }
+    plan_version_columns = {column["name"] for column in inspector.get_columns("plan_versions")}
     if "policy_json" not in plan_version_columns:
         op.add_column(
             "plan_versions",
@@ -38,9 +36,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
-    plan_version_columns = {
-        column["name"] for column in inspector.get_columns("plan_versions")
-    }
+    plan_version_columns = {column["name"] for column in inspector.get_columns("plan_versions")}
     if "policy_json" in plan_version_columns:
         op.drop_column("plan_versions", "policy_json")
 

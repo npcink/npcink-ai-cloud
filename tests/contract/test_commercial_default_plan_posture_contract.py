@@ -24,4 +24,7 @@ def test_dev_unlimited_plan_is_limited_to_seed_runtime_paths() -> None:
     assert "plan_dev_unlimited / plan_dev_unlimited_v1" in commercial_core_doc
     assert "只属于：" in commercial_core_doc
     assert "plan_id = plan_free" in free_plan_doc
-    assert "不是 runtime request-time fallback" in free_plan_doc or "不是 runtime request-time fallback" in commercial_core_doc
+    assert (
+        "不是 runtime request-time fallback" in free_plan_doc
+        or "不是 runtime request-time fallback" in commercial_core_doc
+    )

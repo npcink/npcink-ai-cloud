@@ -44,5 +44,4 @@ class RuntimeCallbackDispatcher(Protocol):
     def dispatch(
         self,
         request: RuntimeCallbackDispatchRequest,
-    ) -> RuntimeCallbackDispatchResult:
-        ...
+    ) -> RuntimeCallbackDispatchResult: ...

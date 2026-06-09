@@ -379,7 +379,11 @@ class UsageService:
             )
             instances = repository.list_instances_by_ids(candidate_instance_ids)
             models = repository.list_models_by_ids(
-                [instance.model_id for instance in instances if str(instance.model_id or "").strip()]
+                [
+                    instance.model_id
+                    for instance in instances
+                    if str(instance.model_id or "").strip()
+                ]
             )
 
         models_by_id = {model.model_id: model for model in models}
@@ -599,7 +603,9 @@ class UsageService:
 
         for profile in profiles:
             binding = bindings.get(profile.profile_id)
-            candidate_instance_ids = list(binding.candidate_instance_ids) if binding is not None else []
+            candidate_instance_ids = (
+                list(binding.candidate_instance_ids) if binding is not None else []
+            )
             candidate_instances = [
                 instances_by_id[instance_id]
                 for instance_id in candidate_instance_ids
@@ -634,9 +640,7 @@ class UsageService:
             )
 
         recommended_profile_ids = [
-            row["profile_id"]
-            for row in profile_matches
-            if row["matched_provider_ids"]
+            row["profile_id"] for row in profile_matches if row["matched_provider_ids"]
         ]
         avoid_profile_ids = [
             row["profile_id"]
@@ -652,15 +656,12 @@ class UsageService:
         else:
             summary_lines.append("No provider recommendation available in the current window.")
         if degraded_provider_ids:
-            summary_lines.append(
-                "Degraded providers: " + ", ".join(degraded_provider_ids[:5])
-            )
+            summary_lines.append("Degraded providers: " + ", ".join(degraded_provider_ids[:5]))
         else:
             summary_lines.append("No provider degradation signals in the current window.")
         if recommended_profile_ids:
             summary_lines.append(
-                "Profiles with matching providers: "
-                + ", ".join(recommended_profile_ids[:5])
+                "Profiles with matching providers: " + ", ".join(recommended_profile_ids[:5])
             )
 
         return {
@@ -734,13 +735,11 @@ class UsageService:
         risk_lines: list[str] = []
         if degraded_provider_ids:
             risk_lines.append(
-                "Recent provider degradation detected: "
-                + ", ".join(degraded_provider_ids[:5])
+                "Recent provider degradation detected: " + ", ".join(degraded_provider_ids[:5])
             )
         if error_rate >= 0.2:
             risk_lines.append(
-                "Error rate is elevated in the recent window "
-                + f"({round(error_rate * 100, 2)}%)."
+                "Error rate is elevated in the recent window " + f"({round(error_rate * 100, 2)}%)."
             )
         if blocked_rate >= 0.1:
             risk_lines.append(
@@ -748,9 +747,7 @@ class UsageService:
                 + f"({round(blocked_rate * 100, 2)}%)."
             )
         if recommended_error_codes:
-            risk_lines.append(
-                "Recent top error codes: " + ", ".join(recommended_error_codes[:5])
-            )
+            risk_lines.append("Recent top error codes: " + ", ".join(recommended_error_codes[:5]))
         if not risk_lines:
             risk_lines.append(
                 "No provider degradation or elevated runtime risk signals in the current window."
@@ -811,9 +808,7 @@ class UsageService:
                 "Candidate version is older than the current local version, so the current baseline stays preferred."
             )
         elif candidate_version > current_version > 0:
-            reason_lines.append(
-                "Candidate version is newer than the current local version."
-            )
+            reason_lines.append("Candidate version is newer than the current local version.")
 
         updated_at = str(logs_summary.get("updated_at") or "").strip()
         if not updated_at:
@@ -846,9 +841,7 @@ class UsageService:
                     "blocked_rate": blocked_rate,
                     "updated_at": str(logs_summary.get("updated_at") or ""),
                 },
-                "recommended_providers": recommendations.get(
-                    "recommended_providers", []
-                ),
+                "recommended_providers": recommendations.get("recommended_providers", []),
                 "recommended_error_codes": recommended_error_codes,
                 "degraded_provider_ids": degraded_provider_ids,
             },
@@ -1024,9 +1017,7 @@ class UsageService:
                 "No strong preset winner is visible in the current service-plane window."
             )
         if normalized_filters["ability_id"]:
-            reason_lines.append(
-                "Scoped to ability " + normalized_filters["ability_id"] + "."
-            )
+            reason_lines.append("Scoped to ability " + normalized_filters["ability_id"] + ".")
         else:
             reason_lines.append(
                 "No ability scope was provided, so this uses site-level service-plane evidence."
@@ -1329,7 +1320,9 @@ class UsageService:
             "tool_latency_p95_ms": self._calculate_percentile(latency_values, 95.0),
             "tool_latency_samples": len(latency_values),
             "tool_latency_source": "cloud",
-            "top_errors": self._build_logs_top_error_rows(context["provider_calls"], context["runs_by_id"]),
+            "top_errors": self._build_logs_top_error_rows(
+                context["provider_calls"], context["runs_by_id"]
+            ),
             "trend_7d": self._build_logs_trend_rows(
                 context["provider_calls"],
                 context["runs_by_id"],
@@ -1501,7 +1494,9 @@ class UsageService:
                 return preset_id[:191]
         return ""
 
-    def _is_router_guard_failure(self, provider_error_code: str | None, run_error_code: str | None) -> bool:
+    def _is_router_guard_failure(
+        self, provider_error_code: str | None, run_error_code: str | None
+    ) -> bool:
         codes = [str(provider_error_code or "").lower(), str(run_error_code or "").lower()]
         for code in codes:
             if not code:
@@ -1544,9 +1539,7 @@ class UsageService:
         instances_by_id = {instance.instance_id: instance for instance in instances}
         latest_health_by_instance = self._latest_health_by_instance(health_snapshots)
         scoped_calls = [
-            call
-            for call in provider_calls
-            if self._is_in_window(call.created_at, start_at, now)
+            call for call in provider_calls if self._is_in_window(call.created_at, start_at, now)
         ]
 
         provider_calls_by_provider: defaultdict[str, list[ProviderCallRecord]] = defaultdict(list)
@@ -1926,10 +1919,14 @@ class UsageService:
                 "error_message": str(run.error_message or ""),
                 "callback_last_error_code": str(run.callback_last_error_code or ""),
                 "callback_last_error_message": str(run.callback_last_error_message or ""),
-                "started_at": self._format_datetime(self._normalize_required_datetime(run.started_at))
+                "started_at": self._format_datetime(
+                    self._normalize_required_datetime(run.started_at)
+                )
                 if run.started_at is not None
                 else "",
-                "finished_at": self._format_datetime(self._normalize_required_datetime(run.finished_at))
+                "finished_at": self._format_datetime(
+                    self._normalize_required_datetime(run.finished_at)
+                )
                 if run.finished_at is not None
                 else "",
             },
@@ -2054,9 +2051,7 @@ class UsageService:
         runs_total = _coerce_int(run_metrics.get("runs_total"))
         success_total = _coerce_int(run_metrics.get("success_total"))
         fallback_total = _coerce_int(run_metrics.get("fallback_total"))
-        last_seen_at = self._normalize_datetime(
-            _datetime_value(run_metrics.get("last_seen_at"))
-        )
+        last_seen_at = self._normalize_datetime(_datetime_value(run_metrics.get("last_seen_at")))
         return {
             "start_at": self._format_datetime(window["start_at"]),
             "end_at": self._format_datetime(window["end_at"]),
@@ -2222,9 +2217,7 @@ class UsageService:
                 continue
 
             created_at = self._normalize_datetime(provider_call.created_at)
-            if created_at is None or not (
-                window["start_at"] <= created_at <= window["end_at"]
-            ):
+            if created_at is None or not (window["start_at"] <= created_at <= window["end_at"]):
                 continue
 
             status = self._classify_logs_call_status(run=run, provider_call=provider_call)
@@ -2299,11 +2292,7 @@ class UsageService:
         ]
         error_rate = float(logs_summary.get("error_rate") or 0.0)
         blocked_rate = float(logs_summary.get("blocked_rate") or 0.0)
-        low_risk = (
-            len(degraded_provider_ids) == 0
-            and error_rate < 0.2
-            and blocked_rate < 0.1
-        )
+        low_risk = len(degraded_provider_ids) == 0 and error_rate < 0.2 and blocked_rate < 0.1
         scope_label_parts = [
             value
             for value in (
@@ -2317,13 +2306,11 @@ class UsageService:
         risk_lines: list[str] = []
         if degraded_provider_ids:
             risk_lines.append(
-                "Recent provider degradation detected: "
-                + ", ".join(degraded_provider_ids[:5])
+                "Recent provider degradation detected: " + ", ".join(degraded_provider_ids[:5])
             )
         if error_rate >= 0.2:
             risk_lines.append(
-                "Error rate is elevated in the recent window "
-                + f"({round(error_rate * 100, 2)}%)."
+                "Error rate is elevated in the recent window " + f"({round(error_rate * 100, 2)}%)."
             )
         if blocked_rate >= 0.1:
             risk_lines.append(
@@ -2331,9 +2318,7 @@ class UsageService:
                 + f"({round(blocked_rate * 100, 2)}%)."
             )
         if recommended_error_codes:
-            risk_lines.append(
-                "Recent top error codes: " + ", ".join(recommended_error_codes[:5])
-            )
+            risk_lines.append("Recent top error codes: " + ", ".join(recommended_error_codes[:5]))
         if not risk_lines:
             risk_lines.append(
                 "No provider degradation or elevated runtime risk signals in the current window."
@@ -2348,34 +2333,24 @@ class UsageService:
                 reason_lines.append(
                     "Cloud runtime signals are stable enough for a local compare/quick-eval pass."
                 )
-                suggested_action = (
-                    "Run local preview, compare, and quick eval on the candidate version before any local adoption decision."
-                )
+                suggested_action = "Run local preview, compare, and quick eval on the candidate version before any local adoption decision."
             elif candidate_version > 0:
                 reason_lines.append(
                     "Runtime risk signals suggest deeper local eval is still needed before reviewing the candidate."
                 )
-                suggested_action = (
-                    "Hold local adoption and use embedded preview/quick eval until service-plane risk falls."
-                )
+                suggested_action = "Hold local adoption and use embedded preview/quick eval until service-plane risk falls."
             else:
                 reason_lines.append(
                     "No candidate version was provided, so cloud can only recommend a local preview/eval pass."
                 )
-                suggested_action = (
-                    "Provide candidate version context locally and run preview/compare before changing prompt truth."
-                )
-            boundary_note = (
-                "Readonly eval recommendation only. Cloud does not become a prompt gate, publish owner, or second control plane."
-            )
+                suggested_action = "Provide candidate version context locally and run preview/compare before changing prompt truth."
+            boundary_note = "Readonly eval recommendation only. Cloud does not become a prompt gate, publish owner, or second control plane."
         elif normalized_type == "canary":
             if candidate_version > 0 and low_risk:
                 reason_lines.append(
                     "The candidate currently looks stable enough for readonly staged-review guidance."
                 )
-                suggested_action = (
-                    "Keep live canary disabled in local runtime; if extra confidence is needed, use readonly cloud detail plus local preview/compare only."
-                )
+                suggested_action = "Keep live canary disabled in local runtime; if extra confidence is needed, use readonly cloud detail plus local preview/compare only."
             else:
                 reason_lines.append(
                     "Current service-plane risk signals do not support even a staged-review recommendation."
@@ -2383,24 +2358,18 @@ class UsageService:
                 suggested_action = (
                     "Keep canary disabled and continue with embedded preview/eval only."
                 )
-            boundary_note = (
-                "Readonly canary recommendation only. Cloud does not own rollout state, publish state, or live canary control."
-            )
+            boundary_note = "Readonly canary recommendation only. Cloud does not own rollout state, publish state, or live canary control."
         else:
             if candidate_version > current_version > 0 and low_risk:
                 reason_lines.append(
                     "The candidate appears eligible for a local manual upgrade review."
                 )
-                suggested_action = (
-                    "Review candidate version locally and adopt it only through the local prompt truth path."
-                )
+                suggested_action = "Review candidate version locally and adopt it only through the local prompt truth path."
             elif current_version > 0:
                 reason_lines.append(
                     "Keep the current local version as the baseline until service-plane risk settles or more evidence arrives."
                 )
-                suggested_action = (
-                    "Keep the current local version and revisit upgrade review after more runtime evidence is available."
-                )
+                suggested_action = "Keep the current local version and revisit upgrade review after more runtime evidence is available."
             else:
                 reason_lines.append(
                     "Cloud can only offer upgrade guidance after local current/candidate version context is provided."
@@ -2408,9 +2377,7 @@ class UsageService:
                 suggested_action = (
                     "Provide local version context before using cloud upgrade guidance."
                 )
-            boundary_note = (
-                "Readonly upgrade recommendation only. Local plugin remains the prompt truth owner, final upgrade owner, and only publish/apply surface."
-            )
+            boundary_note = "Readonly upgrade recommendation only. Local plugin remains the prompt truth owner, final upgrade owner, and only publish/apply surface."
 
         if scope_label:
             reason_lines.append("Scoped to " + scope_label + ".")
@@ -2450,9 +2417,7 @@ class UsageService:
                     "blocked_rate": blocked_rate,
                     "updated_at": str(logs_summary.get("updated_at") or ""),
                 },
-                "recommended_providers": recommendations.get(
-                    "recommended_providers", []
-                ),
+                "recommended_providers": recommendations.get("recommended_providers", []),
                 "recommended_error_codes": recommended_error_codes,
                 "degraded_provider_ids": degraded_provider_ids,
             },
@@ -2465,9 +2430,7 @@ class UsageService:
         model: Any | None,
     ) -> dict[str, Any]:
         capability_tags = [
-            str(tag).strip()
-            for tag in list(instance.capability_tags or [])
-            if str(tag).strip()
+            str(tag).strip() for tag in list(instance.capability_tags or []) if str(tag).strip()
         ]
         return {
             "instance_id": instance.instance_id,
@@ -2542,9 +2505,7 @@ class UsageService:
                 base_filters.get("candidate_variant"),
                 "candidate",
             ),
-            "current_version": self._coerce_non_negative_int(
-                base_filters.get("current_version")
-            ),
+            "current_version": self._coerce_non_negative_int(base_filters.get("current_version")),
             "candidate_version": self._coerce_non_negative_int(
                 base_filters.get("candidate_version")
             ),
@@ -2562,9 +2523,7 @@ class UsageService:
         window = self._resolve_logs_analytics_window(base_filters, now)
         return {
             "preset_id": str(base_filters.get("preset_id") or "").strip()[:191],
-            "default_preset_id": str(base_filters.get("default_preset_id") or "").strip()[
-                :191
-            ],
+            "default_preset_id": str(base_filters.get("default_preset_id") or "").strip()[:191],
             "ability_id": str(base_filters.get("ability_id") or "").strip()[:191],
             "range": str(base_filters.get("range") or "24h").strip().lower() or "24h",
             "start_gmt": self._format_datetime(window["start_at"]),
@@ -2625,7 +2584,10 @@ class UsageService:
             return False
 
         provider_filter = str(filters.get("provider") or "").strip().lower()
-        if provider_filter and str(provider_call.provider_id or "").strip().lower() != provider_filter:
+        if (
+            provider_filter
+            and str(provider_call.provider_id or "").strip().lower() != provider_filter
+        ):
             return False
 
         model_filter = str(filters.get("model") or "").strip().lower()
@@ -2670,11 +2632,7 @@ class UsageService:
         ability_name = str(run.ability_name or "").strip().lower()
         channel = str(run.channel or "").strip().lower()
         execution_kind = str(run.execution_kind or "").strip().lower()
-        return (
-            "mcp" in ability_name
-            or "mcp" in channel
-            or execution_kind == "mcp"
-        )
+        return "mcp" in ability_name or "mcp" in channel or execution_kind == "mcp"
 
     def _classify_logs_call_status(
         self,

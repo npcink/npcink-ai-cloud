@@ -7,9 +7,9 @@ from typing import Any
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.adapters.queue.in_memory import InMemoryRuntimeQueue
 from app.adapters.providers.base import ProviderExecutionRequest, ProviderExecutionResult
 from app.adapters.providers.openai import OpenAIProviderAdapter
+from app.adapters.queue.in_memory import InMemoryRuntimeQueue
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
@@ -396,8 +396,7 @@ def test_image_source_runtime_enriches_prompt_candidates_with_site_knowledge(
                     "post_id": 99,
                     "image_use": "paragraph_image",
                     "selected_text": (
-                        "AEO focuses on answer quality when a reader asks a clear "
-                        "question."
+                        "AEO focuses on answer quality when a reader asks a clear question."
                     ),
                     "title": "SEO, AEO, and GEO for AI search",
                 }
@@ -605,8 +604,13 @@ def test_image_source_candidate_suggested_filename_is_safe(monkeypatch: Any) -> 
     assert handoff["prompt_prefill_plan"]["requires_user_review"] is True
     assert handoff["local_prompt_sources"][0] == "cloud_llm_prompt_planner.prompt_candidates"
     assert handoff["local_prompt_sources"][1] == "cloud_visual_brief.prompt_candidates"
-    assert execution.result_json["visual_brief"]["artifact_type"] == "paragraph_image_visual_brief.v1"
-    assert execution.result_json["visual_brief"]["evidence_policy"]["use_site_knowledge_vectors"] is True
+    assert (
+        execution.result_json["visual_brief"]["artifact_type"] == "paragraph_image_visual_brief.v1"
+    )
+    assert (
+        execution.result_json["visual_brief"]["evidence_policy"]["use_site_knowledge_vectors"]
+        is True
+    )
     assert execution.result_json["prompt_candidates"][0]["requires_operator_review"] is True
     assert handoff["prompt_candidates"][0]["source"] == "cloud_visual_brief"
     assert handoff["prompt_prefill_plan"]["safety"]["do_not_autorun"] is True
@@ -747,9 +751,7 @@ def test_image_source_ai_generation_prefill_plan_tracks_product_purpose() -> Non
     handoff = result.result_json["ai_generation_handoff"]
     prefill_plan = handoff["prompt_prefill_plan"]
     assert handoff["input_defaults"]["aspect_ratio"] == "1:1"
-    assert "Professional product photography" in prefill_plan["local_prompt_fields"][3][
-        "default"
-    ]
+    assert "Professional product photography" in prefill_plan["local_prompt_fields"][3]["default"]
     assert prefill_plan["assembly"]["section_order"] == [
         "subject",
         "context",

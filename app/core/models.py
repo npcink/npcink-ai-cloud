@@ -196,9 +196,7 @@ class PortalLoginCode(Base):
 
 class PlatformAdminIdentity(Base):
     __tablename__ = "platform_admin_identities"
-    __table_args__ = (
-        UniqueConstraint("admin_ref", name="uq_platform_admin_identities_admin_ref"),
-    )
+    __table_args__ = (UniqueConstraint("admin_ref", name="uq_platform_admin_identities_admin_ref"),)
 
     admin_id: Mapped[str] = mapped_column(String(191), primary_key=True)
     admin_ref: Mapped[str] = mapped_column(String(191), index=True)
@@ -417,9 +415,7 @@ class SiteKnowledgeChunk(Base):
 
 class SiteKnowledgeIndexJobMetric(Base):
     __tablename__ = "site_knowledge_index_job_metrics"
-    __table_args__ = (
-        UniqueConstraint("run_id", name="uq_site_knowledge_index_job_metrics_run"),
-    )
+    __table_args__ = (UniqueConstraint("run_id", name="uq_site_knowledge_index_job_metrics_run"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("run_records.run_id"), index=True)
@@ -449,9 +445,7 @@ class SiteKnowledgeIndexJobMetric(Base):
 
 class SiteKnowledgeSearchMetric(Base):
     __tablename__ = "site_knowledge_search_metrics"
-    __table_args__ = (
-        UniqueConstraint("run_id", name="uq_site_knowledge_search_metrics_run"),
-    )
+    __table_args__ = (UniqueConstraint("run_id", name="uq_site_knowledge_search_metrics_run"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("run_records.run_id"), index=True)
@@ -747,9 +741,7 @@ class ProviderCallRecord(Base):
 
 class UsageMeterEvent(Base):
     __tablename__ = "usage_meter_events"
-    __table_args__ = (
-        UniqueConstraint("dedupe_key", name="uq_usage_meter_events_dedupe"),
-    )
+    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_usage_meter_events_dedupe"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str | None] = mapped_column(String(191), index=True)
@@ -825,9 +817,7 @@ class RuntimeGuardEvent(Base):
 
 class PluginObservabilityEvent(Base):
     __tablename__ = "plugin_observability_events"
-    __table_args__ = (
-        UniqueConstraint("dedupe_key", name="uq_plugin_observability_events_dedupe"),
-    )
+    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_plugin_observability_events_dedupe"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     dedupe_key: Mapped[str] = mapped_column(String(255))
@@ -1048,9 +1038,7 @@ class MediaDerivativeArtifact(Base):
 
 class MediaDerivativeJobMetric(Base):
     __tablename__ = "media_derivative_job_metrics"
-    __table_args__ = (
-        UniqueConstraint("run_id", name="uq_media_derivative_job_metrics_run"),
-    )
+    __table_args__ = (UniqueConstraint("run_id", name="uq_media_derivative_job_metrics_run"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("run_records.run_id"), index=True)

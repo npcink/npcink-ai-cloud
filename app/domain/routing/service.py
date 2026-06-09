@@ -38,9 +38,7 @@ class RoutingService:
                 raise RoutingNoCandidatesError(profile_id)
 
             instances = repository.list_instances_by_ids(binding.candidate_instance_ids)
-            models = repository.list_models_by_ids(
-                [instance.model_id for instance in instances]
-            )
+            models = repository.list_models_by_ids([instance.model_id for instance in instances])
             models_by_id = {model.model_id: model for model in models}
 
         candidates = [

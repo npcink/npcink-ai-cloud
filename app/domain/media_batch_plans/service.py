@@ -374,11 +374,7 @@ def _normalize_text(value: Any, *, limit: int) -> str:
 def _normalize_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [
-        str(item or "").strip().lower()
-        for item in value
-        if str(item or "").strip()
-    ]
+    return [str(item or "").strip().lower() for item in value if str(item or "").strip()]
 
 
 def _contains_any(text: str, needles: tuple[str, ...]) -> bool:

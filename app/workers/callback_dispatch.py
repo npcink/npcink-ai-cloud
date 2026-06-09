@@ -104,9 +104,7 @@ def main() -> None:
                         redelivered_total,
                         [
                             item.get("run_id")
-                            for item in _dict_items(
-                                auto_repair.get("redelivered_callback_overdue")
-                            )
+                            for item in _dict_items(auto_repair.get("redelivered_callback_overdue"))
                         ],
                     )
                 time.sleep(settings.runtime_callback_worker_poll_seconds)

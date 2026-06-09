@@ -14,8 +14,8 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
-from app.domain.image_generation.contracts import IMAGE_GENERATION_RESULT_CONTRACT
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
+from app.domain.image_generation.contracts import IMAGE_GENERATION_RESULT_CONTRACT
 
 DEEPSEEK_MODEL_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
     "deepseek-v4-flash": {
@@ -259,9 +259,7 @@ class OpenAIProviderAdapter:
                 f"provider catalog refresh failed with {error.response.status_code}: {message}"
             ) from error
         except httpx.RequestError as error:
-            raise RuntimeError(
-                f"provider catalog refresh network error: {error}"
-            ) from error
+            raise RuntimeError(f"provider catalog refresh network error: {error}") from error
 
         response_json = response.json()
         raw_models = response_json.get("data")
@@ -341,8 +339,7 @@ class OpenAIProviderAdapter:
             raise ProviderExecutionError(
                 error_code,
                 self._extract_http_error_message(error.response),
-                retryable=error.response.status_code >= 500
-                or error.response.status_code == 429,
+                retryable=error.response.status_code >= 500 or error.response.status_code == 429,
             ) from error
         except httpx.RequestError as error:
             raise ProviderExecutionError(
@@ -423,9 +420,7 @@ class OpenAIProviderAdapter:
             data = response_json.get("data")
             first_embedding = data[0] if isinstance(data, list) and data else {}
             embedding = (
-                first_embedding.get("embedding")
-                if isinstance(first_embedding, dict)
-                else []
+                first_embedding.get("embedding") if isinstance(first_embedding, dict) else []
             )
             usage = response_json.get("usage", {})
             tokens_in = self._coerce_int(usage.get("prompt_tokens"))
@@ -465,9 +460,7 @@ class OpenAIProviderAdapter:
                     images.append(image)
             usage = response_json.get("usage", {})
             tokens_in = (
-                self._coerce_int(usage.get("prompt_tokens"))
-                if isinstance(usage, dict)
-                else 0
+                self._coerce_int(usage.get("prompt_tokens")) if isinstance(usage, dict) else 0
             )
             cost = self._extract_image_generation_cost(usage)
             usage_for_cost = usage if isinstance(usage, dict) else {}
@@ -560,8 +553,7 @@ class OpenAIProviderAdapter:
             seed = sum(ord(character) for character in source_text)
             output = {
                 "embedding": [
-                    round(((seed + (index * 17)) % 1000) / 1000, 3)
-                    for index in range(4)
+                    round(((seed + (index * 17)) % 1000) / 1000, 3) for index in range(4)
                 ],
                 "dimensions": 4,
                 "model_id": request.model_id,
@@ -1309,12 +1301,8 @@ class OpenAIProviderAdapter:
         if cache_hit_tokens == 0 and cache_miss_tokens == 0:
             cache_miss_tokens = max(0, int(tokens_in or 0))
 
-        input_hit_cost = (
-            pricing["input_cache_hit"] * max(0, cache_hit_tokens)
-        ) / 1_000_000
-        input_miss_cost = (
-            pricing["input_cache_miss"] * max(0, cache_miss_tokens)
-        ) / 1_000_000
+        input_hit_cost = (pricing["input_cache_hit"] * max(0, cache_hit_tokens)) / 1_000_000
+        input_miss_cost = (pricing["input_cache_miss"] * max(0, cache_miss_tokens)) / 1_000_000
         output_cost = (pricing["output"] * max(0, int(tokens_out or 0))) / 1_000_000
         return round(input_hit_cost + input_miss_cost + output_cost, 6)
 

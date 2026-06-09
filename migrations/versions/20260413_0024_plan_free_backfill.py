@@ -90,11 +90,15 @@ def upgrade() -> None:
         "openclaw_enabled": True,
     }
 
-    existing_plan = bind.execute(
-        sa.select(plans.c.plan_id, plans.c.metadata_json).where(
-            plans.c.plan_id == DEFAULT_FREE_PLAN_ID
+    existing_plan = (
+        bind.execute(
+            sa.select(plans.c.plan_id, plans.c.metadata_json).where(
+                plans.c.plan_id == DEFAULT_FREE_PLAN_ID
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if existing_plan is None:
         bind.execute(
             sa.insert(plans).values(
@@ -117,11 +121,15 @@ def upgrade() -> None:
             )
         )
 
-    existing_version = bind.execute(
-        sa.select(plan_versions.c.plan_version_id, plan_versions.c.metadata_json).where(
-            plan_versions.c.plan_version_id == DEFAULT_FREE_PLAN_VERSION_ID
+    existing_version = (
+        bind.execute(
+            sa.select(plan_versions.c.plan_version_id, plan_versions.c.metadata_json).where(
+                plan_versions.c.plan_version_id == DEFAULT_FREE_PLAN_VERSION_ID
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     version_values = dict(
         plan_version_id=DEFAULT_FREE_PLAN_VERSION_ID,
         plan_id=DEFAULT_FREE_PLAN_ID,
@@ -153,30 +161,36 @@ def upgrade() -> None:
             .values(
                 **{
                     **version_values,
-                    "metadata_json": _merge_metadata(existing_version["metadata_json"], **version_metadata),
+                    "metadata_json": _merge_metadata(
+                        existing_version["metadata_json"], **version_metadata
+                    ),
                 }
             )
         )
 
-    subscription_rows = bind.execute(
-        sa.select(
-            account_subscriptions.c.subscription_id,
-            account_subscriptions.c.plan_id,
-            account_subscriptions.c.plan_version_id,
-            account_subscriptions.c.metadata_json,
-        ).where(
-            sa.or_(
-                sa.and_(
-                    account_subscriptions.c.plan_id == "starter",
-                    account_subscriptions.c.plan_version_id == "starter_v1",
-                ),
-                sa.and_(
-                    account_subscriptions.c.plan_id == "plan_dev_unlimited",
-                    account_subscriptions.c.plan_version_id == "plan_dev_unlimited_v1",
-                ),
+    subscription_rows = (
+        bind.execute(
+            sa.select(
+                account_subscriptions.c.subscription_id,
+                account_subscriptions.c.plan_id,
+                account_subscriptions.c.plan_version_id,
+                account_subscriptions.c.metadata_json,
+            ).where(
+                sa.or_(
+                    sa.and_(
+                        account_subscriptions.c.plan_id == "starter",
+                        account_subscriptions.c.plan_version_id == "starter_v1",
+                    ),
+                    sa.and_(
+                        account_subscriptions.c.plan_id == "plan_dev_unlimited",
+                        account_subscriptions.c.plan_version_id == "plan_dev_unlimited_v1",
+                    ),
+                )
             )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     for row in subscription_rows:
         metadata_json = row["metadata_json"] if isinstance(row["metadata_json"], dict) else {}
         source = str(metadata_json.get("source") or "").strip()
@@ -186,8 +200,14 @@ def upgrade() -> None:
             row["plan_id"] == "plan_dev_unlimited"
             and row["plan_version_id"] == "plan_dev_unlimited_v1"
         )
-        if not is_legacy_dev_unlimited and source not in LEGACY_DEFAULT_FREE_SOURCES and not (
-            tier_id == "starter" and package_alias == "Free" and str(row["subscription_id"] or "").endswith("_starter")
+        if (
+            not is_legacy_dev_unlimited
+            and source not in LEGACY_DEFAULT_FREE_SOURCES
+            and not (
+                tier_id == "starter"
+                and package_alias == "Free"
+                and str(row["subscription_id"] or "").endswith("_starter")
+            )
         ):
             continue
         bind.execute(
@@ -206,17 +226,21 @@ def upgrade() -> None:
                 ),
             )
         )
-        snapshot_rows = bind.execute(
-            sa.select(
-                account_entitlement_snapshots.c.id,
-                account_entitlement_snapshots.c.metadata_json,
-            ).where(
-                account_entitlement_snapshots.c.subscription_id == row["subscription_id"],
-                account_entitlement_snapshots.c.plan_version_id.in_(
-                    ["starter_v1", "plan_dev_unlimited_v1"]
-                ),
+        snapshot_rows = (
+            bind.execute(
+                sa.select(
+                    account_entitlement_snapshots.c.id,
+                    account_entitlement_snapshots.c.metadata_json,
+                ).where(
+                    account_entitlement_snapshots.c.subscription_id == row["subscription_id"],
+                    account_entitlement_snapshots.c.plan_version_id.in_(
+                        ["starter_v1", "plan_dev_unlimited_v1"]
+                    ),
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         for snapshot_row in snapshot_rows:
             bind.execute(
                 sa.update(account_entitlement_snapshots)

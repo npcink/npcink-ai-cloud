@@ -7,9 +7,8 @@ Create Date: 2026-03-23 15:20:00.000000
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision = "20260323_0012"
 down_revision = "20260323_0011"
@@ -42,8 +41,12 @@ def upgrade() -> None:
             server_default="active",
         ),
         sa.Column("metadata_json", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.UniqueConstraint("admin_ref", name="uq_platform_admin_identities_admin_ref"),
     )
     op.create_index(
@@ -99,8 +102,12 @@ def upgrade() -> None:
         sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ended_reason", sa.Text(), nullable=True),
         sa.Column("metadata_json", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
     op.create_index(
         "ix_platform_impersonation_sessions_platform_admin_ref",
@@ -155,22 +162,51 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_platform_impersonation_sessions_ended_at", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_expires_at", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_started_at", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_status", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_reason_code", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_site_id", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_account_id", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_member_ref", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_platform_role", table_name="platform_impersonation_sessions")
-    op.drop_index("ix_platform_impersonation_sessions_platform_admin_ref", table_name="platform_impersonation_sessions")
+    op.drop_index(
+        "ix_platform_impersonation_sessions_ended_at", table_name="platform_impersonation_sessions"
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_expires_at",
+        table_name="platform_impersonation_sessions",
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_started_at",
+        table_name="platform_impersonation_sessions",
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_status", table_name="platform_impersonation_sessions"
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_reason_code",
+        table_name="platform_impersonation_sessions",
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_site_id", table_name="platform_impersonation_sessions"
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_account_id",
+        table_name="platform_impersonation_sessions",
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_member_ref",
+        table_name="platform_impersonation_sessions",
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_platform_role",
+        table_name="platform_impersonation_sessions",
+    )
+    op.drop_index(
+        "ix_platform_impersonation_sessions_platform_admin_ref",
+        table_name="platform_impersonation_sessions",
+    )
     op.drop_table("platform_impersonation_sessions")
 
     op.drop_index("ix_platform_admin_identities_status", table_name="platform_admin_identities")
     op.drop_index("ix_platform_admin_identities_role", table_name="platform_admin_identities")
     op.drop_index("ix_platform_admin_identities_email", table_name="platform_admin_identities")
-    op.drop_index("ix_platform_admin_identities_external_subject", table_name="platform_admin_identities")
+    op.drop_index(
+        "ix_platform_admin_identities_external_subject", table_name="platform_admin_identities"
+    )
     op.drop_index("ix_platform_admin_identities_provider", table_name="platform_admin_identities")
     op.drop_index("ix_platform_admin_identities_admin_ref", table_name="platform_admin_identities")
     op.drop_table("platform_admin_identities")

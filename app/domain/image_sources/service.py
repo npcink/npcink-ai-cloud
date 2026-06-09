@@ -622,9 +622,7 @@ def _build_ai_generation_handoff(
         "result_contract": IMAGE_GENERATION_RESULT_CONTRACT,
         "input_defaults": {
             "contract_version": IMAGE_GENERATION_CONTRACT,
-            "aspect_ratio": _default_generation_aspect_ratio(
-                str(options.get("orientation") or "")
-            ),
+            "aspect_ratio": _default_generation_aspect_ratio(str(options.get("orientation") or "")),
             "resolution": "high",
             "response_format": "url",
             "n": 1,
@@ -1007,9 +1005,7 @@ def _normalize_visual_context(value: Any) -> dict[str, Any]:
     if query_intent:
         context["query_intent"] = {
             "rewrite_abstract_terms": bool(query_intent.get("rewrite_abstract_terms")),
-            "prefer_concrete_visual_scene": bool(
-                query_intent.get("prefer_concrete_visual_scene")
-            ),
+            "prefer_concrete_visual_scene": bool(query_intent.get("prefer_concrete_visual_scene")),
             "return_alternate_queries": bool(query_intent.get("return_alternate_queries")),
         }
     return context
@@ -1058,10 +1054,8 @@ def _normalize_llm_prompt_plan(value: Any) -> dict[str, Any]:
             continue
         candidates.append(
             {
-                "id": _normalize_token(candidate.get("id"), limit=80)
-                or f"llm_prompt_{index}",
-                "label": _normalize_text(candidate.get("label"), limit=80)
-                or f"LLM prompt {index}",
+                "id": _normalize_token(candidate.get("id"), limit=80) or f"llm_prompt_{index}",
+                "label": _normalize_text(candidate.get("label"), limit=80) or f"LLM prompt {index}",
                 "prompt": prompt,
                 "direction_type": _normalize_token(
                     candidate.get("direction_type"),
@@ -1101,8 +1095,7 @@ def _prompt_candidates_from_llm_plan(
         candidates.append(
             {
                 "id": _normalize_token(candidate.get("id"), limit=80) or _hash_text(prompt)[:12],
-                "label": _normalize_text(candidate.get("label"), limit=80)
-                or "LLM visual prompt",
+                "label": _normalize_text(candidate.get("label"), limit=80) or "LLM visual prompt",
                 "prompt": prompt,
                 "direction_type": _normalize_token(
                     candidate.get("direction_type"),

@@ -76,16 +76,14 @@ def test_settings_reject_openai_sample_catalog_profile_outside_dev_and_test() ->
             redis_url="redis://localhost:6379/0",
             internal_auth_token="magick-cloud-internal-prod-token-32b",
             admin_session_secret="magick-cloud-ops-session-secret-prod-32b",
-                portal_jwt_secret="magick-cloud-portal-jwt-secret-prod-32b",
+            portal_jwt_secret="magick-cloud-portal-jwt-secret-prod-32b",
             portal_public_base_url="https://cloud.example.com",
             portal_email_smtp_host="smtp.example.com",
             portal_email_from_email="no-reply@example.com",
             openai_sample_catalog_profile="legacy_dev_sample",
         )
 
-    assert "openai_sample_catalog_profile is only allowed in development/test" in str(
-        error.value
-    )
+    assert "openai_sample_catalog_profile is only allowed in development/test" in str(error.value)
 
 
 @pytest.mark.parametrize(

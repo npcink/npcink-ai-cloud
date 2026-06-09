@@ -10,9 +10,7 @@ from app.core.db import dispose_engine, init_schema
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from tests.conftest import (
-    TEST_INTERNAL_AUTH_TOKEN,
     build_auth_headers,
-    build_internal_headers,
     seed_site_auth,
 )
 
@@ -91,5 +89,3 @@ def test_catalog_models_response_shape_is_stable(tmp_path: Path) -> None:
     }
 
     dispose_engine(database_url)
-
-

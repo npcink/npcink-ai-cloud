@@ -11,8 +11,8 @@ from app.core.db import dispose_engine, init_schema
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from tests.conftest import (
-    TEST_INTERNAL_AUTH_TOKEN,
     TEST_ADMIN_SESSION_SECRET,
+    TEST_INTERNAL_AUTH_TOKEN,
     TEST_PORTAL_JWT_SECRET,
     build_internal_headers,
 )
@@ -393,7 +393,9 @@ def test_internal_platform_admin_directory_routes_are_removed(tmp_path: Path) ->
 def test_web_portal_preview_surface_is_removed(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
-    response = client.post("/portal/preview/email-login/request", json={"email": "outsider@example.com"})
+    response = client.post(
+        "/portal/preview/email-login/request", json={"email": "outsider@example.com"}
+    )
 
     assert response.status_code == 404
 
@@ -458,5 +460,3 @@ def test_web_portal_email_code_and_key_actions_with_jwt(tmp_path: Path) -> None:
     assert issue_response.json()["data"]["cloud_api_key"].startswith("mak1_")
 
     dispose_engine(database_url)
-
-

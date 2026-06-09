@@ -39,6 +39,8 @@ ALLOWED_ADMIN_MODEL_SORT_FIELDS = {
     "visibility",
 }
 ALLOWED_ADMIN_MODEL_SORT_DIRECTIONS = {"asc", "desc"}
+
+
 class CatalogService:
     def __init__(
         self,
@@ -368,16 +370,10 @@ class CatalogService:
             filtered = [model for model in filtered if model.status == status]
         if search:
             search_term = search.lower()
-            filtered = [
-                model
-                for model in filtered
-                if search_term in model.model_id.lower()
-            ]
+            filtered = [model for model in filtered if search_term in model.model_id.lower()]
         if fallback_candidate is not None:
             filtered = [
-                model
-                for model in filtered
-                if model.fallback_candidate == fallback_candidate
+                model for model in filtered if model.fallback_candidate == fallback_candidate
             ]
         if deprecated_only:
             filtered = [model for model in filtered if model.is_deprecated]
@@ -455,9 +451,7 @@ class CatalogService:
 
             if exact_model_id:
                 exact_scored = [
-                    item
-                    for item in scored
-                    if instances_by_id[item[2]].model_id == exact_model_id
+                    item for item in scored if instances_by_id[item[2]].model_id == exact_model_id
                 ]
                 if exact_scored:
                     exact_scored.sort()

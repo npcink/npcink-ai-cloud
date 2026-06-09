@@ -10,11 +10,11 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from app.adapters.callbacks.base import RuntimeCallbackDispatchRequest
 from app.adapters.callbacks.http import HttpRuntimeCallbackDispatcher
 from app.adapters.queue.in_memory import InMemoryRuntimeQueue
 from app.adapters.queue.redis_runtime_queue import RedisRuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
-from app.adapters.callbacks.base import RuntimeCallbackDispatchRequest
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import RunRecord, ServiceAuditEvent
 from app.domain.catalog.service import CatalogService
@@ -80,9 +80,7 @@ def test_execute_requires_preprovisioned_active_site(tmp_path: Path) -> None:
             "polling_interval_sec": 120,
         },
         input_payload={
-            "messages": [
-                {"role": "user", "content": "queue this run after provisioning"}
-            ]
+            "messages": [{"role": "user", "content": "queue this run after provisioning"}]
         },
         policy={"allow_fallback": True},
         idempotency_key="queue-domain-preprovision-001",
@@ -134,9 +132,7 @@ def test_process_next_queued_run_claims_from_database_without_signal(tmp_path: P
                 "polling_interval_sec": 120,
             },
             input_payload={
-                "messages": [
-                    {"role": "user", "content": "queue this run without a signal backend"}
-                ]
+                "messages": [{"role": "user", "content": "queue this run without a signal backend"}]
             },
             policy={"allow_fallback": True},
             idempotency_key="queue-domain-001",
@@ -198,7 +194,9 @@ def test_claim_next_queued_run_uses_atomic_update_returning(tmp_path: Path) -> N
         repository = RuntimeRepository(session)
 
         def _unexpected_scalar(*args: object, **kwargs: object) -> None:
-            raise AssertionError("claim_next_queued_run should not perform a pre-claim scalar select")
+            raise AssertionError(
+                "claim_next_queued_run should not perform a pre-claim scalar select"
+            )
 
         session.scalar = _unexpected_scalar  # type: ignore[method-assign]
         claimed = repository.claim_next_queued_run()
@@ -248,9 +246,7 @@ def test_process_queued_runs_drains_signaled_and_unsignaled_runs_in_one_cycle(
                 "polling_interval_sec": 120,
             },
             input_payload={
-                "messages": [
-                    {"role": "user", "content": "queue this run with a wake-up signal"}
-                ]
+                "messages": [{"role": "user", "content": "queue this run with a wake-up signal"}]
             },
             policy={"allow_fallback": True},
             idempotency_key="queue-domain-batch-001",
@@ -280,9 +276,7 @@ def test_process_queued_runs_drains_signaled_and_unsignaled_runs_in_one_cycle(
                 "polling_interval_sec": 120,
             },
             input_payload={
-                "messages": [
-                    {"role": "user", "content": "queue this run without a wake-up signal"}
-                ]
+                "messages": [{"role": "user", "content": "queue this run without a wake-up signal"}]
             },
             policy={"allow_fallback": True},
             idempotency_key="queue-domain-batch-002",
@@ -384,7 +378,10 @@ def test_cancel_run_marks_queued_run_canceled(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
-def test_dispatch_pending_callbacks_delivers_terminal_run(tmp_path: Path) -> None:
+def test_dispatch_pending_callbacks_delivers_terminal_run(
+    tmp_path: Path,
+    allow_example_callback_dns: None,
+) -> None:
     callback_payloads: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -435,7 +432,10 @@ def test_dispatch_pending_callbacks_delivers_terminal_run(tmp_path: Path) -> Non
     dispose_engine(database_url)
 
 
-def test_dispatch_pending_callbacks_recovers_stale_dispatching_lease(tmp_path: Path) -> None:
+def test_dispatch_pending_callbacks_recovers_stale_dispatching_lease(
+    tmp_path: Path,
+    allow_example_callback_dns: None,
+) -> None:
     callback_payloads: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -577,6 +577,7 @@ def test_bounded_auto_repairs_requeue_stale_queued_runs_and_audit_worker_actor(
 
 def test_bounded_auto_repairs_redeliver_callback_overdue_runs_and_surface_operator_only_running_stale(
     tmp_path: Path,
+    allow_example_callback_dns: None,
 ) -> None:
     callback_payloads: list[dict[str, object]] = []
 
@@ -600,7 +601,9 @@ def test_bounded_auto_repairs_redeliver_callback_overdue_runs_and_surface_operat
             callback_url="https://example.com/callback-overdue",
             idempotency_key="queue-domain-auto-repair-callback-001",
             trace_id="trace-queue-domain-auto-repair-callback-001",
-            input_payload={"messages": [{"role": "user", "content": "callback overdue auto repair"}]},
+            input_payload={
+                "messages": [{"role": "user", "content": "callback overdue auto repair"}]
+            },
         )
     )
     running = service.execute(
@@ -775,6 +778,7 @@ def test_callback_dispatch_recovery_logs_audit_failure_but_keeps_recovery_flow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    allow_example_callback_dns: None,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
@@ -820,6 +824,7 @@ def test_callback_dispatch_recovery_logs_audit_failure_but_keeps_recovery_flow(
     )
 
     call_count = 0
+
     def raise_audit_failure(*args: object, **kwargs: object) -> None:
         nonlocal call_count
         call_count += 1
@@ -912,6 +917,7 @@ def test_redis_runtime_queue_reuses_one_client_across_publish_and_consume(
 
 def test_http_callback_dispatcher_reuses_one_client_across_dispatches(
     monkeypatch: pytest.MonkeyPatch,
+    allow_example_callback_dns: None,
 ) -> None:
     class FakeHttpClient:
         def __init__(self, **kwargs: object) -> None:

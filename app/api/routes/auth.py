@@ -161,23 +161,21 @@ def _current_admin_session(request: Request) -> dict[str, Any]:
             "admin session is no longer valid",
         ) from error
     identity_metadata = identity.get("metadata")
-    revocable = not bool(identity_metadata.get("bootstrap")) if isinstance(
-        identity_metadata, dict
-    ) else True
+    revocable = (
+        not bool(identity_metadata.get("bootstrap"))
+        if isinstance(identity_metadata, dict)
+        else True
+    )
 
     issued_at = ""
     expires_at = ""
     if claims.get("iat"):
         issued_at = (
-            datetime.fromtimestamp(int(claims["iat"]), tz=UTC)
-            .isoformat()
-            .replace("+00:00", "Z")
+            datetime.fromtimestamp(int(claims["iat"]), tz=UTC).isoformat().replace("+00:00", "Z")
         )
     if claims.get("exp"):
         expires_at = (
-            datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
-            .isoformat()
-            .replace("+00:00", "Z")
+            datetime.fromtimestamp(int(claims["exp"]), tz=UTC).isoformat().replace("+00:00", "Z")
         )
     return {
         "platform_admin_ref": str(identity.get("admin_ref") or platform_admin_ref),
@@ -304,8 +302,7 @@ async def _request_payload(request: Request) -> dict[str, Any]:
 def _request_wants_html_redirect(request: Request) -> bool:
     content_type = str(request.headers.get("content-type") or "").lower()
     return (
-        "application/x-www-form-urlencoded" in content_type
-        or "multipart/form-data" in content_type
+        "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type
     )
 
 

@@ -173,11 +173,7 @@ def test_process_png_applies_text_watermark() -> None:
     )
 
     output = Image.open(io.BytesIO(result.output_bytes)).convert("RGB")
-    top_right_pixels = [
-        output.getpixel((x, y))
-        for x in range(50, 100)
-        for y in range(0, 40)
-    ]
+    top_right_pixels = [output.getpixel((x, y)) for x in range(50, 100) for y in range(0, 40)]
     assert any(pixel != (255, 255, 255) for pixel in top_right_pixels)
 
 

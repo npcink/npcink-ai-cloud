@@ -24,8 +24,7 @@ class RerankOutcome:
 
 
 class SiteKnowledgeReranker(Protocol):
-    def rerank(self, *, query: str, results: list[dict[str, object]]) -> RerankOutcome:
-        ...
+    def rerank(self, *, query: str, results: list[dict[str, object]]) -> RerankOutcome: ...
 
 
 def build_site_knowledge_reranker(settings: Settings) -> SiteKnowledgeReranker | None:

@@ -78,7 +78,9 @@ def test_stats_response_shapes_are_stable(tmp_path: Path) -> None:
 
     projection_end = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     projection_start = projection_end - timedelta(hours=1)
-    UsageRollupService(database_url, now_factory=lambda: projection_end).store_router_performance_snapshot_batches(
+    UsageRollupService(
+        database_url, now_factory=lambda: projection_end
+    ).store_router_performance_snapshot_batches(
         site_ids=["site_contract"],
         start_at=projection_start,
         end_at=projection_end,
@@ -169,10 +171,7 @@ def test_stats_response_shapes_are_stable(tmp_path: Path) -> None:
         ),
     )
     alert_query = (
-        "window_minutes=30"
-        "&min_requests=1"
-        "&error_rate_threshold=0.25"
-        "&latency_ms_threshold=1"
+        "window_minutes=30&min_requests=1&error_rate_threshold=0.25&latency_ms_threshold=1"
     )
     alert_response = client.get(
         f"/v1/alerts/provider-degradation?{alert_query}",
@@ -308,13 +307,13 @@ def test_stats_response_shapes_are_stable(tmp_path: Path) -> None:
         "start_at",
         "end_at",
         "calls_total",
-            "success_total",
-            "error_total",
-            "success_rate",
-            "avg_latency_ms",
-            "latency_ms_p50",
-            "latency_ms_p95",
-            "fallback_total",
+        "success_total",
+        "error_total",
+        "success_rate",
+        "avg_latency_ms",
+        "latency_ms_p50",
+        "latency_ms_p95",
+        "fallback_total",
         "fallback_rate",
         "last_seen_at",
     }
@@ -443,11 +442,11 @@ def test_stats_response_shapes_are_stable(tmp_path: Path) -> None:
         "provider_calls_total",
         "success_total",
         "error_total",
-            "success_rate",
-            "avg_latency_ms",
-            "latency_ms_p50",
-            "latency_ms_p95",
-            "fallback_total",
+        "success_rate",
+        "avg_latency_ms",
+        "latency_ms_p50",
+        "latency_ms_p95",
+        "fallback_total",
         "fallback_rate",
         "tokens_in_total",
         "tokens_out_total",
@@ -609,7 +608,9 @@ def test_stats_response_shapes_are_stable(tmp_path: Path) -> None:
             "last_seen_at",
         }
     if diagnostics_payload["data"]["report"]["quality_regressions"]["items"]:
-        assert set(diagnostics_payload["data"]["report"]["quality_regressions"]["items"][0].keys()) == {
+        assert set(
+            diagnostics_payload["data"]["report"]["quality_regressions"]["items"][0].keys()
+        ) == {
             "kind",
             "label",
             "run_id",
@@ -867,7 +868,9 @@ def test_alert_provider_degradation_contract_exposes_delivery_buffer_metadata(
 
         session.commit()
 
-    UsageRollupService(database_url, now_factory=lambda: now).store_alert_provider_degradation_batches(
+    UsageRollupService(
+        database_url, now_factory=lambda: now
+    ).store_alert_provider_degradation_batches(
         site_ids=["site_contract"],
         window_minutes=30,
         min_requests=1,
@@ -884,10 +887,7 @@ def test_alert_provider_degradation_contract_exposes_delivery_buffer_metadata(
     client = TestClient(create_app(CloudServices(settings=settings)))
 
     alert_query = (
-        "window_minutes=30"
-        "&min_requests=1"
-        "&error_rate_threshold=0.25"
-        "&latency_ms_threshold=1"
+        "window_minutes=30&min_requests=1&error_rate_threshold=0.25&latency_ms_threshold=1"
     )
     response = client.get(
         f"/v1/alerts/provider-degradation?{alert_query}",
@@ -1240,7 +1240,9 @@ def test_router_performance_snapshot_contract_exposes_first_tranche_dimensions(
 
     projection_end = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     projection_start = projection_end - timedelta(hours=24)
-    UsageRollupService(database_url, now_factory=lambda: projection_end).store_router_performance_snapshot_batches(
+    UsageRollupService(
+        database_url, now_factory=lambda: projection_end
+    ).store_router_performance_snapshot_batches(
         site_ids=["site_alpha"],
         start_at=projection_start,
         end_at=projection_end,
@@ -1348,7 +1350,9 @@ def test_router_performance_projection_contract_exposes_delivery_buffer_metadata
 
         session.commit()
 
-    UsageRollupService(database_url, now_factory=lambda: projection_end).store_router_performance_snapshot_batches(
+    UsageRollupService(
+        database_url, now_factory=lambda: projection_end
+    ).store_router_performance_snapshot_batches(
         site_ids=["site_contract"],
         start_at=projection_start,
         end_at=projection_end,

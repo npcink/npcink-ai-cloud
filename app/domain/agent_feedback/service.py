@@ -224,9 +224,7 @@ class AgentFeedbackService:
             bucket_at = datetime.now(UTC)
         else:
             bucket_at = (
-                created_at
-                if created_at.tzinfo is not None
-                else created_at.replace(tzinfo=UTC)
+                created_at if created_at.tzinfo is not None else created_at.replace(tzinfo=UTC)
             )
         bucket_key = bucket_at.astimezone(UTC).strftime("%Y-%m-%dT%H:00:00Z")
         bucket = trend.setdefault(

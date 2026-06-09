@@ -51,8 +51,7 @@ class RuntimeEntitlementDeniedError(RuntimeErrorBase):
         super().__init__(
             403,
             "commercial.entitlement_denied",
-            f"site '{site_id}' is not entitled for ability family '{ability_family}'"
-            f" ({reason})",
+            f"site '{site_id}' is not entitled for ability family '{ability_family}' ({reason})",
         )
 
 

@@ -26,8 +26,7 @@ def test_prod_env_files_use_canonical_admin_and_openai_names() -> None:
         assert "MAGICK_CLOUD_RUNTIME_CALLBACK_WORKER_POLL_SECONDS" in text or text is checklist_text
         assert "MAGICK_CLOUD_WORKER_HEARTBEAT_INTERVAL_SECONDS" in text or text is checklist_text
         assert (
-            "MAGICK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS" in text
-            or text is checklist_text
+            "MAGICK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS" in text or text is checklist_text
         )
         assert "MAGICK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT" in text or text is checklist_text
         assert "MAGICK_CLOUD_OPENAI_BASE_URL" in text or text is checklist_text
@@ -61,12 +60,9 @@ def test_env_example_production_payload_validates_with_canonical_names(
         "MAGICK_CLOUD_ENVIRONMENT=production",
     )
     replacements = {
-        "MAGICK_CLOUD_INTERNAL_AUTH_TOKEN=": "MAGICK_CLOUD_INTERNAL_AUTH_TOKEN="
-        + ("i" * 32),
-        "MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN=": "MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN="
-        + ("b" * 32),
-        "MAGICK_CLOUD_ADMIN_SESSION_SECRET=": "MAGICK_CLOUD_ADMIN_SESSION_SECRET="
-        + ("a" * 32),
+        "MAGICK_CLOUD_INTERNAL_AUTH_TOKEN=": "MAGICK_CLOUD_INTERNAL_AUTH_TOKEN=" + ("i" * 32),
+        "MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN=": "MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN=" + ("b" * 32),
+        "MAGICK_CLOUD_ADMIN_SESSION_SECRET=": "MAGICK_CLOUD_ADMIN_SESSION_SECRET=" + ("a" * 32),
         "MAGICK_CLOUD_PORTAL_JWT_SECRET=": "MAGICK_CLOUD_PORTAL_JWT_SECRET=" + ("j" * 32),
         "MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=": (
             "MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=https://cloud.example.com"
@@ -137,11 +133,10 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert "alembic upgrade head" in preview_script
     assert "python -m app.dev.baseline_status" in preview_script
     assert (
-        'SERVICES="${SERVICES:-api worker callback-worker ops-worker frontend}"'
-        in preview_script
+        'SERVICES="${SERVICES:-api worker callback-worker ops-worker frontend}"' in preview_script
     )
     assert "for service in ${SERVICES}; do" in preview_script
-    assert 'fatal startup log detected' in preview_script
+    assert "fatal startup log detected" in preview_script
     assert "MAGICK_CLOUD_TRUSTED_HOST_ALLOWLIST" in preview_script
     assert "MAGICK_CLOUD_BROWSER_ORIGIN_ALLOWLIST" in preview_script
     assert "MAGICK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT" in preview_script
@@ -154,8 +149,7 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert "PREVIEW_STACK_SERVICES" in preview_script
     assert "DEPENDENCY_IMAGES=(" in preview_script
     assert (
-        "keychain cannot be accessed because the current session does not allow user "
-        "interaction"
+        "keychain cannot be accessed because the current session does not allow user interaction"
     ) in preview_script
     assert "falling back to local dependency image transfer" in preview_script
     assert "falling back to local build + image transfer" in preview_script

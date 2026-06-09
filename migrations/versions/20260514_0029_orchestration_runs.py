@@ -6,9 +6,8 @@ Create Date: 2026-05-14
 
 """
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision = "20260514_0029"
 down_revision = "20260428_0028"
@@ -28,13 +27,21 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime, nullable=True),
         sa.Column("callback_url", sa.Text, nullable=True),
         sa.Column("result_summary", sa.JSON, nullable=True),
-        sa.Column("max_duration_seconds", sa.Integer, nullable=False, server_default=sa.text("3600")),
+        sa.Column(
+            "max_duration_seconds", sa.Integer, nullable=False, server_default=sa.text("3600")
+        ),
         sa.Column("cancel_requested_at", sa.DateTime, nullable=True),
         sa.Column("error_code", sa.String(64), nullable=True),
         sa.Column("error_message", sa.Text, nullable=True),
         sa.Column("failed_step_index", sa.Integer, nullable=True),
         sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime, nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()),
+        sa.Column(
+            "updated_at",
+            sa.DateTime,
+            nullable=False,
+            server_default=sa.func.now(),
+            onupdate=sa.func.now(),
+        ),
         sa.ForeignKeyConstraint(["site_id"], ["sites.site_id"]),
         sa.Index("idx_orchestration_runs_site", "site_id"),
         sa.Index("idx_orchestration_runs_status", "status"),

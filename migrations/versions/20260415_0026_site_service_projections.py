@@ -58,9 +58,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_site_service_projections_last_error_at", table_name="site_service_projections")
+    op.drop_index(
+        "ix_site_service_projections_last_error_at", table_name="site_service_projections"
+    )
     op.drop_index("ix_site_service_projections_fresh_until", table_name="site_service_projections")
     op.drop_index("ix_site_service_projections_generated_at", table_name="site_service_projections")
-    op.drop_index("ix_site_service_projections_projection_kind", table_name="site_service_projections")
+    op.drop_index(
+        "ix_site_service_projections_projection_kind", table_name="site_service_projections"
+    )
     op.drop_index("ix_site_service_projections_site_id", table_name="site_service_projections")
     op.drop_table("site_service_projections")

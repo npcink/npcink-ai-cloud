@@ -195,9 +195,7 @@ def test_usage_service_window_aggregations_avoid_full_history_list_scans(
 
     original_list_provider_calls = StatsRepository.list_provider_calls
     original_list_provider_calls_for_instance = StatsRepository.list_provider_calls_for_instance
-    original_list_provider_calls_for_instances = (
-        StatsRepository.list_provider_calls_for_instances
-    )
+    original_list_provider_calls_for_instances = StatsRepository.list_provider_calls_for_instances
 
     def guarded_list_provider_calls(self, site_id=None, *, start_at=None, end_at=None):
         assert start_at is not None
@@ -417,5 +415,3 @@ def test_usage_service_builds_prompt_governance_recommendation_summaries(
         assert payload["evidence"]["logs_summary"]["total"] >= 1
 
     dispose_engine(database_url)
-
-

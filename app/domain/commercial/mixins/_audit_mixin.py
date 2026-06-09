@@ -1,4 +1,5 @@
 """Commercial service: audit, serialization, and coercion base mixin."""
+
 from __future__ import annotations
 
 import re
@@ -267,7 +268,9 @@ def _normalize_portal_site_url(value: str) -> tuple[str, str]:
     canonical = f"{parsed.scheme.lower() or 'https'}://{hostname}"
     if path not in {"", "/"}:
         canonical = f"{canonical}{path.rstrip('/')}"
-    return canonical, hostname + (f"{path.rstrip('/').replace('/', '-')}" if path not in {"", "/"} else "")
+    return canonical, hostname + (
+        f"{path.rstrip('/').replace('/', '-')}" if path not in {"", "/"} else ""
+    )
 
 
 def _extract_site_wordpress_url(site: Site) -> str:
@@ -513,9 +516,7 @@ class CommercialServiceAuditMixin:
             reason="inspect",
         )
         subscription_policy = policy.get("subscription")
-        subscription_policy = (
-            subscription_policy if isinstance(subscription_policy, dict) else {}
-        )
+        subscription_policy = subscription_policy if isinstance(subscription_policy, dict) else {}
         return {
             "active": action is not None,
             "subscription_status": subscription.status,
@@ -524,9 +525,7 @@ class CommercialServiceAuditMixin:
                 self._coerce_int(subscription_policy.get("grace_period_days")),
             ),
             "grace_until_at": str(action.get("grace_until_at") or "") if action else "",
-            "runtime_policy_overrides": (
-                action.get("runtime_policy_overrides") if action else {}
-            ),
+            "runtime_policy_overrides": (action.get("runtime_policy_overrides") if action else {}),
         }
 
     def _build_budget_policy_state(
@@ -560,10 +559,15 @@ class CommercialServiceAuditMixin:
                     since=period_start_at,
                 )
             result[meter_key] = {
-                "current_total": round(float(totals.get(
-                    "tokens_total" if meter_key == "tokens" else meter_key,
-                    0.0,
-                )), 6),
+                "current_total": round(
+                    float(
+                        totals.get(
+                            "tokens_total" if meter_key == "tokens" else meter_key,
+                            0.0,
+                        )
+                    ),
+                    6,
+                ),
                 "limit": round(float(self._coerce_float(budgets.get(budget_key))), 6),
                 "grace_requests": grace_requests,
                 "used_grace_requests": used_grace_requests,
@@ -571,10 +575,16 @@ class CommercialServiceAuditMixin:
                 "downgrade_policy": self._normalize_runtime_policy_overrides(
                     meter_policy.get("downgrade_policy")
                 ),
-                "over_limit": round(float(totals.get(
-                    "tokens_total" if meter_key == "tokens" else meter_key,
-                    0.0,
-                )), 6) >= round(float(self._coerce_float(budgets.get(budget_key))), 6)
+                "over_limit": round(
+                    float(
+                        totals.get(
+                            "tokens_total" if meter_key == "tokens" else meter_key,
+                            0.0,
+                        )
+                    ),
+                    6,
+                )
+                >= round(float(self._coerce_float(budgets.get(budget_key))), 6)
                 and self._coerce_float(budgets.get(budget_key)) > 0,
             }
         return result

@@ -1,4 +1,5 @@
 """Commercial service: portal operations mixin."""
+
 from __future__ import annotations
 
 import secrets
@@ -30,7 +31,6 @@ from app.domain.commercial.mixins._audit_mixin import (
 
 
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
-
     def issue_portal_login_code(
         self,
         *,
@@ -74,7 +74,6 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "expires_in_seconds": max(60, int(ttl_seconds or 0)),
             "accounts": login.get("accounts") or [],
         }
-
 
     def verify_portal_login_code(
         self,
@@ -148,9 +147,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     status=membership.status,
                     metadata_json=metadata,
                 )
-                updated_items.append(
-                    cast(Any, self)._serialize_account_membership(membership)
-                )
+                updated_items.append(cast(Any, self)._serialize_account_membership(membership))
             session.commit()
         return {
             "email": normalized_email,
@@ -158,7 +155,6 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "last_login_at": self._serialize_datetime(now),
             "memberships": updated_items,
         }
-
 
     def list_portal_accounts(
         self,
@@ -197,7 +193,6 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 ],
             }
 
-
     def _resolve_portal_target_package_tier_id(self, target_package: str) -> str:
         normalized = str(target_package or "").strip().lower()
         mapping = {
@@ -212,4 +207,3 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "service.invalid_target_package",
             "target package must be Free, Basic, or Bulk",
         )
-

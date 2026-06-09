@@ -45,7 +45,9 @@ def _normalize_overlay(payload: Any) -> dict[str, object]:
     result = {key: overlay[key] for key in TOPUP_PACK_EDITABLE_FIELDS if key in overlay}
     tiers = result.get("recommended_for_tiers")
     if isinstance(tiers, list):
-        result["recommended_for_tiers"] = [str(item or "").strip() for item in tiers if str(item or "").strip()]
+        result["recommended_for_tiers"] = [
+            str(item or "").strip() for item in tiers if str(item or "").strip()
+        ]
     else:
         result["recommended_for_tiers"] = []
     result["label"] = str(result.get("label") or "")
@@ -72,7 +74,9 @@ def upgrade() -> None:
         sa.Column("recommended_for_tiers_json", sa.JSON(), nullable=False),
         sa.Column("display_order", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index(
         "ix_operator_managed_topup_pack_overlays_updated_at",
@@ -107,16 +111,20 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True)),
     )
 
-    rows = bind.execute(
-        sa.select(
-            decision_events.c.id,
-            decision_events.c.decision_code,
-            decision_events.c.payload_json,
-            decision_events.c.created_at,
+    rows = (
+        bind.execute(
+            sa.select(
+                decision_events.c.id,
+                decision_events.c.decision_code,
+                decision_events.c.payload_json,
+                decision_events.c.created_at,
+            )
+            .where(decision_events.c.request_kind == TOPUP_PACK_CATALOG_REQUEST_KIND)
+            .order_by(decision_events.c.created_at.desc(), decision_events.c.id.desc())
         )
-        .where(decision_events.c.request_kind == TOPUP_PACK_CATALOG_REQUEST_KIND)
-        .order_by(decision_events.c.created_at.desc(), decision_events.c.id.desc())
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     seen: set[str] = set()
     for row in rows:

@@ -146,9 +146,7 @@ class StatsRepository:
         start_at: datetime | None = None,
         end_at: datetime | None = None,
     ) -> list[ProviderCallRecord]:
-        statement = select(ProviderCallRecord).where(
-            ProviderCallRecord.instance_id == instance_id
-        )
+        statement = select(ProviderCallRecord).where(ProviderCallRecord.instance_id == instance_id)
         if site_id:
             statement = statement.join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
             statement = statement.where(RunRecord.site_id == site_id)
@@ -268,7 +266,9 @@ class StatsRepository:
         constrain_run_started: bool = False,
     ) -> list[int]:
         joins_run_record = bool(site_id) or constrain_run_started
-        statement = select(ProviderCallRecord.latency_ms).where(ProviderCallRecord.latency_ms.is_not(None))
+        statement = select(ProviderCallRecord.latency_ms).where(
+            ProviderCallRecord.latency_ms.is_not(None)
+        )
         if joins_run_record:
             statement = statement.select_from(ProviderCallRecord).join(
                 RunRecord,
@@ -431,9 +431,13 @@ class StatsRepository:
         end_at: datetime | None,
     ) -> Select:
         if start_at is not None:
-            statement = statement.where(RunRecord.started_at.is_not(None), RunRecord.started_at >= start_at)
+            statement = statement.where(
+                RunRecord.started_at.is_not(None), RunRecord.started_at >= start_at
+            )
         if end_at is not None:
-            statement = statement.where(RunRecord.started_at.is_not(None), RunRecord.started_at <= end_at)
+            statement = statement.where(
+                RunRecord.started_at.is_not(None), RunRecord.started_at <= end_at
+            )
         return statement
 
     def _apply_provider_call_window_filters(

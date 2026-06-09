@@ -159,9 +159,7 @@ def test_list_models_returns_recommended_sets_and_profile_filter(tmp_path: Path)
     assert "recommended_sets" in all_models
     assert all_models["platform_models"]["surface"] == "platform_models"
     assert all_models["platform_models"]["total"] == 4
-    assert all_models["recommended_sets"]["text.balanced"]["model_ids"] == [
-        "gpt-4.1-mini"
-    ]
+    assert all_models["recommended_sets"]["text.balanced"]["model_ids"] == ["gpt-4.1-mini"]
     assert balanced_models["recommended_for"] == "text.balanced"
     assert balanced_models["platform_models"]["recommended_for"] == "text.balanced"
     assert balanced_models["total"] == 1
@@ -270,9 +268,7 @@ def test_grok_image_quality_profile_filters_to_exact_image_model(
 
     recommended_set = models["recommended_sets"][GROK_IMAGINE_IMAGE_PROFILE_ID]
     assert recommended_set["model_ids"] == [GROK_IMAGINE_IMAGE_MODEL_ID]
-    assert recommended_set["instance_ids"] == [
-        "openai-global-tongyi-mai-z-image-turbo"
-    ]
+    assert recommended_set["instance_ids"] == ["openai-global-tongyi-mai-z-image-turbo"]
     assert models["total"] == 1
     assert models["items"][0]["model_id"] == GROK_IMAGINE_IMAGE_MODEL_ID
 

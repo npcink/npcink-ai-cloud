@@ -93,9 +93,7 @@ def test_openai_adapter_sample_catalog_includes_hosted_image_generation() -> Non
     adapter = OpenAIProviderAdapter()
 
     snapshot = adapter.fetch_catalog()
-    model = next(
-        item for item in snapshot.models if item.model_id == GROK_IMAGINE_IMAGE_MODEL_ID
-    )
+    model = next(item for item in snapshot.models if item.model_id == GROK_IMAGINE_IMAGE_MODEL_ID)
 
     assert model.feature == "image_generation"
     assert model.instances[0].endpoint_variant == "image_generations"
@@ -265,9 +263,7 @@ def test_openai_adapter_executes_chat_completions_over_http() -> None:
             execution_kind="text",
             endpoint_variant="chat_completions",
             model_id="gpt-4.1-mini",
-            input_payload={
-                "messages": [{"role": "user", "content": "write a short draft"}]
-            },
+            input_payload={"messages": [{"role": "user", "content": "write a short draft"}]},
         )
     )
 
@@ -362,9 +358,7 @@ def test_openai_adapter_executes_responses_over_http() -> None:
             execution_kind="vision",
             endpoint_variant="responses",
             model_id="gpt-4.1",
-            input_payload={
-                "messages": [{"role": "user", "content": "describe this image"}]
-            },
+            input_payload={"messages": [{"role": "user", "content": "describe this image"}]},
         )
     )
 
@@ -492,7 +486,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
                         "id": "fc_123",
                         "call_id": "call_123",
                         "name": "lookup_docs",
-                        "arguments": "{\"query\":\"hello\"}",
+                        "arguments": '{"query":"hello"}',
                     }
                 ],
                 "usage": {"input_tokens": 10, "output_tokens": 4},
@@ -545,7 +539,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
             "type": "function",
             "function": {
                 "name": "lookup_docs",
-                "arguments": "{\"query\":\"hello\"}",
+                "arguments": '{"query":"hello"}',
             },
         }
     ]
@@ -570,9 +564,7 @@ def test_openai_adapter_maps_http_errors_to_runtime_taxonomy() -> None:
                 execution_kind="text",
                 endpoint_variant="chat_completions",
                 model_id="gpt-4.1-mini",
-                input_payload={
-                    "messages": [{"role": "user", "content": "rate limit me"}]
-                },
+                input_payload={"messages": [{"role": "user", "content": "rate limit me"}]},
             )
         )
     except ProviderExecutionError as error:

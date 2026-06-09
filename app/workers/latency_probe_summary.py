@@ -67,9 +67,7 @@ def run_once(
 ) -> dict[str, Any]:
     factory = now_factory or (lambda: datetime.now(UTC))
     now = factory()
-    since_at = now.astimezone(UTC) - timedelta(
-        minutes=settings.latency_probe_worker_recent_minutes
-    )
+    since_at = now.astimezone(UTC) - timedelta(minutes=settings.latency_probe_worker_recent_minutes)
 
     with get_session(settings.database_url) as session:
         sites = CommercialRepository(session).list_sites(

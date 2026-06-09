@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.config import Settings, get_settings

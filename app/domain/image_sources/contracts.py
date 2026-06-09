@@ -4,9 +4,7 @@ from typing import Any
 
 IMAGE_SOURCE_CLOUD_ABILITY = "magick-ai-cloud/search-image-source"
 IMAGE_SOURCE_TOOLBOX_ABILITY = "magick-ai-toolbox/search-image-source"
-IMAGE_SOURCE_ABILITIES = frozenset(
-    {IMAGE_SOURCE_CLOUD_ABILITY, IMAGE_SOURCE_TOOLBOX_ABILITY}
-)
+IMAGE_SOURCE_ABILITIES = frozenset({IMAGE_SOURCE_CLOUD_ABILITY, IMAGE_SOURCE_TOOLBOX_ABILITY})
 IMAGE_SOURCE_CONTRACT = "image_source_cloud_request.v1"
 IMAGE_SOURCE_PROFILE_ID = "image-source.managed"
 IMAGE_SOURCE_EXECUTION_KIND = "image_source"
@@ -14,12 +12,8 @@ IMAGE_SOURCE_ABILITY_FAMILY = "knowledge"
 IMAGE_SOURCE_DATA_CLASSIFICATION = "public_reference_media"
 IMAGE_CANDIDATE_CONTRACT = "image_candidate.v1"
 
-ALLOWED_IMAGE_SOURCE_PROVIDERS = frozenset(
-    {"auto", "cloud", "unsplash", "pixabay", "pexels"}
-)
-ALLOWED_IMAGE_SOURCE_ORIENTATIONS = frozenset(
-    {"", "landscape", "portrait", "squarish", "square"}
-)
+ALLOWED_IMAGE_SOURCE_PROVIDERS = frozenset({"auto", "cloud", "unsplash", "pixabay", "pexels"})
+ALLOWED_IMAGE_SOURCE_ORIENTATIONS = frozenset({"", "landscape", "portrait", "squarish", "square"})
 
 FORBIDDEN_IMAGE_SOURCE_KEYS = frozenset(
     {
@@ -128,4 +122,3 @@ def coerce_positive_int(value: Any, *, default: int, maximum: int) -> int:
     except (TypeError, ValueError):
         normalized = default
     return max(1, min(maximum, normalized))
-

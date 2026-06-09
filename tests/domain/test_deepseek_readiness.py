@@ -7,7 +7,9 @@ import pytest
 _deepseek_key_available = bool(os.environ.get("MAGICK_CLOUD_OPENAI_API_KEY", "").strip())
 
 
-@pytest.mark.skipif(not _deepseek_key_available, reason="MAGICK_CLOUD_OPENAI_API_KEY not configured")
+@pytest.mark.skipif(
+    not _deepseek_key_available, reason="MAGICK_CLOUD_OPENAI_API_KEY not configured"
+)
 class TestDeepSeekReadiness:
     def test_catalog_refresh_includes_deepseek_models(self) -> None:
         from app.adapters.providers.registry import build_provider_adapters
@@ -23,7 +25,9 @@ class TestDeepSeekReadiness:
         display_name = getattr(snapshot, "display_name", "")
         provider_label = os.environ.get("MAGICK_CLOUD_OPENAI_PROVIDER_LABEL", "")
         if provider_label:
-            assert provider_label in display_name, f"provider label '{provider_label}' must appear in display name"
+            assert provider_label in display_name, (
+                f"provider label '{provider_label}' must appear in display name"
+            )
 
     def test_provider_health_check_passes(self) -> None:
         from app.adapters.providers.registry import build_provider_adapters

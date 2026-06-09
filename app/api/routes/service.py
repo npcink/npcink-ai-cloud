@@ -2296,9 +2296,7 @@ async def get_hosted_model_governance_diagnostics(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = RuntimeService(
-        services.settings.database_url
-    ).get_hosted_model_governance_diagnostics(
+    result = RuntimeService(services.settings.database_url).get_hosted_model_governance_diagnostics(
         site_id=site_id,
         recent_minutes=recent_minutes,
         limit=limit,
@@ -2320,9 +2318,7 @@ async def get_hosted_model_governance_cadence(
     if auth is not None:
         return auth
     services = get_cloud_services(request)
-    result = UsageRollupService(
-        services.settings.database_url
-    ).get_hosted_model_governance_batch(
+    result = UsageRollupService(services.settings.database_url).get_hosted_model_governance_batch(
         window_minutes=recent_minutes,
     )
     if result is None:

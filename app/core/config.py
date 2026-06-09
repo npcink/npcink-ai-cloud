@@ -525,9 +525,7 @@ class Settings(BaseSettings):
         if self.site_knowledge_max_sync_chunks_per_run <= 0:
             raise ValueError("site_knowledge_max_sync_chunks_per_run must be greater than 0")
         if self.site_knowledge_max_indexed_documents_per_site <= 0:
-            raise ValueError(
-                "site_knowledge_max_indexed_documents_per_site must be greater than 0"
-            )
+            raise ValueError("site_knowledge_max_indexed_documents_per_site must be greater than 0")
         if self.site_knowledge_max_indexed_chunks_per_site <= 0:
             raise ValueError("site_knowledge_max_indexed_chunks_per_site must be greater than 0")
         if not 0 < self.site_knowledge_quota_warning_ratio <= 1:
@@ -660,9 +658,9 @@ class Settings(BaseSettings):
         if metric_type not in {"COSINE", "IP", "L2"}:
             raise ValueError("site_knowledge_vector_metric_type must be COSINE, IP, or L2")
         self.site_knowledge_vector_metric_type = metric_type
-        site_knowledge_rerank_provider = str(
-            self.site_knowledge_rerank_provider or "disabled"
-        ).strip().lower()
+        site_knowledge_rerank_provider = (
+            str(self.site_knowledge_rerank_provider or "disabled").strip().lower()
+        )
         if site_knowledge_rerank_provider not in {"disabled", "jina"}:
             raise ValueError("site_knowledge_rerank_provider must be disabled or jina")
         self.site_knowledge_rerank_provider = site_knowledge_rerank_provider

@@ -429,9 +429,7 @@ class RuntimeService:
                 trace_id=trace_id,
                 idempotency_key=request.idempotency_key,
                 request_kind=(
-                    "status"
-                    if request.ability_name == SITE_KNOWLEDGE_STATUS_ABILITY
-                    else "execute"
+                    "status" if request.ability_name == SITE_KNOWLEDGE_STATUS_ABILITY else "execute"
                 ),
                 run_id=run_id,
             )
@@ -703,15 +701,11 @@ class RuntimeService:
         return hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
 
     def _build_media_derivative_policy(self, input_payload: dict[str, Any]) -> dict[str, object]:
-        cloud_job_payload = (
+        cloud_job_payload = self._dict_or_empty(
             input_payload.get("cloud_job_payload")
-            if isinstance(input_payload.get("cloud_job_payload"), dict)
-            else {}
         )
-        batch_context = (
+        batch_context = self._dict_or_empty(
             input_payload.get("batch_context")
-            if isinstance(input_payload.get("batch_context"), dict)
-            else {}
         )
         return {
             "target_format": str(cloud_job_payload.get("target_format") or "webp"),
@@ -1149,9 +1143,7 @@ class RuntimeService:
             call.run_id for call, _run in provider_call_rows if call.run_id in run_ids
         }
         meter_run_ids = {
-            str(event.run_id or "")
-            for event in meter_events
-            if str(event.run_id or "") in run_ids
+            str(event.run_id or "") for event in meter_events if str(event.run_id or "") in run_ids
         }
         run_groups: dict[str, dict[str, object]] = {}
         profile_groups: dict[str, dict[str, object]] = {}
@@ -1197,9 +1189,7 @@ class RuntimeService:
             family = str(run.ability_family or "unknown").strip() or "unknown"
             profile_id = str(run.profile_id or "unknown").strip() or "unknown"
             execution_kind = str(run.execution_kind or "unknown").strip() or "unknown"
-            provider_model_key = (
-                f"{call.provider_id or 'unknown'}::{call.model_id or 'unknown'}"
-            )
+            provider_model_key = f"{call.provider_id or 'unknown'}::{call.model_id or 'unknown'}"
             for group in (
                 run_groups.setdefault(
                     family,
@@ -1283,7 +1273,7 @@ class RuntimeService:
             provider_call_run_ids=provider_call_run_ids,
             meter_run_ids=meter_run_ids,
         )
-        result = {
+        result: dict[str, object] = {
             "filters": {
                 "site_id": site_id or "",
                 "recent_minutes": recent_minutes,
@@ -1423,9 +1413,7 @@ class RuntimeService:
                 str(item.get("scope_id") or ""),
             )
 
-        items.sort(
-            key=backlog_sort_key
-        )
+        items.sort(key=backlog_sort_key)
         limited_items = items[: max(1, limit)]
         active_scope_count = len(items)
         pressured_scope_count = sum(1 for item in items if item["pressure_state"] != "healthy")
@@ -1570,18 +1558,15 @@ class RuntimeService:
         group["provider_calls"] = self._coerce_int(group.get("provider_calls"), default=0) + 1
         if call.error_code:
             group["provider_errors"] = self._coerce_int(group.get("provider_errors"), default=0) + 1
-        group["latency_ms_total"] = (
-            self._coerce_int(group.get("latency_ms_total"), default=0)
-            + self._coerce_int(call.latency_ms, default=0)
+        group["latency_ms_total"] = self._coerce_int(
+            group.get("latency_ms_total"), default=0
+        ) + self._coerce_int(call.latency_ms, default=0)
+        group["tokens_in"] = self._coerce_int(group.get("tokens_in"), default=0) + self._coerce_int(
+            call.tokens_in, default=0
         )
-        group["tokens_in"] = (
-            self._coerce_int(group.get("tokens_in"), default=0)
-            + self._coerce_int(call.tokens_in, default=0)
-        )
-        group["tokens_out"] = (
-            self._coerce_int(group.get("tokens_out"), default=0)
-            + self._coerce_int(call.tokens_out, default=0)
-        )
+        group["tokens_out"] = self._coerce_int(
+            group.get("tokens_out"), default=0
+        ) + self._coerce_int(call.tokens_out, default=0)
         cost = self._coerce_float(group.get("cost")) or 0.0
         group["cost"] = round(cost + float(call.cost or 0.0), 8)
         self._add_nonempty(cast(set[str], group["provider_ids"]), call.provider_id)
@@ -1650,16 +1635,16 @@ class RuntimeService:
             group["provider_ids"] = sorted(cast(set[str], group["provider_ids"]))[:10]
             group["model_ids"] = sorted(cast(set[str], group["model_ids"]))[:10]
             group["instance_ids"] = sorted(cast(set[str], group["instance_ids"]))[:10]
-            group["data_classifications"] = sorted(
-                cast(set[str], group["data_classifications"])
-            )[:10]
+            group["data_classifications"] = sorted(cast(set[str], group["data_classifications"]))[
+                :10
+            ]
             items.append(group)
 
         items.sort(
             key=lambda item: (
                 -self._coerce_int(item.get("runs_total"), default=0),
                 -self._coerce_int(item.get("provider_calls"), default=0),
-                -float(item.get("cost") or 0.0),
+                -(self._coerce_float(item.get("cost")) or 0.0),
                 str(item.get("group_id") or ""),
             )
         )
@@ -1677,7 +1662,8 @@ class RuntimeService:
             str(item.get("group_id") or "")
             for item in capability_items
             if self._coerce_int(item.get("runs_total"), default=0) > 0
-            and float(item.get("metered_run_coverage_rate") or 0.0) < 1.0
+            and (self._coerce_float(item.get("metered_run_coverage_rate")) or 0.0)
+            < 1.0
         ]
         missing_provider_call_capabilities = [
             str(item.get("group_id") or "")
@@ -1703,22 +1689,22 @@ class RuntimeService:
         self,
         diagnostics: dict[str, object],
     ) -> dict[str, object]:
-        totals = diagnostics.get("totals") if isinstance(diagnostics.get("totals"), dict) else {}
-        gaps = (
-            diagnostics.get("governance_gaps")
-            if isinstance(diagnostics.get("governance_gaps"), dict)
-            else {}
+        totals = self._dict_or_empty(diagnostics.get("totals"))
+        gaps = self._dict_or_empty(diagnostics.get("governance_gaps"))
+        raw_capability_items = diagnostics.get("capability_groups")
+        raw_capability_items = (
+            raw_capability_items if isinstance(raw_capability_items, list) else []
         )
-        capability_items = (
-            diagnostics.get("capability_groups")
-            if isinstance(diagnostics.get("capability_groups"), list)
-            else []
-        )
+        capability_items = [
+            self._dict_or_empty(item)
+            for item in raw_capability_items
+            if isinstance(item, dict)
+        ]
         runs_total = self._coerce_int(totals.get("runs"), default=0)
         provider_calls = self._coerce_int(totals.get("provider_calls"), default=0)
         meter_events = self._coerce_int(totals.get("usage_meter_events"), default=0)
-        metered_rate = float(totals.get("metered_run_coverage_rate") or 0.0)
-        provider_rate = float(totals.get("provider_call_run_coverage_rate") or 0.0)
+        metered_rate = self._coerce_float(totals.get("metered_run_coverage_rate")) or 0.0
+        provider_rate = self._coerce_float(totals.get("provider_call_run_coverage_rate")) or 0.0
         unmetered_run_count = self._coerce_int(gaps.get("unmetered_run_count"), default=0)
         runs_without_provider_call_count = self._coerce_int(
             gaps.get("runs_without_provider_call_count"),
@@ -1752,7 +1738,7 @@ class RuntimeService:
 
         unmetered_capabilities = [
             str(item)
-            for item in gaps.get("unmetered_capabilities", [])
+            for item in self._list_or_empty(gaps.get("unmetered_capabilities"))
             if str(item or "").strip()
         ]
         if unmetered_run_count > 0 or unmetered_capabilities:
@@ -1771,7 +1757,8 @@ class RuntimeService:
             for item in capability_items
             if isinstance(item, dict)
             and self._coerce_int(item.get("runs_total"), default=0) > 0
-            and float(item.get("provider_call_run_coverage_rate") or 0.0) < 1.0
+            and (self._coerce_float(item.get("provider_call_run_coverage_rate")) or 0.0)
+            < 1.0
         ]
         if runs_without_provider_call_count > 0 or provider_gap_capabilities:
             add_alert(
@@ -1809,8 +1796,7 @@ class RuntimeService:
         failed_groups = [
             str(item.get("group_id") or "")
             for item in capability_items
-            if isinstance(item, dict)
-            and self._coerce_int(item.get("failed"), default=0) > 0
+            if isinstance(item, dict) and self._coerce_int(item.get("failed"), default=0) > 0
         ]
         failed_runs = sum(
             self._coerce_int(item.get("failed"), default=0)
@@ -2288,9 +2274,7 @@ class RuntimeService:
                 self._decorate_abuse_guard_item(
                     scope_kind=scope_kind,
                     item=item,
-                    observed_count=max(
-                        0, self._coerce_int(item.get("request_count"), default=0)
-                    ),
+                    observed_count=max(0, self._coerce_int(item.get("request_count"), default=0)),
                     limit=request_limit,
                     signal_kind="request_burst",
                     near_limit_reason="request_burst_near_limit",
@@ -2306,9 +2290,7 @@ class RuntimeService:
                     self._decorate_abuse_guard_item(
                         scope_kind=scope_kind,
                         item=item,
-                        observed_count=max(
-                            0, self._coerce_int(item.get("event_count"), default=0)
-                        ),
+                        observed_count=max(0, self._coerce_int(item.get("event_count"), default=0)),
                         limit=cooldown_limit,
                         signal_kind="reject_storm",
                         near_limit_reason="reject_storm_near_limit",
@@ -3804,20 +3786,12 @@ class RuntimeService:
                 "direct_wordpress_write": False,
             }
 
-        visual_context = (
-            input_payload.get("visual_context")
-            if isinstance(input_payload.get("visual_context"), dict)
-            else {}
-        )
+        visual_context = self._dict_or_empty(input_payload.get("visual_context"))
         current_post_id = self._coerce_int(
             visual_context.get("post_id") or input_payload.get("post_id"),
             default=0,
         )
-        candidate_limits = (
-            visual_context.get("candidate_limits")
-            if isinstance(visual_context.get("candidate_limits"), dict)
-            else {}
-        )
+        candidate_limits = self._dict_or_empty(visual_context.get("candidate_limits"))
         max_results = min(
             4,
             max(
@@ -3855,9 +3829,7 @@ class RuntimeService:
                 ability_name=SITE_KNOWLEDGE_SEARCH_ABILITY,
                 contract_version=SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SEARCH_ABILITY],
                 input_payload={
-                    "contract_version": SITE_KNOWLEDGE_CONTRACTS[
-                        SITE_KNOWLEDGE_SEARCH_ABILITY
-                    ],
+                    "contract_version": SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SEARCH_ABILITY],
                     "query": query,
                     "intent": "image_context",
                     "max_results": max_results,
@@ -4061,11 +4033,7 @@ class RuntimeService:
         input_payload: dict[str, Any],
         site_knowledge_context: dict[str, Any],
     ) -> dict[str, Any]:
-        visual_context = (
-            input_payload.get("visual_context")
-            if isinstance(input_payload.get("visual_context"), dict)
-            else {}
-        )
+        visual_context = self._dict_or_empty(input_payload.get("visual_context"))
         evidence = []
         for item in site_knowledge_context.get("results", []):
             if not isinstance(item, dict):
@@ -4073,9 +4041,9 @@ class RuntimeService:
             evidence.append(
                 {
                     "title": str(item.get("title") or "")[:160],
-                    "match_context": str(
-                        item.get("match_context") or item.get("chunk_text") or ""
-                    )[:320],
+                    "match_context": str(item.get("match_context") or item.get("chunk_text") or "")[
+                        :320
+                    ],
                     "score": item.get("score", 0),
                 }
             )
@@ -4171,11 +4139,7 @@ class RuntimeService:
         return candidates
 
     def _image_source_site_knowledge_query(self, input_payload: dict[str, Any]) -> str:
-        visual_context = (
-            input_payload.get("visual_context")
-            if isinstance(input_payload.get("visual_context"), dict)
-            else {}
-        )
+        visual_context = self._dict_or_empty(input_payload.get("visual_context"))
         parts = [
             visual_context.get("selected_text"),
             visual_context.get("selected_block_text"),
@@ -6004,3 +5968,6 @@ class RuntimeService:
 
     def _dict_or_empty(self, value: object | None) -> dict[str, object]:
         return value if isinstance(value, dict) else {}
+
+    def _list_or_empty(self, value: object | None) -> list[object]:
+        return value if isinstance(value, list) else []

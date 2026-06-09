@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 from sqlalchemy import select
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
-from app.core.models import RunRecord, RuntimeGuardEvent, SITE_STATUS_SUSPENDED
+from app.core.models import SITE_STATUS_SUSPENDED, RunRecord, RuntimeGuardEvent
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.rollup import ROUTER_DIAGNOSTICS_BATCH_SCOPE
-from app.adapters.repositories.stats_repository import StatsRepository
 from app.workers.router_diagnostics_summary import run_once
 from tests.conftest import seed_site_auth
 
@@ -220,7 +220,10 @@ def test_router_diagnostics_summary_worker_dispatches_optional_callback_when_con
     assert summary["callback_failed_total"] == 0
     assert len(delivered_requests) == 1
     delivered = delivered_requests[0]
-    assert delivered["url"] == "https://wp.example.test/wp-json/magick-ai/open/v1/router/diagnostics/callback"
+    assert (
+        delivered["url"]
+        == "https://wp.example.test/wp-json/magick-ai/open/v1/router/diagnostics/callback"
+    )
     assert delivered["headers"]["x-magick-cloud-event"] == "router.diagnostics.batch"
     assert delivered["headers"]["x-magick-key-id"] == "kd_alpha"
     assert delivered["body"]["config_revision"] == "cloud_runtime_summary_worker"

@@ -129,9 +129,7 @@ class ImageSourceAdminConfigService:
 
     def _normalize_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         provider = (
-            str(payload.get("provider_mode") or self.settings.image_source_provider)
-            .strip()
-            .lower()
+            str(payload.get("provider_mode") or self.settings.image_source_provider).strip().lower()
         )
         if provider not in PROVIDER_MODES:
             provider = "disabled"
@@ -140,12 +138,16 @@ class ImageSourceAdminConfigService:
         pixabay = _dict(providers.get("pixabay"))
         pexels = _dict(providers.get("pexels"))
         runtime = _dict(payload.get("runtime"))
-        auto_strategy = str(
-            payload.get("auto_strategy")
-            or runtime.get("auto_strategy")
-            or self.settings.image_source_auto_strategy
-            or "first_available"
-        ).strip().lower()
+        auto_strategy = (
+            str(
+                payload.get("auto_strategy")
+                or runtime.get("auto_strategy")
+                or self.settings.image_source_auto_strategy
+                or "first_available"
+            )
+            .strip()
+            .lower()
+        )
         if auto_strategy not in {"first_available", "random"}:
             auto_strategy = "first_available"
         return {

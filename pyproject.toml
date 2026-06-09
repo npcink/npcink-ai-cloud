@@ -55,6 +55,22 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+"app/api/routes/stats.py" = ["B008"]
+"app/domain/commercial/service.py" = ["E402", "E501"]
+"app/domain/commercial/mixins/_billing_mixin.py" = ["E501"]
+"app/domain/commercial/mixins/_site_mixin.py" = ["E501"]
+"app/domain/image_sources/service.py" = ["E501"]
+"app/domain/usage/service.py" = ["E501"]
+"migrations/versions/20260413_0024_plan_free_backfill.py" = ["E501"]
+"tests/api/test_execution_pattern_contract.py" = ["E501"]
+"tests/api/test_image_source_runtime.py" = ["E501"]
+"tests/conftest.py" = ["E402"]
+"tests/contract/test_security_config_contract.py" = ["E501"]
+"tests/dev/test_identity_role_migration.py" = ["E501"]
+"tests/domain/test_deepseek_readiness.py" = ["E501"]
+"tests/domain/test_runtime_queue.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 packages = ["app"]

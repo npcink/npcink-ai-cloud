@@ -6,9 +6,8 @@ Create Date: 2026-06-01
 
 """
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision = "20260601_0033"
 down_revision = "20260528_0032"
@@ -48,7 +47,9 @@ def upgrade() -> None:
         sa.Column("payload_json", sa.JSON(), nullable=True),
         sa.Column("emitted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("captured_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "received_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["site_id"], ["sites.site_id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("dedupe_key", name="uq_plugin_observability_events_dedupe"),
