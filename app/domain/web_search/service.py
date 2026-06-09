@@ -203,9 +203,13 @@ class TavilyWebSearchProvider:
                 api_keys,
                 labels=_tavily_api_key_labels(self.settings, len(api_keys)),
             )
+            external_query = _provider_query(
+                query,
+                str(options.get("intent") or "general_research"),
+            )
             request_body: dict[str, Any] = {
                 "api_key": str(selection["api_key"]),
-                "query": query,
+                "query": external_query,
                 "search_depth": str(options.get("search_depth") or "basic"),
                 "max_results": max_results,
                 "include_answer": False,
@@ -337,8 +341,12 @@ class BochaWebSearchProvider:
         base_url = str(self.settings.web_search_bocha_base_url or "").strip().rstrip("/")
         endpoint = f"{base_url}/web-search"
         max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
+        external_query = _provider_query(
+            query,
+            str(options.get("intent") or "general_research"),
+        )
         request_body: dict[str, Any] = {
-            "query": query,
+            "query": external_query,
             "count": max_results,
             "summary": True,
         }
@@ -448,8 +456,12 @@ class ApifyWebSearchProvider:
         base_url = str(self.settings.web_search_apify_base_url or "").strip().rstrip("/")
         endpoint = f"{base_url}/acts/{quote(actor_id, safe='')}/run-sync-get-dataset-items"
         max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
+        external_query = _provider_query(
+            query,
+            str(options.get("intent") or "general_research"),
+        )
         request_body = {
-            "queries": query,
+            "queries": external_query,
             "maxResults": max_results,
             "resultsPerPage": max_results,
             "maxPagesPerQuery": 1,
@@ -601,7 +613,11 @@ def _tavily_api_key_labels(settings: Settings, key_count: int) -> list[str]:
     return labels[:key_count] + [""] * max(0, key_count - len(labels))
 
 
-def _select_tavily_api_key(api_keys: list[str], *, labels: list[str] | None = None) -> dict[str, object]:
+def _select_tavily_api_key(
+    api_keys: list[str],
+    *,
+    labels: list[str] | None = None,
+) -> dict[str, object]:
     fingerprints = [_hash_tavily_key(item) for item in api_keys]
     pool_id = hashlib.sha256("|".join(fingerprints).encode("utf-8")).hexdigest()[:16]
     now = time.monotonic()
@@ -686,6 +702,7 @@ def _build_result_json(
     evidence_policy: dict[str, Any],
 ) -> dict[str, Any]:
     evidence_gate = _evidence_gate(results, evidence_policy)
+    source_priority = _source_priority(str(options.get("intent") or "general_research"))
     evidence_pack = _build_search_evidence_pack(
         provider_id=provider_id,
         query=query,
@@ -706,6 +723,8 @@ def _build_result_json(
         "intent": str(options.get("intent") or "general_research"),
         "query_hash": _hash_query(query),
         "query_chars": len(query),
+        "result_count": len(results),
+        "source_priority": source_priority,
         "output_contract": SEARCH_EVIDENCE_PACK_CONTRACT,
         "evidence_gate": evidence_gate,
         "evidence_pack": evidence_pack,
@@ -938,6 +957,7 @@ def _build_search_evidence_pack(
     intent = str(options.get("intent") or "general_research")
     source_cards = [_source_card(item, provider_id=provider_id) for item in results]
     source_count = len([item for item in source_cards if str(item.get("url") or "")])
+    source_priority = _source_priority(intent)
     return {
         "artifact_type": "search_evidence_pack",
         "contract_version": SEARCH_EVIDENCE_PACK_CONTRACT,
@@ -949,6 +969,8 @@ def _build_search_evidence_pack(
         "source_count": source_count,
         "required_sources": int(evidence_policy.get("required_sources") or 1),
         "provider": provider_id,
+        "source_priority": source_priority,
+        "source_requirements": _source_requirements(intent),
         "sections": _evidence_pack_sections(intent),
         "source_cards": source_cards,
         "citation_candidates": source_cards,
@@ -1013,17 +1035,92 @@ def _evidence_pack_sections(intent: str) -> list[str]:
 
 def _evidence_pack_guidance(intent: str, evidence_gate: dict[str, Any]) -> str:
     if str(evidence_gate.get("status") or "") != "passed":
-        return "Treat this pack as insufficient evidence and ask for manual review before making current factual claims."
+        return (
+            "Treat this pack as insufficient evidence and ask for manual review before "
+            "making current factual claims."
+        )
     return {
-        "article_background": "Use as a pre-writing background pack. Cite sources for current claims and keep final writes local-governed.",
-        "fact_check": "Use as supporting evidence for claim review. Do not mark unsupported claims as verified.",
-        "competitor_research": "Use as a lightweight competitor snapshot, not a durable competitor database.",
-        "pricing_snapshot": "Use as a point-in-time pricing snapshot. Re-check before publishing pricing claims.",
-        "product_comparison": "Use as a lightweight comparison input. Confirm important claims manually before publishing.",
+        "article_background": (
+            "Use as a pre-writing background pack. Cite sources for current claims "
+            "and keep final writes local-governed."
+        ),
+        "fact_check": (
+            "Use as supporting evidence for claim review. Prefer official or primary "
+            "sources and do not mark unsupported claims as verified."
+        ),
+        "competitor_research": (
+            "Use as a lightweight competitor snapshot, not a durable competitor database."
+        ),
+        "pricing_snapshot": (
+            "Use as a point-in-time pricing snapshot. Prefer official pricing or "
+            "documentation pages and re-check before publishing pricing claims."
+        ),
+        "product_comparison": (
+            "Use as a lightweight comparison input. Confirm important claims manually "
+            "before publishing."
+        ),
     }.get(
         intent,
-        "Use returned web sources as external grounding evidence. Keep conclusions suggestion-only.",
+        (
+            "Use returned web sources as external grounding evidence. Keep conclusions "
+            "suggestion-only."
+        ),
     )
+
+
+def _provider_query(query: str, intent: str) -> str:
+    hint = _provider_query_hint(intent)
+    if not hint:
+        return query
+    query_lower = query.lower()
+    if any(term in query_lower for term in _provider_query_marker_terms(intent)):
+        return query
+    return _normalize_text(f"{query} {hint}", limit=MAX_QUERY_CHARS)
+
+
+def _provider_query_hint(intent: str) -> str:
+    return {
+        "fact_check": "official primary source documentation source of record",
+        "pricing_snapshot": "official pricing page pricing documentation",
+    }.get(intent, "")
+
+
+def _provider_query_marker_terms(intent: str) -> tuple[str, ...]:
+    return {
+        "fact_check": (
+            "official primary source",
+            "official documentation",
+            "source of record",
+        ),
+        "pricing_snapshot": (
+            "official pricing",
+            "official billing",
+            "pricing documentation",
+        ),
+    }.get(intent, ())
+
+
+def _source_priority(intent: str) -> str:
+    return {
+        "fact_check": "official_or_primary_sources",
+        "pricing_snapshot": "official_pricing_or_docs",
+    }.get(intent, "external_sources")
+
+
+def _source_requirements(intent: str) -> list[str]:
+    return {
+        "fact_check": [
+            "Prefer official, primary, standards, documentation, or source-of-record pages.",
+            "Use secondary sources only as context unless they directly cite a primary source.",
+        ],
+        "pricing_snapshot": [
+            "Prefer official pricing, billing, plan, documentation, or changelog pages.",
+            (
+                "Treat third-party pricing pages as fallback context and re-check "
+                "official pages before publishing."
+            ),
+        ],
+    }.get(intent, [])
 
 
 def _normalize_domain_list(value: Any) -> list[str]:

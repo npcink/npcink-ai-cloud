@@ -15,13 +15,13 @@ from app.core.db import get_session, init_schema
 from app.core.models import ProviderCallRecord, RunRecord, UsageMeterEvent
 from app.core.services import CloudServices
 from app.domain.web_search.service import (
+    _TAVILY_POOL_CURSOR,
+    _TAVILY_POOL_QUARANTINED_UNTIL,
     ApifyWebSearchProvider,
     BochaWebSearchProvider,
     TavilyWebSearchProvider,
     WebSearchExecutionResult,
     WebSearchProviderUsage,
-    _TAVILY_POOL_CURSOR,
-    _TAVILY_POOL_QUARANTINED_UNTIL,
 )
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -156,6 +156,7 @@ def test_cloud_managed_web_search_executes_and_records_provider_usage(
                 "intent": options["intent"],
                 "query_hash": "hash-only",
                 "query_chars": len(query),
+                "result_count": 1,
                 "evidence_gate": {
                     "status": "passed",
                     "allows_web_grounded_assertion": True,
@@ -209,6 +210,7 @@ def test_cloud_managed_web_search_executes_and_records_provider_usage(
     assert result["artifact_type"] == "web_search_results"
     assert result["provider"] == "tavily"
     assert result["provider_mode"] == "tavily"
+    assert result["result_count"] == 1
     assert result["direct_wordpress_write"] is False
     assert result["workflow_metadata"]["workflow_id"] == "external_web_evidence_preflight"
     assert result["workflow_metadata"]["workflow_version"] == "web_search_evidence_workflow.v1"
@@ -316,6 +318,78 @@ def test_tavily_key_pool_rotates_without_exposing_keys(monkeypatch: Any) -> None
     assert second.result_json["provider_key_pool"]["selected_key_label"] == "account-b"
     assert "tvly-pool-a" not in json.dumps(first.result_json)
     assert "tvly-pool-b" not in json.dumps(second.result_json)
+
+
+def test_tavily_prefers_authoritative_sources_for_review_intents(monkeypatch: Any) -> None:
+    captured_queries: list[str] = []
+
+    class FakeClient:
+        def __init__(self, *, timeout: float) -> None:
+            assert timeout == 15.0
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(self, endpoint: str, *, json: dict[str, Any]) -> httpx.Response:
+            captured_queries.append(str(json["query"]))
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "title": "Official source",
+                            "url": "https://example.com/official-source",
+                            "content": "An official source returned through Tavily.",
+                        }
+                    ]
+                },
+                request=httpx.Request("POST", endpoint),
+            )
+
+    monkeypatch.setattr("app.domain.web_search.service.httpx.Client", FakeClient)
+    provider = TavilyWebSearchProvider(
+        Settings(
+            _env_file=None,
+            environment="test",
+            web_search_provider="tavily",
+            web_search_tavily_api_key="tvly-test-key",
+        )
+    )
+
+    fact_check = provider.search(
+        query="WordPress 6.9 AI built in",
+        options={"intent": "fact_check", "max_results": 3},
+        site_id="site_alpha",
+        run_id="run_tavily_fact_check",
+    )
+    pricing = provider.search(
+        query="Tavily API costs",
+        options={"intent": "pricing_snapshot", "max_results": 3},
+        site_id="site_alpha",
+        run_id="run_tavily_pricing",
+    )
+    provider.search(
+        query="latest WordPress AI search trends",
+        options={"intent": "news", "max_results": 3},
+        site_id="site_alpha",
+        run_id="run_tavily_news",
+    )
+
+    assert captured_queries[0] == (
+        "WordPress 6.9 AI built in official primary source documentation source of record"
+    )
+    assert captured_queries[1] == "Tavily API costs official pricing page pricing documentation"
+    assert captured_queries[2] == "latest WordPress AI search trends"
+    assert fact_check.result_json["source_priority"] == "official_or_primary_sources"
+    assert fact_check.result_json["evidence_pack"]["source_priority"] == (
+        "official_or_primary_sources"
+    )
+    assert "Prefer official" in fact_check.result_json["evidence_pack"]["source_requirements"][0]
+    assert pricing.result_json["source_priority"] == "official_pricing_or_docs"
+    assert pricing.result_json["evidence_pack"]["source_priority"] == "official_pricing_or_docs"
 
 
 def test_tavily_key_pool_fails_over_after_rate_limit(monkeypatch: Any) -> None:
