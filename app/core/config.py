@@ -566,7 +566,8 @@ class Settings(BaseSettings):
                 self.web_search_tavily_api_keys or ""
             ).strip():
                 raise ValueError(
-                    "web_search_tavily_api_key or web_search_tavily_api_keys is required when web_search_provider=tavily"
+                    "web_search_tavily_api_key or web_search_tavily_api_keys is required "
+                    "when web_search_provider=tavily"
                 )
         if web_search_provider == "bocha":
             if not str(self.web_search_bocha_base_url or "").strip():
