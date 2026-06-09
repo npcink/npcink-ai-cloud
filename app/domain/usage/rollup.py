@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from app.adapters.repositories.stats_repository import StatsRepository
 from app.core.db import get_session
-from app.domain.usage.service import UsageService
+from app.domain.usage.service import UsageInstanceNotFoundError, UsageService
 
 GLOBAL_SITE_SCOPE = "__global__"
 ROUTER_PERFORMANCE_BATCH_SCOPE = "router_performance_batch"
@@ -408,7 +408,14 @@ class UsageRollupService:
                 instances: list[dict[str, object]] = []
                 skipped_total = 0
                 for instance_id in instance_ids:
-                    summary = self.usage_service.get_instance_stats(instance_id, site_id=site_id)
+                    try:
+                        summary = self.usage_service.get_instance_stats(
+                            instance_id,
+                            site_id=site_id,
+                        )
+                    except UsageInstanceNotFoundError:
+                        skipped_total += 1
+                        continue
                     source = str(summary.get("source") or "")
                     if source == "empty":
                         skipped_total += 1

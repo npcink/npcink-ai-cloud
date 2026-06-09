@@ -354,6 +354,45 @@ def test_usage_rollup_service_stores_latency_probe_projection_batches(
     dispose_engine(database_url)
 
 
+def test_usage_rollup_service_skips_missing_latency_probe_instances(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_site_auth(database_url, site_id="site_alpha", scopes=["stats:read"])
+
+    fixed_now = datetime(2026, 3, 24, 9, 20, tzinfo=UTC)
+    service = UsageRollupService(database_url, now_factory=lambda: fixed_now)
+    result = service.store_latency_probe_batches(
+        site_instances={"site_alpha": ["retired-instance"]},
+        start_at=fixed_now - timedelta(minutes=60),
+        end_at=fixed_now,
+    )
+
+    assert result["scope_kind"] == LATENCY_PROBE_BATCH_SCOPE
+    assert result["stored_batches_total"] == 1
+    assert result["instances_total"] == 0
+    assert result["site_batches"][0]["skipped_total"] == 1
+    assert result["site_batches"][0]["instance_batches"] == []
+
+    with get_session(database_url) as session:
+        repository = StatsRepository(session)
+        stored_batch = next(
+            rollup
+            for rollup in repository.list_usage_rollups(
+                site_scope="site_alpha",
+                scope_kind=LATENCY_PROBE_BATCH_SCOPE,
+            )
+            if rollup.scope_id == "2026-03-24T08:20:00Z__2026-03-24T09:20:00Z"
+        )
+
+    assert stored_batch.payload_json["source"] == "cloud_latency_probe"
+    assert stored_batch.payload_json["instances"] == []
+
+    dispose_engine(database_url)
+
+
 def test_usage_rollup_service_stores_alert_provider_degradation_batches(
     tmp_path: Path,
 ) -> None:

@@ -1014,10 +1014,12 @@ class OpenAIProviderAdapter:
             return "image_generation"
 
         capability_values = set(self._collect_catalog_capability_values(payload))
+        if capability_values.intersection({"embedding", "embeddings"}):
+            return "embedding"
         if "image_generation" in capability_values:
             return "image_generation"
 
-        if "embedding" in model_key:
+        if "embedding" in model_key or self._looks_like_embedding_model(model_key):
             return "embedding"
 
         modalities = set(self._collect_catalog_modalities(payload))
@@ -1028,6 +1030,10 @@ class OpenAIProviderAdapter:
             return "vision"
 
         return "text"
+
+    def _looks_like_embedding_model(self, model_key: str) -> bool:
+        tokens = [token for token in re.split(r"[^a-z0-9]+", model_key) if token]
+        return "bge" in tokens
 
     def _infer_catalog_tier(
         self,

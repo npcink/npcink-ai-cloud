@@ -29,7 +29,7 @@ CHANNEL="${MAGICK_CLOUD_CHANNEL:-openapi}"
 EXECUTION_KIND="${MAGICK_CLOUD_EXECUTION_KIND:-text}"
 PROMPT_TEXT="${MAGICK_CLOUD_PROMPT_TEXT:-Magick AI DeepSeek smoke ok}"
 EXPECTED_PROVIDER_ID="${MAGICK_CLOUD_EXPECTED_PROVIDER_ID:-openai}"
-EXPECTED_MODEL_ID="${MAGICK_CLOUD_EXPECTED_MODEL_ID:-deepseek-v4-flash}"
+EXPECTED_MODEL_ID="${MAGICK_CLOUD_EXPECTED_MODEL_ID:-}"
 EVIDENCE_DIR="${MAGICK_AI_LOCAL_ALPHA_SMOKE_EVIDENCE_DIR:-${ROOT_DIR}/.tmp/local-alpha-smoke}"
 
 fail() {
@@ -290,23 +290,27 @@ curl -k -sS -L \
 	--data-urlencode "redirect_to=${WORDPRESS_URL%/}/wp-admin/" \
 	--data-urlencode "testcookie=1" \
 	"${WORDPRESS_URL%/}/wp-login.php" >/dev/null
-WORDPRESS_ADDON_PATH="/wp-admin/admin.php?page=magick-ai-cloud-addon"
-WORDPRESS_ADDON_BODY="$(
-	curl -k -sS -L \
-		-b "${WORDPRESS_COOKIE_JAR}" \
-		"${WORDPRESS_URL%/}${WORDPRESS_ADDON_PATH}"
-)"
-case "${WORDPRESS_ADDON_BODY}" in
-	*"Cloud API Key"*) ;;
-	*)
-		WORDPRESS_ADDON_PATH="/wp-admin/plugins.php?page=magick-ai-settings&tab=cloud"
-		WORDPRESS_ADDON_BODY="$(
-			curl -k -sS -L \
-				-b "${WORDPRESS_COOKIE_JAR}" \
-				"${WORDPRESS_URL%/}${WORDPRESS_ADDON_PATH}"
-		)"
-		;;
-esac
+WORDPRESS_ADDON_PATH=""
+WORDPRESS_ADDON_BODY=""
+for candidate_path in \
+	"/wp-admin/admin.php?page=npcink-cloud-addon&tab=settings" \
+	"/wp-admin/admin.php?page=magick-ai-cloud-addon" \
+	"/wp-admin/plugins.php?page=magick-ai-settings&tab=cloud"
+do
+	candidate_body="$(
+		curl -k -sS -L \
+			-b "${WORDPRESS_COOKIE_JAR}" \
+			"${WORDPRESS_URL%/}${candidate_path}"
+	)"
+	case "${candidate_body}" in
+		*"Cloud API Key"*)
+			WORDPRESS_ADDON_PATH="${candidate_path}"
+			WORDPRESS_ADDON_BODY="${candidate_body}"
+			break
+			;;
+	esac
+done
+require_value "${WORDPRESS_ADDON_PATH}" "WordPress Cloud addon settings page was not found"
 ok "WordPress Cloud addon admin path: ${WORDPRESS_ADDON_PATH}"
 case "${WORDPRESS_ADDON_BODY}" in
 	*"已验证"*|*"Cloud settings are saved and verified."*) ;;
@@ -556,9 +560,18 @@ evidence = {
         "provider_call_count": runtime.get("provider_call_count"),
         "output_preview": str(result.get("result", {}).get("output_text", ""))[:160],
     },
+    "result": {
+        "run_id": result.get("run_id"),
+        "status": result.get("status"),
+        "output_preview": str(result.get("result", {}).get("output_text", ""))[:160],
+    },
     "usage": {
         "rolling_24h": usage.get("windows", {}).get("rolling_24h"),
         "meter_totals": usage_meter.get("totals"),
+    },
+    "usage_meter": {
+        "totals": usage_meter.get("totals"),
+        "items_count": len(usage_meter.get("items", [])),
     },
 }
 

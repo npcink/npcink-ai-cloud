@@ -61,6 +61,35 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
     assert snapshot.models[3].instances[0].endpoint_variant == "embeddings"
 
 
+def test_openai_adapter_classifies_bge_catalog_models_as_embeddings() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "BAAI/bge-m3",
+                        "context_window": 8192,
+                    }
+                ]
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    snapshot = adapter.fetch_catalog()
+
+    assert snapshot.models[0].model_id == "BAAI/bge-m3"
+    assert snapshot.models[0].feature == "embedding"
+    assert snapshot.models[0].raw_json["tier"] == "default"
+    assert snapshot.models[0].instances[0].endpoint_variant == "embeddings"
+    assert snapshot.models[0].instances[0].capability_tags == ["embedding", "default"]
+
+
 def test_openai_adapter_rejects_sample_catalog_when_fallback_is_disabled() -> None:
     adapter = OpenAIProviderAdapter(
         allow_sample_catalog=False,
