@@ -12,15 +12,16 @@ DOCKER_TEST_PROVIDER_ENV = -e MAGICK_CLOUD_OPENAI_API_KEY= -e MAGICK_CLOUD_OPENA
 
 baseline:
 	.venv/bin/pytest --version
+	pnpm run test:anti-drift
 	docker compose -f docker-compose.dev.yml run --rm $(DOCKER_TEST_PROVIDER_ENV) api python -m pytest tests/domain/test_runtime_queue.py -q
 	docker compose -f docker-compose.dev.yml run --rm $(DOCKER_TEST_PROVIDER_ENV) api python -m pytest tests/domain/test_usage_service.py -q
 	docker compose -f docker-compose.dev.yml run --rm $(DOCKER_TEST_PROVIDER_ENV) api python -m pytest tests/api/test_service_routes.py tests/api/test_portal_routes.py -q -k 'keys'
-	# Record current static-analysis debt without blocking hardening lanes.
-	docker compose -f docker-compose.dev.yml run --rm api python -m ruff check . || true
-	docker compose -f docker-compose.dev.yml run --rm api python -m mypy app || true
+	docker compose -f docker-compose.dev.yml run --rm api python -m ruff check .
+	docker compose -f docker-compose.dev.yml run --rm api python -m mypy app
 	$(MAKE) perimeter
-	$(TEST_PROVIDER_ENV) .venv/bin/pytest tests/api/test_runtime_execute.py tests/api/test_addon_routes.py tests/contract/test_runtime_contract.py tests/domain/test_commercial_runtime_defaults.py -q
+	$(TEST_PROVIDER_ENV) .venv/bin/pytest tests/api/test_runtime_execute.py tests/contract/test_addon_projection_contract.py tests/contract/test_runtime_contract.py tests/domain/test_commercial_runtime_defaults.py -q
 	cd frontend && pnpm run type-check
+	cd frontend && pnpm run lint
 
 bootstrap-dev:
 	uv venv --python 3.12 .venv

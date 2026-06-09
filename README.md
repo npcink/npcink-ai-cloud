@@ -341,12 +341,14 @@ make baseline
 `make baseline` runs the current repeatable checks:
 
 - local `.venv` health via `.venv/bin/pytest --version`
+- Agent/Workflow metadata anti-drift unit checks
 - focused runtime and usage pytest lanes
 - bounded key-list API pytest lane
-- container `ruff` and `mypy`
+- strict container `ruff` and `mypy`
 - `magick-ai` wrapper checks:
   - `check:cloud:perimeter`
   - `cloud:frontend:type-check`
+  - `cloud:frontend:lint`
 
 For new Cloud Python work, add the changed-files static gate on top of the
 baseline:
@@ -398,23 +400,17 @@ workspace.
 
 ## Lint Debt Boundary
 
-Cloud Python still has existing static-analysis debt.
+Cloud Python static-analysis debt is now part of the blocking baseline.
 
-- `ruff` currently reports categories such as `I001`, `E501`, `F401`, and `F841`.
-- `mypy app` also reports pre-existing type errors outside the current hardening scope.
-
-- Do not block usage/perimeter/runtime hardening on unrelated lint-only or type-only cleanup.
-- Do not mix large lint-only rewrites into pagination, bootstrap, or performance commits.
-- Use the `ruff` and `mypy` output from `make baseline` as the recorded debt snapshot
-  until dedicated cleanup branches are opened.
-- For new Cloud Python changes, run `make lint-changed` and treat it as the
-  minimum changed-files gate even while the full-repo debt remains recorded but
-  non-blocking.
-- `make lint-changed` intentionally avoids blocking on repo-wide style debt such
-  as historical `E501` line-length cleanup.
-- A small allowlist of registered legacy-debt modules may be skipped by the
-  changed-files mypy pass until they are decomposed or typed in dedicated
-  follow-up work; those files remain covered by the baseline debt snapshot.
+- Treat new `ruff check .` failures as regressions.
+- Treat new `mypy app` failures as regressions.
+- Do not mix unrelated lint-only rewrites into feature commits unless the
+  changed feature needs that cleanup to keep the baseline green.
+- For new Cloud Python changes, run `make lint-changed` as the minimum
+  changed-files gate when the full `make baseline` lane would be too slow.
+- The repo keeps a small explicit `ruff` per-file ignore list in
+  [`pyproject.toml`](pyproject.toml); additions to that list should be treated
+  as reviewed exceptions, not as the default way to land new code.
 
 ## Quick Start
 
