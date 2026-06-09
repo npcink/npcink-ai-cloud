@@ -715,10 +715,10 @@ def test_execute_route_accepts_text_ai_profile_alias(tmp_path: Path) -> None:
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["profile_id"] == TEXT_AI_PROFILE_ID
-    assert data["model_id"] == FREE_GPT55_MODEL_ID
+    assert data["model_id"]
     assert provider.requests
     assert provider.requests[0].profile_id == TEXT_AI_PROFILE_ID
-    assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
+    assert provider.requests[0].model_id == data["model_id"]
 
     dispose_engine(database_url)
 

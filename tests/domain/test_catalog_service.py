@@ -201,24 +201,56 @@ def test_free_gpt55_profile_filters_to_free_hosted_model(tmp_path: Path) -> None
     dispose_engine(database_url)
 
 
-def test_text_ai_profile_filters_to_free_hosted_model(tmp_path: Path) -> None:
+def test_text_ai_profile_filters_to_hosted_free_model_without_exact_model_pin(
+    tmp_path: Path,
+) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
 
+    snapshot = ProviderCatalogSnapshot(
+        provider_id="openai",
+        display_name="OpenAI Compatible",
+        adapter_type="openai",
+        models=[
+            CatalogModelSeed(
+                model_id="gpt-hosted-free-next",
+                family="gpt-hosted-free",
+                feature="text",
+                status="available",
+                context_window=256000,
+                price_input=0.0,
+                price_output=0.0,
+                fallback_candidate=True,
+                raw_json={"tier": "quality", "surface": "hosted_free_tools"},
+                instances=[
+                    CatalogInstanceSeed(
+                        instance_id="openai-global-hosted-free-next",
+                        endpoint_variant="responses",
+                        region="global",
+                        capability_tags=["text", "quality", "hosted-free"],
+                        is_default=True,
+                        weight=140,
+                    )
+                ],
+            )
+        ],
+    )
     service = CatalogService(
         database_url,
-        providers={"openai": OpenAIProviderAdapter(sample_catalog_profile="free-gpt55")},
+        providers={"openai": SequenceCatalogProvider([snapshot])},
     )
     service.refresh_catalog()
 
     models = service.list_models(recommended_for=TEXT_AI_PROFILE_ID)
 
-    assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["model_ids"] == ["gpt-5.5"]
+    assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["model_ids"] == [
+        "gpt-hosted-free-next"
+    ]
     assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["instance_ids"] == [
-        "openai-global-free-gpt55"
+        "openai-global-hosted-free-next"
     ]
     assert models["total"] == 1
-    assert models["items"][0]["model_id"] == "gpt-5.5"
+    assert models["items"][0]["model_id"] == "gpt-hosted-free-next"
     assert TEXT_AI_PROFILE_ID in models["items"][0]["recommended_profiles"]
 
     dispose_engine(database_url)
