@@ -49,6 +49,7 @@ from app.domain.hosted_model_defaults import (
     FREE_GPT55_TEXT_PROFILE_ID,
     GROK_IMAGINE_IMAGE_MODEL_ID,
     GROK_IMAGINE_IMAGE_PROFILE_ID,
+    TEXT_AI_PROFILE_ID,
 )
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
@@ -674,6 +675,49 @@ def test_execute_route_defaults_text_requests_to_free_gpt55(tmp_path: Path) -> N
     assert data["model_id"] == FREE_GPT55_MODEL_ID
     assert provider.requests
     assert provider.requests[0].profile_id == FREE_GPT55_TEXT_PROFILE_ID
+    assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
+
+    dispose_engine(database_url)
+
+
+def test_execute_route_accepts_text_ai_profile_alias(tmp_path: Path) -> None:
+    provider = RecordingProviderAdapter()
+    database_url, client = _build_client(tmp_path, providers={"openai": provider})
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "magick-ai/content-support",
+        "ability_family": "text",
+        "contract_version": "v1",
+        "channel": "openapi",
+        "execution_kind": "text",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "profile_id": TEXT_AI_PROFILE_ID,
+        "data_classification": "internal",
+        "input": {"messages": [{"role": "user", "content": "summarize this draft"}]},
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/execute",
+            site_id="site_alpha",
+            idempotency_key="idem-text-ai-profile-001",
+            nonce="nonce-text-ai-profile-001",
+            trace_id="tracetextaiprofile00100000000",
+            body=body,
+        )
+    )
+
+    response = client.post("/v1/runtime/execute", content=body, headers=headers)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["profile_id"] == TEXT_AI_PROFILE_ID
+    assert data["model_id"] == FREE_GPT55_MODEL_ID
+    assert provider.requests
+    assert provider.requests[0].profile_id == TEXT_AI_PROFILE_ID
     assert provider.requests[0].model_id == FREE_GPT55_MODEL_ID
 
     dispose_engine(database_url)

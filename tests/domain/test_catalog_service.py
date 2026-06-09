@@ -18,6 +18,7 @@ from app.domain.catalog.service import CatalogService
 from app.domain.hosted_model_defaults import (
     GROK_IMAGINE_IMAGE_MODEL_ID,
     GROK_IMAGINE_IMAGE_PROFILE_ID,
+    TEXT_AI_PROFILE_ID,
 )
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
@@ -196,6 +197,29 @@ def test_free_gpt55_profile_filters_to_free_hosted_model(tmp_path: Path) -> None
     assert models["total"] == 1
     assert models["items"][0]["model_id"] == "gpt-5.5"
     assert "text.free-gpt55" in models["items"][0]["recommended_profiles"]
+
+    dispose_engine(database_url)
+
+
+def test_text_ai_profile_filters_to_free_hosted_model(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    service = CatalogService(
+        database_url,
+        providers={"openai": OpenAIProviderAdapter(sample_catalog_profile="free-gpt55")},
+    )
+    service.refresh_catalog()
+
+    models = service.list_models(recommended_for=TEXT_AI_PROFILE_ID)
+
+    assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["model_ids"] == ["gpt-5.5"]
+    assert models["recommended_sets"][TEXT_AI_PROFILE_ID]["instance_ids"] == [
+        "openai-global-free-gpt55"
+    ]
+    assert models["total"] == 1
+    assert models["items"][0]["model_id"] == "gpt-5.5"
+    assert TEXT_AI_PROFILE_ID in models["items"][0]["recommended_profiles"]
 
     dispose_engine(database_url)
 

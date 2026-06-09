@@ -12,12 +12,15 @@ from app.core.db import get_session
 from app.core.models import ProviderCallRecord
 from app.domain.health.scoring import assess_instance_health
 from app.domain.hosted_model_defaults import (
+    FREE_GPT55_MODEL_ID,
     FREE_GPT55_TEXT_PROFILE_ID,
     GROK_IMAGINE_IMAGE_MODEL_ID,
     GROK_IMAGINE_IMAGE_PROFILE_ID,
+    TEXT_AI_PROFILE_ID,
 )
 
 DEFAULT_RECOMMENDED_PROFILE_IDS = (
+    TEXT_AI_PROFILE_ID,
     FREE_GPT55_TEXT_PROFILE_ID,
     "text.economy",
     "text.balanced",
@@ -461,6 +464,7 @@ class CatalogService:
             return [instance_id for _, _, instance_id in scored]
 
         profile_specs: dict[str, tuple[str, list[str]]] = {
+            TEXT_AI_PROFILE_ID: ("text", ["free-gpt55"]),
             FREE_GPT55_TEXT_PROFILE_ID: ("text", ["free-gpt55"]),
             "text.economy": ("text", ["economy", "balanced"]),
             "text.balanced": ("text", ["balanced", "economy", "quality"]),
@@ -480,6 +484,8 @@ class CatalogService:
                 exact_model_id=(
                     GROK_IMAGINE_IMAGE_MODEL_ID
                     if profile_id == GROK_IMAGINE_IMAGE_PROFILE_ID
+                    else FREE_GPT55_MODEL_ID
+                    if profile_id in {TEXT_AI_PROFILE_ID, FREE_GPT55_TEXT_PROFILE_ID}
                     else None
                 ),
             )
