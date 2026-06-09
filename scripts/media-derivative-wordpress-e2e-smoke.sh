@@ -118,7 +118,7 @@ function mde2e_assert($condition, $stage, $data) {
 }
 
 function mde2e_create_proposal($ability_id, array $input, array $preview, $title, $summary, array $caller) {
-	$proposal = mde2e_rest("POST", "/magick-ai-adapter/v1/proposals", array(
+	$proposal = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/proposals", array(
 		"ability_id" => $ability_id,
 		"title" => $title,
 		"summary" => $summary,
@@ -133,7 +133,7 @@ function mde2e_create_proposal($ability_id, array $input, array $preview, $title
 }
 
 function mde2e_execute_proposal($proposal_id) {
-	$execute = mde2e_rest("POST", "/magick-ai-adapter/v1/proposals/" . rawurlencode($proposal_id) . "/approve-and-execute");
+	$execute = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/proposals/" . rawurlencode($proposal_id) . "/approve-and-execute");
 	mde2e_assert($execute["ok"] && 200 === (int) ($execute["status"] ?? 0) && !empty($execute["data"]["success"]), "approve_and_execute", array("proposal_id" => $proposal_id, "execute" => $execute));
 	return $execute;
 }
@@ -147,7 +147,7 @@ function mde2e_proposals_from_plan($plan_ability_id, array $plan, array $plan_in
 	if (!empty($caller)) {
 		$request["caller"] = $caller;
 	}
-	$bridge = mde2e_rest("POST", "/magick-ai-adapter/v1/proposals/from-plan", $request);
+	$bridge = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/proposals/from-plan", $request);
 	mde2e_assert($bridge["ok"] && in_array((int) ($bridge["status"] ?? 0), array(200, 201), true), "proposals_from_plan", array("plan_ability_id" => $plan_ability_id, "bridge" => $bridge));
 	if (isset($bridge["data"]["proposals"]) && is_array($bridge["data"]["proposals"])) {
 		return array_values(array_filter($bridge["data"]["proposals"], "is_array"));
@@ -227,6 +227,7 @@ function mde2e_smoke_media_file_paths() {
 	foreach (array("magick-e2e-media-derivative-*", "magick-ai-e2e-media-derivative-*", "magick-media-derivative-smoke-*") as $pattern) {
 		$paths = array_merge($paths, (array) glob($basedir . "/20[0-9][0-9]/*/" . $pattern));
 		$paths = array_merge($paths, (array) glob($basedir . "/magick-ai-backups/20[0-9][0-9]/*/" . $pattern));
+		$paths = array_merge($paths, (array) glob($basedir . "/npcink-abilities-toolkit-backups/20[0-9][0-9]/*/" . $pattern));
 	}
 
 	return array_values(array_filter(array_unique($paths), "is_file"));
@@ -275,7 +276,8 @@ $created_relative_files = array();
 $mde2e_failure_json = "";
 
 try {
-	mde2e_assert_ability_input_field("magick-ai/replace-media-file", "mode", array("replace", "rollback"));
+	mde2e_assert_ability_input_field("npcink-abilities-toolkit/replace-media-file", "derivative_relative_file");
+	mde2e_assert_ability_input_field("npcink-abilities-toolkit/restore-media-backup", "backup_id");
 
 	$upload = wp_upload_dir();
 	$dir = trailingslashit($upload["path"]);
@@ -327,8 +329,37 @@ try {
 	));
 	$created_pages[] = (int) $page_id;
 
+	$batch_plan_envelope = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/run-read-ability", array(
+		"ability_id" => "npcink-abilities-toolkit/build-media-derivative-batch-plan",
+		"input" => array(
+			"attachment_ids" => array($attachment_id),
+			"target_format" => "webp",
+			"exclude_formats" => array("gif", "svg"),
+			"target_max_width" => 320,
+			"quality" => 80,
+			"min_width" => 0,
+			"min_height" => 0,
+			"max_items" => 5,
+		),
+	));
+	mde2e_assert($batch_plan_envelope["ok"] && 200 === (int) ($batch_plan_envelope["status"] ?? 0), "batch_plan_build", $batch_plan_envelope);
+	$batch_plan = (array) ($batch_plan_envelope["data"]["result"]["data"] ?? $batch_plan_envelope["data"]["data"] ?? array());
+	$batch_candidates = array_values(array_filter((array) ($batch_plan["candidates"] ?? array()), "is_array"));
+	$batch_candidate = array();
+	foreach ($batch_candidates as $candidate) {
+		if ((int) ($candidate["attachment_id"] ?? 0) === (int) $attachment_id) {
+			$batch_candidate = $candidate;
+			break;
+		}
+	}
+	mde2e_assert(!empty($batch_candidate), "batch_plan_missing_smoke_candidate", $batch_plan);
+	$batch_cloud_input = is_array($batch_candidate["cloud_request_input"] ?? null) ? $batch_candidate["cloud_request_input"] : array();
+	mde2e_assert((int) ($batch_cloud_input["attachment_id"] ?? 0) === (int) $attachment_id && "webp" === (string) ($batch_cloud_input["preferred_format"] ?? ""), "batch_plan_cloud_input_invalid", $batch_candidate);
+	$batch_size_recommendation = (int) ($batch_plan["execution_plan"]["batch_size_recommendation"] ?? 0);
+	mde2e_assert($batch_size_recommendation >= 1, "batch_plan_missing_chunk_recommendation", $batch_plan);
+
 	$trace_id = "wp-media-derivative-e2e-" . $attachment_id;
-	$create = mde2e_rest("POST", "/magick-ai-adapter/v1/media-derivative-runs", array(
+	$create = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/media-derivative-runs", array(
 		"attachment_id" => $attachment_id,
 		"target_format" => "webp",
 		"max_width" => 320,
@@ -343,14 +374,14 @@ try {
 	$status = array();
 	for ($i = 0; $i < 40; $i++) {
 		usleep(0 === $i ? 250000 : 750000);
-		$status = mde2e_rest("GET", "/magick-ai-adapter/v1/media-derivative-runs/" . rawurlencode($run_id), array("trace_id" => $trace_id));
+		$status = mde2e_rest("GET", "/npcink-openclaw-adapter/v1/media-derivative-runs/" . rawurlencode($run_id), array("trace_id" => $trace_id));
 		$state = (string) ($status["data"]["cloud_run"]["status"] ?? "");
 		if (in_array($state, array("succeeded", "completed", "failed"), true)) {
 			break;
 		}
 	}
 
-	$result = mde2e_rest("GET", "/magick-ai-adapter/v1/media-derivative-runs/" . rawurlencode($run_id) . "/result", array("trace_id" => $trace_id));
+	$result = mde2e_rest("GET", "/npcink-openclaw-adapter/v1/media-derivative-runs/" . rawurlencode($run_id) . "/result", array("trace_id" => $trace_id));
 	mde2e_assert($result["ok"], "poll_result", array("status" => $status, "result" => $result));
 	$cloud_result = (array) ($result["data"]["cloud_result"] ?? array());
 	mde2e_assert(in_array((string) ($cloud_result["status"] ?? ""), array("succeeded", "completed"), true), "cloud_result_not_success", array("status" => $status, "result" => $result));
@@ -370,7 +401,7 @@ try {
 		"description" => "Reviewed description for the media derivative E2E smoke.",
 		"source_type" => "ai_generated",
 	);
-	$proposal_payload = mde2e_rest("POST", "/magick-ai-adapter/v1/media-derivative-proposal-payload", array(
+	$proposal_payload = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/media-derivative-proposal-payload", array(
 		"ability_response" => (array) ($create["data"]["ability_response"] ?? array()),
 		"cloud_result" => $cloud_result,
 		"derivative_artifact" => $artifact,
@@ -380,7 +411,7 @@ try {
 	mde2e_assert(!empty($proposal_payload["data"]["proposal_ready"]), "optimization_payload_not_ready", $proposal_payload);
 	$from_plan_request = is_array($proposal_payload["data"]["from_plan_request"] ?? null) ? $proposal_payload["data"]["from_plan_request"] : array();
 	$optimization_plan = is_array($from_plan_request["plan"] ?? null) ? $from_plan_request["plan"] : array();
-	mde2e_assert("magick-ai/build-media-optimization-plan" === (string) ($from_plan_request["plan_ability_id"] ?? ""), "optimization_from_plan_missing", $proposal_payload);
+	mde2e_assert("npcink-abilities-toolkit/build-media-optimization-plan" === (string) ($from_plan_request["plan_ability_id"] ?? ""), "optimization_from_plan_missing", $proposal_payload);
 	mde2e_assert("media_optimization_plan" === (string) ($optimization_plan["artifact_type"] ?? ""), "optimization_plan_type_invalid", $optimization_plan);
 	mde2e_assert(2 === count((array) ($optimization_plan["write_actions"] ?? array())), "optimization_plan_action_count_invalid", $optimization_plan);
 
@@ -401,7 +432,7 @@ try {
 	$after_url = wp_get_attachment_url($attachment_id);
 	$after_rel = (string) get_post_meta($attachment_id, "_wp_attached_file", true);
 	$created_relative_files[] = $after_rel;
-	$history = get_post_meta($attachment_id, "_magick_ai_media_file_replacement_history", true);
+	$history = get_post_meta($attachment_id, "_npcink_ai_media_file_replacement_history", true);
 	$history = is_array($history) ? array_values($history) : array();
 	$latest_history = end($history);
 	if (is_array($latest_history)) {
@@ -413,22 +444,26 @@ try {
 	mde2e_assert($media_details_input["caption"] === $attachment_post->post_excerpt, "metadata_caption_not_applied", array("post_excerpt" => $attachment_post ? $attachment_post->post_excerpt : ""));
 	mde2e_assert($media_details_input["description"] === $attachment_post->post_content, "metadata_description_not_applied", array("post_content" => $attachment_post ? $attachment_post->post_content : ""));
 	mde2e_assert($media_details_input["alt"] === get_post_meta($attachment_id, "_wp_attachment_image_alt", true), "metadata_alt_not_applied", get_post_meta($attachment_id));
-	mde2e_assert($media_details_input["source_type"] === get_post_meta($attachment_id, "_magick_ai_media_source_type", true), "metadata_source_type_not_applied", get_post_meta($attachment_id));
+	mde2e_assert($media_details_input["source_type"] === get_post_meta($attachment_id, "_npcink_ai_media_source_type", true), "metadata_source_type_not_applied", get_post_meta($attachment_id));
 
 	$content_plan_input = array("attachment_id" => $attachment_id, "max_posts" => 20, "max_replacements_per_post" => 20);
-	$content_plan_envelope = mde2e_rest("POST", "/magick-ai-adapter/v1/run-read-ability", array(
-		"ability_id" => "magick-ai/build-media-reference-repair-plan",
+	$content_plan_envelope = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/run-read-ability", array(
+		"ability_id" => "npcink-abilities-toolkit/build-media-reference-repair-plan",
 		"input" => $content_plan_input,
 	));
 	mde2e_assert($content_plan_envelope["ok"], "content_reference_plan", $content_plan_envelope);
 	$content_plan = (array) ($content_plan_envelope["data"]["result"]["data"] ?? $content_plan_envelope["data"]["data"] ?? array());
-	mde2e_assert((int) ($content_plan["action_count"] ?? 0) >= 1, "content_reference_plan_empty", $content_plan);
-	$content_proposals = mde2e_proposals_from_plan("magick-ai/build-media-reference-repair-plan", $content_plan, $content_plan_input);
-	foreach ($content_proposals as $proposal) {
-		mde2e_execute_proposal((string) ($proposal["proposal_id"] ?? ""));
+	$content_proposals = array();
+	if ((int) ($content_plan["action_count"] ?? 0) >= 1) {
+		$content_proposals = mde2e_proposals_from_plan("npcink-abilities-toolkit/build-media-reference-repair-plan", $content_plan, $content_plan_input);
+		foreach ($content_proposals as $proposal) {
+			mde2e_execute_proposal((string) ($proposal["proposal_id"] ?? ""));
+		}
 	}
 	$page_body = (string) get_post_field("post_content", $page_id);
-	mde2e_assert(false === strpos($page_body, $before_url) && false !== strpos($page_body, $after_url), "content_reference_repair_not_applied", array("post_content" => $page_body));
+	mde2e_assert(false === strpos($page_body, $before_url) && false !== strpos($page_body, $after_url), "content_reference_repair_not_applied", array("post_content" => $page_body, "repair_plan" => $content_plan));
+	$page_http = wp_remote_get(get_permalink($page_id), array("sslverify" => false, "timeout" => 20));
+	$page_body_http = is_wp_error($page_http) ? "" : (string) wp_remote_retrieve_body($page_http);
 
 	$option_name = "magick_ai_e2e_media_derivative_option_" . $stamp;
 	$theme_mod_name = "magick_ai_e2e_media_derivative_theme_mod_" . $stamp;
@@ -447,14 +482,14 @@ try {
 		"min_width" => 64,
 		"min_height" => 64,
 	);
-	$settings_plan_envelope = mde2e_rest("POST", "/magick-ai-adapter/v1/run-read-ability", array(
-		"ability_id" => "magick-ai/build-media-settings-reference-repair-plan",
+	$settings_plan_envelope = mde2e_rest("POST", "/npcink-openclaw-adapter/v1/run-read-ability", array(
+		"ability_id" => "npcink-abilities-toolkit/build-media-settings-reference-repair-plan",
 		"input" => $settings_plan_input,
 	));
 	mde2e_assert($settings_plan_envelope["ok"], "settings_reference_plan", $settings_plan_envelope);
 	$settings_plan = (array) ($settings_plan_envelope["data"]["result"]["data"] ?? $settings_plan_envelope["data"]["data"] ?? array());
 	mde2e_assert((int) ($settings_plan["action_count"] ?? 0) >= 2, "settings_reference_plan_incomplete", $settings_plan);
-	$settings_proposals = mde2e_proposals_from_plan("magick-ai/build-media-settings-reference-repair-plan", $settings_plan, $settings_plan_input);
+	$settings_proposals = mde2e_proposals_from_plan("npcink-abilities-toolkit/build-media-settings-reference-repair-plan", $settings_plan, $settings_plan_input);
 	foreach ($settings_proposals as $proposal) {
 		mde2e_execute_proposal((string) ($proposal["proposal_id"] ?? ""));
 	}
@@ -465,18 +500,20 @@ try {
 	$replacement_id = is_array($latest_history) ? (string) ($latest_history["replacement_id"] ?? "") : "";
 	mde2e_assert("" !== $replacement_id, "rollback_replacement_id_missing", $history);
 	list($rollback_proposal_id, $rollback_proposal) = mde2e_create_proposal(
-		"magick-ai/replace-media-file",
+		"npcink-abilities-toolkit/restore-media-backup",
 		array(
 			"attachment_id" => $attachment_id,
-			"mode" => "rollback",
-			"replacement_id" => $replacement_id,
+			"backup_id" => $replacement_id,
+			"expected_current_relative_file" => $after_rel,
+			"expected_current_mime_type" => "image/webp",
+			"target_conflict_mode" => "overwrite",
 			"dry_run" => true,
 			"commit" => false,
-			"idempotency_key" => "media-rollback-" . $replacement_id,
+			"idempotency_key" => "media-restore-" . $replacement_id,
 		),
-		array("source" => array("type" => "media_derivative_e2e_rollback"), "replacement_id" => $replacement_id),
+		array("source" => array("type" => "media_derivative_e2e_restore"), "backup_id" => $replacement_id),
 		"Rollback media derivative smoke",
-		"Smoke proposal for media derivative rollback.",
+		"Smoke proposal for media derivative backup restore.",
 		array("external_thread_id" => "media-derivative-e2e-smoke", "trace_id" => $trace_id)
 	);
 	$rollback_execute = mde2e_execute_proposal($rollback_proposal_id);
@@ -485,7 +522,6 @@ try {
 	mde2e_assert($rollback_url !== $after_url && "image/png" === get_post_mime_type($attachment_id), "rollback_not_applied", array("rollback_url" => $rollback_url, "after_url" => $after_url, "mime_type" => get_post_mime_type($attachment_id)));
 	$created_relative_files[] = $rollback_rel;
 
-	$page_http = wp_remote_get(get_permalink($page_id), array("sslverify" => false, "timeout" => 20));
 	$after_head = wp_remote_head($after_url, array("sslverify" => false, "timeout" => 20));
 
 	echo wp_json_encode(
@@ -498,6 +534,11 @@ try {
 			"artifact_id" => (string) ($artifact["artifact_id"] ?? ""),
 			"optimization_proposal_id" => $optimization_proposal_id,
 			"optimization_write_action_count" => count((array) ($optimization_plan["write_actions"] ?? array())),
+			"batch_plan" => array(
+				"candidate_count" => count($batch_candidates),
+				"batch_size_recommendation" => $batch_size_recommendation,
+				"cloud_request_input_ready" => !empty($batch_cloud_input),
+			),
 			"metadata_updated" => true,
 			"file_replaced" => true,
 			"rollback_proposal_id" => $rollback_proposal_id,
@@ -514,9 +555,9 @@ try {
 			"rollback" => array("url" => $rollback_url, "relative_file" => $rollback_rel, "mime_type" => get_post_mime_type($attachment_id)),
 			"page_display_after_reference_repair" => array(
 				"http_code" => is_wp_error($page_http) ? 0 : (int) wp_remote_retrieve_response_code($page_http),
-				"contains_derivative_url" => false !== strpos(is_wp_error($page_http) ? "" : (string) wp_remote_retrieve_body($page_http), $after_url),
+				"contains_derivative_url" => false !== strpos($page_body_http, $after_url),
 			),
-			"rollback_history_count" => count(get_post_meta($attachment_id, "_magick_ai_media_file_replacement_history", true) ?: array()),
+			"rollback_history_count" => count(get_post_meta($attachment_id, "_npcink_ai_media_file_replacement_history", true) ?: array()),
 			"stale_smoke_cleanup" => $stale_cleanup,
 		),
 		JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES

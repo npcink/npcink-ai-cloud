@@ -93,10 +93,12 @@ Before enabling the feature:
 
 Expected smoke evidence:
 
+- local batch planning returns a candidate with Cloud request input and a
+  `batch_size_recommendation`;
 - derivative preview succeeds;
 - Core proposal is created and approved;
 - attachment URL changes after adoption;
-- page hard-coded reference repair succeeds;
+- page hard-coded references no longer contain the old URL;
 - option/theme-mod reference repair succeeds;
 - rollback history is present;
 - `media_derivative_job_metrics` contains the succeeded run;
