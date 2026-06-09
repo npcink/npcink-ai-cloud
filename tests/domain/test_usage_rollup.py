@@ -71,14 +71,19 @@ def test_usage_rollup_service_writes_summary_profile_and_instance_snapshots(
         database_url,
         now_factory=lambda: fixed_now,
     )
+    with get_session(database_url) as session:
+        repository = StatsRepository(session)
+        expected_profile_rollups = len(repository.list_profiles()) * 2
+        expected_instance_rollups = len(repository.list_instances()) * 2
+
     result = service.generate_rollups(site_ids=["site_alpha"], include_global=True)
 
     assert result["counts"] == {
         "summary": 2,
-        "profile": 14,
-        "instance": 12,
+        "profile": expected_profile_rollups,
+        "instance": expected_instance_rollups,
     }
-    assert result["rollups_total"] == 28
+    assert result["rollups_total"] == 2 + expected_profile_rollups + expected_instance_rollups
 
     with get_session(database_url) as session:
         repository = StatsRepository(session)

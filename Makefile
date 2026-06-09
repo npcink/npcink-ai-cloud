@@ -26,7 +26,7 @@ baseline:
 bootstrap-dev:
 	uv venv --python 3.12 .venv
 	uv pip install --python .venv/bin/python -e '.[dev]'
-	cd frontend && pnpm install --lockfile-dir . --frozen-lockfile
+	pnpm --dir frontend install --frozen-lockfile
 
 dev:
 	docker compose -f docker-compose.dev.yml up --build
