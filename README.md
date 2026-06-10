@@ -41,6 +41,7 @@ Operational references:
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
 - [docs/internal-alpha-operator-checklist.md](docs/internal-alpha-operator-checklist.md)
 - [docs/external-trial-capability-note-2026-06-10.md](docs/external-trial-capability-note-2026-06-10.md)
+- [docs/external-trial-readiness-checklist-2026-06-10.md](docs/external-trial-readiness-checklist-2026-06-10.md)
 - [docs/cloud-adapter-analysis-contract.md](docs/cloud-adapter-analysis-contract.md)
 - [docs/cloud-local-integration-and-rebuild-guidance.md](docs/cloud-local-integration-and-rebuild-guidance.md)
 - [docs/cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md)
