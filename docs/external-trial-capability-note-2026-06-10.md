@@ -115,8 +115,8 @@ See `docs/cloud-agent-feedback-contract-v1.md` and
 
 The current local alpha verification evidence is:
 
-- `/Users/muze/gitee/magick-ai-cloud/.tmp/local-alpha-smoke/evidence-20260610090134.json`
-- `/Users/muze/gitee/magick-ai-cloud/.tmp/site-knowledge-real-chain-smoke/evidence-20260610085114.json`
+- `/Users/muze/gitee/magick-ai-cloud/.tmp/local-alpha-smoke/evidence-20260611050446.json`
+- `/Users/muze/gitee/magick-ai-cloud/.tmp/site-knowledge-real-chain-smoke/evidence-20260611050150.json`
 
 Commands used for the verified baseline:
 
@@ -133,6 +133,11 @@ Additional Toolbox-side verification:
 composer test:all
 composer smoke:site-knowledge-review-ui
 ```
+
+First-batch operator assets:
+
+- `docs/external-trial-operator-runbook-2026-06-11.md`
+- `docs/external-trial-copy-and-log-2026-06-11.md`
 
 ## Minimal External Trial Acceptance Table
 

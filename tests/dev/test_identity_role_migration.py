@@ -152,7 +152,7 @@ def test_identity_role_collapse_migration_rewrites_historical_values(tmp_path: P
                 )
             ).scalar_one()
 
-        assert membership_role == "user_admin"
+        assert membership_role == "user"
         assert platform_role == "platform_admin"
         assert impersonation_role == "platform_admin"
     finally:

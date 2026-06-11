@@ -1175,9 +1175,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             else None,
         ]
         for source in sources:
-            resolved = self._coerce_int(source)
-            if resolved > 0:
-                return resolved
+            if source is not None:
+                return max(0, self._coerce_int(source))
         tier_id = cast(Any, self)._infer_plan_tier_id(
             {
                 "plan_id": str(getattr(subscription, "plan_id", "") or ""),
@@ -1186,4 +1185,4 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             [],
         )
         baseline = PLAN_TIER_REGISTRY.get(tier_id, PLAN_TIER_REGISTRY[DEFAULT_PLAN_TIER_ID])
-        return max(1, self._coerce_int(baseline.get("site_limit")) or 1)
+        return max(0, self._coerce_int(baseline.get("site_limit")))

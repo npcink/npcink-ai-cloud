@@ -151,6 +151,13 @@ function PortalSiteRecordContent() {
               {t('portal.site_record_package_label', {}, 'Package')}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{packageLabel}</h2>
+            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+              {t(
+                'portal.site_record_package_access_desc',
+                {},
+                'This is the clearest place to confirm the current package, current period, your role, and allowed actions for this site.'
+              )}
+            </p>
           </div>
           <BackofficeStackCard>
             <div className="flex items-start justify-between gap-3">

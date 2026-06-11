@@ -150,7 +150,7 @@ def _seed_account_membership(
     *,
     account_id: str,
     member_ref: str,
-    role: str = "user_admin",
+    role: str = "user",
     status: str = "active",
 ) -> None:
     safe_member_ref = member_ref.replace(":", "_").replace("@", "_").replace(".", "_")

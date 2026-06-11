@@ -40,8 +40,11 @@ Operational references:
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](../cloud/deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
 - [docs/internal-alpha-operator-checklist.md](docs/internal-alpha-operator-checklist.md)
+- [docs/internal-alpha-onboarding-smoke-runbook.md](docs/internal-alpha-onboarding-smoke-runbook.md)
 - [docs/external-trial-capability-note-2026-06-10.md](docs/external-trial-capability-note-2026-06-10.md)
 - [docs/external-trial-readiness-checklist-2026-06-10.md](docs/external-trial-readiness-checklist-2026-06-10.md)
+- [docs/external-trial-operator-runbook-2026-06-11.md](docs/external-trial-operator-runbook-2026-06-11.md)
+- [docs/external-trial-copy-and-log-2026-06-11.md](docs/external-trial-copy-and-log-2026-06-11.md)
 - [docs/external-trial-record-magick-ai-local-2026-06-10.md](docs/external-trial-record-magick-ai-local-2026-06-10.md)
 - [docs/external-trial-user-briefing-copy-zh-2026-06-10.md](docs/external-trial-user-briefing-copy-zh-2026-06-10.md)
 - [docs/cloud-adapter-analysis-contract.md](docs/cloud-adapter-analysis-contract.md)
@@ -82,6 +85,7 @@ unavailable even when the Cloud project is correctly configured.
 - scaffold one new Portal route pack: `pnpm run scaffold:cloud:portal-route -- --route-id <route-id>`
 - perimeter seam: `pnpm run check:cloud:perimeter`
 - hosted runtime smoke: `pnpm run smoke:local-alpha`
+- internal alpha onboarding smoke: `pnpm run smoke:internal-alpha-onboarding`
 - deploy bundle smoke: `pnpm run check:e2e:cloud-deploy-bundle:smoke`
 - combined cloud smoke closure: `pnpm run check:e2e:cloud:smoke`
 - remote WordPress cron helper: `pnpm run cloud:wp-cron:ssh -- <install|status|remove> [--site-url <wp-base-url>]`
@@ -129,7 +133,7 @@ platform model operations console.
 Cloud product identity is frozen to two external identity types only:
 
 - `platform_admin`
-- `user_admin`
+- `user`
 
 These are the only product-layer identity semantics allowed in Cloud docs, API
 contracts, and UI copy.
@@ -137,7 +141,7 @@ contracts, and UI copy.
 Boundaries:
 
 - `platform_admin` owns the bounded Cloud operator surface
-- `user_admin` owns the bounded customer/account/site management surface
+- `user` owns the bounded customer/account/site management surface
 - database role values are also collapsed to these same two canonical values
 - external payloads must treat `identity_type` as the primary identity field
 
@@ -179,7 +183,7 @@ Current repository status is:
   - bounded `/admin` session cookie login via `internal token`
   - accounts, sites, plans, subscriptions, runtime diagnostics, audit, and commercial decisions
 - bounded portal auth seam is now landed for:
-  - invited `user_admin` email verification-code login
+  - invited `user` email verification-code login
   - cookie-backed `/portal/*` member session
   - account/site-scoped read-only portal workspace for sites, keys, usage, billing, and audit
 
@@ -202,9 +206,9 @@ Still deferred in the current phase:
 Commercial acceptance freeze:
 
 - `plans + plan_versions` remain the only package execution truth
-- `starter / pro / agency` remain tier templates
+- `free / pro / agency` remain tier templates
 - `plan_free / plan_free_v1` is the explicit production free package
-- `Free / Basic / Bulk` remain presentation aliases unless a formal package object is explicitly contracted
+- `Free / Pro / Agency` remain the only current package presentation aliases
 - points are presentation, not a ledger
 - operator top-up means current billing period budget headroom only
 - no wallet, no permanent credit, no customer self-serve buy flow in the current phase
@@ -561,7 +565,7 @@ not configured.
 
 Portal member auth:
 
-- portal members are invite-only `user_admin` users
+- portal members are invite-only `user` identities
 - browser login is two-step:
   - `POST /portal/v1/auth/code/request`
   - `POST /portal/v1/auth/code/verify`
@@ -778,7 +782,7 @@ Current acceptance receipt:
 
 Current auth decision stays bounded:
 
-- keep `platform_admin token login + user_admin email verification code` as the
+- keep `platform_admin token login + user email verification code` as the
   current bounded seam
 - remote smoke should use `/portal/v1/auth/code/request` and
   `/portal/v1/auth/code/verify`
@@ -814,7 +818,7 @@ For Alibaba Cloud enterprise mailbox, point the SMTP settings above at the
 SMTP host/port and SSL or STARTTLS mode provided by your mailbox admin panel.
 This keeps Cloud generic while still supporting Aliyun enterprise mail as the
 actual sender.
-An Aliyun-focused starter template now lives at
+An Aliyun-focused baseline template now lives at
 `cloud/.env.portal-email.aliyun.example`.
 
 Portal email self-test:

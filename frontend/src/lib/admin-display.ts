@@ -18,7 +18,7 @@ const ADMIN_AUDIT_EVENT_LABELS: Record<string, string> = {
 };
 
 const ADMIN_ROLE_LABELS: Record<string, string> = {
-  user_admin: 'admin.external_role_user_admin',
+  user: 'admin.external_role_user',
   platform_admin: 'admin.external_role_platform_admin',
 };
 
@@ -69,7 +69,7 @@ export function translateExternalCommercialRole(role: string, t: TranslateFn) {
   if (normalizedRole === 'platform_admin') {
     return t('admin.external_role_platform_admin', {}, 'Platform Admin');
   }
-  return t('admin.external_role_user_admin', {}, 'User Admin');
+  return t('admin.external_role_user', {}, 'User');
 }
 
 export function translateAdminReasonCode(reasonCode: string, t: TranslateFn) {

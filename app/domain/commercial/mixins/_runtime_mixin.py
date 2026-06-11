@@ -103,7 +103,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 metadata_json=(
                     {
                         "source": "seed_runtime",
-                        "tier_id": "starter",
+                        "tier_id": "free",
                         "package_alias": "Free",
                         "plan_kind": DEFAULT_FREE_PLAN_KIND,
                     }

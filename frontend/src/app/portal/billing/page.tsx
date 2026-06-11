@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   BackofficeMetricStrip,
@@ -23,14 +24,20 @@ import {
   type PortalBillingReconciliation,
   type PortalBillingSnapshot,
 } from '@/lib/portal-client';
+import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import { DEFAULT_PORTAL_CURRENCY, formatPortalCurrency, normalizePortalCurrency } from '@/lib/currency';
 import { formatCompactNumber, formatDate, formatNumber } from '@/lib/utils';
 
 function sumSnapshots(
   snapshots: PortalBillingSnapshot[],
-  selector: (snapshot: PortalBillingSnapshot) => number | undefined
+  selector: (snapshot: PortalBillingSnapshot) => unknown
 ): number {
-  return snapshots.reduce((total, snapshot) => total + Number(selector(snapshot) || 0), 0);
+  return snapshots.reduce((total, snapshot) => total + coerceFiniteNumber(selector(snapshot)), 0);
+}
+
+function coerceFiniteNumber(value: unknown): number {
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function PortalBillingContent() {
@@ -105,6 +112,18 @@ function PortalBillingContent() {
   const totalCost = sumSnapshots(snapshots, (snapshot) => snapshot.totals?.cost);
   const latestSnapshot = snapshots[0] || null;
   const syncState = reconciliation?.reconciliation?.in_sync;
+  const currentSubscription = session.current_subscription || null;
+  const snapshotPlanVersionId =
+    latestSnapshot?.plan_version_id || currentSubscription?.plan_version_id || '';
+  const packageDisplay = resolveCustomerPackageDisplay(t, {
+    planId: currentSubscription?.plan_id,
+    planVersionId: snapshotPlanVersionId,
+    packageAlias: currentSubscription?.package_alias,
+    formalPlanName: selectedSite.plan_name,
+    planKind: currentSubscription?.plan_kind,
+    coverageState: currentSubscription ? 'covered' : 'uncovered',
+  });
+  const packageLabel = packageDisplay.display_package_label || t('common.not_found');
 
   return (
     <BackofficePageStack>
@@ -130,6 +149,7 @@ function PortalBillingContent() {
       <BackofficeMetricStrip
         items={[
           { label: t('portal.billing.snapshots', {}, 'Snapshots'), value: formatNumber(snapshots.length) },
+          { label: t('portal.current_subscription_label', {}, 'Current package'), value: packageLabel },
           { label: t('common.requests', {}, 'Requests'), value: formatCompactNumber(totalRuns) },
           { label: t('common.tokens', {}, 'Tokens'), value: formatCompactNumber(totalTokens) },
           { label: t('common.cost', {}, 'Cost'), value: formatPortalCurrency(totalCost, { to: currency }) },
@@ -155,6 +175,27 @@ function PortalBillingContent() {
       </BackofficeStackCard>
 
       <BackofficeStackCard>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              {t('portal.current_subscription_label', {}, 'Current package')}
+            </p>
+            <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">{packageLabel}</h2>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+              {t(
+                'portal.billing.operator_notice',
+                {},
+                'Package changes are operator-managed. This page stays read-only for customer users.'
+              )}
+            </p>
+          </div>
+          <Link href={`/portal/sites/${selectedSiteId}`} className="btn btn-secondary">
+            {t('portal.site_record', {}, 'Site Record')}
+          </Link>
+        </div>
+      </BackofficeStackCard>
+
+      <BackofficeStackCard>
         <p className="text-sm font-semibold text-gray-950 dark:text-white">
           {t('portal.billing.help_title', {}, 'Need help?')}
         </p>
@@ -166,6 +207,50 @@ function PortalBillingContent() {
           )}
         </p>
       </BackofficeStackCard>
+
+      <details className="overflow-hidden rounded-[1.4rem] border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-950">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-950 hover:bg-gray-50 dark:text-white dark:hover:bg-slate-900">
+          {t('portal.billing.records_title', {}, 'Recent package records')}
+        </summary>
+        <div className="grid gap-4 border-t border-gray-200 p-4 dark:border-gray-800 lg:grid-cols-2">
+          {snapshots.map((snapshot) => (
+            <BackofficeStackCard key={`record-${snapshot.snapshot_id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-950 dark:text-white">
+                    {t('portal.billing.record_title', {}, 'Package record')}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{snapshot.snapshot_id}</p>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {formatDate(snapshot.generated_at)}
+                </span>
+              </div>
+              <BackofficeMetricStrip
+                items={[
+                  {
+                    label: t('common.requests', {}, 'Requests'),
+                    value: formatNumber(coerceFiniteNumber(snapshot.totals?.runs)),
+                  },
+                  {
+                    label: t('common.tokens', {}, 'Tokens'),
+                    value: formatCompactNumber(coerceFiniteNumber(snapshot.totals?.tokens_total)),
+                  },
+                  {
+                    label: t('common.cost', {}, 'Cost'),
+                    value: formatPortalCurrency(coerceFiniteNumber(snapshot.totals?.cost), { to: currency }),
+                  },
+                ]}
+              />
+            </BackofficeStackCard>
+          ))}
+          {!snapshots.length ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {t('portal.billing.records_empty', {}, 'No records')}
+            </p>
+          ) : null}
+        </div>
+      </details>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {snapshots.map((snapshot) => (
@@ -181,9 +266,9 @@ function PortalBillingContent() {
             </div>
             <BackofficeMetricStrip
               items={[
-                { label: t('common.requests', {}, 'Requests'), value: formatNumber(snapshot.totals?.runs || 0) },
-                { label: t('common.tokens', {}, 'Tokens'), value: formatCompactNumber(snapshot.totals?.tokens_total || 0) },
-                { label: t('common.cost', {}, 'Cost'), value: formatPortalCurrency(snapshot.totals?.cost || 0, { to: currency }) },
+                { label: t('common.requests', {}, 'Requests'), value: formatNumber(coerceFiniteNumber(snapshot.totals?.runs)) },
+                { label: t('common.tokens', {}, 'Tokens'), value: formatCompactNumber(coerceFiniteNumber(snapshot.totals?.tokens_total)) },
+                { label: t('common.cost', {}, 'Cost'), value: formatPortalCurrency(coerceFiniteNumber(snapshot.totals?.cost), { to: currency }) },
               ]}
             />
           </BackofficeStackCard>

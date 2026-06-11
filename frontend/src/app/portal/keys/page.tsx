@@ -369,9 +369,9 @@ function KeysContent() {
   const writeNotice = siteSummary?.allowed_actions?.includes('manage_site_keys')
     ? null
     : t(
-        'keys.user_admin_read_only_notice',
+        'keys.user_read_only_notice',
         {},
-        'Your current user-admin access is read-only. Ask an account admin to grant key-management access before creating or rotating keys.'
+        'Your current user access is read-only. Ask a platform admin to grant key-management access before creating or rotating keys.'
       );
   const selectedKeyProtected = isProtectedSystemInitializedKey(selectedKey);
   const canManageSiteKeys = Boolean(siteSummary?.allowed_actions?.includes('manage_site_keys'));

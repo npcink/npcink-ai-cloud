@@ -327,7 +327,7 @@ function PlansContent() {
         description={t(
           'admin.package_management_center_desc',
           {},
-          'Manage Free, Basic, and Bulk package settings. Assign packages from customer coverage when needed.'
+          'Manage Free, Pro, and Agency package settings. Assign packages from customer coverage when needed.'
         )}
         aside={
           <div className="w-full xl:w-[44rem]">
@@ -336,7 +336,7 @@ function PlansContent() {
                 {
                   label: t('admin.managed_packages', {}, 'Managed packages'),
                   value: formatInteger(tierTemplates.length),
-                  detail: t('admin.managed_packages_detail', {}, 'Free / Basic / Bulk are the main packages exposed to account coverage.'),
+                  detail: t('admin.managed_packages_detail', {}, 'Free / Pro / Agency are the main packages exposed to account coverage.'),
                   size: 'compact',
                 },
                 {
@@ -581,7 +581,7 @@ function PlansContent() {
           description={t(
             'admin.package_shell_bootstrap_desc',
             {},
-            'Use these shortcuts to create any missing Free / Basic / Bulk package entries before assigning them to customers.'
+            'Use these shortcuts to create any missing Free / Pro / Agency package entries before assigning them to customers.'
           )}
         />
         <BackofficeSectionPanel className="mt-4 space-y-4">
@@ -694,7 +694,7 @@ function PlansContent() {
               value={form.plan_id}
               onChange={(event) => setForm((current) => ({ ...current, plan_id: event.target.value }))}
               className="input w-full"
-              placeholder="plan_starter"
+              placeholder="plan_free"
               required
             />
           </label>
@@ -704,7 +704,7 @@ function PlansContent() {
               value={form.name}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               className="input w-full"
-              placeholder="Starter"
+              placeholder="Free"
               required
             />
           </label>

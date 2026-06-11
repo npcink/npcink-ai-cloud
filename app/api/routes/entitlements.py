@@ -15,7 +15,7 @@ router = APIRouter(prefix="/v1/entitlements", tags=["entitlements"])
 
 CONTRACT_VERSION = "cloud-billing-entitlement-v1"
 PUBLIC_PACKAGE_BY_TIER = {
-    "starter": "Free",
+    "free": "Free",
     "pro": "Pro",
     "agency": "Agency",
 }
@@ -124,11 +124,13 @@ def _resolve_usage_limits(
 def _resolve_site_limit(policy: dict[str, object], tier_id: str) -> int:
     snapshot = _dict(policy.get("entitlement_snapshot"))
     plan_metadata = _dict(_dict(policy.get("plan_version")).get("metadata"))
-    value = snapshot.get("site_limit") or plan_metadata.get("site_limit")
+    value = (
+        snapshot.get("site_limit")
+        if snapshot.get("site_limit") is not None
+        else plan_metadata.get("site_limit")
+    )
     resolved = _coerce_int(value, default=0)
-    if resolved > 0:
-        return resolved
-    return 1 if tier_id == "starter" else 5 if tier_id == "pro" else 25
+    return max(0, resolved)
 
 
 def _resolve_runtime_quota(policy: dict[str, object]) -> dict[str, object]:

@@ -41,17 +41,17 @@ reference is never permission to mutate WooCommerce from Cloud.
 
 The public package names are frozen:
 
-| Package | Internal tier compatibility | Purpose |
+| Package | Internal tier id | Purpose |
 |---------|-----------------------------|---------|
-| `Free` | `starter` | Conservative single-site baseline. |
+| `Free` | `free` | Conservative single-site baseline. |
 | `Pro` | `pro` | Normal hosted runtime and workflow usage. |
 | `Agency` | `agency` | Multi-site or sustained higher-volume usage. |
 
 Rules:
 
 - `Free / Pro / Agency` are the only public package names for this contract.
-- Existing internal tier ids may remain `starter / pro / agency`.
-- Legacy presentation aliases such as `Basic` and `Bulk` must not be introduced
+- Internal tier ids are `free / pro / agency`.
+- Non-approved legacy package aliases must not be introduced
   into new entitlement API fields.
 - Plan and plan-version records remain the package execution truth inside Cloud.
 
@@ -72,17 +72,17 @@ An entitlement snapshot must express these fields only for the v1 contract:
   },
   "usage_limits": {
     "period": "month",
-    "max_runs": 10000,
-    "max_tokens": 2000000,
-    "max_cost_usd": 99.0,
-    "max_sites": 5
+    "max_runs": 0,
+    "max_tokens": 0,
+    "max_cost_usd": 0.0,
+    "max_sites": 0
   },
   "analytics_retention": {
     "days": 90
   },
   "hosted_runtime_quota": {
-    "max_active_runs": 2,
-    "max_batch_items": 10,
+    "max_active_runs": 0,
+    "max_batch_items": 0,
     "execution_tiers": ["cloud"]
   }
 }
@@ -92,7 +92,8 @@ Field rules:
 
 - `task_packs.allowed` lists Cloud task pack ids available to the paid object.
 - `usage_limits` is the customer-visible limit shape for the active billing
-  period.
+  period. During internal development before release, `0` means the package
+  does not block on that quota while usage and audit evidence remain active.
 - `analytics_retention.days` controls Cloud analytics/log summary visibility; it
   does not create indefinite retention.
 - `hosted_runtime_quota` controls Cloud runtime headroom only.
@@ -182,17 +183,17 @@ Response:
       },
       "usage_limits": {
         "period": "month",
-        "max_runs": 10000,
-        "max_tokens": 2000000,
-        "max_cost_usd": 99.0,
-        "max_sites": 5
+        "max_runs": 0,
+        "max_tokens": 0,
+        "max_cost_usd": 0.0,
+        "max_sites": 0
       },
       "analytics_retention": {
         "days": 90
       },
       "hosted_runtime_quota": {
-        "max_active_runs": 2,
-        "max_batch_items": 10,
+        "max_active_runs": 0,
+        "max_batch_items": 0,
         "execution_tiers": ["cloud"]
       }
     }

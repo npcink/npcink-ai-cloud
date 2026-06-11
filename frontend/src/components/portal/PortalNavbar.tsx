@@ -168,7 +168,7 @@ export function PortalNavbar() {
               </span>
             </span>
             <span className="hidden rounded-full border border-slate-200/80 bg-slate-50/85 px-2.5 py-1 text-[0.58rem] font-bold uppercase tracking-[0.22em] text-slate-600 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 md:inline-flex">
-              {t('portal.member_workspace', undefined, 'User Admin')}
+              {t('portal.member_workspace', undefined, 'User')}
             </span>
           </Link>
 

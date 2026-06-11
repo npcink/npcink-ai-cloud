@@ -35,7 +35,7 @@ SITE_API_KEY_STATUS_EXPIRED = "expired"
 ACCOUNT_STATUS_ACTIVE = "active"
 ACCOUNT_STATUS_SUSPENDED = "suspended"
 
-ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN = "user_admin"
+ACCOUNT_MEMBERSHIP_ROLE_USER = "user"
 
 ACCOUNT_MEMBERSHIP_STATUS_ACTIVE = "active"
 ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE = "pending_invite"
@@ -115,7 +115,7 @@ class AccountMembership(Base):
     member_ref: Mapped[str] = mapped_column(String(191))
     role: Mapped[str] = mapped_column(
         String(32),
-        default=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+        default=ACCOUNT_MEMBERSHIP_ROLE_USER,
         index=True,
     )
     status: Mapped[str] = mapped_column(

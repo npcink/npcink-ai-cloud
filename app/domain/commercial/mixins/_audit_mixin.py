@@ -11,7 +11,7 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
     ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
@@ -27,13 +27,13 @@ from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import CommercialPermissionError
 
 PORTAL_SITE_KEY_WRITE_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
 }
 PORTAL_SITE_PROVISION_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
 }
 PORTAL_SITE_READ_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
 }
 PORTAL_MEMBERSHIP_ALLOWED_ROLES = PORTAL_SITE_READ_ROLES
 ACCOUNT_MEMBERSHIP_ALLOWED_ROLES = PORTAL_MEMBERSHIP_ALLOWED_ROLES
@@ -62,7 +62,7 @@ PORTAL_MEMBER_PREFERENCE_LOCALES = {"en", "zh-CN", "zh-TW"}
 PORTAL_MEMBER_PREFERENCE_CURRENCIES = {"USD", "CNY", "HKD"}
 PORTAL_MEMBER_IDENTITY_PROVIDER = "email_magic_link"
 IDENTITY_TYPE_PLATFORM_ADMIN = "platform_admin"
-IDENTITY_TYPE_USER_ADMIN = "user_admin"
+IDENTITY_TYPE_USER = "user"
 USER_ALLOWED_ACTION_VIEW_SITES = "view_sites"
 USER_ALLOWED_ACTION_VIEW_USAGE = "view_usage"
 USER_ALLOWED_ACTION_VIEW_BILLING = "view_billing"
@@ -185,16 +185,16 @@ def _portal_membership_has_allowed_role(
 
 def _normalize_customer_membership_role(role: str) -> str:
     normalized_role = str(role or "").strip()
-    if normalized_role == ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN:
-        return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
-    return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+    if normalized_role == ACCOUNT_MEMBERSHIP_ROLE_USER:
+        return ACCOUNT_MEMBERSHIP_ROLE_USER
+    return ACCOUNT_MEMBERSHIP_ROLE_USER
 
 
 def _resolve_identity_type(role: str) -> str:
     normalized_role = str(role or "").strip()
     if normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES:
         return IDENTITY_TYPE_PLATFORM_ADMIN
-    return IDENTITY_TYPE_USER_ADMIN
+    return IDENTITY_TYPE_USER
 
 
 def _portal_membership_role_priority(role: str) -> int:
@@ -208,8 +208,8 @@ def _normalize_platform_admin_role(role: str) -> str:
 def _canonicalize_customer_membership_role_for_write(role: str) -> str:
     normalized_role = str(role or "").strip()
     if normalized_role in ACCOUNT_MEMBERSHIP_ALLOWED_ROLES:
-        return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
-    return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+        return ACCOUNT_MEMBERSHIP_ROLE_USER
+    return ACCOUNT_MEMBERSHIP_ROLE_USER
 
 
 def _canonicalize_platform_admin_role_for_write(role: str) -> str:

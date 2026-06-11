@@ -49,7 +49,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
         status="active",
         current_period_start_at=datetime(2026, 5, 1, tzinfo=UTC),
         current_period_end_at=datetime(2026, 6, 1, tzinfo=UTC),
-        metadata_json={"tier_id": "pro", "package_alias": "Basic"},
+        metadata_json={"tier_id": "pro", "package_alias": "Pro"},
     )
     return database_url, TestClient(create_app(CloudServices(settings=settings)))
 
@@ -85,15 +85,15 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
     assert "task_packs" not in data["entitlement"]
     assert data["entitlement"]["usage_limits"] == {
         "period": "month",
-        "max_runs": 10000.0,
-        "max_tokens": 2000000.0,
-        "max_cost_usd": 99.0,
-        "max_sites": 5,
+        "max_runs": 0.0,
+        "max_tokens": 0.0,
+        "max_cost_usd": 0.0,
+        "max_sites": 0,
     }
     assert data["entitlement"]["analytics_retention"] == {"days": 45}
     assert data["entitlement"]["hosted_runtime_quota"] == {
-        "max_active_runs": 2,
-        "max_batch_items": 10,
+        "max_active_runs": 0,
+        "max_batch_items": 0,
         "execution_tiers": ["cloud"],
     }
 

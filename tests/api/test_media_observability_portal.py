@@ -9,7 +9,7 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     AccountMembership,
     MediaDerivativeArtifact,
@@ -36,7 +36,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
             AccountMembership(
                 account_id="acct_site-media-portal-001",
                 member_ref="user:portal-admin@example.com",
-                role=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+                role=ACCOUNT_MEMBERSHIP_ROLE_USER,
                 status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
                 metadata_json={"source": "test"},
             )

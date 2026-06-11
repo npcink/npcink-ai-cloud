@@ -48,12 +48,12 @@ DEFAULT_RUNTIME_ENTITLEMENTS = {
     "data_classifications": ["*"],
 }
 DEFAULT_RUNTIME_BUDGETS: dict[str, object] = {
-    "max_runs_per_period": 500,
-    "max_tokens_per_period": 2_000_000,
-    "max_cost_per_period": 50.0,
+    "max_runs_per_period": 0,
+    "max_tokens_per_period": 0,
+    "max_cost_per_period": 0.0,
 }
 DEFAULT_RUNTIME_CONCURRENCY: dict[str, object] = {
-    "max_active_runs": 10,
+    "max_active_runs": 0,
 }
 DEFAULT_RUNTIME_COMMERCIAL_POLICY = {
     "subscription": {
@@ -136,28 +136,28 @@ SHADOW_PRICING_TARIFF_REGISTRY: dict[str, dict[str, dict[str, float | str]]] = {
     },
 }
 PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
-    "starter": {
-        "tier_id": "starter",
-        "label": "Starter",
+    "free": {
+        "tier_id": "free",
+        "label": "Free",
         "package_alias": "Free",
-        "usage_band": "Low-volume single-site hosted usage.",
-        "positioning": "Baseline package for conservative hosted runs, lighter workflow usage, and operator-managed growth.",
-        "monthly_included_points": 500,
+        "usage_band": "Unlimited internal development usage.",
+        "positioning": "Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.",
+        "monthly_included_points": 0,
         "budgets_template": {
-            "max_runs_per_period": 500,
-            "max_tokens_per_period": 200_000,
-            "max_cost_per_period": 5.0,
+            "max_runs_per_period": 0,
+            "max_tokens_per_period": 0,
+            "max_cost_per_period": 0.0,
         },
-        "concurrency_template": {"max_active_runs": 1},
-        "site_limit": 1,
+        "concurrency_template": {"max_active_runs": 0},
+        "site_limit": 0,
         "max_batch_items": 0,
         "automation_enabled": True,
         "api_enabled": True,
         "openclaw_enabled": True,
-        "package_operator_note": "Core capabilities stay available across packages. Free remains the most conservative on points, concurrency, batch headroom, and over-limit handling.",
+        "package_operator_note": "Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.",
         "policy_baseline": {
             "grace_period_days": 0,
-            "downgrade_policy": "Fail closed when cost or token pressure exceeds the period budget.",
+            "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development.",
         },
         "feature_groups": [
             "Hosted runtime baseline",
@@ -168,25 +168,25 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
     "pro": {
         "tier_id": "pro",
         "label": "Pro",
-        "package_alias": "Basic",
-        "usage_band": "Mid-band workflow and automation usage.",
-        "positioning": "General-purpose package for steadier workflow volume, fuller automation usage, and predictable hosted operations.",
-        "monthly_included_points": 10_000,
+        "package_alias": "Pro",
+        "usage_band": "Unlimited internal development usage.",
+        "positioning": "Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.",
+        "monthly_included_points": 0,
         "budgets_template": {
-            "max_runs_per_period": 10_000,
-            "max_tokens_per_period": 2_000_000,
-            "max_cost_per_period": 99.0,
+            "max_runs_per_period": 0,
+            "max_tokens_per_period": 0,
+            "max_cost_per_period": 0.0,
         },
-        "concurrency_template": {"max_active_runs": 2},
-        "site_limit": 5,
-        "max_batch_items": 10,
+        "concurrency_template": {"max_active_runs": 0},
+        "site_limit": 0,
+        "max_batch_items": 0,
         "automation_enabled": True,
         "api_enabled": True,
         "openclaw_enabled": True,
-        "package_operator_note": "Core capabilities stay available across packages. Basic expands points, concurrency, batch headroom, and grace before operator intervention.",
+        "package_operator_note": "Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.",
         "policy_baseline": {
             "grace_period_days": 3,
-            "downgrade_policy": "Use short grace before downgrading queue-heavy or high-cost usage.",
+            "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development.",
         },
         "feature_groups": [
             "Hosted runtime + workflow coverage",
@@ -197,25 +197,25 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
     "agency": {
         "tier_id": "agency",
         "label": "Agency",
-        "package_alias": "Bulk",
-        "usage_band": "High-volume multi-site and sustained workflow usage.",
-        "positioning": "High-headroom package for multi-site operators, continuous automation, and materially higher hosted workload.",
-        "monthly_included_points": 50_000,
+        "package_alias": "Agency",
+        "usage_band": "Unlimited internal development usage.",
+        "positioning": "Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.",
+        "monthly_included_points": 0,
         "budgets_template": {
-            "max_runs_per_period": 50_000,
-            "max_tokens_per_period": 10_000_000,
-            "max_cost_per_period": 499.0,
+            "max_runs_per_period": 0,
+            "max_tokens_per_period": 0,
+            "max_cost_per_period": 0.0,
         },
-        "concurrency_template": {"max_active_runs": 6},
-        "site_limit": 25,
-        "max_batch_items": 100,
+        "concurrency_template": {"max_active_runs": 0},
+        "site_limit": 0,
+        "max_batch_items": 0,
         "automation_enabled": True,
         "api_enabled": True,
         "openclaw_enabled": True,
-        "package_operator_note": "Core capabilities stay available across packages. Bulk provides the highest points budget, concurrency, batch headroom, and policy headroom.",
+        "package_operator_note": "Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.",
         "policy_baseline": {
             "grace_period_days": 7,
-            "downgrade_policy": "Keep operator visibility high while allowing short-lived overage handling before intervention.",
+            "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development.",
         },
         "feature_groups": [
             "Higher hosted concurrency",
@@ -238,7 +238,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "points_label": "10,000 points equivalent",
         "points_equivalent": 10_000,
         "display_order": 1,
-        "recommended_for_tiers": ["starter", "pro"],
+        "recommended_for_tiers": ["free", "pro"],
         "active": True,
         "runs_increment": 10_000,
         "tokens_increment": 2_000_000,
@@ -1084,7 +1084,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         *,
         repository: CommercialRepository,
     ) -> tuple[str, str]:
-        tier_id = "starter"
+        tier_id = "free"
         baseline = PLAN_TIER_REGISTRY[tier_id]
         plan_id = DEFAULT_FREE_PLAN_ID
         plan_version_id = DEFAULT_FREE_PLAN_VERSION_ID
@@ -1125,7 +1125,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "tier_id": tier_id,
                 "package_alias": str(baseline.get("package_alias") or "Free"),
                 "plan_kind": DEFAULT_FREE_PLAN_KIND,
-                "site_limit": self._coerce_int(baseline.get("site_limit")) or 1,
+                "site_limit": self._coerce_int(baseline.get("site_limit")),
                 "monthly_included_points": self._coerce_int(
                     baseline.get("monthly_included_points")
                 ),
@@ -1144,7 +1144,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         repository: CommercialRepository,
         tier_id: str,
     ) -> tuple[str, str]:
-        if tier_id == "starter":
+        if tier_id == "free":
             return self._ensure_plan_free_version_in_session(repository=repository)
 
         baseline = PLAN_TIER_REGISTRY.get(tier_id)
@@ -1195,7 +1195,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "monthly_included_points": self._coerce_int(
                     baseline.get("monthly_included_points")
                 ),
-                "site_limit": self._coerce_int(baseline.get("site_limit")) or 1,
+                "site_limit": self._coerce_int(baseline.get("site_limit")),
                 "max_batch_items": self._coerce_int(baseline.get("max_batch_items")),
                 "automation_enabled": bool(baseline.get("automation_enabled")),
                 "api_enabled": bool(baseline.get("api_enabled")),
@@ -1730,7 +1730,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "budgets": self._normalize_budgets(snapshot.budgets_json),
             "concurrency": self._normalize_concurrency(snapshot.concurrency_json),
             "policy": self._normalize_commercial_policy(snapshot.policy_json),
-            "site_limit": self._coerce_int(getattr(snapshot, "site_limit", 1)) or 1,
+            "site_limit": self._coerce_int(getattr(snapshot, "site_limit", 0)),
             "metadata": snapshot.metadata_json or {},
             "generated_at": self._serialize_datetime(snapshot.generated_at),
         }
@@ -1913,7 +1913,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "usage_band": str(baseline.get("usage_band") or ""),
             "positioning": str(baseline.get("positioning") or ""),
             "monthly_included_points": self._coerce_int(baseline.get("monthly_included_points")),
-            "site_limit": self._coerce_int(baseline.get("site_limit")) or 1,
+            "site_limit": self._coerce_int(baseline.get("site_limit")),
             "budgets_template": budgets_template,
             "concurrency_template": concurrency_template,
             "max_batch_items": self._coerce_int(baseline.get("max_batch_items")),
@@ -1935,7 +1935,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                     "monthly_included_points": self._coerce_int(
                         baseline.get("monthly_included_points")
                     ),
-                    "site_limit": self._coerce_int(baseline.get("site_limit")) or 1,
+                    "site_limit": self._coerce_int(baseline.get("site_limit")),
                     "max_batch_items": self._coerce_int(baseline.get("max_batch_items")),
                     "automation_enabled": bool(baseline.get("automation_enabled")),
                     "api_enabled": bool(baseline.get("api_enabled")),

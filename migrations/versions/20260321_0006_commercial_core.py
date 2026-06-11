@@ -14,7 +14,7 @@ depends_on = None
 def upgrade() -> None:
     # Historical migration snapshot: the original schema introduced legacy
     # multi-role defaults here. Current head collapses product identity to
-    # `user_admin` / `platform_admin` via later migrations, so do not treat
+    # `user` / `platform_admin` via later migrations, so do not treat
     # these literals as the current role contract.
     op.create_table(
         "accounts",

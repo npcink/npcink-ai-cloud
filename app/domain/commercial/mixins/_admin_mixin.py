@@ -11,6 +11,8 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
+    ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
+    ACCOUNT_STATUS_ACTIVE,
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
     PLATFORM_ADMIN_STATUS_ACTIVE,
     SITE_API_KEY_STATUS_ACTIVE,
@@ -27,7 +29,7 @@ from app.domain.commercial.errors import (
 )
 from app.domain.commercial.mixins._audit_mixin import (
     IDENTITY_TYPE_PLATFORM_ADMIN,
-    IDENTITY_TYPE_USER_ADMIN,
+    IDENTITY_TYPE_USER,
     CommercialServiceAuditMixin,
     ServiceAuditContext,
     _canonicalize_platform_admin_role_for_write,
@@ -684,6 +686,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             memberships = repository.list_account_memberships(account_id=account_id, limit=None)
             sites = repository.list_sites(account_id=account_id, limit=None)
             subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
+            active_key_counts = repository.count_site_keys_by_site(
+                site_ids=[site.site_id for site in sites],
+                statuses=[SITE_API_KEY_STATUS_ACTIVE],
+            )
 
         return {
             "account": cast(Any, self)._serialize_account(account),
@@ -702,6 +708,171 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 }
                 for subscription in subscriptions
             ],
+            "trial_readiness": cast(Any, self)._build_account_trial_readiness_summary(
+                account=account,
+                memberships=memberships,
+                sites=sites,
+                subscriptions=subscriptions,
+                active_key_counts=active_key_counts,
+            ),
+        }
+
+    def _build_account_trial_readiness_summary(
+        self,
+        *,
+        account: object,
+        memberships: list[object],
+        sites: list[object],
+        subscriptions: list[AccountSubscription],
+        active_key_counts: dict[str, int],
+    ) -> dict[str, object]:
+        service = cast(Any, self)
+        primary_subscription = service._select_primary_subscription(subscriptions)
+        package_summary = service._build_subscription_package_summary(
+            primary_subscription,
+            site_count=len(sites),
+        )
+        package_kind = str(package_summary.get("package_kind") or "")
+        coverage_state = str(package_summary.get("coverage_state") or "")
+        account_active = str(getattr(account, "status", "") or "") == ACCOUNT_STATUS_ACTIVE
+        site_count = len(sites)
+        active_site_count = sum(
+            1 for site in sites if str(getattr(site, "status", "") or "") == SITE_STATUS_ACTIVE
+        )
+        sites_without_active_key = [
+            str(getattr(site, "site_id", "") or "")
+            for site in sites
+            if int(active_key_counts.get(str(getattr(site, "site_id", "") or ""), 0) or 0) <= 0
+        ]
+        active_key_site_count = site_count - len(sites_without_active_key)
+        active_or_pending_member_count = sum(
+            1
+            for membership in memberships
+            if str(getattr(membership, "status", "") or "")
+            in {ACCOUNT_MEMBERSHIP_STATUS_ACTIVE, ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE}
+        )
+        active_member_count = sum(
+            1
+            for membership in memberships
+            if str(getattr(membership, "status", "") or "") == ACCOUNT_MEMBERSHIP_STATUS_ACTIVE
+        )
+        subscription_status = str(getattr(primary_subscription, "status", "") or "")
+        has_coverage = coverage_state == "covered" and package_kind not in {
+            "dev_baseline",
+            "unknown",
+            "uncovered",
+        }
+        package_label = str(package_summary.get("display_package_label") or "Package")
+        subscription_stable = subscription_status in {
+            SUBSCRIPTION_STATUS_ACTIVE,
+            SUBSCRIPTION_STATUS_TRIALING,
+        }
+        checks = [
+            {
+                "code": "account_active",
+                "label": "Customer active",
+                "ok": account_active,
+                "detail": (
+                    "Customer record is active."
+                    if account_active
+                    else "Resume or review the customer before inviting it into trial."
+                ),
+            },
+            {
+                "code": "site_attached",
+                "label": "Site attached",
+                "ok": site_count > 0,
+                "detail": (
+                    f"{site_count} site(s) attached."
+                    if site_count > 0
+                    else "Attach or provision at least one approved WordPress site."
+                ),
+            },
+            {
+                "code": "sites_active",
+                "label": "Sites active",
+                "ok": site_count > 0 and active_site_count == site_count,
+                "detail": (
+                    "Every attached site is active."
+                    if site_count > 0 and active_site_count == site_count
+                    else f"{active_site_count}/{site_count} site(s) are active."
+                ),
+            },
+            {
+                "code": "active_api_key",
+                "label": "Cloud API key",
+                "ok": site_count > 0 and active_key_site_count == site_count,
+                "detail": (
+                    "Every attached site has an active Cloud API key."
+                    if site_count > 0 and active_key_site_count == site_count
+                    else f"{len(sites_without_active_key)} site(s) need an active Cloud API key."
+                ),
+            },
+            {
+                "code": "package_coverage",
+                "label": "Package coverage",
+                "ok": has_coverage and subscription_stable,
+                "detail": (
+                    f"{package_label} coverage is ready."
+                    if has_coverage and subscription_stable
+                    else "Apply Free, Pro, or Agency coverage before inviting this customer."
+                ),
+            },
+            {
+                "code": "portal_admin",
+                "label": "Portal user",
+                "ok": active_or_pending_member_count > 0,
+                "detail": (
+                    f"{active_or_pending_member_count} active or invited portal user(s)."
+                    if active_or_pending_member_count > 0
+                    else "Invite at least one portal user."
+                ),
+            },
+        ]
+        blocking_codes = [str(item["code"]) for item in checks if not bool(item["ok"])]
+        status = "ready" if not blocking_codes else "action_required"
+        if not account_active or site_count == 0:
+            status = "blocked"
+        next_action = "invite_trial_site"
+        next_action_label = "Invite trial site"
+        if not account_active:
+            next_action = "review_customer_status"
+            next_action_label = "Review customer status"
+        elif site_count == 0:
+            next_action = "attach_approved_site"
+            next_action_label = "Attach approved site"
+        elif not has_coverage or not subscription_stable:
+            next_action = "apply_package_coverage"
+            next_action_label = "Apply package coverage"
+        elif active_site_count != site_count:
+            next_action = "activate_sites"
+            next_action_label = "Activate attached sites"
+        elif sites_without_active_key:
+            next_action = "issue_or_verify_key"
+            next_action_label = "Issue or verify Cloud API key"
+        elif active_or_pending_member_count == 0:
+            next_action = "invite_portal_admin"
+            next_action_label = "Invite portal user"
+        elif active_member_count == 0:
+            next_action = "confirm_invite_delivery"
+            next_action_label = "Confirm invite delivery"
+        return {
+            "status": status,
+            "next_action": next_action,
+            "next_action_label": next_action_label,
+            "blocking_codes": blocking_codes,
+            "summary": {
+                "site_count": site_count,
+                "active_site_count": active_site_count,
+                "active_key_site_count": active_key_site_count,
+                "sites_without_active_key": sites_without_active_key,
+                "member_count": len(memberships),
+                "active_member_count": active_member_count,
+                "active_or_pending_member_count": active_or_pending_member_count,
+                "subscription_status": subscription_status,
+                **package_summary,
+            },
+            "checks": checks,
         }
 
     def get_admin_account_member_plan_coverage(self, account_id: str) -> dict[str, object]:
@@ -797,7 +968,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "member_ref": str(serialized_membership.get("member_ref") or ""),
                     "email": str(serialized_membership.get("email") or ""),
                     "identity_type": str(
-                        serialized_membership.get("identity_type") or IDENTITY_TYPE_USER_ADMIN
+                        serialized_membership.get("identity_type") or IDENTITY_TYPE_USER
                     ),
                     "allowed_actions": [
                         str(action)

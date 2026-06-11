@@ -38,8 +38,8 @@ function buildPortalSession(selectedSiteId: string) {
     member_ref: 'user:portal-demo@example.com',
     site_id: currentSite.site_id,
     account_id: 'acct_portal',
-    identity_type: 'user_admin',
-    role: 'user_admin',
+    identity_type: 'user',
+    role: 'user',
     allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'manage_site_keys'],
     site: {
       site_id: currentSite.site_id,
@@ -55,8 +55,8 @@ function buildPortalSession(selectedSiteId: string) {
         name: 'Portal Account',
         status: 'active',
         member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user_admin',
-        role: 'user_admin',
+        identity_type: 'user',
+        role: 'user',
         allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'manage_site_keys'],
         membership_status: 'active',
         site_count: 2,
@@ -128,8 +128,8 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_attention',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user_admin',
-        role: 'user_admin',
+        identity_type: 'user',
+        role: 'user',
         allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'manage_site_keys'],
         site: {
           site_id: 'site_attention',
@@ -140,7 +140,7 @@ async function installPortalMocks(page: Page) {
         },
         covered_by_subscription_id: 'sub_growth',
         subscription_status: 'expired',
-        package_alias: 'Basic',
+        package_alias: 'Pro',
         coverage: {
           subscription_id: 'sub_growth',
           status: 'expired',
@@ -180,8 +180,8 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_clear',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user_admin',
-        role: 'user_admin',
+        identity_type: 'user',
+        role: 'user',
         allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'manage_site_keys'],
         site: {
           site_id: 'site_clear',
@@ -232,7 +232,7 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_attention',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        role: 'user_admin',
+        role: 'user',
         items: [
           {
             snapshot_id: 'bill_attention_current',
@@ -259,7 +259,7 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_attention',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        role: 'user_admin',
+        role: 'user',
         snapshot: {
           snapshot_id: 'bill_attention_current',
           generated_at: '2026-04-07T10:00:00Z',
@@ -282,7 +282,7 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_clear',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        role: 'user_admin',
+        role: 'user',
         items: [
           {
             snapshot_id: 'bill_clear_current',
@@ -309,7 +309,7 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_clear',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        role: 'user_admin',
+        role: 'user',
         snapshot: {
           snapshot_id: 'bill_clear_current',
           generated_at: '2026-04-07T10:00:00Z',
@@ -332,8 +332,8 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_attention',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user_admin',
-        role: 'user_admin',
+        identity_type: 'user',
+        role: 'user',
         allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'manage_site_keys'],
         timezone: 'Asia/Shanghai',
         generated_at: '2026-04-07T10:00:00Z',
@@ -370,8 +370,8 @@ async function installPortalMocks(page: Page) {
         site_id: 'site_attention',
         account_id: 'acct_portal',
         member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user_admin',
-        role: 'user_admin',
+        identity_type: 'user',
+        role: 'user',
         allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'manage_site_keys'],
         site: {
           site_id: 'site_attention',
@@ -503,7 +503,7 @@ test('portal site record prefers package alias, then formal plan name, before ra
   await installPortalMocks(page);
 
   await page.goto('/portal/sites/site_attention');
-  await expect(page.getByText(/^Basic$/).first()).toBeVisible();
+  await expect(page.getByText(/^Pro$/).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /Preferences|个人偏好|偏好設定/i })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Audit|审计|稽核/i })).toHaveCount(0);
 

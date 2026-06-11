@@ -1,4 +1,4 @@
-"""collapse commercial identity roles to platform_admin and user_admin
+"""collapse commercial identity roles to platform_admin and user
 
 Revision ID: 20260412_0023
 Revises: 20260410_0022
@@ -27,7 +27,7 @@ def upgrade() -> None:
             WHERE role IS NULL OR role <> :new_role
             """
         ),
-        {"new_role": "user_admin"},
+        {"new_role": "user"},
     )
     connection.execute(
         sa.text(
@@ -55,7 +55,7 @@ def upgrade() -> None:
             "role",
             existing_type=sa.String(length=32),
             nullable=False,
-            server_default="user_admin",
+            server_default="user",
         )
 
     with op.batch_alter_table("platform_admin_identities") as batch_op:

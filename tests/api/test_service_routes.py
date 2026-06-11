@@ -790,7 +790,7 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
     )
     membership_response = client.post(
         "/internal/service/accounts/acct_service/memberships",
-        json={"member_ref": "user:admin@example.com", "role": "user_admin"},
+        json={"member_ref": "user:admin@example.com", "role": "user"},
         headers=build_internal_headers(idempotency_key="svc-membership-001"),
     )
     site_response = client.post(
@@ -1043,7 +1043,7 @@ def test_service_routes_admin_account_members_filters_and_detail(tmp_path: Path)
         "/internal/service/accounts/acct_members/memberships",
         json={
             "member_ref": "user:pending@example.com",
-            "role": "user_admin",
+            "role": "user",
             "status": "pending_invite",
             "metadata": {
                 "email": "pending@example.com",
@@ -1059,7 +1059,7 @@ def test_service_routes_admin_account_members_filters_and_detail(tmp_path: Path)
         "/internal/service/accounts/acct_members/memberships",
         json={
             "member_ref": "user:active@example.com",
-            "role": "user_admin",
+            "role": "user",
             "status": "active",
             "metadata": {
                 "email": "active@example.com",
@@ -1134,10 +1134,30 @@ def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Pat
         headers=build_internal_headers(idempotency_key="svc-coverage-site-uncovered-001"),
     )
     client.post(
+        "/internal/service/sites/site_covered/keys",
+        json={
+            "key_id": "key_coverage_covered",
+            "secret": "svc-coverage-secret-covered",
+            "scopes": ["runtime:execute"],
+            "label": "trial-ready-covered",
+        },
+        headers=build_internal_headers(idempotency_key="svc-coverage-key-covered-001"),
+    )
+    client.post(
+        "/internal/service/sites/site_uncovered/keys",
+        json={
+            "key_id": "key_coverage_uncovered",
+            "secret": "svc-coverage-secret-uncovered",
+            "scopes": ["runtime:execute"],
+            "label": "trial-ready-uncovered",
+        },
+        headers=build_internal_headers(idempotency_key="svc-coverage-key-uncovered-001"),
+    )
+    client.post(
         "/internal/service/accounts/acct_coverage/memberships",
         json={
             "member_ref": "user:admin@example.com",
-            "role": "user_admin",
+            "role": "user",
             "metadata": {"email": "admin@example.com"},
         },
         headers=build_internal_headers(idempotency_key="svc-coverage-membership-admin-001"),
@@ -1146,20 +1166,20 @@ def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Pat
         "/internal/service/accounts/acct_coverage/memberships",
         json={
             "member_ref": "user:member@example.com",
-            "role": "user_admin",
+            "role": "user",
             "metadata": {"email": "member@example.com"},
         },
         headers=build_internal_headers(idempotency_key="svc-coverage-membership-member-001"),
     )
     client.post(
         "/internal/service/plans",
-        json={"plan_id": "plan_basic", "name": "Basic"},
+        json={"plan_id": "plan_pro", "name": "Pro"},
         headers=build_internal_headers(idempotency_key="svc-coverage-plan-001"),
     )
     client.post(
-        "/internal/service/plans/plan_basic/versions",
+        "/internal/service/plans/plan_pro/versions",
         json={
-            "plan_version_id": "plan_basic_v1",
+            "plan_version_id": "plan_pro_v1",
             "version_label": "v1",
             "status": "published",
             "budgets": {"max_runs_per_period": 1000},
@@ -1171,8 +1191,8 @@ def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Pat
         json={
             "subscription_id": "sub_covered",
             "account_id": "acct_coverage",
-            "plan_id": "plan_basic",
-            "plan_version_id": "plan_basic_v1",
+            "plan_id": "plan_pro",
+            "plan_version_id": "plan_pro_v1",
             "status": "active",
         },
         headers=build_internal_headers(idempotency_key="svc-coverage-bind-001"),
@@ -1193,17 +1213,33 @@ def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Pat
     admin_member = next(
         item for item in data["members"] if item["member_ref"] == "user:admin@example.com"
     )
-    assert admin_member["identity_type"] == "user_admin"
-    assert admin_member["role"] == "user_admin"
+    assert admin_member["identity_type"] == "user"
+    assert admin_member["role"] == "user"
     assert admin_member["covered_site_count"] == 2
     assert admin_member["sites_needing_follow_up_count"] == 0
     covered_site = next(
         site for site in admin_member["accessible_sites"] if site["site_id"] == "site_covered"
     )
     assert covered_site["covered"] is True
-    assert covered_site["plan_id"] == "plan_basic"
-    assert covered_site["plan_version_id"] == "plan_basic_v1"
+    assert covered_site["plan_id"] == "plan_pro"
+    assert covered_site["plan_version_id"] == "plan_pro_v1"
     assert covered_site["coverage"]["status"] == "active"
+
+    account_detail_response = client.get(
+        "/internal/service/admin/accounts/acct_coverage",
+        headers=build_internal_headers(),
+    )
+    assert account_detail_response.status_code == 200
+    readiness = account_detail_response.json()["data"]["trial_readiness"]
+    assert readiness["status"] == "ready"
+    assert readiness["next_action"] == "invite_trial_site"
+    assert readiness["blocking_codes"] == []
+    assert readiness["summary"]["active_site_count"] == 2
+    assert readiness["summary"]["active_key_site_count"] == 2
+    assert readiness["summary"]["active_or_pending_member_count"] == 2
+    assert readiness["summary"]["display_package_label"] == "Pro"
+    package_check = next(item for item in readiness["checks"] if item["code"] == "package_coverage")
+    assert package_check["ok"] is True
 
     dispose_engine(database_url)
 
@@ -1244,13 +1280,13 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     )
     plan_response = client.post(
         "/internal/service/plans",
-        json={"plan_id": "plan_growth", "name": "Growth"},
+        json={"plan_id": "plan_pro_topup", "name": "Pro"},
         headers=build_internal_headers(idempotency_key="svc-plan-101"),
     )
     version_response = client.post(
-        "/internal/service/plans/plan_growth/versions",
+        "/internal/service/plans/plan_pro_topup/versions",
         json={
-            "plan_version_id": "plan_growth_v1",
+            "plan_version_id": "plan_pro_topup_v1",
             "version_label": "v1",
             "entitlements": {
                 "ability_families": ["workflow"],
@@ -1267,16 +1303,16 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     subscription_response = client.post(
         "/internal/service/admin/accounts/acct_billing/subscription",
         json={
-            "subscription_id": "sub_growth",
+            "subscription_id": "sub_pro_topup",
             "account_id": "acct_billing",
-            "plan_id": "plan_growth",
-            "plan_version_id": "plan_growth_v1",
+            "plan_id": "plan_pro_topup",
+            "plan_version_id": "plan_pro_topup_v1",
             "status": "active",
         },
         headers=build_internal_headers(idempotency_key="svc-subscription-101"),
     )
     topup_response = client.post(
-        "/internal/service/subscriptions/sub_growth/topup",
+        "/internal/service/subscriptions/sub_pro_topup/topup",
         json={
             "target_period_start_at": subscription_response.json()["data"]["subscription"][
                 "current_period_start_at"
@@ -1329,7 +1365,7 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert topup_payload["billing_snapshot_status"]["next_action"] is None
 
     admin_subscription_response = client.get(
-        "/internal/service/admin/subscriptions/sub_growth",
+        "/internal/service/admin/subscriptions/sub_pro_topup",
         headers=build_internal_headers(),
     )
     assert admin_subscription_response.status_code == 200
@@ -1346,7 +1382,7 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert admin_subscription["billing_snapshot_status"]["next_action"] is None
 
     rebuild_subscription_response = client.post(
-        "/internal/service/admin/subscriptions/sub_growth/billing-snapshots/rebuild",
+        "/internal/service/admin/subscriptions/sub_pro_topup/billing-snapshots/rebuild",
         headers=build_internal_headers(idempotency_key="svc-subscription-rebuild-101"),
     )
     assert rebuild_subscription_response.status_code == 200
@@ -1486,7 +1522,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     )
     client.post(
         "/internal/service/accounts/acct_admin/memberships",
-        json={"member_ref": "user:admin@example.com", "role": "user_admin"},
+        json={"member_ref": "user:admin@example.com", "role": "user"},
         headers=build_internal_headers(idempotency_key="svc-admin-membership-001"),
     )
     client.post(
@@ -1676,7 +1712,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     assert accounts[0]["member_count"] == 1
     assert accounts[0]["site_count"] == 1
     assert accounts[0]["active_subscription_count"] >= 1
-    assert accounts[0]["display_package_label"] == "Basic"
+    assert accounts[0]["display_package_label"] == "Pro"
     assert accounts[0]["package_kind"] == "tier_package"
     assert accounts[0]["coverage_state"] == "covered"
     assert accounts[0]["primary_subscription_id"] == "sub_admin"
@@ -1755,25 +1791,25 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     plans = plans_response.json()["data"]["items"]
     tier_templates = plans_response.json()["data"]["tier_templates"]
     assert len(plans) >= 1
-    assert [item["tier_id"] for item in tier_templates] == ["starter", "pro", "agency"]
+    assert [item["tier_id"] for item in tier_templates] == ["free", "pro", "agency"]
     assert tier_templates[0]["package_alias"] == "Free"
-    assert tier_templates[1]["monthly_included_points"] == 10000
-    assert tier_templates[2]["concurrency_template"]["max_active_runs"] == 6
+    assert tier_templates[1]["monthly_included_points"] == 0
+    assert tier_templates[2]["concurrency_template"]["max_active_runs"] == 0
     assert tier_templates[0]["canonical_shell"]["entitlements"]["execution_tiers"] == ["cloud"]
-    assert tier_templates[1]["canonical_shell"]["budgets"]["max_runs_per_period"] == 10000
-    assert tier_templates[2]["canonical_shell"]["metadata"]["max_batch_items"] == 100
+    assert tier_templates[1]["canonical_shell"]["budgets"]["max_runs_per_period"] == 0
+    assert tier_templates[2]["canonical_shell"]["metadata"]["max_batch_items"] == 0
     admin_plan_summary = next(item for item in plans if item["plan"]["plan_id"] == "plan_admin")
     assert admin_plan_summary["tier_summary"]["tier_id"] == "pro"
     assert admin_plan_summary["tier_summary"]["label"] == "Pro"
-    assert admin_plan_summary["tier_summary"]["package_alias"] == "Basic"
-    assert admin_plan_summary["tier_summary"]["monthly_included_points"] == 10000
-    assert admin_plan_summary["tier_summary"]["site_limit"] == 5
-    assert admin_plan_summary["tier_summary"]["max_batch_items"] == 10
+    assert admin_plan_summary["tier_summary"]["package_alias"] == "Pro"
+    assert admin_plan_summary["tier_summary"]["monthly_included_points"] == 0
+    assert admin_plan_summary["tier_summary"]["site_limit"] == 0
+    assert admin_plan_summary["tier_summary"]["max_batch_items"] == 0
     assert admin_plan_summary["tier_summary"]["automation_enabled"] is True
     assert admin_plan_summary["tier_summary"]["api_enabled"] is True
     assert admin_plan_summary["tier_summary"]["openclaw_enabled"] is True
     assert (
-        "core capabilities stay available across packages"
+        "internal development is temporarily unlimited"
         in admin_plan_summary["tier_summary"]["package_operator_note"].lower()
     )
     assert admin_plan_summary["latest_version"]["plan_version_id"] == "plan_admin_v1"
@@ -1782,20 +1818,18 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     plan_detail = plan_detail_response.json()["data"]
     assert plan_detail["plan"]["plan_id"] == "plan_admin"
     assert plan_detail["tier_summary"]["tier_id"] == "pro"
-    assert plan_detail["tier_summary"]["package_alias"] == "Basic"
-    assert plan_detail["tier_summary"]["monthly_included_points"] == 10000
-    assert plan_detail["tier_summary"]["site_limit"] == 5
-    assert plan_detail["tier_summary"]["max_batch_items"] == 10
+    assert plan_detail["tier_summary"]["package_alias"] == "Pro"
+    assert plan_detail["tier_summary"]["monthly_included_points"] == 0
+    assert plan_detail["tier_summary"]["site_limit"] == 0
+    assert plan_detail["tier_summary"]["max_batch_items"] == 0
     assert plan_detail["tier_summary"]["automation_enabled"] is True
     assert plan_detail["tier_summary"]["api_enabled"] is True
     assert plan_detail["tier_summary"]["openclaw_enabled"] is True
-    assert plan_detail["tier_summary"]["concurrency_template"]["max_active_runs"] == 2
+    assert plan_detail["tier_summary"]["concurrency_template"]["max_active_runs"] == 0
     assert plan_detail["latest_version"]["plan_version_id"] == "plan_admin_v1"
     assert plan_detail["package_fit_cues"]
     cue_codes = {item["code"] for item in plan_detail["package_fit_cues"]}
     assert "package_fit.cost_ceiling_missing" in cue_codes
-    assert "package_fit.max_runs_per_period.too_conservative" in cue_codes
-    assert "package_fit.max_tokens_per_period.too_conservative" in cue_codes
     assert subscription_detail_response.status_code == 200
     subscription_detail = subscription_detail_response.json()["data"]
     assert subscription_detail["subscription"]["subscription_id"] == "sub_admin"
@@ -1837,11 +1871,11 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
         client.post(
             "/internal/service/plans",
             json={
-                "plan_id": "starter_ops",
-                "name": "Starter Ops",
-                "metadata": {"tier_id": "starter"},
+                "plan_id": "free_ops",
+                "name": "Free Ops",
+                "metadata": {"tier_id": "free"},
             },
-            headers=build_internal_headers(idempotency_key="svc-tier-plan-starter-001"),
+            headers=build_internal_headers(idempotency_key="svc-tier-plan-free-001"),
         ),
         client.post(
             "/internal/service/plans",
@@ -1850,7 +1884,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
         ),
         client.post(
             "/internal/service/plans",
-            json={"plan_id": "agency_growth", "name": "Agency Growth"},
+            json={"plan_id": "agency_ops", "name": "Agency Operations"},
             headers=build_internal_headers(idempotency_key="svc-tier-plan-name-001"),
         ),
         client.post(
@@ -1863,9 +1897,9 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
 
     create_version_responses = [
         client.post(
-            "/internal/service/plans/starter_ops/versions",
+            "/internal/service/plans/free_ops/versions",
             json={
-                "plan_version_id": "starter_ops_v1",
+                "plan_version_id": "free_ops_v1",
                 "version_label": "v1",
                 "budgets": {
                     "max_runs_per_period": 100,
@@ -1874,7 +1908,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "concurrency": {"max_active_runs": 1},
                 "metadata": {"tier_id": "agency"},
             },
-            headers=build_internal_headers(idempotency_key="svc-tier-version-starter-001"),
+            headers=build_internal_headers(idempotency_key="svc-tier-version-free-001"),
         ),
         client.post(
             "/internal/service/plans/plan_version_tier/versions",
@@ -1892,9 +1926,9 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
             headers=build_internal_headers(idempotency_key="svc-tier-version-agency-001"),
         ),
         client.post(
-            "/internal/service/plans/agency_growth/versions",
+            "/internal/service/plans/agency_ops/versions",
             json={
-                "plan_version_id": "agency_growth_v1",
+                "plan_version_id": "agency_ops_v1",
                 "version_label": "v1",
                 "budgets": {
                     "max_runs_per_period": 12_000,
@@ -1926,8 +1960,8 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
         "/internal/service/admin/plans",
         headers=build_internal_headers(),
     )
-    starter_detail_response = client.get(
-        "/internal/service/admin/plans/starter_ops",
+    free_detail_response = client.get(
+        "/internal/service/admin/plans/free_ops",
         headers=build_internal_headers(),
     )
     version_tier_detail_response = client.get(
@@ -1935,7 +1969,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
         headers=build_internal_headers(),
     )
     name_tier_detail_response = client.get(
-        "/internal/service/admin/plans/agency_growth",
+        "/internal/service/admin/plans/agency_ops",
         headers=build_internal_headers(),
     )
     default_tier_detail_response = client.get(
@@ -1945,35 +1979,33 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
 
     assert plans_response.status_code == 200
     plans = {item["plan"]["plan_id"]: item for item in plans_response.json()["data"]["items"]}
-    assert plans["starter_ops"]["tier_summary"]["tier_id"] == "starter"
-    assert plans["starter_ops"]["tier_summary"]["package_alias"] == "Free"
-    assert plans["starter_ops"]["tier_summary"]["monthly_included_points"] == 500
-    assert plans["starter_ops"]["tier_summary"]["max_batch_items"] == 0
-    assert plans["starter_ops"]["tier_summary"]["automation_enabled"] is True
-    assert plans["starter_ops"]["tier_summary"]["api_enabled"] is True
-    assert plans["starter_ops"]["tier_summary"]["openclaw_enabled"] is True
+    assert plans["free_ops"]["tier_summary"]["tier_id"] == "free"
+    assert plans["free_ops"]["tier_summary"]["package_alias"] == "Free"
+    assert plans["free_ops"]["tier_summary"]["monthly_included_points"] == 0
+    assert plans["free_ops"]["tier_summary"]["max_batch_items"] == 0
+    assert plans["free_ops"]["tier_summary"]["automation_enabled"] is True
+    assert plans["free_ops"]["tier_summary"]["api_enabled"] is True
+    assert plans["free_ops"]["tier_summary"]["openclaw_enabled"] is True
     assert plans["plan_version_tier"]["tier_summary"]["tier_id"] == "agency"
-    assert plans["plan_version_tier"]["tier_summary"]["package_alias"] == "Bulk"
-    assert plans["plan_version_tier"]["tier_summary"]["monthly_included_points"] == 50000
-    assert plans["plan_version_tier"]["tier_summary"]["max_batch_items"] == 100
+    assert plans["plan_version_tier"]["tier_summary"]["package_alias"] == "Agency"
+    assert plans["plan_version_tier"]["tier_summary"]["monthly_included_points"] == 0
+    assert plans["plan_version_tier"]["tier_summary"]["max_batch_items"] == 0
     assert plans["plan_version_tier"]["tier_summary"]["openclaw_enabled"] is True
-    assert plans["agency_growth"]["tier_summary"]["tier_id"] == "agency"
+    assert plans["agency_ops"]["tier_summary"]["tier_id"] == "agency"
     assert plans["general_ops"]["tier_summary"]["tier_id"] == "pro"
 
-    assert starter_detail_response.status_code == 200
-    starter_detail = starter_detail_response.json()["data"]
-    assert starter_detail["tier_summary"]["tier_id"] == "starter"
-    assert starter_detail["tier_summary"]["package_alias"] == "Free"
-    assert starter_detail["tier_summary"]["monthly_included_points"] == 500
-    starter_cue_codes = {item["code"] for item in starter_detail["package_fit_cues"]}
-    assert "package_fit.cost_ceiling_missing" in starter_cue_codes
-    assert "package_fit.max_runs_per_period.too_conservative" in starter_cue_codes
-    assert "package_fit.max_tokens_per_period.too_conservative" in starter_cue_codes
+    assert free_detail_response.status_code == 200
+    free_detail = free_detail_response.json()["data"]
+    assert free_detail["tier_summary"]["tier_id"] == "free"
+    assert free_detail["tier_summary"]["package_alias"] == "Free"
+    assert free_detail["tier_summary"]["monthly_included_points"] == 0
+    free_cue_codes = {item["code"] for item in free_detail["package_fit_cues"]}
+    assert "package_fit.cost_ceiling_missing" in free_cue_codes
 
     assert version_tier_detail_response.status_code == 200
     version_tier_detail = version_tier_detail_response.json()["data"]
     assert version_tier_detail["tier_summary"]["tier_id"] == "agency"
-    assert version_tier_detail["tier_summary"]["package_alias"] == "Bulk"
+    assert version_tier_detail["tier_summary"]["package_alias"] == "Agency"
     assert version_tier_detail["tier_summary"]["openclaw_enabled"] is True
 
     assert name_tier_detail_response.status_code == 200
@@ -1983,7 +2015,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
     assert default_tier_detail_response.status_code == 200
     default_tier_detail = default_tier_detail_response.json()["data"]
     assert default_tier_detail["tier_summary"]["tier_id"] == "pro"
-    assert default_tier_detail["tier_summary"]["package_alias"] == "Basic"
+    assert default_tier_detail["tier_summary"]["package_alias"] == "Pro"
     assert default_tier_detail["tier_summary"]["automation_enabled"] is True
     assert default_tier_detail["tier_summary"]["api_enabled"] is True
     assert default_tier_detail["tier_summary"]["openclaw_enabled"] is True

@@ -36,7 +36,7 @@ Trial posture:
 | Gate | Required state | Evidence |
 | --- | --- | --- |
 | Boundary | Cloud remains runtime/detail/eval only | This checklist plus capability note reviewed |
-| Smoke baseline | Hosted runtime and Site Knowledge smoke pass | `pnpm run smoke:local-alpha`; `pnpm run smoke:site-knowledge` |
+| Smoke baseline | Hosted runtime, onboarding, and Site Knowledge smoke pass | `pnpm run smoke:internal-alpha-onboarding`; `pnpm run smoke:local-alpha`; `pnpm run smoke:site-knowledge` |
 | Test baseline | Contract/domain/API/perimeter lanes pass | `pnpm run check:fast`; `pnpm run check:seam` |
 | Toolbox baseline | Toolbox suggestion and Core handoff tests pass | Toolbox `composer test:all`; `composer smoke:site-knowledge-review-ui` |
 | Operational readiness | Target environment reports ready | `/health/operational-ready` returns ready |
@@ -78,6 +78,7 @@ environment.
 ```bash
 pnpm run check:fast
 pnpm run check:seam
+pnpm run smoke:internal-alpha-onboarding
 pnpm run smoke:site-knowledge
 pnpm run smoke:local-alpha
 ```
@@ -138,11 +139,15 @@ expanding beyond the first few sites:
   - smoke commands
   - revocation/suspension steps
   - support evidence paths
+  - Current artifact:
+    `docs/external-trial-operator-runbook-2026-06-11.md`
 - Prepare trial copy that uses:
   - "reviewable suggestions"
   - "writing preparation"
   - "hosted runtime assistance"
   - "Cloud-managed evidence"
+  - Current artifact:
+    `docs/external-trial-copy-and-log-2026-06-11.md`
 - Remove or revise any copy that implies:
   - automatic article generation
   - direct publishing
@@ -156,6 +161,8 @@ expanding beyond the first few sites:
   - blocked prompts or abuse signals
   - operator notes
   - feedback summary
+  - Current artifact:
+    `docs/external-trial-copy-and-log-2026-06-11.md`
 - Review first-trial feedback weekly before changing prompts, profiles,
   routing, or UX.
 

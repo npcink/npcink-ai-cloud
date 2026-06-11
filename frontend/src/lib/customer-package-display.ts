@@ -86,7 +86,7 @@ export function resolveCustomerPackageDisplay(
   if (packageKind === 'formal_free') {
     return {
       display_package_label:
-        packageAlias || localizePackageAlias(t, 'plan_free', localizePlanName(t, 'plan_free', 'Starter')),
+        packageAlias || localizePackageAlias(t, 'plan_free', localizePlanName(t, 'plan_free', 'Free')),
       package_kind: packageKind,
       coverage_state: coverageState,
     };
@@ -125,7 +125,7 @@ export function translatePackageKindLabel(
 ): string {
   switch (packageKind) {
     case 'formal_free':
-      return t('admin.plan_package_alias_starter', {}, 'Starter');
+      return t('admin.plan_package_alias_free', {}, 'Free');
     case 'tier_package':
       return t('admin.tier_template_binding', {}, 'Tier-bound plan');
     case 'dev_baseline':

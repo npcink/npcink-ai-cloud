@@ -7,7 +7,7 @@ from app.core.config import Settings
 from app.domain.commercial.customer_api_keys import build_customer_api_key
 from app.domain.commercial.errors import CommercialNotFoundError
 from app.domain.commercial.service import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
     CommercialService,
 )
 from app.domain.usage.service import UsageService
@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--site-id", required=True)
     parser.add_argument("--member-email", required=True)
-    parser.add_argument("--member-role", default=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN)
+    parser.add_argument("--member-role", default=ACCOUNT_MEMBERSHIP_ROLE_USER)
     parser.add_argument("--public-base-url", default="http://127.0.0.1:8010")
     parser.add_argument(
         "--skip-billing-rebuild",
@@ -104,7 +104,7 @@ def bootstrap_portal_site(
     membership = commercial_service.upsert_account_membership(
         account_id=account_id,
         member_ref=member_ref,
-        role=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+        role=ACCOUNT_MEMBERSHIP_ROLE_USER,
         status="active",
         metadata_json={
             "source": "bootstrap_portal_site",
@@ -151,7 +151,7 @@ def bootstrap_portal_site(
             "member_email": normalized_email,
             "member_ref": member_ref,
             "member_role": membership["role"],
-            "identity_type": membership.get("identity_type") or "user_admin",
+            "identity_type": membership.get("identity_type") or "user",
             "routes": {
                 "login_url": f"{base_url}/portal/login",
                 "portal_url": f"{base_url}/portal",

@@ -49,8 +49,8 @@ async function installPortalAIInsightMocks(page: Page) {
         member_ref: 'user:portal-agent-smoke@example.com',
         site_id: 'site_agent_smoke',
         account_id: 'acct_agent_smoke',
-        identity_type: 'user_admin',
-        role: 'user_admin',
+        identity_type: 'user',
+        role: 'user',
         allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit'],
         site: {
           site_id: 'site_agent_smoke',

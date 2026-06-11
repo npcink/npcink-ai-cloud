@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
-from app.core.models import ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+from app.core.models import ACCOUNT_MEMBERSHIP_ROLE_USER
 from app.core.security import extract_trace_id
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
@@ -73,7 +73,7 @@ class AccountPayload(BaseModel):
 
 class MembershipPayload(BaseModel):
     member_ref: str
-    role: str = ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+    role: str = ACCOUNT_MEMBERSHIP_ROLE_USER
     status: str = "active"
     metadata: dict[str, Any] = Field(default_factory=dict)
 

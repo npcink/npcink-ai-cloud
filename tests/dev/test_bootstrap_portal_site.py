@@ -42,7 +42,7 @@ def test_bootstrap_portal_site_binds_member_to_existing_site_without_demo_usage(
         settings=settings,
         site_id="site_realish",
         member_email="buyer@example.com",
-        member_role="user_admin",
+        member_role="user",
         public_base_url="http://127.0.0.1:8010",
         rebuild_billing_snapshot=True,
         issue_key=False,
@@ -54,8 +54,8 @@ def test_bootstrap_portal_site_binds_member_to_existing_site_without_demo_usage(
 
     assert result["data_mode"] == "real_site_bootstrap"
     assert result["portal"]["membership"]["member_ref"] == "user:buyer@example.com"
-    assert result["portal"]["membership"]["identity_type"] == "user_admin"
-    assert result["portal"]["membership"]["role"] == "user_admin"
+    assert result["portal"]["membership"]["identity_type"] == "user"
+    assert result["portal"]["membership"]["role"] == "user"
     assert result["site_summary"]["site"]["site_id"] == "site_realish"
     assert result["usage_summary"]["windows"]["today"]["runs_total"] == 0
     assert result["usage_meter"]["totals"] == {}
@@ -100,7 +100,7 @@ def test_bootstrap_portal_site_can_optionally_issue_one_new_key(tmp_path: Path) 
         settings=settings,
         site_id="site_realish_issue",
         member_email="buyer@example.com",
-        member_role="user_admin",
+        member_role="user",
         public_base_url="http://127.0.0.1:8010",
         rebuild_billing_snapshot=False,
         issue_key=True,

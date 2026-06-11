@@ -29,7 +29,7 @@
 | `uuid` | `uuid4` |
 | `app.core.models` | `AccountSubscription`, `PlatformImpersonationSession`, `Site`, `ACCOUNT_MEMBERSHIP_STATUS_ACTIVE`, `PLATFORM_IMPERSONATION_STATUS_*`, `SITE_*_STATUS_*`, `SUBSCRIPTION_STATUS_*` |
 | `app.domain.commercial.errors` | `CommercialNotFoundError`, `CommercialPermissionError` |
-| `app.domain.commercial.mixins._audit_mixin` | `IDENTITY_TYPE_USER_ADMIN` |
+| `app.domain.commercial.mixins._audit_mixin` | `IDENTITY_TYPE_USER` |
 | `app.domain.commercial.mixins._billing_mixin` | `SHADOW_PRICING_TARIFF_REGISTRY`, `SHADOW_PRICING_TARIFF_VERSION` |
 
 ### 3. `docker-compose.dev.yml` — 修复前端容器启动

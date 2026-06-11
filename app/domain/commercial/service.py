@@ -4,7 +4,7 @@ import re
 from urllib.parse import urlsplit
 
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
     ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
@@ -35,12 +35,12 @@ DEFAULT_RUNTIME_ENTITLEMENTS = {
     "data_classifications": ["*"],
 }
 DEFAULT_RUNTIME_BUDGETS: dict[str, object] = {
-    "max_runs_per_period": 500,
-    "max_tokens_per_period": 2_000_000,
-    "max_cost_per_period": 50.0,
+    "max_runs_per_period": 0,
+    "max_tokens_per_period": 0,
+    "max_cost_per_period": 0.0,
 }
 DEFAULT_RUNTIME_CONCURRENCY: dict[str, object] = {
-    "max_active_runs": 10,
+    "max_active_runs": 0,
 }
 DEFAULT_RUNTIME_COMMERCIAL_POLICY = {
     "subscription": {
@@ -123,28 +123,28 @@ SHADOW_PRICING_TARIFF_REGISTRY: dict[str, dict[str, dict[str, float | str]]] = {
     },
 }
 PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
-    "starter": {
-        "tier_id": "starter",
-        "label": "Starter",
+    "free": {
+        "tier_id": "free",
+        "label": "Free",
         "package_alias": "Free",
-        "usage_band": "Low-volume single-site hosted usage.",
-        "positioning": "Baseline package for conservative hosted runs, lighter workflow usage, and operator-managed growth.",
-        "monthly_included_points": 500,
+        "usage_band": "Unlimited internal development usage.",
+        "positioning": "Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.",
+        "monthly_included_points": 0,
         "budgets_template": {
-            "max_runs_per_period": 500,
-            "max_tokens_per_period": 200_000,
-            "max_cost_per_period": 5.0,
+            "max_runs_per_period": 0,
+            "max_tokens_per_period": 0,
+            "max_cost_per_period": 0.0,
         },
-        "concurrency_template": {"max_active_runs": 1},
-        "site_limit": 1,
+        "concurrency_template": {"max_active_runs": 0},
+        "site_limit": 0,
         "max_batch_items": 0,
         "automation_enabled": True,
         "api_enabled": True,
         "openclaw_enabled": True,
-        "package_operator_note": "Core capabilities stay available across packages. Free remains the most conservative on points, concurrency, batch headroom, and over-limit handling.",
+        "package_operator_note": "Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.",
         "policy_baseline": {
             "grace_period_days": 0,
-            "downgrade_policy": "Fail closed when cost or token pressure exceeds the period budget.",
+            "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development.",
         },
         "feature_groups": [
             "Hosted runtime baseline",
@@ -155,25 +155,25 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
     "pro": {
         "tier_id": "pro",
         "label": "Pro",
-        "package_alias": "Basic",
-        "usage_band": "Mid-band workflow and automation usage.",
-        "positioning": "General-purpose package for steadier workflow volume, fuller automation usage, and predictable hosted operations.",
-        "monthly_included_points": 10_000,
+        "package_alias": "Pro",
+        "usage_band": "Unlimited internal development usage.",
+        "positioning": "Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.",
+        "monthly_included_points": 0,
         "budgets_template": {
-            "max_runs_per_period": 10_000,
-            "max_tokens_per_period": 2_000_000,
-            "max_cost_per_period": 99.0,
+            "max_runs_per_period": 0,
+            "max_tokens_per_period": 0,
+            "max_cost_per_period": 0.0,
         },
-        "concurrency_template": {"max_active_runs": 2},
-        "site_limit": 5,
-        "max_batch_items": 10,
+        "concurrency_template": {"max_active_runs": 0},
+        "site_limit": 0,
+        "max_batch_items": 0,
         "automation_enabled": True,
         "api_enabled": True,
         "openclaw_enabled": True,
-        "package_operator_note": "Core capabilities stay available across packages. Basic expands points, concurrency, batch headroom, and grace before operator intervention.",
+        "package_operator_note": "Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.",
         "policy_baseline": {
             "grace_period_days": 3,
-            "downgrade_policy": "Use short grace before downgrading queue-heavy or high-cost usage.",
+            "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development.",
         },
         "feature_groups": [
             "Hosted runtime + workflow coverage",
@@ -184,25 +184,25 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
     "agency": {
         "tier_id": "agency",
         "label": "Agency",
-        "package_alias": "Bulk",
-        "usage_band": "High-volume multi-site and sustained workflow usage.",
-        "positioning": "High-headroom package for multi-site operators, continuous automation, and materially higher hosted workload.",
-        "monthly_included_points": 50_000,
+        "package_alias": "Agency",
+        "usage_band": "Unlimited internal development usage.",
+        "positioning": "Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.",
+        "monthly_included_points": 0,
         "budgets_template": {
-            "max_runs_per_period": 50_000,
-            "max_tokens_per_period": 10_000_000,
-            "max_cost_per_period": 499.0,
+            "max_runs_per_period": 0,
+            "max_tokens_per_period": 0,
+            "max_cost_per_period": 0.0,
         },
-        "concurrency_template": {"max_active_runs": 6},
-        "site_limit": 25,
-        "max_batch_items": 100,
+        "concurrency_template": {"max_active_runs": 0},
+        "site_limit": 0,
+        "max_batch_items": 0,
         "automation_enabled": True,
         "api_enabled": True,
         "openclaw_enabled": True,
-        "package_operator_note": "Core capabilities stay available across packages. Bulk provides the highest points budget, concurrency, batch headroom, and policy headroom.",
+        "package_operator_note": "Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.",
         "policy_baseline": {
             "grace_period_days": 7,
-            "downgrade_policy": "Keep operator visibility high while allowing short-lived overage handling before intervention.",
+            "downgrade_policy": "No package-limit downgrade while the unreleased product is in internal development.",
         },
         "feature_groups": [
             "Higher hosted concurrency",
@@ -225,7 +225,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "points_label": "10,000 points equivalent",
         "points_equivalent": 10_000,
         "display_order": 1,
-        "recommended_for_tiers": ["starter", "pro"],
+        "recommended_for_tiers": ["free", "pro"],
         "active": True,
         "runs_increment": 10_000,
         "tokens_increment": 2_000_000,
@@ -262,13 +262,13 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
 
 
 PORTAL_SITE_KEY_WRITE_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
 }
 PORTAL_SITE_PROVISION_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
 }
 PORTAL_SITE_READ_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
 }
 PORTAL_MEMBERSHIP_ALLOWED_ROLES = PORTAL_SITE_READ_ROLES
 ACCOUNT_MEMBERSHIP_ALLOWED_ROLES = PORTAL_MEMBERSHIP_ALLOWED_ROLES
@@ -294,7 +294,7 @@ PORTAL_INVITE_DELIVERY_SENT = "sent"
 PORTAL_INVITE_DELIVERY_FAILED = "failed"
 PORTAL_INVITE_DELIVERY_SKIPPED = "skipped"
 IDENTITY_TYPE_PLATFORM_ADMIN = "platform_admin"
-IDENTITY_TYPE_USER_ADMIN = "user_admin"
+IDENTITY_TYPE_USER = "user"
 USER_ALLOWED_ACTION_VIEW_SITES = "view_sites"
 USER_ALLOWED_ACTION_VIEW_USAGE = "view_usage"
 USER_ALLOWED_ACTION_VIEW_BILLING = "view_billing"
@@ -403,16 +403,16 @@ def _portal_membership_has_allowed_role(
 
 def _normalize_customer_membership_role(role: str) -> str:
     normalized_role = str(role or "").strip()
-    if normalized_role == ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN:
-        return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
-    return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+    if normalized_role == ACCOUNT_MEMBERSHIP_ROLE_USER:
+        return ACCOUNT_MEMBERSHIP_ROLE_USER
+    return ACCOUNT_MEMBERSHIP_ROLE_USER
 
 
 def _resolve_identity_type(role: str) -> str:
     normalized_role = str(role or "").strip()
     if normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES:
         return IDENTITY_TYPE_PLATFORM_ADMIN
-    return IDENTITY_TYPE_USER_ADMIN
+    return IDENTITY_TYPE_USER
 
 
 def _portal_membership_role_priority(role: str) -> int:
@@ -426,8 +426,8 @@ def _normalize_platform_admin_role(role: str) -> str:
 def _canonicalize_customer_membership_role_for_write(role: str) -> str:
     normalized_role = str(role or "").strip()
     if normalized_role in ACCOUNT_MEMBERSHIP_ALLOWED_ROLES:
-        return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
-    return ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+        return ACCOUNT_MEMBERSHIP_ROLE_USER
+    return ACCOUNT_MEMBERSHIP_ROLE_USER
 
 
 def _canonicalize_platform_admin_role_for_write(role: str) -> str:

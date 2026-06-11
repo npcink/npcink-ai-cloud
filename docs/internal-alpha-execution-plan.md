@@ -57,7 +57,7 @@ Allowed in this plan:
 - queue-backed worker execution
 - usage, billing, entitlement, and audit detail
 - bounded `/admin/*` operator surfaces
-- bounded `/portal/*` user-admin workspace surfaces
+- bounded `/portal/*` user workspace surfaces
 - local, mini, or preview environment smoke verification
 
 Not in this plan:
@@ -225,6 +225,17 @@ Current local result:
 - The current Cloud contract intentionally keeps `/v1/addon/*` projection routes
   absent. Local addon verification is therefore done through the WordPress Cloud
   addon admin tab plus Cloud entitlement/runtime/usage APIs.
+
+Current onboarding contract:
+
+- `pnpm run smoke:internal-alpha-onboarding` verifies the fast Admin to Portal
+  onboarding path in an isolated API test database.
+- The path covers `platform_admin` account/package/subscription setup, invited
+  `user` Portal login, user-created site binding, user-issued Cloud API key,
+  one signed runtime request, usage meter evidence, Admin/Portal audit
+  visibility, and `trial_readiness.status == ready`.
+- This is a contract smoke for the Cloud service boundary; it does not replace
+  the full local `smoke:local-alpha` run against Docker Compose and WordPress.
 
 ### Step 4: Runtime And Ops Minimum Hardening
 

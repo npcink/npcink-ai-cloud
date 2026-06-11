@@ -8,7 +8,7 @@
 import { getPortalApiBaseUrl } from './env';
 import { generateIdempotencyKey } from './idempotency';
 
-export type ProductIdentityType = 'platform_admin' | 'user_admin';
+export type ProductIdentityType = 'platform_admin' | 'user';
 
 // ============================================
 // 类型定义

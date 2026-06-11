@@ -4,7 +4,7 @@ Next.js App Router frontend for the bounded Cloud web surfaces. The shipped
 frontend has three clearly separated surface families:
 
 - `/(marketing)/*`: public product and onboarding surface
-- `/portal/*`: authenticated user workspace for user admins
+- `/portal/*`: authenticated user workspace for users
 - `/admin/*`: internal platform-admin console
 
 This frontend is not a separate backend truth and it is not a second control
@@ -38,7 +38,7 @@ Commercial copy freeze for frontend surfaces:
 
 ### Cloud Portal
 
-- Entry for: `user_admin`
+- Entry for: `user`
 - Home: `/portal/*`
 - Purpose: user workspace, not a smaller admin console
 - Portal may expose bounded billing/usage detail, but it must not be described
@@ -205,7 +205,7 @@ Use this split consistently in code, copy, and navigation:
   - internal operations console
   - never reuse portal user wording here
 - `/portal/*`
-  - user administrator only
+  - user only
   - current site workspace
   - never mirror admin object inventory here
 - addon

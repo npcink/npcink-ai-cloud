@@ -10,7 +10,7 @@ from uuid import uuid4
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+    ACCOUNT_MEMBERSHIP_ROLE_USER,
     ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
     ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
@@ -28,7 +28,7 @@ from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixi
 from app.domain.commercial.service import (
     DEFAULT_FREE_PLAN_KIND,
     DEFAULT_FREE_SUBSCRIPTION_SOURCE,
-    IDENTITY_TYPE_USER_ADMIN,
+    IDENTITY_TYPE_USER,
     PLAN_TIER_REGISTRY,
     PORTAL_INVITE_DELIVERY_FAILED,
     PORTAL_INVITE_DELIVERY_QUEUED,
@@ -94,7 +94,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         member_ref: str,
-        role: str = ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+        role: str = ACCOUNT_MEMBERSHIP_ROLE_USER,
         status: str = "active",
         metadata_json: dict[str, object] | None = None,
         audit_context: ServiceAuditContext | None = None,
@@ -139,7 +139,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         email: str,
-        role: str = ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+        role: str = ACCOUNT_MEMBERSHIP_ROLE_USER,
         locale: str = "",
         platform_role: str,
         audit_context: ServiceAuditContext | None = None,
@@ -157,7 +157,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 "service.portal_email_invalid",
                 "a valid portal email is required",
             )
-        requested_role = ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN
+        requested_role = ACCOUNT_MEMBERSHIP_ROLE_USER
 
         member_ref = f"user:{normalized_email}"
         invited_at_dt = self.now_factory()
@@ -276,7 +276,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 "email": normalized_email,
                 "member_ref": member_ref,
                 "role": member_role,
-                "identity_type": IDENTITY_TYPE_USER_ADMIN,
+                "identity_type": IDENTITY_TYPE_USER,
                 "status": ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
                 "delivery": delivery_mode,
                 "delivery_status": delivery_status,
@@ -404,7 +404,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 repository.upsert_account_membership(
                     account_id=account_id,
                     member_ref=normalized_member_ref,
-                    role=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+                    role=ACCOUNT_MEMBERSHIP_ROLE_USER,
                     status=ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
                     metadata_json=_normalize_portal_membership_metadata(
                         member_ref=normalized_member_ref,
@@ -441,7 +441,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             membership = repository.upsert_account_membership(
                 account_id=account_id,
                 member_ref=normalized_member_ref,
-                role=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+                role=ACCOUNT_MEMBERSHIP_ROLE_USER,
                 status=next_status,
                 metadata_json=_normalize_portal_membership_metadata(
                     member_ref=normalized_member_ref,
@@ -521,7 +521,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             membership = repository.upsert_account_membership(
                 account_id=account_id,
                 member_ref=normalized_member_ref,
-                role=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+                role=ACCOUNT_MEMBERSHIP_ROLE_USER,
                 status=ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
                 metadata_json=_normalize_portal_membership_metadata(
                     member_ref=normalized_member_ref,
@@ -601,7 +601,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             membership = repository.upsert_account_membership(
                 account_id=account_id,
                 member_ref=normalized_member_ref,
-                role=ACCOUNT_MEMBERSHIP_ROLE_USER_ADMIN,
+                role=ACCOUNT_MEMBERSHIP_ROLE_USER,
                 status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
                 metadata_json=_normalize_portal_membership_metadata(
                     member_ref=normalized_member_ref,
@@ -797,7 +797,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             ),
             "auth_mode": "magic-link",
             "roles": roles,
-            "identity_type": IDENTITY_TYPE_USER_ADMIN,
+            "identity_type": IDENTITY_TYPE_USER,
             "allowed_actions": sorted(
                 {
                     action
@@ -811,7 +811,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             "memberships": [
                 {
                     "account_id": str(item.get("account_id") or ""),
-                    "identity_type": str(item.get("identity_type") or IDENTITY_TYPE_USER_ADMIN),
+                    "identity_type": str(item.get("identity_type") or IDENTITY_TYPE_USER),
                     "allowed_actions": [
                         str(action)
                         for action in list(item.get("allowed_actions") or [])
@@ -951,11 +951,10 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             current_period_end_at=now + timedelta(days=30),
             metadata_json={
                 "source": DEFAULT_FREE_SUBSCRIPTION_SOURCE,
-                "tier_id": "starter",
-                "package_alias": PLAN_TIER_REGISTRY["starter"].get("package_alias") or "Free",
+                "tier_id": "free",
+                "package_alias": PLAN_TIER_REGISTRY["free"].get("package_alias") or "Free",
                 "plan_kind": DEFAULT_FREE_PLAN_KIND,
-                "site_limit": self._coerce_int(PLAN_TIER_REGISTRY["starter"].get("site_limit"))
-                or 1,
+                "site_limit": self._coerce_int(PLAN_TIER_REGISTRY["free"].get("site_limit")),
             },
         )
         payload = {
@@ -1196,7 +1195,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             account_ids=[account_id],
         )
         current_count = self._coerce_int(site_counts.get(account_id, 0))
-        if current_count >= site_limit:
+        if site_limit > 0 and current_count >= site_limit:
             raise CommercialPermissionError(
                 "service.site_limit_exceeded",
                 f"account '{account_id}' has reached its site limit for the current subscription",

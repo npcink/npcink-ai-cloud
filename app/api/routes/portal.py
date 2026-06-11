@@ -66,6 +66,12 @@ class PortalSessionSitePayload(BaseModel):
     site_id: str = ""
 
 
+class PortalCreateSitePayload(BaseModel):
+    account_id: str = ""
+    site_name: str = ""
+    wordpress_url: str = ""
+
+
 class PortalLoginCodeRequestPayload(BaseModel):
     email: str = ""
     locale: str = ""
@@ -612,6 +618,44 @@ async def list_portal_sites(request: Request) -> Any:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal sites loaded",
+        data=result,
+    )
+
+
+@router.post("/sites")
+async def create_portal_site(
+    request: Request,
+    payload: PortalCreateSitePayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+
+    service = _get_commercial_service(request)
+    audit_context = _build_portal_audit_context(request, auth.member_ref)
+    try:
+        result = service.provision_portal_site(
+            account_id=payload.account_id,
+            member_ref=auth.member_ref,
+            wordpress_url=payload.wordpress_url,
+            site_name=payload.site_name,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+
+    return _portal_route_envelope(
+        message="portal site created",
         data=result,
     )
 

@@ -332,7 +332,7 @@ function AccountsContent() {
                   size: 'compact',
                 },
                 {
-                  label: t('admin.plan_package_alias_starter', {}, 'Free'),
+                  label: t('admin.plan_package_alias_free', {}, 'Free'),
                   value: formatInteger(freeAccounts),
                   size: 'compact',
                 },
@@ -499,7 +499,7 @@ function AccountsContent() {
               className="input"
             >
               <option value="">{t('common.all')}</option>
-              <option value="formal_free">{t('admin.plan_package_alias_starter', {}, 'Free')}</option>
+              <option value="formal_free">{t('admin.plan_package_alias_free', {}, 'Free')}</option>
               <option value="tier_package">{t('admin.tier_template_binding', {}, 'Tier-bound plan')}</option>
               <option value="dev_baseline">{t('admin.dev_baseline', {}, 'Dev baseline')}</option>
             </select>

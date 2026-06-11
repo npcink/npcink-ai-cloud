@@ -330,6 +330,17 @@ case "${WORDPRESS_ADDON_BODY}" in
 esac
 assert_body_contains "${WORDPRESS_ADDON_BODY}" "Cloud API Key" "WordPress Cloud addon page should render the Cloud settings tab"
 
+ok "Refreshing local alpha runtime baseline"
+docker compose -f "${ROOT_DIR}/docker-compose.dev.yml" exec -T api \
+	python -m app.dev.seed_runtime \
+		--site-id "${SITE_ID}" \
+		--key-id "${KEY_ID}" \
+		--secret "${SECRET}" \
+		--site-name "Local Alpha Site" \
+		--scopes "catalog:read,runtime:resolve,runtime:execute,runtime:read,stats:read,entitlement:read" \
+		--skip-catalog-refresh \
+		--skip-health-scan >/dev/null
+
 ok "Bootstrapping portal membership and billing snapshot"
 docker compose -f "${ROOT_DIR}/docker-compose.dev.yml" run --rm api \
 	python -m app.dev.bootstrap_portal_site \

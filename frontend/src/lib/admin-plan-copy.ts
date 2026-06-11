@@ -2,14 +2,12 @@ type TranslateFn = (key: string, params?: Record<string, string>, fallback?: str
 
 export function localizeTierLabel(t: TranslateFn, tierId: string, fallback?: string): string {
   switch (tierId) {
-    case 'starter':
-      return t('admin.plan_tier_starter', {}, fallback || 'Starter');
+    case 'free':
+      return t('admin.plan_tier_free', {}, fallback || 'Free');
     case 'pro':
       return t('admin.plan_tier_pro', {}, fallback || 'Pro');
     case 'agency':
       return t('admin.plan_tier_agency', {}, fallback || 'Agency');
-    case 'enterprise':
-      return t('admin.plan_tier_enterprise', {}, fallback || 'Enterprise');
     default:
       return fallback || tierId;
   }
@@ -18,14 +16,12 @@ export function localizeTierLabel(t: TranslateFn, tierId: string, fallback?: str
 export function localizePackageAlias(t: TranslateFn, tierId: string, fallback?: string): string {
   switch (tierId) {
     case 'plan_free':
-    case 'starter':
-      return t('admin.plan_package_alias_starter', {}, fallback || 'Starter');
+    case 'free':
+      return t('admin.plan_package_alias_free', {}, fallback || 'Free');
     case 'pro':
       return t('admin.plan_package_alias_pro', {}, fallback || 'Pro');
     case 'agency':
       return t('admin.plan_package_alias_agency', {}, fallback || 'Agency');
-    case 'enterprise':
-      return t('admin.plan_package_alias_enterprise', {}, fallback || 'Enterprise');
     default:
       return fallback || tierId;
   }
@@ -33,14 +29,12 @@ export function localizePackageAlias(t: TranslateFn, tierId: string, fallback?: 
 
 export function localizeUsageBand(t: TranslateFn, tierId: string, fallback?: string): string {
   switch (tierId) {
-    case 'starter':
-      return t('admin.plan_usage_band_starter', {}, fallback || 'Single-site trial with light GEO and product task usage.');
+    case 'free':
+      return t('admin.plan_usage_band_free', {}, fallback || 'Unlimited internal development usage.');
     case 'pro':
-      return t('admin.plan_usage_band_pro', {}, fallback || 'Daily content, GEO, and WooCommerce product operations on one site.');
+      return t('admin.plan_usage_band_pro', {}, fallback || 'Unlimited internal development usage.');
     case 'agency':
-      return t('admin.plan_usage_band_agency', {}, fallback || 'Multi-site, bulk product, multi-language, and team-collaboration usage.');
-    case 'enterprise':
-      return t('admin.plan_usage_band_enterprise', {}, fallback || 'Custom-scale usage with BYOM, private models, audit, and SLA compliance.');
+      return t('admin.plan_usage_band_agency', {}, fallback || 'Unlimited internal development usage.');
     default:
       return fallback || '';
   }
@@ -48,14 +42,12 @@ export function localizeUsageBand(t: TranslateFn, tierId: string, fallback?: str
 
 export function localizePositioning(t: TranslateFn, tierId: string, fallback?: string): string {
   switch (tierId) {
-    case 'starter':
-      return t('admin.plan_positioning_starter', {}, fallback || 'Baseline package for single-site trial, conservative hosted runs, and operator-managed growth.');
+    case 'free':
+      return t('admin.plan_positioning_free', {}, fallback || 'Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.');
     case 'pro':
-      return t('admin.plan_positioning_pro', {}, fallback || 'General-purpose package for steady daily content, GEO, and Woo product ops with predictable hosted operations.');
+      return t('admin.plan_positioning_pro', {}, fallback || 'Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.');
     case 'agency':
-      return t('admin.plan_positioning_agency', {}, fallback || 'High-headroom package for multi-site operators, bulk products, multi-language, and team collaboration.');
-    case 'enterprise':
-      return t('admin.plan_positioning_enterprise', {}, fallback || 'Custom package for BYOM, private models, extended audit retention, SLA compliance, and dedicated support.');
+      return t('admin.plan_positioning_agency', {}, fallback || 'Development-stage package with no runtime, token, cost, concurrency, site, or batch limits while the product is unreleased.');
     default:
       return fallback || '';
   }
@@ -63,14 +55,12 @@ export function localizePositioning(t: TranslateFn, tierId: string, fallback?: s
 
 export function localizeOperatorNote(t: TranslateFn, tierId: string, fallback?: string): string {
   switch (tierId) {
-    case 'starter':
-      return t('admin.plan_operator_note_starter', {}, fallback || 'Core capabilities stay available across packages. Starter is the most conservative on site count, task volume, concurrency, batch headroom, and over-limit handling.');
+    case 'free':
+      return t('admin.plan_operator_note_free', {}, fallback || 'Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.');
     case 'pro':
-      return t('admin.plan_operator_note_pro', {}, fallback || 'Core capabilities stay available across packages. Pro expands task volume, concurrency, batch headroom, and support level for daily operations.');
+      return t('admin.plan_operator_note_pro', {}, fallback || 'Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.');
     case 'agency':
-      return t('admin.plan_operator_note_agency', {}, fallback || 'Core capabilities stay available across packages. Agency provides the highest standard headroom for multi-site, bulk product, and team-collaboration usage.');
-    case 'enterprise':
-      return t('admin.plan_operator_note_enterprise', {}, fallback || 'Core capabilities stay available across packages. Enterprise offers custom limits, BYOM, private models, extended audit retention, and dedicated SLA support.');
+      return t('admin.plan_operator_note_agency', {}, fallback || 'Internal development is temporarily unlimited. Keep subscriptions, keys, usage, and audit active, but do not block on package limits before release.');
     default:
       return fallback || '';
   }
@@ -103,7 +93,7 @@ export function localizeFeatureGroup(t: TranslateFn, feature: string): string {
 
 export function localizePlanName(t: TranslateFn, planId: string, name: string): string {
   if (planId === 'plan_free' || name === 'Free') {
-    return t('admin.plan_name_free', {}, name || 'Starter');
+    return t('admin.plan_name_free', {}, name || 'Free');
   }
   if (planId === 'plan_dev_unlimited' || name === 'Development Unlimited') {
     return t('admin.plan_name_development_unlimited', {}, name);
@@ -127,17 +117,14 @@ export function resolveAdminPackageLabel(
   }
 ): string {
   const raw = `${planId || ''} ${packageAlias || ''} ${fallback || ''}`.toLowerCase();
-  if (raw.includes('enterprise')) {
-    return localizePackageAlias(t, 'enterprise', fallback || packageAlias || 'Enterprise');
-  }
-  if (raw.includes('bulk') || raw.includes('agency')) {
+  if (raw.includes('agency')) {
     return localizePackageAlias(t, 'agency', fallback || packageAlias || 'Agency');
   }
-  if (raw.includes('basic') || raw.includes('pro')) {
+  if (raw.includes('pro')) {
     return localizePackageAlias(t, 'pro', fallback || packageAlias || 'Pro');
   }
-  if (raw.includes('free') || raw.includes('starter') || raw.includes('plan_free')) {
-    return localizePackageAlias(t, 'starter', fallback || packageAlias || 'Starter');
+  if (raw.includes('free') || raw.includes('free') || raw.includes('plan_free')) {
+    return localizePackageAlias(t, 'free', fallback || packageAlias || 'Free');
   }
   return fallback || packageAlias || planId || '';
 }

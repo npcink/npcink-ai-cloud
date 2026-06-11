@@ -158,7 +158,7 @@ function LoginFormContent() {
                   {t(
                     'auth.email_verification_desc',
                     undefined,
-                    'Platform admins invite user admins first. Only invited email addresses can request a verification code.'
+                    'Platform admins invite users first. Only invited email addresses can request a verification code.'
                   )}
                 </p>
               </BackofficeStackCard>

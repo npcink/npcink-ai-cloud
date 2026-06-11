@@ -83,6 +83,35 @@ interface AccountDetail {
     metadata?: Record<string, unknown>;
     updated_at?: string;
   }>;
+  trial_readiness?: TrialReadinessSummary;
+}
+
+interface TrialReadinessCheck {
+  code: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+interface TrialReadinessSummary {
+  status: 'ready' | 'action_required' | 'blocked' | string;
+  next_action: string;
+  next_action_label: string;
+  blocking_codes: string[];
+  summary: {
+    site_count: number;
+    active_site_count: number;
+    active_key_site_count: number;
+    sites_without_active_key: string[];
+    member_count: number;
+    active_member_count: number;
+    active_or_pending_member_count: number;
+    subscription_status?: string;
+    display_package_label?: string;
+    package_kind?: PackageKind | string;
+    coverage_state?: CoverageState | string;
+  };
+  checks: TrialReadinessCheck[];
 }
 
 interface MemberPlanCoverageSummary {
@@ -146,13 +175,13 @@ interface PackagePlanListItem {
 }
 
 type QuickPackageOption = {
-  tier_id: 'starter' | 'pro' | 'agency';
+  tier_id: 'free' | 'pro' | 'agency';
   plan_id: string;
   plan_version_id: string;
 };
 
 const QUICK_PACKAGE_OPTIONS: QuickPackageOption[] = [
-  { tier_id: 'starter', plan_id: 'starter', plan_version_id: 'starter_v1' },
+  { tier_id: 'free', plan_id: 'free', plan_version_id: 'free_v1' },
   { tier_id: 'pro', plan_id: 'pro', plan_version_id: 'pro_v1' },
   { tier_id: 'agency', plan_id: 'agency', plan_version_id: 'agency_v1' },
 ];
@@ -369,6 +398,8 @@ function AccountDetailContent() {
       const memberships = Array.isArray(payload.memberships) ? payload.memberships : [];
       const sites = Array.isArray(payload.sites) ? payload.sites : [];
       const subscriptions = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
+      const readiness = payload.trial_readiness || {};
+      const readinessSummary = readiness.summary || {};
       const nextAccount: AccountDetail = {
         account_id: String(accountData.account_id || accountId),
         name: String(accountData.name || accountData.account_id || accountId),
@@ -437,6 +468,39 @@ function AccountDetailContent() {
           metadata: membership.metadata || {},
           email: normalizeEmailFromMember(String(membership.member_ref || ''), membership.metadata || {}),
         })),
+        trial_readiness: readiness.status
+          ? {
+              status: String(readiness.status || 'action_required'),
+              next_action: String(readiness.next_action || ''),
+              next_action_label: String(readiness.next_action_label || ''),
+              blocking_codes: Array.isArray(readiness.blocking_codes)
+                ? readiness.blocking_codes.map((item: unknown) => String(item))
+                : [],
+              summary: {
+                site_count: Number(readinessSummary.site_count || 0),
+                active_site_count: Number(readinessSummary.active_site_count || 0),
+                active_key_site_count: Number(readinessSummary.active_key_site_count || 0),
+                sites_without_active_key: Array.isArray(readinessSummary.sites_without_active_key)
+                  ? readinessSummary.sites_without_active_key.map((item: unknown) => String(item))
+                  : [],
+                member_count: Number(readinessSummary.member_count || 0),
+                active_member_count: Number(readinessSummary.active_member_count || 0),
+                active_or_pending_member_count: Number(readinessSummary.active_or_pending_member_count || 0),
+                subscription_status: String(readinessSummary.subscription_status || ''),
+                display_package_label: String(readinessSummary.display_package_label || ''),
+                package_kind: String(readinessSummary.package_kind || ''),
+                coverage_state: String(readinessSummary.coverage_state || ''),
+              },
+              checks: Array.isArray(readiness.checks)
+                ? readiness.checks.map((item: Record<string, unknown>) => ({
+                    code: String(item.code || ''),
+                    label: String(item.label || ''),
+                    ok: Boolean(item.ok),
+                    detail: String(item.detail || ''),
+                  }))
+                : [],
+            }
+          : undefined,
       };
       setAccount(nextAccount);
       const defaultSubscription =
@@ -561,7 +625,7 @@ function AccountDetailContent() {
         },
         body: JSON.stringify({
           email: normalizedEmail,
-          role: 'user_admin',
+          role: 'user',
         }),
       });
 
@@ -575,7 +639,7 @@ function AccountDetailContent() {
         t(
           'admin.invite_member_success',
           { email: normalizedEmail },
-          `${normalizedEmail} has been invited as a user administrator.`
+          `${normalizedEmail} has been invited as a user.`
         )
       );
       setInviteEmail('');
@@ -885,6 +949,74 @@ function AccountDetailContent() {
     primaryPackage.package_kind === 'tier_package' && primaryPackage.coverage_state === 'covered';
   const hasFormalFreeCoverage =
     primaryPackage.package_kind === 'formal_free' && primaryPackage.coverage_state === 'covered';
+  const trialReadiness = account.trial_readiness || null;
+  const trialReadinessTone =
+    trialReadiness?.status === 'ready'
+      ? 'ok'
+      : trialReadiness?.status === 'blocked'
+        ? 'error'
+        : 'warning';
+  const trialReadinessTitle =
+    trialReadiness?.status === 'ready'
+      ? t('admin.account_detail.trial_readiness_ready_title', undefined, 'Ready for controlled trial')
+      : trialReadiness?.status === 'blocked'
+        ? t('admin.account_detail.trial_readiness_blocked_title', undefined, 'Blocked before trial')
+        : t('admin.account_detail.trial_readiness_action_title', undefined, 'Action required before trial');
+  const trialReadinessDescription =
+    trialReadiness?.status === 'ready'
+      ? t(
+          'admin.account_detail.trial_readiness_ready_desc',
+          undefined,
+          'Package coverage, active site posture, Cloud API key coverage, and portal access are ready for an approved trial invite.'
+        )
+      : t(
+          'admin.account_detail.trial_readiness_action_desc',
+          undefined,
+          'Use this checklist as the operator path for internal testing: fix the first failed item, then rerun smoke or invite the approved site.'
+        );
+  const trialSummary = trialReadiness?.summary;
+  const trialMetricItems = [
+    {
+      label: t('admin.account_detail.trial_sites_metric', undefined, 'Sites active'),
+      value: `${formatInteger(trialSummary?.active_site_count || 0)}/${formatInteger(trialSummary?.site_count || 0)}`,
+      detail: t('admin.account_detail.trial_sites_metric_desc', undefined, 'Approved WordPress sites attached to this customer.'),
+      toneClassName:
+        trialSummary && trialSummary.site_count > 0 && trialSummary.active_site_count === trialSummary.site_count
+          ? undefined
+          : 'text-red-600 dark:text-red-400',
+      size: 'compact' as const,
+    },
+    {
+      label: t('admin.account_detail.trial_keys_metric', undefined, 'API keys'),
+      value: `${formatInteger(trialSummary?.active_key_site_count || 0)}/${formatInteger(trialSummary?.site_count || 0)}`,
+      detail: t('admin.account_detail.trial_keys_metric_desc', undefined, 'Sites with active Cloud API key coverage.'),
+      toneClassName:
+        trialSummary && trialSummary.site_count > 0 && trialSummary.active_key_site_count === trialSummary.site_count
+          ? undefined
+          : 'text-red-600 dark:text-red-400',
+      size: 'compact' as const,
+    },
+    {
+      label: t('common.package', undefined, 'Package'),
+      value: trialSummary?.display_package_label || primaryPackage.display_package_label,
+      detail: translateCoverageStateLabel(t, (trialSummary?.coverage_state as CoverageState) || primaryPackage.coverage_state),
+      toneClassName:
+        (trialSummary?.coverage_state || primaryPackage.coverage_state) === 'covered'
+          ? undefined
+          : 'text-red-600 dark:text-red-400',
+      size: 'compact' as const,
+    },
+    {
+      label: t('admin.account_detail.trial_portal_metric', undefined, 'Portal users'),
+      value: `${formatInteger(trialSummary?.active_or_pending_member_count || 0)}/${formatInteger(trialSummary?.member_count || 0)}`,
+      detail: t('admin.account_detail.trial_portal_metric_desc', undefined, 'Active or invited users for customer access.'),
+      toneClassName:
+        trialSummary && trialSummary.active_or_pending_member_count > 0
+          ? undefined
+          : 'text-red-600 dark:text-red-400',
+      size: 'compact' as const,
+    },
+  ];
   const postureTone =
     account.status === 'suspended' || riskySubscriptions.length > 0 || hasUncoveredCommercialPosture || hasDevBaselineOnly
       ? 'error'
@@ -1086,6 +1218,52 @@ function AccountDetailContent() {
           <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
           <BackofficeStatusBadge status={account.status} label={translateStatusLabel(account.status, t)} />
         </div>
+        {trialReadiness ? (
+          <BackofficeStackCard data-ui="trial-readiness-summary" className="bg-white/85 dark:bg-slate-950/55">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('admin.account_detail.trial_readiness_eyebrow', undefined, 'Trial readiness')}
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">{trialReadinessTitle}</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+                  {trialReadinessDescription}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <BackofficeStatusBadge status={trialReadinessTone} label={translateStatusLabel(trialReadinessTone, t)} />
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                  {trialReadiness.next_action_label}
+                </span>
+              </div>
+            </div>
+            <div className="mt-4">
+              <BackofficeMetricStrip items={trialMetricItems} columnsClassName="md:grid-cols-2 xl:grid-cols-4" />
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {trialReadiness.checks.map((check) => (
+                <div
+                  key={check.code}
+                  className={cn(
+                    'rounded-[1rem] border px-3 py-3 text-sm',
+                    check.ok
+                      ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200'
+                      : 'border-amber-200 bg-amber-50/75 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100'
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold">{check.label}</p>
+                    <BackofficeStatusBadge
+                      status={check.ok ? 'ok' : 'warning'}
+                      label={check.ok ? translateStatusLabel('ok', t) : translateStatusLabel('warning', t)}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs leading-5 opacity-85">{check.detail}</p>
+                </div>
+              ))}
+            </div>
+          </BackofficeStackCard>
+        ) : null}
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <div id="coverage-actions">
           <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
@@ -1157,21 +1335,21 @@ function AccountDetailContent() {
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
               {t('admin.account_detail.operator_actions_desc', undefined, 'Keep first actions simple: open coverage, inspect sites, handle portal access, or start support view. Package internals stay secondary.' )}
             </p>
-            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
-                    {t('admin.account_detail.test_package_switch_label', undefined, 'Test package switch')}
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
+                    {t('admin.account_detail.change_customer_package_label', undefined, 'Change customer package')}
                   </p>
-                  <p className="mt-2 text-sm text-amber-800 dark:text-amber-100">
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                     {t(
-                      'admin.account_detail.test_package_switch_desc',
+                      'admin.account_detail.change_customer_package_desc',
                       undefined,
-                      'Testing shortcut: switch this customer to a package shell immediately. User workspace stays read-only.'
+                      'Switch this account to Free, Pro, or Agency. User workspace stays read-only.'
                     )}
                   </p>
                 </div>
-                <BackofficeStatusBadge status="warning" label={t('common.testing', {}, 'Testing')} />
+                <BackofficeStatusBadge status="ok" label={t('admin.operator_managed', {}, 'Operator managed')} />
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 {QUICK_PACKAGE_OPTIONS.map((option) => {
@@ -1189,7 +1367,7 @@ function AccountDetailContent() {
                         'rounded-2xl border px-4 py-3 text-left text-sm transition',
                         isCurrent
                           ? 'border-emerald-300 bg-white text-emerald-800 dark:border-emerald-800 dark:bg-slate-950/60 dark:text-emerald-200'
-                          : 'border-amber-200 bg-white text-slate-800 hover:border-amber-400 dark:border-amber-900/50 dark:bg-slate-950/60 dark:text-slate-100'
+                          : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100'
                       )}
                       disabled={packageActionPending !== null}
                     >
@@ -1197,7 +1375,7 @@ function AccountDetailContent() {
                       <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
                         {isCurrent
                           ? t('common.current', {}, 'Current')
-                          : t('admin.account_detail.apply_test_package_action', undefined, 'Apply test package')}
+                          : t('admin.account_detail.apply_package_action', undefined, 'Apply package')}
                       </span>
                     </button>
                   );
@@ -1250,7 +1428,7 @@ function AccountDetailContent() {
               className="mt-5 rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800"
             >
               <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
-              {t('admin.account_detail.package_actions_reveal', undefined, 'Advanced coverage controls')}
+              {t('admin.account_detail.package_actions_reveal', undefined, 'Repair subscription record')}
             </summary>
             <div className="mt-4 flex flex-wrap gap-3">
                 {primarySubscription ? (
@@ -1263,7 +1441,7 @@ function AccountDetailContent() {
                 ) : null}
               </div>
             <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-              {t('admin.account_detail.package_controls_desc', undefined, 'Only open these fields when you need deeper coverage package detail or subscription-level repair work.')}
+              {t('admin.account_detail.package_controls_desc', undefined, 'Only open these fields for subscription-level repair work. Normal package changes should use the buttons above.')}
             </p>
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               <label className="text-sm">
@@ -1667,7 +1845,7 @@ function AccountDetailContent() {
               ) : (
                 <BackofficeEmptyState
                   title={t('admin.account_detail.members_empty_title', undefined, 'No members on this customer')}
-                  description={t('admin.account_detail.members_empty_desc', undefined, 'No user administrator or support member is attached to this customer yet. Use the member directory for invite and access follow-up.')}
+                  description={t('admin.account_detail.members_empty_desc', undefined, 'No user or support member is attached to this customer yet. Use the member directory for invite and access follow-up.')}
                 />
               )}
             </div>
@@ -1727,13 +1905,13 @@ function AccountDetailContent() {
               <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900/90">
                 <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.role')}</span>
                 <div className="font-medium text-slate-900 dark:text-slate-100">
-                  {t('admin.external_role_user_admin', undefined, 'User Admin')}
+                  {t('admin.external_role_user', undefined, 'User')}
                 </div>
                 <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
                   {t(
-                    'admin.user_admin_role_notice',
+                    'admin.user_role_notice',
                     undefined,
-                    'Invited portal members are provisioned as user administrators in the current Cloud model.'
+                    'Invited portal members are provisioned as users in the current Cloud model.'
                   )}
                 </p>
               </div>

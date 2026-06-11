@@ -12,10 +12,12 @@ read-only diagnosis companion that stays inside the existing service-plane evide
 
 ## How to use this checklist
 
-1. Run `pnpm run smoke:local-alpha` to capture current evidence.
-2. Inspect `operator_guidance` in the evidence file (or via `GET /internal/service/runtime/diagnostics/summary`).
-3. Match `primary_reason` to the section below and follow the bounded actions.
-4. Record what you observed; do not attempt repairs outside the listed scope.
+1. Run `pnpm run smoke:internal-alpha-onboarding` to confirm the Admin to Portal
+   onboarding contract.
+2. Run `pnpm run smoke:local-alpha` to capture current environment evidence.
+3. Inspect `operator_guidance` in the evidence file (or via `GET /internal/service/runtime/diagnostics/summary`).
+4. Match `primary_reason` to the section below and follow the bounded actions.
+5. Record what you observed; do not attempt repairs outside the listed scope.
 
 ## Guidance-to-action mapping
 

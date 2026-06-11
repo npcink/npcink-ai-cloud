@@ -11,7 +11,7 @@ def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{tmp_path / 'commercial-runtime-defaults.sqlite3'}"
 
 
-def test_authorize_runtime_request_uses_starter_package_budgets_and_concurrency(
+def test_authorize_runtime_request_uses_development_unlimited_package_defaults(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -39,12 +39,12 @@ def test_authorize_runtime_request_uses_starter_package_budgets_and_concurrency(
         session.commit()
 
     assert decision["budgets"] == {
-        "max_runs_per_period": 500.0,
-        "max_tokens_per_period": 200_000.0,
-        "max_cost_per_period": 5.0,
+        "max_runs_per_period": 0.0,
+        "max_tokens_per_period": 0.0,
+        "max_cost_per_period": 0.0,
     }
     assert decision["concurrency"] == {
-        "max_active_runs": 1,
+        "max_active_runs": 0,
     }
 
     dispose_engine(database_url)

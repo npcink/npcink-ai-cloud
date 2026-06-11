@@ -196,14 +196,14 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
     def _resolve_portal_target_package_tier_id(self, target_package: str) -> str:
         normalized = str(target_package or "").strip().lower()
         mapping = {
-            "free": "starter",
-            "basic": "pro",
-            "bulk": "agency",
+            "free": "free",
+            "pro": "pro",
+            "agency": "agency",
         }
         tier_id = mapping.get(normalized)
         if tier_id:
             return tier_id
         raise CommercialValidationError(
             "service.invalid_target_package",
-            "target package must be Free, Basic, or Bulk",
+            "target package must be Free, Pro, or Agency",
         )

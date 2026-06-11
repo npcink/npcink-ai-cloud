@@ -26,10 +26,10 @@ export async function installAdminMocks(page: Page) {
     plan_id: 'plan_basic',
     plan_version_id: 'plan_basic_v1',
     plan_kind: 'tier_paid',
-    package_alias: 'Basic',
+    package_alias: 'Pro',
     package_kind: 'tier_package',
     coverage_state: 'uncovered',
-    display_package_label: 'Basic',
+    display_package_label: 'Pro',
     current_period_start: '2026-04-01T00:00:00Z',
     current_period_end: '2026-04-12T00:00:00Z',
   };
@@ -46,9 +46,9 @@ export async function installAdminMocks(page: Page) {
       site_count: 1,
       active_subscription_count: 1,
       top_plan_id: 'plan_basic',
-      package_alias: 'Basic',
+      package_alias: 'Pro',
       plan_kind: 'tier_paid',
-      display_package_label: 'Basic',
+      display_package_label: 'Pro',
       package_kind: 'tier_package',
       coverage_state: 'uncovered',
       primary_subscription_id: 'sub_mvp',
@@ -132,7 +132,7 @@ export async function installAdminMocks(page: Page) {
       const payload = route.request().postDataJSON() as Record<string, unknown>;
       const nextPlanId = String(payload.plan_id || primaryAccountSubscription.plan_id);
       const nextPackageAlias =
-        nextPlanId === FREE_PLAN_ID ? 'Free' : nextPlanId === 'plan_basic_primary' || nextPlanId === 'plan_basic' ? 'Basic' : 'Basic';
+        nextPlanId === FREE_PLAN_ID ? 'Free' : nextPlanId === 'plan_basic_primary' || nextPlanId === 'plan_basic' ? 'Pro' : 'Pro';
       const nextPlanKind = nextPlanId === FREE_PLAN_ID ? 'default_free' : 'tier_paid';
       const nextPackageKind = nextPlanId === FREE_PLAN_ID ? 'formal_free' : 'tier_package';
       primaryAccountSubscription = {
@@ -614,7 +614,7 @@ export async function installAdminMocks(page: Page) {
             },
             account: { account_id: LONG_ACCOUNT_ID, name: 'MVP Account' },
             covered_sites: [{ site_id: 'site_mvp', name: 'MVP Site' }],
-            coverage: { site_count: 1, package_alias: 'Basic' },
+            coverage: { site_count: 1, package_alias: 'Pro' },
             latest_billing_snapshots: [{ snapshot_id: 'snap_mvp', totals: { cost: 18.42 } }],
             billing_snapshot_status: {
               status: 'fresh',
@@ -642,7 +642,7 @@ export async function installAdminMocks(page: Page) {
         },
         account: { account_id: LONG_ACCOUNT_ID, name: 'MVP Account', status: 'active' },
         covered_sites: [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }],
-        plan: { plan_id: 'plan_basic', display_name: 'Basic' },
+        plan: { plan_id: 'plan_basic', display_name: 'Pro' },
         plan_version: { plan_version_id: 'plan_basic_v1' },
         commercial_policy: { subscription: { grace_period_days: 3 } },
         budget_headroom: {
@@ -747,7 +747,7 @@ export async function installAdminMocks(page: Page) {
             },
             site_keys: [{ site_key_id: 'key_1', status: 'active' }],
             memberships: [
-              { member_ref: 'user:admin@example.com', identity_type: 'user_admin', role: 'user_admin', status: 'active' },
+              { member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' },
             ],
             subscription: {
               subscription_id: 'sub_mvp',
@@ -778,7 +778,7 @@ export async function installAdminMocks(page: Page) {
           status: 'active',
           created_at: '2026-02-01T00:00:00Z',
         },
-        memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user_admin', role: 'user_admin', status: 'active' }],
+        memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' }],
         subscription: {
           subscription_id: 'sub_mvp',
           status: 'past_due',
@@ -896,10 +896,10 @@ export async function installAdminMocks(page: Page) {
           {
             member_ref: 'user:admin@example.com',
             email: 'admin@example.com',
-            identity_type: 'user_admin',
+            identity_type: 'user',
             status: 'active',
             invite_state: 'accepted',
-            role: 'user_admin',
+            role: 'user',
             account_count: 1,
             accessible_site_count: 1,
             sites_needing_follow_up_count: 1,
@@ -926,10 +926,10 @@ export async function installAdminMocks(page: Page) {
           {
             member_ref: 'user:pending@example.com',
             email: 'pending@example.com',
-            identity_type: 'user_admin',
+            identity_type: 'user',
             status: 'pending_invite',
             invite_state: 'pending',
-            role: 'user_admin',
+            role: 'user',
             account_count: 1,
             accessible_site_count: 1,
             sites_needing_follow_up_count: 1,
@@ -956,10 +956,10 @@ export async function installAdminMocks(page: Page) {
           {
             member_ref: 'user:covered@example.com',
             email: 'covered@example.com',
-            identity_type: 'user_admin',
+            identity_type: 'user',
             status: 'active',
             invite_state: 'accepted',
-            role: 'user_admin',
+            role: 'user',
             account_count: 1,
             accessible_site_count: 1,
             sites_needing_follow_up_count: 0,
@@ -996,9 +996,43 @@ export async function installAdminMocks(page: Page) {
           status: 'active',
           created_at: '2026-02-01T00:00:00Z',
         },
-        memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user_admin', role: 'user_admin', status: 'active' }],
+        memberships: [{ member_ref: 'user:admin@example.com', identity_type: 'user', role: 'user', status: 'active' }],
         sites: [{ site_id: 'site_mvp', name: 'MVP Site', status: 'active' }],
         subscriptions: [primaryAccountSubscription],
+        trial_readiness: {
+          status: primaryAccountCoverageFollowUp ? 'action_required' : 'ready',
+          next_action: primaryAccountCoverageFollowUp ? 'apply_package_coverage' : 'invite_trial_site',
+          next_action_label: primaryAccountCoverageFollowUp ? 'Apply package coverage' : 'Invite trial site',
+          blocking_codes: primaryAccountCoverageFollowUp ? ['package_coverage'] : [],
+          summary: {
+            site_count: 1,
+            active_site_count: 1,
+            active_key_site_count: 1,
+            sites_without_active_key: [],
+            member_count: 1,
+            active_member_count: 1,
+            active_or_pending_member_count: 1,
+            subscription_status: primaryAccountSubscription.status,
+            display_package_label: primaryAccountSubscription.display_package_label,
+            package_kind: primaryAccountSubscription.package_kind,
+            coverage_state: primaryAccountCoverageFollowUp ? 'uncovered' : 'covered',
+          },
+          checks: [
+            { code: 'account_active', label: 'Customer active', ok: true, detail: 'Customer record is active.' },
+            { code: 'site_attached', label: 'Site attached', ok: true, detail: '1 site(s) attached.' },
+            { code: 'sites_active', label: 'Sites active', ok: true, detail: 'Every attached site is active.' },
+            { code: 'active_api_key', label: 'Cloud API key', ok: true, detail: 'Every attached site has an active Cloud API key.' },
+            {
+              code: 'package_coverage',
+              label: 'Package coverage',
+              ok: !primaryAccountCoverageFollowUp,
+              detail: primaryAccountCoverageFollowUp
+                ? 'Apply Free, Pro, or Agency coverage before inviting this customer.'
+                : 'Pro coverage is ready.',
+            },
+            { code: 'portal_admin', label: 'Portal user', ok: true, detail: '1 active or invited portal user(s).' },
+          ],
+        },
       });
       return;
     }
@@ -1019,8 +1053,8 @@ export async function installAdminMocks(page: Page) {
           {
             member_ref: 'user:admin@example.com',
             email: 'admin@example.com',
-            identity_type: 'user_admin',
-            role: 'user_admin',
+            identity_type: 'user',
+            role: 'user',
             status: 'active',
             covered_site_count: primaryAccountCoverageFollowUp ? 0 : 1,
             sites_needing_follow_up_count: primaryAccountCoverageFollowUp ? 1 : 0,
@@ -1053,7 +1087,7 @@ export async function installAdminMocks(page: Page) {
         tier_templates: [
           {
             tier_id: 'starter',
-            label: 'Starter',
+            label: 'Free',
             package_alias: 'Free',
             usage_band: 'Low-volume single-site hosted usage.',
             positioning: 'Baseline package for conservative hosted runs, lighter workflow usage, and operator-managed growth.',
@@ -1102,7 +1136,7 @@ export async function installAdminMocks(page: Page) {
           {
             tier_id: 'pro',
             label: 'Pro',
-            package_alias: 'Basic',
+            package_alias: 'Pro',
             usage_band: 'Mid-band workflow usage with shared core access.',
             positioning: 'Stable operator-managed package for recurring hosted work with higher headroom.',
             monthly_included_points: 10000,
@@ -1136,7 +1170,7 @@ export async function installAdminMocks(page: Page) {
               policy: { subscription: { grace_period_days: 3, downgrade_policy: 'review_before_downgrade' } },
               metadata: {
                 tier_id: 'pro',
-                package_alias: 'Basic',
+                package_alias: 'Pro',
                 monthly_included_points: 10000,
                 site_limit: 5,
                 max_batch_items: 10,
@@ -1150,7 +1184,7 @@ export async function installAdminMocks(page: Page) {
           {
             tier_id: 'agency',
             label: 'Agency',
-            package_alias: 'Bulk',
+            package_alias: 'Agency',
             usage_band: 'High-volume multi-site and sustained workflow usage.',
             positioning: 'High-headroom package for multi-site operators, continuous automation, and materially higher hosted workload.',
             monthly_included_points: 50000,
@@ -1165,7 +1199,7 @@ export async function installAdminMocks(page: Page) {
             automation_enabled: true,
             api_enabled: true,
             openclaw_enabled: true,
-            package_operator_note: 'Core capabilities stay available across packages. Bulk provides the highest points budget, concurrency, batch headroom, and policy headroom.',
+            package_operator_note: 'Core capabilities stay available across packages. Agency provides the highest points budget, concurrency, batch headroom, and policy headroom.',
             policy_baseline: { grace_period_days: 7 },
             canonical_shell: {
               entitlements: {
@@ -1184,7 +1218,7 @@ export async function installAdminMocks(page: Page) {
               policy: { subscription: { grace_period_days: 7 } },
               metadata: {
                 tier_id: 'agency',
-                package_alias: 'Bulk',
+                package_alias: 'Agency',
                 monthly_included_points: 50000,
                 site_limit: 25,
                 max_batch_items: 100,
@@ -1237,7 +1271,7 @@ export async function installAdminMocks(page: Page) {
             },
             tier_summary: {
               tier_id: 'starter',
-              label: 'Starter',
+              label: 'Free',
               package_alias: 'Free',
               usage_band: 'Low-volume single-site hosted usage.',
               positioning: 'Baseline package for conservative hosted runs, lighter workflow usage, and operator-managed growth.',
@@ -1263,7 +1297,7 @@ export async function installAdminMocks(page: Page) {
           {
             plan: {
               plan_id: LONG_PLAN_ID,
-              name: 'Basic',
+              name: 'Pro',
               status: 'active',
               description: 'Package metadata for the operator-managed basic tier.',
               metadata: { source: 'canonical_package_shell_v1', tier_id: 'pro' },
@@ -1273,7 +1307,7 @@ export async function installAdminMocks(page: Page) {
             versions: [
               {
                 plan_version_id: LONG_PLAN_VERSION_ID,
-                version_label: 'Basic v1',
+                version_label: 'Pro v1',
                 status: 'published',
                 currency: 'USD',
                 budgets: {
@@ -1287,7 +1321,7 @@ export async function installAdminMocks(page: Page) {
             ],
             latest_version: {
               plan_version_id: LONG_PLAN_VERSION_ID,
-              version_label: 'Basic v1',
+              version_label: 'Pro v1',
               status: 'published',
               currency: 'USD',
               budgets: {
@@ -1301,7 +1335,7 @@ export async function installAdminMocks(page: Page) {
             tier_summary: {
               tier_id: 'pro',
               label: 'Pro',
-              package_alias: 'Basic',
+              package_alias: 'Pro',
               usage_band: 'Mid-band workflow usage with shared core access.',
               positioning: 'Stable operator-managed package for recurring hosted work with higher headroom.',
               monthly_included_points: 10000,
@@ -1333,7 +1367,7 @@ export async function installAdminMocks(page: Page) {
       await fulfillJson(route, {
         plan: {
           plan_id: LONG_PLAN_ID,
-          name: 'Basic',
+          name: 'Pro',
           status: 'active',
           description: 'Package metadata for the operator-managed basic tier.',
           created_at: '2026-04-01T00:00:00Z',
@@ -1342,7 +1376,7 @@ export async function installAdminMocks(page: Page) {
         versions: [
           {
             plan_version_id: LONG_PLAN_VERSION_ID,
-            version_label: 'Basic v1',
+            version_label: 'Pro v1',
             status: 'published',
             currency: 'USD',
             entitlements: { hosted: true },
@@ -1359,7 +1393,7 @@ export async function installAdminMocks(page: Page) {
         ],
         latest_version: {
           plan_version_id: LONG_PLAN_VERSION_ID,
-          version_label: 'Basic v1',
+          version_label: 'Pro v1',
           status: 'published',
           currency: 'USD',
           entitlements: { hosted: true },
@@ -1376,7 +1410,7 @@ export async function installAdminMocks(page: Page) {
         tier_summary: {
           tier_id: 'pro',
           label: 'Pro',
-          package_alias: 'Basic',
+          package_alias: 'Pro',
           usage_band: 'Mid-band workflow usage with shared core access.',
           positioning: 'Stable operator-managed package for recurring hosted work with higher headroom.',
           monthly_included_points: 10000,
@@ -1426,7 +1460,7 @@ export async function installAdminMocks(page: Page) {
       await fulfillJson(route, {
         plan_version: {
           plan_version_id: String(payload.plan_version_id || LONG_PLAN_VERSION_ID),
-          version_label: String(payload.version_label || 'Basic v2'),
+          version_label: String(payload.version_label || 'Pro v2'),
           status: String(payload.status || 'published'),
           currency: 'USD',
           created_at: '2026-04-08T00:00:00Z',
