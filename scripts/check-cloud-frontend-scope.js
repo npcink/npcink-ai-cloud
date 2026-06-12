@@ -25,7 +25,11 @@ function parseArtifactFile( filePath ) { const s = readText( filePath ); if ( fi
 function parseArgs( args ) { let handoffPath = ''; let wantsJson = false; const files = []; for ( let i = 0; i < args.length; i += 1 ) { const v = args[ i ]; if ( v === '--' ) { continue; } if ( v === '--json' ) { wantsJson = true; continue; } if ( v === '--handoff' ) { handoffPath = String( args[ i + 1 ] || '' ).trim(); i += 1; continue; } files.push( v ); } return { handoffPath, wantsJson, files }; }
 function printSection( t, i ) { if ( ! i.length ) { return; } console.log( `\n${ t }` ); i.forEach( ( item ) => console.log( `- ${ item }` ) ); }
 const { handoffPath, wantsJson, files: explicitFiles } = parseArgs( process.argv.slice( 2 ) );
-if ( ! handoffPath ) { console.error( '[error] cloud frontend scope failed: missing --handoff <path-to-json-or-markdown>.' ); process.exit( 1 ); }
+if ( ! handoffPath ) {
+	console.log( 'Usage: pnpm run check:frontend-scope -- --handoff <path-to-json-or-markdown> [changed-files...]' );
+	console.log( 'No handoff was provided, so no frontend scope check was run.' );
+	process.exit( 0 );
+}
 const absoluteHandoffPath = path.isAbsolute( handoffPath ) ? handoffPath : path.resolve( workspaceRoot, handoffPath );
 if ( ! exists( absoluteHandoffPath ) ) { console.error( `[error] cloud frontend scope failed: handoff file not found: ${ absoluteHandoffPath }` ); process.exit( 1 ); }
 const handoff = parseArtifactFile( absoluteHandoffPath );

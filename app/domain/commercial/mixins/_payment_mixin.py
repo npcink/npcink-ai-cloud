@@ -25,10 +25,13 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialValidationError,
 )
-from app.domain.commercial.mixins._audit_mixin import ServiceAuditContext
+from app.domain.commercial.mixins._audit_mixin import (
+    CommercialServiceAuditMixin,
+    ServiceAuditContext,
+)
 
 
-class CommercialServicePaymentMixin:
+class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
     def create_payment_order(
         self,
         *,

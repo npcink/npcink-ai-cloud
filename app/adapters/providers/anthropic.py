@@ -372,11 +372,11 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
         try:
             payload = response.json()
         except ValueError:
-            return response.text or f"http {response.status_code}"
+            return self._bounded_response_text(response) or f"http {response.status_code}"
 
         error = payload.get("error")
         if isinstance(error, dict) and isinstance(error.get("message"), str):
-            return error["message"]
+            return self._bounded_error_message(error["message"])
         return super()._extract_http_error_message(response)
 
     def _map_anthropic_error(self, response: httpx.Response) -> str:

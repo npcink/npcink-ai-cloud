@@ -35,9 +35,9 @@ Current repository status is a strong-contraction cleanup baseline:
 
 Operational references:
 
-- [deploy/OPS_PLAYBOOK.md](../cloud/deploy/OPS_PLAYBOOK.md)
-- [deploy/RELEASE_CHECKLIST.md](../cloud/deploy/RELEASE_CHECKLIST.md)
-- [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](../cloud/deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
+- [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
+- [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
+- [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
 - [docs/internal-alpha-operator-checklist.md](docs/internal-alpha-operator-checklist.md)
 - [docs/internal-alpha-onboarding-smoke-runbook.md](docs/internal-alpha-onboarding-smoke-runbook.md)
@@ -58,37 +58,35 @@ Operational references:
 
 ## Test Entry For Agents
 
-Cloud Python test dependencies live in `cloud/pyproject.toml`, including the
-`dev` extra that provides `pytest`. From the workspace root, run Cloud tests
-with `uv --directory cloud ...` so `uv` resolves the correct Python project:
+Cloud Python test dependencies live in this repository's `pyproject.toml`,
+including the `dev` extra that provides `pytest`. From the repository root, use
+the repo-local `.venv` created by `make bootstrap-dev`:
 
 ```bash
-uv --directory cloud run python -m pytest tests/api/test_portal_routes.py
+.venv/bin/python -m pytest tests/api/test_portal_routes.py
 ```
 
 If `pytest` is missing, install the Cloud dev extra through the same project
 root:
 
 ```bash
-uv --directory cloud sync --extra dev
+make bootstrap-dev
 ```
 
-Do not run `uv run python -m pytest ...` from the workspace root for Cloud
-tests; the workspace root has no Cloud `pyproject.toml`, so `pytest` may be
-unavailable even when the Cloud project is correctly configured.
+Do not use the old monorepo `uv --directory cloud ...` form in this standalone
+repository; it points at a path that no longer exists here.
 
 ## Seed & Smoke Quick Entry
 
-- local runtime seed: `pnpm run cloud:seed:smoke`
-- local portal real-site bootstrap: `pnpm run cloud:portal:bind:dev -- --site-id <site-id> --member-email <email>`
-- scaffold one new Cloud route pack: `pnpm run scaffold:cloud:route -- --route-id <route-id>`
-- scaffold one new Portal route pack: `pnpm run scaffold:cloud:portal-route -- --route-id <route-id>`
-- perimeter seam: `pnpm run check:cloud:perimeter`
+- local runtime seed: `pnpm run seed:smoke`
+- local portal real-site bootstrap: `pnpm run portal:bind:dev -- --site-id <site-id> --member-email <email>`
+- scaffold one new Cloud route pack: `pnpm run scaffold:route -- --route-id <route-id>`
+- scaffold one new Portal route pack: `pnpm run scaffold:portal-route -- --route-id <route-id>`
+- perimeter seam: `pnpm run check:perimeter`
 - hosted runtime smoke: `pnpm run smoke:local-alpha`
 - internal alpha onboarding smoke: `pnpm run smoke:internal-alpha-onboarding`
-- deploy bundle smoke: `pnpm run check:e2e:cloud-deploy-bundle:smoke`
-- combined cloud smoke closure: `pnpm run check:e2e:cloud:smoke`
-- remote WordPress cron helper: `pnpm run cloud:wp-cron:ssh -- <install|status|remove> [--site-url <wp-base-url>]`
+- deploy bundle smoke: `pnpm run check:e2e:deploy-bundle:smoke`
+- remote WordPress cron helper: `pnpm run wp-cron:ssh -- <install|status|remove> [--site-url <wp-base-url>]`
 
 ## Scope
 
@@ -219,11 +217,11 @@ Commercial acceptance freeze:
 Cloud development and verification now follow a fixed three-layer order:
 
 1. Local source workspace:
-   - edit `cloud/**`, contracts, and feature docs here first
+   - edit `app/**`, `frontend/**`, `tests/**`, contracts, and feature docs here first
    - this remains the only day-to-day development truth
 2. Local Docker runtime:
    - validate the current branch with `docker-compose.dev.yml`, focused `pytest`,
-     and `pnpm run check:cloud:perimeter`
+     and `pnpm run check:perimeter`
    - this is the default runtime test loop for auth, perimeter, worker, and
      bundle-adjacent behavior
 3. Remote host deploy verification:
@@ -268,30 +266,30 @@ Use the smallest Cloud lane that still covers the touched seam:
 
 ```bash
 # all Cloud tests
-pnpm run cloud:test
+pnpm run test
 
 # focused local suites
-pnpm run cloud:test:contract
-pnpm run cloud:test:domain
-pnpm run cloud:test:api
+pnpm run test:contract
+pnpm run test:domain
+pnpm run test:api
 
 # recommended narrow lanes
-pnpm run cloud:check:fast
-pnpm run cloud:check:seam
-pnpm run check:cloud:perimeter
+pnpm run check:fast
+pnpm run check:seam
+pnpm run check:perimeter
 ```
 
-- `cloud:test:contract`
-  - contract truth for response shape and seam drift in `cloud/tests/contract/**`
-- `cloud:test:domain`
-  - domain/service behavior in `cloud/tests/domain/**`
-- `cloud:test:api`
-  - route/auth/api behavior in `cloud/tests/api/**`
-- `cloud:check:fast`
+- `test:contract`
+  - contract truth for response shape and seam drift in `tests/contract/**`
+- `test:domain`
+  - domain/service behavior in `tests/domain/**`
+- `test:api`
+  - route/auth/api behavior in `tests/api/**`
+- `check:fast`
   - default small Cloud lane: `contract + domain`
-- `cloud:check:seam`
+- `check:seam`
   - API seam lane: `api + perimeter`
-- `check:cloud:perimeter`
+- `check:perimeter`
   - deploy/auth/health/perimeter guard; do not replace it with `pytest` alone when auth or hosted seam changes
 
 ## Local Pytest Bootstrap
@@ -302,48 +300,45 @@ migration, any old `cloud/.venv` created against `magick-ai/cloud` should be
 treated as stale and rebuilt.
 
 ```bash
-cd cloud
 make bootstrap-dev
 .venv/bin/pytest --version
 ```
 
-`make bootstrap-dev` also installs the pinned `cloud/frontend` Node dependencies
-needed by `pnpm run cloud:frontend:type-check` inside the hardening baseline.
+`make bootstrap-dev` also installs the pinned `frontend` Node dependencies
+needed by `pnpm run frontend:type-check` inside the hardening baseline.
 
 Typical local runs:
 
 ```bash
-cd cloud
 make test-local PYTEST_ARGS='tests/api/test_web_routes.py -q'
 make test-local
 ```
 
-If `.venv/bin/pytest` points at a moved or missing worktree, delete `cloud/.venv`
+If `.venv/bin/pytest` points at a moved or missing worktree, delete `.venv`
 and rerun `make bootstrap-dev`.
 
 ## Runtime Output vs Fixtures
 
-`cloud/.runtime/**` is runtime-generated state for local jobs, deploy helpers,
+`.runtime/**` is runtime-generated state for local jobs, deploy helpers,
 and container execution. It is not a git-tracked source of truth.
 
-- Runtime outputs stay under `cloud/.runtime/**`.
-- Test fixtures belong under `cloud/tests/fixtures/runtime/**`.
+- Runtime outputs stay under `.runtime/**`.
+- Test fixtures belong under `tests/fixtures/runtime/**`.
 If you need sample payloads for a test, add them under
-`cloud/tests/fixtures/runtime/**` and load them explicitly from the test. Do not
-commit new files under `cloud/.runtime/**`.
+`tests/fixtures/runtime/**` and load them explicitly from the test. Do not
+commit new files under `.runtime/**`.
 
 Current repo baseline:
 
-- `git ls-files cloud | rg '\.runtime/'` should return no tracked runtime outputs.
-- `git check-ignore -v --no-index cloud/.runtime/LATEST.txt` should resolve to the
-  root [`.gitignore`](../.gitignore) rule.
+- `git ls-files | rg '(^|/)\.runtime/'` should return no tracked runtime outputs.
+- `git check-ignore -v --no-index .runtime/LATEST.txt` should resolve to the
+  root [`.gitignore`](.gitignore) rule.
 
 ## Stability Baseline
 
 Before the next Cloud feature round, rerun the fixed hardening baseline:
 
 ```bash
-cd cloud
 make baseline
 ```
 
@@ -354,30 +349,28 @@ make baseline
 - focused runtime and usage pytest lanes
 - bounded key-list API pytest lane
 - strict container `ruff` and `mypy`
-- `magick-ai` wrapper checks:
-  - `check:cloud:perimeter`
-  - `cloud:frontend:type-check`
-  - `cloud:frontend:lint`
+- local wrapper checks:
+  - `check:perimeter`
+  - `frontend:type-check`
+  - `frontend:lint`
 
 For new Cloud Python work, add the changed-files static gate on top of the
 baseline:
 
 ```bash
-cd cloud
 make lint-changed
 ```
 
-`make lint-changed` auto-detects changed `cloud/**/*.py` files against the
+`make lint-changed` auto-detects changed `app/**/*.py` and test Python files against the
 merge-base with `origin/master` (falling back to `master` when needed), includes
 staged / unstaged / untracked local edits, runs `ruff` correctness/import checks
 (`I`, `F`, `E9`) on all changed Python files, and runs `mypy --follow-imports=skip`
-on changed `cloud/app/**/*.py` files only. Use `CHANGED_BASE_REF=<ref>` when the
+on changed `app/**/*.py` files only. Use `CHANGED_BASE_REF=<ref>` when the
 feature branch should compare against a different base.
 
 After hardening-sensitive changes, also rerun the production packaging lane:
 
 ```bash
-cd cloud
 POSTGRES_PASSWORD='prod-password-32-characters-secret' \
 MAGICK_CLOUD_DATABASE_URL='postgresql+psycopg://magick:prod-password-32-characters-secret@postgres:5432/magick_ai_cloud' \
 docker compose -f docker-compose.prod.yml config >/dev/null
@@ -390,7 +383,7 @@ The next Cloud feature branch must start from the clean hardening base branch:
 
 - approved base branch: `codex/cloud-hardening-base`
 - approved base worktree: `../../magick-ai-root-cloud-hardening-base`
-- required baseline before branching: `cd cloud && make baseline`
+- required baseline before branching: `make baseline`
 
 Do not start the next Cloud feature directly from the root repo `master`
 until that branch contains the hardening base commits and matches this
@@ -440,9 +433,10 @@ pnpm run dev:ops       # adds runtime, callback, and ops cadence workers
 ```
 
 Keep local-only debug credentials such as `MAGICK_CLOUD_INTERNAL_AUTH_TOKEN`,
-`MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`, `MAGICK_CLOUD_ADMIN_SESSION_SECRET`,and `MAGICK_CLOUD_PORTAL_JWT_SECRET` in `cloud/.env.local` for dev Docker runs.
-`cloud/.env.local` is gitignored, while production-style deploy helpers read
-`cloud/.env.deploy` instead.
+`MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`, `MAGICK_CLOUD_ADMIN_SESSION_SECRET`, and
+`MAGICK_CLOUD_PORTAL_JWT_SECRET` in `.env.local` for dev Docker runs.
+`.env.local` is gitignored, while production-style deploy helpers read
+`.env.deploy` instead.
 
 Runtime catalog metadata can also include Ollama-sourced model records in two modes:
 
@@ -457,7 +451,9 @@ Runtime catalog metadata can also include Ollama-sourced model records in two mo
 
 The allowlist mode is best for private nodes you actually run. Ollama metadata is consumed as runtime catalog input only; it does not create a platform model operations surface.
 
-For production-style remote deploys, start from [cloud/.env.example](../../cloud/.env.example), then copy it to `cloud/.env.deploy` or another deploy env file. Production-style config now fails fast when these are missing:
+For production-style remote deploys, start from [.env.example](.env.example),
+then copy it to `.env.deploy` or another deploy env file. Production-style
+config now fails fast when these are missing:
 
 - `MAGICK_CLOUD_INTERNAL_AUTH_TOKEN`
 - `MAGICK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`
@@ -481,7 +477,6 @@ Additional hardening rules now enforced:
 Before a formal deploy, run the combined release smoke:
 
 ```bash
-cd cloud
 bash deploy/release-smoke.sh \
   --base-url https://cloud.example.com \
   --internal-auth-token "$MAGICK_CLOUD_INTERNAL_AUTH_TOKEN" \
@@ -503,7 +498,9 @@ The release smoke verifies:
 - `POST /admin/auth/bootstrap`
 - `GET /admin/session`
 
-This workspace now also keeps a local remote-target handoff at [cloud/deploy/WORKSPACE_TARGET.md](../../cloud/deploy/WORKSPACE_TARGET.md) and a sourceable shell target file at [cloud/deploy/workspace-target.env.sh](../../cloud/deploy/workspace-target.env.sh).
+This workspace now also keeps a local remote-target handoff at
+[deploy/WORKSPACE_TARGET.md](deploy/WORKSPACE_TARGET.md) and a sourceable shell
+target file at [deploy/workspace-target.env.sh](deploy/workspace-target.env.sh).
 
 ## External WordPress Cron
 
@@ -520,9 +517,9 @@ Current posture:
 Typical flow:
 
 ```bash
-source cloud/deploy/workspace-target.env.sh
-pnpm run cloud:wp-cron:ssh -- install --site-url https://example-wordpress-site.test
-pnpm run cloud:wp-cron:ssh -- status
+source deploy/workspace-target.env.sh
+pnpm run wp-cron:ssh -- install --site-url https://example-wordpress-site.test
+pnpm run wp-cron:ssh -- status
 ```
 
 Default behavior:
@@ -535,8 +532,8 @@ Default behavior:
 Remove it with:
 
 ```bash
-source cloud/deploy/workspace-target.env.sh
-pnpm run cloud:wp-cron:ssh -- remove
+source deploy/workspace-target.env.sh
+pnpm run wp-cron:ssh -- remove
 ```
 
 Platform identity/admin roadmap:
@@ -618,17 +615,17 @@ removed.
 
 For the fastest local verification loop:
 
-1. Configure local portal auth in `cloud/.env`:
+1. Configure local portal auth in `.env`:
    - `MAGICK_CLOUD_PORTAL_JWT_SECRET=dev-portal-jwt-secret-with-at-least-thirty-two-bytes`
    - `MAGICK_CLOUD_PORTAL_PUBLIC_BASE_URL=http://127.0.0.1:8010`
 2. Start local Cloud:
-   - `pnpm run cloud:dev`
-   - optional frontend auto-sync loop: `pnpm run cloud:frontend:watch`
+   - `pnpm run dev`
+   - optional frontend auto-sync loop: `pnpm run frontend:watch`
 3. Prefer binding Portal to one already provisioned real site:
-   - `pnpm run cloud:portal:bind:dev -- --site-id <site-id> --member-email <email>`
+   - `pnpm run portal:bind:dev -- --site-id <site-id> --member-email <email>`
 4. If the environment is empty, seed a runtime baseline and then bind Portal:
-   - `pnpm run cloud:seed:smoke`
-   - `pnpm run cloud:portal:bind:dev -- --site-id <site-id> --member-email <email>`
+   - `pnpm run seed:smoke`
+   - `pnpm run portal:bind:dev -- --site-id <site-id> --member-email <email>`
 
 The real-site bootstrap path reuses:
 
@@ -646,7 +643,7 @@ Primary local verification routes:
 - `http://127.0.0.1:8010/portal/overview`
 - `http://127.0.0.1:8010/portal/keys`
 
-`cloud:portal:bind:dev` marks its output as `"data_mode": "real_site_bootstrap"`
+`portal:bind:dev` marks its output as `"data_mode": "real_site_bootstrap"`
 and does not synthesize seeded runs or usage. It only binds a portal member
 to an existing site and optionally rebuilds the current billing snapshot from
 real ledger data.
@@ -654,20 +651,20 @@ real ledger data.
 For remote portal verification after deploy:
 
 1. Load the saved target:
-   - `source cloud/deploy/workspace-target.env.sh`
+   - `source deploy/workspace-target.env.sh`
 2. Prefer binding Portal to one already provisioned remote site:
-   - `pnpm run cloud:portal:bind:ssh -- --site-id <site-id> --member-email <email>`
+   - `pnpm run portal:bind:ssh -- --site-id <site-id> --member-email <email>`
 3. Run the remote portal smoke against the same site:
-   - `pnpm run cloud:portal:smoke:ssh -- --site-id <site-id> --member-email <email>`
+   - `pnpm run portal:smoke:ssh -- --site-id <site-id> --member-email <email>`
 4. Or fold the same post-deploy verification into the deploy command:
-   - `pnpm run cloud:deploy:ssh -- --with-portal-smoke --site-id <site-id> --member-email <email>`
+   - `pnpm run deploy:ssh -- --with-portal-smoke --site-id <site-id> --member-email <email>`
 
-`cloud:portal:bind:ssh` is the preferred remote path once a real site and
+`portal:bind:ssh` is the preferred remote path once a real site and
 subscription already exist on the server. It binds one portal member to that
 site and exposes the current real ledger/snapshot state instead of generating
 seeded runs.
 
-`cloud:deploy:ssh -- --with-portal-smoke` requires a real site and member email.
+`deploy:ssh -- --with-portal-smoke` requires a real site and member email.
 It runs real-site bootstrap plus portal smoke for the given `--site-id`.
 
 Release verification should use the formal portal code path. Dev-only
@@ -715,7 +712,7 @@ Current `/admin` overview is not just counters. It now also includes:
 For backend-only/admin-only remote updates, you can now skip rebuilding the
 frontend image:
 
-- `pnpm run cloud:deploy:ssh -- --skip-seed --skip-smoke --skip-frontend-image`
+- `pnpm run deploy:ssh -- --skip-seed --skip-smoke --skip-frontend-image`
 
 This keeps the existing remote frontend container and only refreshes the
 backend/admin surface, which is useful when Docker Hub or frontend build churn
@@ -818,8 +815,8 @@ For Alibaba Cloud enterprise mailbox, point the SMTP settings above at the
 SMTP host/port and SSL or STARTTLS mode provided by your mailbox admin panel.
 This keeps Cloud generic while still supporting Aliyun enterprise mail as the
 actual sender.
-An Aliyun-focused baseline template now lives at
-`cloud/.env.portal-email.aliyun.example`.
+For Aliyun-specific deploys, keep the concrete SMTP values in the chosen deploy
+env file rather than committing provider-specific secrets.
 
 Portal email self-test:
 
@@ -1236,14 +1233,14 @@ surface:
 - whether OTLP tracing is wired to the collector endpoint
 
 Production-style compose now includes a minimal `otel-collector` sidecar using
-[`deploy/otel-collector.config.yml`](../cloud/deploy/otel-collector.config.yml).
+[`deploy/otel-collector.config.yml`](deploy/otel-collector.config.yml).
 By default, `MAGICK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` points at
 `http://otel-collector:4318/v1/traces` and the collector forwards to the
 default Jaeger sink at `MAGICK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT=jaeger:4317`.
 `otel-collector debug exporter` no longer counts as release-complete state.
 
 Formal operator procedures now live in
-[`deploy/OPS_PLAYBOOK.md`](../cloud/deploy/OPS_PLAYBOOK.md).
+[`deploy/OPS_PLAYBOOK.md`](deploy/OPS_PLAYBOOK.md).
 Release readiness should now prefer `GET /health/operational-ready` over
 `GET /health/ready`; the former enforces fresh worker heartbeats, fresh cadence
 tasks, and fresh provider health in addition to DB/Redis reachability.
@@ -1251,13 +1248,13 @@ tasks, and fresh provider health in addition to DB/Redis reachability.
 From the repository root you can also use:
 
 ```bash
-pnpm run cloud:dev
-pnpm run cloud:test
-pnpm run cloud:lint
-pnpm run cloud:build
-pnpm run cloud:bundle
-pnpm run cloud:deploy:ssh -- --ssh-host your-cloud-host
-pnpm run cloud:env:ssh -- --ssh-host your-cloud-host
+pnpm run dev
+pnpm run test
+pnpm run lint
+pnpm run build
+pnpm run bundle
+pnpm run deploy:ssh -- --ssh-host your-cloud-host
+pnpm run env:ssh -- --ssh-host your-cloud-host
 ```
 
 From `cloud/`, you can also run:
@@ -1274,7 +1271,7 @@ make alert-provider-degradation
 Build a production bundle:
 
 ```bash
-pnpm run cloud:bundle
+pnpm run bundle
 ```
 
 Bundle contents:
@@ -1318,11 +1315,11 @@ smoke.
 Remote SSH deploy from your local machine:
 
 ```bash
-pnpm run cloud:deploy:ssh -- \
+pnpm run deploy:ssh -- \
   --ssh-host your-cloud-host \
   --ssh-user root \
   --remote-dir /opt/magick-ai-cloud \
-  --env-file cloud/.env.prod \
+  --env-file .env.deploy \
   --site-id site_smoke \
   --key-id key_default \
   --secret magick-cloud-test-secret
@@ -1333,11 +1330,11 @@ add `--with-portal-smoke` with an explicit site + member email. That extra post-
 runs real-site bootstrap plus `remote-portal-smoke.sh` on the fresh release:
 
 ```bash
-pnpm run cloud:deploy:ssh -- \
+pnpm run deploy:ssh -- \
   --ssh-host your-cloud-host \
   --ssh-user root \
   --remote-dir /opt/magick-ai-cloud \
-  --env-file cloud/.env.prod \
+  --env-file .env.deploy \
   --with-portal-smoke \
   --site-id site_smoke \
   --member-email site-admin@example.com
@@ -1347,11 +1344,11 @@ To prove a specific provider was selected during remote smoke, pass explicit
 expectations through the same deploy command:
 
 ```bash
-pnpm run cloud:deploy:ssh -- \
+pnpm run deploy:ssh -- \
   --ssh-host your-cloud-host \
   --ssh-user root \
   --remote-dir /opt/magick-ai-cloud \
-  --env-file cloud/.env.prod \
+  --env-file .env.deploy \
   --site-id site_smoke \
   --key-id key_default \
   --secret magick-cloud-test-secret \
@@ -1371,7 +1368,7 @@ Notes:
   Do not use the remote host as the default inner-loop environment.
 - If your default always-on machine is the office `mac mini`, you may use it as
   a deploy jump host, but keep the release path formal:
-  `scripts/mini-cloud-deploy.sh -> cloud/deploy/deploy-to-ssh-host.sh`.
+  `scripts/mini-cloud-deploy.sh -> deploy/deploy-to-ssh-host.sh`.
   Do not treat the mini dev compose stack as the production release path.
 - `--env-file` is optional; when present it is copied to the remote release and
   exposed as `MAGICK_CLOUD_ENV_FILE` for the remote scripts.
@@ -1399,14 +1396,14 @@ Notes:
   immediately without a full redeploy.
 - Final off-machine deploy evidence still requires a real external host; this
   workspace currently records the active target in
-  `cloud/deploy/WORKSPACE_TARGET.md`, but SSH user, base URL, and deploy env
+  `deploy/WORKSPACE_TARGET.md`, but SSH user, base URL, and deploy env
   still need to be completed before the host is deploy-ready.
 
 Remote provider env sync example:
 
 ```bash
 export MAGICK_CLOUD_ANTHROPIC_API_KEY=sk-ant-...
-pnpm run cloud:env:ssh -- \
+pnpm run env:ssh -- \
   --ssh-host your-cloud-host \
   --ssh-user root \
   --remote-dir /opt/magick-ai-cloud \
@@ -1419,11 +1416,11 @@ After syncing env, confirm readiness before running Anthropic smoke:
 
 ```bash
 ssh root@your-cloud-host 'cd /opt/magick-ai-cloud/current && bash -s' \
-  < cloud/deploy/remote-provider-status.sh
+  < deploy/remote-provider-status.sh
 ```
 
 Local bundle replay using the exact deploy artifacts:
 
 ```bash
-pnpm run check:e2e:cloud-deploy-bundle:smoke
+pnpm run check:e2e:deploy-bundle:smoke
 ```

@@ -603,6 +603,33 @@ def test_openai_adapter_maps_http_errors_to_runtime_taxonomy() -> None:
         raise AssertionError("expected provider execution error")
 
 
+def test_openai_adapter_bounds_upstream_error_text() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(500, text="x" * 5000)
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    try:
+        adapter.execute(
+            _build_request(
+                execution_kind="text",
+                endpoint_variant="chat_completions",
+                model_id="gpt-4.1-mini",
+                input_payload={"messages": [{"role": "user", "content": "fail"}]},
+            )
+        )
+    except ProviderExecutionError as error:
+        assert error.error_code == "provider.upstream_error"
+        assert len(error.message) < 4100
+        assert error.message.endswith("...[truncated]")
+    else:
+        raise AssertionError("expected provider execution error")
+
+
 def test_openai_adapter_rejects_sample_execution_when_fallback_is_disabled() -> None:
     adapter = OpenAIProviderAdapter(
         allow_sample_catalog=False,

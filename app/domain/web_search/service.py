@@ -5,7 +5,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -37,6 +37,15 @@ TAVILY_KEY_QUARANTINE_SECONDS = 300.0
 _TAVILY_POOL_LOCK = threading.Lock()
 _TAVILY_POOL_CURSOR: dict[str, int] = {}
 _TAVILY_POOL_QUARANTINED_UNTIL: dict[tuple[str, str], float] = {}
+
+
+class _TavilyApiKeySelection(TypedDict):
+    api_key: str
+    index: int
+    key_count: int
+    fingerprint: str
+    pool_id: str
+    label: str
 
 
 @dataclass(slots=True)
@@ -194,7 +203,7 @@ class TavilyWebSearchProvider:
         max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
         started = time.monotonic()
         key_errors: list[dict[str, object]] = []
-        selection: dict[str, object] | None = None
+        selection: _TavilyApiKeySelection | None = None
         response: httpx.Response | None = None
         last_error: Exception | None = None
         last_error_code: str | None = None
@@ -614,7 +623,7 @@ def _select_tavily_api_key(
     api_keys: list[str],
     *,
     labels: list[str] | None = None,
-) -> dict[str, object]:
+) -> _TavilyApiKeySelection:
     fingerprints = [_hash_tavily_key(item) for item in api_keys]
     pool_id = hashlib.sha256("|".join(fingerprints).encode("utf-8")).hexdigest()[:16]
     now = time.monotonic()

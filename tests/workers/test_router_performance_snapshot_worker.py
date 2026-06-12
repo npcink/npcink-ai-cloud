@@ -245,3 +245,28 @@ def test_router_performance_snapshot_callback_rejects_private_target_before_disp
             timeout_seconds=10.0,
             transport=httpx.MockTransport(handler),
         )
+
+
+def test_router_performance_snapshot_callback_bounds_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _resolve_example_test_to_public_ip(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(500, text="x" * 5000)
+
+    delivery = _dispatch_callback(
+        callback_url="https://wp.example.test/wp-json/magick-ai/open/v1/router/performance-snapshot/callback",
+        site_id="site_alpha",
+        key_id="kp_alpha",
+        secret="callback-secret-alpha",
+        callback_id="batch_alpha",
+        payload={"status": "test"},
+        timeout_seconds=10.0,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert delivery["delivered"] is False
+    assert len(str(delivery["response_body"])) < 4100
+    assert str(delivery["response_body"]).endswith("...[truncated]")

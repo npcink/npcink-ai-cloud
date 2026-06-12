@@ -22,6 +22,7 @@ from app.domain.usage.rollup import UsageRollupService
 
 CALLBACK_ROUTE = "/magick-ai/open/v1/router/performance-snapshot/callback"
 CALLBACK_EVENT = "router.performance_snapshot.batch"
+MAX_CALLBACK_RESPONSE_BODY_CHARS = 4000
 
 
 def _coerce_int(value: object, default: int = 0) -> int:
@@ -39,6 +40,12 @@ def _dict_items(value: object) -> list[dict[str, object]]:
         for candidate in value
         if isinstance(candidate, dict)
     ]
+
+
+def _truncate_callback_response_body(value: str) -> str:
+    if len(value) <= MAX_CALLBACK_RESPONSE_BODY_CHARS:
+        return value
+    return f"{value[:MAX_CALLBACK_RESPONSE_BODY_CHARS]}...[truncated]"
 
 
 def _build_projection_window(*, now: datetime, window_hours: int) -> tuple[datetime, datetime]:
@@ -170,7 +177,7 @@ def _dispatch_callback(
         "callback_url": callback_url,
         "status_code": response.status_code,
         "delivered": 200 <= response.status_code < 300,
-        "response_body": response.text,
+        "response_body": _truncate_callback_response_body(response.text),
     }
 
 

@@ -254,7 +254,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "source": str((metadata_json or {}).get("source") or "site_admin_access"),
                 },
             )
-            payload = {
+            payload: dict[str, object] = {
                 "site_admin_id": identity.site_admin_id,
                 "site_admin_ref": identity.site_admin_ref,
                 "email": identity.email,
@@ -310,17 +310,19 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             for site, _identity, _grant in candidate_sites
             if str(getattr(site, "account_id", "") or "").strip()
         }
+        portal_accounts = self.list_portal_accounts(site_admin_ref=site_admin_ref)
+        portal_account_items = portal_accounts.get("items")
+        if not isinstance(portal_account_items, list):
+            portal_account_items = []
         return {
             "email": normalized_email,
             "site_admin_ref": site_admin_ref,
             "sites": site_items,
             "accounts": [
                 item
-                for item in self.list_portal_accounts(site_admin_ref=site_admin_ref).get(
-                    "items",
-                    [],
-                )
-                if str(item.get("account_id") or "") in account_ids
+                for item in portal_account_items
+                if isinstance(item, dict)
+                and str(item.get("account_id") or "") in account_ids
             ],
         }
 

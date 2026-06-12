@@ -139,6 +139,34 @@ def test_anthropic_adapter_maps_http_errors_to_runtime_taxonomy() -> None:
         raise AssertionError("expected provider execution error")
 
 
+def test_anthropic_adapter_bounds_upstream_error_message() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            500,
+            json={"error": {"type": "server_error", "message": "x" * 5000}},
+        )
+
+    adapter = AnthropicProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    try:
+        adapter.execute(
+            _build_request(
+                model_id="claude-3-7-sonnet-latest",
+                input_payload={"messages": [{"role": "user", "content": "fail"}]},
+            )
+        )
+    except ProviderExecutionError as error:
+        assert error.error_code == "provider.upstream_error"
+        assert len(error.message) < 4100
+        assert error.message.endswith("...[truncated]")
+    else:
+        raise AssertionError("expected provider execution error")
+
+
 def test_anthropic_adapter_rejects_sample_execution_when_fallback_is_disabled() -> None:
     adapter = AnthropicProviderAdapter(
         allow_sample_catalog=False,

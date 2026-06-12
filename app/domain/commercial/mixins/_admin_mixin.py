@@ -295,6 +295,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )[:5]
         ]
         usage_totals = usage_summary.get("totals")
+        usage_event_count = int(cast(Any, usage_summary.get("event_count") or 0))
         attention_subscription_items = [
             _serialize_overview_subscription(subscription)
             for subscription in attention_subscriptions
@@ -328,7 +329,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ],
             "recent_usage": {
                 "window_days": max(1, usage_window_days),
-                "event_count": int(usage_summary.get("event_count") or 0),
+                "event_count": usage_event_count,
                 "totals": usage_totals if isinstance(usage_totals, dict) else {},
             },
             "recent_audit_summary": {

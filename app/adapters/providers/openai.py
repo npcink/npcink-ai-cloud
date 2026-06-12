@@ -39,6 +39,13 @@ DEEPSEEK_MODEL_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
         "output": 0.87,
     },
 }
+MAX_UPSTREAM_ERROR_MESSAGE_CHARS = 4000
+
+
+def _truncate_upstream_error_message(value: str) -> str:
+    if len(value) <= MAX_UPSTREAM_ERROR_MESSAGE_CHARS:
+        return value
+    return f"{value[:MAX_UPSTREAM_ERROR_MESSAGE_CHARS]}...[truncated]"
 
 
 class OpenAIProviderAdapter:
@@ -1460,16 +1467,22 @@ class OpenAIProviderAdapter:
         try:
             payload = response.json()
         except ValueError:
-            return response.text or f"http {response.status_code}"
+            return self._bounded_response_text(response) or f"http {response.status_code}"
 
         error = payload.get("error")
         if isinstance(error, dict) and isinstance(error.get("message"), str):
-            return error["message"]
+            return self._bounded_error_message(error["message"])
 
         if isinstance(payload.get("message"), str):
-            return payload["message"]
+            return self._bounded_error_message(payload["message"])
 
-        return response.text or f"http {response.status_code}"
+        return self._bounded_response_text(response) or f"http {response.status_code}"
+
+    def _bounded_response_text(self, response: httpx.Response) -> str:
+        return self._bounded_error_message(response.text)
+
+    def _bounded_error_message(self, message: str) -> str:
+        return _truncate_upstream_error_message(message)
 
     def _collect_catalog_modalities(self, payload: dict[str, Any]) -> list[str]:
         values: list[str] = []
