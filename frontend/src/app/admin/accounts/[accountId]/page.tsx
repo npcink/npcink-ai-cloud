@@ -26,7 +26,6 @@ import {
 import { localizePackageAlias } from '@/lib/admin-plan-copy';
 import { formatAdminCurrency } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
-import { translateAllowedAction, translateExternalCommercialRole } from '@/lib/admin-display';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
 
@@ -40,7 +39,6 @@ interface AccountDetail {
   status: string;
   metadata: Record<string, unknown>;
   created_at: string;
-  member_count: number;
   site_count: number;
   subscription_count: number;
   subscriptions: Array<{
@@ -60,34 +58,6 @@ interface AccountDetail {
     site_id: string;
     status?: string;
     name?: string;
-  }>;
-  members: Array<{
-    member_ref: string;
-    identity_type?: string;
-    allowed_actions?: string[];
-    role: string;
-    joined_at: string;
-    status?: string;
-    email?: string;
-    invite_state?: string;
-    invite_count?: number;
-    invited_at?: string;
-    last_invited_at?: string;
-    invite_expires_at?: string;
-    last_delivery_status?: string;
-    last_delivery_error_code?: string;
-    last_delivery_error_message?: string;
-    last_login_at?: string;
-    enabled_at?: string;
-    disabled_at?: string;
-    disabled_reason?: string;
-    accessible_sites?: Array<{
-      site_id: string;
-      name?: string;
-      status?: string;
-    }>;
-    metadata?: Record<string, unknown>;
-    updated_at?: string;
   }>;
   trial_readiness?: TrialReadinessSummary;
 }
@@ -109,61 +79,12 @@ interface TrialReadinessSummary {
     active_site_count: number;
     active_key_site_count: number;
     sites_without_active_key: string[];
-    member_count: number;
-    active_member_count: number;
-    active_or_pending_member_count: number;
     subscription_status?: string;
     display_package_label?: string;
     package_kind?: PackageKind | string;
     coverage_state?: CoverageState | string;
   };
   checks: TrialReadinessCheck[];
-}
-
-interface MemberPlanCoverageSummary {
-  member_count: number;
-  covered_member_count: number;
-  sites_needing_follow_up: number;
-}
-
-interface MemberPlanCoverageMember {
-  member_ref: string;
-  email?: string;
-  identity_type?: string;
-  allowed_actions?: string[];
-  role: string;
-  status: string;
-  covered_site_count: number;
-  sites_needing_follow_up: number;
-  accessible_sites: Array<{
-    site_id: string;
-    site_name: string;
-    site_status?: string;
-    plan_id?: string;
-    plan_version_id?: string;
-    package_alias?: string;
-    display_package_label?: string;
-    package_kind?: PackageKind;
-    coverage_state?: CoverageState;
-    covered: boolean;
-    coverage?: {
-      covered_by_subscription_id?: string;
-      status?: string;
-    };
-  }>;
-}
-
-interface MemberPlanCoveragePayload {
-  summary: MemberPlanCoverageSummary;
-  members: MemberPlanCoverageMember[];
-}
-
-interface SiteMembership {
-  member_ref: string;
-  identity_type?: string;
-  allowed_actions?: string[];
-  role: string;
-  status?: string;
 }
 
 interface PackagePlanListItem {
@@ -245,46 +166,6 @@ type PendingConfirmation = {
   onConfirm: () => void;
 };
 
-function normalizeEmailFromMember(memberRef: string, metadata?: Record<string, unknown>): string {
-  const metadataEmail = String(metadata?.email || '').trim().toLowerCase();
-  if (metadataEmail) {
-    return metadataEmail;
-  }
-  if (memberRef.startsWith('user:')) {
-    return memberRef.slice('user:'.length).trim().toLowerCase();
-  }
-  return '';
-}
-
-function getInviteStateLabel(member: AccountDetail['members'][number], t: (key: string, vars?: Record<string, string>, fallback?: string) => string): string {
-  if (member.status === 'disabled') {
-    return translateStatusLabel('disabled', t);
-  }
-  const source = String(member.metadata?.source || '');
-  const inviteState = String(member.invite_state || member.metadata?.invite_state || '');
-  if (inviteState === 'pending') {
-    return translateStatusLabel('pending', t);
-  }
-  if (inviteState === 'sent') {
-    return t('admin.invite_state_sent');
-  }
-  if (inviteState === 'accepted') {
-    return t('admin.invite_state_accepted');
-  }
-  if (source === 'bootstrap_portal_site') {
-    return t('admin.member_state_provisioned');
-  }
-  return translateStatusLabel(member.status || 'active', t);
-}
-
-function getDeliveryStateLabel(member: AccountDetail['members'][number], t: (key: string, vars?: Record<string, string>, fallback?: string) => string): string {
-  const deliveryStatus = String(member.last_delivery_status || member.metadata?.last_delivery_status || '').trim();
-  if (!deliveryStatus) {
-    return t('common.unknown');
-  }
-  return t(`admin.delivery_${deliveryStatus}`, undefined, deliveryStatus);
-}
-
 function selectPrimarySubscription(account: AccountDetail | null): AccountDetail['subscriptions'][number] | null {
   if (!account?.subscriptions.length) {
     return null;
@@ -349,12 +230,9 @@ function AccountDetailContent() {
   const { accountId } = params as { accountId: string };
   
   const [account, setAccount] = useState<AccountDetail | null>(null);
-  const [coverage, setCoverage] = useState<MemberPlanCoveragePayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState('');
-  const [selectedMemberRef, setSelectedMemberRef] = useState('');
-  const [siteMembers, setSiteMembers] = useState<SiteMembership[]>([]);
   const [accountMetaForm, setAccountMetaForm] = useState({
     operator_display_name: '',
     operator_note: '',
@@ -366,14 +244,6 @@ function AccountDetailContent() {
   const [accountStatusError, setAccountStatusError] = useState<string | null>(null);
   const [accountStatusPending, setAccountStatusPending] = useState<'suspend' | 'restore' | null>(null);
   const [suspendReason, setSuspendReason] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [isInviting, setIsInviting] = useState(false);
-  const [memberActionNotice, setMemberActionNotice] = useState<string | null>(null);
-  const [memberActionError, setMemberActionError] = useState<string | null>(null);
-  const [memberActionRef, setMemberActionRef] = useState<string | null>(null);
-  const [memberStatusFilter, setMemberStatusFilter] = useState('all');
   const [packageForm, setPackageForm] = useState({
     subscription_id: '',
     plan_id: '',
@@ -408,40 +278,6 @@ function AccountDetailContent() {
       setPackagePlans(Array.isArray(data.data?.items) ? (data.data.items as PackagePlanListItem[]) : []);
     } catch {
       setPackagePlans([]);
-    }
-  }, []);
-
-  const loadSiteMembers = useCallback(async (siteId: string) => {
-    if (!siteId) {
-      setSiteMembers([]);
-      setSelectedMemberRef('');
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/admin/sites/${encodeURIComponent(siteId)}`, {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        setSiteMembers([]);
-        setSelectedMemberRef('');
-        return;
-      }
-
-      const data = await response.json();
-      const memberships = data.data?.memberships || [];
-      const allowedMembers = memberships.filter((membership: SiteMembership) => membership.status === 'active');
-      setSiteMembers(allowedMembers);
-      setSelectedMemberRef((current) => {
-        if (current && allowedMembers.some((item: SiteMembership) => item.member_ref === current)) {
-          return current;
-        }
-        return allowedMembers[0]?.member_ref || '';
-      });
-    } catch {
-      setSiteMembers([]);
-      setSelectedMemberRef('');
     }
   }, []);
 
@@ -489,30 +325,21 @@ function AccountDetailContent() {
     setSiteRuntimeData(results);
   }, []);
 
-  const loadAccount = useCallback(async (preferredSiteId = '', preferredMemberRef = '') => {
+  const loadAccount = useCallback(async (preferredSiteId = '') => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const [accountResponse, coverageResponse] = await Promise.all([
-        fetch(`/api/admin/accounts/${accountId}`, {
-          credentials: 'include',
-        }),
-        fetch(`/api/admin/accounts/${accountId}/member-plan-coverage`, {
-          credentials: 'include',
-        }),
-      ]);
+      const accountResponse = await fetch(`/api/admin/accounts/${accountId}`, {
+        credentials: 'include',
+      });
 
-      if (!accountResponse.ok || !coverageResponse.ok) {
+      if (!accountResponse.ok) {
         throw new Error(t('error.failed_load'));
       }
 
-      const [data, coverageData] = await Promise.all([
-        accountResponse.json(),
-        coverageResponse.json(),
-      ]);
+      const data = await accountResponse.json();
       const payload = data.data || {};
-      const coveragePayload = coverageData.data || {};
       const accountData = payload.account || {};
       const accountMetadata =
         accountData.metadata && typeof accountData.metadata === 'object'
@@ -522,7 +349,6 @@ function AccountDetailContent() {
       const operatorNote = String(accountMetadata.operator_note || '').trim();
       const accountStatusNote = String(accountMetadata.account_status_note || '').trim();
       const accountStatusUpdatedAt = String(accountMetadata.account_status_updated_at || '').trim();
-      const memberships = Array.isArray(payload.memberships) ? payload.memberships : [];
       const sites = Array.isArray(payload.sites) ? payload.sites : [];
       const subscriptions = Array.isArray(payload.subscriptions) ? payload.subscriptions : [];
       const readiness = payload.trial_readiness || {};
@@ -537,7 +363,6 @@ function AccountDetailContent() {
         status: String(accountData.status || 'unknown'),
         metadata: accountMetadata,
         created_at: String(accountData.created_at || ''),
-        member_count: memberships.length,
         site_count: sites.length,
         subscription_count: subscriptions.length,
         sites: sites.map((site: { site_id?: string; status?: string; name?: string }) => ({
@@ -572,34 +397,6 @@ function AccountDetailContent() {
             coverage_state: packageDisplay.coverage_state,
           };
         }),
-        members: memberships.map((membership: { member_ref?: string; role?: string; status?: string; created_at?: string; updated_at?: string; metadata?: Record<string, unknown> }) => ({
-          member_ref: String(membership.member_ref || ''),
-          role: String(membership.role || ''),
-          joined_at: String(membership.created_at || membership.updated_at || ''),
-          updated_at: String(membership.updated_at || ''),
-          status: membership.status || 'unknown',
-          invite_state: String((membership as { invite_state?: string }).invite_state || ''),
-          invite_count: Number((membership as { invite_count?: number }).invite_count || 0) || 0,
-          invited_at: String((membership as { invited_at?: string }).invited_at || ''),
-          last_invited_at: String((membership as { last_invited_at?: string }).last_invited_at || ''),
-          invite_expires_at: String((membership as { invite_expires_at?: string }).invite_expires_at || ''),
-          last_delivery_status: String((membership as { last_delivery_status?: string }).last_delivery_status || ''),
-          last_delivery_error_code: String((membership as { last_delivery_error_code?: string }).last_delivery_error_code || ''),
-          last_delivery_error_message: String((membership as { last_delivery_error_message?: string }).last_delivery_error_message || ''),
-          last_login_at: String((membership as { last_login_at?: string }).last_login_at || ''),
-          enabled_at: String((membership as { enabled_at?: string }).enabled_at || ''),
-          disabled_at: String((membership as { disabled_at?: string }).disabled_at || ''),
-          disabled_reason: String((membership as { disabled_reason?: string }).disabled_reason || ''),
-          accessible_sites: Array.isArray((membership as { accessible_sites?: Array<{ site_id?: string; name?: string; status?: string }> }).accessible_sites)
-            ? ((membership as { accessible_sites?: Array<{ site_id?: string; name?: string; status?: string }> }).accessible_sites || []).map((site) => ({
-                site_id: String(site.site_id || ''),
-                name: String(site.name || ''),
-                status: String(site.status || ''),
-              }))
-            : [],
-          metadata: membership.metadata || {},
-          email: normalizeEmailFromMember(String(membership.member_ref || ''), membership.metadata || {}),
-        })),
         trial_readiness: readiness.status
           ? {
               status: String(readiness.status || 'action_required'),
@@ -615,9 +412,6 @@ function AccountDetailContent() {
                 sites_without_active_key: Array.isArray(readinessSummary.sites_without_active_key)
                   ? readinessSummary.sites_without_active_key.map((item: unknown) => String(item))
                   : [],
-                member_count: Number(readinessSummary.member_count || 0),
-                active_member_count: Number(readinessSummary.active_member_count || 0),
-                active_or_pending_member_count: Number(readinessSummary.active_or_pending_member_count || 0),
                 subscription_status: String(readinessSummary.subscription_status || ''),
                 display_package_label: String(readinessSummary.display_package_label || ''),
                 package_kind: String(readinessSummary.package_kind || ''),
@@ -654,53 +448,6 @@ function AccountDetailContent() {
         current_period_start_at: defaultSubscription?.current_period_start || '',
         current_period_end_at: defaultSubscription?.current_period_end || '',
       });
-      setCoverage({
-        summary: {
-          member_count: Number(coveragePayload.summary?.member_count || 0),
-          covered_member_count: Number(coveragePayload.summary?.covered_member_count || 0),
-          sites_needing_follow_up: Number(coveragePayload.summary?.sites_needing_follow_up_count || 0),
-        },
-        members: Array.isArray(coveragePayload.members)
-          ? coveragePayload.members.map((member: Record<string, unknown>) => ({
-              member_ref: String(member.member_ref || ''),
-              email: String(member.email || ''),
-              role: String(member.role || ''),
-              status: String(member.status || ''),
-              covered_site_count: Number(member.covered_site_count || 0),
-              sites_needing_follow_up: Number(member.sites_needing_follow_up_count || 0),
-              accessible_sites: Array.isArray(member.accessible_sites)
-                ? member.accessible_sites.map((site: Record<string, unknown>) => {
-                    const packageDisplay = resolveCustomerPackageDisplay(t, {
-                      planId: String(site.plan_id || ''),
-                      packageAlias: String(site.package_alias || ''),
-                      packageKind: String(site.package_kind || ''),
-                      coverageState: String(site.coverage_state || (site.covered ? 'covered' : 'uncovered')),
-                    });
-                    return {
-                      site_id: String(site.site_id || ''),
-                      site_name: String(site.site_name || site.site_id || ''),
-                      site_status: String(site.site_status || ''),
-                      plan_id: String(site.plan_id || ''),
-                      plan_version_id: String(site.plan_version_id || ''),
-                      package_alias: String(site.package_alias || ''),
-                      display_package_label:
-                        String(site.display_package_label || '') || packageDisplay.display_package_label,
-                      package_kind:
-                        (String(site.package_kind || '') as PackageKind) || packageDisplay.package_kind,
-                      coverage_state:
-                        (String(site.coverage_state || '') as CoverageState) || packageDisplay.coverage_state,
-                      covered: Boolean(site.covered),
-                      coverage: {
-                        covered_by_subscription_id: String((site.coverage as Record<string, unknown> | undefined)?.covered_by_subscription_id || ''),
-                        status: String((site.coverage as Record<string, unknown> | undefined)?.status || ''),
-                      },
-                    };
-                  })
-                : [],
-            }))
-          : [],
-      });
-
       const nextSiteOptions =
         nextAccount?.sites && nextAccount.sites.length > 0
           ? nextAccount.sites.map((site: { site_id: string; status?: string; name?: string }) => ({
@@ -715,20 +462,7 @@ function AccountDetailContent() {
           ? preferredSiteId
           : nextSiteOptions[0]?.site_id) || '';
 
-      const nextMemberRef =
-        (preferredMemberRef &&
-        (nextAccount?.members || []).some((member: { member_ref: string }) => member.member_ref === preferredMemberRef)
-          ? preferredMemberRef
-          : nextAccount?.members?.[0]?.member_ref) || '';
-
       setSelectedSiteId(nextSiteId);
-      setSelectedMemberRef(nextMemberRef);
-
-      if (nextSiteId) {
-        await loadSiteMembers(nextSiteId);
-      } else {
-        setSiteMembers([]);
-      }
 
       const nextSiteIds = nextAccount?.sites?.map((s) => s.site_id).filter(Boolean) || [];
       if (nextSiteIds.length > 0) {
@@ -739,55 +473,7 @@ function AccountDetailContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [accountId, loadSiteMembers, loadSiteRuntimeData, t]);
-
-  const handleInviteMember = async () => {
-    const normalizedEmail = inviteEmail.trim().toLowerCase();
-    if (!normalizedEmail) {
-      setInviteError(t('error.email_required'));
-      return;
-    }
-
-    setIsInviting(true);
-    setInviteError(null);
-    setInviteNotice(null);
-
-    try {
-      const response = await fetch(`/api/admin/accounts/${encodeURIComponent(accountId)}/invite-member`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: normalizedEmail,
-          role: 'user',
-        }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(resolveUiErrorMessage(payload.message, t('error.failed_invite_member')));
-      }
-
-      setInviteNotice(
-        t(
-          'admin.invite_member_success',
-          { email: normalizedEmail },
-          `${normalizedEmail} has been invited as a user.`
-        )
-      );
-      setInviteEmail('');
-      setMemberActionNotice(null);
-      setMemberActionError(null);
-      await loadAccount(selectedSiteId, `user:${normalizedEmail}`);
-    } catch (err) {
-      setInviteError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_invite_member')));
-    } finally {
-      setIsInviting(false);
-    }
-  };
+  }, [accountId, loadSiteRuntimeData, t]);
 
   const handleSaveAccountMeta = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -909,7 +595,7 @@ function AccountDetailContent() {
             : 'Customer package coverage has been updated.'
         )
       );
-      await loadAccount(selectedSiteId, selectedMemberRef);
+      await loadAccount(selectedSiteId);
     } catch (err) {
       setPackageActionError(
         resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save'))
@@ -950,7 +636,7 @@ function AccountDetailContent() {
               'Customer coverage has been canceled.'
             )
       );
-      await loadAccount(selectedSiteId, selectedMemberRef);
+      await loadAccount(selectedSiteId);
     } catch (err) {
       setPackageActionError(
         resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save'))
@@ -999,7 +685,7 @@ function AccountDetailContent() {
           ? t('admin.accounts.account_restored_notice', { account: accountTitle }, `${accountTitle} has been restored.`)
           : t('admin.accounts.account_suspended_notice', { account: accountTitle }, `${accountTitle} has been suspended.`)
       );
-      await loadAccount(selectedSiteId, selectedMemberRef);
+      await loadAccount(selectedSiteId);
     } catch (err) {
       setAccountStatusError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save')));
     } finally {
@@ -1050,7 +736,7 @@ function AccountDetailContent() {
           `${pack.fallback_label} has been applied to the current period.`
         )
       );
-      await loadAccount(selectedSiteId, selectedMemberRef);
+      await loadAccount(selectedSiteId);
     } catch (err) {
       setPackageActionError(
         resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save'))
@@ -1060,103 +746,10 @@ function AccountDetailContent() {
     }
   };
 
-  const handleResendInvite = async (member: AccountDetail['members'][number]) => {
-    setMemberActionRef(member.member_ref);
-    setMemberActionNotice(null);
-    setMemberActionError(null);
-    try {
-      const response = await fetch(
-        `/api/admin/accounts/${encodeURIComponent(accountId)}/members/${encodeURIComponent(member.member_ref)}/resend-invite`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(resolveUiErrorMessage(payload.message, t('error.failed_resend_invite')));
-      }
-      const email = member.email || member.member_ref;
-      setMemberActionNotice(t('admin.invite_member_resent', { email }));
-      await loadAccount(selectedSiteId, member.member_ref);
-    } catch (err) {
-      setMemberActionError(
-        resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_resend_invite'))
-      );
-    } finally {
-      setMemberActionRef(null);
-    }
-  };
-
-  const handleDisableMember = async (member: AccountDetail['members'][number]) => {
-    setMemberActionRef(member.member_ref);
-    setMemberActionNotice(null);
-    setMemberActionError(null);
-    try {
-      const response = await fetch(
-        `/api/admin/accounts/${encodeURIComponent(accountId)}/members/${encodeURIComponent(member.member_ref)}/disable`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(resolveUiErrorMessage(payload.message, t('error.failed_disable_member')));
-      }
-      setMemberActionNotice(t('admin.member_disabled_notice', { member: member.email || member.member_ref }));
-      await loadAccount(selectedSiteId, selectedMemberRef === member.member_ref ? '' : selectedMemberRef);
-    } catch (err) {
-      setMemberActionError(
-        resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_disable_member'))
-      );
-    } finally {
-      setMemberActionRef(null);
-    }
-  };
-
-  const handleEnableMember = async (member: AccountDetail['members'][number]) => {
-    setMemberActionRef(member.member_ref);
-    setMemberActionNotice(null);
-    setMemberActionError(null);
-    try {
-      const response = await fetch(
-        `/api/admin/accounts/${encodeURIComponent(accountId)}/members/${encodeURIComponent(member.member_ref)}/enable`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(resolveUiErrorMessage(payload.message, t('error.failed_reenable_member')));
-      }
-      setMemberActionNotice(t('admin.member_enabled_notice', { member: member.email || member.member_ref }));
-      await loadAccount(selectedSiteId, member.member_ref);
-    } catch (err) {
-      setMemberActionError(
-        resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_reenable_member'))
-      );
-    } finally {
-      setMemberActionRef(null);
-    }
-  };
-
   useEffect(() => {
     void loadAccount();
     void loadPackagePlans();
   }, [loadAccount, loadPackagePlans]);
-
-  useEffect(() => {
-    if (!selectedSiteId) {
-      setSiteMembers([]);
-      return;
-    }
-    void loadSiteMembers(selectedSiteId);
-  }, [loadSiteMembers, selectedSiteId]);
 
   if (isLoading) {
     return (
@@ -1202,19 +795,6 @@ function AccountDetailContent() {
       }))
     : [];
 
-  const filteredMembers = account.members.filter((member) => {
-    if (memberStatusFilter === 'all') {
-      return true;
-    }
-    if (memberStatusFilter === 'delivery_failed') {
-      return member.last_delivery_status === 'failed';
-    }
-    if (memberStatusFilter === 'never_logged_in') {
-      return !member.last_login_at;
-    }
-    return member.status === memberStatusFilter;
-  });
-
   const riskySubscriptions = account.subscriptions.filter((sub) => sub.status !== 'active');
   const primarySubscription = selectPrimarySubscription(account);
   const primaryPackage = resolveCustomerPackageDisplay(t, {
@@ -1231,12 +811,8 @@ function AccountDetailContent() {
     const diff = new Date(sub.current_period_end).getTime() - Date.now();
     return diff >= 0 && diff <= 1000 * 60 * 60 * 24 * 30;
   });
-  const disabledMembers = account.members.filter((member) => member.status === 'disabled');
-  const pendingMembers = account.members.filter((member) => member.status === 'pending_invite');
-  const membersWithDeliveryFailures = account.members.filter((member) => member.last_delivery_status === 'failed');
-  const uncoveredSiteCount = coverage?.summary.sites_needing_follow_up || 0;
-  const coveredMemberCount = coverage?.summary.covered_member_count || 0;
-  const uncoveredMembers = (coverage?.members || []).filter((member) => member.sites_needing_follow_up > 0);
+  const uncoveredSiteCount =
+    primaryPackage.coverage_state === 'uncovered' && account.site_count > 0 ? account.site_count : 0;
   const hasCoverageGap = uncoveredSiteCount > 0;
   const hasUncoveredCommercialPosture =
     primaryPackage.coverage_state === 'uncovered' || hasCoverageGap || (account.subscription_count === 0 && account.site_count > 0);
@@ -1263,12 +839,12 @@ function AccountDetailContent() {
       ? t(
           'admin.account_detail.trial_readiness_ready_desc',
           undefined,
-          'Package coverage, active site posture, Cloud API key coverage, and portal access are ready for an approved trial invite.'
+          'Package coverage, active site posture, Cloud API key coverage, and site admin workspace access are ready for a controlled trial.'
         )
       : t(
           'admin.account_detail.trial_readiness_action_desc',
           undefined,
-          'Use this checklist as the operator path for internal testing: fix the first failed item, then rerun smoke or invite the approved site.'
+          'Use this checklist as the operator path for internal testing: fix the first failed item, then rerun smoke or bind the approved site administrator.'
         );
   const trialSummary = trialReadiness?.summary;
   const trialMetricItems = [
@@ -1302,23 +878,11 @@ function AccountDetailContent() {
           : 'text-red-600 dark:text-red-400',
       size: 'compact' as const,
     },
-    {
-      label: t('admin.account_detail.trial_portal_metric', undefined, 'Portal users'),
-      value: `${formatInteger(trialSummary?.active_or_pending_member_count || 0)}/${formatInteger(trialSummary?.member_count || 0)}`,
-      detail: t('admin.account_detail.trial_portal_metric_desc', undefined, 'Active or invited users for customer access.'),
-      toneClassName:
-        trialSummary && trialSummary.active_or_pending_member_count > 0
-          ? undefined
-          : 'text-red-600 dark:text-red-400',
-      size: 'compact' as const,
-    },
   ];
   const postureTone =
     account.status === 'suspended' || riskySubscriptions.length > 0 || hasUncoveredCommercialPosture || hasDevBaselineOnly
       ? 'error'
-      : disabledMembers.length > 0 || pendingMembers.length > 0 || membersWithDeliveryFailures.length > 0
-        ? 'warning'
-        : 'ok';
+      : 'ok';
   const postureTitle = (() => {
     if (account.status === 'suspended') {
       return t('admin.account_detail.suspended_title', undefined, 'Customer access is suspended');
@@ -1337,9 +901,6 @@ function AccountDetailContent() {
     }
     if (hasPaidCoverage) {
       return t('admin.account_detail.paid_covered_title', undefined, 'Covered by paid package');
-    }
-    if (disabledMembers.length > 0 || pendingMembers.length > 0 || membersWithDeliveryFailures.length > 0) {
-      return t('admin.account_detail.member_attention_title', undefined, 'Member follow-up is pending');
     }
     return t('admin.account_detail.healthy_title', undefined, 'Customer posture is stable');
   })();
@@ -1362,10 +923,7 @@ function AccountDetailContent() {
     if (hasPaidCoverage) {
       return t('admin.account_detail.paid_covered_desc', undefined, 'This customer is covered by a paid package. Use the current subscription record for package changes, suspension, or cancellation.');
     }
-    if (disabledMembers.length > 0 || pendingMembers.length > 0 || membersWithDeliveryFailures.length > 0) {
-      return t('admin.account_detail.member_attention_desc', undefined, 'Coverage is broadly healthy, but member delivery or access state still needs operator follow-up.');
-    }
-    return t('admin.account_detail.healthy_desc', undefined, 'Commercial coverage, site footprint, and member access are all readable from this surface.');
+    return t('admin.account_detail.healthy_desc', undefined, 'Commercial coverage and site footprint are readable from this surface.');
   })();
   const nextStepDescription = account.status === 'suspended'
     ? t('admin.account_detail.next_step_suspended_desc', undefined, 'Keep support actions bounded until you confirm why the customer is suspended.')
@@ -1373,9 +931,7 @@ function AccountDetailContent() {
       ? t('admin.account_detail.next_step_subscription_desc', undefined, 'Coverage posture still needs operator attention. Use the bounded actions on this page before opening any deeper commercial detail.')
       : hasUncoveredCommercialPosture
         ? t('admin.account_detail.open_subscription_queue_desc', undefined, 'This customer has site footprint without readable package coverage, so keep the next decision on customer coverage and site impact first.')
-        : disabledMembers.length > 0 || pendingMembers.length > 0 || membersWithDeliveryFailures.length > 0
-          ? t('admin.account_detail.review_member_access_desc', undefined, 'Coverage is readable; the next follow-up is usually inside portal access and invite delivery below.')
-          : t('admin.account_detail.open_primary_site_desc', undefined, 'The customer is stable; only open a site when you need lower-level runtime, key, or support detail.');
+        : t('admin.account_detail.open_primary_site_desc', undefined, 'The customer is stable; only open a site when you need lower-level runtime, key, or support detail.');
   const watchItems = [
     {
       label: t('common.package', undefined, 'Package'),
@@ -1404,19 +960,6 @@ function AccountDetailContent() {
         : t('admin.account_detail.site_coverage_ready_desc', undefined, 'Site footprint is attached to current subscription coverage.'),
       toneClassName: hasCoverageGap ? 'text-red-600 dark:text-red-400' : undefined,
     },
-    {
-      label: t('common.members'),
-      value: formatInteger(account.member_count),
-      detail:
-        uncoveredMembers.length > 0
-          ? t('admin.account_detail.member_uncovered_desc', { count: String(uncoveredMembers.length) }, `${uncoveredMembers.length} members can reach at least one site that needs subscription follow-up.`)
-          : membersWithDeliveryFailures.length > 0
-          ? t('admin.account_detail.member_delivery_failed_desc', { count: String(membersWithDeliveryFailures.length) }, `${membersWithDeliveryFailures.length} members have delivery issues.`)
-          : pendingMembers.length > 0
-            ? t('admin.account_detail.member_pending_desc', { count: String(pendingMembers.length) }, `${pendingMembers.length} members still need invite follow-up.`)
-            : t('admin.account_detail.member_access_stable_desc', undefined, 'Member access and invite state look stable from this customer boundary.'),
-      toneClassName: membersWithDeliveryFailures.length > 0 || pendingMembers.length > 0 ? 'text-amber-700 dark:text-amber-300' : undefined,
-    },
   ];
   const packagePlanOptions = packagePlans
     .filter((item) => item.plan?.plan_id)
@@ -1442,36 +985,6 @@ function AccountDetailContent() {
       : primarySubscription?.package_alias === 'Agency' || primarySubscription?.plan_id === 'agency'
         ? 'agency'
         : 'pro';
-  const portalAccessSummaryItems = [
-    {
-      label: t('common.members'),
-      value: formatInteger(account.member_count),
-      detail: t('admin.account_detail.portal_access_member_count_desc', undefined, 'Portal members currently attached to this customer.'),
-    },
-    {
-      label: t('admin.pending_invites', undefined, 'Pending invites'),
-      value: formatInteger(pendingMembers.length),
-      detail: pendingMembers.length > 0
-        ? t('admin.account_detail.member_pending_desc', { count: String(pendingMembers.length) }, `${pendingMembers.length} members still need invite follow-up.`)
-        : t('admin.account_detail.portal_access_pending_clear_desc', undefined, 'No pending invite follow-up is visible right now.'),
-      toneClassName: pendingMembers.length > 0 ? 'text-amber-700 dark:text-amber-300' : undefined,
-    },
-    {
-      label: t('admin.disabled_members', undefined, 'Disabled members'),
-      value: formatInteger(disabledMembers.length),
-      detail: disabledMembers.length > 0
-        ? t('admin.account_detail.portal_access_disabled_desc', { count: String(disabledMembers.length) }, `${disabledMembers.length} members are currently disabled and may need support review.`)
-        : t('admin.account_detail.portal_access_disabled_clear_desc', undefined, 'No disabled portal members are visible on this customer.'),
-    },
-    {
-      label: t('admin.members_needing_coverage_follow_up', undefined, 'Members needing coverage follow-up'),
-      value: formatInteger(uncoveredMembers.length),
-      detail: uncoveredMembers.length > 0
-        ? t('admin.account_detail.members_with_coverage_follow_up_desc', undefined, 'These members can reach one or more sites whose customer coverage still needs follow-up.')
-        : t('admin.account_detail.members_fully_covered_desc', undefined, 'No member currently points at a site that needs commercial follow-up.'),
-      toneClassName: uncoveredMembers.length > 0 ? 'text-red-600 dark:text-red-400' : undefined,
-    },
-  ];
   const accountTitle = resolveAccountTitle(account, t);
   const showPostureBadge = postureTone !== 'ok';
   const showAccountStatusBadge = account.status !== 'active' && account.status !== 'unknown';
@@ -1534,8 +1047,12 @@ function AccountDetailContent() {
           <div className="w-full xl:w-[46rem]">
             <BackofficeMetricStrip
               items={[
-                { label: t('common.members'), value: formatInteger(account.member_count), size: 'compact' },
                 { label: t('common.sites'), value: formatInteger(account.site_count), size: 'compact' },
+                {
+                  label: t('common.status'),
+                  value: translateStatusLabel(account.status, t),
+                  size: 'compact',
+                },
                 {
                   label: t('common.subscriptions'),
                   value: formatInteger(account.subscription_count),
@@ -1688,9 +1205,7 @@ function AccountDetailContent() {
                 <p className="mt-2 font-medium text-gray-950 dark:text-white">
                   {hasCoverageGap
                     ? t('admin.account_detail.next_focus_coverage', undefined, 'Customer coverage and site impact')
-                    : pendingMembers.length > 0 || disabledMembers.length > 0 || membersWithDeliveryFailures.length > 0
-                      ? t('admin.account_detail.next_focus_portal_access', undefined, 'Portal access and member delivery')
-                      : t('admin.account_detail.next_focus_sites', undefined, 'Site footprint and runtime detail')}
+                    : t('admin.account_detail.next_focus_sites', undefined, 'Site footprint and runtime detail')}
                 </p>
               </div>
             </div>
@@ -1840,9 +1355,6 @@ function AccountDetailContent() {
             <div className="mt-4 flex flex-wrap gap-3">
               <a href="#site-footprint" className="btn btn-secondary">
                 {t('admin.account_detail.view_sites_action', undefined, 'View sites')}
-              </a>
-              <a href="#portal-access" className="btn btn-secondary">
-                {t('admin.account_detail.invite_member_action', undefined, 'Invite member')}
               </a>
             </div>
             <details
@@ -2128,8 +1640,8 @@ function AccountDetailContent() {
                 items={[
                   { label: t('admin.active_sites'), value: formatInteger(siteOptions.length) },
                   {
-                    label: t('admin.active_memberships'),
-                    value: formatInteger(account.members.filter((member) => member.status !== 'inactive').length),
+                    label: t('admin.account_detail.site_admin_workspace_metric', undefined, 'Site admin workspace'),
+                    value: t('common.enabled', undefined, 'Enabled'),
                   },
                 ]}
               />
@@ -2235,347 +1747,6 @@ function AccountDetailContent() {
         </BackofficeSectionPanel>
       ) : null}
 
-      <div id="portal-access" className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <BackofficeSectionPanel className="space-y-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.member_directory')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('admin.account_detail.portal_access_title', undefined, 'Portal access')}
-            </h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {t('admin.account_detail.portal_access_desc', undefined, 'Use this block for invite delivery and member access follow-up after the customer coverage posture is clear.')}
-            </p>
-          </div>
-          <BackofficeMetricStrip items={portalAccessSummaryItems} columnsClassName="xl:grid-cols-2" />
-          {coverage?.members.length ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {coverage.members.slice(0, 2).map((member) => (
-                <BackofficeStackCard key={`portal-access-summary-${member.member_ref}`}>
-                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                    {member.email || member.member_ref}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    {translateExternalCommercialRole(member.identity_type || member.role, t)}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <BackofficeStatusBadge status={member.status} label={translateStatusLabel(member.status, t)} />
-                    <BackofficeStatusBadge
-                      status={member.sites_needing_follow_up > 0 ? 'error' : 'ok'}
-                      label={
-                        member.sites_needing_follow_up > 0
-                          ? t('admin.coverage_follow_up_required', undefined, 'Coverage follow-up required')
-                          : t('status.active')
-                      }
-                    />
-                  </div>
-                </BackofficeStackCard>
-              ))}
-            </div>
-          ) : null}
-          <details
-            data-ui="member-coverage-details"
-            className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800"
-          >
-            <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
-              {t('admin.account_detail.member_plan_coverage_reveal', undefined, 'View member coverage details')}
-            </summary>
-            <div className="mt-4 space-y-4">
-              <BackofficeMetricStrip
-                columnsClassName="md:grid-cols-2 xl:grid-cols-2"
-                items={[
-                  {
-                    label: t('admin.covered_members', undefined, 'Covered members'),
-                    value: formatInteger(coveredMemberCount),
-                    detail: t('admin.account_detail.covered_members_desc', undefined, 'Members with at least one covered site.'),
-                  },
-                  {
-                    label: t('admin.members_needing_coverage_follow_up', undefined, 'Members needing coverage follow-up'),
-                    value: formatInteger(uncoveredMembers.length),
-                    detail: hasCoverageGap
-                      ? t('admin.account_detail.members_with_coverage_follow_up_desc', undefined, 'These members can access one or more sites whose current customer subscription needs operator follow-up.')
-                      : t('admin.account_detail.members_fully_covered_desc', undefined, 'No member currently points at a site that needs commercial follow-up.'),
-                  },
-                  {
-                    label: t('admin.sites_needing_subscription_follow_up', undefined, 'Sites needing subscription follow-up'),
-                    value: formatInteger(uncoveredSiteCount),
-                    detail: hasCoverageGap
-                      ? t('admin.account_detail.sites_needing_follow_up_desc', undefined, 'These sites are covered by the customer account, but their current subscription posture still needs explicit operator follow-up.')
-                      : t('admin.account_detail.uncovered_sites_clear_desc', undefined, 'All visible sites currently resolve to readable customer subscription coverage.'),
-                  },
-                ]}
-              />
-              {coverage?.members.length ? (
-                <div className="space-y-3">
-                  {coverage.members.map((member) => (
-                    <BackofficeStackCard key={member.member_ref} className="space-y-3">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <BackofficeIdentifier value={member.member_ref} className="text-sm font-semibold text-gray-950 dark:text-white" />
-                          {member.email ? (
-                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{member.email}</p>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <BackofficeStatusBadge status={member.status} label={translateStatusLabel(member.status, t)} />
-                          <BackofficeStatusBadge status={member.sites_needing_follow_up > 0 ? 'error' : 'ok'} label={member.sites_needing_follow_up > 0 ? t('admin.coverage_follow_up_required', undefined, 'Coverage follow-up required') : t('status.active')} />
-                        </div>
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{t('admin.product_role', undefined, 'Product role')}</p>
-                          <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {translateExternalCommercialRole(member.identity_type || member.role, t)}
-                          </p>
-                          {member.allowed_actions?.length ? (
-                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                              {member.allowed_actions.map((action) => translateAllowedAction(action, t)).join(' · ')}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{t('admin.covered_sites', undefined, 'Covered sites')}</p>
-                          <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">{formatInteger(member.covered_site_count)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{t('admin.sites_needing_follow_up', undefined, 'Sites needing follow-up')}</p>
-                          <p className={cn('mt-1 text-sm font-semibold', member.sites_needing_follow_up > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100')}>
-                            {formatInteger(member.sites_needing_follow_up)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        {member.accessible_sites.map((site) => (
-                          <div key={`${member.member_ref}:${site.site_id}`} className="rounded-2xl border border-gray-200 px-4 py-3 dark:border-gray-800">
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <Link href={`/admin/sites/${site.site_id}`} className="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
-                                  <BackofficeIdentifier value={site.site_id} className="text-sm text-blue-600 dark:text-blue-300" />
-                                </Link>
-                                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{site.site_name || site.site_id}</p>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <BackofficeStatusBadge status={site.covered ? 'ok' : 'error'} label={site.covered ? t('status.active') : t('admin.coverage_follow_up_required', undefined, 'Coverage follow-up required')} />
-                                <BackofficeStatusBadge status={site.coverage?.status || site.site_status || 'unknown'} label={translateStatusLabel(site.coverage?.status || site.site_status || 'unknown', t)} />
-                              </div>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-400">
-                              <span>{t('common.package', undefined, 'Package')}: {site.display_package_label || site.package_alias || site.plan_id || t('common.not_found')}</span>
-                              <span>{t('admin.package_kind', undefined, 'Package kind')}: {translatePackageKindLabel(t, site.package_kind || (site.covered ? 'tier_package' : 'unknown'))}</span>
-                              <span>{t('admin.coverage_state', undefined, 'Coverage state')}: {translateCoverageStateLabel(t, site.coverage_state || (site.covered ? 'covered' : 'uncovered'))}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </BackofficeStackCard>
-                  ))}
-                </div>
-              ) : (
-                <BackofficeEmptyState
-                  title={t('admin.account_detail.members_empty_title', undefined, 'No members on this customer')}
-                  description={t('admin.account_detail.members_empty_desc', undefined, 'No user or support member is attached to this customer yet. Use the member directory for invite and access follow-up.')}
-                />
-              )}
-            </div>
-          </details>
-        </BackofficeSectionPanel>
-
-        <BackofficeSectionPanel className="space-y-4">
-          <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.member_directory')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('admin.account_detail.member_ops_title', undefined, 'Portal access controls')}
-            </h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {t('admin.account_detail.member_ops_desc', undefined, 'Keep invite delivery, disable/reenable, and member directory work behind an explicit reveal so the first screen stays customer-first.')}
-            </p>
-          </div>
-          <details className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800">
-            <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
-              {t('admin.account_detail.portal_access_controls_reveal', undefined, 'Manage portal access')}
-            </summary>
-            <div className="mt-4 rounded-2xl border border-gray-200 dark:border-gray-800">
-          <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
-                  {t('admin.invite_portal_member')}
-                </p>
-                <h3 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
-                  {t('admin.invite_portal_member_title')}
-                </h3>
-                <p className="mt-1 max-w-2xl text-sm text-gray-600 dark:text-gray-400">
-                  {t('admin.invite_portal_member_desc')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleInviteMember}
-                className={cn('btn btn-secondary', (isInviting || !inviteEmail.trim()) && 'pointer-events-none opacity-50')}
-                disabled={isInviting || !inviteEmail.trim()}
-              >
-                {isInviting ? t('auth.sending') : t('admin.send_invite')}
-              </button>
-            </div>
-            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_0.7fr]">
-              <label className="text-sm">
-                <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.email')}</span>
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  placeholder={t('auth.email_placeholder')}
-                  className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900/90"
-                />
-              </label>
-              <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900/90">
-                <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.role')}</span>
-                <div className="font-medium text-slate-900 dark:text-slate-100">
-                  {t('admin.external_role_user', undefined, 'User')}
-                </div>
-                <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                  {t(
-                    'admin.user_role_notice',
-                    undefined,
-                    'Invited portal members are provisioned as users in the current Cloud model.'
-                  )}
-                </p>
-              </div>
-            </div>
-            {inviteNotice ? (
-              <BackofficeStackCard className="mt-4 border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300">
-                {inviteNotice}
-              </BackofficeStackCard>
-            ) : null}
-            {inviteError ? (
-              <BackofficeStackCard className="mt-4 border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                {inviteError}
-              </BackofficeStackCard>
-            ) : null}
-            {memberActionNotice ? (
-              <BackofficeStackCard className="mt-4 border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
-                {memberActionNotice}
-              </BackofficeStackCard>
-            ) : null}
-            {memberActionError ? (
-              <BackofficeStackCard className="mt-4 border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                {memberActionError}
-              </BackofficeStackCard>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('admin.member_directory')}</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{t('admin.member_directory_desc')}</p>
-            </div>
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('common.status')}</span>
-              <select
-                value={memberStatusFilter}
-                onChange={(event) => setMemberStatusFilter(event.target.value)}
-                className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm dark:border-gray-800 dark:bg-gray-900/90"
-              >
-                <option value="all">{t('common.all')}</option>
-                <option value="pending_invite">{translateStatusLabel('pending_invite', t)}</option>
-                <option value="active">{translateStatusLabel('active', t)}</option>
-                <option value="disabled">{translateStatusLabel('disabled', t)}</option>
-                <option value="delivery_failed">{t('admin.delivery_failed')}</option>
-                <option value="never_logged_in">{t('admin.never_logged_in')}</option>
-              </select>
-            </label>
-          </div>
-          {filteredMembers.length === 0 ? (
-            <div className="p-6">
-              <BackofficeEmptyState
-                title={t('admin.account_detail.members_filter_empty_title', undefined, 'No members match this filter')}
-                description={t('admin.account_detail.members_filter_empty_desc', undefined, 'The customer has no member in the selected status. Clear the filter or inspect the member directory.')}
-                action={
-                  <button type="button" className="btn btn-secondary" onClick={() => setMemberStatusFilter('all')}>
-                    {t('common.clear_filters', undefined, 'Clear filters')}
-                  </button>
-                }
-              />
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200 dark:divide-gray-800">
-              {filteredMembers.map((member) => (
-                <article key={member.member_ref} className="grid gap-4 px-6 py-4 lg:grid-cols-[minmax(0,1fr)_0.5fr_0.6fr_auto] lg:items-center">
-                  <div>
-                    <BackofficeIdentifier value={member.member_ref} className="text-sm font-semibold text-gray-950 dark:text-white" />
-                    {member.email ? (
-                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{member.email}</p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {getInviteStateLabel(member, t)}
-                      {member.last_invited_at ? ` · ${t('admin.last_invited_at')}: ${formatDate(String(member.last_invited_at))}` : ''}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {t('admin.delivery_status')}: {getDeliveryStateLabel(member, t)}
-                      {member.invite_expires_at ? ` · ${t('admin.invite_expires_at')}: ${formatDate(member.invite_expires_at)}` : ''}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {t('admin.last_login_at')}: {member.last_login_at ? formatDate(member.last_login_at) : t('common.never')}
-                    </p>
-                    {member.last_delivery_error_message ? (
-                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">{member.last_delivery_error_message}</p>
-                    ) : null}
-                  </div>
-                  <div>
-                    <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                      {translateExternalCommercialRole(member.identity_type || member.role, t)}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    <p>{formatDate(member.joined_at)}</p>
-                    <BackofficeStatusBadge
-                      status={member.status || 'unknown'}
-                      label={translateStatusLabel(member.status || 'unknown', t)}
-                      className="mt-2"
-                    />
-                  </div>
-                  <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
-                    {member.status === 'active' && member.email ? (
-                      <button
-                        type="button"
-                        onClick={() => handleResendInvite(member)}
-                        className={cn('btn btn-secondary', memberActionRef === member.member_ref && 'pointer-events-none opacity-50')}
-                        disabled={memberActionRef === member.member_ref}
-                      >
-                        {t('admin.resend_invite')}
-                      </button>
-                    ) : null}
-                    {member.status === 'disabled' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleEnableMember(member)}
-                        className={cn('btn btn-secondary', memberActionRef === member.member_ref && 'pointer-events-none opacity-50')}
-                        disabled={memberActionRef === member.member_ref}
-                      >
-                        {t('admin.reenable_member')}
-                      </button>
-                    ) : null}
-                    {member.status !== 'disabled' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDisableMember(member)}
-                        className={cn('btn btn-secondary', memberActionRef === member.member_ref && 'pointer-events-none opacity-50')}
-                        disabled={memberActionRef === member.member_ref}
-                      >
-                        {t('admin.disable_member')}
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-            </div>
-          </details>
-        </BackofficeSectionPanel>
-      </div>
       <ConfirmModal
         isOpen={Boolean(pendingConfirmation)}
         title={pendingConfirmation?.title}

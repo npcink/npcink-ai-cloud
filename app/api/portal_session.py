@@ -23,7 +23,6 @@ from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
 
 COOKIE_SITE_ID = "magick_portal_site_id"
-COOKIE_MEMBER_REF = "magick_portal_member_ref"
 COOKIE_PORTAL_SESSION_TOKEN = "magick_portal_session_token"
 COOKIE_BEARER_TOKEN = COOKIE_PORTAL_SESSION_TOKEN
 COOKIE_SESSION_ISSUED_AT = "magick_portal_session_issued_at"
@@ -113,8 +112,8 @@ def current_portal_browser_session(
                 session_required_message,
             )
         claims = decode_portal_session_cookie_claims(settings, token)
-        member_ref = str(claims.get("sub") or claims.get("member_ref") or "").strip()
-        if not member_ref:
+        site_admin_ref = str(claims.get("sub") or "").strip()
+        if not site_admin_ref:
             raise PortalBearerTokenError(
                 401,
                 session_required_error_code,
@@ -128,7 +127,7 @@ def current_portal_browser_session(
                 .replace("+00:00", "Z")
             )
         return {
-            "member_ref": member_ref,
+            "site_admin_ref": site_admin_ref,
             "auth_mode": "jwt",
             "issued_at": issued_at,
             "expires_at": token_expires_at or expires_at,
@@ -138,19 +137,6 @@ def current_portal_browser_session(
         503,
         "auth.portal_not_configured",
         "portal auth is not configured",
-    )
-
-
-def current_portal_member_session(
-    request: Request,
-    *,
-    session_required_error_code: str = "portal.session_required",
-    session_required_message: str = "portal browser session is required",
-) -> dict[str, str]:
-    return current_portal_browser_session(
-        request,
-        session_required_error_code=session_required_error_code,
-        session_required_message=session_required_message,
     )
 
 
@@ -183,14 +169,14 @@ def current_portal_site_session(
 def serialize_portal_session(
     request: Request,
     *,
-    member_ref: str,
+    site_admin_ref: str,
     site_id: str = "",
     strict_site: bool = True,
     session_metadata: dict[str, object] | None = None,
 ) -> dict[str, object]:
     service = get_commercial_service(request)
-    sites = service.list_portal_sites(member_ref=member_ref)
-    accounts = service.list_portal_accounts(member_ref=member_ref)
+    sites = service.list_portal_sites(site_admin_ref=site_admin_ref)
+    accounts = service.list_portal_accounts(site_admin_ref=site_admin_ref)
     site_items = _dict_list(sites.get("items"))
     visible_site_items = [
         item
@@ -202,12 +188,15 @@ def serialize_portal_session(
     selected_account_id = ""
     current_subscription: dict[str, object] | None = None
     resolved_site_id = site_id
-    session = session_metadata or _resolve_portal_session_metadata(request, member_ref=member_ref)
+    session = session_metadata or _resolve_portal_session_metadata(
+        request,
+        site_admin_ref=site_admin_ref,
+    )
     if site_id:
         try:
             access = service.resolve_portal_site_access(
                 site_id=site_id,
-                member_ref=member_ref,
+                site_admin_ref=site_admin_ref,
             )
         except CommercialServiceError:
             if strict_site:
@@ -249,7 +238,7 @@ def serialize_portal_session(
         current_subscription = subscriptions[0] if subscriptions else None
     return {
         "site_id": resolved_site_id,
-        "member_ref": member_ref,
+        "site_admin_ref": site_admin_ref,
         "account_id": selected_account_id,
         "identity_type": (
             str(account_items[0].get("identity_type") or "") if account_items else ""
@@ -283,7 +272,7 @@ def build_new_portal_session_metadata(request: Request) -> dict[str, object]:
     now = datetime.now(UTC)
     ttl_seconds = resolve_portal_session_ttl_seconds(settings)
     return {
-        "member_ref": "",
+        "site_admin_ref": "",
         "issued_at": now.isoformat().replace("+00:00", "Z"),
         "expires_at": (now + timedelta(seconds=ttl_seconds)).isoformat().replace("+00:00", "Z"),
         "transport": "cookie",
@@ -295,7 +284,7 @@ def set_portal_session_cookies(
     request: Request,
     response: JSONResponse,
     *,
-    member_ref: str,
+    site_admin_ref: str,
     site_id: str = "",
 ) -> None:
     settings = get_cloud_services(request).settings
@@ -319,7 +308,7 @@ def set_portal_session_cookies(
         COOKIE_PORTAL_SESSION_TOKEN,
         build_portal_session_token(
             settings,
-            member_ref=member_ref,
+            site_admin_ref=site_admin_ref,
             expires_at=now + timedelta(seconds=ttl_seconds),
         ),
         httponly=True,
@@ -327,7 +316,6 @@ def set_portal_session_cookies(
         samesite="lax",
         max_age=ttl_seconds,
     )
-    response.delete_cookie(COOKIE_MEMBER_REF)
     response.set_cookie(
         COOKIE_SESSION_ISSUED_AT,
         issued_at,
@@ -348,7 +336,6 @@ def set_portal_session_cookies(
 
 def clear_portal_session_cookies(response: JSONResponse | RedirectResponse) -> None:
     response.delete_cookie(COOKIE_SITE_ID)
-    response.delete_cookie(COOKIE_MEMBER_REF)
     response.delete_cookie(COOKIE_PORTAL_SESSION_TOKEN)
     response.delete_cookie(COOKIE_SESSION_ISSUED_AT)
     response.delete_cookie(COOKIE_SESSION_EXPIRES_AT)
@@ -362,7 +349,7 @@ def _has_portal_request_headers(request: Request) -> bool:
     )
 
 
-def _resolve_portal_session_metadata(request: Request, *, member_ref: str) -> dict[str, object]:
+def _resolve_portal_session_metadata(request: Request, *, site_admin_ref: str) -> dict[str, object]:
     if _has_portal_request_headers(request):
         auth_header = request.headers.get(AUTHORIZATION_HEADER, "").strip()
         if auth_header.lower().startswith("bearer "):
@@ -385,14 +372,14 @@ def _resolve_portal_session_metadata(request: Request, *, member_ref: str) -> di
                     .replace("+00:00", "Z")
                 )
             return {
-                "member_ref": member_ref,
+                "site_admin_ref": site_admin_ref,
                 "issued_at": issued_at,
                 "expires_at": expires_at,
                 "transport": "header",
                 "revocable": False,
             }
         return {
-            "member_ref": member_ref,
+            "site_admin_ref": site_admin_ref,
             "issued_at": "",
             "expires_at": "",
             "transport": "header",
@@ -401,7 +388,7 @@ def _resolve_portal_session_metadata(request: Request, *, member_ref: str) -> di
 
     session = current_portal_browser_session(request)
     return {
-        "member_ref": member_ref,
+        "site_admin_ref": site_admin_ref,
         "issued_at": session.get("issued_at", ""),
         "expires_at": session.get("expires_at", ""),
         "transport": "cookie",
@@ -437,7 +424,7 @@ async def resolve_portal_request_context(
                 error_code=error.error_code,
                 message=error.message,
             )
-        return PortalAuthContext(member_ref=session["member_ref"])
+        return PortalAuthContext(site_admin_ref=session["site_admin_ref"])
 
     return await authorize_portal_request(
         request,

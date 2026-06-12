@@ -25,7 +25,7 @@ approval plane, second router truth, or second WordPress write owner.
 - If the addon is absent, unverified, or monitoring is disabled, events stay
   local and are not uploaded.
 - Cloud receives batches at `POST /v1/observability/plugin-events`.
-- Portal reads only the current member's authorized site.
+- Portal reads only the current site administrator's authorized site.
 - Admin reads may aggregate across sites through internal service auth.
 
 ## Envelope

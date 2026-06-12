@@ -8,14 +8,14 @@
 import { getPortalApiBaseUrl } from './env';
 import { generateIdempotencyKey } from './idempotency';
 
-export type ProductIdentityType = 'platform_admin' | 'user';
+export type ProductIdentityType = 'platform_admin' | 'site_admin';
 
 // ============================================
 // 类型定义
 // ============================================
 
 export interface PortalSession {
-  member_ref: string;
+  site_admin_ref: string;
   site_id: string;
   account_id?: string;
   identity_type?: ProductIdentityType;
@@ -25,9 +25,8 @@ export interface PortalSession {
     account_id: string;
     name: string;
     status: string;
-    member_ref: string;
+    site_admin_ref: string;
     role: string;
-    membership_status: string;
     site_count: number;
     sites: Site[];
   }>;
@@ -52,8 +51,8 @@ export interface PortalSession {
   };
 }
 
-export interface PortalMemberSummary {
-  member_ref: string;
+export interface PortalSiteAdminSummary {
+  site_admin_ref: string;
   email: string;
   auth_mode: string;
   identity_type?: ProductIdentityType;
@@ -61,12 +60,11 @@ export interface PortalMemberSummary {
   roles: ProductIdentityType[];
   accessible_sites_count: number;
   selected_site_id: string;
-  memberships: Array<{
+  grants: Array<{
     account_id: string;
     identity_type?: ProductIdentityType;
     allowed_actions?: string[];
     role: string;
-    membership_status: string;
     site_count: number;
   }>;
 }
@@ -158,7 +156,7 @@ export interface UsageSummary {
 export interface Entitlements {
   site_id: string;
   account_id: string;
-  member_ref: string;
+  site_admin_ref: string;
   identity_type?: ProductIdentityType;
   allowed_actions?: string[];
   role: string;
@@ -237,7 +235,7 @@ export interface Entitlements {
 export interface PortalSiteSummaryRecord {
   site_id: string;
   account_id: string;
-  member_ref: string;
+  site_admin_ref: string;
   identity_type?: ProductIdentityType;
   allowed_actions?: string[];
   role: string;
@@ -285,7 +283,7 @@ export interface PortalUsageWindow {
 export interface PortalUsageSummaryPayload {
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   timezone?: string;
   generated_at?: string;
@@ -427,7 +425,7 @@ export interface PortalMonitoringOverviewSummary {
   contract_version: string;
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   generated_at: string;
   window: {
@@ -470,7 +468,7 @@ export interface PortalPluginObservabilitySummary {
   contract_version: string;
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   generated_at: string;
   window: {
@@ -576,7 +574,7 @@ export interface PortalMediaObservabilitySummary {
   contract_version: string;
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   generated_at: string;
   window: {
@@ -671,7 +669,7 @@ export interface PortalVectorObservabilitySummary {
   contract_version: string;
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   generated_at: string;
   window: {
@@ -776,7 +774,7 @@ export interface PortalAIInsightResponse {
   portal_ai_insight_version: string;
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   identity_type?: ProductIdentityType;
   role?: string;
   analysis: PortalAIInsightAnalysis;
@@ -787,7 +785,7 @@ export interface PortalAIInsightHistoryResponse {
   portal_ai_insight_version: string;
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   identity_type?: ProductIdentityType;
   role?: string;
   items: PortalAIInsightHistoryItem[];
@@ -806,7 +804,7 @@ export interface PortalAuditEvent {
 export interface PortalAuditSummary {
   site_id?: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   generated_at?: string;
   totals?: {
@@ -826,7 +824,7 @@ export interface PortalAuditSummary {
 export interface PortalAuditEventList {
   site_id?: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   items: PortalAuditEvent[];
 }
@@ -851,7 +849,7 @@ export interface PortalBillingSnapshot {
 export interface PortalBillingReconciliation {
   site_id?: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   role?: string;
   ledger_totals?: {
     cost?: number;
@@ -879,7 +877,7 @@ export interface PortalSiteBundle {
 export interface PortalAnalyticsTrend {
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   identity_type?: string;
   role?: string;
   tier_id?: string;
@@ -902,7 +900,7 @@ export interface PortalAnalyticsTrend {
 export interface PortalAnalyticsCostBreakdown {
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   identity_type?: string;
   role?: string;
   tier_id?: string;
@@ -921,7 +919,7 @@ export interface PortalAnalyticsCostBreakdown {
 export interface PortalAnalyticsPerformance {
   site_id: string;
   account_id?: string;
-  member_ref?: string;
+  site_admin_ref?: string;
   identity_type?: string;
   role?: string;
   tier_id?: string;
@@ -970,7 +968,7 @@ function normalizePortalSiteSummaryRecord(raw: unknown): PortalSiteSummaryRecord
   return {
     site_id: String(record.site_id || ''),
     account_id: String(record.account_id || ''),
-    member_ref: String(record.member_ref || ''),
+    site_admin_ref: String(record.site_admin_ref || ''),
     identity_type: (record.identity_type as ProductIdentityType | undefined) || undefined,
     allowed_actions: Array.isArray(record.allowed_actions)
       ? record.allowed_actions.map((action) => String(action))
@@ -1028,7 +1026,7 @@ export interface ProvisionedSiteRecord {
 
 export interface PortalProvisionedSite {
   account_id: string;
-  member_ref: string;
+  site_admin_ref: string;
   role: string;
   wordpress_url: string;
   site: ProvisionedSiteRecord;
@@ -1055,7 +1053,7 @@ export interface PortalProvisionedSite {
 export interface PortalActivatedSite {
   site_id: string;
   account_id: string;
-  member_ref: string;
+  site_admin_ref: string;
   role: string;
   site: ProvisionedSiteRecord;
 }
@@ -1278,10 +1276,6 @@ export class PortalClient {
     return this.request('POST', '/session/revoke');
   }
 
-  async getMemberSummary(): Promise<PortalEnvelope<PortalMemberSummary>> {
-    return this.request('GET', '/member-summary', undefined, { requireAuth: true });
-  }
-
   // ========================================
   // 站点管理
   // ========================================
@@ -1478,7 +1472,7 @@ export class PortalClient {
   async listBillingSnapshots(siteId: string): Promise<PortalEnvelope<{
     site_id?: string;
     account_id?: string;
-    member_ref?: string;
+    site_admin_ref?: string;
     role?: string;
     items: PortalBillingSnapshot[];
   }>> {
@@ -1646,7 +1640,7 @@ export class PortalClient {
    */
   async getAdminOverview(): Promise<PortalEnvelope<{
     total_accounts: number;
-    total_memberships: number;
+    total_site_admins: number;
     total_sites: number;
     total_subscriptions: number;
     active_site_keys: number;
@@ -1684,7 +1678,6 @@ export class PortalClient {
    */
   async listAdminAccounts(options?: {
     status?: string;
-    member_ref?: string;
     expires_before?: string;
     limit?: number;
   }): Promise<PortalEnvelope<{
@@ -1692,7 +1685,6 @@ export class PortalClient {
       account_id: string;
       name: string;
       status: string;
-      member_count: number;
       site_count: number;
       subscription_count: number;
       top_plan?: string;
@@ -1702,7 +1694,6 @@ export class PortalClient {
   }>> {
     const params = new URLSearchParams();
     if (options?.status) params.set('status', options.status);
-    if (options?.member_ref) params.set('member_ref', options.member_ref);
     if (options?.expires_before) params.set('expires_before', options.expires_before);
     if (options?.limit) params.set('limit', String(options.limit));
 
@@ -1719,7 +1710,6 @@ export class PortalClient {
     name: string;
     status: string;
     created_at: string;
-    member_count: number;
     site_count: number;
     subscription_count: number;
     subscriptions: Array<{
@@ -1729,11 +1719,6 @@ export class PortalClient {
       plan_version_id?: string;
       package_alias?: string;
       current_period_end: string;
-    }>;
-    members: Array<{
-      member_ref: string;
-      role: string;
-      joined_at: string;
     }>;
   }>> {
     return this.request('GET', `/internal/service/admin/accounts/${accountId}`, undefined, { requireAuth: true });
@@ -1755,7 +1740,6 @@ export class PortalClient {
       account_id: string;
       site_name: string;
       status: string;
-      member_count: number;
       key_count: number;
       subscription_status: string;
       plan_id: string;
@@ -1788,7 +1772,6 @@ export class PortalClient {
     site_name: string;
     status: string;
     created_at: string;
-    member_count: number;
     key_count: number;
     subscription?: {
       subscription_id: string;

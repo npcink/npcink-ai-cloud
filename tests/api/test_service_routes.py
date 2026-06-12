@@ -788,11 +788,6 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
         json={"account_id": "acct_service", "name": "Service Account"},
         headers=build_internal_headers(idempotency_key="svc-account-001"),
     )
-    membership_response = client.post(
-        "/internal/service/accounts/acct_service/memberships",
-        json={"member_ref": "user:admin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="svc-membership-001"),
-    )
     site_response = client.post(
         "/internal/service/sites",
         json={
@@ -860,7 +855,6 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
 
     assert account_response.status_code == 200
     assert "current_subscription" not in account_response.json()["data"]
-    assert membership_response.status_code == 200
     assert site_response.status_code == 200
     assert site_response.json()["data"]["status"] == "provisioning"
     assert activate_response.status_code == 200
@@ -1019,229 +1013,6 @@ def test_service_site_keys_support_limit_offset_and_desc_sort(tmp_path: Path) ->
         "next_offset": 2,
     }
     assert payload["sort"] == {"created_at": "desc", "key_id": "desc"}
-
-
-def test_service_routes_admin_account_members_filters_and_detail(tmp_path: Path) -> None:
-    database_url, client = _build_client(tmp_path)
-
-    client.post(
-        "/internal/service/accounts",
-        json={"account_id": "acct_members", "name": "Members Account"},
-        headers=build_internal_headers(idempotency_key="svc-members-account-001"),
-    )
-    client.post(
-        "/internal/service/sites",
-        json={
-            "site_id": "site_members",
-            "account_id": "acct_members",
-            "name": "Members Site",
-            "status": "active",
-        },
-        headers=build_internal_headers(idempotency_key="svc-members-site-001"),
-    )
-    client.post(
-        "/internal/service/accounts/acct_members/memberships",
-        json={
-            "member_ref": "user:pending@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "pending@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_invited_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="svc-membership-pending-001"),
-    )
-    client.post(
-        "/internal/service/accounts/acct_members/memberships",
-        json={
-            "member_ref": "user:active@example.com",
-            "role": "user",
-            "status": "active",
-            "metadata": {
-                "email": "active@example.com",
-                "invite_state": "accepted",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_login_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="svc-membership-active-001"),
-    )
-
-    list_response = client.get(
-        "/internal/service/admin/accounts/acct_members/members?status=pending_invite",
-        headers=build_internal_headers(),
-    )
-    assert list_response.status_code == 200
-    items = list_response.json()["data"]["items"]
-    assert len(items) == 1
-    assert items[0]["member_ref"] == "user:pending@example.com"
-    assert items[0]["invite_state"] == "pending"
-    assert items[0]["last_delivery_status"] == "sent"
-    assert items[0]["accessible_sites"][0]["site_id"] == "site_members"
-
-    never_logged_in_response = client.get(
-        "/internal/service/admin/accounts/acct_members/members?never_logged_in=true",
-        headers=build_internal_headers(),
-    )
-    assert never_logged_in_response.status_code == 200
-    never_logged_items = never_logged_in_response.json()["data"]["items"]
-    assert {item["member_ref"] for item in never_logged_items} == {"user:pending@example.com"}
-
-    detail_response = client.get(
-        "/internal/service/admin/accounts/acct_members/members/user:active@example.com",
-        headers=build_internal_headers(),
-    )
-    assert detail_response.status_code == 200
-    membership = detail_response.json()["data"]["membership"]
-    assert membership["member_ref"] == "user:active@example.com"
-    assert membership["last_login_at"] != ""
-    assert membership["invite_state"] == "accepted"
-
-    dispose_engine(database_url)
-
-
-def test_service_routes_admin_account_member_plan_coverage_summary(tmp_path: Path) -> None:
-    database_url, client = _build_client(tmp_path)
-
-    client.post(
-        "/internal/service/accounts",
-        json={"account_id": "acct_coverage", "name": "Coverage Account"},
-        headers=build_internal_headers(idempotency_key="svc-coverage-account-001"),
-    )
-    client.post(
-        "/internal/service/sites",
-        json={
-            "site_id": "site_covered",
-            "account_id": "acct_coverage",
-            "name": "Covered Site",
-            "status": "active",
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-site-covered-001"),
-    )
-    client.post(
-        "/internal/service/sites",
-        json={
-            "site_id": "site_uncovered",
-            "account_id": "acct_coverage",
-            "name": "Uncovered Site",
-            "status": "active",
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-site-uncovered-001"),
-    )
-    client.post(
-        "/internal/service/sites/site_covered/keys",
-        json={
-            "key_id": "key_coverage_covered",
-            "secret": "svc-coverage-secret-covered",
-            "scopes": ["runtime:execute"],
-            "label": "trial-ready-covered",
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-key-covered-001"),
-    )
-    client.post(
-        "/internal/service/sites/site_uncovered/keys",
-        json={
-            "key_id": "key_coverage_uncovered",
-            "secret": "svc-coverage-secret-uncovered",
-            "scopes": ["runtime:execute"],
-            "label": "trial-ready-uncovered",
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-key-uncovered-001"),
-    )
-    client.post(
-        "/internal/service/accounts/acct_coverage/memberships",
-        json={
-            "member_ref": "user:admin@example.com",
-            "role": "user",
-            "metadata": {"email": "admin@example.com"},
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-membership-admin-001"),
-    )
-    client.post(
-        "/internal/service/accounts/acct_coverage/memberships",
-        json={
-            "member_ref": "user:member@example.com",
-            "role": "user",
-            "metadata": {"email": "member@example.com"},
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-membership-member-001"),
-    )
-    client.post(
-        "/internal/service/plans",
-        json={"plan_id": "plan_pro", "name": "Pro"},
-        headers=build_internal_headers(idempotency_key="svc-coverage-plan-001"),
-    )
-    client.post(
-        "/internal/service/plans/plan_pro/versions",
-        json={
-            "plan_version_id": "plan_pro_v1",
-            "version_label": "v1",
-            "status": "published",
-            "budgets": {"max_runs_per_period": 1000},
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-plan-version-001"),
-    )
-    client.post(
-        "/internal/service/admin/accounts/acct_coverage/subscription",
-        json={
-            "subscription_id": "sub_covered",
-            "account_id": "acct_coverage",
-            "plan_id": "plan_pro",
-            "plan_version_id": "plan_pro_v1",
-            "status": "active",
-        },
-        headers=build_internal_headers(idempotency_key="svc-coverage-bind-001"),
-    )
-
-    response = client.get(
-        "/internal/service/admin/accounts/acct_coverage/member-plan-coverage",
-        headers=build_internal_headers(),
-    )
-
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["account"]["account_id"] == "acct_coverage"
-    assert data["summary"]["member_count"] == 2
-    assert data["summary"]["covered_member_count"] == 2
-    assert data["summary"]["sites_needing_follow_up_count"] == 0
-
-    admin_member = next(
-        item for item in data["members"] if item["member_ref"] == "user:admin@example.com"
-    )
-    assert admin_member["identity_type"] == "user"
-    assert admin_member["role"] == "user"
-    assert admin_member["covered_site_count"] == 2
-    assert admin_member["sites_needing_follow_up_count"] == 0
-    covered_site = next(
-        site for site in admin_member["accessible_sites"] if site["site_id"] == "site_covered"
-    )
-    assert covered_site["covered"] is True
-    assert covered_site["plan_id"] == "plan_pro"
-    assert covered_site["plan_version_id"] == "plan_pro_v1"
-    assert covered_site["coverage"]["status"] == "active"
-
-    account_detail_response = client.get(
-        "/internal/service/admin/accounts/acct_coverage",
-        headers=build_internal_headers(),
-    )
-    assert account_detail_response.status_code == 200
-    readiness = account_detail_response.json()["data"]["trial_readiness"]
-    assert readiness["status"] == "ready"
-    assert readiness["next_action"] == "invite_trial_site"
-    assert readiness["blocking_codes"] == []
-    assert readiness["summary"]["active_site_count"] == 2
-    assert readiness["summary"]["active_key_site_count"] == 2
-    assert readiness["summary"]["active_or_pending_member_count"] == 2
-    assert readiness["summary"]["display_package_label"] == "Pro"
-    package_check = next(item for item in readiness["checks"] if item["code"] == "package_coverage")
-    assert package_check["ok"] is True
-
-    dispose_engine(database_url)
 
 
 def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
@@ -1521,11 +1292,6 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
         headers=build_internal_headers(idempotency_key="svc-admin-account-001"),
     )
     client.post(
-        "/internal/service/accounts/acct_admin/memberships",
-        json={"member_ref": "user:admin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="svc-admin-membership-001"),
-    )
-    client.post(
         "/internal/service/sites",
         json={
             "site_id": "site_primary",
@@ -1538,6 +1304,11 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     client.post(
         "/internal/service/sites/site_primary/activate",
         headers=build_internal_headers(idempotency_key="svc-admin-site-activate-001"),
+    )
+    client.post(
+        "/internal/service/sites/site_primary/site-admin-access",
+        json={"email": "admin@example.com"},
+        headers=build_internal_headers(idempotency_key="svc-admin-site-admin-access-001"),
     )
     client.post(
         "/internal/service/sites/site_primary/keys",
@@ -1654,10 +1425,6 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
         "/internal/service/admin/subscriptions/sub_admin",
         headers=build_internal_headers(),
     )
-    filtered_accounts_response = client.get(
-        "/internal/service/admin/accounts?member_ref=user:admin@example.com",
-        headers=build_internal_headers(),
-    )
     package_filtered_accounts_response = client.get(
         "/internal/service/admin/accounts?coverage_state=covered&package_kind=tier_package&top_plan_id=plan_admin",
         headers=build_internal_headers(),
@@ -1680,7 +1447,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     assert overview_response.status_code == 200
     overview = overview_response.json()["data"]
     assert overview["counts"]["accounts_total"] == 1
-    assert overview["counts"]["memberships_active"] == 1
+    assert overview["counts"]["site_admins_active"] == 1
     assert overview["counts"]["sites_active"] == 1
     assert overview["counts"]["site_keys_active"] == 1
     assert overview["recent_usage"]["event_count"] >= 1
@@ -1709,19 +1476,12 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     accounts = accounts_response.json()["data"]["items"]
     assert len(accounts) == 1
     assert accounts[0]["account"]["account_id"] == "acct_admin"
-    assert accounts[0]["member_count"] == 1
     assert accounts[0]["site_count"] == 1
     assert accounts[0]["active_subscription_count"] >= 1
     assert accounts[0]["display_package_label"] == "Pro"
     assert accounts[0]["package_kind"] == "tier_package"
     assert accounts[0]["coverage_state"] == "covered"
     assert accounts[0]["primary_subscription_id"] == "sub_admin"
-    assert filtered_accounts_response.status_code == 200
-    assert (
-        filtered_accounts_response.json()["data"]["filters"]["member_ref"]
-        == "user:admin@example.com"
-    )
-    assert len(filtered_accounts_response.json()["data"]["items"]) == 1
     assert package_filtered_accounts_response.status_code == 200
     assert (
         package_filtered_accounts_response.json()["data"]["filters"]["coverage_state"] == "covered"
@@ -1737,7 +1497,6 @@ def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
 
     assert account_detail_response.status_code == 200
     account_detail = account_detail_response.json()["data"]
-    assert len(account_detail["memberships"]) == 1
     assert len(account_detail["sites"]) == 1
     assert len(account_detail["subscriptions"]) >= 1
 

@@ -177,19 +177,30 @@ def test_internal_alpha_onboarding_flow_closes_admin_user_site_key_usage_audit(
         },
         idempotency_key="alpha-subscription-001",
     )
-    invite_data = _post_internal(
+    site_data = _post_internal(
         client,
-        "/internal/service/accounts/acct_alpha_flow/memberships",
+        "/internal/service/sites",
         json_payload={
-            "member_ref": "user:alpha@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {"email": "alpha@example.com"},
+            "site_id": "site_alpha_flow",
+            "account_id": "acct_alpha_flow",
+            "name": "Alpha WordPress Site",
+            "status": "provisioning",
+            "wordpress_url": "https://alpha.example.test",
         },
-        idempotency_key="alpha-member-001",
+        idempotency_key="alpha-site-001",
     )
-    assert invite_data["role"] == "user"
-    assert invite_data["identity_type"] == "user"
+    site_id = str(site_data["site_id"])
+    _post_internal(
+        client,
+        f"/internal/service/sites/{site_id}/activate",
+        idempotency_key="alpha-site-activate-001",
+    )
+    _post_internal(
+        client,
+        f"/internal/service/sites/{site_id}/site-admin-access",
+        json_payload={"email": "alpha@example.com"},
+        idempotency_key="alpha-site-admin-access-001",
+    )
 
     login_code_response = client.post(
         "/portal/v1/auth/code/request",
@@ -209,25 +220,12 @@ def test_internal_alpha_onboarding_flow_closes_admin_user_site_key_usage_audit(
     )
     assert verify_response.status_code == 200, verify_response.text
     portal_session = verify_response.json()["data"]
-    assert portal_session["identity_type"] == "user"
-    assert portal_session["role"] == "user"
+    assert portal_session["site_admin_ref"] == "site_admin:alpha@example.com"
+    assert portal_session["identity_type"] == "site_admin"
+    assert portal_session["role"] == "site_admin"
     assert portal_session["account_id"] == "acct_alpha_flow"
-    assert portal_session["sites"] == []
-
-    provision_response = client.post(
-        "/portal/v1/sites",
-        json={
-            "account_id": "acct_alpha_flow",
-            "site_name": "Alpha WordPress Site",
-            "wordpress_url": "https://alpha.example.test",
-        },
-        headers=_origin_headers(idempotency_key="alpha-portal-site-001"),
-    )
-    assert provision_response.status_code == 200, provision_response.text
-    site_data = provision_response.json()["data"]
-    assert site_data["account_id"] == "acct_alpha_flow"
-    site_id = site_data["site"]["site_id"]
-    assert site_id
+    assert portal_session["site_id"] == site_id
+    assert portal_session["sites"][0]["site"]["site_id"] == site_id
 
     select_response = client.post(
         "/portal/v1/session/site",
@@ -301,9 +299,6 @@ def test_internal_alpha_onboarding_flow_closes_admin_user_site_key_usage_audit(
     assert admin_account["trial_readiness"]["status"] == "ready"
     assert admin_account["trial_readiness"]["blocking_codes"] == []
     assert admin_account["trial_readiness"]["summary"]["active_key_site_count"] == 1
-    assert admin_account["trial_readiness"]["summary"]["active_or_pending_member_count"] == 1
-    assert admin_account["memberships"][0]["identity_type"] == "user"
-    assert admin_account["memberships"][0]["role"] == "user"
 
     portal_usage_response = client.get(f"/portal/v1/sites/{site_id}/usage-summary")
     assert portal_usage_response.status_code == 200, portal_usage_response.text
@@ -325,7 +320,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_user_site_key_usage_audit(
     )
     assert admin_audit_response.status_code == 200, admin_audit_response.text
     admin_audit_items = admin_audit_response.json()["data"]["items"]
-    assert any(item["actor_kind"] == "portal_member" for item in admin_audit_items)
+    assert any(item["actor_kind"] == "site_admin" for item in admin_audit_items)
     assert any(item["event_kind"] == "site_key.issue" for item in admin_audit_items)
 
     with get_session(database_url) as session:

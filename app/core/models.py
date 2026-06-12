@@ -35,19 +35,15 @@ SITE_API_KEY_STATUS_EXPIRED = "expired"
 ACCOUNT_STATUS_ACTIVE = "active"
 ACCOUNT_STATUS_SUSPENDED = "suspended"
 
-ACCOUNT_MEMBERSHIP_ROLE_USER = "user"
-
-ACCOUNT_MEMBERSHIP_STATUS_ACTIVE = "active"
-ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE = "pending_invite"
-ACCOUNT_MEMBERSHIP_STATUS_INVITED = ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE
-ACCOUNT_MEMBERSHIP_STATUS_DISABLED = "disabled"
 PORTAL_LOGIN_CODE_STATUS_PENDING = "pending"
 PORTAL_LOGIN_CODE_STATUS_CONSUMED = "consumed"
 PORTAL_LOGIN_CODE_STATUS_EXPIRED = "expired"
 PORTAL_LOGIN_CODE_STATUS_LOCKED = "locked"
 
-PORTAL_MEMBER_IDENTITY_STATUS_ACTIVE = "active"
-PORTAL_MEMBER_IDENTITY_STATUS_DISABLED = "disabled"
+SITE_ADMIN_STATUS_ACTIVE = "active"
+SITE_ADMIN_STATUS_DISABLED = "disabled"
+SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE = "active"
+SITE_ADMIN_SITE_GRANT_STATUS_REVOKED = "revoked"
 
 PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN = "platform_admin"
 
@@ -70,6 +66,18 @@ SUBSCRIPTION_STATUS_CANCELED = "canceled"
 
 ENTITLEMENT_SNAPSHOT_STATUS_ACTIVE = "active"
 ENTITLEMENT_SNAPSHOT_STATUS_SUPERSEDED = "superseded"
+
+PAYMENT_ORDER_STATUS_PENDING = "pending"
+PAYMENT_ORDER_STATUS_PAID = "paid"
+PAYMENT_ORDER_STATUS_CANCELED = "canceled"
+PAYMENT_ORDER_STATUS_REFUNDED = "refunded"
+
+PAYMENT_REFUND_STATUS_REQUESTED = "requested"
+PAYMENT_REFUND_STATUS_SUCCEEDED = "succeeded"
+PAYMENT_REFUND_STATUS_FAILED = "failed"
+
+PAYMENT_EVENT_STATUS_RECEIVED = "received"
+PAYMENT_EVENT_STATUS_PROCESSED = "processed"
 
 RUN_CALLBACK_STATUS_NOT_REQUESTED = "not_requested"
 RUN_CALLBACK_STATUS_PENDING = "pending"
@@ -100,79 +108,12 @@ class Account(Base):
     )
 
 
-class AccountMembership(Base):
-    __tablename__ = "account_memberships"
-    __table_args__ = (
-        UniqueConstraint(
-            "account_id",
-            "member_ref",
-            name="uq_account_memberships_account_member",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.account_id"), index=True)
-    member_ref: Mapped[str] = mapped_column(String(191))
-    role: Mapped[str] = mapped_column(
-        String(32),
-        default=ACCOUNT_MEMBERSHIP_ROLE_USER,
-        index=True,
-    )
-    status: Mapped[str] = mapped_column(
-        String(32),
-        default=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-        index=True,
-    )
-    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-
-class PortalMemberIdentity(Base):
-    __tablename__ = "portal_member_identities"
-    __table_args__ = (
-        UniqueConstraint(
-            "provider",
-            "external_subject",
-            name="uq_portal_member_identities_provider_subject",
-        ),
-    )
-
-    identity_id: Mapped[str] = mapped_column(String(191), primary_key=True)
-    provider: Mapped[str] = mapped_column(String(64), index=True)
-    external_subject: Mapped[str] = mapped_column(String(191))
-    email: Mapped[str | None] = mapped_column(String(191), index=True)
-    member_ref: Mapped[str] = mapped_column(String(191), index=True)
-    status: Mapped[str] = mapped_column(
-        String(32),
-        default=PORTAL_MEMBER_IDENTITY_STATUS_ACTIVE,
-        index=True,
-    )
-    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-
 class PortalLoginCode(Base):
     __tablename__ = "portal_login_codes"
 
     code_id: Mapped[str] = mapped_column(String(191), primary_key=True)
     email: Mapped[str] = mapped_column(String(191), index=True)
-    member_ref: Mapped[str] = mapped_column(String(191), index=True)
+    site_admin_ref: Mapped[str] = mapped_column(String(191), index=True)
     code_hash: Mapped[str] = mapped_column(String(191))
     status: Mapped[str] = mapped_column(
         String(32),
@@ -295,6 +236,67 @@ class Site(Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspension_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class SiteAdminIdentity(Base):
+    __tablename__ = "site_admin_identities"
+    __table_args__ = (
+        UniqueConstraint("site_admin_ref", name="uq_site_admin_identities_ref"),
+        UniqueConstraint("email", name="uq_site_admin_identities_email"),
+    )
+
+    site_admin_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    site_admin_ref: Mapped[str] = mapped_column(String(191), index=True)
+    email: Mapped[str] = mapped_column(String(191), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=SITE_ADMIN_STATUS_ACTIVE,
+        index=True,
+    )
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class SiteAdminSiteGrant(Base):
+    __tablename__ = "site_admin_site_grants"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_admin_id",
+            "site_id",
+            name="uq_site_admin_site_grants_admin_site",
+        ),
+    )
+
+    grant_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    site_admin_id: Mapped[str] = mapped_column(
+        ForeignKey("site_admin_identities.site_admin_id"),
+        index=True,
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE,
+        index=True,
+    )
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -548,6 +550,117 @@ class AccountEntitlementSnapshot(Base):
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+    )
+
+
+class PaymentOrder(Base):
+    __tablename__ = "payment_orders"
+    __table_args__ = (
+        UniqueConstraint("provider", "external_order_no", name="uq_payment_orders_provider_ext"),
+        UniqueConstraint("idempotency_key", name="uq_payment_orders_idempotency"),
+    )
+
+    order_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.account_id"), index=True)
+    site_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    subscription_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    plan_id: Mapped[str] = mapped_column(String(191), index=True)
+    plan_version_id: Mapped[str] = mapped_column(String(191), index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="alipay", index=True)
+    external_order_no: Mapped[str] = mapped_column(String(191), index=True)
+    provider_trade_no: Mapped[str | None] = mapped_column(String(191), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=PAYMENT_ORDER_STATUS_PENDING,
+        index=True,
+    )
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(16), default="CNY")
+    subject: Mapped[str] = mapped_column(String(191))
+    checkout_url: Mapped[str | None] = mapped_column(Text)
+    refund_window_end_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(191), index=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PaymentRefund(Base):
+    __tablename__ = "payment_refunds"
+    __table_args__ = (
+        UniqueConstraint("provider", "external_refund_no", name="uq_payment_refunds_provider_ext"),
+        UniqueConstraint("idempotency_key", name="uq_payment_refunds_idempotency"),
+    )
+
+    refund_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("payment_orders.order_id"), index=True)
+    account_id: Mapped[str] = mapped_column(String(191), index=True)
+    subscription_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="alipay", index=True)
+    external_refund_no: Mapped[str] = mapped_column(String(191), index=True)
+    provider_refund_no: Mapped[str | None] = mapped_column(String(191), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=PAYMENT_REFUND_STATUS_REQUESTED,
+        index=True,
+    )
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(16), default="CNY")
+    reason: Mapped[str | None] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    succeeded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(191), index=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PaymentEvent(Base):
+    __tablename__ = "payment_events"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_event_id", name="uq_payment_events_provider_event"),
+        UniqueConstraint("idempotency_key", name="uq_payment_events_idempotency"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), default="alipay", index=True)
+    event_kind: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=PAYMENT_EVENT_STATUS_RECEIVED,
+        index=True,
+    )
+    order_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    refund_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    provider_event_id: Mapped[str | None] = mapped_column(String(191), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(191), index=True)
+    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
     )
 
 

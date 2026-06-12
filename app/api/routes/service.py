@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.api.auth import authorize_internal_request, get_cloud_services
 from app.api.envelope import build_envelope
-from app.core.models import ACCOUNT_MEMBERSHIP_ROLE_USER
 from app.core.security import extract_trace_id
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
@@ -75,13 +74,6 @@ class AccountStatusPayload(BaseModel):
     reason: str = ""
 
 
-class MembershipPayload(BaseModel):
-    member_ref: str
-    role: str = ACCOUNT_MEMBERSHIP_ROLE_USER
-    status: str = "active"
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class SiteProvisionPayload(BaseModel):
     site_id: str
     account_id: str
@@ -92,6 +84,12 @@ class SiteProvisionPayload(BaseModel):
 
 class SiteStatusPayload(BaseModel):
     reason: str = ""
+
+
+class SiteAdminAccessPayload(BaseModel):
+    email: str
+    status: str = "active"
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SiteKeyPayload(BaseModel):
@@ -146,6 +144,40 @@ class SubscriptionTopUpPayload(BaseModel):
     cost_increment: float = 0.0
     reason: str = ""
     note: str = ""
+
+
+class PaymentOrderPayload(BaseModel):
+    account_id: str
+    plan_id: str
+    plan_version_id: str
+    amount: float
+    currency: str = "CNY"
+    provider: str = "alipay"
+    subject: str = ""
+    site_id: str = ""
+    refund_window_days: int = 14
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PaymentSucceededPayload(BaseModel):
+    provider_trade_no: str = ""
+    provider_event_id: str = ""
+    paid_at: datetime | None = None
+    amount: float | None = None
+    raw_event: dict[str, Any] = Field(default_factory=dict)
+
+
+class PaymentRefundPayload(BaseModel):
+    amount: float | None = None
+    reason: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PaymentRefundSucceededPayload(BaseModel):
+    provider_refund_no: str = ""
+    provider_event_id: str = ""
+    succeeded_at: datetime | None = None
+    raw_event: dict[str, Any] = Field(default_factory=dict)
 
 
 class PluginAttentionStatePayload(BaseModel):
@@ -559,45 +591,6 @@ async def restore_admin_account(
     )
 
 
-@router.post("/accounts/{account_id}/memberships")
-async def upsert_account_membership(
-    request: Request,
-    account_id: str,
-    payload: MembershipPayload,
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=True)
-    if auth is not None:
-        return auth
-    service = _get_commercial_service(request)
-    audit_context = _build_audit_context(request)
-    try:
-        result = service.upsert_account_membership(
-            account_id=account_id,
-            member_ref=payload.member_ref,
-            role=payload.role,
-            status=payload.status,
-            metadata_json=payload.metadata,
-            audit_context=audit_context,
-        )
-    except CommercialServiceError as error:
-        _record_service_failure(
-            request,
-            event_kind="account_membership.upsert",
-            error=error,
-            account_id=account_id,
-            scope_kind="account",
-            scope_id=account_id,
-            payload_json=_build_audit_payload(payload),
-        )
-        return _service_error_response(error)
-    return build_envelope(
-        status="ok",
-        message="account membership saved",
-        data=result,
-        revision="m6",
-    )
-
-
 @router.post("/sites")
 async def provision_site(
     request: Request,
@@ -630,6 +623,44 @@ async def provision_site(
         )
         return _service_error_response(error)
     return build_envelope(status="ok", message="site provisioned", data=result, revision="m6")
+
+
+@router.post("/sites/{site_id}/site-admin-access")
+async def upsert_site_admin_access(
+    request: Request,
+    site_id: str,
+    payload: SiteAdminAccessPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    audit_context = _build_audit_context(request)
+    try:
+        result = service.upsert_site_admin_access(
+            site_id=site_id,
+            email=payload.email,
+            status=payload.status,
+            metadata_json=payload.metadata,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request,
+            event_kind="site_admin_access.upsert",
+            error=error,
+            site_id=site_id,
+            scope_kind="site_admin_access",
+            scope_id=site_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="site admin access saved",
+        data=result,
+        revision="m6",
+    )
 
 
 @router.post("/sites/{site_id}/activate")
@@ -1110,6 +1141,162 @@ async def apply_subscription_topup(
                 ),
             ),
         ),
+        revision="m6",
+    )
+
+
+@router.post("/payments/orders")
+async def create_payment_order(request: Request, payload: PaymentOrderPayload) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    audit_context = _build_audit_context(request)
+    try:
+        result = service.create_payment_order(
+            account_id=payload.account_id,
+            plan_id=payload.plan_id,
+            plan_version_id=payload.plan_version_id,
+            amount=payload.amount,
+            currency=payload.currency,
+            provider=payload.provider,
+            subject=payload.subject,
+            site_id=payload.site_id,
+            refund_window_days=payload.refund_window_days,
+            metadata_json=payload.metadata,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request,
+            event_kind="payment.order.create",
+            error=error,
+            account_id=payload.account_id,
+            plan_id=payload.plan_id,
+            plan_version_id=payload.plan_version_id,
+            scope_kind="payment_order",
+            scope_id=payload.account_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="payment order created",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/payments/orders/{order_id}/mark-paid")
+async def mark_payment_order_paid(
+    request: Request,
+    order_id: str,
+    payload: PaymentSucceededPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    audit_context = _build_audit_context(request)
+    try:
+        result = service.mark_payment_order_paid(
+            order_id=order_id,
+            provider_trade_no=payload.provider_trade_no,
+            provider_event_id=payload.provider_event_id,
+            paid_at=payload.paid_at,
+            amount=payload.amount,
+            raw_event=payload.raw_event,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request,
+            event_kind="payment.order.paid",
+            error=error,
+            scope_kind="payment_order",
+            scope_id=order_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="payment order marked paid",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/payments/orders/{order_id}/refunds")
+async def request_payment_refund(
+    request: Request,
+    order_id: str,
+    payload: PaymentRefundPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    audit_context = _build_audit_context(request)
+    try:
+        result = service.request_payment_refund(
+            order_id=order_id,
+            amount=payload.amount,
+            reason=payload.reason,
+            metadata_json=payload.metadata,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request,
+            event_kind="payment.refund.request",
+            error=error,
+            scope_kind="payment_order",
+            scope_id=order_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="payment refund requested",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/payments/refunds/{refund_id}/mark-succeeded")
+async def mark_payment_refund_succeeded(
+    request: Request,
+    refund_id: str,
+    payload: PaymentRefundSucceededPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    audit_context = _build_audit_context(request)
+    try:
+        result = service.mark_payment_refund_succeeded(
+            refund_id=refund_id,
+            provider_refund_no=payload.provider_refund_no,
+            provider_event_id=payload.provider_event_id,
+            succeeded_at=payload.succeeded_at,
+            raw_event=payload.raw_event,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request,
+            event_kind="payment.refund.succeeded",
+            error=error,
+            scope_kind="payment_refund",
+            scope_id=refund_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error)
+    return build_envelope(
+        status="ok",
+        message="payment refund marked succeeded",
+        data=result,
         revision="m6",
     )
 
@@ -1615,7 +1802,6 @@ async def get_ops_summary_value_metrics(
 async def list_admin_accounts(
     request: Request,
     status: str | None = Query(default=None),
-    member_ref: str | None = Query(default=None),
     expires_before: datetime | None = Query(default=None),  # noqa: B008
     coverage_state: str | None = Query(default=None),
     package_kind: str | None = Query(default=None),
@@ -1628,7 +1814,6 @@ async def list_admin_accounts(
     try:
         result = _get_commercial_service(request).list_admin_accounts(
             status=status,
-            member_ref=member_ref,
             expires_before=expires_before,
             coverage_state=coverage_state,
             package_kind=package_kind,
@@ -1687,80 +1872,6 @@ async def get_admin_account_subscription(
             "current_subscription": current,
             "subscriptions": subscriptions,
         },
-        revision="m6",
-    )
-
-
-@router.get("/admin/accounts/{account_id}/member-plan-coverage")
-async def get_admin_account_member_plan_coverage(
-    request: Request,
-    account_id: str,
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
-    if auth is not None:
-        return auth
-    try:
-        result = _get_commercial_service(request).get_admin_account_member_plan_coverage(account_id)
-    except CommercialServiceError as error:
-        return _service_error_response(error, request=request)
-    return build_envelope(
-        status="ok",
-        message="admin account member coverage loaded",
-        data=result,
-        revision="m6",
-    )
-
-
-@router.get("/admin/accounts/{account_id}/members")
-async def list_admin_account_members(
-    request: Request,
-    account_id: str,
-    status: str | None = Query(default=None),
-    invite_state: str | None = Query(default=None),
-    delivery_status: str | None = Query(default=None),
-    never_logged_in: bool = Query(default=False),
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
-    if auth is not None:
-        return auth
-    try:
-        result = _get_commercial_service(request).list_admin_account_members(
-            account_id=account_id,
-            status=status,
-            invite_state=invite_state,
-            delivery_status=delivery_status,
-            never_logged_in=never_logged_in,
-        )
-    except CommercialServiceError as error:
-        return _service_error_response(error, request=request)
-    return build_envelope(
-        status="ok",
-        message="admin account members loaded",
-        data=result,
-        revision="m6",
-    )
-
-
-@router.get("/admin/accounts/{account_id}/members/{member_ref:path}")
-async def get_admin_account_member(
-    request: Request,
-    account_id: str,
-    member_ref: str,
-) -> Any:
-    auth = await authorize_internal_request(request, require_idempotency=False)
-    if auth is not None:
-        return auth
-    try:
-        result = _get_commercial_service(request).get_admin_account_member(
-            account_id=account_id,
-            member_ref=member_ref,
-        )
-    except CommercialServiceError as error:
-        return _service_error_response(error, request=request)
-    return build_envelope(
-        status="ok",
-        message="admin account member loaded",
-        data=result,
         revision="m6",
     )
 

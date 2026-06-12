@@ -27,7 +27,7 @@ from app.api.portal_session import (
 )
 from app.core.models import PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
 from app.domain.commercial.errors import CommercialServiceError
-from app.domain.commercial.service import (
+from app.domain.commercial.identity import (
     IDENTITY_TYPE_PLATFORM_ADMIN,
     _platform_capability_flags,
 )

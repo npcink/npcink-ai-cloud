@@ -104,7 +104,7 @@ future migration plan deliberately aliases or replaces them.
 ## Portal vs Admin Split
 
 The early implementation exposed useful data but created an important product
-question: should Portal users see the same kind of observability dashboard as
+question: should site administrators see the same kind of observability dashboard as
 Cloud admins?
 
 Decision:

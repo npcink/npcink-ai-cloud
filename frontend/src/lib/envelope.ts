@@ -115,7 +115,6 @@ export function getErrorMessage(errorCode: string): string {
     'commercial.concurrency_exceeded': 'Too many concurrent operations',
     'service.site_not_found': 'Site not found',
     'service.key_not_found': 'API key not found',
-    'service.member_not_found': 'Member not found',
   };
 
   return messages[errorCode] || 'An unexpected error occurred';

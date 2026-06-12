@@ -39,12 +39,13 @@ from app.domain.agent_workflow_metadata import (
     get_agent_handoff_metadata,
     get_workflow_metadata,
 )
+from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.customer_api_keys import (
     build_customer_api_key,
     serialize_portal_site_key,
 )
 from app.domain.commercial.errors import CommercialServiceError
-from app.domain.commercial.service import PORTAL_SITE_KEY_WRITE_ROLES, ServiceAuditContext
+from app.domain.commercial.identity import SITE_ADMIN_SITE_KEY_WRITE_ROLES
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
@@ -94,10 +95,10 @@ def _dict_value(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
-def _build_portal_audit_context(request: Request, member_ref: str) -> ServiceAuditContext:
+def _build_portal_audit_context(request: Request, site_admin_ref: str) -> ServiceAuditContext:
     audit_context = _build_audit_context(request)
-    audit_context.actor_kind = "portal_member"
-    audit_context.actor_ref = member_ref
+    audit_context.actor_kind = "site_admin"
+    audit_context.actor_ref = site_admin_ref
     return audit_context
 
 
@@ -105,13 +106,13 @@ def _authorize_portal_site_access(
     request: Request,
     *,
     site_id: str,
-    member_ref: str,
+    site_admin_ref: str,
     required_roles: set[str] | None = None,
 ) -> dict[str, object] | JSONResponse:
     try:
         return _get_commercial_service(request).resolve_portal_site_access(
             site_id=site_id,
-            member_ref=member_ref,
+            site_admin_ref=site_admin_ref,
             required_roles=required_roles,
         )
     except CommercialServiceError as error:
@@ -335,12 +336,12 @@ def _resolve_portal_site_summary(
     request: Request,
     *,
     site_id: str,
-    member_ref: str,
+    site_admin_ref: str,
 ) -> dict[str, object] | JSONResponse:
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=member_ref,
+        site_admin_ref=site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -354,7 +355,7 @@ def _resolve_portal_site_summary(
     return {
         "site_id": site_id,
         "account_id": str(access.get("account_id") or ""),
-        "member_ref": member_ref,
+        "site_admin_ref": site_admin_ref,
         "identity_type": str(access.get("identity_type") or ""),
         "allowed_actions": [
             str(action)
@@ -414,7 +415,10 @@ async def request_portal_login_code(
             ttl_seconds=ttl_seconds,
         )
     except CommercialServiceError as error:
-        if error.error_code == "service.portal_email_not_found":
+        if error.error_code in {
+            "service.portal_email_not_found",
+            "service.site_admin_email_not_found",
+        }:
             return _portal_route_envelope(
                 message="portal login code request accepted",
                 data={
@@ -429,7 +433,7 @@ async def request_portal_login_code(
         try:
             email_sender.send_login_code(
                 recipient_email=str(issued.get("email") or ""),
-                member_ref=str(issued.get("member_ref") or ""),
+                site_admin_ref=str(issued.get("site_admin_ref") or ""),
                 code=str(issued.get("code") or ""),
                 expires_in_seconds=ttl_seconds,
                 project_name=get_cloud_services(request).settings.project_name,
@@ -479,10 +483,10 @@ async def verify_portal_login_code(
                 int(get_cloud_services(request).settings.portal_login_code_max_attempts or 0),
             ),
         )
-        member_ref = str(verified.get("member_ref") or "")
+        site_admin_ref = str(verified.get("site_admin_ref") or "")
         data = serialize_portal_session(
             request,
-            member_ref=member_ref,
+            site_admin_ref=site_admin_ref,
             site_id="",
             strict_site=False,
             session_metadata=build_new_portal_session_metadata(request),
@@ -507,7 +511,7 @@ async def verify_portal_login_code(
     set_portal_session_cookies(
         request,
         response,
-        member_ref=member_ref,
+        site_admin_ref=site_admin_ref,
         site_id="",
     )
     return response
@@ -526,7 +530,7 @@ async def get_portal_session(request: Request) -> Any:
     try:
         data = serialize_portal_session(
             request,
-            member_ref=auth.member_ref,
+            site_admin_ref=auth.site_admin_ref,
             site_id=selected_site_id,
             strict_site=False,
         )
@@ -564,7 +568,7 @@ async def select_portal_session_site(
     try:
         data = serialize_portal_session(
             request,
-            member_ref=auth.member_ref,
+            site_admin_ref=auth.site_admin_ref,
             site_id=site_id,
             strict_site=True,
         )
@@ -613,7 +617,9 @@ async def list_portal_sites(request: Request) -> Any:
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        result = _get_commercial_service(request).list_portal_sites(member_ref=auth.member_ref)
+        result = _get_commercial_service(request).list_portal_sites(
+            site_admin_ref=auth.site_admin_ref,
+        )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
@@ -642,11 +648,11 @@ async def create_portal_site(
         return auth
 
     service = _get_commercial_service(request)
-    audit_context = _build_portal_audit_context(request, auth.member_ref)
+    audit_context = _build_portal_audit_context(request, auth.site_admin_ref)
     try:
         result = service.provision_portal_site(
             account_id=payload.account_id,
-            member_ref=auth.member_ref,
+            site_admin_ref=auth.site_admin_ref,
             wordpress_url=payload.wordpress_url,
             site_name=payload.site_name,
             audit_context=audit_context,
@@ -672,7 +678,7 @@ async def get_portal_site_summary(request: Request, site_id: str) -> Any:
     result = _resolve_portal_site_summary(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(result, JSONResponse):
         return result
@@ -694,8 +700,8 @@ async def get_portal_site_usage_summary(request: Request, site_id: str) -> Any:
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -704,7 +710,7 @@ async def get_portal_site_usage_summary(request: Request, site_id: str) -> Any:
     )
     result["site_id"] = site_id
     result["account_id"] = str(access.get("account_id") or "")
-    result["member_ref"] = auth.member_ref
+    result["site_admin_ref"] = auth.site_admin_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
         str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
@@ -732,7 +738,7 @@ async def get_portal_site_monitoring_overview(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -747,7 +753,7 @@ async def get_portal_site_monitoring_overview(
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     result["account_id"] = str(access.get("account_id") or "")
-    result["member_ref"] = auth.member_ref
+    result["site_admin_ref"] = auth.site_admin_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
         str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
@@ -776,7 +782,7 @@ async def get_portal_site_plugin_observability(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -787,7 +793,7 @@ async def get_portal_site_plugin_observability(
     )
     result["site_id"] = site_id
     result["account_id"] = str(access.get("account_id") or "")
-    result["member_ref"] = auth.member_ref
+    result["site_admin_ref"] = auth.site_admin_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
         str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
@@ -816,7 +822,7 @@ async def get_portal_site_media_observability(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -835,7 +841,7 @@ async def get_portal_site_media_observability(
     result["workflow_metadata"] = get_workflow_metadata(MEDIA_DERIVATIVE_WORKFLOW_ID)
     result["site_id"] = site_id
     result["account_id"] = str(access.get("account_id") or "")
-    result["member_ref"] = auth.member_ref
+    result["site_admin_ref"] = auth.site_admin_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
         str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
@@ -863,7 +869,7 @@ async def get_portal_site_vector_observability(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -876,7 +882,7 @@ async def get_portal_site_vector_observability(
     result.pop("sites", None)
     result["site_id"] = site_id
     result["account_id"] = str(access.get("account_id") or "")
-    result["member_ref"] = auth.member_ref
+    result["site_admin_ref"] = auth.site_admin_ref
     result["identity_type"] = str(access.get("identity_type") or "")
     result["allowed_actions"] = [
         str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
@@ -904,7 +910,7 @@ async def list_portal_site_ai_insight_history(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -919,7 +925,7 @@ async def list_portal_site_ai_insight_history(
             "portal_ai_insight_version": "portal-ai-insight-v1",
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "role": str(access.get("role") or ""),
             "items": [
@@ -951,7 +957,7 @@ async def analyze_portal_site_ai_insight(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -983,7 +989,7 @@ async def analyze_portal_site_ai_insight(
             "portal_ai_insight_version": "portal-ai-insight-v1",
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "role": str(access.get("role") or ""),
             "analysis": _portal_ai_summary(summary),
@@ -1004,8 +1010,8 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -1018,7 +1024,7 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
         data={
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "allowed_actions": [
                 str(action)
@@ -1053,8 +1059,8 @@ async def get_portal_site_audit_summary(request: Request, site_id: str) -> Any:
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -1069,7 +1075,7 @@ async def get_portal_site_audit_summary(request: Request, site_id: str) -> Any:
         data={
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "allowed_actions": [
                 str(action)
@@ -1100,8 +1106,8 @@ async def list_portal_site_audit_events(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -1119,7 +1125,7 @@ async def list_portal_site_audit_events(
         data={
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "allowed_actions": [
                 str(action)
@@ -1144,7 +1150,7 @@ async def list_portal_site_billing_snapshots(request: Request, site_id: str) -> 
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -1157,7 +1163,7 @@ async def list_portal_site_billing_snapshots(request: Request, site_id: str) -> 
         data={
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "allowed_actions": [
                 str(action)
@@ -1182,7 +1188,7 @@ async def get_portal_site_billing_reconciliation(request: Request, site_id: str)
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
+        site_admin_ref=auth.site_admin_ref,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -1195,7 +1201,7 @@ async def get_portal_site_billing_reconciliation(request: Request, site_id: str)
         data={
             "site_id": site_id,
             "account_id": str(access.get("account_id") or ""),
-            "member_ref": auth.member_ref,
+            "site_admin_ref": auth.site_admin_ref,
             "identity_type": str(access.get("identity_type") or ""),
             "role": str(access.get("role") or ""),
             **reconciliation,
@@ -1220,8 +1226,8 @@ async def list_portal_site_keys(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
@@ -1276,14 +1282,14 @@ async def issue_portal_site_key(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
 
     service = _get_commercial_service(request)
-    audit_context = _build_portal_audit_context(request, auth.member_ref)
+    audit_context = _build_portal_audit_context(request, auth.site_admin_ref)
 
     try:
         result = service.issue_site_key(
@@ -1337,14 +1343,14 @@ async def rotate_portal_site_key(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
 
     service = _get_commercial_service(request)
-    audit_context = _build_portal_audit_context(request, auth.member_ref)
+    audit_context = _build_portal_audit_context(request, auth.site_admin_ref)
 
     try:
         result = service.rotate_site_key(
@@ -1402,14 +1408,14 @@ async def revoke_portal_site_key(
     access = _authorize_portal_site_access(
         request,
         site_id=site_id,
-        member_ref=auth.member_ref,
-        required_roles=PORTAL_SITE_KEY_WRITE_ROLES,
+        site_admin_ref=auth.site_admin_ref,
+        required_roles=SITE_ADMIN_SITE_KEY_WRITE_ROLES,
     )
     if isinstance(access, JSONResponse):
         return access
 
     service = _get_commercial_service(request)
-    audit_context = _build_portal_audit_context(request, auth.member_ref)
+    audit_context = _build_portal_audit_context(request, auth.site_admin_ref)
 
     try:
         result = service.revoke_site_key(

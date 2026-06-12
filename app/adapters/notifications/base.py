@@ -23,21 +23,9 @@ class PortalEmailSender(ABC):
         self,
         *,
         recipient_email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code: str,
         expires_in_seconds: int,
-        project_name: str,
-        locale: str = "zh-CN",
-    ) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def send_invite_notice(
-        self,
-        *,
-        recipient_email: str,
-        member_ref: str,
-        portal_url: str,
         project_name: str,
         locale: str = "zh-CN",
     ) -> None:

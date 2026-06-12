@@ -9,12 +9,10 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER,
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    AccountMembership,
     PluginObservabilityEvent,
 )
 from app.core.services import CloudServices
+from app.domain.commercial.service import CommercialService
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_INTERNAL_AUTH_TOKEN,
@@ -29,17 +27,11 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
     init_schema(database_url)
     seed_site_auth(database_url, site_id="site-portal-001", scopes=["stats:read"])
     seed_site_auth(database_url, site_id="site-portal-002", scopes=["stats:read"])
-    with get_session(database_url) as session:
-        session.add(
-            AccountMembership(
-                account_id="acct_site-portal-001",
-                member_ref="user:portal-admin@example.com",
-                role=ACCOUNT_MEMBERSHIP_ROLE_USER,
-                status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-                metadata_json={"source": "test"},
-            )
-        )
-        session.commit()
+    CommercialService(database_url).upsert_site_admin_access(
+        site_id="site-portal-001",
+        email="portal-admin@example.com",
+        metadata_json={"source": "test"},
+    )
     settings = Settings(
         project_name="Magick AI Cloud Test",
         environment="test",

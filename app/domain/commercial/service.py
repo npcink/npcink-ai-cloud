@@ -1,22 +1,6 @@
 from __future__ import annotations
 
-import re
-from urllib.parse import urlsplit
-
-from app.core.models import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER,
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    ACCOUNT_MEMBERSHIP_STATUS_DISABLED,
-    ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-    SUBSCRIPTION_STATUS_ACTIVE,
-    SUBSCRIPTION_STATUS_TRIALING,
-    Site,
-)
 from app.domain.commercial.audit_context import ServiceAuditContext
-from app.domain.commercial.errors import (
-    CommercialPermissionError,
-)
 
 ALLOWED_ABILITY_FAMILIES = {
     "text",
@@ -261,284 +245,12 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
 }
 
 
-PORTAL_SITE_KEY_WRITE_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER,
-}
-PORTAL_SITE_PROVISION_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER,
-}
-PORTAL_SITE_READ_ROLES = {
-    ACCOUNT_MEMBERSHIP_ROLE_USER,
-}
-PORTAL_MEMBERSHIP_ALLOWED_ROLES = PORTAL_SITE_READ_ROLES
-ACCOUNT_MEMBERSHIP_ALLOWED_ROLES = PORTAL_MEMBERSHIP_ALLOWED_ROLES
-PLATFORM_ADMIN_ALLOWED_ROLES = {
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-}
-PLATFORM_ADMIN_ACCOUNT_WRITE_ROLES = {
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-}
-PLATFORM_ADMIN_CATALOG_WRITE_ROLES = {
-    PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
-}
-PORTAL_MEMBER_ALLOWED_LOGIN_STATUSES = {
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
-}
-COMMERCIAL_COVERED_SUBSCRIPTION_STATUSES = {
-    SUBSCRIPTION_STATUS_TRIALING,
-    SUBSCRIPTION_STATUS_ACTIVE,
-}
-PORTAL_INVITE_DELIVERY_QUEUED = "queued"
-PORTAL_INVITE_DELIVERY_SENT = "sent"
-PORTAL_INVITE_DELIVERY_FAILED = "failed"
-PORTAL_INVITE_DELIVERY_SKIPPED = "skipped"
-IDENTITY_TYPE_PLATFORM_ADMIN = "platform_admin"
-IDENTITY_TYPE_USER = "user"
-USER_ALLOWED_ACTION_VIEW_SITES = "view_sites"
-USER_ALLOWED_ACTION_VIEW_USAGE = "view_usage"
-USER_ALLOWED_ACTION_VIEW_BILLING = "view_billing"
-USER_ALLOWED_ACTION_VIEW_AUDIT = "view_audit"
-USER_ALLOWED_ACTION_PROVISION_SITES = "provision_sites"
-USER_ALLOWED_ACTION_MANAGE_SITE_KEYS = "manage_site_keys"
-USER_ALLOWED_ACTION_ARCHIVE_SITES = "archive_sites"
-
-
-def _normalize_portal_member_email(member_ref: str, metadata_json: dict[str, object] | None) -> str:
-    metadata = metadata_json or {}
-    email = str(metadata.get("email") or "").strip().lower()
-    if email:
-        return email
-    normalized_member_ref = str(member_ref or "").strip()
-    if normalized_member_ref.startswith("user:"):
-        return normalized_member_ref[len("user:") :].strip().lower()
-    return ""
-
-
-def _subscription_counts_as_covered(subscription: object | None) -> bool:
-    if subscription is None:
-        return False
-    status = str(getattr(subscription, "status", "") or "").strip()
-    plan_id = str(getattr(subscription, "plan_id", "") or "").strip()
-    plan_version_id = str(getattr(subscription, "plan_version_id", "") or "").strip()
-    return (
-        status in COMMERCIAL_COVERED_SUBSCRIPTION_STATUSES
-        and bool(plan_id)
-        and bool(plan_version_id)
-    )
-
-
-def _aggregate_membership_status(statuses: set[str]) -> str:
-    if ACCOUNT_MEMBERSHIP_STATUS_DISABLED in statuses:
-        return ACCOUNT_MEMBERSHIP_STATUS_DISABLED
-    if ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE in statuses:
-        return ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE
-    if ACCOUNT_MEMBERSHIP_STATUS_ACTIVE in statuses:
-        return ACCOUNT_MEMBERSHIP_STATUS_ACTIVE
-    return next(iter(statuses), "")
-
-
-def _normalize_portal_membership_metadata(
-    *,
-    member_ref: str,
-    status: str,
-    metadata_json: dict[str, object] | None,
-) -> dict[str, object]:
-    normalized_status = str(status or "").strip() or ACCOUNT_MEMBERSHIP_STATUS_ACTIVE
-    metadata: dict[str, object] = dict(metadata_json or {})
-    email = _normalize_portal_member_email(member_ref, metadata)
-    if email:
-        metadata["email"] = email
-
-    invite_state = str(metadata.get("invite_state") or "").strip().lower()
-    last_delivery_status = str(metadata.get("last_delivery_status") or "").strip().lower()
-
-    if normalized_status == ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE:
-        metadata["invite_state"] = invite_state or "pending"
-    elif normalized_status == ACCOUNT_MEMBERSHIP_STATUS_ACTIVE:
-        if invite_state in {"pending", "sent"} and metadata.get("last_login_at"):
-            metadata["invite_state"] = "accepted"
-        elif invite_state:
-            metadata["invite_state"] = invite_state
-        elif metadata.get("last_login_at"):
-            metadata["invite_state"] = "accepted"
-        else:
-            metadata["invite_state"] = "active"
-    elif normalized_status == ACCOUNT_MEMBERSHIP_STATUS_DISABLED:
-        metadata["invite_state"] = "disabled"
-
-    if last_delivery_status in {
-        PORTAL_INVITE_DELIVERY_QUEUED,
-        PORTAL_INVITE_DELIVERY_SENT,
-        PORTAL_INVITE_DELIVERY_FAILED,
-        PORTAL_INVITE_DELIVERY_SKIPPED,
-    }:
-        metadata["last_delivery_status"] = last_delivery_status
-
-    return metadata
-
-
-def _portal_membership_is_active(membership: object | None) -> bool:
-    return bool(
-        membership is not None
-        and getattr(membership, "status", "") == ACCOUNT_MEMBERSHIP_STATUS_ACTIVE
-    )
-
-
-def _portal_membership_has_allowed_role(
-    membership: object | None,
-    *,
-    required_roles: set[str] | None = None,
-) -> bool:
-    if membership is None:
-        return False
-    role = str(getattr(membership, "role", "") or "")
-    if role not in PORTAL_MEMBERSHIP_ALLOWED_ROLES:
-        return False
-    normalized_role = _normalize_customer_membership_role(role)
-    if required_roles is not None and normalized_role not in required_roles:
-        return False
-    return True
-
-
-def _normalize_customer_membership_role(role: str) -> str:
-    normalized_role = str(role or "").strip()
-    if normalized_role == ACCOUNT_MEMBERSHIP_ROLE_USER:
-        return ACCOUNT_MEMBERSHIP_ROLE_USER
-    return ACCOUNT_MEMBERSHIP_ROLE_USER
-
-
-def _resolve_identity_type(role: str) -> str:
-    normalized_role = str(role or "").strip()
-    if normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES:
-        return IDENTITY_TYPE_PLATFORM_ADMIN
-    return IDENTITY_TYPE_USER
-
-
-def _portal_membership_role_priority(role: str) -> int:
-    return 0
-
-
-def _normalize_platform_admin_role(role: str) -> str:
-    return str(role or "").strip()
-
-
-def _canonicalize_customer_membership_role_for_write(role: str) -> str:
-    normalized_role = str(role or "").strip()
-    if normalized_role in ACCOUNT_MEMBERSHIP_ALLOWED_ROLES:
-        return ACCOUNT_MEMBERSHIP_ROLE_USER
-    return ACCOUNT_MEMBERSHIP_ROLE_USER
-
-
-def _canonicalize_platform_admin_role_for_write(role: str) -> str:
-    normalized_role = str(role or "").strip()
-    if normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES:
-        return PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
-    return PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
-
-
-def _resolve_portal_allowed_actions(role: str) -> list[str]:
-    actions = [
-        USER_ALLOWED_ACTION_VIEW_SITES,
-        USER_ALLOWED_ACTION_VIEW_USAGE,
-        USER_ALLOWED_ACTION_VIEW_BILLING,
-        USER_ALLOWED_ACTION_VIEW_AUDIT,
-        USER_ALLOWED_ACTION_PROVISION_SITES,
-        USER_ALLOWED_ACTION_MANAGE_SITE_KEYS,
-        USER_ALLOWED_ACTION_ARCHIVE_SITES,
-    ]
-    return actions
-
-
-def _platform_capability_flags(role: str) -> dict[str, bool]:
-    normalized_role = _normalize_platform_admin_role(role)
-    return {
-        "can_manage_accounts": normalized_role in PLATFORM_ADMIN_ACCOUNT_WRITE_ROLES,
-        "can_manage_catalog": normalized_role in PLATFORM_ADMIN_CATALOG_WRITE_ROLES,
-        "can_impersonate": False,
-        "can_manage_billing": normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES,
-        "can_review_diagnostics": normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES,
-    }
-
-
-def _slugify_portal_site_segment(value: str) -> str:
-    normalized = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
-    return normalized
-
-
-def _normalize_portal_site_url(value: str) -> tuple[str, str]:
-    raw = str(value or "").strip()
-    if not raw:
-        raise CommercialPermissionError(
-            "service.portal_site_url_required",
-            "wordpress site url is required",
-        )
-    candidate = raw if "://" in raw else f"https://{raw}"
-    parsed = urlsplit(candidate)
-    hostname = str(parsed.hostname or "").strip().lower()
-    if not hostname:
-        raise CommercialPermissionError(
-            "service.portal_site_url_invalid",
-            "wordpress site url is invalid",
-        )
-    path = re.sub(r"/+", "/", str(parsed.path or "/").strip())
-    path = "/" if not path or path == "." else path
-    canonical = f"{parsed.scheme.lower() or 'https'}://{hostname}"
-    if path not in {"", "/"}:
-        canonical = f"{canonical}{path.rstrip('/')}"
-    return canonical, hostname + (
-        f"{path.rstrip('/').replace('/', '-')}" if path not in {"", "/"} else ""
-    )
-
-
-def _extract_site_wordpress_url(site: Site) -> str:
-    metadata = site.metadata_json if isinstance(site.metadata_json, dict) else {}
-    raw_value = metadata.get("wordpress_url", "")
-    return str(raw_value).strip() if raw_value is not None else ""
-
-
-def assert_platform_admin_role_allowed(
-    *,
-    role: str,
-    allowed_roles: set[str],
-    error_code: str,
-    message: str,
-) -> str:
-    normalized_role = _normalize_platform_admin_role(role)
-    if normalized_role not in PLATFORM_ADMIN_ALLOWED_ROLES:
-        raise CommercialPermissionError(
-            "service.platform_admin_role_invalid",
-            f"unsupported platform admin role '{normalized_role}'",
-        )
-    if normalized_role not in allowed_roles:
-        raise CommercialPermissionError(error_code, message)
-    return normalized_role
-
-
-def assert_platform_admin_capability(
-    *,
-    role: str,
-    capability: str,
-    error_code: str,
-    message: str,
-) -> str:
-    normalized_role = _normalize_platform_admin_role(role)
-    if normalized_role not in PLATFORM_ADMIN_ALLOWED_ROLES:
-        raise CommercialPermissionError(
-            "service.platform_admin_role_invalid",
-            f"unsupported platform admin role '{normalized_role}'",
-        )
-    capabilities = _platform_capability_flags(normalized_role)
-    if not bool(capabilities.get(capability)):
-        raise CommercialPermissionError(error_code, message)
-    return normalized_role
-
-
 from app.domain.commercial.mixins import (
     CommercialServiceAccountMixin,
     CommercialServiceAdminMixin,
     CommercialServiceAuditMixin,
     CommercialServiceBillingMixin,
+    CommercialServicePaymentMixin,
     CommercialServicePortalMixin,
     CommercialServiceRuntimeMixin,
     CommercialServiceSiteMixin,
@@ -549,6 +261,7 @@ class CommercialService(
     CommercialServiceAccountMixin,
     CommercialServiceSiteMixin,
     CommercialServiceBillingMixin,
+    CommercialServicePaymentMixin,
     CommercialServicePortalMixin,
     CommercialServiceAdminMixin,
     CommercialServiceRuntimeMixin,
@@ -559,4 +272,7 @@ class CommercialService(
     pass
 
 
-__all__ = ["CommercialService", "ServiceAuditContext"]
+__all__ = [
+    "CommercialService",
+    "ServiceAuditContext",
+]

@@ -19,8 +19,8 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    AccountMembership,
+    SITE_ADMIN_STATUS_ACTIVE,
+    SiteAdminIdentity,
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
@@ -106,7 +106,7 @@ class FakePortalEmailSender(PortalEmailSender):
         self,
         *,
         recipient_email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code: str,
         expires_in_seconds: int,
         project_name: str,
@@ -116,29 +116,9 @@ class FakePortalEmailSender(PortalEmailSender):
             {
                 "kind": "login_code",
                 "recipient_email": recipient_email,
-                "member_ref": member_ref,
+                "site_admin_ref": site_admin_ref,
                 "code": code,
                 "expires_in_seconds": expires_in_seconds,
-                "project_name": project_name,
-                "locale": locale,
-            }
-        )
-
-    def send_invite_notice(
-        self,
-        *,
-        recipient_email: str,
-        member_ref: str,
-        portal_url: str,
-        project_name: str,
-        locale: str = "zh-CN",
-    ) -> None:
-        self.messages.append(
-            {
-                "kind": "invite_notice",
-                "recipient_email": recipient_email,
-                "member_ref": member_ref,
-                "portal_url": portal_url,
                 "project_name": project_name,
                 "locale": locale,
             }
@@ -221,6 +201,22 @@ def _verify_portal_login_code(
     return response.json()["data"]
 
 
+def _grant_site_admin_access(
+    client: TestClient,
+    *,
+    site_id: str,
+    email: str,
+    status: str = "active",
+    idempotency_key: str = "portal-site-admin-access-001",
+) -> None:
+    response = client.post(
+        f"/internal/service/sites/{site_id}/site-admin-access",
+        json={"email": email, "status": status},
+        headers=build_internal_headers(idempotency_key=idempotency_key),
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_portal_issue_rotate_list_and_revoke_site_key(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -239,10 +235,11 @@ def test_portal_issue_rotate_list_and_revoke_site_key(tmp_path: Path) -> None:
         },
         headers=build_internal_headers(idempotency_key="portal-site-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal/memberships",
-        json={"member_ref": "user:portal-admin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-membership-admin-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal",
+        email="portal-admin@example.com",
+        idempotency_key="portal-site-admin-access-admin-001",
     )
 
     issue_response = client.post(
@@ -332,10 +329,10 @@ def test_portal_issue_rotate_list_and_revoke_site_key(tmp_path: Path) -> None:
     portal_revoke_audit = next(
         item for item in audit_items if item["event_kind"] == "site_key.revoke"
     )
-    assert portal_issue_audit["actor_kind"] == "portal_member"
-    assert portal_rotate_audit["actor_kind"] == "portal_member"
-    assert portal_revoke_audit["actor_kind"] == "portal_member"
-    assert portal_issue_audit["actor_ref"] == "user:portal-admin@example.com"
+    assert portal_issue_audit["actor_kind"] == "site_admin"
+    assert portal_rotate_audit["actor_kind"] == "site_admin"
+    assert portal_revoke_audit["actor_kind"] == "site_admin"
+    assert portal_issue_audit["actor_ref"] == "site_admin:portal-admin@example.com"
 
     dispose_engine(database_url)
 
@@ -358,10 +355,11 @@ def test_portal_site_keys_support_limit_offset_and_desc_sort(tmp_path: Path) -> 
         },
         headers=build_internal_headers(idempotency_key="portal-page-site-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_page/memberships",
-        json={"member_ref": "user:portal-page@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-page-member-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_page",
+        email="portal-page@example.com",
+        idempotency_key="portal-page-site-admin-access-001",
     )
 
     for index in range(3):
@@ -378,7 +376,7 @@ def test_portal_site_keys_support_limit_offset_and_desc_sort(tmp_path: Path) -> 
 
     response = client.get(
         "/portal/v1/sites/site_portal_page/api-keys?limit=2&offset=0",
-        headers=build_portal_headers(member_ref="user:portal-page@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-page@example.com"),
     )
 
     assert response.status_code == 200
@@ -417,17 +415,18 @@ def test_portal_issue_site_key_normalizes_legacy_scope_aliases(tmp_path: Path) -
         },
         headers=build_internal_headers(idempotency_key="portal-alias-site-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_alias/memberships",
-        json={"member_ref": "user:portal-alias@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-alias-member-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_alias",
+        email="portal-alias@example.com",
+        idempotency_key="portal-alias-site-admin-access-001",
     )
 
     issue_response = client.post(
         "/portal/v1/sites/site_portal_alias/api-keys",
         json={"label": "Alias Key", "scopes": ["read", "execute"]},
         headers=build_portal_headers(
-            member_ref="user:portal-alias@example.com",
+            site_admin_ref="site_admin:portal-alias@example.com",
             idempotency_key="portal-alias-issue-001",
         ),
     )
@@ -462,7 +461,7 @@ def test_portal_routes_require_authenticated_session(tmp_path: Path) -> None:
 
     response = client.get(
         "/portal/v1/sites/site_portal/api-keys",
-        headers={"X-Magick-Portal-Member-Ref": "user:portal-admin@example.com"},
+        headers={"X-Magick-Portal-Site-Admin-Ref": "site_admin:portal-admin@example.com"},
     )
 
     assert response.status_code == 401
@@ -522,10 +521,11 @@ def test_portal_ai_insights_are_manual_cached_and_redacted(tmp_path: Path) -> No
         },
         headers=build_internal_headers(idempotency_key="portal-ai-site-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_ai/memberships",
-        json={"member_ref": "user:portal-admin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-ai-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_ai",
+        email="portal-admin@example.com",
+        idempotency_key="portal-ai-site-admin-access-001",
     )
 
     initial_history = client.get(
@@ -639,16 +639,16 @@ def test_portal_ai_insights_reject_other_site(tmp_path: Path) -> None:
     response = client.post(
         "/portal/v1/sites/site_portal_ai_private/ai-insights/analyze",
         json={"force_refresh": False},
-        headers=build_portal_headers(member_ref="user:outsider@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:outsider@example.com"),
     )
 
     assert response.status_code == 403
-    assert response.json()["error_code"] == "service.portal_membership_required"
+    assert response.json()["error_code"] == "service.site_admin_access_required"
 
     dispose_engine(database_url)
 
 
-def test_portal_non_member_cannot_access_site_keys(tmp_path: Path) -> None:
+def test_portal_unknown_site_admin_cannot_access_site_keys(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
     client.post(
@@ -673,16 +673,16 @@ def test_portal_non_member_cannot_access_site_keys(tmp_path: Path) -> None:
 
     response = client.get(
         "/portal/v1/sites/site_portal_private/api-keys",
-        headers=build_portal_headers(member_ref="user:outsider@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:outsider@example.com"),
     )
 
     assert response.status_code == 403
-    assert response.json()["error_code"] == "service.portal_membership_required"
+    assert response.json()["error_code"] == "service.site_admin_access_required"
 
     dispose_engine(database_url)
 
 
-def test_portal_disabled_membership_cannot_read_or_write(tmp_path: Path) -> None:
+def test_disabled_site_admin_cannot_read_or_write(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
     client.post(
@@ -704,37 +704,35 @@ def test_portal_disabled_membership_cannot_read_or_write(tmp_path: Path) -> None
         "/internal/service/sites/site_portal_disabled/activate",
         headers=build_internal_headers(idempotency_key="portal-disabled-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_disabled/memberships",
-        json={
-            "member_ref": "user:portal-disabled@example.com",
-            "role": "user",
-            "status": "disabled",
-        },
-        headers=build_internal_headers(idempotency_key="portal-disabled-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_disabled",
+        email="portal-disabled@example.com",
+        status="disabled",
+        idempotency_key="portal-disabled-site-admin-access-001",
     )
 
     read_response = client.get(
         "/portal/v1/sites/site_portal_disabled/summary",
-        headers=build_portal_headers(member_ref="user:portal-disabled@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-disabled@example.com"),
     )
     assert read_response.status_code == 403
-    assert read_response.json()["error_code"] == "service.portal_membership_required"
+    assert read_response.json()["error_code"] == "service.site_admin_access_required"
 
     write_response = client.post(
         "/portal/v1/sites/site_portal_disabled/api-keys",
         json={"label": "Disabled Write Attempt"},
         headers=build_portal_headers(
-            member_ref="user:portal-disabled@example.com",
+            site_admin_ref="site_admin:portal-disabled@example.com",
             idempotency_key="portal-disabled-write-denied-001",
         ),
     )
     assert write_response.status_code == 403
-    assert write_response.json()["error_code"] == "service.portal_membership_required"
+    assert write_response.json()["error_code"] == "service.site_admin_access_required"
 
     sites_response = client.get(
         "/portal/v1/sites",
-        headers=build_portal_headers(member_ref="user:portal-disabled@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-disabled@example.com"),
     )
     assert sites_response.status_code == 200
     assert sites_response.json()["data"]["items"] == []
@@ -742,7 +740,7 @@ def test_portal_disabled_membership_cannot_read_or_write(tmp_path: Path) -> None
     dispose_engine(database_url)
 
 
-def test_portal_jwt_allows_member_access_without_dev_headers(tmp_path: Path) -> None:
+def test_portal_jwt_allows_site_admin_access_without_dev_headers(tmp_path: Path) -> None:
     database_url, client = _build_client(
         tmp_path,
         settings_overrides={
@@ -771,17 +769,18 @@ def test_portal_jwt_allows_member_access_without_dev_headers(tmp_path: Path) -> 
         "/internal/service/sites/site_portal_jwt/activate",
         headers=build_internal_headers(idempotency_key="portal-jwt-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_jwt/memberships",
-        json={"member_ref": "user:portal-jwt@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-jwt-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_jwt",
+        email="portal-jwt@example.com",
+        idempotency_key="portal-jwt-site-admin-access-001",
     )
 
     response = client.post(
         "/portal/v1/sites/site_portal_jwt/api-keys",
         json={"label": "JWT Key"},
         headers=build_portal_bearer_headers(
-            member_ref="user:portal-jwt@example.com",
+            site_admin_ref="site_admin:portal-jwt@example.com",
             issuer="magick-cloud-portal",
             audience="magick-cloud-customers",
             idempotency_key="portal-jwt-issue-001",
@@ -866,20 +865,9 @@ def test_portal_auth_login_code_request_and_verify_with_jwt(tmp_path: Path) -> N
         headers=build_internal_headers(idempotency_key="portal-auth-site-activate-001"),
     )
     client.post(
-        "/internal/service/accounts/acct_portal_auth/memberships",
-        json={
-            "member_ref": "user:portal-auth@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "portal-auth@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_invited_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="portal-auth-membership-001"),
+        "/internal/service/sites/site_portal_auth/site-admin-access",
+        json={"email": "portal-auth@example.com"},
+        headers=build_internal_headers(idempotency_key="portal-auth-site-admin-access-001"),
     )
 
     request_data = _request_portal_login_code(
@@ -895,7 +883,7 @@ def test_portal_auth_login_code_request_and_verify_with_jwt(tmp_path: Path) -> N
         email="portal-auth@example.com",
         code=str(request_data["code"]),
     )
-    assert consume_data["member_ref"] == "user:portal-auth@example.com"
+    assert consume_data["site_admin_ref"] == "site_admin:portal-auth@example.com"
     assert consume_data["auth_mode"] == "jwt"
     assert consume_data["session"]["state"] == "active"
     assert consume_data["session"]["transport"] == "cookie"
@@ -903,86 +891,18 @@ def test_portal_auth_login_code_request_and_verify_with_jwt(tmp_path: Path) -> N
 
     session_response = client.get("/portal/v1/session")
     assert session_response.status_code == 200
-    assert session_response.json()["data"]["member_ref"] == "user:portal-auth@example.com"
+    assert session_response.json()["data"]["site_admin_ref"] == "site_admin:portal-auth@example.com"
     assert session_response.json()["data"]["session"]["revocable"] is True
 
     with get_session(database_url) as session:
-        membership = session.scalar(
-            select(AccountMembership).where(
-                AccountMembership.account_id == "acct_portal_auth",
-                AccountMembership.member_ref == "user:portal-auth@example.com",
+        identity = session.scalar(
+            select(SiteAdminIdentity).where(
+                SiteAdminIdentity.site_admin_ref == "site_admin:portal-auth@example.com"
             )
         )
-        assert membership is not None
-        assert membership.status == ACCOUNT_MEMBERSHIP_STATUS_ACTIVE
-        metadata = membership.metadata_json or {}
-        assert metadata.get("invite_state") == "accepted"
-        assert metadata.get("last_login_at")
-
-
-def test_portal_auth_login_code_allows_invited_member_without_sites(tmp_path: Path) -> None:
-    database_url, client = _build_client(
-        tmp_path,
-        settings_overrides={
-            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_jwt_issuer": "magick-cloud-portal",
-            "portal_jwt_audience": "magick-cloud-customers",
-        },
-    )
-
-    client.post(
-        "/internal/service/accounts",
-        json={
-            "account_id": "acct_portal_first_site",
-            "name": "Portal First Site Account",
-            "bind_default_free": True,
-        },
-        headers=build_internal_headers(idempotency_key="portal-first-site-account-001"),
-    )
-    client.post(
-        "/internal/service/accounts/acct_portal_first_site/memberships",
-        json={
-            "member_ref": "user:first-site@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "first-site@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-            },
-        },
-        headers=build_internal_headers(idempotency_key="portal-first-site-membership-001"),
-    )
-
-    request_data = _request_portal_login_code(
-        client,
-        email="first-site@example.com",
-        headers={"x-magick-debug-portal-link": "1"},
-    )
-
-    consume_data = _verify_portal_login_code(
-        client,
-        email="first-site@example.com",
-        code=str(request_data["code"]),
-    )
-    assert consume_data["member_ref"] == "user:first-site@example.com"
-    assert consume_data["sites"] == []
-    assert consume_data["account_id"] == "acct_portal_first_site"
-    assert consume_data["identity_type"] == "user"
-    assert consume_data["role"] == "user"
-    assert consume_data["accounts"][0]["account_id"] == "acct_portal_first_site"
-    assert consume_data["accounts"][0]["site_count"] == 0
-
-    session_response = client.get("/portal/v1/session")
-    assert session_response.status_code == 200
-    session_data = session_response.json()["data"]
-    assert session_data["member_ref"] == "user:first-site@example.com"
-    assert session_data["sites"] == []
-    assert session_data["account_id"] == "acct_portal_first_site"
-    assert session_data["identity_type"] == "user"
-    assert session_data["role"] == "user"
-
-    dispose_engine(database_url)
+        assert identity is not None
+        assert identity.status == SITE_ADMIN_STATUS_ACTIVE
+        assert identity.last_login_at is not None
 
 
 def test_portal_removed_obsolete_auth_routes_return_not_found(tmp_path: Path) -> None:
@@ -1051,10 +971,11 @@ def test_portal_login_code_request_uses_real_sender_when_configured(
         "/internal/service/sites/site_portal_mail/activate",
         headers=build_internal_headers(idempotency_key="portal-mail-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_mail/memberships",
-        json={"member_ref": "user:portal-mail@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-mail-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_mail",
+        email="portal-mail@example.com",
+        idempotency_key="portal-mail-site-admin-access-001",
     )
 
     response = client.post(
@@ -1073,7 +994,7 @@ def test_portal_login_code_request_uses_real_sender_when_configured(
     dispose_engine(database_url)
 
 
-def test_portal_login_code_request_masks_missing_membership(
+def test_portal_login_code_request_masks_missing_site_admin_access(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(
@@ -1128,21 +1049,11 @@ def test_portal_login_code_request_accepts_forwarded_host_with_port(
         "/internal/service/sites/site_portal_forwarded/activate",
         headers=build_internal_headers(idempotency_key="portal-forwarded-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_forwarded/memberships",
-        json={
-            "member_ref": "user:portal-forwarded@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "portal-forwarded@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_invited_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="portal-forwarded-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_forwarded",
+        email="portal-forwarded@example.com",
+        idempotency_key="portal-forwarded-site-admin-access-001",
     )
 
     response = client.post(
@@ -1200,21 +1111,11 @@ def test_portal_login_code_request_accepts_localhost_loopback_alias(
         "/internal/service/sites/site_portal_localhost/activate",
         headers=build_internal_headers(idempotency_key="portal-localhost-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_localhost/memberships",
-        json={
-            "member_ref": "user:portal-localhost@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "portal-localhost@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_invited_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="portal-localhost-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_localhost",
+        email="portal-localhost@example.com",
+        idempotency_key="portal-localhost-site-admin-access-001",
     )
 
     response = client.post(
@@ -1272,21 +1173,11 @@ def test_portal_login_code_request_skips_rate_limit_for_local_debug_loopback(
         "/internal/service/sites/site_portal_debug/activate",
         headers=build_internal_headers(idempotency_key="portal-debug-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_debug/memberships",
-        json={
-            "member_ref": "user:portal-debug@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "portal-debug@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_invited_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="portal-debug-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_debug",
+        email="portal-debug@example.com",
+        idempotency_key="portal-debug-site-admin-access-001",
     )
 
     debug_headers = {
@@ -1343,10 +1234,11 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
         "/internal/service/sites/site_portal_session/activate",
         headers=build_internal_headers(idempotency_key="portal-session-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_session/memberships",
-        json={"member_ref": "user:portal-session@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-session-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_session",
+        email="portal-session@example.com",
+        idempotency_key="portal-session-site-admin-access-001",
     )
 
     request_data = _request_portal_login_code(
@@ -1363,10 +1255,11 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     session_response = client.get("/portal/v1/session")
     assert session_response.status_code == 200
     session_data = session_response.json()["data"]
-    assert session_data["member_ref"] == "user:portal-session@example.com"
+    assert session_data["site_admin_ref"] == "site_admin:portal-session@example.com"
     assert session_data["site_id"] == "site_portal_session"
     assert session_data["account_id"] == "acct_portal_session"
-    assert session_data["role"] == "user"
+    assert session_data["identity_type"] == "site_admin"
+    assert session_data["role"] == "site_admin"
     assert session_data["accounts"][0]["account_id"] == "acct_portal_session"
     assert session_data["site"]["site_id"] == "site_portal_session"
 
@@ -1423,21 +1316,11 @@ def test_portal_site_key_routes_allow_cookie_session_after_login_code_verificati
         "/internal/service/sites/site_portal_cookie_keys/activate",
         headers=build_internal_headers(idempotency_key="portal-cookie-keys-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_cookie_keys/memberships",
-        json={
-            "member_ref": "user:portal-cookie-keys@example.com",
-            "role": "user",
-            "status": "pending_invite",
-            "metadata": {
-                "email": "portal-cookie-keys@example.com",
-                "invite_state": "pending",
-                "invite_count": 1,
-                "last_delivery_status": "sent",
-                "last_invited_at": datetime.now(UTC).isoformat(),
-            },
-        },
-        headers=build_internal_headers(idempotency_key="portal-cookie-keys-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_cookie_keys",
+        email="portal-cookie-keys@example.com",
+        idempotency_key="portal-cookie-keys-site-admin-access-001",
     )
 
     request_data = _request_portal_login_code(
@@ -1500,10 +1383,11 @@ def test_portal_cookie_write_requires_same_origin(tmp_path: Path) -> None:
         "/internal/service/sites/site_portal_origin/activate",
         headers=build_internal_headers(idempotency_key="portal-origin-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_origin/memberships",
-        json={"member_ref": "user:portal-origin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-origin-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_origin",
+        email="portal-origin@example.com",
+        idempotency_key="portal-origin-site-admin-access-001",
     )
 
     request_response = client.post(
@@ -1554,12 +1438,6 @@ def test_portal_debug_bypass_is_disabled_in_production_even_with_allowlist(
         json={"account_id": "acct_portal_prod_origin", "name": "Portal Prod Origin Account"},
         headers=build_internal_headers(idempotency_key="portal-prod-origin-account-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_prod_origin/memberships",
-        json={"member_ref": "user:portal-prod-origin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-prod-origin-membership-001"),
-    )
-
     response = client.post(
         "/portal/v1/auth/code/request",
         json={"email": "portal-prod-origin@example.com"},
@@ -1598,10 +1476,11 @@ def test_portal_header_authenticated_write_skips_same_origin_guard(tmp_path: Pat
         "/internal/service/sites/site_portal_header_origin/activate",
         headers=build_internal_headers(idempotency_key="portal-header-origin-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_header_origin/memberships",
-        json={"member_ref": "user:portal-admin@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-header-origin-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_header_origin",
+        email="portal-admin@example.com",
+        idempotency_key="portal-header-origin-site-admin-access-001",
     )
 
     response = client.post(
@@ -1649,16 +1528,17 @@ def test_portal_session_route_supports_jwt_with_session_cookies(tmp_path: Path) 
         "/internal/service/sites/site_portal_session_jwt/activate",
         headers=build_internal_headers(idempotency_key="portal-session-jwt-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_session_jwt/memberships",
-        json={"member_ref": "user:portal-session-jwt@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-session-jwt-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_session_jwt",
+        email="portal-session-jwt@example.com",
+        idempotency_key="portal-session-jwt-site-admin-access-001",
     )
 
     response = client.get(
         "/portal/v1/session",
         headers=build_portal_bearer_headers(
-            member_ref="user:portal-session-jwt@example.com",
+            site_admin_ref="site_admin:portal-session-jwt@example.com",
             issuer="magick-cloud-portal",
             audience="magick-cloud-customers",
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
@@ -1667,7 +1547,7 @@ def test_portal_session_route_supports_jwt_with_session_cookies(tmp_path: Path) 
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["member_ref"] == "user:portal-session-jwt@example.com"
+    assert data["site_admin_ref"] == "site_admin:portal-session-jwt@example.com"
     assert data["site_id"] == "site_portal_session_jwt"
     assert data["auth_mode"] == "jwt"
     assert len(data["sites"]) == 1
@@ -1700,10 +1580,11 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "/internal/service/sites/site_portal_reads/activate",
         headers=build_internal_headers(idempotency_key="portal-reads-site-activate-001"),
     )
-    client.post(
-        "/internal/service/accounts/acct_portal_reads/memberships",
-        json={"member_ref": "user:portal-reads@example.com", "role": "user"},
-        headers=build_internal_headers(idempotency_key="portal-reads-membership-001"),
+    _grant_site_admin_access(
+        client,
+        site_id="site_portal_reads",
+        email="portal-reads@example.com",
+        idempotency_key="portal-reads-site-admin-access-001",
     )
     client.post(
         "/internal/service/plans",
@@ -1743,7 +1624,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "/portal/v1/sites/site_portal_reads/api-keys",
         json={"label": "Portal Reads Key"},
         headers=build_portal_headers(
-            member_ref="user:portal-reads@example.com",
+            site_admin_ref="site_admin:portal-reads@example.com",
             idempotency_key="portal-reads-key-001",
         ),
     )
@@ -1755,39 +1636,39 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     summary_response = client.get(
         "/portal/v1/sites/site_portal_reads/summary",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert summary_response.status_code == 200
     assert summary_response.json()["data"]["site"]["site_id"] == "site_portal_reads"
-    assert summary_response.json()["data"]["identity_type"] == "user"
-    assert summary_response.json()["data"]["role"] == "user"
+    assert summary_response.json()["data"]["identity_type"] == "site_admin"
+    assert summary_response.json()["data"]["role"] == "site_admin"
 
     usage_response = client.get(
         "/portal/v1/sites/site_portal_reads/usage-summary",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert usage_response.status_code == 200
     assert usage_response.json()["data"]["site_id"] == "site_portal_reads"
-    assert usage_response.json()["data"]["identity_type"] == "user"
-    assert usage_response.json()["data"]["role"] == "user"
+    assert usage_response.json()["data"]["identity_type"] == "site_admin"
+    assert usage_response.json()["data"]["role"] == "site_admin"
 
     monitoring_response = client.get(
         "/portal/v1/sites/site_portal_reads/monitoring-overview?window_hours=24",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert monitoring_response.status_code == 200
     monitoring_data = monitoring_response.json()["data"]
     assert monitoring_data["contract_version"] == "magick-site-monitoring-overview-v1"
     assert monitoring_data["site_id"] == "site_portal_reads"
-    assert monitoring_data["identity_type"] == "user"
-    assert monitoring_data["role"] == "user"
+    assert monitoring_data["identity_type"] == "site_admin"
+    assert monitoring_data["role"] == "site_admin"
     assert "health" in monitoring_data
     assert "action_required" in monitoring_data
     assert "quota" in monitoring_data
 
     entitlements_response = client.get(
         "/portal/v1/sites/site_portal_reads/entitlements",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert entitlements_response.status_code == 200
     assert entitlements_response.json()["data"]["site"]["site_id"] == "site_portal_reads"
@@ -1795,7 +1676,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     audit_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-summary",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert audit_response.status_code == 200
     assert audit_response.json()["data"]["site_id"] == "site_portal_reads"
@@ -1803,7 +1684,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     audit_events_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-events?event_kind=site_key.issue&limit=10",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert audit_events_response.status_code == 200
     assert audit_events_response.json()["data"]["site_id"] == "site_portal_reads"
@@ -1812,7 +1693,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     billing_response = client.get(
         "/portal/v1/sites/site_portal_reads/billing-snapshots",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert billing_response.status_code == 200
     assert billing_response.json()["data"]["site_id"] == "site_portal_reads"
@@ -1820,7 +1701,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     reconciliation_response = client.get(
         "/portal/v1/sites/site_portal_reads/billing-snapshots/reconciliation",
-        headers=build_portal_headers(member_ref="user:portal-reads@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:portal-reads@example.com"),
     )
     assert reconciliation_response.status_code == 200
     assert reconciliation_response.json()["data"]["site_id"] == "site_portal_reads"
@@ -1828,10 +1709,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
 
     denied_response = client.get(
         "/portal/v1/sites/site_portal_reads/summary",
-        headers=build_portal_headers(member_ref="user:outsider@example.com"),
+        headers=build_portal_headers(site_admin_ref="site_admin:outsider@example.com"),
     )
     assert denied_response.status_code == 403
-    assert denied_response.json()["error_code"] == "service.portal_membership_required"
+    assert denied_response.json()["error_code"] == "service.site_admin_access_required"
     assert denied_response.json()["meta"]["trace_id"] == "00112233445566778899aabbccddeeff"
 
     dispose_engine(database_url)

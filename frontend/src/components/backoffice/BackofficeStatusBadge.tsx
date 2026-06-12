@@ -15,7 +15,6 @@ function getBackofficeStatusBadgeClassName(status: string): string {
     case 'over_budget':
     case 'provisioning':
     case 'pending':
-    case 'pending_invite':
     case 'trialing':
     case 'past_due':
       return 'bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200';

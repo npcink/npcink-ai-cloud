@@ -6,10 +6,7 @@ import json
 from app.core.config import Settings
 from app.domain.commercial.customer_api_keys import build_customer_api_key
 from app.domain.commercial.errors import CommercialNotFoundError
-from app.domain.commercial.service import (
-    ACCOUNT_MEMBERSHIP_ROLE_USER,
-    CommercialService,
-)
+from app.domain.commercial.service import CommercialService
 from app.domain.usage.service import UsageService
 
 DEFAULT_PORTAL_SCOPES = [
@@ -30,13 +27,12 @@ def _dict_value(value: object) -> dict[str, object]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Bind a portal member to one existing Cloud site so the portal can expose "
+            "Bind a site administrator to one existing Cloud site so the workspace can expose "
             "real site/subscription/usage/billing data."
         )
     )
     parser.add_argument("--site-id", required=True)
-    parser.add_argument("--member-email", required=True)
-    parser.add_argument("--member-role", default=ACCOUNT_MEMBERSHIP_ROLE_USER)
+    parser.add_argument("--site-admin-email", dest="site_admin_email", required=True)
     parser.add_argument("--public-base-url", default="http://127.0.0.1:8010")
     parser.add_argument(
         "--skip-billing-rebuild",
@@ -68,8 +64,7 @@ def bootstrap_portal_site(
     *,
     settings: Settings,
     site_id: str,
-    member_email: str,
-    member_role: str,
+    site_admin_email: str,
     public_base_url: str,
     rebuild_billing_snapshot: bool,
     issue_key: bool,
@@ -79,8 +74,7 @@ def bootstrap_portal_site(
     scopes: list[str],
 ) -> dict[str, object]:
     commercial_service = CommercialService(settings.database_url, settings=settings)
-    normalized_email = member_email.strip().lower()
-    member_ref = f"user:{normalized_email}"
+    normalized_email = site_admin_email.strip().lower()
     base_url = _normalized_base_url(public_base_url)
 
     policy = commercial_service.inspect_commercial_policy(site_id)
@@ -101,18 +95,17 @@ def bootstrap_portal_site(
             f"no subscription was found for site '{site_id}'",
         )
 
-    membership = commercial_service.upsert_account_membership(
-        account_id=account_id,
-        member_ref=member_ref,
-        role=ACCOUNT_MEMBERSHIP_ROLE_USER,
+    site_admin_access = commercial_service.upsert_site_admin_access(
+        site_id=site_id,
+        email=normalized_email,
         status="active",
         metadata_json={
             "source": "bootstrap_portal_site",
-            "email": normalized_email,
             "site_id": site_id,
         },
     )
-    portal_sites = commercial_service.list_portal_sites(member_ref=member_ref)
+    site_admin_ref = str(site_admin_access.get("site_admin_ref") or "")
+    portal_sites = commercial_service.list_portal_sites(site_admin_ref=site_admin_ref)
     usage_summary = UsageService(settings.database_url).get_usage_summary(site_id=site_id)
     usage_meter = commercial_service.inspect_usage_meter(site_id)
     billing_snapshot = (
@@ -148,10 +141,9 @@ def bootstrap_portal_site(
             "subscription_id": str(subscription.get("subscription_id") or ""),
             "plan_id": str(subscription.get("plan_id") or ""),
             "plan_version_id": str(subscription.get("plan_version_id") or ""),
-            "member_email": normalized_email,
-            "member_ref": member_ref,
-            "member_role": membership["role"],
-            "identity_type": membership.get("identity_type") or "user",
+            "site_admin_email": normalized_email,
+            "site_admin_ref": site_admin_ref,
+            "identity_type": "site_admin",
             "routes": {
                 "login_url": f"{base_url}/portal/login",
                 "portal_url": f"{base_url}/portal",
@@ -167,7 +159,7 @@ def bootstrap_portal_site(
             "auth_configured": auth_configured,
         },
         "portal": {
-            "membership": membership,
+            "site_admin_access": site_admin_access,
             "sites": portal_sites,
         },
         "site_summary": {
@@ -208,8 +200,7 @@ def main() -> None:
     result = bootstrap_portal_site(
         settings=settings,
         site_id=args.site_id,
-        member_email=args.member_email,
-        member_role=args.member_role,
+        site_admin_email=args.site_admin_email,
         public_base_url=args.public_base_url,
         rebuild_billing_snapshot=not args.skip_billing_rebuild,
         issue_key=args.issue_key,

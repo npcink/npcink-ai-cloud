@@ -10,11 +10,10 @@ from uuid import uuid4
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-    ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE,
     ACCOUNT_STATUS_ACTIVE,
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
     PLATFORM_ADMIN_STATUS_ACTIVE,
+    SITE_ADMIN_STATUS_ACTIVE,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_ACTIVE,
@@ -23,19 +22,17 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
 )
+from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
 )
-from app.domain.commercial.mixins._audit_mixin import (
+from app.domain.commercial.identity import (
     IDENTITY_TYPE_PLATFORM_ADMIN,
-    IDENTITY_TYPE_USER,
-    CommercialServiceAuditMixin,
-    ServiceAuditContext,
     _canonicalize_platform_admin_role_for_write,
     _platform_capability_flags,
-    _subscription_counts_as_covered,
 )
+from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.mixins._billing_mixin import (
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
@@ -193,12 +190,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 since=usage_since,
                 limit=None,
             )
-            active_membership_count = len(
-                repository.list_account_memberships(
-                    status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-                    limit=None,
-                )
-            )
             active_site_key_count = sum(
                 repository.count_site_keys_by_site(
                     statuses=[SITE_API_KEY_STATUS_ACTIVE],
@@ -289,7 +280,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "generated_at": self._serialize_datetime(now),
             "counts": {
                 "accounts_total": len(accounts),
-                "memberships_active": active_membership_count,
+                "site_admins_active": repository.count_site_admin_identities(
+                    status=SITE_ADMIN_STATUS_ACTIVE
+                ),
                 "sites_total": len(sites),
                 "sites_active": sum(1 for site in sites if site.status == SITE_STATUS_ACTIVE),
                 "subscriptions_total": len(subscriptions),
@@ -557,7 +550,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         self,
         *,
         status: str | None = None,
-        member_ref: str | None = None,
         expires_before: datetime | None = None,
         coverage_state: str | None = None,
         package_kind: str | None = None,
@@ -567,13 +559,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             filtered_account_ids: set[str] | None = None
-            if member_ref:
-                memberships = repository.list_account_memberships(
-                    member_ref=member_ref,
-                    status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-                    limit=None,
-                )
-                filtered_account_ids = {membership.account_id for membership in memberships}
             if expires_before is not None:
                 expiring_subscriptions = repository.list_subscriptions(
                     current_period_end_before=expires_before,
@@ -597,10 +582,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 limit=None if coverage_state or package_kind or top_plan_id else limit,
             )
             account_ids = [account.account_id for account in accounts]
-            membership_counts = repository.count_account_memberships_by_account(
-                account_ids=account_ids,
-                status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-            )
             site_counts = repository.count_sites_by_account(account_ids=account_ids)
             subscription_counts = repository.count_subscriptions_by_account(
                 account_ids=account_ids,
@@ -634,7 +615,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             nearest_expiry = service._find_nearest_subscription_expiry(account_subscriptions)
             item = {
                 "account": service._serialize_account(account),
-                "member_count": membership_counts.get(account.account_id, 0),
                 "site_count": site_counts.get(account.account_id, 0),
                 "active_subscription_count": subscription_counts.get(account.account_id, 0),
                 "top_plan_id": str(
@@ -663,7 +643,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         return {
             "filters": {
                 "status": status or "",
-                "member_ref": member_ref or "",
                 "expires_before": self._serialize_datetime(expires_before),
                 "coverage_state": coverage_state or "",
                 "package_kind": package_kind or "",
@@ -683,7 +662,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
-            memberships = repository.list_account_memberships(account_id=account_id, limit=None)
             sites = repository.list_sites(account_id=account_id, limit=None)
             subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
             active_key_counts = repository.count_site_keys_by_site(
@@ -693,13 +671,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
 
         return {
             "account": cast(Any, self)._serialize_account(account),
-            "memberships": [
-                cast(Any, self)._serialize_account_membership(
-                    membership,
-                    accessible_sites=sites,
-                )
-                for membership in memberships
-            ],
             "sites": [cast(Any, self)._serialize_site(site) for site in sites],
             "subscriptions": [
                 {
@@ -710,7 +681,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ],
             "trial_readiness": cast(Any, self)._build_account_trial_readiness_summary(
                 account=account,
-                memberships=memberships,
                 sites=sites,
                 subscriptions=subscriptions,
                 active_key_counts=active_key_counts,
@@ -721,7 +691,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         self,
         *,
         account: object,
-        memberships: list[object],
         sites: list[object],
         subscriptions: list[AccountSubscription],
         active_key_counts: dict[str, int],
@@ -745,17 +714,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             if int(active_key_counts.get(str(getattr(site, "site_id", "") or ""), 0) or 0) <= 0
         ]
         active_key_site_count = site_count - len(sites_without_active_key)
-        active_or_pending_member_count = sum(
-            1
-            for membership in memberships
-            if str(getattr(membership, "status", "") or "")
-            in {ACCOUNT_MEMBERSHIP_STATUS_ACTIVE, ACCOUNT_MEMBERSHIP_STATUS_PENDING_INVITE}
-        )
-        active_member_count = sum(
-            1
-            for membership in memberships
-            if str(getattr(membership, "status", "") or "") == ACCOUNT_MEMBERSHIP_STATUS_ACTIVE
-        )
         subscription_status = str(getattr(primary_subscription, "status", "") or "")
         has_coverage = coverage_state == "covered" and package_kind not in {
             "dev_baseline",
@@ -815,17 +773,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "detail": (
                     f"{package_label} coverage is ready."
                     if has_coverage and subscription_stable
-                    else "Apply Free, Pro, or Agency coverage before inviting this customer."
-                ),
-            },
-            {
-                "code": "portal_admin",
-                "label": "Portal user",
-                "ok": active_or_pending_member_count > 0,
-                "detail": (
-                    f"{active_or_pending_member_count} active or invited portal user(s)."
-                    if active_or_pending_member_count > 0
-                    else "Invite at least one portal user."
+                    else "Apply Free, Pro, or Agency coverage before granting site admin access."
                 ),
             },
         ]
@@ -833,8 +781,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         status = "ready" if not blocking_codes else "action_required"
         if not account_active or site_count == 0:
             status = "blocked"
-        next_action = "invite_trial_site"
-        next_action_label = "Invite trial site"
+        next_action = "review_site_admin_access"
+        next_action_label = "Review site admin access"
         if not account_active:
             next_action = "review_customer_status"
             next_action_label = "Review customer status"
@@ -850,12 +798,6 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         elif sites_without_active_key:
             next_action = "issue_or_verify_key"
             next_action_label = "Issue or verify Cloud API key"
-        elif active_or_pending_member_count == 0:
-            next_action = "invite_portal_admin"
-            next_action_label = "Invite portal user"
-        elif active_member_count == 0:
-            next_action = "confirm_invite_delivery"
-            next_action_label = "Confirm invite delivery"
         return {
             "status": status,
             "next_action": next_action,
@@ -866,216 +808,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "active_site_count": active_site_count,
                 "active_key_site_count": active_key_site_count,
                 "sites_without_active_key": sites_without_active_key,
-                "member_count": len(memberships),
-                "active_member_count": active_member_count,
-                "active_or_pending_member_count": active_or_pending_member_count,
                 "subscription_status": subscription_status,
                 **package_summary,
             },
             "checks": checks,
-        }
-
-    def get_admin_account_member_plan_coverage(self, account_id: str) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
-            if account is None:
-                raise CommercialNotFoundError(
-                    "service.account_not_found",
-                    f"account '{account_id}' was not found",
-                )
-            memberships = repository.list_account_memberships(account_id=account_id, limit=None)
-            sites = repository.list_sites(account_id=account_id, limit=None)
-            subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
-
-        sites_by_id = {
-            str(site.site_id or ""): site for site in sites if str(site.site_id or "").strip()
-        }
-        service = cast(Any, self)
-        latest_subscription_by_account = service._latest_subscription_map(subscriptions)
-
-        members_payload: list[dict[str, object]] = []
-        follow_up_site_ids: set[str] = set()
-        covered_member_count = 0
-
-        for membership in memberships:
-            serialized_membership = service._serialize_account_membership(
-                membership,
-                accessible_sites=sites,
-            )
-            accessible_sites_payload: list[dict[str, object]] = []
-            member_has_covered_site = False
-            serialized_accessible_sites = list(serialized_membership.get("accessible_sites") or [])
-            for accessible_site in serialized_accessible_sites:
-                site_id = str(accessible_site.get("site_id") or "").strip()
-                site = sites_by_id.get(site_id)
-                subscription = latest_subscription_by_account.get(
-                    str(getattr(site, "account_id", "") or "").strip()
-                )
-                covered = _subscription_counts_as_covered(subscription)
-                if covered:
-                    member_has_covered_site = True
-                else:
-                    follow_up_site_ids.add(site_id)
-                plan_id = (
-                    str(getattr(subscription, "plan_id", "") or "").strip()
-                    if subscription is not None
-                    else ""
-                )
-                plan_version_id = (
-                    str(getattr(subscription, "plan_version_id", "") or "").strip()
-                    if subscription is not None
-                    else ""
-                )
-                package_summary = service._build_subscription_package_summary(
-                    subscription,
-                    site_count=1,
-                )
-                accessible_sites_payload.append(
-                    {
-                        "site_id": site_id,
-                        "site_name": str(
-                            getattr(site, "name", "") or accessible_site.get("name") or site_id
-                        ),
-                        "site_status": str(
-                            getattr(site, "status", "") or accessible_site.get("status") or ""
-                        ),
-                        "plan_id": plan_id,
-                        "plan_version_id": plan_version_id,
-                        "package_alias": str(package_summary.get("package_alias") or ""),
-                        "display_package_label": str(
-                            package_summary.get("display_package_label") or ""
-                        ),
-                        "package_kind": str(package_summary.get("package_kind") or ""),
-                        "coverage_state": str(package_summary.get("coverage_state") or ""),
-                        "covered": covered,
-                        "coverage": {
-                            "covered_by_subscription_id": str(
-                                getattr(subscription, "subscription_id", "") or ""
-                            ),
-                            "status": str(getattr(subscription, "status", "") or ""),
-                            "package_kind": str(package_summary.get("package_kind") or ""),
-                            "coverage_state": str(package_summary.get("coverage_state") or ""),
-                        },
-                    }
-                )
-
-            if member_has_covered_site:
-                covered_member_count += 1
-
-            members_payload.append(
-                {
-                    "member_ref": str(serialized_membership.get("member_ref") or ""),
-                    "email": str(serialized_membership.get("email") or ""),
-                    "identity_type": str(
-                        serialized_membership.get("identity_type") or IDENTITY_TYPE_USER
-                    ),
-                    "allowed_actions": [
-                        str(action)
-                        for action in list(serialized_membership.get("allowed_actions") or [])
-                        if str(action).strip()
-                    ],
-                    "role": str(serialized_membership.get("role") or ""),
-                    "status": str(serialized_membership.get("status") or ""),
-                    "covered_site_count": sum(
-                        1 for site in accessible_sites_payload if bool(site.get("covered"))
-                    ),
-                    "sites_needing_follow_up_count": sum(
-                        1 for site in accessible_sites_payload if not bool(site.get("covered"))
-                    ),
-                    "accessible_sites": accessible_sites_payload,
-                }
-            )
-
-        return {
-            "account": service._serialize_account(account),
-            "summary": {
-                "member_count": len(members_payload),
-                "covered_member_count": covered_member_count,
-                "sites_needing_follow_up_count": len(
-                    [site_id for site_id in follow_up_site_ids if site_id]
-                ),
-            },
-            "members": members_payload,
-        }
-
-    def list_admin_account_members(
-        self,
-        *,
-        account_id: str,
-        status: str | None = None,
-        invite_state: str | None = None,
-        delivery_status: str | None = None,
-        never_logged_in: bool = False,
-    ) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
-            if account is None:
-                raise CommercialNotFoundError(
-                    "service.account_not_found",
-                    f"account '{account_id}' was not found",
-                )
-            memberships = repository.list_account_memberships(account_id=account_id, limit=None)
-            sites = repository.list_sites(account_id=account_id, limit=None)
-
-        items = []
-        for membership in memberships:
-            serialized = cast(Any, self)._serialize_account_membership(
-                membership,
-                accessible_sites=sites,
-            )
-            if status and serialized["status"] != status:
-                continue
-            if invite_state and serialized["invite_state"] != invite_state:
-                continue
-            if delivery_status and serialized["last_delivery_status"] != delivery_status:
-                continue
-            if never_logged_in and serialized["last_login_at"]:
-                continue
-            items.append(serialized)
-
-        return {
-            "account": cast(Any, self)._serialize_account(account),
-            "filters": {
-                "status": status or "",
-                "invite_state": invite_state or "",
-                "delivery_status": delivery_status or "",
-                "never_logged_in": bool(never_logged_in),
-            },
-            "items": items,
-        }
-
-    def get_admin_account_member(
-        self,
-        *,
-        account_id: str,
-        member_ref: str,
-    ) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
-            if account is None:
-                raise CommercialNotFoundError(
-                    "service.account_not_found",
-                    f"account '{account_id}' was not found",
-                )
-            membership = repository.get_account_membership(
-                account_id=account_id,
-                member_ref=member_ref,
-            )
-            if membership is None:
-                raise CommercialNotFoundError(
-                    "service.account_membership_not_found",
-                    f"member '{member_ref}' was not found in account '{account_id}'",
-                )
-            sites = repository.list_sites(account_id=account_id, limit=None)
-        return {
-            "account": cast(Any, self)._serialize_account(account),
-            "membership": cast(Any, self)._serialize_account_membership(
-                membership,
-                accessible_sites=sites,
-            ),
         }
 
     def list_admin_platform_admin_identities(

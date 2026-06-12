@@ -16,8 +16,9 @@ from app.core.callback_security import (
 )
 from app.core.db import get_session
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_STATUS_ACTIVE,
+    SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE,
+    SITE_ADMIN_STATUS_ACTIVE,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_API_KEY_STATUS_EXPIRED,
     SITE_API_KEY_STATUS_REVOKED,
@@ -34,26 +35,25 @@ from app.core.secrets import (
     encrypt_site_api_signing_secret,
 )
 from app.core.security import build_secret_hash
+from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.customer_api_keys import expand_api_key_scopes
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
     CommercialValidationError,
 )
+from app.domain.commercial.identity import (
+    IDENTITY_TYPE_SITE_ADMIN,
+    SITE_ADMIN_ROLE_SITE_ADMIN,
+    _extract_site_wordpress_url,
+    _normalize_portal_site_url,
+    _slugify_portal_site_segment,
+    resolve_site_admin_allowed_actions,
+)
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.service import (
     DEFAULT_PLAN_TIER_ID,
     PLAN_TIER_REGISTRY,
-    PORTAL_SITE_PROVISION_ROLES,
-    ServiceAuditContext,
-    _extract_site_wordpress_url,
-    _normalize_customer_membership_role,
-    _normalize_portal_site_url,
-    _portal_membership_has_allowed_role,
-    _portal_membership_is_active,
-    _resolve_identity_type,
-    _resolve_portal_allowed_actions,
-    _slugify_portal_site_segment,
 )
 
 
@@ -125,13 +125,13 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         self,
         *,
         account_id: str,
-        member_ref: str,
+        site_admin_ref: str,
         wordpress_url: str,
         site_name: str = "",
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         normalized_account_id = str(account_id or "").strip()
-        normalized_member_ref = str(member_ref or "").strip()
+        normalized_site_admin_ref = str(site_admin_ref or "").strip()
         canonical_wordpress_url, site_source = _normalize_portal_site_url(wordpress_url)
         site_slug = _slugify_portal_site_segment(site_source)
         if not normalized_account_id:
@@ -139,10 +139,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "service.account_id_required",
                 "account id is required",
             )
-        if not normalized_member_ref:
+        if not normalized_site_admin_ref:
             raise CommercialPermissionError(
-                "service.portal_member_ref_required",
-                "portal member ref is required",
+                "service.site_admin_ref_required",
+                "site admin ref is required",
             )
         if not site_slug:
             raise CommercialPermissionError(
@@ -169,22 +169,13 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.portal_account_inactive",
                     f"account '{normalized_account_id}' is not active",
                 )
-            membership = repository.get_account_membership(
-                account_id=normalized_account_id,
-                member_ref=normalized_member_ref,
+            identity = repository.get_site_admin_identity_by_ref(
+                site_admin_ref=normalized_site_admin_ref,
             )
-            if not _portal_membership_is_active(membership):
+            if identity is None or identity.status != SITE_ADMIN_STATUS_ACTIVE:
                 raise CommercialPermissionError(
-                    "service.portal_membership_required",
-                    f"member '{normalized_member_ref}' is not active for account '{normalized_account_id}'",
-                )
-            if not _portal_membership_has_allowed_role(
-                membership,
-                required_roles=PORTAL_SITE_PROVISION_ROLES,
-            ):
-                raise CommercialPermissionError(
-                    "service.portal_role_forbidden",
-                    f"member '{normalized_member_ref}' cannot add sites to account '{normalized_account_id}'",
+                    "service.site_admin_access_required",
+                    f"site admin '{normalized_site_admin_ref}' is not active",
                 )
             existing_site = repository.get_site(normalized_site_id)
             if existing_site is not None:
@@ -230,11 +221,18 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 },
                 provisioned_at=now,
             )
+            repository.upsert_site_admin_site_grant(
+                grant_id=f"sadmg_{uuid4().hex}",
+                site_admin_id=identity.site_admin_id,
+                site_id=site.site_id,
+                status=SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE,
+                metadata_json={"source": "portal_connect_site"},
+            )
             payload = {
                 "account_id": normalized_account_id,
-                "member_ref": normalized_member_ref,
-                "identity_type": _resolve_identity_type(str(getattr(membership, "role", "") or "")),
-                "role": str(getattr(membership, "role", "") or ""),
+                "site_admin_ref": normalized_site_admin_ref,
+                "identity_type": IDENTITY_TYPE_SITE_ADMIN,
+                "role": SITE_ADMIN_ROLE_SITE_ADMIN,
                 "wordpress_url": canonical_wordpress_url,
                 "site": self._serialize_site(site),
                 "subscription": service._serialize_subscription(subscription),
@@ -786,7 +784,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         self,
         *,
         site_id: str,
-        member_ref: str,
+        site_admin_ref: str,
         required_roles: set[str] | None = None,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
@@ -808,63 +806,63 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.portal_account_inactive",
                     f"account '{site.account_id}' is not active",
                 )
-            membership = repository.get_account_membership(
-                account_id=site.account_id,
-                member_ref=member_ref,
+            grant_pair = repository.get_site_admin_site_grant(
+                site_admin_ref=site_admin_ref,
+                site_id=site_id,
             )
-            if not _portal_membership_is_active(membership):
+            if grant_pair is None:
                 raise CommercialPermissionError(
-                    "service.portal_membership_required",
-                    f"member '{member_ref}' is not active for account '{site.account_id}'",
+                    "service.site_admin_access_required",
+                    f"site admin '{site_admin_ref}' is not active for site '{site_id}'",
                 )
-            if not _portal_membership_has_allowed_role(
-                membership,
-                required_roles=required_roles,
+            identity, grant = grant_pair
+            if (
+                identity.status != SITE_ADMIN_STATUS_ACTIVE
+                or grant.status != SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE
             ):
                 raise CommercialPermissionError(
+                    "service.site_admin_access_required",
+                    f"site admin '{site_admin_ref}' is not active for site '{site_id}'",
+                )
+            if required_roles is not None and SITE_ADMIN_ROLE_SITE_ADMIN not in required_roles:
+                raise CommercialPermissionError(
                     "service.portal_role_forbidden",
-                    f"member '{member_ref}' lacks required role for site '{site_id}'",
+                    f"site admin '{site_admin_ref}' lacks required role for site '{site_id}'",
                 )
         return {
             "site_id": site.site_id,
             "account_id": site.account_id,
-            "member_ref": str(getattr(membership, "member_ref", "") or ""),
-            "identity_type": _resolve_identity_type(str(getattr(membership, "role", "") or "")),
-            "allowed_actions": _resolve_portal_allowed_actions(
-                str(getattr(membership, "role", "") or "")
-            ),
-            "role": _normalize_customer_membership_role(str(getattr(membership, "role", "") or "")),
+            "site_admin_ref": site_admin_ref,
+            "identity_type": IDENTITY_TYPE_SITE_ADMIN,
+            "allowed_actions": resolve_site_admin_allowed_actions(),
+            "role": SITE_ADMIN_ROLE_SITE_ADMIN,
             "site": self._serialize_site(site),
         }
 
     def list_portal_sites(
         self,
         *,
-        member_ref: str,
+        site_admin_ref: str,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             items = []
-            for site, membership in repository.list_sites_for_member(member_ref=member_ref):
-                if not _portal_membership_has_allowed_role(membership):
-                    continue
+            for site, _identity, grant in repository.list_sites_for_site_admin(
+                site_admin_ref=site_admin_ref,
+                grant_statuses=[SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE],
+            ):
                 items.append(
                     {
-                        "member_ref": membership.member_ref,
-                        "identity_type": _resolve_identity_type(
-                            str(getattr(membership, "role", "") or "")
-                        ),
-                        "allowed_actions": _resolve_portal_allowed_actions(
-                            str(getattr(membership, "role", "") or "")
-                        ),
-                        "role": _normalize_customer_membership_role(
-                            str(getattr(membership, "role", "") or "")
-                        ),
+                        "site_admin_ref": site_admin_ref,
+                        "identity_type": IDENTITY_TYPE_SITE_ADMIN,
+                        "allowed_actions": resolve_site_admin_allowed_actions(),
+                        "role": SITE_ADMIN_ROLE_SITE_ADMIN,
+                        "grant_status": grant.status,
                         "site": self._serialize_site(site),
                     }
                 )
             return {
-                "member_ref": member_ref,
+                "site_admin_ref": site_admin_ref,
                 "items": items,
             }
 
@@ -907,10 +905,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             )
             site_ids = [site.site_id for site in sites]
             account_ids = [site.account_id for site in sites if site.account_id]
-            membership_counts = repository.count_account_memberships_by_account(
-                account_ids=account_ids,
-                status=ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-            )
             key_counts = repository.count_site_keys_by_site(
                 site_ids=site_ids,
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
@@ -937,7 +931,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             items.append(
                 {
                     "site": self._serialize_site(site),
-                    "member_count": membership_counts.get(site.account_id or "", 0),
                     "active_key_count": key_counts.get(site.site_id, 0),
                     "coverage": service._build_subscription_coverage_summary(
                         subscription,
@@ -981,11 +974,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     f"site '{site_id}' was not found",
                 )
             account = repository.get_account(site.account_id) if site.account_id else None
-            memberships = (
-                repository.list_account_memberships(account_id=site.account_id, limit=None)
-                if site.account_id
-                else []
-            )
             keys = repository.list_site_keys(site_id)
             subscription = repository.get_latest_account_subscription(site.account_id or "")
             snapshot = repository.get_active_entitlement_snapshot(
@@ -1006,9 +994,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         return {
             "site": self._serialize_site(site),
             "account": service._serialize_account(account) if account is not None else None,
-            "memberships": [
-                service._serialize_account_membership(membership) for membership in memberships
-            ],
             "site_keys": [self._serialize_site_key(item) for item in keys],
             "subscription": (
                 service._serialize_subscription(subscription) if subscription is not None else None

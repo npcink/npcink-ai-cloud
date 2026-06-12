@@ -36,7 +36,7 @@ from app.core.security import (
 from app.core.services import CloudServices
 
 INTERNAL_TOKEN_HEADER = "X-Magick-Internal-Token"
-PORTAL_MEMBER_REF_HEADER = "X-Magick-Portal-Member-Ref"
+PORTAL_SITE_ADMIN_REF_HEADER = "X-Magick-Portal-Site-Admin-Ref"
 AUTHORIZATION_HEADER = "Authorization"
 PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL = "portal_login_code_email"
 PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT = "portal_login_code_client"
@@ -47,7 +47,7 @@ PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_CLIENT_WINDOW = 10
 
 @dataclass(slots=True)
 class PortalAuthContext:
-    member_ref: str
+    site_admin_ref: str
 
 
 class PortalBearerTokenError(ValueError):
@@ -125,7 +125,7 @@ def _build_auth_error_response(
 def build_portal_session_token(
     settings: Settings,
     *,
-    member_ref: str,
+    site_admin_ref: str,
     expires_at: datetime | None = None,
 ) -> str:
     now = datetime.now(UTC)
@@ -133,7 +133,7 @@ def build_portal_session_token(
         now + timedelta(seconds=resolve_portal_session_ttl_seconds(settings))
     )
     payload: dict[str, Any] = {
-        "sub": member_ref,
+        "sub": site_admin_ref,
         "purpose": "portal_session",
         "iat": int(now.timestamp()),
         "exp": int(resolved_expires_at.timestamp()),
@@ -243,14 +243,14 @@ def decode_portal_session_cookie_claims(settings: Settings, token: str) -> dict[
 def decode_portal_bearer_token(settings: Settings, token: str) -> str:
     payload = decode_portal_bearer_claims(settings, token)
 
-    member_ref = str(payload.get("sub") or payload.get("member_ref") or "").strip()
-    if not member_ref:
+    site_admin_ref = str(payload.get("sub") or "").strip()
+    if not site_admin_ref:
         raise PortalBearerTokenError(
             401,
-            "auth.portal_member_ref_required",
-            "missing portal member ref",
+            "auth.site_admin_ref_required",
+            "missing portal site admin ref",
         )
-    return member_ref
+    return site_admin_ref
 
 
 def enforce_portal_login_code_request_rate_limit(
@@ -557,7 +557,7 @@ def _authorize_portal_bearer_jwt_request(
         )
 
     try:
-        member_ref = decode_portal_bearer_token(services.settings, token)
+        site_admin_ref = decode_portal_bearer_token(services.settings, token)
     except PortalBearerTokenError as error:
         return _build_auth_error_response(
             request,
@@ -565,4 +565,4 @@ def _authorize_portal_bearer_jwt_request(
             error_code=error.error_code,
             message=error.message,
         )
-    return PortalAuthContext(member_ref=member_ref)
+    return PortalAuthContext(site_admin_ref=site_admin_ref)

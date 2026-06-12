@@ -8,23 +8,27 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.models import (
-    ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
     PORTAL_LOGIN_CODE_STATUS_PENDING,
+    SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE,
+    SITE_ADMIN_STATUS_ACTIVE,
     Account,
     AccountEntitlementSnapshot,
-    AccountMembership,
     AccountSubscription,
     BillingSnapshot,
     CommercialDecisionEvent,
+    PaymentEvent,
+    PaymentOrder,
+    PaymentRefund,
     Plan,
     PlanVersion,
     PlatformAdminIdentity,
     PortalLoginCode,
-    PortalMemberIdentity,
     ProviderCallRecord,
     RunRecord,
     ServiceAuditEvent,
     Site,
+    SiteAdminIdentity,
+    SiteAdminSiteGrant,
     SiteApiKey,
     UsageMeterEvent,
 )
@@ -82,188 +86,12 @@ class CommercialRepository:
         self.session.flush()
         return account
 
-    def upsert_account_membership(
-        self,
-        *,
-        account_id: str,
-        member_ref: str,
-        role: str,
-        status: str = ACCOUNT_MEMBERSHIP_STATUS_ACTIVE,
-        metadata_json: dict[str, object] | None = None,
-    ) -> AccountMembership:
-        membership = self.session.scalar(
-            select(AccountMembership).where(
-                AccountMembership.account_id == account_id,
-                AccountMembership.member_ref == member_ref,
-            )
-        )
-        if membership is None:
-            membership = AccountMembership(
-                account_id=account_id,
-                member_ref=member_ref,
-                role=role,
-                status=status,
-                metadata_json=metadata_json,
-            )
-            self.session.add(membership)
-        else:
-            membership.role = role
-            membership.status = status
-            membership.metadata_json = metadata_json
-        self.session.flush()
-        return membership
-
-    def get_account_membership(
-        self,
-        *,
-        account_id: str,
-        member_ref: str,
-    ) -> AccountMembership | None:
-        return self.session.scalar(
-            select(AccountMembership).where(
-                AccountMembership.account_id == account_id,
-                AccountMembership.member_ref == member_ref,
-            )
-        )
-
-    def list_account_memberships(
-        self,
-        *,
-        account_id: str | None = None,
-        account_ids: list[str] | None = None,
-        status: str | None = None,
-        statuses: list[str] | None = None,
-        member_ref: str | None = None,
-        limit: int | None = None,
-    ) -> list[AccountMembership]:
-        statement = select(AccountMembership)
-        if account_id:
-            statement = statement.where(AccountMembership.account_id == account_id)
-        if account_ids is not None:
-            if not account_ids:
-                return []
-            statement = statement.where(AccountMembership.account_id.in_(account_ids))
-        if status:
-            statement = statement.where(AccountMembership.status == status)
-        if statuses is not None:
-            if not statuses:
-                return []
-            statement = statement.where(AccountMembership.status.in_(statuses))
-        if member_ref:
-            statement = statement.where(AccountMembership.member_ref == member_ref)
-        statement = statement.order_by(
-            AccountMembership.created_at.desc(),
-            AccountMembership.id.desc(),
-        )
-        if limit is not None and limit > 0:
-            statement = statement.limit(limit)
-        return list(self.session.scalars(statement))
-
-    def count_account_memberships_by_account(
-        self,
-        *,
-        account_ids: list[str] | None = None,
-        status: str | None = None,
-    ) -> dict[str, int]:
-        statement = select(
-            AccountMembership.account_id,
-            func.count(AccountMembership.id),
-        ).group_by(AccountMembership.account_id)
-        if account_ids is not None:
-            if not account_ids:
-                return {}
-            statement = statement.where(AccountMembership.account_id.in_(account_ids))
-        if status:
-            statement = statement.where(AccountMembership.status == status)
-        return {
-            str(account_id or ""): int(count or 0)
-            for account_id, count in self.session.execute(statement)
-        }
-
-    def get_portal_member_identity(
-        self,
-        *,
-        provider: str,
-        external_subject: str,
-    ) -> PortalMemberIdentity | None:
-        return self.session.scalar(
-            select(PortalMemberIdentity).where(
-                PortalMemberIdentity.provider == provider,
-                PortalMemberIdentity.external_subject == external_subject,
-            )
-        )
-
-    def get_portal_member_identity_by_email(
-        self,
-        *,
-        provider: str,
-        email: str,
-    ) -> PortalMemberIdentity | None:
-        return self.session.scalar(
-            select(PortalMemberIdentity).where(
-                PortalMemberIdentity.provider == provider,
-                func.lower(PortalMemberIdentity.email) == email.lower(),
-            )
-        )
-
-    def get_portal_member_identity_by_member_ref(
-        self,
-        *,
-        member_ref: str,
-    ) -> PortalMemberIdentity | None:
-        return self.session.scalar(
-            select(PortalMemberIdentity).where(
-                PortalMemberIdentity.member_ref == member_ref,
-            )
-        )
-
-    def upsert_portal_member_identity(
-        self,
-        *,
-        identity_id: str,
-        provider: str,
-        external_subject: str,
-        email: str | None,
-        member_ref: str,
-        status: str,
-        metadata_json: dict[str, object] | None = None,
-    ) -> PortalMemberIdentity:
-        identity = self.get_portal_member_identity(
-            provider=provider,
-            external_subject=external_subject,
-        )
-        if identity is None and email:
-            identity = self.get_portal_member_identity_by_email(
-                provider=provider,
-                email=email,
-            )
-        if identity is None:
-            identity = PortalMemberIdentity(
-                identity_id=identity_id,
-                provider=provider,
-                external_subject=external_subject,
-                email=email,
-                member_ref=member_ref,
-                status=status,
-                metadata_json=metadata_json,
-            )
-            self.session.add(identity)
-        else:
-            identity.provider = provider
-            identity.external_subject = external_subject
-            identity.email = email
-            identity.member_ref = member_ref
-            identity.status = status
-            identity.metadata_json = metadata_json
-        self.session.flush()
-        return identity
-
     def create_portal_login_code(
         self,
         *,
         code_id: str,
         email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code_hash: str,
         expires_at: datetime,
         metadata_json: dict[str, object] | None = None,
@@ -271,7 +99,7 @@ class CommercialRepository:
         code = PortalLoginCode(
             code_id=code_id,
             email=email,
-            member_ref=member_ref,
+            site_admin_ref=site_admin_ref,
             code_hash=code_hash,
             status=PORTAL_LOGIN_CODE_STATUS_PENDING,
             expires_at=expires_at,
@@ -287,7 +115,7 @@ class CommercialRepository:
         self,
         *,
         email: str | None = None,
-        member_ref: str | None = None,
+        site_admin_ref: str | None = None,
         status: str | None = None,
         active_only: bool = False,
         now: datetime | None = None,
@@ -296,8 +124,8 @@ class CommercialRepository:
         statement = select(PortalLoginCode)
         if email:
             statement = statement.where(func.lower(PortalLoginCode.email) == email.lower())
-        if member_ref:
-            statement = statement.where(PortalLoginCode.member_ref == member_ref)
+        if site_admin_ref:
+            statement = statement.where(PortalLoginCode.site_admin_ref == site_admin_ref)
         if status:
             statement = statement.where(PortalLoginCode.status == status)
         if active_only:
@@ -313,6 +141,138 @@ class CommercialRepository:
         if limit is not None and limit > 0:
             statement = statement.limit(limit)
         return list(self.session.scalars(statement))
+
+    def get_site_admin_identity_by_email(self, *, email: str) -> SiteAdminIdentity | None:
+        return self.session.scalar(
+            select(SiteAdminIdentity).where(func.lower(SiteAdminIdentity.email) == email.lower())
+        )
+
+    def get_site_admin_identity_by_ref(
+        self,
+        *,
+        site_admin_ref: str,
+    ) -> SiteAdminIdentity | None:
+        return self.session.scalar(
+            select(SiteAdminIdentity).where(SiteAdminIdentity.site_admin_ref == site_admin_ref)
+        )
+
+    def count_site_admin_identities(self, *, status: str | None = None) -> int:
+        statement = select(func.count(SiteAdminIdentity.site_admin_id))
+        if status:
+            statement = statement.where(SiteAdminIdentity.status == status)
+        return int(self.session.scalar(statement) or 0)
+
+    def upsert_site_admin_identity(
+        self,
+        *,
+        site_admin_id: str,
+        site_admin_ref: str,
+        email: str,
+        status: str = SITE_ADMIN_STATUS_ACTIVE,
+        metadata_json: dict[str, object] | None = None,
+        last_login_at: datetime | None = None,
+    ) -> SiteAdminIdentity:
+        identity = self.get_site_admin_identity_by_ref(site_admin_ref=site_admin_ref)
+        if identity is None:
+            identity = self.get_site_admin_identity_by_email(email=email)
+        if identity is None:
+            identity = SiteAdminIdentity(
+                site_admin_id=site_admin_id,
+                site_admin_ref=site_admin_ref,
+                email=email,
+                status=status,
+                metadata_json=metadata_json,
+                last_login_at=last_login_at,
+            )
+            self.session.add(identity)
+        else:
+            identity.site_admin_ref = site_admin_ref
+            identity.email = email
+            identity.status = status
+            identity.metadata_json = metadata_json
+            if last_login_at is not None:
+                identity.last_login_at = last_login_at
+        self.session.flush()
+        return identity
+
+    def upsert_site_admin_site_grant(
+        self,
+        *,
+        grant_id: str,
+        site_admin_id: str,
+        site_id: str,
+        status: str = SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE,
+        metadata_json: dict[str, object] | None = None,
+    ) -> SiteAdminSiteGrant:
+        grant = self.session.scalar(
+            select(SiteAdminSiteGrant).where(
+                SiteAdminSiteGrant.site_admin_id == site_admin_id,
+                SiteAdminSiteGrant.site_id == site_id,
+            )
+        )
+        if grant is None:
+            grant = SiteAdminSiteGrant(
+                grant_id=grant_id,
+                site_admin_id=site_admin_id,
+                site_id=site_id,
+                status=status,
+                metadata_json=metadata_json,
+            )
+            self.session.add(grant)
+        else:
+            grant.status = status
+            grant.metadata_json = metadata_json
+        self.session.flush()
+        return grant
+
+    def get_site_admin_site_grant(
+        self,
+        *,
+        site_admin_ref: str,
+        site_id: str,
+    ) -> tuple[SiteAdminIdentity, SiteAdminSiteGrant] | None:
+        row = self.session.execute(
+            select(SiteAdminIdentity, SiteAdminSiteGrant)
+            .join(
+                SiteAdminSiteGrant,
+                SiteAdminSiteGrant.site_admin_id == SiteAdminIdentity.site_admin_id,
+            )
+            .where(
+                SiteAdminIdentity.site_admin_ref == site_admin_ref,
+                SiteAdminSiteGrant.site_id == site_id,
+            )
+        ).first()
+        if row is None:
+            return None
+        return row[0], row[1]
+
+    def list_sites_for_site_admin(
+        self,
+        *,
+        site_admin_ref: str,
+        grant_statuses: list[str] | None = None,
+    ) -> list[tuple[Site, SiteAdminIdentity, SiteAdminSiteGrant]]:
+        statuses = grant_statuses or [SITE_ADMIN_SITE_GRANT_STATUS_ACTIVE]
+        statement = (
+            select(Site, SiteAdminIdentity, SiteAdminSiteGrant)
+            .join(SiteAdminSiteGrant, SiteAdminSiteGrant.site_id == Site.site_id)
+            .join(
+                SiteAdminIdentity,
+                SiteAdminIdentity.site_admin_id == SiteAdminSiteGrant.site_admin_id,
+            )
+            .join(Account, Account.account_id == Site.account_id)
+            .where(
+                SiteAdminIdentity.site_admin_ref == site_admin_ref,
+                SiteAdminIdentity.status == SITE_ADMIN_STATUS_ACTIVE,
+                SiteAdminSiteGrant.status.in_(statuses),
+                Account.status == "active",
+            )
+            .order_by(Site.created_at.desc(), Site.site_id.asc())
+        )
+        return [
+            (site, identity, grant)
+            for site, identity, grant in self.session.execute(statement).all()
+        ]
 
     def get_platform_admin_identity(
         self,
@@ -469,26 +429,6 @@ class CommercialRepository:
             for account_id, count in self.session.execute(statement)
             if account_id
         }
-
-    def list_sites_for_member(
-        self,
-        *,
-        member_ref: str,
-        membership_statuses: list[str] | None = None,
-    ) -> list[tuple[Site, AccountMembership]]:
-        statuses = membership_statuses or [ACCOUNT_MEMBERSHIP_STATUS_ACTIVE]
-        statement = (
-            select(Site, AccountMembership)
-            .join(AccountMembership, AccountMembership.account_id == Site.account_id)
-            .join(Account, Account.account_id == Site.account_id)
-            .where(
-                AccountMembership.member_ref == member_ref,
-                AccountMembership.status.in_(statuses),
-                Account.status == "active",
-            )
-            .order_by(Site.created_at.desc(), Site.site_id.asc())
-        )
-        return [(site, membership) for site, membership in self.session.execute(statement).all()]
 
     def upsert_site(
         self,
@@ -892,12 +832,22 @@ class CommercialRepository:
                 return subscription
         return candidates[0] if candidates else None
 
-    def supersede_entitlement_snapshots(self, account_id: str) -> None:
+    def supersede_entitlement_snapshots(
+        self,
+        account_id: str,
+        *,
+        subscription_id: str | None = None,
+    ) -> None:
         snapshots = list(
             self.session.scalars(
                 select(AccountEntitlementSnapshot).where(
                     AccountEntitlementSnapshot.account_id == account_id,
                     AccountEntitlementSnapshot.status == "active",
+                    *(
+                        (AccountEntitlementSnapshot.subscription_id == subscription_id,)
+                        if subscription_id
+                        else ()
+                    ),
                 )
             )
         )
@@ -933,6 +883,165 @@ class CommercialRepository:
         self.session.add(snapshot)
         self.session.flush()
         return snapshot
+
+    def get_payment_order(self, order_id: str) -> PaymentOrder | None:
+        return self.session.get(PaymentOrder, order_id)
+
+    def get_payment_order_by_idempotency_key(self, idempotency_key: str) -> PaymentOrder | None:
+        if not idempotency_key:
+            return None
+        return self.session.scalar(
+            select(PaymentOrder).where(PaymentOrder.idempotency_key == idempotency_key)
+        )
+
+    def create_payment_order(
+        self,
+        *,
+        order_id: str,
+        account_id: str,
+        site_id: str | None,
+        subscription_id: str | None,
+        plan_id: str,
+        plan_version_id: str,
+        provider: str,
+        external_order_no: str,
+        status: str,
+        amount: float,
+        currency: str,
+        subject: str,
+        checkout_url: str | None,
+        refund_window_end_at: datetime | None,
+        idempotency_key: str | None,
+        metadata_json: dict[str, object] | None,
+    ) -> PaymentOrder:
+        order = PaymentOrder(
+            order_id=order_id,
+            account_id=account_id,
+            site_id=site_id,
+            subscription_id=subscription_id,
+            plan_id=plan_id,
+            plan_version_id=plan_version_id,
+            provider=provider,
+            external_order_no=external_order_no,
+            status=status,
+            amount=amount,
+            currency=currency,
+            subject=subject,
+            checkout_url=checkout_url,
+            refund_window_end_at=refund_window_end_at,
+            idempotency_key=idempotency_key,
+            metadata_json=metadata_json,
+        )
+        self.session.add(order)
+        self.session.flush()
+        return order
+
+    def get_payment_refund(self, refund_id: str) -> PaymentRefund | None:
+        return self.session.get(PaymentRefund, refund_id)
+
+    def get_payment_refund_by_idempotency_key(self, idempotency_key: str) -> PaymentRefund | None:
+        if not idempotency_key:
+            return None
+        return self.session.scalar(
+            select(PaymentRefund).where(PaymentRefund.idempotency_key == idempotency_key)
+        )
+
+    def list_payment_refunds(self, order_id: str) -> list[PaymentRefund]:
+        return list(
+            self.session.scalars(
+                select(PaymentRefund)
+                .where(PaymentRefund.order_id == order_id)
+                .order_by(PaymentRefund.created_at.desc(), PaymentRefund.refund_id.desc())
+            )
+        )
+
+    def create_payment_refund(
+        self,
+        *,
+        refund_id: str,
+        order_id: str,
+        account_id: str,
+        subscription_id: str | None,
+        provider: str,
+        external_refund_no: str,
+        status: str,
+        amount: float,
+        currency: str,
+        reason: str | None,
+        requested_at: datetime,
+        idempotency_key: str | None,
+        metadata_json: dict[str, object] | None,
+    ) -> PaymentRefund:
+        refund = PaymentRefund(
+            refund_id=refund_id,
+            order_id=order_id,
+            account_id=account_id,
+            subscription_id=subscription_id,
+            provider=provider,
+            external_refund_no=external_refund_no,
+            status=status,
+            amount=amount,
+            currency=currency,
+            reason=reason,
+            requested_at=requested_at,
+            idempotency_key=idempotency_key,
+            metadata_json=metadata_json,
+        )
+        self.session.add(refund)
+        self.session.flush()
+        return refund
+
+    def get_payment_event_by_idempotency_key(self, idempotency_key: str) -> PaymentEvent | None:
+        if not idempotency_key:
+            return None
+        return self.session.scalar(
+            select(PaymentEvent).where(PaymentEvent.idempotency_key == idempotency_key)
+        )
+
+    def get_payment_event_by_provider_event(
+        self,
+        *,
+        provider: str,
+        provider_event_id: str,
+    ) -> PaymentEvent | None:
+        if not provider_event_id:
+            return None
+        return self.session.scalar(
+            select(PaymentEvent).where(
+                PaymentEvent.provider == provider,
+                PaymentEvent.provider_event_id == provider_event_id,
+            )
+        )
+
+    def create_payment_event(
+        self,
+        *,
+        event_id: str,
+        provider: str,
+        event_kind: str,
+        status: str,
+        order_id: str | None,
+        refund_id: str | None,
+        provider_event_id: str | None,
+        idempotency_key: str | None,
+        payload_json: dict[str, object] | None,
+        processed_at: datetime | None,
+    ) -> PaymentEvent:
+        event = PaymentEvent(
+            event_id=event_id,
+            provider=provider,
+            event_kind=event_kind,
+            status=status,
+            order_id=order_id,
+            refund_id=refund_id,
+            provider_event_id=provider_event_id,
+            idempotency_key=idempotency_key,
+            payload_json=payload_json,
+            processed_at=processed_at,
+        )
+        self.session.add(event)
+        self.session.flush()
+        return event
 
     def get_active_entitlement_snapshot(
         self,

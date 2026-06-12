@@ -18,7 +18,6 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
 import { localizeAdminCommercialCopy } from '@/lib/admin-commercial-copy';
-import { translateAdminRole } from '@/lib/admin-display';
 import { translateStatusLabel } from '@/lib/status-display';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatAdminCurrency } from '@/lib/currency';
@@ -34,7 +33,6 @@ interface SiteDetail {
   site_name: string;
   status: string;
   created_at: string;
-  member_count: number;
   key_count: number;
   subscription?: {
     subscription_id: string;
@@ -86,11 +84,6 @@ interface SiteDetail {
     in_sync?: boolean;
     delta_cost?: number;
   };
-  memberships?: Array<{
-    member_ref: string;
-    role: string;
-    status?: string;
-  }>;
   related_surfaces?: {
     account_href?: string;
     subscription_href?: string;
@@ -186,7 +179,6 @@ function SiteDetailContent() {
         const payload = data.data || {};
         const rawSite = payload.site || {};
         const rawAccount = payload.account || {};
-        const memberships = Array.isArray(payload.memberships) ? payload.memberships : [];
         const siteKeys = Array.isArray(payload.site_keys) ? payload.site_keys : [];
         const rawSubscription = payload.subscription || null;
         const commercialPolicy = payload.commercial_policy || {};
@@ -206,7 +198,6 @@ function SiteDetailContent() {
           site_name: String(rawSite.name || rawSite.site_id || siteId),
           status: String(rawSite.status || 'unknown'),
           created_at: String(rawSite.created_at || ''),
-          member_count: memberships.length,
           key_count: siteKeys.length,
           subscription: rawSubscription
             ? {
@@ -250,11 +241,6 @@ function SiteDetailContent() {
             in_sync: Boolean(billingReconciliation?.reconciliation?.in_sync),
             delta_cost: Number(billingReconciliation?.reconciliation?.deltas?.cost || 0),
           },
-          memberships: memberships.map((membership: { member_ref?: string; role?: string; status?: string }) => ({
-            member_ref: String(membership.member_ref || ''),
-            role: String(membership.role || ''),
-            status: membership.status || 'unknown',
-          })),
           related_surfaces:
             payload.related_surfaces && typeof payload.related_surfaces === 'object'
               ? payload.related_surfaces
@@ -386,7 +372,7 @@ function SiteDetailContent() {
           ? {
               href: `/admin/accounts/${site.account_id}`,
               label: t('admin.site_detail.review_account_access_action', undefined, 'Review account access'),
-              description: t('admin.site_detail.review_account_access_desc', undefined, 'Use the account surface to confirm memberships, support access, and site access before rotating keys.'),
+              description: t('admin.site_detail.review_account_access_desc', undefined, 'Use the account surface to confirm support posture and site access before rotating keys.'),
             }
           : {
               href: `/admin/accounts/${site.account_id}`,
@@ -512,7 +498,10 @@ function SiteDetailContent() {
             </div>
             <BackofficeMetricStrip
               items={[
-                { label: t('common.members'), value: formatInteger(site.member_count) },
+                {
+                  label: t('admin.account_detail.site_admin_workspace_metric', undefined, 'Site admin workspace'),
+                  value: t('common.enabled', undefined, 'Enabled'),
+                },
                 { label: t('common.keys'), value: formatInteger(site.key_count) },
                 {
                   label: t('admin.failed_runs'),
@@ -823,37 +812,37 @@ function SiteDetailContent() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <BackofficeSectionPanel className="overflow-hidden p-0">
+        <BackofficeSectionPanel>
           <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.site_membership_directory')}
+              {t('admin.site_admin_workspace_eyebrow', undefined, 'Site admin workspace')}
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{t('common.members')}</h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('admin.site_membership_directory_desc')}</p>
+            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+              {t('admin.site_admin_workspace_title', undefined, 'Workspace access')}
+            </h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {t(
+                'admin.site_admin_workspace_desc',
+                undefined,
+                'Site administrators use the Cloud site workspace for this site. Access is bound per site and audited through the service API.'
+              )}
+            </p>
           </div>
-          {!site.memberships || site.memberships.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-gray-600 dark:text-gray-400">
-              {t('common.members')} {t('common.not_found')}
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200 dark:divide-gray-800">
-              {site.memberships.map((member) => (
-                <article key={member.member_ref} className="grid gap-4 px-6 py-4 lg:grid-cols-[minmax(0,1fr)_0.4fr_0.4fr] lg:items-center">
-                  <div>
-                    <p className="font-mono text-sm font-semibold text-gray-950 dark:text-white">{member.member_ref}</p>
-                  </div>
-                  <div>
-                    <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                      {translateAdminRole(member.role, t)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {member.status ? translateStatusLabel(member.status, t) : translateStatusLabel('active', t)}
-                  </p>
-                </article>
-              ))}
-            </div>
-          )}
+          <div className="px-6 py-5">
+            <BackofficeMetricStrip
+              columnsClassName="md:grid-cols-2"
+              items={[
+                {
+                  label: t('admin.site_admin_access_scope', undefined, 'Access scope'),
+                  value: t('admin.site_admin_access_scope_site', undefined, 'This site'),
+                },
+                {
+                  label: t('common.status'),
+                  value: t('common.enabled', undefined, 'Enabled'),
+                },
+              ]}
+            />
+          </div>
         </BackofficeSectionPanel>
       </div>
     </BackofficePageStack>

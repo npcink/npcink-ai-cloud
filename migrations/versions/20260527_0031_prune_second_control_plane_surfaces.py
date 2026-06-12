@@ -25,8 +25,6 @@ def _drop_table_if_exists(table_name: str) -> None:
 def upgrade() -> None:
     _drop_table_if_exists("orchestration_steps")
     _drop_table_if_exists("orchestration_runs")
-    _drop_table_if_exists("portal_action_requests")
-    _drop_table_if_exists("platform_impersonation_sessions")
     _drop_table_if_exists("operator_managed_topup_pack_overlays")
 
 

@@ -2,13 +2,13 @@
 
 Status: active internal runbook
 Date: 2026-06-11
-Scope: platform administrator and user onboarding path before public release
+Scope: platform administrator and site administrator onboarding path before public release
 
 ## Purpose
 
 This runbook proves the narrow internal alpha onboarding path:
 
-`platform_admin -> account/package/subscription -> user invite -> Portal login -> site bind -> Cloud API key -> signed runtime call -> usage and audit evidence`
+`platform_admin -> account/package/subscription -> site_admin_access -> Portal login -> site bind -> Cloud API key -> signed runtime call -> usage and audit evidence`
 
 It is not a GA checklist, a payment flow, a customer storefront, or a Cloud-side
 WordPress control plane.
@@ -17,7 +17,7 @@ WordPress control plane.
 
 - `platform_admin`: manages Cloud platform data, customer accounts, packages,
   subscriptions, diagnostics, audit, and trial readiness.
-- `user`: logs in to Portal, binds their own site, manages site keys, and views
+- `site_admin`: logs in to Portal, binds their own site, manages site keys, and views
   usage, billing, and audit for their account/site scope.
 
 ## Fast Contract Smoke
@@ -32,9 +32,9 @@ This is a fast API-level smoke. It creates an isolated temporary database and
 verifies:
 
 - platform admin account, Pro package coverage, and subscription setup;
-- invited user email-code login through `/portal/v1/auth/code/*`;
-- user-created Portal site through `POST /portal/v1/sites`;
-- user-issued Cloud API key through `POST /portal/v1/sites/{site_id}/api-keys`;
+- site administrator email-code login through `/portal/v1/auth/code/*`;
+- site administrator-created Portal site through `POST /portal/v1/sites`;
+- site administrator-issued Cloud API key through `POST /portal/v1/sites/{site_id}/api-keys`;
 - one signed hosted runtime request through `/v1/runtime/execute`;
 - usage meter evidence for runs and provider calls;
 - Portal and Admin audit visibility for the onboarding actions;

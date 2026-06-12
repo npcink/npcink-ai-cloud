@@ -8,6 +8,8 @@ Date: 2026-05-27
 This specification freezes only the Cloud billing entitlement contract. It does
 not define checkout, invoices, dunning, self-serve payment, WordPress writes,
 router ownership, profile ownership, prompt ownership, or approval ownership.
+Payment order/refund event handling is separately scoped by
+`docs/cloud-payment-entitlement-v1.md`.
 
 Cloud may expose billing and entitlement detail for hosted service use. The
 local plugin remains the product control plane.

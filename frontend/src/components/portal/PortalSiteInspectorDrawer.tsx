@@ -116,7 +116,7 @@ export function PortalSiteInspectorDrawer({
     {
       label: t('common.account'),
       value: summary?.account_id || detailSite.account_id || t('common.not_found'),
-      detail: summary?.member_ref || t('common.not_found'),
+      detail: summary?.site_admin_ref || t('common.not_found'),
     },
     {
       label: t('portal.home.access_scope', {}, 'Access scope'),

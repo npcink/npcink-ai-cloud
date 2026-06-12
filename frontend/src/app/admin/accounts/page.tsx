@@ -32,7 +32,6 @@ interface Account {
   account_status_note: string;
   account_status_updated_at: string;
   status: string;
-  member_count: number;
   site_count: number;
   subscription_count: number;
   top_plan?: string;
@@ -50,7 +49,6 @@ interface AccountsApiItem {
     status?: string;
     metadata?: Record<string, unknown>;
   };
-  member_count?: number;
   site_count?: number;
   active_subscription_count?: number;
   top_plan_id?: string;
@@ -148,7 +146,6 @@ function normalizeAccount(
     account_status_note: accountStatusNote,
     account_status_updated_at: accountStatusUpdatedAt,
     status: account.status || 'inactive',
-    member_count: item.member_count || 0,
     site_count: item.site_count || 0,
     subscription_count: item.active_subscription_count || 0,
     top_plan: item.top_plan_id || '',
@@ -266,7 +263,6 @@ function AccountsContent() {
   const [filters, setFilters] = useState({
     q: searchParams.get('q') || '',
     status: searchParams.get('status') || '',
-    member_ref: searchParams.get('member_ref') || '',
     expires_before: searchParams.get('expires_before') || '',
     coverage_state: searchParams.get('coverage_state') || '',
     package_kind: searchParams.get('package_kind') || '',
@@ -291,7 +287,6 @@ function AccountsContent() {
       try {
         const params = new URLSearchParams();
         if (filters.status) params.set('status', filters.status);
-        if (filters.member_ref) params.set('member_ref', filters.member_ref);
         if (filters.expires_before) params.set('expires_before', filters.expires_before);
         if (filters.coverage_state) params.set('coverage_state', filters.coverage_state);
         if (filters.package_kind) params.set('package_kind', filters.package_kind);
@@ -328,7 +323,6 @@ function AccountsContent() {
     setFilters({
       status: '',
       q: '',
-      member_ref: '',
       expires_before: '',
       coverage_state: '',
       package_kind: '',
@@ -388,7 +382,6 @@ function AccountsContent() {
       setIsCreateOpen(false);
       const params = new URLSearchParams();
       if (filters.status) params.set('status', filters.status);
-      if (filters.member_ref) params.set('member_ref', filters.member_ref);
       if (filters.expires_before) params.set('expires_before', filters.expires_before);
       if (filters.coverage_state) params.set('coverage_state', filters.coverage_state);
       if (filters.package_kind) params.set('package_kind', filters.package_kind);
@@ -804,16 +797,6 @@ function AccountsContent() {
             </summary>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <label className="text-sm">
-                <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.member_ref')}</span>
-                <input
-                  type="text"
-                  value={filters.member_ref}
-                  onChange={(event) => handleFilterChange('member_ref', event.target.value)}
-                  placeholder={t('admin.member_ref')}
-                  className="input"
-                />
-              </label>
-              <label className="text-sm">
                 <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.expires_before')}</span>
                 <input
                   type="date"
@@ -846,7 +829,7 @@ function AccountsContent() {
                 <tr>
                   <th scope="col" className="w-[30%] px-6 py-3 font-semibold">{t('admin.accounts.user_column', {}, 'User')}</th>
                   <th scope="col" className="w-[20%] px-4 py-3 font-semibold">{t('common.package', {}, 'Package')}</th>
-                  <th scope="col" className="w-[15%] px-4 py-3 font-semibold">{t('admin.accounts.footprint_column', {}, 'Sites / members')}</th>
+                  <th scope="col" className="w-[15%] px-4 py-3 font-semibold">{t('admin.accounts.footprint_column', {}, 'Sites')}</th>
                   <th scope="col" className="w-[15%] px-4 py-3 font-semibold">{t('admin.nearest_expiry')}</th>
                   <th scope="col" className="w-[12%] px-4 py-3 font-semibold">{t('admin.next_step', {}, 'Next step')}</th>
                   <th scope="col" className="w-[8rem] px-6 py-3 text-right font-semibold">{t('common.actions', {}, 'Actions')}</th>
@@ -898,9 +881,8 @@ function AccountsContent() {
                         'admin.accounts.footprint_value',
                         {
                           sites: formatInteger(account.site_count),
-                          members: formatInteger(account.member_count),
                         },
-                        `${formatInteger(account.site_count)} sites · ${formatInteger(account.member_count)} members`
+                        `${formatInteger(account.site_count)} sites`
                       )}
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">

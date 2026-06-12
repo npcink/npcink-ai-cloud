@@ -38,41 +38,6 @@ def upgrade() -> None:
     op.create_index("ix_accounts_status", "accounts", ["status"])
 
     op.create_table(
-        "account_memberships",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column(
-            "account_id",
-            sa.String(length=191),
-            sa.ForeignKey("accounts.account_id"),
-            nullable=False,
-        ),
-        sa.Column("member_ref", sa.String(length=191), nullable=False),
-        sa.Column("role", sa.String(length=32), nullable=False, server_default="viewer"),
-        sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
-        sa.Column("metadata_json", sa.JSON(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
-        sa.UniqueConstraint(
-            "account_id",
-            "member_ref",
-            name="uq_account_memberships_account_member",
-        ),
-    )
-    op.create_index("ix_account_memberships_account_id", "account_memberships", ["account_id"])
-    op.create_index("ix_account_memberships_role", "account_memberships", ["role"])
-    op.create_index("ix_account_memberships_status", "account_memberships", ["status"])
-
-    op.create_table(
         "plans",
         sa.Column("plan_id", sa.String(length=191), primary_key=True),
         sa.Column("name", sa.String(length=191), nullable=False),
@@ -464,11 +429,6 @@ def downgrade() -> None:
 
     op.drop_index("ix_plans_status", table_name="plans")
     op.drop_table("plans")
-
-    op.drop_index("ix_account_memberships_status", table_name="account_memberships")
-    op.drop_index("ix_account_memberships_role", table_name="account_memberships")
-    op.drop_index("ix_account_memberships_account_id", table_name="account_memberships")
-    op.drop_table("account_memberships")
 
     op.drop_index("ix_accounts_status", table_name="accounts")
     op.drop_table("accounts")

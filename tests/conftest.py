@@ -278,7 +278,7 @@ def build_internal_headers(
 
 def build_portal_headers(
     *,
-    member_ref: str = "user:portal-admin@example.com",
+    site_admin_ref: str = "site_admin:portal-admin@example.com",
     secret: str = TEST_PORTAL_JWT_SECRET,
     issuer: str | None = None,
     audience: str | None = None,
@@ -287,7 +287,7 @@ def build_portal_headers(
     trace_id: str = "00112233445566778899aabbccddeeff",
 ) -> dict[str, str]:
     headers = build_portal_bearer_headers(
-        member_ref=member_ref,
+        site_admin_ref=site_admin_ref,
         secret=secret,
         issuer=issuer,
         audience=audience,
@@ -302,7 +302,7 @@ def build_portal_headers(
 
 def build_portal_bearer_headers(
     *,
-    member_ref: str = "user:portal-admin@example.com",
+    site_admin_ref: str = "site_admin:portal-admin@example.com",
     secret: str = TEST_PORTAL_JWT_SECRET,
     issuer: str | None = None,
     audience: str | None = None,
@@ -310,7 +310,7 @@ def build_portal_bearer_headers(
     idempotency_key: str = "",
     trace_id: str = "00112233445566778899aabbccddeeff",
 ) -> dict[str, str]:
-    payload: dict[str, object] = {"sub": member_ref}
+    payload: dict[str, object] = {"sub": site_admin_ref}
     if issuer:
         payload["iss"] = issuer
     if audience:

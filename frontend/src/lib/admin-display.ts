@@ -3,7 +3,7 @@ import { humanizeStatusToken, normalizeStatusToken, translateStatusLabel } from 
 type TranslateFn = (key: string, vars?: Record<string, string>, fallback?: string) => string;
 
 const ADMIN_AUDIT_EVENT_LABELS: Record<string, string> = {
-  'portal_member.invited': 'audit.kind.portal_member.invited',
+  'site_admin_access.upsert': 'audit.kind.site_admin_access.upsert',
   'portal_magic_link.requested': 'audit.kind.portal_login_code.requested',
   'portal_magic_link.consumed': 'audit.kind.portal_login_code.verified',
   'api_key.created': 'audit.kind.api_key.created',
@@ -14,11 +14,10 @@ const ADMIN_AUDIT_EVENT_LABELS: Record<string, string> = {
   'subscription.activated': 'audit.kind.subscription.activated',
   'subscription.updated': 'audit.kind.subscription.updated',
   'subscription.canceled': 'audit.kind.subscription.canceled',
-  'account_membership.upsert': 'audit.kind.account_membership.upsert',
 };
 
 const ADMIN_ROLE_LABELS: Record<string, string> = {
-  user: 'admin.external_role_user',
+  site_admin: 'admin.external_role_site_admin',
   platform_admin: 'admin.external_role_platform_admin',
 };
 
@@ -69,7 +68,7 @@ export function translateExternalCommercialRole(role: string, t: TranslateFn) {
   if (normalizedRole === 'platform_admin') {
     return t('admin.external_role_platform_admin', {}, 'Platform Admin');
   }
-  return t('admin.external_role_user', {}, 'User');
+  return t('admin.external_role_site_admin', {}, 'Site Admin');
 }
 
 export function translateAdminReasonCode(reasonCode: string, t: TranslateFn) {

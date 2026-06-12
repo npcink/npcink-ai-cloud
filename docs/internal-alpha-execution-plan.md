@@ -182,7 +182,7 @@ Done:
 - `callback-worker` is part of the local Docker Compose stack.
 - Deterministic pytest entrypoints clear OpenAI-compatible API key environment
   variables so local real-provider credentials do not leak into baseline tests.
-- Cloud site/key/member/subscription baseline is seeded for
+- Cloud site/key/site-admin/subscription baseline is seeded for
   `site_magick_ai_local`.
 - WordPress Cloud addon is saved and verified against the local Cloud base URL.
 - Portal dev-entry login works and shows the bound WordPress site.
@@ -230,8 +230,8 @@ Current onboarding contract:
 
 - `pnpm run smoke:internal-alpha-onboarding` verifies the fast Admin to Portal
   onboarding path in an isolated API test database.
-- The path covers `platform_admin` account/package/subscription setup, invited
-  `user` Portal login, user-created site binding, user-issued Cloud API key,
+- The path covers `platform_admin` account/package/subscription setup,
+  `site_admin` Portal login, site-admin-created site binding, site-admin-issued Cloud API key,
   one signed runtime request, usage meter evidence, Admin/Portal audit
   visibility, and `trial_readiness.status == ready`.
 - This is a contract smoke for the Cloud service boundary; it does not replace

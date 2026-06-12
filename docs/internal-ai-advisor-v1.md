@@ -177,7 +177,7 @@ Initial API:
 - `POST /portal/v1/sites/{site_id}/ai-insights/analyze`
 
 The Portal endpoints are customer-facing read/detail surfaces over the same
-advisor contract. They are not provider configuration endpoints. Portal users
+advisor contract. They are not provider configuration endpoints. Site administrators
 cannot pass `provider_id`, `model_id`, token budgets, prices, prompt templates,
 or cache keys. The service resolves an allowlisted provider internally and
 falls back to deterministic analysis when no provider is configured.
@@ -258,7 +258,7 @@ callback bodies, secrets, prompts, or WordPress content.
 `GET /internal/service/advisor/ops-summary-value` is an internal-only evaluation
 surface for deciding whether AI analysis is worth continued spend. It reads
 advisor audit events and cached summary disclosure state. It does not call a
-provider and does not expose data to Portal users.
+provider and does not expose data to site administrators.
 
 Allowed metrics:
 

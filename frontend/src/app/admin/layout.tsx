@@ -87,10 +87,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     if (href === '/admin/accounts' && pathname.startsWith('/admin/sites/')) {
       return true;
     }
-    if (href === '/admin/accounts' && pathname.startsWith('/admin/members')) {
-      return true;
-    }
-
     return (item.activePrefixes || [href]).some(isPathMatch);
   };
   const activePrimaryItem = primaryNavItems.find((item) => isActive(item)) ?? primaryNavItems[0];

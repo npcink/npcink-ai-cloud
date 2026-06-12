@@ -28,7 +28,7 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
 const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
-  'portal_member.invited': 'audit.kind.portal_member.invited',
+  'site_admin_access.upsert': 'audit.kind.site_admin_access.upsert',
   'portal_magic_link.requested': 'audit.kind.portal_login_code.requested',
   'portal_magic_link.consumed': 'audit.kind.portal_login_code.verified',
   'api_key.created': 'audit.kind.api_key.created',
@@ -402,7 +402,7 @@ export function PortalAuditClient() {
                       <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 text-xs text-gray-600 dark:border-slate-800 dark:bg-slate-950/45 dark:text-gray-300 md:grid-cols-2">
                         <AuditDetail label="Event ID" value={event.event_id} />
                         <AuditDetail label={t('common.created')} value={formatDate(event.created_at)} />
-                        <AuditDetail label={t('audit.actor', {}, 'Actor')} value={String(event.metadata?.actor_ref || event.metadata?.member_ref || event.metadata?.subject_ref || '—')} />
+                        <AuditDetail label={t('audit.actor', {}, 'Actor')} value={String(event.metadata?.actor_ref || event.metadata?.subject_ref || '—')} />
                         <AuditDetail label={t('audit.target', {}, 'Target')} value={String(event.metadata?.target_ref || event.metadata?.site_id || selectedSiteId || '—')} />
                         <AuditDetail label={t('audit.path', {}, 'Path')} value={String(event.metadata?.path || event.metadata?.request_path || '—')} />
                         <AuditDetail label={t('audit.trace_id', {}, 'Trace ID')} value={String(event.metadata?.trace_id || event.metadata?.request_id || '—')} />

@@ -91,7 +91,7 @@ class FakePortalEmailSender(PortalEmailSender):
         self,
         *,
         recipient_email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code: str,
         expires_in_seconds: int,
         project_name: str,
@@ -101,34 +101,13 @@ class FakePortalEmailSender(PortalEmailSender):
             {
                 "kind": "login_code",
                 "recipient_email": recipient_email,
-                "member_ref": member_ref,
+                "site_admin_ref": site_admin_ref,
                 "code": code,
                 "expires_in_seconds": expires_in_seconds,
                 "project_name": project_name,
                 "locale": locale,
             }
         )
-
-    def send_invite_notice(
-        self,
-        *,
-        recipient_email: str,
-        member_ref: str,
-        portal_url: str,
-        project_name: str,
-        locale: str = "zh-CN",
-    ) -> None:
-        self.messages.append(
-            {
-                "kind": "invite_notice",
-                "recipient_email": recipient_email,
-                "member_ref": member_ref,
-                "portal_url": portal_url,
-                "project_name": project_name,
-                "locale": locale,
-            }
-        )
-
 
 def _login_platform_admin(client: TestClient, *, admin_ref: str = "platform:founder") -> TestClient:
     response = client.post(
@@ -145,30 +124,25 @@ def _login_platform_admin(client: TestClient, *, admin_ref: str = "platform:foun
     return client
 
 
-def _seed_account_membership(
+def _seed_account(
     client: TestClient,
     *,
     account_id: str,
-    member_ref: str,
-    role: str = "user",
-    status: str = "active",
 ) -> None:
-    safe_member_ref = member_ref.replace(":", "_").replace("@", "_").replace(".", "_")
-    client.post(
+    response = client.post(
         "/internal/service/accounts",
         json={"account_id": account_id, "name": f"Account {account_id}"},
         headers=build_internal_headers(idempotency_key=f"{account_id}-account-seed"),
     )
+    assert response.status_code == 200, response.text
+
+
+def _grant_site_admin_access(client: TestClient, *, site_id: str, email: str) -> None:
+    safe_email = email.replace("@", "-").replace(".", "-")
     response = client.post(
-        f"/internal/service/accounts/{account_id}/memberships",
-        json={
-            "member_ref": member_ref,
-            "role": role,
-            "status": status,
-        },
-        headers=build_internal_headers(
-            idempotency_key=f"{account_id}-{safe_member_ref}-membership-seed"
-        ),
+        f"/internal/service/sites/{site_id}/site-admin-access",
+        json={"email": email},
+        headers=build_internal_headers(idempotency_key=f"{site_id}-{safe_email}-site-admin-access"),
     )
     assert response.status_code == 200, response.text
 
@@ -414,11 +388,9 @@ def test_web_portal_email_code_and_key_actions_with_jwt(tmp_path: Path) -> None:
         portal_email_sender=fake_sender,
     )
 
-    _seed_account_membership(
+    _seed_account(
         client,
         account_id="acct_web",
-        member_ref="user:web@example.com",
-        status="pending_invite",
     )
     client.post(
         "/internal/service/sites",
@@ -434,6 +406,7 @@ def test_web_portal_email_code_and_key_actions_with_jwt(tmp_path: Path) -> None:
         "/internal/service/sites/site_web/activate",
         headers=build_internal_headers(idempotency_key="web-site-activate-001"),
     )
+    _grant_site_admin_access(client, site_id="site_web", email="web@example.com")
 
     login_request_response = client.post(
         "/portal/v1/auth/code/request",
@@ -449,7 +422,7 @@ def test_web_portal_email_code_and_key_actions_with_jwt(tmp_path: Path) -> None:
         json={"email": "web@example.com", "code": str(fake_sender.messages[0]["code"])},
     )
     assert login_verify_response.status_code == 200
-    assert login_verify_response.json()["data"]["member_ref"] == "user:web@example.com"
+    assert login_verify_response.json()["data"]["site_admin_ref"] == "site_admin:web@example.com"
 
     issue_response = client.post(
         "/portal/v1/sites/site_web/api-keys",

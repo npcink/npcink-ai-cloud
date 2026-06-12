@@ -46,25 +46,13 @@ class FakePortalEmailSender(PortalEmailSender):
         self,
         *,
         recipient_email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code: str,
         expires_in_seconds: int,
         project_name: str,
         locale: str = "zh-CN",
     ) -> None:
         return None
-
-    def send_invite_notice(
-        self,
-        *,
-        recipient_email: str,
-        member_ref: str,
-        portal_url: str,
-        project_name: str,
-        locale: str = "zh-CN",
-    ) -> None:
-        return None
-
 
 def test_catalog_routes_return_seeded_models(tmp_path: Path) -> None:
     database_url = _sqlite_url(tmp_path)

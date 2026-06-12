@@ -138,7 +138,7 @@ function LoginFormContent() {
           description={t(
             'auth.sign_in_desc',
             undefined,
-            'Use your invited email address to receive a one-time verification code.'
+            'Use your approved site admin email address to receive a one-time verification code.'
           )}
           summary={(
             <div className="grid gap-4 lg:grid-cols-2">
@@ -158,7 +158,7 @@ function LoginFormContent() {
                   {t(
                     'auth.email_verification_desc',
                     undefined,
-                    'Platform admins invite users first. Only invited email addresses can request a verification code.'
+                    'Platform admins approve site admin access first. Only approved email addresses can request a verification code.'
                   )}
                 </p>
               </BackofficeStackCard>
@@ -173,7 +173,7 @@ function LoginFormContent() {
               {t(
                 'portal.login.notice',
                 undefined,
-                'Enter your invited email address, receive a verification code, then continue into the portal workspace.'
+                'Enter your approved site admin email address, receive a verification code, then continue into the portal workspace.'
               )}
             </p>
           </BackofficeStackCard>
@@ -190,7 +190,7 @@ function LoginFormContent() {
             form.step === 'request' ? 'auth.request_code_desc' : 'auth.verify_code_desc',
             undefined,
             form.step === 'request'
-              ? 'We will send a short-lived code to your invited email address.'
+              ? 'We will send a short-lived code to your approved site admin email address.'
               : 'Enter the code you received to create your portal session.'
           )}
         />
@@ -292,7 +292,7 @@ function LoginFormContent() {
               {t(
                 'auth.no_password',
                 undefined,
-                'Portal sign-in is invite-only and passwordless. Platform admins add the email first, then you verify it with a one-time code.'
+                'Portal sign-in is passwordless. Platform admins approve site admin access first, then you verify with a one-time code.'
               )}
             </p>
           </div>

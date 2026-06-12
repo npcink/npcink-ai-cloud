@@ -71,7 +71,7 @@ class SmtpPortalEmailSender(PortalEmailSender):
         self,
         *,
         recipient_email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code: str,
         expires_in_seconds: int,
         project_name: str,
@@ -88,7 +88,7 @@ class SmtpPortalEmailSender(PortalEmailSender):
         message.set_content(
             self._build_login_code_text_body(
                 recipient_email=recipient_email,
-                member_ref=member_ref,
+                site_admin_ref=site_admin_ref,
                 code=code,
                 expires_in_seconds=expires_in_seconds,
                 project_name=project_name,
@@ -101,38 +101,6 @@ class SmtpPortalEmailSender(PortalEmailSender):
         except Exception as error:
             raise PortalEmailDeliveryError(
                 f"failed to deliver portal login code to '{recipient_email}': {error}"
-            ) from error
-
-    def send_invite_notice(
-        self,
-        *,
-        recipient_email: str,
-        member_ref: str,
-        portal_url: str,
-        project_name: str,
-        locale: str = "zh-CN",
-    ) -> None:
-        message = EmailMessage()
-        message["Subject"] = self._build_invite_subject(project_name=project_name, locale=locale)
-        message["From"] = self._format_from_header()
-        message["To"] = recipient_email
-        if self.reply_to:
-            message["Reply-To"] = self.reply_to
-        message.set_content(
-            self._build_invite_text_body(
-                recipient_email=recipient_email,
-                member_ref=member_ref,
-                portal_url=portal_url,
-                project_name=project_name,
-                locale=locale,
-            )
-        )
-
-        try:
-            self._deliver(message)
-        except Exception as error:
-            raise PortalEmailDeliveryError(
-                f"failed to deliver portal invite email to '{recipient_email}': {error}"
             ) from error
 
     def _deliver(self, message: EmailMessage) -> None:
@@ -169,7 +137,7 @@ class SmtpPortalEmailSender(PortalEmailSender):
         self,
         *,
         recipient_email: str,
-        member_ref: str,
+        site_admin_ref: str,
         code: str,
         expires_in_seconds: int,
         project_name: str,
@@ -223,60 +191,6 @@ class SmtpPortalEmailSender(PortalEmailSender):
         if normalized_locale == "zh-TW":
             return f"{project_name} 登入驗證碼"
         return f"{project_name} portal sign-in code"
-
-    def _build_invite_text_body(
-        self,
-        *,
-        recipient_email: str,
-        member_ref: str,
-        portal_url: str,
-        project_name: str,
-        locale: str,
-    ) -> str:
-        normalized_locale = self._normalize_locale(locale)
-        if normalized_locale == "zh-CN":
-            return "\n".join(
-                [
-                    f"{project_name} Portal 邀请",
-                    "",
-                    f"邮箱：{recipient_email}",
-                    "",
-                    "你已被添加为站点管理员。",
-                    "请打开下面的 Portal 登录页，并使用邮箱验证码登录：",
-                    portal_url,
-                ]
-            )
-        if normalized_locale == "zh-TW":
-            return "\n".join(
-                [
-                    f"{project_name} Portal 邀請",
-                    "",
-                    f"電子郵件：{recipient_email}",
-                    "",
-                    "你已被加入為網站管理員。",
-                    "請打開下方 Portal 登入頁，並使用電子郵件驗證碼登入：",
-                    portal_url,
-                ]
-            )
-        return "\n".join(
-            [
-                f"{project_name} portal invitation",
-                "",
-                f"Email: {recipient_email}",
-                "",
-                "You have been invited as a site administrator.",
-                "Open the portal login page below and sign in with your email verification code:",
-                portal_url,
-            ]
-        )
-
-    def _build_invite_subject(self, *, project_name: str, locale: str) -> str:
-        normalized_locale = self._normalize_locale(locale)
-        if normalized_locale == "zh-CN":
-            return f"{project_name} Portal 邀请"
-        if normalized_locale == "zh-TW":
-            return f"{project_name} Portal 邀請"
-        return f"{project_name} portal invitation"
 
     def _normalize_locale(self, locale: str) -> str:
         value = (locale or "").strip().lower()
