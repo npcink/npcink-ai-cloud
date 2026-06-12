@@ -1335,7 +1335,9 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "runs": round(
                 sum(
                     self._coerce_float(
-                        (self._sanitize_payload_dict(item.get("increments")) or {}).get("runs")
+                        item.get("increments", {}).get("runs")
+                        if isinstance(item.get("increments"), dict)
+                        else 0.0
                     )
                     for item in topup_items
                     if isinstance(item, dict)
@@ -1347,7 +1349,9 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "tokens": round(
                 sum(
                     self._coerce_float(
-                        (self._sanitize_payload_dict(item.get("increments")) or {}).get("tokens")
+                        item.get("increments", {}).get("tokens")
+                        if isinstance(item.get("increments"), dict)
+                        else 0.0
                     )
                     for item in topup_items
                     if isinstance(item, dict)
@@ -1359,7 +1363,9 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "cost": round(
                 sum(
                     self._coerce_float(
-                        (self._sanitize_payload_dict(item.get("increments")) or {}).get("cost")
+                        item.get("increments", {}).get("cost")
+                        if isinstance(item.get("increments"), dict)
+                        else 0.0
                     )
                     for item in topup_items
                     if isinstance(item, dict)

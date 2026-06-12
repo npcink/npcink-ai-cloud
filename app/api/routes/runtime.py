@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from app.adapters.providers.registry import resolve_execution_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
-from app.core.security import RequestAuthContext
+from app.core.security import PUBLIC_RUNTIME_MAX_BODY_BYTES, RequestAuthContext
 from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_generation.contracts import (
     IMAGE_GENERATION_ABILITIES,
@@ -63,7 +63,9 @@ router = APIRouter(prefix="/v1/runtime", tags=["runtime"])
 MAX_RUNTIME_JSON_DEPTH = 8
 MAX_RUNTIME_DICT_KEYS = 100
 MAX_RUNTIME_LIST_ITEMS = 200
-MAX_RUNTIME_STRING_CHARS = 50_000
+# Keep per-field shape validation above the total request limit so public
+# auth consistently owns 413 payload-size responses.
+MAX_RUNTIME_STRING_CHARS = PUBLIC_RUNTIME_MAX_BODY_BYTES * 2
 MAX_RUNTIME_DICT_KEY_CHARS = 191
 
 
@@ -108,7 +110,7 @@ class RuntimePayload(BaseModel):
     canonical_run_id: str | None = Field(default=None, max_length=191)
     skill_id: str | None = Field(default=None, max_length=191)
     workflow_id: str | None = Field(default=None, max_length=191)
-    contract_version: str = Field(default="v1", min_length=1, max_length=32)
+    contract_version: str = Field(default="v1", min_length=1, max_length=64)
     channel: str = Field(default="openapi", max_length=64)
     execution_kind: str = Field(default="", max_length=64)
     execution_tier: Literal["cloud"] = "cloud"

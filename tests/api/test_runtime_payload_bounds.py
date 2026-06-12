@@ -4,14 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.routes.runs import RuntimeRepairPayload
-from app.api.routes.runtime import RuntimePayload
+from app.api.routes.runtime import MAX_RUNTIME_STRING_CHARS, RuntimePayload
 
 
 def test_runtime_payload_rejects_oversized_input_string() -> None:
     with pytest.raises(ValidationError):
         RuntimePayload(
             ability_name="magick-ai/test",
-            input={"prompt": "x" * 50_001},
+            input={"prompt": "x" * (MAX_RUNTIME_STRING_CHARS + 1)},
         )
 
 
