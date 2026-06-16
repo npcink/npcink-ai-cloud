@@ -52,6 +52,7 @@ Operational references:
 - [docs/cloud-local-integration-and-rebuild-guidance.md](docs/cloud-local-integration-and-rebuild-guidance.md)
 - [docs/cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md)
 - [docs/cloud-bulk-article-run-v1.md](docs/cloud-bulk-article-run-v1.md)
+- [docs/nightly-site-inspection-morning-brief-v1.md](docs/nightly-site-inspection-morning-brief-v1.md)
 - [docs/cloud-agent-positioning-v1.md](docs/cloud-agent-positioning-v1.md)
 - [docs/cloud-agent-feedback-contract-v1.md](docs/cloud-agent-feedback-contract-v1.md)
 - [docs/internal-ai-advisor-v1.md](docs/internal-ai-advisor-v1.md)
@@ -513,7 +514,7 @@ Current posture:
 - customer-facing default remains standard `WP-Cron`
 - production recommendation is server cron calling `wp-cron.php`
 - this helper is only for deployments that intentionally disable automatic `WP-Cron`
-- it does not replace the local `Action Scheduler` substrate or create a second scheduler truth
+- it does not replace local schedule ownership or create a second scheduler truth
 
 Typical flow:
 
@@ -1004,7 +1005,7 @@ Queued whole-run offload behavior:
 
 - public runtime intake still only accepts `inline` and `whole_run_offload`
 - `step_offload` remains an internal local seam and is not a public Cloud ingress mode
-- WordPress local async ownership still stays on `Action Scheduler`; Cloud queue workers only own hosted runtime execution/detail
+- WordPress local schedule and batch-policy ownership stays local; Cloud queue workers only own hosted runtime execution/detail
 - `execution_pattern=whole_run_offload` plus `task_backend.enabled=true` returns a
   hosted queued `run_id` plus an explicit `canonical_run_id` backlink
 - `python -m app.workers.runtime_queue` is now the default worker command in both

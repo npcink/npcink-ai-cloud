@@ -12,6 +12,13 @@ from app.adapters.providers.registry import resolve_execution_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
 from app.core.security import PUBLIC_RUNTIME_MAX_BODY_BYTES, RequestAuthContext
+from app.domain.cloud_batch_runtime.contracts import (
+    CLOUD_BATCH_RUNTIME_ABILITIES,
+    CLOUD_BATCH_RUNTIME_ABILITY_FAMILY,
+    CLOUD_BATCH_RUNTIME_DATA_CLASSIFICATION,
+    CLOUD_BATCH_RUNTIME_EXECUTION_KIND,
+    CLOUD_BATCH_RUNTIME_PROFILE_ID,
+)
 from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_generation.contracts import (
     IMAGE_GENERATION_ABILITIES,
@@ -243,7 +250,13 @@ def _is_media_batch_plan_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in MEDIA_BATCH_PLAN_ABILITIES
 
 
+def _is_cloud_batch_runtime_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in CLOUD_BATCH_RUNTIME_ABILITIES
+
+
 def _resolve_ability_family(payload: RuntimePayload) -> str:
+    if _is_cloud_batch_runtime_payload(payload):
+        return CLOUD_BATCH_RUNTIME_ABILITY_FAMILY
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_ABILITY_FAMILY
     if _is_image_generation_payload(payload):
@@ -258,6 +271,8 @@ def _resolve_ability_family(payload: RuntimePayload) -> str:
 
 
 def _resolve_execution_kind(payload: RuntimePayload) -> str:
+    if _is_cloud_batch_runtime_payload(payload) and not payload.execution_kind:
+        return CLOUD_BATCH_RUNTIME_EXECUTION_KIND
     if _is_media_batch_plan_payload(payload) and not payload.execution_kind:
         return MEDIA_BATCH_PLAN_EXECUTION_KIND
     if _is_image_generation_payload(payload) and not payload.execution_kind:
@@ -272,6 +287,8 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
 
 
 def _resolve_profile_id(payload: RuntimePayload) -> str:
+    if _is_cloud_batch_runtime_payload(payload) and not payload.profile_id:
+        return CLOUD_BATCH_RUNTIME_PROFILE_ID
     if _is_media_batch_plan_payload(payload) and not payload.profile_id:
         return MEDIA_BATCH_PLAN_PROFILE_ID
     if _is_image_generation_payload(payload) and not payload.profile_id:
@@ -294,6 +311,8 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
 
 
 def _resolve_data_classification(payload: RuntimePayload) -> str:
+    if _is_cloud_batch_runtime_payload(payload):
+        return CLOUD_BATCH_RUNTIME_DATA_CLASSIFICATION
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_DATA_CLASSIFICATION
     if _is_image_generation_payload(payload):
@@ -309,6 +328,17 @@ def _resolve_data_classification(payload: RuntimePayload) -> str:
 
 def _resolve_task_backend(payload: RuntimePayload) -> dict[str, Any]:
     task_backend = payload.task_backend or {}
+    if (
+        _is_cloud_batch_runtime_payload(payload)
+        and payload.execution_pattern == "whole_run_offload"
+        and not task_backend
+    ):
+        return {
+            "enabled": True,
+            "mode": "queue",
+            "callback_mode": "polling_preferred",
+            "polling_interval_sec": 10,
+        }
     if (
         payload.ability_name == SITE_KNOWLEDGE_SYNC_ABILITY
         and payload.execution_pattern == "whole_run_offload"
