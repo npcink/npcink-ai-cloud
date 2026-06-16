@@ -51,6 +51,7 @@ Operational references:
 - [docs/nightly-inspection-real-site-operator-trial-2026-06-17.md](docs/nightly-inspection-real-site-operator-trial-2026-06-17.md)
 - [docs/cloud-adapter-analysis-contract.md](docs/cloud-adapter-analysis-contract.md)
 - [docs/cloud-local-integration-and-rebuild-guidance.md](docs/cloud-local-integration-and-rebuild-guidance.md)
+- [docs/cloud-ai-data-handling-standard-v1.md](docs/cloud-ai-data-handling-standard-v1.md)
 - [docs/cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md)
 - [docs/cloud-bulk-article-run-v1.md](docs/cloud-bulk-article-run-v1.md)
 - [docs/nightly-site-inspection-morning-brief-v1.md](docs/nightly-site-inspection-morning-brief-v1.md)
