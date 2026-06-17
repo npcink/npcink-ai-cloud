@@ -296,7 +296,7 @@ def test_image_source_rejects_provider_keys_in_runtime_input(tmp_path: Path) -> 
     )
 
     assert response.status_code == 400
-    assert response.json()["error_code"] == "image_source.write_or_secret_field_forbidden"
+    assert response.json()["error_code"] == "runtime.secret_input_detected"
 
 
 def test_image_source_runtime_enriches_prompt_candidates_with_site_knowledge(

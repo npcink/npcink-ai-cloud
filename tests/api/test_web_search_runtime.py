@@ -877,4 +877,4 @@ def test_web_search_rejects_provider_keys_in_runtime_input(tmp_path: Path) -> No
     )
 
     assert response.status_code == 400
-    assert response.json()["error_code"] == "web_search.write_or_secret_field_forbidden"
+    assert response.json()["error_code"] == "runtime.secret_input_detected"
