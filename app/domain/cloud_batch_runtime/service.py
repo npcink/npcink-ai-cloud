@@ -714,29 +714,20 @@ def _build_nightly_run_detail(
     retry_guidance: dict[str, Any],
     core_intake_package: dict[str, Any],
 ) -> dict[str, Any]:
-    eligibility = (
-        operational_summary.get("eligibility_summary")
-        if isinstance(operational_summary.get("eligibility_summary"), dict)
-        else {}
-    )
-    review_items = (
-        operational_summary.get("review_items")
-        if isinstance(operational_summary.get("review_items"), list)
-        else []
-    )
-    blocked_items = (
-        operational_summary.get("blocked_items")
-        if isinstance(operational_summary.get("blocked_items"), list)
-        else []
-    )
-    priority_queue = (
-        morning_brief.get("priority_queue")
-        if isinstance(morning_brief.get("priority_queue"), list)
-        else []
-    )
-    selected_review_item_ids = (
-        core_intake_package.get("selected_review_item_ids")
-        if isinstance(core_intake_package.get("selected_review_item_ids"), list)
+    raw_eligibility = operational_summary.get("eligibility_summary")
+    eligibility: dict[str, Any] = raw_eligibility if isinstance(raw_eligibility, dict) else {}
+    raw_review_items = operational_summary.get("review_items")
+    review_items: list[Any] = raw_review_items if isinstance(raw_review_items, list) else []
+    raw_blocked_items = operational_summary.get("blocked_items")
+    blocked_items: list[dict[str, Any]] = [
+        item for item in raw_blocked_items if isinstance(item, dict)
+    ] if isinstance(raw_blocked_items, list) else []
+    raw_priority_queue = morning_brief.get("priority_queue")
+    priority_queue: list[Any] = raw_priority_queue if isinstance(raw_priority_queue, list) else []
+    raw_selected_review_item_ids = core_intake_package.get("selected_review_item_ids")
+    selected_review_item_ids: list[Any] = (
+        raw_selected_review_item_ids
+        if isinstance(raw_selected_review_item_ids, list)
         else []
     )
 
