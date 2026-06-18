@@ -321,6 +321,42 @@ Cloud returns a reviewable result:
       "receipt_owner": "wordpress_toolbox_local",
       "cloud_receipt_storage": "not_canonical"
     }
+  },
+  "nightly_run_detail": {
+    "artifact_type": "nightly_site_inspection_run_detail",
+    "contract_version": "nightly_site_inspection_run_detail.v1",
+    "operator_summary": {
+      "reviewable_count": 1,
+      "blocked_count": 0,
+      "selected_count": 1,
+      "score_version": "nightly_content_quality_score.v2"
+    },
+    "review_queue": {
+      "available": true,
+      "source": "morning_brief.priority_queue",
+      "operator_next_action": "review_cloud_batch_result"
+    },
+    "retry_summary": {
+      "retryable": false,
+      "retry_owner": "not_needed",
+      "operator_next_action": "review_morning_brief",
+      "cloud_scheduler_truth": false,
+      "direct_wordpress_write": false
+    },
+    "core_handoff_summary": {
+      "proposal_created": false,
+      "proposal_state_owner": "magick-ai-core",
+      "approval_truth": "wordpress_local",
+      "final_write_truth": "wordpress_local"
+    },
+    "read_only_boundary": {
+      "cloud_role": "runtime_detail",
+      "cloud_scheduler_truth": false,
+      "direct_wordpress_write": false,
+      "automatic_publish": false,
+      "article_body_generated": false,
+      "article_write_plan_generated": false
+    }
   }
 }
 ```
@@ -340,6 +376,11 @@ The `core_intake_package` is the Morning Brief selection envelope for local
 Toolbox/Core submission. It is not a Cloud-owned proposal receipt; the
 canonical receipt remains the local Core `core_proposal_id` after Toolbox
 submits the selected review item through `/proposals/from-plan`.
+`nightly_run_detail` is the operator-facing read/detail envelope for the same
+run result. It summarizes review queue availability, blocked counts, retry
+guidance, Core handoff state, and read-only boundary checks; it does not grant
+retry execution, scheduler truth, proposal creation, approval, or WordPress
+write authority.
 
 Scoring v2 keeps the score explainable by exposing deterministic dimensions:
 

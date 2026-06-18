@@ -304,12 +304,51 @@ surface for the operator, support, and addon display:
       "cloud_scheduler_truth": false,
       "direct_wordpress_write": false
     }
+  },
+  "nightly_run_detail": {
+    "artifact_type": "nightly_site_inspection_run_detail",
+    "contract_version": "nightly_site_inspection_run_detail.v1",
+    "operator_summary": {
+      "items_scanned": 24,
+      "reviewable_count": 3,
+      "blocked_count": 1,
+      "selected_count": 3,
+      "score_version": "nightly_content_quality_score.v2"
+    },
+    "review_queue": {
+      "available": true,
+      "source": "morning_brief.priority_queue",
+      "operator_next_action": "review_cloud_batch_result"
+    },
+    "retry_summary": {
+      "retryable": false,
+      "retry_owner": "not_needed",
+      "operator_next_action": "review_morning_brief",
+      "cloud_scheduler_truth": false,
+      "direct_wordpress_write": false
+    },
+    "core_handoff_summary": {
+      "proposal_created": false,
+      "proposal_state_owner": "magick-ai-core",
+      "approval_truth": "wordpress_local",
+      "final_write_truth": "wordpress_local"
+    },
+    "read_only_boundary": {
+      "cloud_role": "runtime_detail",
+      "cloud_scheduler_truth": false,
+      "direct_wordpress_write": false,
+      "automatic_publish": false,
+      "article_body_generated": false,
+      "article_write_plan_generated": false
+    }
   }
 }
 ```
 
-This detail object is not a Cloud control plane. It is a bounded read/detail
-surface over the current run result.
+These detail objects are not a Cloud control plane. They are bounded
+read/detail surfaces over the current run result. `nightly_run_detail` is the
+operator-facing status envelope for reviewable counts, blocked counts, retry
+guidance, Core handoff state, and read-only boundary checks.
 
 ### Core Review Plan Handoff
 

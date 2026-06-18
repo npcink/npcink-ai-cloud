@@ -373,6 +373,44 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
     assert "automatic_seo_meta_write" in result["nightly_intelligence_detail"][
         "forbidden_outputs_absent"
     ]
+    assert result["nightly_run_detail"]["contract_version"] == (
+        "nightly_site_inspection_run_detail.v1"
+    )
+    assert result["nightly_run_detail"]["operator_summary"] == {
+        "items_scanned": 2,
+        "reviewable_count": 1,
+        "blocked_count": 1,
+        "selected_count": 1,
+        "warning_count": 0,
+        "critical_count": 1,
+        "average_score": 67.5,
+        "score_version": "nightly_content_quality_score.v2",
+    }
+    assert result["nightly_run_detail"]["review_queue"] == {
+        "available": True,
+        "source": "morning_brief.priority_queue",
+        "selected_review_item_ids": ["action_001"],
+        "operator_next_action": "review_cloud_batch_result",
+    }
+    assert result["nightly_run_detail"]["retry_summary"] == {
+        "retryable": False,
+        "retry_owner": "not_needed",
+        "operator_next_action": "review_morning_brief",
+        "failed_action_ids": [],
+        "cloud_scheduler_truth": False,
+        "direct_wordpress_write": False,
+    }
+    assert result["nightly_run_detail"]["core_handoff_summary"][
+        "proposal_state_owner"
+    ] == "magick-ai-core"
+    assert result["nightly_run_detail"]["read_only_boundary"] == {
+        "cloud_role": "runtime_detail",
+        "cloud_scheduler_truth": False,
+        "direct_wordpress_write": False,
+        "automatic_publish": False,
+        "article_body_generated": False,
+        "article_write_plan_generated": False,
+    }
     assert result["handoff"]["target_plan_ability_id"] == (
         "npcink-toolbox/build-nightly-inspection-review-plan"
     )
