@@ -19,6 +19,7 @@ from app.domain.cloud_batch_runtime.contracts import (
 SCORE_VERSION = "nightly_content_quality_score.v2"
 NIGHTLY_INTELLIGENCE_SURFACE = "nightly_intelligence"
 NIGHTLY_INTELLIGENCE_CONTRACT = "nightly_intelligence_detail.v1"
+NIGHTLY_RUN_DETAIL_CONTRACT = "nightly_site_inspection_run_detail.v1"
 
 SCORE_DIMENSIONS = (
     "metadata_completeness",
@@ -164,6 +165,16 @@ class CloudBatchRuntimeService:
             retry_guidance=retry_guidance,
             core_handoff_suggestion=core_handoff_suggestion,
         )
+        nightly_run_detail = _build_nightly_run_detail(
+            run_id=run_id,
+            site_id=site_id,
+            generated_at=generated_at,
+            summary=summary,
+            operational_summary=operational_summary,
+            morning_brief=morning_brief,
+            retry_guidance=retry_guidance,
+            core_intake_package=core_intake_package,
+        )
 
         result = {
             "contract_version": CLOUD_BATCH_RUNTIME_RESULT_CONTRACT,
@@ -196,6 +207,7 @@ class CloudBatchRuntimeService:
             "core_handoff_suggestion": core_handoff_suggestion,
             "core_intake_package": core_intake_package,
             "nightly_intelligence_detail": nightly_intelligence_detail,
+            "nightly_run_detail": nightly_run_detail,
             "core_review_plan": core_review_plan,
             "safety": {
                 "direct_wordpress_write": False,
@@ -688,6 +700,127 @@ def _build_nightly_intelligence_detail(
             "article_body",
             "article_write_plan",
         ],
+    }
+
+
+def _build_nightly_run_detail(
+    *,
+    run_id: str,
+    site_id: str,
+    generated_at: str,
+    summary: dict[str, Any],
+    operational_summary: dict[str, Any],
+    morning_brief: dict[str, Any],
+    retry_guidance: dict[str, Any],
+    core_intake_package: dict[str, Any],
+) -> dict[str, Any]:
+    eligibility = (
+        operational_summary.get("eligibility_summary")
+        if isinstance(operational_summary.get("eligibility_summary"), dict)
+        else {}
+    )
+    review_items = (
+        operational_summary.get("review_items")
+        if isinstance(operational_summary.get("review_items"), list)
+        else []
+    )
+    blocked_items = (
+        operational_summary.get("blocked_items")
+        if isinstance(operational_summary.get("blocked_items"), list)
+        else []
+    )
+    priority_queue = (
+        morning_brief.get("priority_queue")
+        if isinstance(morning_brief.get("priority_queue"), list)
+        else []
+    )
+    selected_review_item_ids = (
+        core_intake_package.get("selected_review_item_ids")
+        if isinstance(core_intake_package.get("selected_review_item_ids"), list)
+        else []
+    )
+
+    return {
+        "artifact_type": "nightly_site_inspection_run_detail",
+        "contract_version": NIGHTLY_RUN_DETAIL_CONTRACT,
+        "run_id": run_id,
+        "site_id": site_id,
+        "generated_at": generated_at,
+        "status": "succeeded",
+        "worker_phase": "result_ready",
+        "operator_summary": {
+            "items_scanned": summary.get("items_scanned", 0),
+            "reviewable_count": eligibility.get("reviewable_count", len(review_items)),
+            "blocked_count": eligibility.get("blocked_count", len(blocked_items)),
+            "selected_count": eligibility.get("selected_count", len(priority_queue)),
+            "warning_count": summary.get("warning_total", 0),
+            "critical_count": summary.get("critical_total", 0),
+            "average_score": summary.get("average_score", 0),
+            "score_version": summary.get("score_version", SCORE_VERSION),
+        },
+        "review_queue": {
+            "available": bool(priority_queue),
+            "source": "morning_brief.priority_queue",
+            "selected_review_item_ids": selected_review_item_ids,
+            "operator_next_action": operational_summary.get(
+                "operator_next_action",
+                "review_cloud_batch_result",
+            ),
+        },
+        "blocked_summary": {
+            "blocked_count": len(blocked_items),
+            "blocked_action_ids": [
+                str(item.get("action_id") or "")
+                for item in blocked_items[:10]
+                if isinstance(item, dict) and str(item.get("action_id") or "").strip()
+            ],
+            "operator_next_action": "resolve_locally_or_select_review_item",
+            "direct_wordpress_write": False,
+        },
+        "retry_summary": {
+            "retryable": bool(retry_guidance.get("retryable")),
+            "retry_owner": retry_guidance.get("retry_owner", "not_needed"),
+            "operator_next_action": retry_guidance.get(
+                "operator_next_action",
+                "review_morning_brief",
+            ),
+            "failed_action_ids": retry_guidance.get("failed_action_ids", []),
+            "cloud_scheduler_truth": False,
+            "direct_wordpress_write": False,
+        },
+        "core_handoff_summary": {
+            "available": bool(core_intake_package.get("available")),
+            "target_owner": core_intake_package.get("target_owner", "magick-ai-core"),
+            "target_route": core_intake_package.get("target_route", "core:/proposals/from-plan"),
+            "target_plan_ability_id": core_intake_package.get(
+                "target_plan_ability_id",
+                NIGHTLY_SITE_INSPECTION_CORE_REVIEW_PLAN_ABILITY,
+            ),
+            "selected_review_item_ids": selected_review_item_ids,
+            "proposal_created": False,
+            "proposal_state_owner": "magick-ai-core",
+            "approval_truth": "wordpress_local",
+            "final_write_truth": "wordpress_local",
+            "receipt_owner": _string_path(
+                core_intake_package,
+                ("receipt_expectation", "receipt_owner"),
+            )
+            or "wordpress_toolbox_local",
+        },
+        "read_only_boundary": {
+            "cloud_role": "runtime_detail",
+            "cloud_scheduler_truth": False,
+            "direct_wordpress_write": False,
+            "automatic_publish": False,
+            "article_body_generated": False,
+            "article_write_plan_generated": False,
+        },
+        "detail_sources": {
+            "morning_brief": "morning_brief",
+            "blocked_items": "blocked_items",
+            "retry_guidance": "retry_guidance",
+            "core_intake_package": "core_intake_package",
+        },
     }
 
 
