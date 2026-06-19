@@ -123,6 +123,7 @@ not committed because it may contain site content.
 
 ## Next Safe Action
 
-Create the exact write-action checklist for `npcink.local` addon installation
-and Cloud identity provisioning, then ask for explicit approval naming that
-exact site and action before executing it.
+Use `docs/live-site-addon-write-action-checklist-npcink-2026-06-20.md` as the
+exact write-action checklist for `npcink.local` addon installation and Cloud
+identity provisioning, then ask for explicit approval naming that exact site
+and action before executing it.

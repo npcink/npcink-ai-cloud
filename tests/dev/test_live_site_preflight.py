@@ -38,6 +38,7 @@ def _wp_summary(**overrides: object) -> dict[str, object]:
             "secret_present": False,
             "api_key_present": False,
             "verified": True,
+            "monitoring_enabled": False,
         },
         "sample_public_titles": ["Hello"],
     }
@@ -131,6 +132,10 @@ def test_cloud_addon_ready_requires_verified_identity_and_key_presence() -> None
         )
         is False
     )
+
+
+def test_wp_summary_uses_addon_monitoring_enabled_field() -> None:
+    assert _wp_summary()["cloud_settings"]["monitoring_enabled"] is False
 
 
 def test_evaluate_candidate_blocks_mismatched_small_unverified_site() -> None:

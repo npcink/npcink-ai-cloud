@@ -49,6 +49,7 @@ def test_redact_addon_settings_keeps_presence_only_for_secret_fields() -> None:
             "secret": "do-not-print",
             "api_key": "also-do-not-print",
             "verified": True,
+            "monitoring_enabled": True,
         }
     )
 
@@ -57,6 +58,7 @@ def test_redact_addon_settings_keeps_presence_only_for_secret_fields() -> None:
     assert result["key_id_present"] is True
     assert result["secret_present"] is True
     assert result["api_key_present"] is True
+    assert result["monitoring_enabled"] is True
     assert "do-not-print" not in str(result)
     assert "also-do-not-print" not in str(result)
 

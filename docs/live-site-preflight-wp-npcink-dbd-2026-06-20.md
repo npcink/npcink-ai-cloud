@@ -102,7 +102,7 @@ Cloud addon option snapshot:
 - `timeout`: `0`
 - `verified`: `false`
 - `verified_at`: empty
-- `monitoring`: `false`
+- `monitoring_enabled`: `false`
 
 Local SQL dump files exist for all three Local sites. Their size and simple
 pattern counts suggest that `npcink` and `dbd` may have more content in dump

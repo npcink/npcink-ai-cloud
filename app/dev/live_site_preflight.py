@@ -66,7 +66,8 @@ $summary = [
         "timeout" => $settings["timeout"] ?? 0,
         "verified" => !empty($settings["verified"]),
         "verified_at" => $settings["verified_at"] ?? "",
-        "monitoring" => !empty($settings["monitoring"]),
+        "monitoring_enabled" => !empty($settings["monitoring_enabled"])
+            || !empty($settings["monitoring"]),
     ],
     "sample_public_titles" => $wpdb->get_col(
         "SELECT post_title FROM {$wpdb->posts} " .

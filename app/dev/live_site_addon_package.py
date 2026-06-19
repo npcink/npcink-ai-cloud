@@ -88,7 +88,9 @@ def redact_addon_settings(value: object) -> dict[str, object]:
         "timeout": settings.get("timeout", 0),
         "verified": bool(settings.get("verified")),
         "verified_at": _text(settings.get("verified_at")),
-        "monitoring": bool(settings.get("monitoring")),
+        "monitoring_enabled": bool(
+            settings.get("monitoring_enabled") or settings.get("monitoring")
+        ),
     }
 
 
