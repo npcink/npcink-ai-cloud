@@ -15,6 +15,7 @@ from app.dev.live_site_addon_package import (
     run_json_command,
     wp_command,
 )
+from app.dev.live_site_env import resolve_approval_text
 from app.dev.live_site_preflight import SiteTarget, _dict, _text, parse_site_spec
 
 DEFAULT_OUTPUT_ROOT = Path(".tmp/live-site-addon-rollback")
@@ -492,6 +493,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--approval-text", default="")
+    parser.add_argument("--approval-file", type=Path)
     return parser.parse_args(argv)
 
 
@@ -501,6 +503,10 @@ def main(argv: list[str] | None = None) -> int:
     suffix = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output_dir = args.output_dir or DEFAULT_OUTPUT_ROOT / f"{target.label}-rollback-{suffix}"
     try:
+        approval_text = resolve_approval_text(
+            cli_value=args.approval_text,
+            approval_file=args.approval_file,
+        )
         report = build_rollback_report(
             target=target,
             php_bin=args.php_bin,
@@ -509,9 +515,9 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=output_dir,
             timeout_seconds=args.timeout_seconds,
             execute=args.execute,
-            approval_text=args.approval_text,
+            approval_text=approval_text,
         )
-    except GuardError as exc:
+    except (GuardError, ValueError) as exc:
         print(json.dumps({"ok": False, "guard_error": str(exc)}), file=sys.stderr)
         return 2
 

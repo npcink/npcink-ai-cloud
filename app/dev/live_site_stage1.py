@@ -22,6 +22,7 @@ from app.dev.live_site_addon_package import DEFAULT_ADDON_ZIP, DEFAULT_NPCINK_SI
 from app.dev.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     default_env_files,
+    resolve_approval_text,
     resolve_env_secret,
 )
 from app.dev.live_site_identity_provision import (
@@ -347,6 +348,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--approval-text", default="")
+    parser.add_argument("--approval-file", type=Path)
     return parser.parse_args(argv)
 
 
@@ -361,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         env_files=default_env_files(args.env_file),
     )
     try:
+        approval_text = resolve_approval_text(
+            cli_value=args.approval_text,
+            approval_file=args.approval_file,
+        )
         report = build_stage_report(
             target=target,
             php_bin=args.php_bin,
@@ -377,13 +383,13 @@ def main(argv: list[str] | None = None) -> int:
             scopes=parse_scopes(args.scopes),
             timeout_seconds=args.timeout_seconds,
             execute=args.execute,
-            approval_text=args.approval_text,
+            approval_text=approval_text,
         )
         report["internal_token"] = internal_token.redacted()
         (output_dir / "stage1-report.json").write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n"
         )
-    except GuardError as exc:
+    except (GuardError, ValueError) as exc:
         print(json.dumps({"ok": False, "guard_error": str(exc)}), file=sys.stderr)
         return 2
 

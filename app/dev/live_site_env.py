@@ -81,3 +81,14 @@ def resolve_env_secret(
 
 def default_env_files(value: list[Path] | None) -> list[Path]:
     return value if value is not None else list(DEFAULT_ENV_FILES)
+
+
+def resolve_approval_text(*, cli_value: str, approval_file: Path | None) -> str:
+    cli_text = cli_value.strip()
+    if cli_text and approval_file is not None:
+        raise ValueError("use either --approval-text or --approval-file, not both")
+    if approval_file is None:
+        return cli_value
+    if not approval_file.exists():
+        raise ValueError(f"approval file not found: {approval_file}")
+    return approval_file.read_text(encoding="utf-8", errors="replace").strip()

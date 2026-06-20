@@ -19,6 +19,7 @@ from app.dev.live_site_addon_package import (
 from app.dev.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     default_env_files,
+    resolve_approval_text,
     resolve_env_secret,
 )
 from app.dev.live_site_identity_provision import (
@@ -402,6 +403,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--scopes", default=",".join(DEFAULT_SCOPES))
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--approval-text", default="")
+    parser.add_argument("--approval-file", type=Path)
     return parser.parse_args(argv)
 
 
@@ -415,6 +417,14 @@ def main(argv: list[str] | None = None) -> int:
         env_key=INTERNAL_TOKEN_ENV_KEY,
         env_files=default_env_files(args.env_file),
     )
+    try:
+        approval_text = resolve_approval_text(
+            cli_value=args.approval_text,
+            approval_file=args.approval_file,
+        )
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "guard_error": str(exc)}), file=sys.stderr)
+        return 2
     report = build_readiness_report(
         target=target,
         php_bin=args.php_bin,
@@ -430,7 +440,7 @@ def main(argv: list[str] | None = None) -> int:
         key_label=args.key_label,
         scopes=parse_scopes(args.scopes),
         timeout_seconds=args.timeout_seconds,
-        approval_text=args.approval_text,
+        approval_text=approval_text,
     )
     identity_plan = _dict(report.get("identity_plan"))
     identity_plan["internal_token"] = internal_token.redacted()

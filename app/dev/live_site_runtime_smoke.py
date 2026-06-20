@@ -12,6 +12,7 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 from app.core.security import build_body_digest, build_canonical_request, build_hmac_signature
+from app.dev.live_site_env import resolve_approval_text
 from app.dev.live_site_preflight import _dict, _list, _text
 
 APPROVAL_TEXT = (
@@ -425,6 +426,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--approval-text", default="")
+    parser.add_argument("--approval-file", type=Path)
     return parser.parse_args(argv)
 
 
@@ -433,6 +435,10 @@ def main(argv: list[str] | None = None) -> int:
     suffix = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output_dir = args.output_dir or DEFAULT_OUTPUT_ROOT / f"npcink-resolve-smoke-{suffix}"
     try:
+        approval_text = resolve_approval_text(
+            cli_value=args.approval_text,
+            approval_file=args.approval_file,
+        )
         report = build_smoke_report(
             acceptance_report_path=args.acceptance_report,
             stage_report_path=args.stage_report,
@@ -440,9 +446,9 @@ def main(argv: list[str] | None = None) -> int:
             base_url=args.base_url,
             timeout_seconds=args.timeout_seconds,
             execute=args.execute,
-            approval_text=args.approval_text,
+            approval_text=approval_text,
         )
-    except GuardError as exc:
+    except (GuardError, ValueError) as exc:
         print(json.dumps({"ok": False, "guard_error": str(exc)}), file=sys.stderr)
         return 2
 

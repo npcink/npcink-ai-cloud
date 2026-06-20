@@ -145,6 +145,11 @@ The readiness, identity, and Stage 1 helpers resolve
 Reports only record token presence, source, and length; they do not print the
 token value. Use `--env-file <path>` to override the default env-file list.
 
+For any execute approval, prefer putting the exact approval text in a local
+`.txt` file under `.tmp/` and passing `--approval-file <path>`. The guarded
+helpers reject ambiguous input if both `--approval-text` and `--approval-file`
+are provided. The file contents must still match the required approval text.
+
 If it reports `ok=false`, fix those prerequisites before asking for Stage 1
 execute approval. If it reports `ok=true`, the next remaining gate is still the
 exact approval text below; readiness is not authorization.
@@ -172,7 +177,7 @@ After the exact approval text above is provided and
 ```bash
 scripts/live-site-stage1.py \
   --execute \
-  --approval-text '<paste the exact approval text>' \
+  --approval-file .tmp/live-site-stage1/npcink-stage1-approval.txt \
   --base-url http://127.0.0.1:8010 \
   --output-dir .tmp/live-site-stage1/npcink-stage1
 ```
@@ -226,7 +231,7 @@ smoke, execute with:
 ```bash
 scripts/live-site-runtime-smoke.py \
   --execute \
-  --approval-text '<paste the exact runtime resolve smoke approval text>' \
+  --approval-file .tmp/live-site-runtime-smoke/npcink-resolve-approval.txt \
   --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
   --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
   --base-url http://127.0.0.1:8010 \
@@ -266,6 +271,19 @@ Required approval text for this bounded execute smoke:
 Knowledge sync/search，不写 WordPress 内容，不启用 monitoring。
 ```
 
+After that exact text is saved locally, execute with:
+
+```bash
+scripts/live-site-runtime-execute-smoke.py \
+  --execute \
+  --approval-file .tmp/live-site-runtime-execute-smoke/npcink-execute-approval.txt \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --base-url http://127.0.0.1:8010 \
+  --output-dir .tmp/live-site-runtime-execute-smoke/npcink-execute
+```
+
 Execute mode sends one signed `/v1/runtime/execute` request using the same
 dedicated site/key. It may trigger provider execution and record Cloud runtime
 run evidence. It still does not run Site Knowledge sync/search, write WordPress
@@ -289,7 +307,7 @@ be executed with:
 ```bash
 scripts/live-site-addon-install.py \
   --execute \
-  --approval-text '<paste the exact approval text>' \
+  --approval-file .tmp/live-site-addon-package/npcink-install-approval.txt \
   --output-dir .tmp/live-site-addon-package/npcink-guarded-install
 ```
 
@@ -316,7 +334,7 @@ executed with:
 ```bash
 scripts/live-site-identity-provision.py \
   --execute \
-  --approval-text '<paste the exact approval text>' \
+  --approval-file .tmp/live-site-identity/npcink-identity-approval.txt \
   --base-url http://127.0.0.1:8010 \
   --output-dir .tmp/live-site-identity/npcink-live-identity
 ```
@@ -524,7 +542,7 @@ After the exact approval text is provided, execute with:
 ```bash
 scripts/live-site-addon-rollback.py \
   --execute \
-  --approval-text '<paste the exact rollback approval text>' \
+  --approval-file .tmp/live-site-addon-rollback/npcink-rollback-approval.txt \
   --snapshot .tmp/live-site-stage1/npcink-stage1/addon-install/prewrite-package/snapshot.json \
   --output-dir .tmp/live-site-addon-rollback/npcink-stage1
 ```

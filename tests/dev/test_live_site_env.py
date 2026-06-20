@@ -5,6 +5,7 @@ from pathlib import Path
 from app.dev.live_site_env import (
     INTERNAL_TOKEN_ENV_KEY,
     parse_env_file,
+    resolve_approval_text,
     resolve_env_secret,
 )
 
@@ -66,3 +67,28 @@ def test_resolve_env_secret_prefers_cli_then_env_then_last_non_empty_file(
     )
     assert from_cli.value == "cli-token-32-bytes-long-value"
     assert from_cli.source == "cli"
+
+
+def test_resolve_approval_text_reads_file_and_rejects_ambiguous_input(tmp_path: Path) -> None:
+    approval_file = tmp_path / "approval.txt"
+    approval_file.write_text(" 精确批准文本 \n")
+
+    assert (
+        resolve_approval_text(cli_value="", approval_file=approval_file)
+        == "精确批准文本"
+    )
+    assert resolve_approval_text(cli_value="inline text", approval_file=None) == "inline text"
+
+    try:
+        resolve_approval_text(cli_value="inline text", approval_file=approval_file)
+    except ValueError as exc:
+        assert "either --approval-text or --approval-file" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected ambiguous approval input to fail")
+
+    try:
+        resolve_approval_text(cli_value="", approval_file=tmp_path / "missing.txt")
+    except ValueError as exc:
+        assert "approval file not found" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected missing approval file to fail")
