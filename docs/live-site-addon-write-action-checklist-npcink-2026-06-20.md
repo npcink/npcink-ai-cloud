@@ -101,6 +101,22 @@ provisioning, or the no-go exclusions, stop and ask again.
 
 ## Execution Sequence
 
+At any point, summarize the guarded trial chain with:
+
+```bash
+scripts/live-site-trial-status.py \
+  --stage1-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --execute-smoke-report .tmp/live-site-runtime-execute-smoke/npcink-execute/runtime-execute-smoke-report.json \
+  --output-dir .tmp/live-site-trial-status/npcink
+```
+
+This status helper only reads local reports and writes a summary. It does not
+install plugins, write options, provision identity, call Cloud runtime, run Site
+Knowledge, enable monitoring, or write content. Use it to identify the next
+blocked phase and the exact approval text needed for that phase.
+
 The first-stage guarded helper combines the addon install/activation guard and
 the Cloud identity guard into one audit trail:
 
