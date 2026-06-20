@@ -200,6 +200,32 @@ contract gate, and routing/profile resolution. It does not call
 `/v1/runtime/execute`, run provider execution, run Site Knowledge, write
 WordPress content, or enable monitoring.
 
+Only after the resolve smoke report is `ok=true`, request separate approval for
+one bounded `/v1/runtime/execute` smoke:
+
+```bash
+scripts/live-site-runtime-execute-smoke.py \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --output-dir .tmp/live-site-runtime-execute-smoke/npcink-execute
+```
+
+Default mode is prepare-only. It checks the acceptance and resolve-smoke reports
+and writes the execute request plan without calling Cloud runtime.
+
+Required approval text for this bounded execute smoke:
+
+```text
+我明确批准在 npcink.local 运行一次 Cloud runtime execute smoke；本次不运行 Site
+Knowledge sync/search，不写 WordPress 内容，不启用 monitoring。
+```
+
+Execute mode sends one signed `/v1/runtime/execute` request using the same
+dedicated site/key. It may trigger provider execution and record Cloud runtime
+run evidence. It still does not run Site Knowledge sync/search, write WordPress
+content, or enable monitoring.
+
 The lower-level helpers remain available for focused debugging.
 
 The guarded helper for the install/activation portion is:
