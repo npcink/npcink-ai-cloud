@@ -26,7 +26,8 @@ DEFAULT_NPCINK_SITE = SiteTarget(
 )
 DEFAULT_ADDON_ZIP = Path("/Users/muze/gitee/magick-ai-cloud-addon/build/magick-ai-cloud-addon.zip")
 DEFAULT_OUTPUT_ROOT = Path(".tmp/live-site-addon-package")
-ADDON_OPTION_NAME = "npcink_cloud_addon_settings"
+ADDON_OPTION_NAMES = ("magick_ai_cloud_addon_settings", "npcink_cloud_addon_settings")
+ADDON_OPTION_NAME = ADDON_OPTION_NAMES[-1]
 ADDON_PLUGIN_BASENAME = "magick-ai-cloud-addon/magick-ai-cloud-addon.php"
 
 
@@ -243,13 +244,25 @@ def build_package(
         args=[
             "eval",
             (
-                f"$value = get_option('{ADDON_OPTION_NAME}', array()); "
-                "echo wp_json_encode($value, JSON_UNESCAPED_SLASHES) . PHP_EOL;"
+                "$option_names = array("
+                + ", ".join(json.dumps(name) for name in ADDON_OPTION_NAMES)
+                + "); "
+                "$selected = ''; $value = array(); "
+                "foreach ($option_names as $option_name) { "
+                "$candidate = get_option($option_name, array()); "
+                "if (is_array($candidate) && !empty($candidate)) { "
+                "$selected = $option_name; $value = $candidate; break; "
+                "} } "
+                "echo wp_json_encode(array('option_name' => $selected, 'value' => $value), "
+                "JSON_UNESCAPED_SLASHES) . PHP_EOL;"
             ),
         ],
     )
     option_result, _ = run_json_command(option_cmd, timeout_seconds=timeout_seconds)
     option_payload = option_result.get("payload") if option_result.get("ok") is True else {}
+    option_payload_dict = _dict(option_payload)
+    selected_option_name = _text(option_payload_dict.get("option_name"))
+    option_value = option_payload_dict.get("value", {})
 
     db_export: dict[str, object] = {"ok": False, "skipped": True}
     if export_db:
@@ -277,7 +290,8 @@ def build_package(
         "addon_zip": inspect_addon_zip(addon_zip),
         "local_mysql_bin_dir": mysql_bin_dir,
         "active_plugins": active_plugins,
-        "addon_settings_snapshot": redact_addon_settings(option_payload),
+        "addon_settings_option": selected_option_name,
+        "addon_settings_snapshot": redact_addon_settings(option_value),
         "database_export": db_export,
         "rollback_inputs": {
             "active_plugins_snapshot": "active_plugins.payload",

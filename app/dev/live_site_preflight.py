@@ -23,7 +23,20 @@ LOCAL_APP_SUPPORT = Path.home() / "Library/Application Support/Local"
 
 WP_EVAL_SUMMARY = r"""
 global $wpdb;
-$settings = get_option("npcink_cloud_addon_settings", []);
+$cloud_option_names = [
+    "magick_ai_cloud_addon_settings",
+    "npcink_cloud_addon_settings",
+];
+$settings = [];
+$settings_option_name = "";
+foreach ($cloud_option_names as $option_name) {
+    $candidate = get_option($option_name, []);
+    if (is_array($candidate) && !empty($candidate)) {
+        $settings = $candidate;
+        $settings_option_name = $option_name;
+        break;
+    }
+}
 $active_plugins = (array) get_option("active_plugins", []);
 $summary = [
     "siteurl" => get_option("siteurl"),
@@ -58,6 +71,7 @@ $summary = [
         ),
     ],
     "cloud_settings" => [
+        "option_name" => $settings_option_name,
         "base_url" => $settings["base_url"] ?? "",
         "site_id" => $settings["site_id"] ?? "",
         "key_id_present" => !empty($settings["key_id"]),

@@ -228,7 +228,7 @@ secret file exists and contains the required fields, and prints the exact addon
 admin URL:
 
 ```text
-http://npcink.local/wp-admin/admin.php?page=npcink-cloud-addon
+http://npcink.local/wp-admin/admin.php?page=magick-ai-cloud-addon
 ```
 
 It reports only secret presence and length. It does not print the Cloud API Key,
@@ -504,7 +504,7 @@ Reason:
 Steps:
 
 1. Log in to `http://npcink.local/wp-admin/` as a local administrator.
-2. Open `Npcink > Cloud Addon`.
+2. Open `Magick AI > Cloud Addon`.
 3. Enter the approved Cloud Base URL.
 4. Paste the dedicated Cloud API Key.
 5. Leave monitoring disabled.

@@ -4,6 +4,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from app.dev.live_site_addon_package import (
+    ADDON_OPTION_NAMES,
     ADDON_PLUGIN_BASENAME,
     find_local_mysql_bin_dir,
     inspect_addon_zip,
@@ -61,6 +62,11 @@ def test_redact_addon_settings_keeps_presence_only_for_secret_fields() -> None:
     assert result["monitoring_enabled"] is True
     assert "do-not-print" not in str(result)
     assert "also-do-not-print" not in str(result)
+
+
+def test_addon_option_names_prefers_current_magick_option() -> None:
+    assert ADDON_OPTION_NAMES[0] == "magick_ai_cloud_addon_settings"
+    assert "npcink_cloud_addon_settings" in ADDON_OPTION_NAMES
 
 
 def test_wp_command_injects_local_mysql_socket_before_wp_bin() -> None:
