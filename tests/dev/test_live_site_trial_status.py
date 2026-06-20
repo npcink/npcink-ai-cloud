@@ -20,6 +20,7 @@ def _write_json(path: Path, payload: dict[str, object]) -> Path:
 def _paths(tmp_path: Path) -> dict[str, Path]:
     return {
         "stage1_report_path": tmp_path / "stage1-report.json",
+        "handoff_report_path": tmp_path / "save-verify-handoff-report.json",
         "acceptance_report_path": tmp_path / "acceptance-report.json",
         "resolve_smoke_report_path": tmp_path / "runtime-resolve-smoke-report.json",
         "execute_smoke_report_path": tmp_path / "runtime-execute-smoke-report.json",
@@ -34,6 +35,22 @@ def _write_ready_chain(paths: dict[str, Path]) -> None:
             "ok": True,
             "boundary": {
                 "wordpress_option_writes": False,
+                "cloud_runtime_execution": False,
+                "site_knowledge_sync": False,
+                "content_writes": False,
+            },
+        },
+    )
+    _write_json(
+        paths["handoff_report_path"],
+        {
+            "mode": "read_only_handoff",
+            "ready_for_manual_save_verify": True,
+            "failures": [],
+            "boundary": {
+                "wordpress_writes": False,
+                "wordpress_option_writes": False,
+                "cloud_identity_provisioning": False,
                 "cloud_runtime_execution": False,
                 "site_knowledge_sync": False,
                 "content_writes": False,
@@ -144,6 +161,21 @@ def test_status_points_to_resolve_smoke_after_acceptance(tmp_path) -> None:
         "phase": "runtime_resolve_smoke",
         "action": "execute_runtime_resolve_smoke_after_exact_approval",
         "approval_text": RESOLVE_SMOKE_APPROVAL_TEXT,
+    }
+
+
+def test_status_points_to_handoff_after_stage1(tmp_path) -> None:
+    paths = _paths(tmp_path)
+    _write_ready_chain(paths)
+    paths["handoff_report_path"].unlink()
+
+    report = build_status_report(**paths, output_dir=tmp_path / "out")
+
+    assert report["complete"] is False
+    assert report["next_action"] == {
+        "phase": "stage1_save_verify_handoff",
+        "action": "generate_save_verify_handoff_then_complete_wp_admin_save_and_verify",
+        "approval_text": "",
     }
 
 

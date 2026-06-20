@@ -14,6 +14,9 @@ from app.dev.live_site_runtime_execute_smoke import (
 from app.dev.live_site_runtime_smoke import APPROVAL_TEXT as RESOLVE_SMOKE_APPROVAL_TEXT
 
 DEFAULT_STAGE1_REPORT = Path(".tmp/live-site-stage1/npcink-stage1/stage1-report.json")
+DEFAULT_HANDOFF_REPORT = Path(
+    ".tmp/live-site-save-verify-handoff/npcink-stage1/save-verify-handoff-report.json"
+)
 DEFAULT_ACCEPTANCE_REPORT = Path(
     ".tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json"
 )
@@ -27,6 +30,7 @@ DEFAULT_OUTPUT_ROOT = Path(".tmp/live-site-trial-status")
 
 PHASE_ORDER = [
     "stage1",
+    "stage1_save_verify_handoff",
     "stage1_acceptance",
     "runtime_resolve_smoke",
     "runtime_execute_smoke",
@@ -88,6 +92,7 @@ def phase_status(
 def build_status_report(
     *,
     stage1_report_path: Path,
+    handoff_report_path: Path,
     acceptance_report_path: Path,
     resolve_smoke_report_path: Path,
     execute_smoke_report_path: Path,
@@ -95,6 +100,7 @@ def build_status_report(
 ) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     stage1, stage1_error = load_optional_json(stage1_report_path)
+    handoff, handoff_error = load_optional_json(handoff_report_path)
     acceptance, acceptance_error = load_optional_json(acceptance_report_path)
     resolve_smoke, resolve_error = load_optional_json(resolve_smoke_report_path)
     execute_smoke, execute_error = load_optional_json(execute_smoke_report_path)
@@ -111,6 +117,24 @@ def build_status_report(
             failure_fields=[],
             boundary_expectations={
                 "wordpress_option_writes": False,
+                "cloud_runtime_execution": False,
+                "site_knowledge_sync": False,
+                "content_writes": False,
+            },
+        ),
+        phase_status(
+            phase_id="stage1_save_verify_handoff",
+            label="Stage 1 Save and Verify handoff",
+            path=handoff_report_path,
+            report=handoff,
+            load_error=handoff_error,
+            success_key="ready_for_manual_save_verify",
+            required_mode="read_only_handoff",
+            failure_fields=["failures"],
+            boundary_expectations={
+                "wordpress_writes": False,
+                "wordpress_option_writes": False,
+                "cloud_identity_provisioning": False,
                 "cloud_runtime_execution": False,
                 "site_knowledge_sync": False,
                 "content_writes": False,
@@ -208,6 +232,12 @@ def determine_next_action(phases: list[dict[str, object]]) -> dict[str, object]:
                 "action": "execute_stage1_after_exact_approval",
                 "approval_text": STAGE1_APPROVAL_TEXT,
             }
+        if phase_id == "stage1_save_verify_handoff":
+            return {
+                "phase": phase_id,
+                "action": "generate_save_verify_handoff_then_complete_wp_admin_save_and_verify",
+                "approval_text": "",
+            }
         if phase_id == "stage1_acceptance":
             return {
                 "phase": phase_id,
@@ -285,6 +315,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Summarize the guarded npcink.local live-site trial chain."
     )
     parser.add_argument("--stage1-report", type=Path, default=DEFAULT_STAGE1_REPORT)
+    parser.add_argument("--handoff-report", type=Path, default=DEFAULT_HANDOFF_REPORT)
     parser.add_argument("--acceptance-report", type=Path, default=DEFAULT_ACCEPTANCE_REPORT)
     parser.add_argument("--resolve-smoke-report", type=Path, default=DEFAULT_RESOLVE_SMOKE_REPORT)
     parser.add_argument("--execute-smoke-report", type=Path, default=DEFAULT_EXECUTE_SMOKE_REPORT)
@@ -298,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = args.output_dir or DEFAULT_OUTPUT_ROOT / f"npcink-status-{suffix}"
     report = build_status_report(
         stage1_report_path=args.stage1_report,
+        handoff_report_path=args.handoff_report,
         acceptance_report_path=args.acceptance_report,
         resolve_smoke_report_path=args.resolve_smoke_report,
         execute_smoke_report_path=args.execute_smoke_report,

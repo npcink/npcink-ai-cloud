@@ -106,6 +106,7 @@ At any point, summarize the guarded trial chain with:
 ```bash
 scripts/live-site-trial-status.py \
   --stage1-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --handoff-report .tmp/live-site-save-verify-handoff/npcink-stage1/save-verify-handoff-report.json \
   --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
   --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
   --execute-smoke-report .tmp/live-site-runtime-execute-smoke/npcink-execute/runtime-execute-smoke-report.json \
