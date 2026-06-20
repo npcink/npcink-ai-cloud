@@ -155,6 +155,25 @@ If it reports `ok=false`, fix those prerequisites before asking for Stage 1
 execute approval. If it reports `ok=true`, the next remaining gate is still the
 exact approval text below; readiness is not authorization.
 
+Before using the exact approval, build the read-only execute packet:
+
+```bash
+scripts/live-site-stage1-execute-packet.py \
+  --readiness-report .tmp/live-site-stage1-readiness/npcink-stage1/stage1-readiness-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --status-report .tmp/live-site-trial-status/npcink-stage1/trial-status-report.json \
+  --approval-file .tmp/live-site-stage1/npcink-stage1-approval.txt \
+  --output-dir .tmp/live-site-stage1-execute-packet/npcink-stage1
+```
+
+This packet only reads the readiness, prepare, and status reports. It confirms
+the chain is still stopped at `execute_stage1_after_exact_approval`, prints the
+exact approval file path and post-execute commands, and keeps the Stage 1
+execute command on `--approval-file` so secrets and approval text are not mixed
+into shell history. It does not install plugins, provision Cloud identity, write
+addon settings, call runtime, run Site Knowledge sync/search, write content, or
+enable monitoring.
+
 Stage 1 execute also enforces this readiness gate internally before plugin
 installation. If the readiness report fails, the helper stops before addon
 install/activation and before Cloud identity provisioning.
