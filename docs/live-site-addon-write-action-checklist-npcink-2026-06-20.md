@@ -163,6 +163,43 @@ The acceptance helper reruns read-only preflight and checks:
 Only if this report says `ready_for_runtime_smoke_approval=true` should a
 separate runtime smoke approval be requested.
 
+The first runtime smoke is limited to a signed `/v1/runtime/resolve` request:
+
+```bash
+scripts/live-site-runtime-smoke.py \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --output-dir .tmp/live-site-runtime-smoke/npcink-resolve
+```
+
+Default mode is prepare-only. It writes the request plan and boundary report but
+does not call Cloud runtime.
+
+After the acceptance report is ready and a separate approval names this exact
+smoke, execute with:
+
+```bash
+scripts/live-site-runtime-smoke.py \
+  --execute \
+  --approval-text '<paste the exact runtime resolve smoke approval text>' \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --base-url http://127.0.0.1:8010 \
+  --output-dir .tmp/live-site-runtime-smoke/npcink-resolve
+```
+
+Required approval text for this limited smoke:
+
+```text
+我明确批准在 npcink.local 运行一次 Cloud runtime resolve smoke；本次不运行 runtime
+execute，不运行 Site Knowledge sync/search，不写 WordPress 内容，不启用 monitoring。
+```
+
+This smoke verifies signed runtime auth, the provisioned site/key, the execution
+contract gate, and routing/profile resolution. It does not call
+`/v1/runtime/execute`, run provider execution, run Site Knowledge, write
+WordPress content, or enable monitoring.
+
 The lower-level helpers remain available for focused debugging.
 
 The guarded helper for the install/activation portion is:
