@@ -360,6 +360,12 @@ def redact_runtime_result(value: object) -> object:
 
 def next_steps(*, execute: bool, ok: bool) -> list[str]:
     if not execute:
+        if ok:
+            return [
+                "use the exact runtime resolve smoke approval text before execute mode",
+                "do not run /v1/runtime/execute, Site Knowledge, or content writes",
+                "rerun this helper with --execute only after the separate approval is provided",
+            ]
         return [
             "run Stage 1 execute and wp-admin Save and Verify first",
             "rerun Stage 1 acceptance until ready_for_runtime_smoke_approval=true",
