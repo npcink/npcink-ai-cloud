@@ -141,6 +141,28 @@ If key issue succeeds, the customer-facing Cloud API Key is written only to
 `.tmp/live-site-stage1/npcink-stage1/identity/cloud-api-key.secret.json`; do not
 commit or paste that value into shared docs or terminal summaries.
 
+After the addon admin page reports Save and Verify success, run the read-only
+Stage 1 acceptance check:
+
+```bash
+scripts/live-site-stage1-acceptance.py \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --output-dir .tmp/live-site-stage1-acceptance/npcink-stage1
+```
+
+The acceptance helper reruns read-only preflight and checks:
+
+- Stage 1 was executed successfully;
+- the generated secret file exists without printing the secret;
+- the addon is active and verified in WordPress;
+- the addon `site_id` matches the Stage 1 Cloud identity;
+- monitoring remains disabled;
+- no runtime smoke, Site Knowledge sync/search, content writes, or option
+  writes were run by the acceptance step.
+
+Only if this report says `ready_for_runtime_smoke_approval=true` should a
+separate runtime smoke approval be requested.
+
 The lower-level helpers remain available for focused debugging.
 
 The guarded helper for the install/activation portion is:
