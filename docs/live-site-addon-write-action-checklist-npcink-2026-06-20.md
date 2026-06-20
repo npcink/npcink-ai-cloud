@@ -338,6 +338,37 @@ scripts/live-site-runtime-execute-smoke.py \
 Default mode is prepare-only. It checks the acceptance and resolve-smoke reports
 and writes the execute request plan without calling Cloud runtime.
 
+Before using the exact runtime execute approval, build the read-only execute
+packet:
+
+```bash
+scripts/live-site-trial-status.py \
+  --stage1-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --handoff-report .tmp/live-site-save-verify-handoff/npcink-stage1/save-verify-handoff-report.json \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --execute-smoke-report .tmp/live-site-runtime-execute-smoke/npcink-execute/runtime-execute-smoke-report.json \
+  --output-dir .tmp/live-site-trial-status/npcink-execute
+
+scripts/live-site-runtime-execute-execute-packet.py \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --execute-prepare-report .tmp/live-site-runtime-execute-smoke/npcink-execute/runtime-execute-smoke-report.json \
+  --status-report .tmp/live-site-trial-status/npcink-execute/trial-status-report.json \
+  --approval-file .tmp/live-site-runtime-execute-smoke/npcink-execute-approval.txt \
+  --output-dir .tmp/live-site-runtime-execute-execute-packet/npcink-execute
+```
+
+This packet only reads the acceptance, Stage 1, resolve smoke, execute prepare,
+and trial status reports. It confirms the chain is still stopped at
+`execute_runtime_execute_smoke_after_exact_approval`, prints the exact approval
+file path and post-execute status command, and keeps the execute command on
+`--approval-file`. It does not call `/v1/runtime/execute`, run Site Knowledge
+sync/search, write WordPress content/options, provision Cloud identity, or
+enable monitoring. The later execute command may trigger provider execution;
+that is why it needs its own explicit approval.
+
 Required approval text for this bounded execute smoke:
 
 ```text
