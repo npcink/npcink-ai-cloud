@@ -269,6 +269,36 @@ scripts/live-site-runtime-smoke.py \
 Default mode is prepare-only. It writes the request plan and boundary report but
 does not call Cloud runtime.
 
+Before using the exact runtime resolve approval, build the read-only resolve
+execute packet:
+
+```bash
+scripts/live-site-trial-status.py \
+  --stage1-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --handoff-report .tmp/live-site-save-verify-handoff/npcink-stage1/save-verify-handoff-report.json \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --resolve-smoke-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --execute-smoke-report .tmp/live-site-runtime-execute-smoke/npcink-execute/runtime-execute-smoke-report.json \
+  --output-dir .tmp/live-site-trial-status/npcink-resolve
+
+scripts/live-site-runtime-resolve-execute-packet.py \
+  --acceptance-report .tmp/live-site-stage1-acceptance/npcink-stage1/acceptance-report.json \
+  --stage-report .tmp/live-site-stage1/npcink-stage1/stage1-report.json \
+  --resolve-prepare-report .tmp/live-site-runtime-smoke/npcink-resolve/runtime-resolve-smoke-report.json \
+  --status-report .tmp/live-site-trial-status/npcink-resolve/trial-status-report.json \
+  --approval-file .tmp/live-site-runtime-smoke/npcink-resolve-approval.txt \
+  --output-dir .tmp/live-site-runtime-resolve-execute-packet/npcink-resolve
+```
+
+This packet only reads the acceptance, Stage 1, resolve prepare, and trial
+status reports. It confirms the chain is still stopped at
+`execute_runtime_resolve_smoke_after_exact_approval`, prints the exact approval
+file path and post-resolve status command, and keeps the execute command on
+`--approval-file`. It does not call `/v1/runtime/resolve`, run
+`/v1/runtime/execute`, run provider execution, run Site Knowledge sync/search,
+write WordPress content/options, provision Cloud identity, or enable
+monitoring.
+
 After the acceptance report is ready and a separate approval names this exact
 smoke, execute with:
 
