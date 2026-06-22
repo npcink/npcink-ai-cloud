@@ -64,6 +64,13 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_PROFILE_ID,
     SITE_KNOWLEDGE_SYNC_ABILITY,
 )
+from app.domain.site_ops_analysis.contracts import (
+    SITE_OPS_ANALYSIS_ABILITIES,
+    SITE_OPS_ANALYSIS_ABILITY_FAMILY,
+    SITE_OPS_ANALYSIS_DATA_CLASSIFICATION,
+    SITE_OPS_ANALYSIS_EXECUTION_KIND,
+    SITE_OPS_ANALYSIS_PROFILE_ID,
+)
 from app.domain.web_search.contracts import (
     WEB_SEARCH_ABILITIES,
     WEB_SEARCH_ABILITY_FAMILY,
@@ -137,6 +144,7 @@ class RuntimePayload(BaseModel):
         "public_site_content",
         "public_reference_media",
         "public_site_media_metadata",
+        "public_site_aggregate",
     ] = "internal"
     storage_mode: Literal["no_store", "result_only", "full_store_with_ttl"] = "result_only"
     timeout_seconds: int = 0
@@ -290,7 +298,13 @@ def _is_cloud_batch_runtime_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in CLOUD_BATCH_RUNTIME_ABILITIES
 
 
+def _is_site_ops_analysis_payload(payload: RuntimePayload) -> bool:
+    return payload.ability_name in SITE_OPS_ANALYSIS_ABILITIES
+
+
 def _resolve_ability_family(payload: RuntimePayload) -> str:
+    if _is_site_ops_analysis_payload(payload):
+        return SITE_OPS_ANALYSIS_ABILITY_FAMILY
     if _is_cloud_batch_runtime_payload(payload):
         return CLOUD_BATCH_RUNTIME_ABILITY_FAMILY
     if _is_media_batch_plan_payload(payload):
@@ -309,6 +323,8 @@ def _resolve_ability_family(payload: RuntimePayload) -> str:
 
 
 def _resolve_execution_kind(payload: RuntimePayload) -> str:
+    if _is_site_ops_analysis_payload(payload) and not payload.execution_kind:
+        return SITE_OPS_ANALYSIS_EXECUTION_KIND
     if _is_cloud_batch_runtime_payload(payload) and not payload.execution_kind:
         return CLOUD_BATCH_RUNTIME_EXECUTION_KIND
     if _is_media_batch_plan_payload(payload) and not payload.execution_kind:
@@ -327,6 +343,8 @@ def _resolve_execution_kind(payload: RuntimePayload) -> str:
 
 
 def _resolve_profile_id(payload: RuntimePayload) -> str:
+    if _is_site_ops_analysis_payload(payload) and not payload.profile_id:
+        return SITE_OPS_ANALYSIS_PROFILE_ID
     if _is_cloud_batch_runtime_payload(payload) and not payload.profile_id:
         return CLOUD_BATCH_RUNTIME_PROFILE_ID
     if _is_media_batch_plan_payload(payload) and not payload.profile_id:
@@ -353,6 +371,8 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
 
 
 def _resolve_data_classification(payload: RuntimePayload) -> str:
+    if _is_site_ops_analysis_payload(payload):
+        return SITE_OPS_ANALYSIS_DATA_CLASSIFICATION
     if _is_cloud_batch_runtime_payload(payload):
         return CLOUD_BATCH_RUNTIME_DATA_CLASSIFICATION
     if _is_media_batch_plan_payload(payload):
