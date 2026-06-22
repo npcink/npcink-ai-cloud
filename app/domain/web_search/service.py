@@ -961,6 +961,10 @@ def _build_options(input_payload: dict[str, Any]) -> dict[str, Any]:
     provider = str(input_payload.get("provider") or "").strip().lower()
     if provider not in {"", "auto", *WEB_SEARCH_PROVIDER_ORDER}:
         provider = ""
+    source_type = _normalize_source_type(input_payload.get("source_type"))
+    if intent in ZHIHU_DIRECT_ANSWER_SOURCE_TYPES:
+        provider = "zhihu" if provider in {"", "auto"} else provider
+        source_type = source_type or intent
     return {
         "intent": intent,
         "provider": provider,
@@ -973,7 +977,7 @@ def _build_options(input_payload: dict[str, Any]) -> dict[str, Any]:
         "blocked_domains": _normalize_domain_list(input_payload.get("blocked_domains")),
         "enhance_with_reader": bool(input_payload.get("enhance_with_reader")),
         "evidence_policy": input_payload.get("evidence_policy"),
-        "source_type": _normalize_source_type(input_payload.get("source_type")),
+        "source_type": source_type,
         "include_hot_list": bool(input_payload.get("include_hot_list")),
     }
 

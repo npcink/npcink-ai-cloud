@@ -900,6 +900,238 @@ def test_cloud_managed_web_search_uses_zhihu_provider(
         assert provider_calls[0].provider_id == "zhihu"
 
 
+def test_cloud_managed_web_search_requested_zhihu_overrides_default_provider(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "web_search_provider": "tavily",
+            "web_search_tavily_api_key": "placeholder-tavily-key",
+            "web_search_zhihu_access_secret": "placeholder-zhihu-secret",
+        },
+    )
+
+    def fail_tavily_search(
+        self: TavilyWebSearchProvider,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        raise AssertionError("explicit provider=zhihu must not call Tavily")
+
+    def fake_zhihu_search(
+        self: ZhihuWebSearchProvider,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        assert query == "AI writing research"
+        assert options["provider"] == "zhihu"
+        assert options["provider_mode"] == "zhihu"
+        assert options["requested_provider"] == "zhihu"
+        assert options["intent"] == "zhida_deep"
+        assert options["source_type"] == "zhida_deep"
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "grounded_answer_preview",
+                "status": "ready",
+                "provider": "zhihu",
+                "provider_mode": options["provider_mode"],
+                "requested_provider": options["requested_provider"],
+                "intent": options["intent"],
+                "query_hash": "hash-only",
+                "query_chars": len(query),
+                "result_count": 1,
+                "source_priority": "zhihu_direct_answer_preview",
+                "output_contract": "grounded_answer.v1",
+                "evidence_gate": {
+                    "status": "passed",
+                    "allows_web_grounded_assertion": True,
+                    "source_count": 1,
+                },
+                "atomic_outputs": {
+                    "grounded_answer": {
+                        "contract_version": "grounded_answer.v1",
+                        "status": "ready",
+                        "answer_text": "先明确读者问题，再收集证据。",
+                        "direct_wordpress_write": False,
+                    },
+                    "source_evidence": {
+                        "contract_version": "source_evidence.v1",
+                        "status": "passed",
+                        "result_count": 1,
+                    },
+                    "topic_candidates": {
+                        "contract_version": "topic_candidate.v1",
+                        "status": "empty",
+                    },
+                },
+                "results": [],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="zhihu",
+                model_id="zhihu-openapi-content",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=15,
+                cost=0.0,
+            ),
+        )
+
+    monkeypatch.setattr(TavilyWebSearchProvider, "search", fail_tavily_search)
+    monkeypatch.setattr(ZhihuWebSearchProvider, "search", fake_zhihu_search)
+
+    response = _execute(
+        client,
+        _payload(
+            {
+                "query": "AI writing research",
+                "intent": "zhida_deep",
+                "provider": "zhihu",
+                "source_type": "zhida_deep",
+                "max_results": 5,
+            }
+        ),
+        idempotency_key="web-search-requested-zhihu",
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    result = data["result"]
+    assert result["provider"] == "zhihu"
+    assert result["provider_mode"] == "zhihu"
+    assert result["requested_provider"] == "zhihu"
+    assert result["intent"] == "zhida_deep"
+    assert result["output_contract"] == "grounded_answer.v1"
+    assert result["atomic_outputs"]["grounded_answer"]["contract_version"] == "grounded_answer.v1"
+    with get_session(database_url) as session:
+        provider_calls = list(
+            session.scalars(
+                select(ProviderCallRecord).where(ProviderCallRecord.run_id == data["run_id"])
+            )
+        )
+        assert provider_calls[0].provider_id == "zhihu"
+
+
+def test_cloud_managed_web_search_zhida_intent_implies_zhihu_direct_answer(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "web_search_provider": "tavily",
+            "web_search_tavily_api_key": "placeholder-tavily-key",
+            "web_search_zhihu_access_secret": "placeholder-zhihu-secret",
+        },
+    )
+
+    def fail_tavily_search(
+        self: TavilyWebSearchProvider,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        raise AssertionError("zhida intent must not fall back to Tavily")
+
+    def fake_zhihu_search(
+        self: ZhihuWebSearchProvider,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        assert options["provider"] == "zhihu"
+        assert options["provider_mode"] == "zhihu"
+        assert options["requested_provider"] == "zhihu"
+        assert options["intent"] == "zhida_deep"
+        assert options["source_type"] == "zhida_deep"
+        return WebSearchExecutionResult(
+            result_json={
+                "artifact_type": "web_search_results",
+                "composition_role": "grounded_answer_preview",
+                "status": "ready",
+                "provider": "zhihu",
+                "provider_mode": options["provider_mode"],
+                "requested_provider": options["requested_provider"],
+                "intent": options["intent"],
+                "query_hash": "hash-only",
+                "query_chars": len(query),
+                "result_count": 0,
+                "source_priority": "zhihu_direct_answer_preview",
+                "output_contract": "grounded_answer.v1",
+                "evidence_gate": {
+                    "status": "insufficient_evidence",
+                    "allows_web_grounded_assertion": False,
+                    "source_count": 0,
+                },
+                "atomic_outputs": {
+                    "grounded_answer": {
+                        "contract_version": "grounded_answer.v1",
+                        "status": "ready",
+                        "answer_text": "先明确问题。",
+                        "direct_wordpress_write": False,
+                    }
+                },
+                "results": [],
+                "write_posture": "suggestion_only",
+                "direct_wordpress_write": False,
+            },
+            usage=WebSearchProviderUsage(
+                provider_id="zhihu",
+                model_id="zhihu-openapi-content",
+                instance_id="cloud-managed",
+                region="unspecified",
+                latency_ms=15,
+                cost=0.0,
+            ),
+        )
+
+    monkeypatch.setattr(TavilyWebSearchProvider, "search", fail_tavily_search)
+    monkeypatch.setattr(ZhihuWebSearchProvider, "search", fake_zhihu_search)
+
+    response = _execute(
+        client,
+        _payload(
+            {
+                "query": "AI writing research",
+                "intent": "zhida_deep",
+                "provider": "auto",
+                "max_results": 5,
+            }
+        ),
+        idempotency_key="web-search-zhida-intent",
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    result = data["result"]
+    assert result["provider"] == "zhihu"
+    assert result["provider_mode"] == "zhihu"
+    assert result["requested_provider"] == "zhihu"
+    assert result["intent"] == "zhida_deep"
+    assert result["output_contract"] == "grounded_answer.v1"
+    with get_session(database_url) as session:
+        provider_calls = list(
+            session.scalars(
+                select(ProviderCallRecord).where(ProviderCallRecord.run_id == data["run_id"])
+            )
+        )
+        assert provider_calls[0].provider_id == "zhihu"
+
+
 def test_zhihu_provider_uses_bearer_secret_and_merges_hot_list(monkeypatch: Any) -> None:
     captured: list[dict[str, Any]] = []
 
