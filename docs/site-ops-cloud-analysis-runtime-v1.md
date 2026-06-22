@@ -47,3 +47,22 @@ The result can include:
 Core handoff candidates are planning hints only. Toolbox, Adapter, Core, and
 Abilities still own review, proposal creation, approval, preflight, audit, and
 final WordPress writes.
+
+## Failure And Degraded Detail
+
+Contract validation failures fail closed before a runtime run is created. Cloud
+must not meter or persist a run when the request contains private comment
+fields, provider secrets, local scheduler instructions, or WordPress write
+actions.
+
+Runtime analyzer failures are recorded as Cloud runtime failed detail with
+`status=failed`, `error_code=site_ops_analysis.execution_failed`, provider id
+`site_ops_analysis`, model id `deterministic-ops-analyzer-v1`, and
+`fallback_used=false`. Failed detail still keeps Cloud in `runtime_detail`; it
+does not create Core proposals, scheduler truth, local run tables in Toolbox, or
+WordPress writes.
+
+Low-signal aggregate requests may succeed with empty priority and trend arrays.
+The result must stay reviewable: confidence should fall to `low`, blockers such
+as incomplete Site Context should appear in `blocked_items`, and operator next
+actions should point to clearing those blockers rather than inventing findings.

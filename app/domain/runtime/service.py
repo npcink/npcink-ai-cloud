@@ -4522,6 +4522,23 @@ class RuntimeService:
                 fallback_used=False,
             )
             return
+        except Exception:
+            logger.exception(
+                "site ops analysis runtime failed: run_id=%s site_id=%s trace_id=%s",
+                run.run_id,
+                run.site_id,
+                run.trace_id,
+            )
+            repository.mark_run_failed(
+                run,
+                error_code="site_ops_analysis.execution_failed",
+                error_message="site ops analysis runtime failed",
+                provider_id="site_ops_analysis",
+                model_id="deterministic-ops-analyzer-v1",
+                instance_id="cloud-runtime",
+                fallback_used=False,
+            )
+            return
 
         repository.mark_run_succeeded(
             run,

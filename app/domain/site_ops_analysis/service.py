@@ -35,6 +35,7 @@ class SiteOpsAnalysisService:
         sample_summaries = _dict(request_input.get("sample_summaries"))
         blocked_items = _list(request_input.get("blocked_items"))
         priority_queue = _priority_queue(local_findings, sample_summaries)
+        normalized_blocked_items = _blocked_items(blocked_items, request_input)
         result = {
             "contract_version": SITE_OPS_ANALYSIS_RESULT_CONTRACT,
             "artifact_type": "site_ops_cloud_analysis_result",
@@ -51,9 +52,12 @@ class SiteOpsAnalysisService:
             "priority_queue": priority_queue,
             "trend_notes": _trend_notes(sample_summaries),
             "confidence": _confidence(sample_summaries, priority_queue),
-            "blocked_items": _blocked_items(blocked_items, request_input),
+            "blocked_items": normalized_blocked_items,
             "core_handoff_candidates": _core_handoff_candidates(priority_queue),
-            "operator_next_actions": _operator_next_actions(priority_queue, blocked_items),
+            "operator_next_actions": _operator_next_actions(
+                priority_queue,
+                normalized_blocked_items,
+            ),
             "safety": {
                 "write_posture": "suggestion_only",
                 "direct_wordpress_write": False,
@@ -116,7 +120,10 @@ def _trend_notes(sample_summaries: dict[str, Any]) -> list[dict[str, Any]]:
         notes.append(
             {
                 "id": "content_refresh_trend",
-                "summary": "Sampled content includes stale public items that should be reviewed before new production.",
+                "summary": (
+                    "Sampled content includes stale public items that should be reviewed "
+                    "before new production."
+                ),
                 "signal_count": _coerce_int(posts.get("stale_180d_count")),
             }
         )
@@ -124,7 +131,10 @@ def _trend_notes(sample_summaries: dict[str, Any]) -> list[dict[str, Any]]:
         notes.append(
             {
                 "id": "comment_question_trend",
-                "summary": "Approved public comments show repeated question-like demand without exposing raw comment text.",
+                "summary": (
+                    "Approved public comments show repeated question-like demand without "
+                    "exposing raw comment text."
+                ),
                 "signal_count": _coerce_int(comments.get("question_like_count")),
             }
         )
@@ -135,7 +145,10 @@ def _trend_notes(sample_summaries: dict[str, Any]) -> list[dict[str, Any]]:
         notes.append(
             {
                 "id": "media_metadata_trend",
-                "summary": "Media metadata gaps are visible in attachment and referenced-image samples.",
+                "summary": (
+                    "Media metadata gaps are visible in attachment and referenced-image "
+                    "samples."
+                ),
                 "signal_count": media_gap,
             }
         )
@@ -149,7 +162,10 @@ def _trend_notes(sample_summaries: dict[str, Any]) -> list[dict[str, Any]]:
         notes.append(
             {
                 "id": "taxonomy_drift_trend",
-                "summary": "Sparse or empty taxonomy terms may weaken discovery and recommendation quality.",
+                "summary": (
+                    "Sparse or empty taxonomy terms may weaken discovery and recommendation "
+                    "quality."
+                ),
                 "signal_count": taxonomy_gap,
             }
         )
