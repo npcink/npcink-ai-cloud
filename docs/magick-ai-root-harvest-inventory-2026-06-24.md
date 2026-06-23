@@ -102,13 +102,18 @@ Before deleting `/Users/muze/gitee/magick-ai-root`, complete this checklist:
 - [x] Push the already committed Cloud documentation updates.
 - [x] Remove nested regenerable dependency/cache/build/test-output directories.
 - [x] Write this harvest inventory.
+- [x] Run a final reference search for `/Users/muze/gitee/magick-ai-root` in the
+  active repos and local agent skills.
 - [ ] Review this inventory and decide whether any listed item should be copied
   now into a target repo.
-- [ ] Run a final reference search for `/Users/muze/gitee/magick-ai-root` in the
-  active repos and local agent skills.
 - [ ] Decide the old workspace Git state: archive it, or intentionally discard
   its local-only commits and dirty files.
 
 Current old workspace Git note: `/Users/muze/gitee/magick-ai-root` is still a
 Git repo with local-only history and dirty files. Treat deletion as an explicit
 discard/archive decision, not a mechanical cleanup step.
+
+Reference search result: after the cleanup, `/Users/muze/gitee/magick-ai-root`
+appears only in documentation notes, not in active code or local agent skill
+paths. The remaining hits are this inventory, the naming closeout note, the
+copied legacy-contract README, and an older Toolkit harvest note.
