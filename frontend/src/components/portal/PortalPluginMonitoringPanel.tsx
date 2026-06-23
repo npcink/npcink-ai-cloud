@@ -24,9 +24,9 @@ type PortalPluginMonitoringPanelProps = {
 };
 
 const PLUGIN_LABELS: Record<string, string> = {
-  'magick-ai-abilities': 'Abilities',
-  'magick-ai-core': 'Core',
-  'magick-ai-adapter': 'Adapter',
+  'npcink-abilities-toolkit': 'Abilities',
+  'npcink-governance-core': 'Core',
+  'npcink-ai-client-adapter': 'Adapter',
 };
 
 function formatSuccessRate(rate: number): string {

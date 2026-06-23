@@ -72,12 +72,12 @@ All plugins should prefer stable fields:
   relevant
 - `emitted_at`
 
-## Prompt: magick-ai-abilities
+## Prompt: npcink-abilities-toolkit
 
-Copy this into the `magick-ai-abilities` AI session:
+Copy this into the `npcink-abilities-toolkit` AI session:
 
 ```text
-You are working in /Users/muze/gitee/magick-ai-abilities.
+You are working in /Users/muze/gitee/npcink-abilities-toolkit.
 
 Goal: finish plugin-side observability trigger coverage for Cloud monitoring.
 
@@ -114,16 +114,16 @@ Required work:
 
 Acceptance:
 - Latest real buffer should still show no registration flood.
-- Cloud Portal should show magick-ai-abilities with callback event counts.
+- Cloud Portal should show npcink-abilities-toolkit with callback event counts.
 - A simulated callback failure should produce a metadata-only recent error.
 ```
 
-## Prompt: magick-ai-core
+## Prompt: npcink-governance-core
 
-Copy this into the `magick-ai-core` AI session:
+Copy this into the `npcink-governance-core` AI session:
 
 ```text
-You are working in /Users/muze/gitee/magick-ai-core.
+You are working in /Users/muze/gitee/npcink-governance-core.
 
 Goal: finish plugin-side observability trigger coverage for Core governance,
 approval, preflight, and audit metadata.
@@ -166,17 +166,17 @@ Required work:
 6. Run the repository's existing unit/smoke checks and report exact commands.
 
 Acceptance:
-- Cloud Portal should show magick-ai-core with proposal/preflight event counts.
+- Cloud Portal should show npcink-governance-core with proposal/preflight event counts.
 - Core error pressure should be explainable by stable error_code values.
 - Cloud must remain read-only and must not become a second approval plane.
 ```
 
-## Prompt: magick-ai-adapter
+## Prompt: npcink-ai-client-adapter
 
-Copy this into the `magick-ai-adapter` AI session:
+Copy this into the `npcink-ai-client-adapter` AI session:
 
 ```text
-You are working in /Users/muze/gitee/magick-ai-adapter.
+You are working in /Users/muze/gitee/npcink-ai-client-adapter.
 
 Goal: finish plugin-side observability trigger coverage for Adapter, including
 OpenClaw dispatch, Core request relay, proposal handoff, commit preflight, and
@@ -223,7 +223,7 @@ Required work:
 7. Run the repository's existing unit/smoke checks and report exact commands.
 
 Acceptance:
-- Cloud Portal should show magick-ai-adapter with request/dispatch event counts.
+- Cloud Portal should show npcink-ai-client-adapter with request/dispatch event counts.
 - Adapter failures should affect health, attention, error ranking, and recent
   errors through stable metadata-only error_code values.
 - Cloud must not see raw OpenClaw or WordPress write payloads.

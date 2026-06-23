@@ -37,9 +37,9 @@ The current implementation target is:
 The original request was to make Cloud-side statistics and monitoring more
 systematic and professional for the Magick AI plugin series:
 
-- `magick-ai-abilities`: ability definitions and ability callback activity;
-- `magick-ai-core`: governance, approval, preflight, and audit activity;
-- `magick-ai-adapter`: OpenClaw channel adaptation and calls into Core and
+- `npcink-abilities-toolkit`: ability definitions and ability callback activity;
+- `npcink-governance-core`: governance, approval, preflight, and audit activity;
+- `npcink-ai-client-adapter`: OpenClaw channel adaptation and calls into Core and
   Abilities APIs.
 
 Important product constraint:

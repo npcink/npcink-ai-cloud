@@ -28,9 +28,9 @@ only an observability read surface and operator workflow detail.
 WordPress side:
 
 - `npcink-cloud-addon`
-- `magick-ai-abilities`
-- `magick-ai-core`
-- `magick-ai-adapter`
+- `npcink-abilities-toolkit`
+- `npcink-governance-core`
+- `npcink-ai-client-adapter`
 
 Cloud side:
 
@@ -151,7 +151,7 @@ from an earlier delayed upload attempt.
 
 ## Emitter Trigger Checklist
 
-### magick-ai-abilities
+### npcink-abilities-toolkit
 
 Trigger:
 
@@ -169,8 +169,8 @@ Expected event families:
 
 Expected Cloud evidence:
 
-- Admin plugin breakdown includes `magick-ai-abilities`.
-- Portal site view includes `magick-ai-abilities`.
+- Admin plugin breakdown includes `npcink-abilities-toolkit`.
+- Portal site view includes `npcink-abilities-toolkit`.
 - Success callbacks increase event totals and success rate inputs.
 - Failed callbacks create a stable error code and a recent metadata-only error.
 
@@ -181,7 +181,7 @@ Registration-class acceptance:
 - A catalog hash change, plugin activation, plugin version change, or manual
   refresh may create a sparse registration-class event.
 
-### magick-ai-core
+### npcink-governance-core
 
 Trigger:
 
@@ -203,13 +203,13 @@ Expected event families:
 
 Expected Cloud evidence:
 
-- Admin plugin breakdown includes `magick-ai-core`.
-- Portal site view includes `magick-ai-core`.
+- Admin plugin breakdown includes `npcink-governance-core`.
+- Portal site view includes `npcink-governance-core`.
 - Blocked or failed states appear as warning/error metadata, not as local
   approval controls.
 - Cloud does not expose raw proposal payloads or mutate local approval state.
 
-### magick-ai-adapter
+### npcink-ai-client-adapter
 
 Trigger:
 
@@ -226,8 +226,8 @@ Expected event families:
 
 Expected Cloud evidence:
 
-- Admin plugin breakdown includes `magick-ai-adapter`.
-- Portal site view includes `magick-ai-adapter`.
+- Admin plugin breakdown includes `npcink-ai-client-adapter`.
+- Portal site view includes `npcink-ai-client-adapter`.
 - Adapter failures influence health, attention, error ranking, and recent
   errors.
 - Cloud does not expose raw OpenClaw requests, raw responses, or WordPress write

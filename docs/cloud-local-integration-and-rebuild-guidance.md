@@ -8,9 +8,9 @@ Date: 2026-05-30
 This document records the current Npcink AI Cloud responsibility boundary after
 the project split into:
 
-- `magick-ai-abilities`
-- `magick-ai-core`
-- `magick-ai-adapter`
+- `npcink-abilities-toolkit`
+- `npcink-governance-core`
+- `npcink-ai-client-adapter`
 - `npcink-ai-cloud`
 
 It also records the current recommendation on whether Cloud should be rebuilt
@@ -42,18 +42,18 @@ Cloud is not the local WordPress control plane. It must not own:
 
 | Project | Cloud-facing role |
 | --- | --- |
-| `magick-ai-abilities` | Supplies local WordPress ability definitions, schemas, callbacks, read-only context, and dry-run previews. It does not call Cloud. |
-| `magick-ai-core` | Governs proposals, approvals, preflight, scoped app identity, rate limits, and audit. It does not execute Cloud runs. |
-| `magick-ai-adapter` | Connects OpenClaw and local WordPress to Cloud. It shapes requests, signs or authenticates transport, proxies status, and preserves correlation ids. It does not own durable run truth. |
+| `npcink-abilities-toolkit` | Supplies local WordPress ability definitions, schemas, callbacks, read-only context, and dry-run previews. It does not call Cloud. |
+| `npcink-governance-core` | Governs proposals, approvals, preflight, scoped app identity, rate limits, and audit. It does not execute Cloud runs. |
+| `npcink-ai-client-adapter` | Connects OpenClaw and local WordPress to Cloud. It shapes requests, signs or authenticates transport, proxies status, and preserves correlation ids. It does not own durable run truth. |
 | `npcink-ai-cloud` | Executes hosted work, stores hosted run truth, produces Cloud analysis, and exposes stats/diagnostics/entitlement detail. |
 
 Recommended integration:
 
 ```text
 OpenClaw
-  -> magick-ai-adapter
-      -> magick-ai-abilities   // local WordPress context and callbacks
-      -> magick-ai-core        // governance, approval, audit, preflight
+  -> npcink-ai-client-adapter
+      -> npcink-abilities-toolkit   // local WordPress context and callbacks
+      -> npcink-governance-core        // governance, approval, audit, preflight
       -> npcink-ai-cloud       // hosted execution, stats, analysis, workers
 ```
 

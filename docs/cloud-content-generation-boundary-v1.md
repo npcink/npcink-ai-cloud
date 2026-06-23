@@ -24,11 +24,11 @@ The product posture is:
 
 Current ownership remains:
 
-- `magick-ai-abilities`: ability definitions, schemas, callbacks, and
+- `npcink-abilities-toolkit`: ability definitions, schemas, callbacks, and
   permission metadata.
-- `magick-ai-core`: governance, proposal review, approval, preflight, and
+- `npcink-governance-core`: governance, proposal review, approval, preflight, and
   audit.
-- `magick-ai-adapter`: OpenClaw channel adapter that calls Core and the
+- `npcink-ai-client-adapter`: OpenClaw channel adapter that calls Core and the
   WordPress Abilities API.
 - `npcink-cloud-addon`: thin connector for Cloud URL/API key, signing,
   runtime calls, and read-only service status.

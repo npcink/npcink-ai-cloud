@@ -144,7 +144,7 @@ def test_site_monitoring_overview_prioritizes_actions_and_quota(tmp_path: Path) 
                     site_id=site_id,
                     key_id="key_default",
                     schema_version="2026-06-01",
-                    plugin_slug="magick-ai-abilities",
+                    plugin_slug="npcink-abilities-toolkit",
                     plugin_version="0.1.0",
                     source="local",
                     event_kind="abilities.callback.failed",

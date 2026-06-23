@@ -4,7 +4,7 @@ Status: active contract
 
 Date: 2026-06-03
 
-Scope: `magick-ai-abilities`, `magick-ai-core`, `magick-ai-adapter`,
+Scope: `npcink-abilities-toolkit`, `npcink-governance-core`, `npcink-ai-client-adapter`,
 `npcink-cloud-addon`, and the Cloud plugin observability read surfaces.
 
 ## Boundary
@@ -33,8 +33,8 @@ approval plane, second router truth, or second WordPress write owner.
 Every uploaded event should include:
 
 - `schema_version`: current value `2026-06-01`.
-- `plugin_slug`: one of `magick-ai-abilities`, `magick-ai-core`,
-  `magick-ai-adapter`, or `npcink-cloud-addon`.
+- `plugin_slug`: one of `npcink-abilities-toolkit`, `npcink-governance-core`,
+  `npcink-ai-client-adapter`, or `npcink-cloud-addon`.
 - `plugin_version`: emitter plugin version.
 - `source`: normally `local`.
 - `event_kind`: stable dotted event name.

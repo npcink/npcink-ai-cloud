@@ -4,8 +4,8 @@ Status: reference
 
 Date: 2026-06-02
 
-Use these examples when implementing emitters in `magick-ai-abilities`,
-`magick-ai-core`, `magick-ai-adapter`, or the Cloud Addon collector. Emitters
+Use these examples when implementing emitters in `npcink-abilities-toolkit`,
+`npcink-governance-core`, `npcink-ai-client-adapter`, or the Cloud Addon collector. Emitters
 must follow `docs/plugin-observability-v1.md` and
 `docs/plugin-observability-event-catalog.md`.
 
@@ -14,7 +14,7 @@ must follow `docs/plugin-observability-v1.md` and
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-abilities",
+  "plugin_slug": "npcink-abilities-toolkit",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "abilities.callback.completed",
@@ -30,7 +30,7 @@ Do not include prompt text, generated content, raw callback payloads, raw
 requests, raw responses, auth headers, keys, cookies, tokens, nonces, signatures,
 or secrets.
 
-## magick-ai-abilities
+## npcink-abilities-toolkit
 
 ### Catalog Changed
 
@@ -40,7 +40,7 @@ plugin version changes, or a manual refresh requests it.
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-abilities",
+  "plugin_slug": "npcink-abilities-toolkit",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "abilities.catalog.changed",
@@ -57,7 +57,7 @@ plugin version changes, or a manual refresh requests it.
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-abilities",
+  "plugin_slug": "npcink-abilities-toolkit",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "abilities.callback.completed",
@@ -76,7 +76,7 @@ plugin version changes, or a manual refresh requests it.
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-abilities",
+  "plugin_slug": "npcink-abilities-toolkit",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "abilities.callback.failed",
@@ -92,14 +92,14 @@ plugin version changes, or a manual refresh requests it.
 }
 ```
 
-## magick-ai-core
+## npcink-governance-core
 
 ### Proposal Created
 
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-core",
+  "plugin_slug": "npcink-governance-core",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "core.proposal.create",
@@ -117,7 +117,7 @@ plugin version changes, or a manual refresh requests it.
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-core",
+  "plugin_slug": "npcink-governance-core",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "core.commit.preflight",
@@ -136,7 +136,7 @@ plugin version changes, or a manual refresh requests it.
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-core",
+  "plugin_slug": "npcink-governance-core",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "core.commit.preflight",
@@ -153,14 +153,14 @@ with `event_kind` values `core.proposal.approve`, `core.proposal.reject`, and
 `core.proposal.plan_ingest`. Do not include proposal input, preview, caller
 payloads, approval notes, generated content, or policy payloads.
 
-## magick-ai-adapter
+## npcink-ai-client-adapter
 
 ### OpenClaw Dispatch Completed
 
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-adapter",
+  "plugin_slug": "npcink-ai-client-adapter",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "adapter.openclaw.dispatch.completed",
@@ -181,7 +181,7 @@ payloads, approval notes, generated content, or policy payloads.
 ```json
 {
   "schema_version": "2026-06-01",
-  "plugin_slug": "magick-ai-adapter",
+  "plugin_slug": "npcink-ai-client-adapter",
   "plugin_version": "0.1.0",
   "source": "local",
   "event_kind": "adapter.openclaw.dispatch.failed",

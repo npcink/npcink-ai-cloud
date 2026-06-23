@@ -5,7 +5,7 @@ Date: 2026-05-30
 
 ## Purpose
 
-This document is the **copy-paste reference** for `magick-ai-adapter` when calling Cloud-hosted analysis through the existing runtime surface.
+This document is the **copy-paste reference** for `npcink-ai-client-adapter` when calling Cloud-hosted analysis through the existing runtime surface.
 
 Cloud does **not** expose a separate `/v1/analysis/*` execution lane in phase one. Adapter reuses:
 
@@ -166,7 +166,7 @@ Cloud sets:
 }
 ```
 
-The actual WordPress mutation is created by `magick-ai-core` as a governed proposal; Cloud only returns the proposal-ready artifact.
+The actual WordPress mutation is created by `npcink-governance-core` as a governed proposal; Cloud only returns the proposal-ready artifact.
 
 When write-completion language is detected, the public response **must not** expose the dangerous provider original text. `_cloud_raw_result` is sanitized: fields such as `output_text` and `messages` are stripped, while safe metadata (`model_id`, `usage`, `finish_reason`, `provider`, `latency_ms`) may be retained.
 

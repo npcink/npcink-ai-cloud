@@ -302,7 +302,7 @@ function normalizePluginObservability(raw: any): PluginObservabilityData {
 }
 
 type WindowOption = 24 | 72 | 168;
-type PluginFilter = 'all' | 'magick-ai-abilities' | 'magick-ai-core' | 'magick-ai-adapter';
+type PluginFilter = 'all' | 'npcink-abilities-toolkit' | 'npcink-governance-core' | 'npcink-ai-client-adapter';
 type AttentionWorkflowFilter = 'active' | 'acknowledged' | 'muted' | 'resolved' | 'all';
 type AttentionSeverityFilter = 'all' | 'warning' | 'error';
 type AttentionStateAction = 'acknowledge' | 'mute' | 'resolve' | 'clear';
@@ -315,9 +315,9 @@ const WINDOW_OPTIONS: { value: WindowOption; label: string }[] = [
 
 const PLUGIN_FILTER_OPTIONS: { value: PluginFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'magick-ai-abilities', label: 'Abilities' },
-  { value: 'magick-ai-core', label: 'Core' },
-  { value: 'magick-ai-adapter', label: 'Adapter' },
+  { value: 'npcink-abilities-toolkit', label: 'Abilities' },
+  { value: 'npcink-governance-core', label: 'Core' },
+  { value: 'npcink-ai-client-adapter', label: 'Adapter' },
 ];
 
 const ATTENTION_WORKFLOW_OPTIONS: { value: AttentionWorkflowFilter; label: string }[] = [
@@ -550,7 +550,7 @@ function AdminPluginObservabilityContent() {
         description={t(
           'admin.plugin_observability_desc',
           {},
-          'Cross-site plugin event volume, error rates, latency, and recent errors for magick-ai-abilities, magick-ai-core, and magick-ai-adapter.'
+          'Cross-site plugin event volume, error rates, latency, and recent errors for npcink-abilities-toolkit, npcink-governance-core, and npcink-ai-client-adapter.'
         )}
         aside={
           data ? (

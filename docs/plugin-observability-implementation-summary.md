@@ -195,8 +195,8 @@ The next high-value layer is alerting and operator workflow:
 - allow filtering attention by site, plugin, severity, and code
 - add daily/weekly digest generation for site owners
 - add a small synthetic-monitoring fixture for seeded demo data
-- document emitter examples for `magick-ai-abilities`, `magick-ai-core`, and
-  `magick-ai-adapter`
+- document emitter examples for `npcink-abilities-toolkit`, `npcink-governance-core`, and
+  `npcink-ai-client-adapter`
 
 ## AI Handoff Checklist
 

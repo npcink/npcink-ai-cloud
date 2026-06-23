@@ -72,7 +72,7 @@ def build_events(site_id: str, scenario: str) -> list[dict[str, object]]:
         events.append(
             _event(
                 site_id=site_id,
-                plugin_slug="magick-ai-abilities",
+                plugin_slug="npcink-abilities-toolkit",
                 event_kind="abilities.callback.completed",
                 status="ok",
                 minutes_ago=90 - index,
@@ -83,7 +83,7 @@ def build_events(site_id: str, scenario: str) -> list[dict[str, object]]:
         events.append(
             _event(
                 site_id=site_id,
-                plugin_slug="magick-ai-core",
+                plugin_slug="npcink-governance-core",
                 event_kind="core.preflight.completed",
                 status="ok",
                 minutes_ago=54 - index,
@@ -94,7 +94,7 @@ def build_events(site_id: str, scenario: str) -> list[dict[str, object]]:
         events.append(
             _event(
                 site_id=site_id,
-                plugin_slug="magick-ai-adapter",
+                plugin_slug="npcink-ai-client-adapter",
                 event_kind="adapter.openclaw.dispatch.completed",
                 status="ok",
                 minutes_ago=36 - index,
@@ -107,7 +107,7 @@ def build_events(site_id: str, scenario: str) -> list[dict[str, object]]:
         events.append(
             _event(
                 site_id=site_id,
-                plugin_slug="magick-ai-adapter",
+                plugin_slug="npcink-ai-client-adapter",
                 event_kind="adapter.openclaw.dispatch.failed",
                 status="error",
                 minutes_ago=8,
@@ -121,7 +121,7 @@ def build_events(site_id: str, scenario: str) -> list[dict[str, object]]:
             events.append(
                 _event(
                     site_id=site_id,
-                    plugin_slug="magick-ai-abilities",
+                    plugin_slug="npcink-abilities-toolkit",
                     event_kind="abilities.callback.failed",
                     status="error",
                     minutes_ago=7 - index,

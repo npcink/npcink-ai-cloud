@@ -54,7 +54,7 @@ def _seed_plugin_events(database_url: str) -> None:
                     site_id="site-portal-001",
                     key_id="key_default",
                     schema_version="2026-06-01",
-                    plugin_slug="magick-ai-core",
+                    plugin_slug="npcink-governance-core",
                     plugin_version="0.1.0",
                     source="local",
                     event_kind="preflight.completed",
@@ -70,7 +70,7 @@ def _seed_plugin_events(database_url: str) -> None:
                     site_id="site-portal-001",
                     key_id="key_default",
                     schema_version="2026-06-01",
-                    plugin_slug="magick-ai-adapter",
+                    plugin_slug="npcink-ai-client-adapter",
                     plugin_version="0.1.0",
                     source="local",
                     event_kind="openclaw.dispatch.failed",
@@ -88,7 +88,7 @@ def _seed_plugin_events(database_url: str) -> None:
                     site_id="site-portal-002",
                     key_id="key_default",
                     schema_version="2026-06-01",
-                    plugin_slug="magick-ai-abilities",
+                    plugin_slug="npcink-abilities-toolkit",
                     plugin_version="0.1.0",
                     source="local",
                     event_kind="ability.callback.completed",
@@ -130,8 +130,8 @@ def test_portal_plugin_observability_returns_current_site_summary(tmp_path: Path
     assert data["digest"]["period_label"] == "daily"
     assert data["digest"]["top_error_code"] == "adapter.dispatch_failed"
     assert {item["plugin_slug"] for item in data["plugins"]} == {
-        "magick-ai-core",
-        "magick-ai-adapter",
+        "npcink-governance-core",
+        "npcink-ai-client-adapter",
     }
     assert isinstance(data["timeline"], list)
     assert sum(item["events_total"] for item in data["timeline"]) == 2
@@ -161,11 +161,11 @@ def test_portal_plugin_observability_filters_plugin(tmp_path: Path) -> None:
 
     response = client.get(
         "/portal/v1/sites/site-portal-001/plugin-observability"
-        "?window_hours=24&plugin_slug=magick-ai-core",
+        "?window_hours=24&plugin_slug=npcink-governance-core",
         headers=build_portal_headers(),
     )
 
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["totals"]["events_total"] == 1
-    assert [item["plugin_slug"] for item in data["plugins"]] == ["magick-ai-core"]
+    assert [item["plugin_slug"] for item in data["plugins"]] == ["npcink-governance-core"]

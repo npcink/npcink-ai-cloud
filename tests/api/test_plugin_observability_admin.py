@@ -35,7 +35,7 @@ def _seed_plugin_events(database_url: str) -> None:
             site_id="site-001",
             key_id="key_default",
             schema_version="2026-06-01",
-            plugin_slug="magick-ai-abilities",
+            plugin_slug="npcink-abilities-toolkit",
             plugin_version="0.1.0",
             source="local",
             event_kind="abilities.callback.completed",
@@ -51,7 +51,7 @@ def _seed_plugin_events(database_url: str) -> None:
             site_id="site-001",
             key_id="key_default",
             schema_version="2026-06-01",
-            plugin_slug="magick-ai-abilities",
+            plugin_slug="npcink-abilities-toolkit",
             plugin_version="0.1.0",
             source="local",
             event_kind="abilities.callback.failed",
@@ -69,7 +69,7 @@ def _seed_plugin_events(database_url: str) -> None:
             site_id="site-002",
             key_id="key_default",
             schema_version="2026-06-01",
-            plugin_slug="magick-ai-core",
+            plugin_slug="npcink-governance-core",
             plugin_version="0.1.0",
             source="local",
             event_kind="core.proposal.create",
@@ -85,7 +85,7 @@ def _seed_plugin_events(database_url: str) -> None:
             site_id="site-002",
             key_id="key_default",
             schema_version="2026-06-01",
-            plugin_slug="magick-ai-core",
+            plugin_slug="npcink-governance-core",
             plugin_version="0.1.0",
             source="local",
             event_kind="core.proposal.create",
@@ -176,13 +176,13 @@ def test_admin_plugin_observability_plugin_slug_filter(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
     _seed_plugin_events(database_url)
     response = client.get(
-        "/internal/service/admin/plugin-observability?window_hours=24&plugin_slug=magick-ai-abilities",
+        "/internal/service/admin/plugin-observability?window_hours=24&plugin_slug=npcink-abilities-toolkit",
         headers=build_internal_headers(trace_id="traceadmin0030000000000000000000"),
     )
     assert response.status_code == 200
     data = response.json()["data"]
     for plugin in data["plugins"]:
-        assert plugin["plugin_slug"] == "magick-ai-abilities"
+        assert plugin["plugin_slug"] == "npcink-abilities-toolkit"
 
 
 def test_admin_plugin_observability_errors_exclude_payload_json(tmp_path: Path) -> None:
