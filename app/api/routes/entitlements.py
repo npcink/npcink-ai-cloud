@@ -183,6 +183,25 @@ def _resolve_pro_cloud_runtime(policy: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _resolve_credit_usage_detail(request: Request, account_id: str) -> dict[str, object]:
+    if not account_id:
+        return {}
+    try:
+        quota_summary = _get_commercial_service(request).get_portal_account_quota_summary(
+            account_id
+        )
+    except CommercialServiceError:
+        return {}
+    credit_usage_detail = quota_summary.get("credit_usage_detail")
+    if not isinstance(credit_usage_detail, dict):
+        return {}
+    return {
+        key: value
+        for key, value in credit_usage_detail.items()
+        if key != "recent_items"
+    }
+
+
 def _build_entitlement_payload(
     request: Request,
     *,
@@ -191,6 +210,7 @@ def _build_entitlement_payload(
     object_id: str,
 ) -> dict[str, object]:
     site = _dict(policy.get("site"))
+    account_id = str(site.get("account_id") or "")
     tier_id = _resolve_package_tier(policy)
     site_limit = _resolve_site_limit(policy, tier_id)
     settings = get_cloud_services(request).settings
@@ -199,7 +219,7 @@ def _build_entitlement_payload(
         "paid_object": {
             "type": object_type,
             "id": object_id,
-            "account_id": str(site.get("account_id") or ""),
+            "account_id": account_id,
         },
         "package": PUBLIC_PACKAGE_BY_TIER.get(tier_id, ""),
         "package_tier": tier_id,
@@ -215,6 +235,9 @@ def _build_entitlement_payload(
             },
             "hosted_runtime_quota": _resolve_runtime_quota(policy),
             "pro_cloud_runtime": _resolve_pro_cloud_runtime(policy),
+        },
+        "quota_summary": {
+            "credit_usage_detail": _resolve_credit_usage_detail(request, account_id),
         },
     }
 

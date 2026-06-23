@@ -2259,6 +2259,100 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
     dispose_engine(database_url)
 
 
+def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    seed_site_auth(
+        database_url,
+        site_id="site_credit_adjustment",
+        scopes=["runtime:execute", "runtime:read", "stats:read"],
+        budgets={"max_ai_credits_per_period": 20},
+    )
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        subscription = session.scalar(
+            select(AccountSubscription)
+            .where(AccountSubscription.account_id == "acct_site_credit_adjustment")
+            .order_by(AccountSubscription.created_at.desc())
+        )
+        assert subscription is not None
+        repository = CommercialRepository(session)
+        repository.record_credit_ledger_entry(
+            account_id="acct_site_credit_adjustment",
+            site_id="site_credit_adjustment",
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id="run-credit-adjustment-1",
+            provider_call_id=None,
+            source_type="tokens_total",
+            source_id="run-credit-adjustment-1:tokens",
+            credit_delta=-12,
+            quantity=12000,
+            unit="token",
+            rate=1,
+            rate_unit="1000_tokens_rounded_up",
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="credit-adjustment-consume-001",
+            created_at=now,
+        )
+        session.commit()
+
+    response = client.post(
+        "/internal/service/admin/accounts/acct_site_credit_adjustment/credit-ledger/adjustments",
+        headers=build_internal_headers(idempotency_key="svc-credit-adjustment-001"),
+        json={
+            "event_type": "grant",
+            "credit_delta": 5,
+            "reason": "billing_correction",
+            "note": "restore manually purchased credits",
+        },
+    )
+    missing_reason = client.post(
+        "/internal/service/admin/accounts/acct_site_credit_adjustment/credit-ledger/adjustments",
+        headers=build_internal_headers(idempotency_key="svc-credit-adjustment-002"),
+        json={"event_type": "grant", "credit_delta": 1, "reason": ""},
+    )
+    quota_response = client.get(
+        "/internal/service/admin/accounts/acct_site_credit_adjustment/quota-summary",
+        headers=build_internal_headers(),
+    )
+    ledger_response = client.get(
+        "/internal/service/admin/accounts/acct_site_credit_adjustment/credit-ledger",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["receipt"]["event_kind"] == "credit_ledger.adjustment"
+    assert payload["entry"]["event_type"] == "grant"
+    assert payload["entry"]["credit_delta"] == 5.0
+    assert payload["entry"]["granted_credits"] == 5.0
+    assert payload["entry"]["metadata"]["reason"] == "billing_correction"
+    assert payload["summary"]["consumed_credits"] == 12.0
+    assert payload["summary"]["granted_credits"] == 5.0
+    assert payload["summary"]["net_credit_delta"] == -7.0
+    assert payload["summary"]["net_used_credits"] == 7.0
+    assert missing_reason.status_code == 400
+
+    assert quota_response.status_code == 200
+    quota = quota_response.json()["data"]
+    assert quota["credit"]["used"] == 7.0
+    assert quota["credit"]["remaining"] == 13.0
+    assert quota["credit"]["estimated"] is False
+    assert quota["credit_ledger_summary"]["net_used_credits"] == 7.0
+
+    assert ledger_response.status_code == 200
+    ledger = ledger_response.json()["data"]
+    assert ledger["summary"]["entry_count"] == 2
+    assert ledger["summary"]["consumed_credits"] == 12.0
+    assert ledger["summary"]["granted_credits"] == 5.0
+    assert ledger["summary"]["net_used_credits"] == 7.0
+    assert {item["event_type"] for item in ledger["items"]} == {"consume", "grant"}
+
+    dispose_engine(database_url)
+
+
 def test_credit_ledger_consume_credit_delta_must_be_integer(
     tmp_path: Path,
 ) -> None:

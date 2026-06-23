@@ -11,7 +11,10 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
+    CREDIT_LEDGER_EVENT_ADJUSTMENT,
     CREDIT_LEDGER_EVENT_CONSUME,
+    CREDIT_LEDGER_EVENT_GRANT,
+    CREDIT_LEDGER_EVENT_REFUND,
     ENTITLEMENT_SNAPSHOT_STATUS_ACTIVE,
     PLAN_STATUS_ACTIVE,
     PLAN_VERSION_STATUS_PUBLISHED,
@@ -456,18 +459,23 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         credit_entries = repository.list_credit_ledger_entries(
             account_ids=[subscription.account_id],
             subscription_id=subscription.subscription_id,
-            event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+            event_types=[
+                CREDIT_LEDGER_EVENT_CONSUME,
+                CREDIT_LEDGER_EVENT_GRANT,
+                CREDIT_LEDGER_EVENT_ADJUSTMENT,
+                CREDIT_LEDGER_EVENT_REFUND,
+            ],
             since=period_start_at,
             until=period_end_at,
             limit=None,
         )
         used_ai_credits = round(
-            sum(
-                max(
-                    0.0,
-                    -service._coerce_float(getattr(entry, "credit_delta", 0.0)),
-                )
-                for entry in credit_entries
+            max(
+                0.0,
+                -sum(
+                    service._coerce_float(getattr(entry, "credit_delta", 0.0))
+                    for entry in credit_entries
+                ),
             ),
             6,
         )

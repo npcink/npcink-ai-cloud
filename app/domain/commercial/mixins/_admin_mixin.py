@@ -12,7 +12,10 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
+    CREDIT_LEDGER_EVENT_ADJUSTMENT,
     CREDIT_LEDGER_EVENT_CONSUME,
+    CREDIT_LEDGER_EVENT_GRANT,
+    CREDIT_LEDGER_EVENT_REFUND,
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
     PLATFORM_ADMIN_STATUS_ACTIVE,
     SITE_ADMIN_STATUS_ACTIVE,
@@ -35,6 +38,7 @@ from app.domain.commercial.credits import (
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
+    CommercialValidationError,
 )
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_PLATFORM_ADMIN,
@@ -46,6 +50,13 @@ from app.domain.commercial.mixins._billing_mixin import (
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
 )
+
+AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES = [
+    CREDIT_LEDGER_EVENT_CONSUME,
+    CREDIT_LEDGER_EVENT_GRANT,
+    CREDIT_LEDGER_EVENT_ADJUSTMENT,
+    CREDIT_LEDGER_EVENT_REFUND,
+]
 
 
 class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
@@ -823,7 +834,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     if primary_subscription is not None
                     else None
                 ),
-                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
                 since=period_start_at,
                 until=period_end_at,
                 limit=None,
@@ -895,6 +906,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         )
         ledger_source = bool(credit_ledger_entries)
         credit_rate_version = AI_CREDIT_RATE_VERSION if ledger_source else "ai-credit-estimate-v2"
+        credit_ledger_summary = self._summarize_credit_ledger_entries(credit_ledger_entries)
         credit_breakdown = build_credit_breakdown_from_ledger(credit_ledger_entries)
         if not credit_breakdown:
             credit_breakdown = self._build_admin_account_credit_breakdown(
@@ -909,6 +921,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             sum(service._coerce_float(item.get("credits")) for item in credit_breakdown),
             6,
         )
+        if ledger_source:
+            credit_used = service._coerce_float(credit_ledger_summary.get("net_used_credits"))
         credit_limit = service._coerce_float(budgets.get("max_ai_credits_per_period"))
         if credit_limit <= 0:
             credit_limit = service._coerce_float(budgets.get("max_runs_per_period"))
@@ -1043,6 +1057,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "resource_limits": resource_limits,
             "internal_limits": internal_limits,
             "breakdown": credit_breakdown,
+            "credit_ledger_summary": credit_ledger_summary,
             "totals": totals,
             "budget_state": budget_state,
             "coverage": {
@@ -1055,6 +1070,125 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ),
             },
         }
+
+    def apply_admin_account_credit_adjustment(
+        self,
+        account_id: str,
+        *,
+        event_type: str,
+        credit_delta: float,
+        reason: str,
+        note: str = "",
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        normalized_event_type = str(event_type or "").strip().lower()
+        if normalized_event_type not in {
+            CREDIT_LEDGER_EVENT_GRANT,
+            CREDIT_LEDGER_EVENT_ADJUSTMENT,
+        }:
+            raise CommercialValidationError(
+                "service.credit_adjustment_event_type_invalid",
+                "credit adjustment event_type must be either grant or adjustment",
+            )
+        normalized_reason = str(reason or "").strip()
+        if not normalized_reason:
+            raise CommercialValidationError(
+                "service.credit_adjustment_reason_required",
+                "credit adjustment requires an operator reason",
+            )
+        normalized_delta = round(self._coerce_float(credit_delta), 6)
+        if normalized_delta == 0:
+            raise CommercialValidationError(
+                "service.credit_adjustment_delta_required",
+                "credit adjustment requires a non-zero credit delta",
+            )
+        if normalized_event_type == CREDIT_LEDGER_EVENT_GRANT and normalized_delta <= 0:
+            raise CommercialValidationError(
+                "service.credit_grant_delta_invalid",
+                "credit grant requires a positive credit delta",
+            )
+
+        now = self.now_factory()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            account = repository.get_account(account_id)
+            if account is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found",
+                    f"account '{account_id}' was not found",
+                )
+            subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
+            primary_subscription = cast(Any, self)._select_primary_subscription(subscriptions)
+            if primary_subscription is None:
+                raise CommercialValidationError(
+                    "service.credit_adjustment_subscription_required",
+                    "credit adjustment requires a current account subscription",
+                )
+            period_start_at, period_end_at = cast(Any, self)._resolve_period(
+                primary_subscription,
+                now,
+            )
+            ledger_idempotency = (
+                f"account_credit_adjustment:{account_id}:"
+                f"{audit_context.idempotency_key if audit_context else uuid4().hex}"
+            )
+            entry = repository.record_credit_ledger_entry(
+                account_id=account_id,
+                site_id=None,
+                subscription_id=primary_subscription.subscription_id,
+                plan_version_id=primary_subscription.plan_version_id,
+                run_id=None,
+                provider_call_id=None,
+                event_type=normalized_event_type,
+                source_type="operator_credit_adjustment",
+                source_id=ledger_idempotency,
+                credit_delta=normalized_delta,
+                quantity=abs(normalized_delta),
+                unit="credit",
+                rate=1.0,
+                rate_unit=None,
+                rate_version=AI_CREDIT_RATE_VERSION,
+                idempotency_key=ledger_idempotency,
+                metadata_json={
+                    "reason": normalized_reason,
+                    "note": str(note or "").strip(),
+                    "actor_kind": audit_context.actor_kind if audit_context else "",
+                    "actor_ref": audit_context.actor_ref if audit_context else "",
+                    "period_start_at": self._serialize_datetime(period_start_at),
+                    "period_end_at": self._serialize_datetime(period_end_at),
+                },
+                created_at=now,
+            )
+            summary_entries = repository.list_credit_ledger_entries(
+                account_ids=[account_id],
+                subscription_id=primary_subscription.subscription_id,
+                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
+                since=period_start_at,
+                until=period_end_at,
+                limit=None,
+            )
+            payload = {
+                "account_id": account_id,
+                "period_start_at": self._serialize_datetime(period_start_at),
+                "period_end_at": self._serialize_datetime(period_end_at),
+                "entry": self._serialize_credit_ledger_entry(entry, include_internal=True),
+                "summary": self._summarize_credit_ledger_entries(summary_entries),
+            }
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="credit_ledger.adjustment",
+                outcome="succeeded",
+                account_id=account_id,
+                subscription_id=primary_subscription.subscription_id,
+                plan_id=primary_subscription.plan_id,
+                plan_version_id=primary_subscription.plan_version_id,
+                scope_kind="account",
+                scope_id=account_id,
+                payload_json=payload,
+            )
+            session.commit()
+        return payload
 
     def get_admin_account_credit_ledger(
         self,
@@ -1091,7 +1225,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             entries = repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 subscription_id=subscription_id,
-                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -1101,7 +1235,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             total = repository.count_credit_ledger_entries(
                 account_ids=[account_id],
                 subscription_id=subscription_id,
-                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -1109,7 +1243,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             summary_entries = repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 subscription_id=subscription_id,
-                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
+                event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
                 source_types=source_types,
                 since=period_start_at,
                 until=period_end_at,
@@ -1122,6 +1256,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             sum(service._coerce_float(item.get("credits")) for item in breakdown),
             6,
         )
+        ledger_summary = self._summarize_credit_ledger_entries(summary_entries)
         return {
             "account_id": account_id,
             "generated_at": self._serialize_datetime(now),
@@ -1141,6 +1276,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             },
             "summary": {
                 "total_credits": total_credits,
+                **ledger_summary,
                 "entry_count": total,
                 "breakdown": breakdown,
             },
@@ -1229,6 +1365,47 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
 
     def _credit_ledger_entries_from_payload(self, items: object) -> list[object]:
         return items if isinstance(items, list) else []
+
+    def _summarize_credit_ledger_entries(self, entries: Sequence[object]) -> dict[str, object]:
+        service = cast(Any, self)
+        consumed = 0.0
+        granted = 0.0
+        adjustment = 0.0
+        refund = 0.0
+        net_delta = 0.0
+        by_event_type: dict[str, float] = defaultdict(float)
+
+        for entry in entries:
+            if isinstance(entry, dict):
+                event_type = str(entry.get("event_type") or "")
+                delta = service._coerce_float(entry.get("credit_delta"))
+            else:
+                event_type = str(getattr(entry, "event_type", "") or "")
+                delta = service._coerce_float(getattr(entry, "credit_delta", 0.0))
+
+            net_delta += delta
+            by_event_type[event_type] += delta
+            if event_type == CREDIT_LEDGER_EVENT_CONSUME:
+                consumed += max(0.0, -delta)
+            elif event_type == CREDIT_LEDGER_EVENT_GRANT:
+                granted += max(0.0, delta)
+            elif event_type == CREDIT_LEDGER_EVENT_ADJUSTMENT:
+                adjustment += delta
+            elif event_type == CREDIT_LEDGER_EVENT_REFUND:
+                refund += max(0.0, delta)
+
+        return {
+            "consumed_credits": round(consumed, 6),
+            "granted_credits": round(granted, 6),
+            "adjustment_credits": round(adjustment, 6),
+            "refund_credits": round(refund, 6),
+            "net_credit_delta": round(net_delta, 6),
+            "net_used_credits": round(max(0.0, -net_delta), 6),
+            "event_type_totals": {
+                key: round(value, 6) for key, value in sorted(by_event_type.items())
+            },
+            "entry_count": len(entries),
+        }
 
     def _build_portal_credit_usage_detail(
         self,
@@ -1333,6 +1510,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "run_id": str(value("run_id", "") or ""),
             "credit_delta": credit_delta,
             "consumed_credits": max(0.0, -credit_delta),
+            "granted_credits": max(0.0, credit_delta),
+            "net_credit_delta": credit_delta,
             "quantity": service._coerce_float(value("quantity", 0.0)),
             "unit": str(value("unit", "") or ""),
             "rate": service._coerce_float(value("rate", 0.0)),

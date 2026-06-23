@@ -223,6 +223,14 @@ type AccountQuotaSummary = {
   period_start_at?: string;
   period_end_at?: string;
   credit: AccountQuotaMetric;
+  credit_ledger_summary?: {
+    consumed_credits?: number;
+    granted_credits?: number;
+    adjustment_credits?: number;
+    refund_credits?: number;
+    net_credit_delta?: number;
+    net_used_credits?: number;
+  };
   resource_limits: AccountQuotaMetric[];
   internal_limits: AccountQuotaMetric[];
   breakdown: AccountCreditBreakdownItem[];
@@ -238,6 +246,8 @@ type AccountCreditLedgerEntry = {
   run_id?: string;
   credit_delta: number;
   consumed_credits: number;
+  granted_credits?: number;
+  net_credit_delta?: number;
   quantity: number;
   unit: string;
   rate?: number;
@@ -260,6 +270,12 @@ type AccountCreditLedger = {
   };
   summary?: {
     total_credits?: number;
+    consumed_credits?: number;
+    granted_credits?: number;
+    adjustment_credits?: number;
+    refund_credits?: number;
+    net_credit_delta?: number;
+    net_used_credits?: number;
     entry_count?: number;
     breakdown?: AccountCreditBreakdownItem[];
   };
@@ -452,6 +468,18 @@ function creditBreakdownLabel(
   return labels[item.key] || item.label || item.key;
 }
 
+function formatSignedCreditDelta(value: number): string {
+  const rounded = Math.round(Number(value || 0));
+  const formatted = formatInteger(Math.abs(rounded));
+  if (rounded > 0) {
+    return `+${formatted}`;
+  }
+  if (rounded < 0) {
+    return `-${formatted}`;
+  }
+  return formatted;
+}
+
 function AccountDetailContent() {
   const params = useParams();
   const { t } = useLocale();
@@ -484,6 +512,13 @@ function AccountDetailContent() {
   const [packageActionError, setPackageActionError] = useState<string | null>(null);
   const [packageActionPending, setPackageActionPending] = useState<'change' | 'suspend' | 'cancel' | null>(null);
   const [topUpActionPending, setTopUpActionPending] = useState<string | null>(null);
+  const [creditAdjustmentForm, setCreditAdjustmentForm] = useState({
+    event_type: 'grant',
+    credit_delta: '',
+    reason: '',
+    note: '',
+  });
+  const [creditAdjustmentPending, setCreditAdjustmentPending] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
   const [siteRuntimeData, setSiteRuntimeData] = useState<Record<string, SiteRuntimeData>>({});
@@ -598,6 +633,10 @@ function AccountDetailContent() {
         period_start_at: String(payload.period_start_at || ''),
         period_end_at: String(payload.period_end_at || ''),
         credit: payload.credit as AccountQuotaMetric,
+        credit_ledger_summary:
+          payload.credit_ledger_summary && typeof payload.credit_ledger_summary === 'object'
+            ? (payload.credit_ledger_summary as AccountQuotaSummary['credit_ledger_summary'])
+            : undefined,
         resource_limits: Array.isArray(payload.resource_limits)
           ? (payload.resource_limits as AccountQuotaMetric[])
           : [],
@@ -1067,6 +1106,77 @@ function AccountDetailContent() {
     }
   };
 
+  const handleApplyCreditAdjustment = async () => {
+    const creditDelta = Number(creditAdjustmentForm.credit_delta);
+    if (!Number.isFinite(creditDelta) || creditDelta === 0) {
+      setPackageActionError(
+        t(
+          'admin.account_detail.credit_adjustment_delta_required',
+          undefined,
+          'Enter a non-zero AI credit delta.'
+        )
+      );
+      return;
+    }
+    if (!creditAdjustmentForm.reason.trim()) {
+      setPackageActionError(
+        t(
+          'admin.account_detail.credit_adjustment_reason_required',
+          undefined,
+          'Enter an operator reason before applying the credit adjustment.'
+        )
+      );
+      return;
+    }
+
+    setCreditAdjustmentPending(true);
+    setPackageActionError(null);
+    setPackageActionNotice(null);
+    try {
+      const response = await fetch(
+        `/api/admin/accounts/${encodeURIComponent(accountId)}/credit-ledger/adjustments`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            event_type: creditAdjustmentForm.event_type,
+            credit_delta: creditDelta,
+            reason: creditAdjustmentForm.reason.trim(),
+            note: creditAdjustmentForm.note.trim(),
+          }),
+        }
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.message || t('error.failed_save', {}, 'Failed to save.'));
+      }
+      setPackageActionNotice(
+        t(
+          'admin.account_detail.credit_adjustment_applied_notice',
+          undefined,
+          'AI credit adjustment has been written to the current ledger period.'
+        )
+      );
+      setCreditAdjustmentForm((current) => ({
+        event_type: current.event_type,
+        credit_delta: '',
+        reason: '',
+        note: '',
+      }));
+      await Promise.all([loadAccount(selectedSiteId), loadQuotaSummary(), loadCreditLedger()]);
+    } catch (err) {
+      setPackageActionError(
+        resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save'))
+      );
+    } finally {
+      setCreditAdjustmentPending(false);
+    }
+  };
+
   useEffect(() => {
     void loadAccount();
     void loadPackagePlans();
@@ -1380,7 +1490,15 @@ function AccountDetailContent() {
   const resourceRows = quotaSummary?.resource_limits || [];
   const internalLimitRows = quotaSummary?.internal_limits || [];
   const creditLedgerItems = creditLedger?.items || [];
-  const creditLedgerTotal = Number(creditLedger?.summary?.total_credits || 0);
+  const creditLedgerNetUsed = Number(
+    creditLedger?.summary?.net_used_credits ??
+      quotaSummary?.credit_ledger_summary?.net_used_credits ??
+      creditLedger?.summary?.total_credits ??
+      0
+  );
+  const creditLedgerGranted = Number(
+    creditLedger?.summary?.granted_credits ?? quotaSummary?.credit_ledger_summary?.granted_credits ?? 0
+  );
   const creditLedgerCount = Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0);
   const siteLimitLabel = siteLimitUnlimited ? unlimitedLabel : formatInteger(accountSiteLimit);
   const packagePlanOptions = packagePlans
@@ -1756,6 +1874,97 @@ function AccountDetailContent() {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/45">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
+                    {t('admin.account_detail.credit_adjustment_label', undefined, 'AI credit adjustment')}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                    {t(
+                      'admin.account_detail.credit_adjustment_desc',
+                      undefined,
+                      'Write a grant or signed adjustment to the current AI credit ledger. A reason is required.'
+                    )}
+                  </p>
+                </div>
+                <BackofficeStatusBadge status="warning" label={t('admin.audit_required', {}, 'Audit required')} />
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-[0.75fr_0.75fr_1fr]">
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+                    {t('admin.account_detail.credit_adjustment_type_label', undefined, 'Entry type')}
+                  </span>
+                  <select
+                    value={creditAdjustmentForm.event_type}
+                    onChange={(event) =>
+                      setCreditAdjustmentForm((current) => ({ ...current, event_type: event.target.value }))
+                    }
+                    className="input"
+                  >
+                    <option value="grant">{t('admin.account_detail.credit_adjustment_grant', undefined, 'Grant')}</option>
+                    <option value="adjustment">
+                      {t('admin.account_detail.credit_adjustment_adjustment', undefined, 'Adjustment')}
+                    </option>
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+                    {t('admin.account_detail.credit_adjustment_delta_label', undefined, 'Credit delta')}
+                  </span>
+                  <input
+                    type="number"
+                    step="1"
+                    value={creditAdjustmentForm.credit_delta}
+                    onChange={(event) =>
+                      setCreditAdjustmentForm((current) => ({ ...current, credit_delta: event.target.value }))
+                    }
+                    className="input"
+                    placeholder="+1000"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+                    {t('admin.account_detail.credit_adjustment_reason_label', undefined, 'Reason')}
+                  </span>
+                  <input
+                    type="text"
+                    value={creditAdjustmentForm.reason}
+                    onChange={(event) =>
+                      setCreditAdjustmentForm((current) => ({ ...current, reason: event.target.value }))
+                    }
+                    className="input"
+                    placeholder={t('admin.account_detail.credit_adjustment_reason_placeholder', undefined, 'billing correction')}
+                  />
+                </label>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <label className="text-sm">
+                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+                    {t('admin.account_detail.credit_adjustment_note_label', undefined, 'Operator note')}
+                  </span>
+                  <input
+                    type="text"
+                    value={creditAdjustmentForm.note}
+                    onChange={(event) =>
+                      setCreditAdjustmentForm((current) => ({ ...current, note: event.target.value }))
+                    }
+                    className="input"
+                    placeholder={t('admin.optional', {}, 'Optional')}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-secondary whitespace-nowrap"
+                  disabled={creditAdjustmentPending || packageActionPending !== null}
+                  onClick={() => void handleApplyCreditAdjustment()}
+                >
+                  {creditAdjustmentPending
+                    ? t('common.saving', {}, 'Saving...')
+                    : t('admin.account_detail.apply_credit_adjustment_action', undefined, 'Apply adjustment')}
+                </button>
               </div>
             </div>
             {packageActionNotice ? (
@@ -2193,19 +2402,19 @@ function AccountDetailContent() {
                   {t(
                     'admin.account_detail.credit_ledger_desc',
                     undefined,
-                    'Current-period consume records from the AI credit ledger.'
+                    'Current-period consume, grant, adjustment, and refund records from the AI credit ledger.'
                   )}
                 </p>
               </div>
               <div className="text-left sm:text-right">
                 <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                  {formatInteger(Math.round(creditLedgerTotal))}
+                  {formatInteger(Math.round(creditLedgerNetUsed))}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {t(
-                    'admin.account_detail.credit_ledger_record_count',
-                    { count: formatInteger(creditLedgerCount) },
-                    `${formatInteger(creditLedgerCount)} records`
+                    'admin.account_detail.credit_ledger_net_used_label',
+                    { count: formatInteger(creditLedgerCount), granted: formatInteger(Math.round(creditLedgerGranted)) },
+                    `Net used, ${formatInteger(creditLedgerCount)} records, ${formatInteger(Math.round(creditLedgerGranted))} granted`
                   )}
                 </p>
               </div>
@@ -2232,20 +2441,20 @@ function AccountDetailContent() {
                               quantity: entry.quantity,
                               unit: entry.unit,
                               rate: Number(entry.rate || 0),
-                              credits: entry.consumed_credits,
+                              credits: Math.abs(Number(entry.net_credit_delta ?? entry.credit_delta ?? 0)),
                             },
                             t
                           )}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {[entry.site_id, entry.run_id].filter(Boolean).join(' · ') || entry.source_id || '-'}
+                          {[entry.event_type, entry.site_id, entry.run_id].filter(Boolean).join(' · ') || entry.source_id || '-'}
                         </p>
                       </div>
                       <p className="text-slate-700 dark:text-slate-300">
                         {formatInteger(Math.round(Number(entry.quantity || 0)))} {entry.unit}
                       </p>
                       <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
-                        {formatInteger(Math.round(Number(entry.consumed_credits || 0)))}
+                        {formatSignedCreditDelta(Number(entry.net_credit_delta ?? entry.credit_delta ?? 0))}
                       </p>
                       <p className="text-slate-500 dark:text-slate-400 sm:text-right">
                         {entry.created_at ? formatDate(entry.created_at) : '-'}
@@ -2260,7 +2469,7 @@ function AccountDetailContent() {
                 description={t(
                   'admin.account_detail.credit_ledger_empty_desc',
                   undefined,
-                  'This account has no consume entries in the current AI credit ledger period.'
+                  'This account has no AI credit ledger entries in the current period.'
                 )}
               />
             )}

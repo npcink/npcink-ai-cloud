@@ -149,6 +149,13 @@ class SubscriptionTopUpPayload(BaseModel):
     note: str = ""
 
 
+class AccountCreditAdjustmentPayload(BaseModel):
+    event_type: str = "adjustment"
+    credit_delta: float
+    reason: str = ""
+    note: str = ""
+
+
 class PaymentOrderPayload(BaseModel):
     account_id: str
     plan_id: str
@@ -1898,6 +1905,60 @@ async def get_admin_account_credit_ledger(
         status="ok",
         message="admin account credit ledger loaded",
         data=result,
+        revision="m6",
+    )
+
+
+@router.post("/admin/accounts/{account_id}/credit-ledger/adjustments")
+async def apply_admin_account_credit_adjustment(
+    request: Request,
+    account_id: str,
+    payload: AccountCreditAdjustmentPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    service = _get_commercial_service(request)
+    audit_context = _build_audit_context(request)
+    try:
+        result = service.apply_admin_account_credit_adjustment(
+            account_id=account_id,
+            event_type=payload.event_type,
+            credit_delta=payload.credit_delta,
+            reason=payload.reason,
+            note=payload.note,
+            audit_context=audit_context,
+        )
+    except CommercialServiceError as error:
+        _record_service_failure(
+            request,
+            event_kind="credit_ledger.adjustment",
+            error=error,
+            account_id=account_id,
+            scope_kind="account",
+            scope_id=account_id,
+            payload_json=_build_audit_payload(payload),
+        )
+        return _service_error_response(error)
+    entry = _dict_value(result.get("entry")) if isinstance(result, dict) else {}
+    return build_envelope(
+        status="ok",
+        message="admin account credit adjustment applied",
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind="credit_ledger.adjustment",
+                scope_kind="account",
+                scope_id=account_id,
+                outcome="succeeded",
+                effective_summary=(
+                    f"Account {account_id} AI credit ledger received "
+                    f"{entry.get('event_type') or payload.event_type} "
+                    f"delta {entry.get('credit_delta') or payload.credit_delta}."
+                ),
+                account_id=account_id,
+            ),
+        ),
         revision="m6",
     )
 

@@ -89,11 +89,11 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
         "max_runs": 0.0,
         "max_tokens": 0.0,
         "max_cost_usd": 0.0,
-        "max_sites": 0,
+        "max_sites": 5,
     }
     assert data["entitlement"]["analytics_retention"] == {"days": 45}
     assert data["entitlement"]["hosted_runtime_quota"] == {
-        "max_active_runs": 0,
+        "max_active_runs": 3,
         "max_batch_items": 25,
         "execution_tiers": ["cloud"],
     }
@@ -118,6 +118,15 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
             "direct_wordpress_write": False,
         },
     }
+    credit_usage_detail = data["quota_summary"]["credit_usage_detail"]
+    assert credit_usage_detail["default_visibility"] == "cloud_portal_only"
+    assert credit_usage_detail["local_addon_policy"] == "summary_and_link_only"
+    assert credit_usage_detail["summary"]["unit"] == "credit"
+    assert credit_usage_detail["portal_paths"] == {
+        "credit_usage": "/portal/usage",
+        "credit_ledger": "/portal/usage/credits",
+    }
+    assert "recent_items" not in credit_usage_detail
 
     dispose_engine(database_url)
 
