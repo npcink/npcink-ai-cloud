@@ -94,8 +94,10 @@ temporary linked worktree was removed so Core development can use the simpler
   new active runtime calls.
 - Commerce add-on ids such as `magick-ai/wc-*` were not migrated in this pass;
   they need a separate owner decision.
-- `/Users/muze/gitee/magick-ai-root` is still retained because some historical
-  boundary and contract references are useful during review.
+- Key historical boundary and contract references from
+  `/Users/muze/gitee/magick-ai-root` were copied into
+  `docs/legacy-contracts/magick-ai-root/`. Treat the old workspace as a
+  temporary historical source, not as an active development dependency.
 
 ## Remaining Non-Blocking Cleanup Candidate
 
