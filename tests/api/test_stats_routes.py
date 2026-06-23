@@ -348,7 +348,9 @@ def test_stats_routes_return_windowed_metrics_and_health(tmp_path: Path) -> None
     )
     rows = projection_payload["rows"]
     assert len(rows) >= 2
-    assert all(row["ability_id"] == "npcink-abilities-toolkit/build-article-block-plan" for row in rows)
+    assert all(
+        row["ability_id"] == "npcink-abilities-toolkit/build-article-block-plan" for row in rows
+    )
     assert all(row["caller_id"] == "openapi" for row in rows)
     assert sum(int(row["request_total"]) for row in rows) == 3
     assert sum(int(row["success_total"]) for row in rows) == 2

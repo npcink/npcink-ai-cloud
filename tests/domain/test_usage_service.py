@@ -297,7 +297,9 @@ def test_usage_service_builds_router_performance_snapshot_projection(tmp_path: P
 
     rows = payload["rows"]
     assert all(row["bucket_gmt"] == "2026-03-12 07:00:00" for row in rows)
-    assert all(row["ability_id"] == "npcink-abilities-toolkit/build-article-block-plan" for row in rows)
+    assert all(
+        row["ability_id"] == "npcink-abilities-toolkit/build-article-block-plan" for row in rows
+    )
     assert all(row["caller_id"] == "openapi" for row in rows)
     assert {"preset.alpha", "preset.beta"} == {str(row["preset_id"]) for row in rows}
     assert sum(int(row["guard_fail_total"]) for row in rows) == 1
