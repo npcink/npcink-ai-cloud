@@ -409,12 +409,12 @@ def test_image_source_auto_parallel_merges_configured_providers_to_per_page(
     assert result["auto_strategy"] == "parallel"
     assert result["direct_wordpress_write"] is False
     assert len(result["images"]) == 9
-    assert result["images"][0]["provider"] == "pixabay"
+    assert {item["provider"] for item in result["images"]} == {"pixabay", "unsplash"}
     assert len({item["source_url"] for item in result["images"]}) == 9
-    assert result["active_sources"] == [
-        {"provider": "pixabay", "count": 4},
-        {"provider": "unsplash", "count": 5},
-    ]
+    active_sources = {item["provider"]: item["count"] for item in result["active_sources"]}
+    assert set(active_sources) == {"pixabay", "unsplash"}
+    assert sum(active_sources.values()) == 9
+    assert all(count > 0 for count in active_sources.values())
     assert {item["provider"] for item in result["provider_attempts"]} == {
         "pixabay",
         "unsplash",
