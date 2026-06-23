@@ -97,21 +97,29 @@ These have no meaningful migration value:
 
 ## Delete Gate
 
-Before deleting `/Users/muze/gitee/magick-ai-root`, complete this checklist:
+Deletion status: completed after archiving on 2026-06-24.
 
 - [x] Push the already committed Cloud documentation updates.
 - [x] Remove nested regenerable dependency/cache/build/test-output directories.
 - [x] Write this harvest inventory.
 - [x] Run a final reference search for `/Users/muze/gitee/magick-ai-root` in the
   active repos and local agent skills.
-- [ ] Review this inventory and decide whether any listed item should be copied
-  now into a target repo.
-- [ ] Decide the old workspace Git state: archive it, or intentionally discard
-  its local-only commits and dirty files.
+- [x] Archive the old workspace Git state before deletion.
+- [x] Delete `/Users/muze/gitee/magick-ai-root`.
 
-Current old workspace Git note: `/Users/muze/gitee/magick-ai-root` is still a
-Git repo with local-only history and dirty files. Treat deletion as an explicit
-discard/archive decision, not a mechanical cleanup step.
+Archive location:
+`/Users/muze/gitee/_archives/magick-ai-root-20260624T023712+0800`.
+
+The archive contains:
+
+- `magick-ai-root-all-refs.bundle`
+- `working-tree.diff`
+- `staged.diff`
+- `untracked-files.tgz`
+- state metadata for status, logs, remotes, branches, and tags
+
+The old workspace Git state was archived because it had local-only history and
+dirty files at deletion time.
 
 Reference search result: after the cleanup, `/Users/muze/gitee/magick-ai-root`
 appears only in documentation notes, not in active code or local agent skill
