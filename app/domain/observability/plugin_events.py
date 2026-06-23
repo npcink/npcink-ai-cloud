@@ -43,9 +43,9 @@ ALLOWED_EVENT_FIELDS = {
 }
 
 EXPECTED_PLUGIN_SLUGS = (
-    "magick-ai-abilities",
-    "magick-ai-core",
-    "magick-ai-adapter",
+    "npcink-abilities-toolkit",
+    "npcink-governance-core",
+    "npcink-ai-client-adapter",
 )
 ERROR_RATE_HIGH_THRESHOLD = 0.05
 LATENCY_WARNING_MS = 3000

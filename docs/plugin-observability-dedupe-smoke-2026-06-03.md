@@ -25,8 +25,8 @@ Local Cloud Addon buffer before flush:
 - buffered events: `193`
 - unique event ids in buffer: `175`
 - duplicate event ids in buffer: `18`
-- plugins represented: `magick-ai-abilities`, `magick-ai-core`,
-  `magick-ai-adapter`
+- plugins represented: `npcink-abilities-toolkit`, `npcink-governance-core`,
+  `npcink-ai-client-adapter`
 
 Flush result:
 
@@ -50,7 +50,7 @@ semantic event id could be stored twice when timestamps drifted by one second.
 
 Observed duplicate shape:
 
-- plugin: `magick-ai-core`
+- plugin: `npcink-governance-core`
 - event kind: `core.proposal.plan_ingest`
 - same `event_id`
 - different `emitted_at` / `captured_at`

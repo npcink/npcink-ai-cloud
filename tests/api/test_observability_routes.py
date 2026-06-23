@@ -37,7 +37,7 @@ def test_plugin_observability_batch_is_signed_and_metadata_only(tmp_path: Path) 
         "events": [
             {
                 "schema_version": "2026-06-01",
-                "plugin_slug": "magick-ai-core",
+                "plugin_slug": "npcink-governance-core",
                 "plugin_version": "0.1.0",
                 "source": "local",
                 "event_kind": "core.proposal.create",
@@ -50,7 +50,7 @@ def test_plugin_observability_batch_is_signed_and_metadata_only(tmp_path: Path) 
             },
             {
                 "schema_version": "2026-06-01",
-                "plugin_slug": "magick-ai-adapter",
+                "plugin_slug": "npcink-ai-client-adapter",
                 "plugin_version": "0.1.0",
                 "source": "local",
                 "event_kind": "adapter.core.request",
@@ -58,7 +58,7 @@ def test_plugin_observability_batch_is_signed_and_metadata_only(tmp_path: Path) 
                 "status": "error",
                 "error_code": "magick_ai_adapter_upstream_failed",
                 "method": "POST",
-                "route": "/magick-ai-core/v1/proposals",
+                "route": "/npcink-governance-core/v1/proposals",
                 "status_code": 500,
                 "captured_at": "2026-06-01T00:00:01Z",
             },
@@ -95,12 +95,12 @@ def test_plugin_observability_batch_is_signed_and_metadata_only(tmp_path: Path) 
         )
         assert len(events) == 2
         assert events[0].site_id == "site_obs"
-        assert events[0].plugin_slug == "magick-ai-core"
+        assert events[0].plugin_slug == "npcink-governance-core"
         assert events[0].event_kind == "core.proposal.create"
         assert events[0].ability_id == "npcink-abilities-toolkit/create-draft"
         assert events[0].payload_json == {}
         assert events[1].error_code == "magick_ai_adapter_upstream_failed"
-        assert events[1].route == "/magick-ai-core/v1/proposals"
+        assert events[1].route == "/npcink-governance-core/v1/proposals"
 
 
 def test_plugin_observability_requires_stats_scope(tmp_path: Path) -> None:
@@ -114,7 +114,7 @@ def test_plugin_observability_requires_stats_scope(tmp_path: Path) -> None:
         "contract_version": "magick-plugin-observability-v1",
         "events": [
             {
-                "plugin_slug": "magick-ai-core",
+                "plugin_slug": "npcink-governance-core",
                 "event_kind": "core.proposal.create",
                 "event_id": "evt_denied",
             }
@@ -147,14 +147,14 @@ def test_plugin_observability_summary_returns_aggregates(tmp_path: Path) -> None
         "contract_version": "magick-plugin-observability-v1",
         "events": [
             {
-                "plugin_slug": "magick-ai-core",
+                "plugin_slug": "npcink-governance-core",
                 "event_kind": "core.proposal.create",
                 "event_id": "evt_summary_core_ok",
                 "status": "ok",
                 "latency_ms": 10,
             },
             {
-                "plugin_slug": "magick-ai-core",
+                "plugin_slug": "npcink-governance-core",
                 "event_kind": "core.proposal.create",
                 "event_id": "evt_summary_core_error",
                 "status": "error",
@@ -163,12 +163,12 @@ def test_plugin_observability_summary_returns_aggregates(tmp_path: Path) -> None
                 "ability_id": "npcink-abilities-toolkit/create-draft",
             },
             {
-                "plugin_slug": "magick-ai-adapter",
+                "plugin_slug": "npcink-ai-client-adapter",
                 "event_kind": "adapter.core.request",
                 "event_id": "evt_summary_adapter_ok",
                 "status": "ok",
                 "latency_ms": 20,
-                "route": "/magick-ai-core/v1/proposals",
+                "route": "/npcink-governance-core/v1/proposals",
             },
         ],
     }
@@ -206,9 +206,9 @@ def test_plugin_observability_summary_returns_aggregates(tmp_path: Path) -> None
     assert data["totals"]["error_total"] == 1
     assert data["totals"]["success_rate"] == 0.6667
     plugins = {item["plugin_slug"]: item for item in data["plugins"]}
-    assert plugins["magick-ai-core"]["events_total"] == 2
-    assert plugins["magick-ai-core"]["error_total"] == 1
-    assert plugins["magick-ai-core"]["avg_latency_ms"] == 20
+    assert plugins["npcink-governance-core"]["events_total"] == 2
+    assert plugins["npcink-governance-core"]["error_total"] == 1
+    assert plugins["npcink-governance-core"]["avg_latency_ms"] == 20
     assert data["errors"][0]["error_code"] == "core.proposal_invalid"
     assert data["recent_errors"][0]["ability_id"] == "npcink-abilities-toolkit/create-draft"
 
@@ -219,7 +219,7 @@ def test_plugin_observability_event_id_is_deduped_after_replay_window(tmp_path: 
         "contract_version": "magick-plugin-observability-v1",
         "events": [
             {
-                "plugin_slug": "magick-ai-abilities",
+                "plugin_slug": "npcink-abilities-toolkit",
                 "event_kind": "abilities.callback.completed",
                 "event_id": "evt_same",
                 "status": "ok",
@@ -257,7 +257,7 @@ def test_plugin_observability_event_id_dedupes_timestamp_drift(tmp_path: Path) -
             "contract_version": "magick-plugin-observability-v1",
             "events": [
                 {
-                    "plugin_slug": "magick-ai-core",
+                    "plugin_slug": "npcink-governance-core",
                     "event_kind": "core.proposal.plan_ingest",
                     "event_id": "core_proposal_plan_ingest_same",
                     "status": "ok",
@@ -270,7 +270,7 @@ def test_plugin_observability_event_id_dedupes_timestamp_drift(tmp_path: Path) -
             "contract_version": "magick-plugin-observability-v1",
             "events": [
                 {
-                    "plugin_slug": "magick-ai-core",
+                    "plugin_slug": "npcink-governance-core",
                     "event_kind": "core.proposal.plan_ingest",
                     "event_id": "core_proposal_plan_ingest_same",
                     "status": "ok",
@@ -322,7 +322,7 @@ def test_plugin_observability_cleanup_retains_180_days(tmp_path: Path) -> None:
                     site_id="site_obs",
                     key_id="key_test",
                     schema_version="2026-06-01",
-                    plugin_slug="magick-ai-core",
+                    plugin_slug="npcink-governance-core",
                     plugin_version="1.0.0",
                     source="local",
                     event_kind="core.proposal.create",
@@ -348,7 +348,7 @@ def test_plugin_observability_cleanup_retains_180_days(tmp_path: Path) -> None:
                     site_id="site_obs",
                     key_id="key_test",
                     schema_version="2026-06-01",
-                    plugin_slug="magick-ai-core",
+                    plugin_slug="npcink-governance-core",
                     plugin_version="1.0.0",
                     source="local",
                     event_kind="core.proposal.create",

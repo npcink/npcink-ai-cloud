@@ -30,11 +30,11 @@ The safe product sentence is:
 
 ## Repository Roles
 
-- `magick-ai-abilities`: ability definitions, schemas, callbacks, and
+- `npcink-abilities-toolkit`: ability definitions, schemas, callbacks, and
   permission metadata.
-- `magick-ai-core`: governance, proposal review, approval, preflight, and
+- `npcink-governance-core`: governance, proposal review, approval, preflight, and
   audit.
-- `magick-ai-adapter`: OpenClaw channel adapter that calls Core and WordPress
+- `npcink-ai-client-adapter`: OpenClaw channel adapter that calls Core and WordPress
   Abilities API.
 - `npcink-cloud-addon`: thin WordPress connector for Cloud URL/API key,
   signing, hosted runtime calls, and read-only service status.

@@ -329,7 +329,7 @@ surface for the operator, support, and addon display:
     },
     "core_handoff_summary": {
       "proposal_created": false,
-      "proposal_state_owner": "magick-ai-core",
+      "proposal_state_owner": "npcink-governance-core",
       "approval_truth": "wordpress_local",
       "final_write_truth": "wordpress_local"
     },
@@ -415,12 +415,12 @@ bounded intake package beside the result:
   "selected_review_item_ids": ["action_001"],
   "handoff_owner": "wordpress_toolbox_local",
   "handoff_surface": "morning_brief_review_queue",
-  "target_owner": "magick-ai-core",
+  "target_owner": "npcink-governance-core",
   "target_route": "core:/proposals/from-plan",
   "target_plan_ability_id": "npcink-toolbox/build-nightly-inspection-review-plan",
   "target_plan_contract": "nightly_site_inspection_core_review_plan.v1",
   "proposal_created": false,
-  "proposal_state_owner": "magick-ai-core",
+  "proposal_state_owner": "npcink-governance-core",
   "approval_truth": "wordpress_local",
   "final_write_truth": "wordpress_local",
   "cloud_role": "runtime_detail",

@@ -287,7 +287,7 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
     assert result["core_handoff_suggestion"] == {
         "available": True,
         "suggestion_type": "core_review_plan_candidate",
-        "target_owner": "magick-ai-core",
+        "target_owner": "npcink-governance-core",
         "target_plan_ability_id": "npcink-toolbox/build-nightly-inspection-review-plan",
         "target_plan_contract": "nightly_site_inspection_core_review_plan.v1",
         "source_action_ids": ["action_001"],
@@ -324,7 +324,7 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
         "recommended_next_action": "review_update_brief",
         "direct_wordpress_write": False,
     }
-    assert result["core_intake_package"]["target_owner"] == "magick-ai-core"
+    assert result["core_intake_package"]["target_owner"] == "npcink-governance-core"
     assert result["core_intake_package"]["handoff_owner"] == "wordpress_toolbox_local"
     assert result["core_intake_package"]["handoff_surface"] == (
         "morning_brief_review_queue"
@@ -340,7 +340,7 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
         f"nightly-inspection-review-{run_id}"
     )
     assert result["core_intake_package"]["proposal_created"] is False
-    assert result["core_intake_package"]["proposal_state_owner"] == "magick-ai-core"
+    assert result["core_intake_package"]["proposal_state_owner"] == "npcink-governance-core"
     assert result["core_intake_package"]["approval_truth"] == "wordpress_local"
     assert result["core_intake_package"]["final_write_truth"] == "wordpress_local"
     assert result["core_intake_package"]["cloud_role"] == "runtime_detail"
@@ -407,7 +407,7 @@ def test_cloud_batch_runtime_queues_and_worker_returns_review_only_result(tmp_pa
     }
     assert result["nightly_run_detail"]["core_handoff_summary"][
         "proposal_state_owner"
-    ] == "magick-ai-core"
+    ] == "npcink-governance-core"
     assert result["nightly_run_detail"]["read_only_boundary"] == {
         "cloud_role": "runtime_detail",
         "cloud_scheduler_truth": False,

@@ -88,7 +88,7 @@ The additive Core intake package uses:
 - `core_intake_package.handoff_surface`: `morning_brief_review_queue`
 - `core_intake_package.target_route`: `core:/proposals/from-plan`
 - `core_intake_package.proposal_created`: `false`
-- `core_intake_package.proposal_state_owner`: `magick-ai-core`
+- `core_intake_package.proposal_state_owner`: `npcink-governance-core`
 - `core_intake_package.receipt_expectation.expected_local_receipt`:
   `core_proposal_id`
 - `core_intake_package.receipt_expectation.receipt_owner`:
