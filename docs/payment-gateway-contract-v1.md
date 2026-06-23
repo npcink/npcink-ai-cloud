@@ -1,0 +1,55 @@
+# Payment Gateway Contract v1
+
+Status: active
+
+This contract defines the boundary between Magick AI Cloud payment orders and
+external payment providers.
+
+The code truth is `app/domain/commercial/payment_gateways.py`.
+
+## Boundary
+
+The gateway layer owns provider-specific order creation, payment callback
+verification, refund creation, and refund callback verification.
+
+The commercial service still owns:
+
+- payment order persistence;
+- subscription activation;
+- credit pack grants;
+- refund adjustments;
+- audit events;
+- credit ledger writes.
+
+Do not let Alipay, WeChat Pay, SDK callback payloads, or signing details leak
+into credit ledger or entitlement logic.
+
+## Provider Contract
+
+Every provider must implement:
+
+- `create_order(request)`: returns `external_order_no`, optional `checkout_url`,
+  and provider metadata.
+- `verify_payment_callback(payload)`: returns normalized order number, trade
+  number, event id, amount, status, and occurred time.
+- `create_refund(request)`: returns `external_refund_no` and provider metadata.
+- `verify_refund_callback(payload)`: returns normalized refund number, provider
+  refund number, event id, amount, status, and occurred time.
+
+Supported provider keys are:
+
+- `alipay`
+- `wechat_pay`
+- `manual`
+
+`wechat` and `wxpay` are accepted aliases for `wechat_pay`.
+
+## Current Provider Mode
+
+Providers currently run in simulated mode. They create local payment/refund
+records and expose normalized callback parsing, but they do not call real Alipay
+or WeChat Pay APIs yet.
+
+Real provider integration must replace only the provider implementation behind
+this contract. It must not change the payment order, credit pack, or credit
+ledger state machine.

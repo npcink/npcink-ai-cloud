@@ -39,6 +39,12 @@ from app.domain.commercial.mixins._audit_mixin import (
     CommercialServiceAuditMixin,
     ServiceAuditContext,
 )
+from app.domain.commercial.payment_gateways import (
+    PaymentGatewayOrderRequest,
+    PaymentGatewayRefundRequest,
+    get_payment_gateway_provider,
+    normalize_payment_gateway_provider,
+)
 
 
 class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
@@ -163,6 +169,18 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "target_period_end_at": service._serialize_datetime(period_end_at),
                 "grant_policy": "payment_success_grants_current_period_ai_credits",
             }
+            gateway = get_payment_gateway_provider(normalized_provider)
+            gateway_order = gateway.create_order(
+                PaymentGatewayOrderRequest(
+                    provider=normalized_provider,
+                    order_id=order_id,
+                    amount=round(float(pack.amount), 6),
+                    currency=pack.currency,
+                    subject=f"{pack.label} ({pack.ai_credits} AI credits)",
+                    metadata=metadata,
+                )
+            )
+            metadata["payment_gateway"] = gateway_order.provider_payload
             order = repository.create_payment_order(
                 order_id=order_id,
                 account_id=account_id,
@@ -171,12 +189,12 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 plan_id=primary_subscription.plan_id,
                 plan_version_id=primary_subscription.plan_version_id,
                 provider=normalized_provider,
-                external_order_no=order_id,
+                external_order_no=gateway_order.external_order_no,
                 status=PAYMENT_ORDER_STATUS_PENDING,
                 amount=round(float(pack.amount), 6),
                 currency=pack.currency,
                 subject=f"{pack.label} ({pack.ai_credits} AI credits)",
-                checkout_url=None,
+                checkout_url=gateway_order.checkout_url or None,
                 refund_window_end_at=now + timedelta(days=14),
                 idempotency_key=idempotency_key or None,
                 metadata_json=metadata,
@@ -248,6 +266,18 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             metadata = dict(metadata_json or {})
             metadata.setdefault("source", "payment_order")
             metadata.setdefault("refund_policy", "customer_requested_full_refund")
+            gateway = get_payment_gateway_provider(normalized_provider)
+            gateway_order = gateway.create_order(
+                PaymentGatewayOrderRequest(
+                    provider=normalized_provider,
+                    order_id=order_id,
+                    amount=normalized_amount,
+                    currency=normalized_currency,
+                    subject=normalized_subject,
+                    metadata=metadata,
+                )
+            )
+            metadata["payment_gateway"] = gateway_order.provider_payload
             order = repository.create_payment_order(
                 order_id=order_id,
                 account_id=account_id,
@@ -256,12 +286,12 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 plan_id=plan.plan_id,
                 plan_version_id=plan_version.plan_version_id,
                 provider=normalized_provider,
-                external_order_no=order_id,
+                external_order_no=gateway_order.external_order_no,
                 status=PAYMENT_ORDER_STATUS_PENDING,
                 amount=normalized_amount,
                 currency=normalized_currency,
                 subject=normalized_subject,
-                checkout_url=None,
+                checkout_url=gateway_order.checkout_url or None,
                 refund_window_end_at=now + timedelta(days=max(0, int(refund_window_days))),
                 idempotency_key=idempotency_key or None,
                 metadata_json=metadata,
@@ -443,20 +473,34 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "refund amount cannot exceed the payment order amount",
                 )
             refund_id = f"ref_{uuid4().hex[:24]}"
+            refund_metadata = dict(metadata_json or {})
+            gateway = get_payment_gateway_provider(order.provider)
+            gateway_refund = gateway.create_refund(
+                PaymentGatewayRefundRequest(
+                    provider=order.provider,
+                    refund_id=refund_id,
+                    order_id=order.order_id,
+                    amount=refund_amount,
+                    currency=order.currency,
+                    reason=str(reason or "").strip(),
+                    metadata=refund_metadata,
+                )
+            )
+            refund_metadata["payment_gateway"] = gateway_refund.provider_payload
             refund = repository.create_payment_refund(
                 refund_id=refund_id,
                 order_id=order.order_id,
                 account_id=order.account_id,
                 subscription_id=order.subscription_id,
                 provider=order.provider,
-                external_refund_no=refund_id,
+                external_refund_no=gateway_refund.external_refund_no,
                 status=PAYMENT_REFUND_STATUS_REQUESTED,
                 amount=refund_amount,
                 currency=order.currency,
                 reason=str(reason or "").strip() or None,
                 requested_at=now,
                 idempotency_key=idempotency_key or None,
-                metadata_json=dict(metadata_json or {}),
+                metadata_json=refund_metadata,
             )
             payload = self._serialize_payment_refund(refund)
             service._record_service_audit_in_session(
@@ -572,6 +616,26 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             )
             session.commit()
             return payload
+
+    def verify_payment_gateway_callback(
+        self,
+        *,
+        provider: str,
+        raw_event: dict[str, object],
+    ) -> dict[str, object]:
+        normalized_provider = self._normalize_payment_provider(provider)
+        gateway = get_payment_gateway_provider(normalized_provider)
+        return gateway.verify_payment_callback(dict(raw_event or {})).to_payload()
+
+    def verify_payment_gateway_refund_callback(
+        self,
+        *,
+        provider: str,
+        raw_event: dict[str, object],
+    ) -> dict[str, object]:
+        normalized_provider = self._normalize_payment_provider(provider)
+        gateway = get_payment_gateway_provider(normalized_provider)
+        return gateway.verify_refund_callback(dict(raw_event or {})).to_payload()
 
     def _mark_credit_pack_payment_order_paid_in_session(
         self,
@@ -830,15 +894,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         return subscription
 
     def _normalize_payment_provider(self, provider: str) -> str:
-        normalized = str(provider or "").strip().lower()
-        if normalized in {"wechat", "wxpay"}:
-            normalized = "wechat_pay"
-        if normalized not in {"alipay", "wechat_pay", "manual"}:
-            raise CommercialValidationError(
-                "service.payment_provider_unsupported",
-                "payment provider must be alipay, wechat_pay, or manual",
-            )
-        return normalized
+        return normalize_payment_gateway_provider(provider)
 
     def _normalize_payment_currency(self, currency: str) -> str:
         normalized = str(currency or "").strip().upper()

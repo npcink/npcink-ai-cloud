@@ -96,10 +96,52 @@ def test_payment_order_does_not_grant_entitlement_until_paid(tmp_path: Path) -> 
 
     assert order["status"] == PAYMENT_ORDER_STATUS_PENDING
     assert order["provider"] == "alipay"
+    assert order["external_order_no"] == order["order_id"]
+    assert order["metadata"]["payment_gateway"]["contract_version"] == (
+        "payment-gateway-contract-v1"
+    )
+    assert order["metadata"]["payment_gateway"]["provider"] == "alipay"
     with get_session(database_url) as session:
         assert session.scalar(select(PaymentOrder)).status == PAYMENT_ORDER_STATUS_PENDING
         assert session.scalar(select(AccountSubscription)) is None
         assert session.scalar(select(AccountEntitlementSnapshot)) is None
+
+    dispose_engine(database_url)
+
+
+def test_payment_service_verifies_gateway_callbacks(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+
+    payment = service.verify_payment_gateway_callback(
+        provider="wechat",
+        raw_event={
+            "out_trade_no": "pay_callback_001",
+            "transaction_id": "420000000020260623000002",
+            "event_id": "notify-wechat-payment-002",
+            "amount": {"total": 19900},
+            "trade_state": "SUCCESS",
+        },
+    )
+    refund = service.verify_payment_gateway_refund_callback(
+        provider="alipay",
+        raw_event={
+            "out_biz_no": "ref_callback_001",
+            "trade_no": "202606230000000002",
+            "notify_id": "notify-alipay-refund-002",
+            "refund_fee": "199.00",
+            "refund_status": "REFUND_SUCCESS",
+        },
+    )
+
+    assert payment["provider"] == "wechat_pay"
+    assert payment["external_order_no"] == "pay_callback_001"
+    assert payment["amount"] == 199.0
+    assert payment["status"] == "succeeded"
+    assert refund["provider"] == "alipay"
+    assert refund["external_refund_no"] == "ref_callback_001"
+    assert refund["status"] == "succeeded"
 
     dispose_engine(database_url)
 
@@ -196,6 +238,10 @@ def test_full_refund_success_cancels_subscription_and_supersedes_entitlement(
     )
 
     assert refund["status"] == PAYMENT_REFUND_STATUS_REQUESTED
+    assert refund["external_refund_no"] == refund["refund_id"]
+    assert refund["metadata"]["payment_gateway"]["contract_version"] == (
+        "payment-gateway-contract-v1"
+    )
     assert result["order"]["status"] == PAYMENT_ORDER_STATUS_REFUNDED
     assert result["refund"]["status"] == PAYMENT_REFUND_STATUS_SUCCEEDED
     assert result["revoked_subscription"]["status"] == SUBSCRIPTION_STATUS_CANCELED
@@ -238,7 +284,7 @@ def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> N
     order = service.create_credit_pack_payment_order(
         account_id="acct_pay",
         pack_id="pack_small",
-        provider="alipay",
+        provider="wechat",
         audit_context=_audit("credit-pack-order"),
     )
     pending_orders = service.list_account_payment_orders(
@@ -268,6 +314,8 @@ def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> N
     )
 
     assert order["status"] == PAYMENT_ORDER_STATUS_PENDING
+    assert order["provider"] == "wechat_pay"
+    assert order["metadata"]["payment_gateway"]["provider"] == "wechat_pay"
     assert order["purchase_kind"] == "credit_pack"
     assert order["credit_pack"]["pack_id"] == "pack_small"
     assert order["target_subscription_id"] == base_paid["subscription"]["subscription_id"]
