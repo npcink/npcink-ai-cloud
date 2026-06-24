@@ -61,6 +61,7 @@ Operational references:
 - [docs/internal-ai-advisor-v1.md](docs/internal-ai-advisor-v1.md)
 - [docs/site-ops-cloud-analysis-runtime-v1.md](docs/site-ops-cloud-analysis-runtime-v1.md)
 - [docs/writing-assistance-evidence-history-2026-06.md](docs/writing-assistance-evidence-history-2026-06.md)
+- [docs/cloud-production-deployment-history-2026-06-24.md](docs/cloud-production-deployment-history-2026-06-24.md)
 
 ## Test Entry For Agents
 
