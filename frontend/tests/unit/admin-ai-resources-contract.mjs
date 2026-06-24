@@ -29,6 +29,18 @@ assert.match(
   'AI resources page must not present itself as a second control plane'
 );
 
+assert.match(
+  pageSource,
+  /Recent runtime evidence/,
+  'AI resources page must expose recent runtime evidence for operator debugging'
+);
+
+assert.match(
+  pageSource,
+  /Prompt and result content are not exposed here/,
+  'AI resources runtime evidence must be metadata-only'
+);
+
 assert.doesNotMatch(
   pageSource,
   /secret:\s*string/,

@@ -248,7 +248,7 @@ class AudioWorkbenchService:
             profile_id=self._audio_summary_text_profile_id(),
             execution_tier="cloud",
             execution_pattern="inline",
-            data_classification="public_site_content",
+            data_classification="internal",
             storage_mode=RUNTIME_STORAGE_MODE_RESULT_ONLY,
             timeout_seconds=30,
             retry_max=0,

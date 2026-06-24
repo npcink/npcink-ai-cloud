@@ -2632,6 +2632,7 @@ async def get_admin_ai_resources(request: Request) -> Any:
         data=build_admin_ai_resource_projection(
             services.settings,
             providers=services.providers,
+            database_url=services.settings.database_url,
         ),
         revision="m6",
     )

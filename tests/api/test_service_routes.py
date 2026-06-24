@@ -616,6 +616,85 @@ def test_admin_ai_resources_reads_injected_runtime_provider_adapters(
     assert profiles["audio.summary.default"]["status"] == "ready"
 
 
+def test_admin_ai_resources_exposes_recent_runtime_evidence_without_content(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    seed_site_auth(
+        database_url,
+        site_id="site_ai_resources",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        session.add(
+            RunRecord(
+                run_id="run_ai_resources_text_recent",
+                site_id="site_ai_resources",
+                account_id="acct_site_ai_resources",
+                subscription_id=None,
+                plan_version_id=None,
+                ability_name="npcink-toolbox/ai-content-support",
+                ability_family="text",
+                skill_id="",
+                workflow_id="",
+                contract_version="hosted_ai_content_support.v1",
+                channel="admin",
+                execution_kind="text",
+                execution_tier="cloud",
+                execution_pattern="inline",
+                data_classification="public_site_content",
+                profile_id=TEXT_AI_PROFILE_ID,
+                canonical_run_id=None,
+                status="succeeded",
+                idempotency_key="idem-ai-resources-text-recent",
+                request_fingerprint="fingerprint-ai-resources-text-recent",
+                trace_id="trace-ai-resources-text-recent",
+                cancel_requested_at=None,
+                canceled_at=None,
+                input_json={"prompt": "sensitive draft body should not appear"},
+                execution_input_ciphertext=None,
+                policy_json={},
+                result_ref="inline",
+                result_json={"output_text": "generated text should not appear"},
+                error_code=None,
+                error_message=None,
+                callback_status="not_requested",
+                callback_attempt_count=0,
+                callback_last_attempt_at=None,
+                callback_delivered_at=None,
+                callback_next_attempt_at=None,
+                callback_last_error_code=None,
+                callback_last_error_message=None,
+                selected_provider_id="openai",
+                selected_model_id="gpt-5.5",
+                selected_instance_id="openai-global-gpt-5-5",
+                fallback_used=False,
+                started_at=now,
+                processing_started_at=now,
+                finished_at=now,
+                retention_expires_at=now + timedelta(days=1),
+                result_purged_at=None,
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/ai-resources",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    evidence = data["recent_runtime_evidence"]["profiles"][TEXT_AI_PROFILE_ID]
+    assert evidence["run_id"] == "run_ai_resources_text_recent"
+    assert evidence["status"] == "succeeded"
+    assert evidence["provider_id"] == "openai"
+    serialized = json.dumps(data)
+    assert "sensitive draft body" not in serialized
+    assert "generated text should not appear" not in serialized
+
+
 def test_admin_ai_resources_saves_profile_preferences_without_secrets(
     tmp_path: Path,
 ) -> None:

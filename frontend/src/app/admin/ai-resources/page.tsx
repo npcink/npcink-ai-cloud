@@ -50,6 +50,27 @@ type RuntimeProfile = {
   selection_owner: string;
   used_by: string[];
   selected_for?: string[];
+  last_run?: RuntimeEvidence | PipelineRuntimeEvidence;
+};
+
+type RuntimeEvidence = {
+  run_id?: string;
+  site_id?: string;
+  status?: string;
+  profile_id?: string;
+  provider_id?: string;
+  model_id?: string;
+  instance_id?: string;
+  trace_id?: string;
+  error_code?: string;
+  started_at?: string;
+  finished_at?: string;
+};
+
+type PipelineRuntimeEvidence = {
+  text?: RuntimeEvidence;
+  audio?: RuntimeEvidence;
+  status?: string;
 };
 
 type ProfilePreferences = {
@@ -69,6 +90,11 @@ type AiResources = {
   connections: Connection[];
   capabilities: Capability[];
   runtime_profiles: RuntimeProfile[];
+  recent_runtime_evidence?: {
+    source: string;
+    content_exposed: boolean;
+    profiles: Record<string, RuntimeEvidence>;
+  };
   profile_preferences: ProfilePreferences;
   boundary: {
     direct_wordpress_write: boolean;
@@ -87,6 +113,19 @@ function statusTone(status: ResourceStatus): 'success' | 'warning' | 'disabled' 
 
 function labelList(values: string[]): string {
   return values.length ? values.join(', ') : '-';
+}
+
+function isRuntimeEvidence(value: RuntimeEvidence | PipelineRuntimeEvidence | undefined): value is RuntimeEvidence {
+  return Boolean(value && 'run_id' in value);
+}
+
+function evidenceSummary(profile: RuntimeProfile): RuntimeEvidence | null {
+  const lastRun = profile.last_run;
+  if (!lastRun) return null;
+  if (isRuntimeEvidence(lastRun)) {
+    return lastRun.run_id ? lastRun : null;
+  }
+  return lastRun.audio?.run_id ? lastRun.audio : lastRun.text?.run_id ? lastRun.text : null;
 }
 
 function AiResourcesContent() {
@@ -402,6 +441,46 @@ function AiResourcesContent() {
               </div>
             </BackofficeStackCard>
           ))}
+        </div>
+      </BackofficeSectionPanel>
+
+      <BackofficeSectionPanel>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Recent runtime evidence</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Last observed run metadata for each profile. Prompt and result content are not exposed here.
+            </p>
+          </div>
+          <BackofficeStatusBadge
+            label={data.recent_runtime_evidence?.content_exposed ? 'Review' : 'Metadata only'}
+            status={data.recent_runtime_evidence?.content_exposed ? 'warning' : 'success'}
+          />
+        </div>
+        <div className="mt-4 grid gap-3">
+          {data.runtime_profiles.map((profile) => {
+            const evidence = evidenceSummary(profile);
+            return (
+              <BackofficeStackCard key={`evidence-${profile.profile_id}`} className="grid gap-3 lg:grid-cols-[1fr_8rem_1.2fr_1fr] lg:items-center">
+                <div>
+                  <div className="font-semibold text-slate-950 dark:text-white">{profile.profile_id}</div>
+                  <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {evidence?.run_id || 'No recent run'}
+                  </div>
+                </div>
+                <BackofficeStatusBadge
+                  label={evidence?.status || 'not observed'}
+                  status={evidence?.status === 'failed' ? 'error' : evidence?.status === 'succeeded' ? 'success' : 'disabled'}
+                />
+                <div className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {evidence?.provider_id || '-'} / {evidence?.model_id || '-'}
+                </div>
+                <div className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {evidence?.trace_id || '-'}
+                </div>
+              </BackofficeStackCard>
+            );
+          })}
         </div>
       </BackofficeSectionPanel>
     </BackofficePageStack>

@@ -4,8 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
 from app.adapters.providers.base import ProviderAdapter
 from app.core.config import Settings
+from app.core.db import get_session
+from app.core.models import RunRecord
 from app.domain.audio_generation.admin_config import AudioProviderAdminConfigService
 from app.domain.hosted_model_defaults import (
     AUDIO_NARRATION_MODEL_ID,
@@ -121,6 +125,7 @@ def build_admin_ai_resource_projection(
     settings: Settings,
     *,
     providers: dict[str, ProviderAdapter] | None = None,
+    database_url: str | None = None,
 ) -> dict[str, Any]:
     provider_adapters = providers or {}
     audio_config = AudioProviderAdminConfigService(settings).get_config()
@@ -149,6 +154,15 @@ def build_admin_ai_resource_projection(
     audio_narration_profile_id = _selected_audio_narration_profile_id(settings)
     audio_summary_text_profile_id = _selected_audio_summary_text_profile_id(settings)
     audio_summary_audio_profile_id = _selected_audio_summary_audio_profile_id(settings)
+    recent_runs = _recent_runtime_evidence(
+        database_url or getattr(settings, "database_url", ""),
+        profile_ids=[
+            TEXT_AI_PROFILE_ID,
+            FREE_GPT55_TEXT_PROFILE_ID,
+            AUDIO_NARRATION_PROFILE_ID,
+            AUDIO_NARRATION_QUALITY_PROFILE_ID,
+        ],
+    )
 
     connections = [
         {
@@ -250,6 +264,7 @@ def build_admin_ai_resource_projection(
             "status": "ready" if text_configured else "missing_provider",
             "selection_owner": "cloud_runtime_metadata",
             "used_by": ["Hosted Content Support", "Audio summary script"],
+            "last_run": recent_runs.get(TEXT_AI_PROFILE_ID, {}),
             "selected_for": (
                 ["audio_summary_script"]
                 if audio_summary_text_profile_id == TEXT_AI_PROFILE_ID
@@ -266,6 +281,7 @@ def build_admin_ai_resource_projection(
             "status": "ready" if text_configured else "missing_provider",
             "selection_owner": "cloud_runtime_metadata",
             "used_by": ["Audio summary script"],
+            "last_run": recent_runs.get(FREE_GPT55_TEXT_PROFILE_ID, {}),
             "selected_for": (
                 ["audio_summary_script"]
                 if audio_summary_text_profile_id == FREE_GPT55_TEXT_PROFILE_ID
@@ -282,6 +298,7 @@ def build_admin_ai_resource_projection(
             "status": "ready" if audio_status == "ready" else "missing_provider",
             "selection_owner": "cloud_runtime_metadata",
             "used_by": ["Article narration", "Audio summary playback"],
+            "last_run": recent_runs.get(AUDIO_NARRATION_PROFILE_ID, {}),
             "selected_for": _audio_selected_for(
                 AUDIO_NARRATION_PROFILE_ID,
                 audio_narration_profile_id=audio_narration_profile_id,
@@ -298,6 +315,7 @@ def build_admin_ai_resource_projection(
             "status": "ready" if audio_status == "ready" else "missing_provider",
             "selection_owner": "cloud_runtime_metadata",
             "used_by": ["Article narration", "Audio summary playback"],
+            "last_run": recent_runs.get(AUDIO_NARRATION_QUALITY_PROFILE_ID, {}),
             "selected_for": _audio_selected_for(
                 AUDIO_NARRATION_QUALITY_PROFILE_ID,
                 audio_narration_profile_id=audio_narration_profile_id,
@@ -321,6 +339,11 @@ def build_admin_ai_resource_projection(
             else "missing_provider",
             "selection_owner": "cloud_runtime_metadata",
             "used_by": ["Long-form audio summary"],
+            "last_run": _pipeline_last_run(
+                recent_runs,
+                text_profile_id=audio_summary_text_profile_id,
+                audio_profile_id=audio_summary_audio_profile_id,
+            ),
             "selected_for": ["article_audio_summary"],
         },
     ]
@@ -330,6 +353,11 @@ def build_admin_ai_resource_projection(
         "connections": connections,
         "capabilities": capabilities,
         "runtime_profiles": runtime_profiles,
+        "recent_runtime_evidence": {
+            "source": "run_records",
+            "content_exposed": False,
+            "profiles": recent_runs,
+        },
         "profile_preferences": {
             "env_path": str(settings.ai_resources_admin_env_path or ".env.local"),
             "requires_worker_restart_after_save": True,
@@ -407,6 +435,55 @@ def _configured_provider_ids(config: dict[str, Any]) -> list[str]:
         for provider_id, provider in providers.items()
         if bool(_dict(provider).get("configured"))
     ]
+
+
+def _recent_runtime_evidence(
+    database_url: str,
+    *,
+    profile_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not database_url:
+        return {}
+    evidence: dict[str, dict[str, Any]] = {}
+    with get_session(database_url) as session:
+        for profile_id in profile_ids:
+            run = session.scalar(
+                select(RunRecord)
+                .where(RunRecord.profile_id == profile_id)
+                .order_by(RunRecord.started_at.desc())
+                .limit(1)
+            )
+            if run is None:
+                continue
+            evidence[profile_id] = {
+                "run_id": run.run_id,
+                "site_id": run.site_id,
+                "status": run.status,
+                "profile_id": run.profile_id,
+                "provider_id": run.selected_provider_id or "",
+                "model_id": run.selected_model_id or "",
+                "instance_id": run.selected_instance_id or "",
+                "trace_id": run.trace_id,
+                "error_code": run.error_code or "",
+                "started_at": run.started_at.isoformat() if run.started_at else "",
+                "finished_at": run.finished_at.isoformat() if run.finished_at else "",
+            }
+    return evidence
+
+
+def _pipeline_last_run(
+    recent_runs: dict[str, dict[str, Any]],
+    *,
+    text_profile_id: str,
+    audio_profile_id: str,
+) -> dict[str, Any]:
+    text_run = recent_runs.get(text_profile_id, {})
+    audio_run = recent_runs.get(audio_profile_id, {})
+    return {
+        "text": text_run,
+        "audio": audio_run,
+        "status": "ready" if text_run and audio_run else "not_observed",
+    }
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
