@@ -130,6 +130,8 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     remote_env_script = (_cloud_root() / "deploy" / "remote-env-upsert.sh").read_text()
     remote_migrate_script = (_cloud_root() / "deploy" / "remote-migrate.sh").read_text()
     deploy_to_ssh_script = (_cloud_root() / "deploy" / "deploy-to-ssh-host.sh").read_text()
+    common_script = (_cloud_root() / "deploy" / "common.sh").read_text()
+    remote_load_script = (_cloud_root() / "deploy" / "remote-load-and-up.sh").read_text()
 
     assert "alembic upgrade head" in preview_script
     assert "python -m app.dev.baseline_status" in preview_script
@@ -191,6 +193,10 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert "BatchMode=yes" in deploy_to_ssh_script
     assert "ConnectTimeout" in deploy_to_ssh_script
     assert "SSH target is not reachable" in deploy_to_ssh_script
+    assert "NPCINK_CLOUD_HEALTH_HOST_HEADER" in common_script
+    assert "NPCINK_CLOUD_HEALTH_FORWARDED_PROTO" in common_script
+    assert "NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST" in remote_load_script
+    assert "configure_ready_origin_headers" in remote_load_script
 
 
 def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -> None:
