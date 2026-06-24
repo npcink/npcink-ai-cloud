@@ -39,6 +39,8 @@ type AudioJob = {
       model_id?: string;
       profile_id?: string;
       status?: string;
+      attempts?: number;
+      retry_attempted?: boolean;
     };
   };
   result_ready: boolean;
@@ -62,6 +64,36 @@ type AudioJob = {
     direct_wordpress_write?: boolean;
     final_writes?: string;
   };
+};
+
+type AudioWorkbenchFailureAction =
+  | 'check_ai_resources'
+  | 'check_text_model'
+  | 'check_text_provider'
+  | 'configure_text_profile'
+  | 'retry_later'
+  | 'retry_or_use_narration';
+
+type AudioWorkbenchFailureData = {
+  action?: AudioWorkbenchFailureAction | string;
+  attempt?: number;
+  max_attempts?: number;
+  model_id?: string;
+  provider_id?: string;
+  reason?: string;
+  retry_attempted?: boolean;
+  retryable?: boolean;
+  run_id?: string;
+  stage?: string;
+  trace_id?: string;
+  upstream_error_code?: string;
+  upstream_error_message?: string;
+};
+
+type AudioWorkbenchNotice = {
+  message: string;
+  errorCode: string;
+  data: AudioWorkbenchFailureData;
 };
 
 type RuntimeProfile = {
@@ -107,6 +139,61 @@ function audioSource(job: AudioJob | null): string {
   return '';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildFailureNotice(payload: unknown, fallback: string): AudioWorkbenchNotice {
+  const envelope = isRecord(payload) ? payload : {};
+  const data = isRecord(envelope.data) ? (envelope.data as AudioWorkbenchFailureData) : {};
+  const rawMessage = readString(envelope.message);
+  return {
+    message: resolveUiErrorMessage(rawMessage, fallback),
+    errorCode: readString(envelope.error_code) || 'audio_workbench.request_failed',
+    data,
+  };
+}
+
+function jobFailureNotice(job: AudioJob | null): AudioWorkbenchNotice | null {
+  if (!job || job.status !== 'failed') {
+    return null;
+  }
+  return {
+    message: resolveUiErrorMessage(
+      job.error_message || '',
+      'Audio generation failed before a playable artifact was created.'
+    ),
+    errorCode: job.error_code || 'audio_workbench.job_failed',
+    data: {
+      action: 'retry_later',
+      retryable: true,
+      provider_id: job.provider_id,
+      model_id: job.model_id,
+      run_id: job.run_id,
+      trace_id: job.trace_id,
+    },
+  };
+}
+
+function actionLabel(action: string): string {
+  if (
+    action === 'check_ai_resources' ||
+    action === 'check_text_model' ||
+    action === 'check_text_provider' ||
+    action === 'configure_text_profile'
+  ) {
+    return 'Open AI resources';
+  }
+  if (action === 'retry_or_use_narration') {
+    return 'Retry summary';
+  }
+  return 'Retry';
+}
+
 function AudioWorkbenchContent() {
   const [intent, setIntent] = useState<AudioIntent>('article_narration');
   const [siteId, setSiteId] = useState('site_smoke');
@@ -115,13 +202,15 @@ function AudioWorkbenchContent() {
   const [job, setJob] = useState<AudioJob | null>(null);
   const [resources, setResources] = useState<AiResources | null>(null);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState('');
+  const [errorNotice, setErrorNotice] = useState<AudioWorkbenchNotice | null>(null);
   const [message, setMessage] = useState('');
   const [resourceError, setResourceError] = useState('');
 
   const terminal = job ? ['succeeded', 'failed', 'canceled'].includes(job.status) : true;
   const source = audioSource(job);
   const audio = job?.result?.audios?.[0];
+  const failedJobNotice = jobFailureNotice(job);
+  const activeNotice = errorNotice || failedJobNotice;
   const textProfile = resources?.runtime_profiles?.find((profile) => profile.profile_id === 'text.ai');
   const audioProfile = resources?.runtime_profiles?.find((profile) => profile.profile_id === 'audio.narration.default');
   const summaryProfile = resources?.runtime_profiles?.find((profile) => profile.profile_id === 'audio.summary.default');
@@ -138,14 +227,18 @@ function AudioWorkbenchContent() {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(resolveUiErrorMessage(payload, 'Failed to load audio job.'));
+          throw new Error(buildFailureNotice(payload, 'Failed to load audio job.').message);
         }
         if (!cancelled) {
           setJob(payload.data as AudioJob);
         }
       } catch (pollError) {
         if (!cancelled) {
-          setError(pollError instanceof Error ? pollError.message : 'Failed to load audio job.');
+          setErrorNotice({
+            message: pollError instanceof Error ? pollError.message : 'Failed to load audio job.',
+            errorCode: 'audio_workbench.poll_failed',
+            data: { action: 'retry_later', retryable: true },
+          });
         }
       }
     }, 2000);
@@ -163,7 +256,7 @@ function AudioWorkbenchContent() {
         const response = await fetch('/api/admin/ai-resources', { credentials: 'include' });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(resolveUiErrorMessage(payload, 'Failed to load AI resources.'));
+          throw new Error(buildFailureNotice(payload, 'Failed to load AI resources.').message);
         }
         if (mounted) {
           setResources(payload.data as AiResources);
@@ -210,9 +303,9 @@ function AudioWorkbenchContent() {
     ];
   }, [audioProfile?.status, intent, job?.run_id, job?.status, siteId, summaryProfile?.status]);
 
-  async function createJob() {
+  async function createJob(nextIntent: AudioIntent = intent) {
     setCreating(true);
-    setError('');
+    setErrorNotice(null);
     setMessage('');
     setJob(null);
     try {
@@ -222,7 +315,7 @@ function AudioWorkbenchContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           site_id: siteId,
-          intent,
+          intent: nextIntent,
           title,
           body,
           format: 'mp3',
@@ -230,15 +323,25 @@ function AudioWorkbenchContent() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(resolveUiErrorMessage(payload, 'Failed to create audio job.'));
+        setErrorNotice(buildFailureNotice(payload, 'Failed to create audio job.'));
+        return;
       }
       setJob(payload.data as AudioJob);
       setMessage('Audio job created. Status will update automatically.');
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Failed to create audio job.');
+      setErrorNotice({
+        message: createError instanceof Error ? createError.message : 'Failed to create audio job.',
+        errorCode: 'audio_workbench.request_failed',
+        data: { action: 'retry_later', retryable: true },
+      });
     } finally {
       setCreating(false);
     }
+  }
+
+  function switchToNarrationAndCreate() {
+    setIntent('article_narration');
+    void createJob('article_narration');
   }
 
   return (
@@ -260,9 +363,64 @@ function AudioWorkbenchContent() {
             {message}
           </BackofficeStackCard>
         ) : null}
-        {error ? (
-          <BackofficeStackCard className="border-rose-200 bg-rose-50 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
-            {error}
+        {activeNotice ? (
+          <BackofficeStackCard className="border-rose-200 bg-rose-50 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-100">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Audio job needs attention</div>
+                <div className="mt-1 text-sm leading-6">{activeNotice.message}</div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-rose-700 dark:text-rose-200/80">
+                  <span>Code: {activeNotice.errorCode}</span>
+                  {activeNotice.data.stage ? <span>Stage: {activeNotice.data.stage}</span> : null}
+                  {activeNotice.data.retry_attempted ? <span>Retried: yes</span> : null}
+                  {activeNotice.data.upstream_error_code ? (
+                    <span>Upstream: {activeNotice.data.upstream_error_code}</span>
+                  ) : null}
+                  {activeNotice.data.provider_id || activeNotice.data.model_id ? (
+                    <span>
+                      Model: {activeNotice.data.provider_id || 'provider'} / {activeNotice.data.model_id || 'model'}
+                    </span>
+                  ) : null}
+                  {activeNotice.data.run_id ? <span>Run: {activeNotice.data.run_id}</span> : null}
+                  {activeNotice.data.trace_id ? <span>Trace: {activeNotice.data.trace_id}</span> : null}
+                  {activeNotice.data.attempt && activeNotice.data.max_attempts ? (
+                    <span>
+                      Attempt: {activeNotice.data.attempt}/{activeNotice.data.max_attempts}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {activeNotice.data.action &&
+                ['check_ai_resources', 'check_text_model', 'check_text_provider', 'configure_text_profile'].includes(
+                  String(activeNotice.data.action)
+                ) ? (
+                  <Link href="/admin/ai-resources" className="btn btn-secondary">
+                    {actionLabel(String(activeNotice.data.action))}
+                  </Link>
+                ) : null}
+                {activeNotice.data.retryable ? (
+                  <button
+                    type="button"
+                    onClick={() => void createJob()}
+                    disabled={creating || !body.trim() || !siteId.trim()}
+                    className="btn btn-secondary"
+                  >
+                    {actionLabel(String(activeNotice.data.action || 'retry_later'))}
+                  </button>
+                ) : null}
+                {activeNotice.data.action === 'retry_or_use_narration' ? (
+                  <button
+                    type="button"
+                    onClick={switchToNarrationAndCreate}
+                    disabled={creating || !body.trim() || !siteId.trim()}
+                    className="btn btn-primary"
+                  >
+                    Use article narration
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </BackofficeStackCard>
         ) : null}
       </BackofficePrimaryPanel>
@@ -340,7 +498,7 @@ function AudioWorkbenchContent() {
 
             <button
               type="button"
-              onClick={createJob}
+              onClick={() => void createJob()}
               disabled={creating || !body.trim() || !siteId.trim()}
               className="inline-flex h-11 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -380,6 +538,12 @@ function AudioWorkbenchContent() {
                         <div>
                           Script model: {job.script.generation.provider_id || 'provider'} /{' '}
                           {job.script.generation.model_id || 'model'}
+                        </div>
+                      ) : null}
+                      {job.script.generation?.attempts ? (
+                        <div>
+                          Script attempts: {job.script.generation.attempts}
+                          {job.script.generation.retry_attempted ? ' (retry used)' : ''}
                         </div>
                       ) : null}
                     </div>
