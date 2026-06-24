@@ -1,8 +1,15 @@
+## Summary
+
+- Briefly describe the intended change.
+
 ## Scope
 
 - [ ] This change is limited to the stated Cloud module.
 - [ ] Public runtime API, capability contract, provider seam, deployment lifecycle, or product boundary docs were updated if changed.
 - [ ] No unrelated generated files, local environment files, screenshots, or cross-repo worktree changes are included.
+- Focused module:
+- Explicit non-goals:
+- Cloud boundary impact:
 
 ## Cloud Boundary
 
@@ -14,15 +21,30 @@
 
 ## Verification
 
+- [ ] The narrowest useful verification gate is listed below.
 - [ ] `pnpm run check:fast`
 - [ ] `pnpm run check:perimeter` if runtime boundaries, WordPress seams, or provider surfaces changed.
 - [ ] `pnpm run check:anti-drift` if Cloud frontend/backend contracts changed.
 - [ ] `pnpm run lint` if Python typing, lint-sensitive code, or shared backend modules changed.
 
+```text
+
+```
+
 ## Deployment Impact
 
 - [ ] No production deployment impact.
 - [ ] Requires production environment approval after CI passes on the protected production branch.
+
+## Production Promotion
+
+Complete only when this PR targets `production`.
+
+- [ ] Source branch is `master` or a release-fix branch that will be backported to `master`.
+- [ ] `master` CI is green, or this is an emergency release fix.
+- [ ] Rollback path is known.
+- [ ] `deploy/RELEASE_CHECKLIST.md` has no newly relevant unchecked blocker for this release scope.
+- [ ] Approved for production validation by operator.
 
 ## Notes
 

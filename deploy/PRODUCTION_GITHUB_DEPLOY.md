@@ -4,6 +4,14 @@ This repository uses `production` as the production release source for
 `https://cloud.npc.ink`. Protect the branch when the GitHub plan/repository
 visibility supports branch protection rules.
 
+The current early-validation process gate is
+[`docs/cloud-production-release-policy-v1.md`](../docs/cloud-production-release-policy-v1.md).
+Run it locally with:
+
+```bash
+pnpm run check:release-policy
+```
+
 ## Branch Model
 
 - `master`: development integration branch.
@@ -18,10 +26,17 @@ are immediately backported to Git.
 
 `Cloud CI` runs on `master`, `main`, and `production`.
 
-`Deploy Production` runs after `Cloud CI` succeeds on `production`, and can also
-be run manually from GitHub Actions. The job is bound to the GitHub Environment
-named `production`; add environment approval rules when the GitHub plan supports
-them.
+On `production` push events, `Cloud CI` runs `backend` and `frontend` first,
+then runs the `deploy-production` job only after both pass. `Deploy Production`
+is a manual fallback workflow only, and must be run from the `production`
+branch. The deploy jobs are bound to the GitHub Environment named `production`;
+add environment approval rules when the GitHub plan supports them.
+
+Exception: if a `production` push changes only `site/terms/*`, `Cloud CI` uses
+the static terms fast path. That path skips backend/frontend/full Docker
+deployment, uploads only the checked-in `site/terms` tree to the current release,
+and verifies `/terms`, `/terms/en/terms.html`, `/terms/zh/terms.html`,
+`/terms/styles.css`, and `/health/live`.
 
 The production deploy job:
 
@@ -32,6 +47,17 @@ The production deploy job:
 5. Runs migrations.
 6. Refreshes provider catalog and provider health.
 7. Verifies `/health/operational-ready`.
+8. Verifies public static legal pages, including `/terms/en/terms.html`.
+
+The static terms fast path runs:
+
+```bash
+pnpm run deploy:static-terms:ssh
+```
+
+Use it only for public static legal/policy page content under `site/terms/*`.
+Any proxy, compose, application, API, provider, database, or runtime change must
+use the full production deploy path.
 
 ## GitHub Secrets
 
@@ -72,7 +98,8 @@ to a managed secret store.
 
 It omits local/development observability sidecars. Caddy owns public `80/443`
 and proxies to the internal Docker proxy. The app proxy binds `8010` only on
-`127.0.0.1`.
+`127.0.0.1`. Public legal and policy pages under `/terms/*` are served as
+static files from the checked-in `site/` directory by the production proxy.
 
 ## Promotion Flow
 
@@ -83,7 +110,7 @@ local feature work
   -> PR master -> production
   -> Cloud CI passes on production
   -> GitHub Environment approval, when available
-  -> Deploy Production
+  -> Cloud CI deploy-production job
   -> operational-ready passes
 ```
 
