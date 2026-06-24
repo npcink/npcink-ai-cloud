@@ -14,7 +14,7 @@ require_file() {
 require_marker() {
 	local path="$1"
 	local marker="$2"
-	if ! grep -Fq "${marker}" "${ROOT_DIR}/${path}"; then
+	if ! grep -Fq -- "${marker}" "${ROOT_DIR}/${path}"; then
 		echo "[fail] Missing release policy marker in ${path}: ${marker}" >&2
 		exit 1
 	fi
@@ -27,6 +27,12 @@ require_file "AGENTS.md"
 require_file ".github/pull_request_template.md"
 require_file ".github/workflows/ci.yml"
 require_file ".github/workflows/deploy-production.yml"
+require_file "site/terms/en/terms.html"
+require_file "site/terms/en/privacy.html"
+require_file "site/terms/en/data-retention.html"
+require_file "site/terms/zh/terms.html"
+require_file "site/terms/zh/privacy.html"
+require_file "site/terms/zh/data-retention.html"
 
 require_marker "AGENTS.md" "AI Production Operation Rules"
 require_marker "AGENTS.md" "Production source branch is \`production\`"
@@ -50,6 +56,13 @@ require_marker ".github/pull_request_template.md" "does not commit production se
 
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "docs/cloud-production-release-policy-v1.md"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "pnpm run check:release-policy"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "/terms/en/terms.html"
+require_marker "deploy/bundle-images.sh" "-C \"\${CLOUD_DIR}\" site"
+require_marker "deploy/remote-smoke.sh" "/terms/en/terms.html"
+require_marker "deploy/remote-smoke.sh" "/terms/zh/terms.html"
+require_marker "deploy/remote-smoke.sh" "/terms/styles.css"
+require_marker "docker-compose.runtime.yml" "./site:/usr/share/nginx/html/npcink-site:ro"
+require_marker "deploy/nginx.prod.conf" "location /terms/"
 require_marker ".github/workflows/ci.yml" "github.ref == 'refs/heads/production'"
 require_marker ".github/workflows/ci.yml" "environment: production"
 require_marker ".github/workflows/deploy-production.yml" "github.ref == 'refs/heads/production'"

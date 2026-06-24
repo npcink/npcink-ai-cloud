@@ -41,6 +41,7 @@ The production deploy job:
 5. Runs migrations.
 6. Refreshes provider catalog and provider health.
 7. Verifies `/health/operational-ready`.
+8. Verifies public static legal pages, including `/terms/en/terms.html`.
 
 ## GitHub Secrets
 
@@ -81,7 +82,8 @@ to a managed secret store.
 
 It omits local/development observability sidecars. Caddy owns public `80/443`
 and proxies to the internal Docker proxy. The app proxy binds `8010` only on
-`127.0.0.1`.
+`127.0.0.1`. Public legal and policy pages under `/terms/*` are served as
+static files from the checked-in `site/` directory by the production proxy.
 
 ## Promotion Flow
 
