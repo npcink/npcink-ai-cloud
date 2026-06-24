@@ -63,7 +63,7 @@ if [ -n "${IMAGE_PLATFORM}" ]; then
 			--load \
 			-t npcink-ai-cloud-frontend:prod \
 			-f "${CLOUD_DIR}/frontend/Dockerfile" \
-			"${CLOUD_DIR}/frontend"
+			"${CLOUD_DIR}"
 	fi
 else
 	if [ "${#BUILD_ARGS[@]}" -gt 0 ]; then
