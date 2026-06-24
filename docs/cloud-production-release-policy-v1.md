@@ -32,6 +32,8 @@ For normal feature and fix PRs:
 - describe the focused module and explicit non-goals;
 - confirm Cloud boundary impact, especially that Cloud is not becoming a
   WordPress write owner or second local control plane;
+- keep public legal and policy pages under `site/terms/*` in the production
+  static release path when those pages change;
 - state explicitly when needed: Cloud is not becoming a WordPress write owner;
 - run the narrowest useful local gate, or explain why GitHub CI is the gate;
 - keep production secrets, SMTP passwords, provider keys, DB credentials, and
@@ -52,6 +54,8 @@ Before promoting `master` to `production`:
 - `deploy/RELEASE_CHECKLIST.md` has no newly relevant unchecked blocker for the
   release scope;
 - no direct server code edit is being used as source truth;
+- public static legal pages, including `/terms/en/terms.html`, remain covered
+  by the deploy smoke when the release changes legal, policy, or proxy files;
 - rollback path is known before merging;
 - production secrets remain server-side or in GitHub Secrets, not committed.
 
