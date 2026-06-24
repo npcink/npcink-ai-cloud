@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, cast
@@ -3451,15 +3452,22 @@ class RuntimeService:
                     run=run,
                     provider_call=provider_call,
                 )
+                provider_output = provider_result.output
+                if self._is_wordpress_ai_connector_run(run):
+                    provider_output = self._normalize_wordpress_ai_connector_provider_output(
+                        provider_output,
+                        input_payload=input_payload,
+                    )
+
                 storage_mode = self._get_storage_mode(
                     run.policy_json if isinstance(run.policy_json, dict) else {}
                 )
                 prepared_result = self._prepare_result_for_storage(
-                    provider_result.output,
+                    provider_output,
                     storage_mode=storage_mode,
                 )
                 if storage_mode == RUNTIME_STORAGE_MODE_NO_STORE:
-                    _set_transient_result_json(run, provider_result.output)
+                    _set_transient_result_json(run, provider_output)
                 automatic_web_search = policy.get("automatic_web_search")
                 if isinstance(automatic_web_search, dict):
                     prepared_result = dict(prepared_result)
@@ -5423,17 +5431,21 @@ class RuntimeService:
 
         task_instruction = {
             "alt_text_suggest": "Generate concise image alt text. Return only the alt text.",
-            "comment_moderation": "Classify the comment moderation outcome. Return only the requested result.",
+            "comment_moderation": "Classify the comment moderation outcome. Return strict JSON only. No markdown.",
             "comment_reply_suggest": "Draft a concise comment reply. Return only the reply text.",
-            "content_classification": "Classify the content. Return only the requested classification.",
+            "content_classification": 'Classify the content. Return strict JSON only: {"suggestions":[{"term":"...","confidence":0.8,"is_new":false}]}. No markdown.',
             "content_rewrite": "Rewrite the content as requested. Return only the rewritten content.",
             "content_summary": "Summarize the content. Return only the summary.",
             "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
-            "meta_description": "Generate a concise meta description. Return only the description.",
+            "meta_description": "Generate one SEO meta description, 120 to 155 characters. Return only the description.",
             "title_generation": "Generate exactly one concise title. Return only the title text.",
         }.get(task, "Return only the requested suggestion. Do not explain.")
 
         fragments = [task_instruction]
+        fragments.append(
+            "Use the same language as the scene input unless a WordPress ability "
+            "instruction explicitly asks for another language."
+        )
         if system_instruction:
             fragments.append(system_instruction)
         if prompt:
@@ -5450,7 +5462,21 @@ class RuntimeService:
             },
         }
 
+        default_max_tokens = {
+            "alt_text_suggest": 48,
+            "comment_moderation": 120,
+            "comment_reply_suggest": 180,
+            "content_classification": 220,
+            "content_rewrite": 512,
+            "content_summary": 160,
+            "excerpt_generation": 140,
+            "meta_description": 80,
+            "title_generation": 48,
+        }.get(task, 160)
+
         max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=0)
+        if max_tokens <= 0:
+            max_tokens = default_max_tokens
         if max_tokens > 0:
             provider_input["max_tokens"] = max_tokens
             provider_input["max_output_tokens"] = max_tokens
@@ -5460,6 +5486,209 @@ class RuntimeService:
             provider_input["temperature"] = float(temperature)
 
         return provider_input
+
+    def _normalize_wordpress_ai_connector_provider_output(
+        self,
+        output: dict[str, Any],
+        *,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        metadata = input_payload.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        task = str(metadata.get("task") or "").strip()
+        output_text = self._extract_provider_output_text(output)
+        if not output_text:
+            return output
+
+        normalized_text = ""
+        if task == "meta_description":
+            normalized_text = self._normalize_wordpress_ai_meta_description(output_text)
+        elif task == "content_classification":
+            normalized_text = self._normalize_wordpress_ai_classification_output(
+                output_text,
+                source_text=str(input_payload.get("text") or ""),
+            )
+
+        if not normalized_text:
+            return output
+
+        normalized = dict(output)
+        normalized["output_text"] = normalized_text
+        normalized["messages"] = [{"role": "assistant", "content": normalized_text}]
+        return normalized
+
+    def _extract_provider_output_text(self, output: dict[str, Any]) -> str:
+        for key in ("output_text", "text", "content"):
+            value = output.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        choices = output.get("choices")
+        if isinstance(choices, list) and choices:
+            choice = choices[0]
+            if isinstance(choice, dict):
+                text = choice.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+                message = choice.get("message")
+                if isinstance(message, dict):
+                    content = message.get("content")
+                    if isinstance(content, str) and content.strip():
+                        return content.strip()
+
+        return ""
+
+    def _normalize_wordpress_ai_meta_description(self, output_text: str) -> str:
+        text = self._strip_wordpress_ai_markdown(output_text)
+        text = re.split(r"\s+#{1,6}\s+", text, maxsplit=1)[0].strip()
+        if ":" in text[:64] and len(text.split(":", 1)[1].strip()) >= 40:
+            text = text.split(":", 1)[1].strip()
+        return self._truncate_wordpress_ai_text(text, limit=155)
+
+    def _normalize_wordpress_ai_classification_output(
+        self,
+        output_text: str,
+        *,
+        source_text: str = "",
+    ) -> str:
+        parsed = self._parse_wordpress_ai_classification_json(output_text)
+        if parsed is None:
+            parsed = {
+                "suggestions": [
+                    {
+                        "term": term,
+                        "confidence": 0.6,
+                        "is_new": True,
+                    }
+                    for term in self._extract_wordpress_ai_classification_terms(
+                        output_text,
+                        source_text=source_text,
+                    )
+                ]
+            }
+        return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+    def _parse_wordpress_ai_classification_json(
+        self,
+        output_text: str,
+    ) -> dict[str, Any] | None:
+        candidates = [output_text.strip()]
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output_text, flags=re.S)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and isinstance(parsed.get("suggestions"), list):
+                return {
+                    "suggestions": self._sanitize_wordpress_ai_classification_suggestions(
+                        parsed.get("suggestions")
+                    )
+                }
+
+        return None
+
+    def _sanitize_wordpress_ai_classification_suggestions(
+        self,
+        suggestions: Any,
+    ) -> list[dict[str, Any]]:
+        sanitized: list[dict[str, Any]] = []
+        if not isinstance(suggestions, list):
+            return sanitized
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                continue
+            term = str(suggestion.get("term") or "").strip()
+            if not term:
+                continue
+            confidence = suggestion.get("confidence")
+            confidence = float(confidence) if isinstance(confidence, (int, float)) else 0.6
+            confidence = max(0.0, min(1.0, confidence))
+            sanitized.append(
+                {
+                    "term": self._truncate_wordpress_ai_text(term, limit=48),
+                    "confidence": confidence,
+                    "is_new": bool(suggestion.get("is_new", True)),
+                }
+            )
+            if len(sanitized) >= 5:
+                break
+        return sanitized
+
+    def _extract_wordpress_ai_classification_terms(
+        self,
+        output_text: str,
+        *,
+        source_text: str = "",
+    ) -> list[str]:
+        terms: list[str] = []
+        for text in (source_text, output_text):
+            for match in re.finditer(
+                r"\b(?:Npcink|WordPress|Cloud|Addon|API|AI|SEO)"
+                r"(?:\s+(?:Npcink|WordPress|Cloud|Addon|API|AI|SEO)){0,3}\b",
+                text,
+            ):
+                term = self._truncate_wordpress_ai_text(match.group(0), limit=48)
+                if 2 <= len(term) <= 48 and term not in terms:
+                    terms.append(term)
+                if len(terms) >= 3:
+                    return terms
+
+        for phrase in (
+            "云端运行时",
+            "内容分类",
+            "建议式输出",
+            "通用聊天入口",
+            "标题生成",
+            "SEO 描述",
+        ):
+            if phrase in source_text and phrase not in terms:
+                terms.append(phrase)
+            if len(terms) >= 3:
+                return terms
+
+        text = output_text.strip()
+        text = re.sub(r"^```(?:json|text|markdown)?\s*", "", text, flags=re.I)
+        text = re.sub(r"\s*```$", "", text)
+        text = re.sub(r"[*_`]+", "", text)
+        parts = re.split(r"[\n,，;；、|]+", text)
+        for part in parts:
+            term = re.sub(r"^\s*[-*\d.)、]+", "", part).strip()
+            term = re.sub(r"^(term|tag|category|标签|分类)\s*[:：]\s*", "", term, flags=re.I)
+            term = self._truncate_wordpress_ai_text(term, limit=48)
+            if 2 <= len(term) <= 48 and term not in terms:
+                terms.append(term)
+            if len(terms) >= 3:
+                break
+        return terms
+
+    def _strip_wordpress_ai_markdown(self, output_text: str) -> str:
+        text = output_text.strip()
+        text = re.sub(r"^```(?:json|text|markdown)?\s*", "", text, flags=re.I)
+        text = re.sub(r"\s*```$", "", text)
+        text = re.sub(r"[*_`]+", "", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def _truncate_wordpress_ai_text(self, text: str, *, limit: int) -> str:
+        text = text.strip()
+        if len(text) <= limit:
+            return text
+        candidate = text[:limit].rstrip()
+        punctuation_index = max(
+            candidate.rfind("。"),
+            candidate.rfind("！"),
+            candidate.rfind("？"),
+            candidate.rfind("."),
+            candidate.rfind("!"),
+            candidate.rfind("?"),
+        )
+        if punctuation_index >= 80:
+            return candidate[: punctuation_index + 1].strip()
+        return candidate[: max(0, limit - 3)].rstrip("，,；;：:、 ") + "..."
 
     def _validate_site_knowledge_contract(self, request: RuntimeRequest) -> None:
         try:

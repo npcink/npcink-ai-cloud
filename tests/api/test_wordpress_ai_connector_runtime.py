@@ -70,9 +70,22 @@ class WordPressAIConnectorTextProvider:
 
     def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
         self.requests.append(request)
+        task = ""
+        metadata = request.input_payload.get("metadata")
+        if isinstance(metadata, dict):
+            task = str(metadata.get("task") or "")
+        output_text = "Suggested scene-bound title"
+        if task == "content_classification":
+            output_text = "- WordPress AI\n- Cloud connector\n- Scene runtime"
+        elif task == "meta_description":
+            output_text = (
+                "**Npcink Cloud AI Connector: WordPress AI plugin scene runtime** "
+                "Npcink Cloud Addon connects verified Cloud settings to fixed WordPress "
+                "AI editing scenes without exposing chat or direct writes. ### Details"
+            )
         return ProviderExecutionResult(
             output={
-                "output_text": "Suggested scene-bound title",
+                "output_text": output_text,
                 "model_id": request.model_id,
             },
             latency_ms=12,
@@ -180,6 +193,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["status"] == "succeeded"
+    assert data["result"]["output_text"] == "Suggested scene-bound title"
     assert data["execution_context"]["contract_version"] == "wp_ai_connector_runtime.v1"
     assert data["execution_context"]["ability_family"] == "text"
     assert data["execution_context"]["data_classification"] == "public_site_content"
@@ -191,6 +205,8 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
     assert "tools" not in provider_input
     assert "Generate exactly one concise title" in provider_input["input"]
     assert "Suggest a concise title for this WordPress post." in provider_input["input"]
+    assert provider_input["max_tokens"] == 48
+    assert provider_input["max_output_tokens"] == 48
     assert provider_input["metadata"]["source_surface"] == "wordpress_ai_connector"
     assert provider_input["metadata"]["suggestion_only"] is True
 
@@ -202,6 +218,66 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert run.policy_json["execution_contract"]["contract_version"] == (
             "wp_ai_connector_runtime.v1"
         )
+
+
+def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_classification",
+            "request": {
+                "prompt": "Classify this post into WordPress taxonomy suggestions.",
+                "response_format": "json",
+            },
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-connector-classification",
+    )
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert "Return strict JSON only" in provider_input["input"]
+    assert "\"suggestions\"" in provider_input["input"]
+    assert provider_input["max_tokens"] == 220
+    assert provider_input["max_output_tokens"] == 220
+    result = json.loads(response.json()["data"]["result"]["output_text"])
+    assert result["suggestions"]
+    assert all("term" in suggestion for suggestion in result["suggestions"])
+    assert any(
+        suggestion["term"] in {"WordPress", "WordPress AI"}
+        for suggestion in result["suggestions"]
+    )
+
+
+def test_wordpress_ai_connector_runtime_normalizes_meta_description_scene(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "meta_description",
+            "request": {
+                "prompt": "Generate a meta description for this post.",
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-meta")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert "120 to 155 characters" in provider_input["input"]
+    assert provider_input["max_tokens"] == 80
+    result_text = response.json()["data"]["result"]["output_text"]
+    assert "**" not in result_text
+    assert "###" not in result_text
+    assert len(result_text) <= 155
 
 
 def test_wordpress_ai_connector_runtime_rejects_timeout_above_scene_limit(
