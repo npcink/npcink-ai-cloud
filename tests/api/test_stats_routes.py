@@ -65,8 +65,8 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, datetime]:
     with get_session(database_url) as session:
         run_specs = {
             run_a.run_id: {
-                "started_at": now - timedelta(minutes=30),
-                "finished_at": now - timedelta(minutes=30) + timedelta(milliseconds=95),
+                "started_at": now - timedelta(minutes=25),
+                "finished_at": now - timedelta(minutes=25) + timedelta(milliseconds=95),
             },
             run_b.run_id: {
                 "started_at": now - timedelta(minutes=20),
