@@ -23,6 +23,7 @@ from app.domain.catalog.service import CatalogService
 from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
+    WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
 )
 from tests.conftest import (
@@ -70,7 +71,32 @@ class WordPressAIConnectorTextProvider:
                             weight=100,
                         )
                     ],
-                )
+                ),
+                CatalogModelSeed(
+                    model_id="grok-imagine-wp-ai-test",
+                    family="grok-imagine-test",
+                    feature="image_generation",
+                    status="available",
+                    context_window=0,
+                    price_input=0.0,
+                    price_output=0.0,
+                    raw_json={"surface": "wordpress_ai_connector_image_test"},
+                    instances=[
+                        CatalogInstanceSeed(
+                            instance_id="openai-wp-ai-image-test",
+                            endpoint_variant="image_generations",
+                            region="global",
+                            capability_tags=[
+                                "image_generation",
+                                "z-image",
+                                "quality",
+                                "default",
+                            ],
+                            is_default=True,
+                            weight=100,
+                        )
+                    ],
+                ),
             ],
         )
 
@@ -96,6 +122,28 @@ class WordPressAIConnectorTextProvider:
                 "**Npcink Cloud AI Connector: WordPress AI plugin scene runtime** "
                 "Npcink Cloud Addon connects verified Cloud settings to fixed WordPress "
                 "AI editing scenes without exposing chat or direct writes. ### Details"
+            )
+        if request.execution_kind == "image_generation":
+            return ProviderExecutionResult(
+                output={
+                    "artifact_type": "image_generation_candidates",
+                    "contract_version": "image_generation_result.v1",
+                    "model_id": request.model_id,
+                    "images": [
+                        {
+                            "index": 1,
+                            "url": "https://example.invalid/wp-ai-generated.png",
+                            "b64_json": "",
+                            "mime_type": "image/png",
+                        }
+                    ],
+                    "provider_response_format": "url",
+                    "direct_wordpress_write": False,
+                },
+                latency_ms=25,
+                tokens_in=14,
+                tokens_out=0,
+                cost=0.0,
             )
         return ProviderExecutionResult(
             output={
@@ -170,6 +218,35 @@ def _payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         "storage_mode": "result_only",
         "data_classification": "public_site_content",
         "timeout_seconds": 60,
+        "retry_max": 0,
+        "retention_ttl": 86400,
+        "input": input_payload,
+        "policy": {"allow_fallback": False},
+    }
+
+
+def _image_payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    input_payload: dict[str, Any] = {
+        "contract_version": "image_generation_request.v1",
+        "source_surface": "wordpress_ai_connector",
+        "connector_id": "npcink-cloud",
+        "task": "image_generation",
+        "prompt": "A clean media-library illustration of a WordPress editor workspace.",
+        "n": 1,
+        "response_format": "url",
+        "aspect_ratio": "16:9",
+        "resolution": "medium",
+    }
+    input_payload.update(input_overrides or {})
+    return {
+        "ability_name": "npcink-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "wordpress_ai_connector",
+        "execution_kind": "image_generation",
+        "execution_pattern": "inline",
+        "storage_mode": "result_only",
+        "data_classification": "internal",
+        "timeout_seconds": 90,
         "retry_max": 0,
         "retention_ttl": 86400,
         "input": input_payload,
@@ -335,6 +412,38 @@ def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(
     assert len(result_text) <= 220
 
 
+def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+
+    response = _execute(
+        client,
+        _image_payload(),
+        idempotency_key="wp-ai-image-generation",
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["profile_id"] == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+    assert data["result"]["artifact_type"] == "image_generation_candidates"
+    assert data["result"]["direct_wordpress_write"] is False
+    assert provider.requests[0].execution_kind == "image_generation"
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+    assert provider.requests[0].timeout_ms == 90000
+
+    with get_session(database_url) as session:
+        run = session.execute(select(RunRecord)).scalar_one()
+        assert run.ability_name == "npcink-cloud/generate-image"
+        assert run.channel == "wordpress_ai_connector"
+        assert run.execution_kind == "image_generation"
+        assert run.profile_id == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+        assert run.policy_json["managed_surface"] == "wordpress_ai_connector"
+        assert run.policy_json["task_group"] == "image_generation"
+        assert run.policy_json["timeout_ms"] == 90000
+
+
 def test_wordpress_ai_connector_runtime_rejects_timeout_above_scene_limit(
     tmp_path: Path,
 ) -> None:
@@ -387,6 +496,10 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
     data = get_response.json()["data"]
     assert data["customer_model_selection"] is False
     assert data["direct_wordpress_write"] is False
+    assert data["available_text_instances"][0]["instance_id"] == (
+        "openai-wp-ai-connector-test"
+    )
+    assert data["available_image_instances"][0]["instance_id"] == "openai-wp-ai-image-test"
     short_text = next(
         profile
         for profile in data["profiles"]
@@ -398,6 +511,15 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
         "meta_description",
         "title_generation",
     ]
+    image_generation = next(
+        profile
+        for profile in data["profiles"]
+        if profile["profile_id"] == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+    )
+    assert image_generation["execution_kind"] == "image_generation"
+    assert image_generation["tasks"] == ["image_generation"]
+    assert image_generation["candidate_instance_ids"] == ["openai-wp-ai-image-test"]
+    assert image_generation["timeout_ms"] == 90000
 
     response = client.post(
         "/internal/service/admin/wordpress-ai-routing",
@@ -413,7 +535,15 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
                     "allow_fallback": True,
                     "max_retries": 1,
                     "note": "short-text canary",
-                }
+                },
+                {
+                    "profile_id": WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
+                    "candidate_instance_ids": ["openai-wp-ai-image-test"],
+                    "timeout_ms": 90000,
+                    "allow_fallback": False,
+                    "max_retries": 0,
+                    "note": "image-generation canary",
+                },
             ]
         },
     )
@@ -429,6 +559,14 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
     assert updated["candidate_instance_ids"] == ["openai-wp-ai-connector-test"]
     assert updated["timeout_ms"] == 12000
     assert updated["max_retries"] == 1
+    updated_image = next(
+        profile
+        for profile in payload["profiles"]
+        if profile["profile_id"] == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
+    )
+    assert updated_image["candidate_instance_ids"] == ["openai-wp-ai-image-test"]
+    assert updated_image["timeout_ms"] == 90000
+    assert updated_image["allow_fallback"] is False
 
     run_response = _execute(
         client,

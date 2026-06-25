@@ -18,6 +18,8 @@ from app.domain.hosted_model_defaults import (
     AUDIO_NARRATION_QUALITY_PROFILE_ID,
     FREE_GPT55_MODEL_ID,
     FREE_GPT55_TEXT_PROFILE_ID,
+    GROK_IMAGINE_IMAGE_MODEL_ID,
+    GROK_IMAGINE_IMAGE_PROFILE_ID,
     TEXT_AI_PROFILE_ID,
 )
 from app.domain.image_sources.admin_config import ImageSourceAdminConfigService
@@ -162,6 +164,8 @@ def build_admin_ai_resource_projection(
             FREE_GPT55_TEXT_PROFILE_ID,
             AUDIO_NARRATION_PROFILE_ID,
             AUDIO_NARRATION_QUALITY_PROFILE_ID,
+            GROK_IMAGINE_IMAGE_PROFILE_ID,
+            "embed.default",
         ],
     )
 
@@ -205,6 +209,77 @@ def build_admin_ai_resource_projection(
             "detail_href": "/admin/audio-providers",
         },
     ]
+    connections.extend(
+        _provider_connections_from_config(
+            web_search_config,
+            connection_prefix="web_search",
+            kind="web_search_provider",
+            capability_ids=["web_search"],
+            runtime_profile_ids=["web-search.managed"],
+            detail_href="/admin/web-search",
+        )
+    )
+    connections.extend(
+        _provider_connections_from_config(
+            image_source_config,
+            connection_prefix="image_source",
+            kind="image_source_provider",
+            capability_ids=["image_source"],
+            runtime_profile_ids=["image-source.managed"],
+            detail_href="/admin/image-sources",
+        )
+    )
+    embedding_provider = str(settings.site_knowledge_embedding_provider or "deterministic")
+    embedding_model = str(settings.site_knowledge_embedding_model or "BAAI/bge-m3")
+    connections.append(
+        {
+            "connection_id": f"embedding_{embedding_provider}",
+            "provider_id": embedding_provider,
+            "display_name": f"Site Knowledge embedding ({embedding_provider})",
+            "kind": "embedding_provider",
+            "enabled": True,
+            "configured": _site_knowledge_embedding_configured(settings),
+            "status": "ready"
+            if _site_knowledge_embedding_configured(settings)
+            else "missing_secret",
+            "base_url": _site_knowledge_embedding_base_url(settings),
+            "secrets": {
+                "secret": {
+                    "configured": _site_knowledge_embedding_configured(settings),
+                    "display": (
+                        "configured"
+                        if _site_knowledge_embedding_configured(settings)
+                        else "missing"
+                    ),
+                }
+            },
+            "capability_ids": ["embedding"],
+            "runtime_profile_ids": ["embed.default"],
+        }
+    )
+    rerank_provider = str(settings.site_knowledge_rerank_provider or "disabled")
+    if rerank_provider != "disabled":
+        rerank_configured = bool(str(settings.site_knowledge_jina_api_key or "").strip())
+        connections.append(
+            {
+                "connection_id": f"rerank_{rerank_provider}",
+                "provider_id": rerank_provider,
+                "display_name": f"Site Knowledge rerank ({rerank_provider})",
+                "kind": "rerank_provider",
+                "enabled": True,
+                "configured": rerank_configured,
+                "status": "ready" if rerank_configured else "missing_secret",
+                "base_url": str(settings.site_knowledge_jina_base_url or ""),
+                "secrets": {
+                    "secret": {
+                        "configured": rerank_configured,
+                        "display": "configured" if rerank_configured else "missing",
+                    }
+                },
+                "capability_ids": ["site_knowledge_rerank"],
+                "runtime_profile_ids": ["site-knowledge.rerank"],
+            }
+        )
 
     capabilities = [
         {
@@ -230,7 +305,10 @@ def build_admin_ai_resource_projection(
             "label": "Web search",
             "status": "ready" if web_search_ready else "disabled",
             "default_profile_id": "web-search.managed",
-            "connection_ids": _configured_provider_ids(web_search_config),
+            "connection_ids": _configured_provider_ids(
+                web_search_config,
+                connection_prefix="web_search",
+            ),
             "used_by": ["Evidence preflight"],
             "write_posture": "suggestion_only",
         },
@@ -239,16 +317,30 @@ def build_admin_ai_resource_projection(
             "label": "Image source",
             "status": "ready" if image_source_ready else "disabled",
             "default_profile_id": "image-source.managed",
-            "connection_ids": _configured_provider_ids(image_source_config),
+            "connection_ids": _configured_provider_ids(
+                image_source_config,
+                connection_prefix="image_source",
+            ),
             "used_by": ["Image source candidates"],
+            "write_posture": "candidate_artifact_only",
+        },
+        {
+            "capability_id": "image_generation",
+            "label": "Image generation",
+            "status": "ready" if text_configured else "missing_provider",
+            "default_profile_id": GROK_IMAGINE_IMAGE_PROFILE_ID,
+            "connection_ids": ["openai_compatible"] if text_configured else [],
+            "used_by": ["Generated image candidates"],
             "write_posture": "candidate_artifact_only",
         },
         {
             "capability_id": "embedding",
             "label": "Embedding",
-            "status": "ready",
+            "status": "ready"
+            if _site_knowledge_embedding_configured(settings)
+            else "missing_provider",
             "default_profile_id": "embed.default",
-            "connection_ids": [str(settings.site_knowledge_embedding_provider or "deterministic")],
+            "connection_ids": [f"embedding_{embedding_provider}"],
             "used_by": ["Site Knowledge"],
             "write_posture": "runtime_metadata_only",
         },
@@ -347,12 +439,41 @@ def build_admin_ai_resource_projection(
             ),
             "selected_for": ["article_audio_summary"],
         },
+        {
+            "profile_id": GROK_IMAGINE_IMAGE_PROFILE_ID,
+            "kind": "runtime_profile",
+            "capability_id": "image_generation",
+            "selected_connection_id": "openai_compatible",
+            "selected_provider_id": "openai",
+            "selected_model_id": GROK_IMAGINE_IMAGE_MODEL_ID,
+            "status": "ready" if text_configured else "missing_provider",
+            "selection_owner": "cloud_runtime_metadata",
+            "used_by": ["Generated image candidates"],
+            "last_run": recent_runs.get(GROK_IMAGINE_IMAGE_PROFILE_ID, {}),
+            "selected_for": ["image_generation"],
+        },
+        {
+            "profile_id": "embed.default",
+            "kind": "runtime_profile",
+            "capability_id": "embedding",
+            "selected_connection_id": f"embedding_{embedding_provider}",
+            "selected_provider_id": embedding_provider,
+            "selected_model_id": embedding_model,
+            "status": "ready"
+            if _site_knowledge_embedding_configured(settings)
+            else "missing_provider",
+            "selection_owner": "cloud_runtime_metadata",
+            "used_by": ["Site Knowledge"],
+            "last_run": recent_runs.get("embed.default", {}),
+            "selected_for": ["site_knowledge"],
+        },
     ]
 
     return {
         "surface": "admin_ai_resources",
         "connections": connections,
         "capabilities": capabilities,
+        "capability_matrix": _build_capability_matrix(capabilities, runtime_profiles),
         "runtime_profiles": runtime_profiles,
         "recent_runtime_evidence": {
             "source": "run_records",
@@ -425,17 +546,124 @@ def _dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _provider_connections_from_config(
+    config: dict[str, Any],
+    *,
+    connection_prefix: str,
+    kind: str,
+    capability_ids: list[str],
+    runtime_profile_ids: list[str],
+    detail_href: str,
+) -> list[dict[str, Any]]:
+    providers = _dict(config.get("providers"))
+    connections: list[dict[str, Any]] = []
+    for provider_id, provider_value in sorted(providers.items()):
+        provider = _dict(provider_value)
+        configured = bool(provider.get("configured"))
+        enabled = bool(provider.get("enabled"))
+        connections.append(
+            {
+                "connection_id": f"{connection_prefix}_{provider_id}",
+                "provider_id": str(provider_id),
+                "display_name": str(provider.get("display_name") or provider_id),
+                "kind": kind,
+                "enabled": enabled,
+                "configured": configured,
+                "status": str(provider.get("status") or "missing_secret"),
+                "base_url": str(provider.get("base_url") or ""),
+                "secrets": {
+                    "secret": {
+                        "configured": configured,
+                        "display": "configured" if configured else "missing",
+                    }
+                },
+                "capability_ids": capability_ids,
+                "runtime_profile_ids": runtime_profile_ids,
+                "detail_href": detail_href,
+            }
+        )
+    return connections
+
+
 def _has_configured_provider(providers: dict[str, Any]) -> bool:
     return any(bool(_dict(provider).get("configured")) for provider in providers.values())
 
 
-def _configured_provider_ids(config: dict[str, Any]) -> list[str]:
+def _configured_provider_ids(
+    config: dict[str, Any],
+    *,
+    connection_prefix: str,
+) -> list[str]:
     providers = _dict(config.get("providers"))
     return [
-        str(provider_id)
+        f"{connection_prefix}_{provider_id}"
         for provider_id, provider in providers.items()
         if bool(_dict(provider).get("configured"))
     ]
+
+
+def _site_knowledge_embedding_configured(settings: Settings) -> bool:
+    provider = str(settings.site_knowledge_embedding_provider or "deterministic")
+    if provider == "deterministic":
+        return True
+    if provider == "tei":
+        return bool(settings.tei_provider_enabled and str(settings.tei_base_url or "").strip())
+    if provider == "openai":
+        return bool(str(settings.openai_api_key or "").strip())
+    if provider == "siliconflow":
+        return bool(
+            settings.siliconflow_provider_enabled
+            and str(settings.siliconflow_api_key or "").strip()
+        )
+    return False
+
+
+def _site_knowledge_embedding_base_url(settings: Settings) -> str:
+    provider = str(settings.site_knowledge_embedding_provider or "deterministic")
+    if provider == "tei":
+        return str(settings.tei_base_url or "")
+    if provider == "openai":
+        return str(settings.openai_base_url or "")
+    if provider == "siliconflow":
+        return str(settings.siliconflow_base_url or "")
+    return "local-deterministic"
+
+
+def _build_capability_matrix(
+    capabilities: list[dict[str, Any]],
+    runtime_profiles: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    profiles_by_capability: dict[str, list[dict[str, Any]]] = {}
+    for profile in runtime_profiles:
+        profiles_by_capability.setdefault(str(profile.get("capability_id") or ""), []).append(
+            profile
+        )
+
+    rows: list[dict[str, Any]] = []
+    for capability in capabilities:
+        capability_id = str(capability["capability_id"])
+        profiles = profiles_by_capability.get(capability_id, [])
+        selected_profiles = [
+            profile
+            for profile in profiles
+            if profile.get("profile_id") == capability.get("default_profile_id")
+            or profile.get("selected_for")
+        ]
+        rows.append(
+            {
+                "capability_id": capability_id,
+                "label": capability["label"],
+                "status": capability["status"],
+                "used_by": capability["used_by"],
+                "write_posture": capability["write_posture"],
+                "default_profile_id": capability["default_profile_id"],
+                "connection_ids": capability["connection_ids"],
+                "profiles": selected_profiles or profiles,
+                "selection_owner": "cloud_runtime_metadata",
+                "direct_wordpress_write": False,
+            }
+        )
+    return rows
 
 
 def _recent_runtime_evidence(

@@ -6,11 +6,13 @@ from typing import Any
 WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID = "wp-ai.short-text"
 WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID = "wp-ai.editorial"
 WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID = "wp-ai.classification"
+WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID = "wp-ai.image-generation"
 
 WP_AI_CONNECTOR_PROFILE_IDS = (
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
+    WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
 )
 
 
@@ -19,9 +21,11 @@ class WordPressAIConnectorProfileSpec:
     profile_id: str
     group_id: str
     label: str
+    execution_kind: str
     tasks: tuple[str, ...]
     ordered_tiers: tuple[str, ...]
     timeout_ms: int
+    max_timeout_ms: int
     allow_fallback: bool
     max_retries: int
     description: str
@@ -32,6 +36,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         profile_id=WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
         group_id="short_text",
         label="Short text",
+        execution_kind="text",
         tasks=(
             "alt_text_suggest",
             "excerpt_generation",
@@ -40,6 +45,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         ),
         ordered_tiers=("economy", "hosted-free", "balanced", "free-gpt55"),
         timeout_ms=20_000,
+        max_timeout_ms=60_000,
         allow_fallback=True,
         max_retries=0,
         description=(
@@ -51,6 +57,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         profile_id=WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
         group_id="editorial_text",
         label="Editorial text",
+        execution_kind="text",
         tasks=(
             "comment_reply_suggest",
             "content_rewrite",
@@ -58,6 +65,7 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         ),
         ordered_tiers=("balanced", "economy", "hosted-free", "quality", "free-gpt55"),
         timeout_ms=45_000,
+        max_timeout_ms=60_000,
         allow_fallback=True,
         max_retries=0,
         description=(
@@ -69,15 +77,33 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         profile_id=WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
         group_id="classification",
         label="Classification",
+        execution_kind="text",
         tasks=(
             "comment_moderation",
             "content_classification",
         ),
         ordered_tiers=("economy", "balanced", "hosted-free", "free-gpt55"),
         timeout_ms=25_000,
+        max_timeout_ms=60_000,
         allow_fallback=True,
         max_retries=0,
         description="Structured taxonomy and moderation suggestions for WordPress AI tasks.",
+    ),
+    WordPressAIConnectorProfileSpec(
+        profile_id=WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
+        group_id="image_generation",
+        label="Image generation",
+        execution_kind="image_generation",
+        tasks=("image_generation",),
+        ordered_tiers=("z-image", "quality", "default"),
+        timeout_ms=90_000,
+        max_timeout_ms=90_000,
+        allow_fallback=False,
+        max_retries=0,
+        description=(
+            "Cloud-managed text-to-image generation for the WordPress AI media "
+            "library feature."
+        ),
     ),
 )
 

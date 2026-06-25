@@ -9,6 +9,7 @@ import {
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
+import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { resolveUiErrorMessage } from '@/lib/errors';
@@ -53,6 +54,19 @@ type RuntimeProfile = {
   last_run?: RuntimeEvidence | PipelineRuntimeEvidence;
 };
 
+type CapabilityMatrixRow = {
+  capability_id: string;
+  label: string;
+  status: ResourceStatus;
+  used_by: string[];
+  write_posture: string;
+  default_profile_id: string;
+  connection_ids: string[];
+  profiles: RuntimeProfile[];
+  selection_owner: string;
+  direct_wordpress_write: boolean;
+};
+
 type RuntimeEvidence = {
   run_id?: string;
   site_id?: string;
@@ -89,6 +103,7 @@ type AiResources = {
   surface: string;
   connections: Connection[];
   capabilities: Capability[];
+  capability_matrix?: CapabilityMatrixRow[];
   runtime_profiles: RuntimeProfile[];
   recent_runtime_evidence?: {
     source: string;
@@ -128,9 +143,21 @@ function evidenceSummary(profile: RuntimeProfile): RuntimeEvidence | null {
   return lastRun.audio?.run_id ? lastRun.audio : lastRun.text?.run_id ? lastRun.text : null;
 }
 
+function profileModelSummary(profiles: RuntimeProfile[]): string {
+  const pairs = profiles
+    .map((profile) => `${profile.selected_provider_id || '-'} / ${profile.selected_model_id || '-'}`)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  return pairs.length ? pairs.join(', ') : '-';
+}
+
+function profileIds(profiles: RuntimeProfile[]): string {
+  return profiles.map((profile) => profile.profile_id).join(', ') || '-';
+}
+
 function AiResourcesContent() {
   const [data, setData] = useState<AiResources | null>(null);
   const [preferences, setPreferences] = useState<ProfilePreferences | null>(null);
+  const [activeView, setActiveView] = useState<'connections' | 'matrix'>('connections');
   const [loading, setLoading] = useState(true);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [error, setError] = useState('');
@@ -231,6 +258,23 @@ function AiResourcesContent() {
     ];
   }, [data]);
 
+  const matrixRows = useMemo<CapabilityMatrixRow[]>(() => {
+    if (!data) return [];
+    if (data.capability_matrix?.length) return data.capability_matrix;
+    return data.capabilities.map((capability) => ({
+      capability_id: capability.capability_id,
+      label: capability.label,
+      status: capability.status,
+      used_by: capability.used_by,
+      write_posture: capability.write_posture,
+      default_profile_id: capability.default_profile_id,
+      connection_ids: capability.connection_ids,
+      profiles: data.runtime_profiles.filter((profile) => profile.capability_id === capability.capability_id),
+      selection_owner: 'cloud_runtime_metadata',
+      direct_wordpress_write: false,
+    }));
+  }, [data]);
+
   if (loading) {
     return <LoadingFallback />;
   }
@@ -285,7 +329,24 @@ function AiResourcesContent() {
         </BackofficeStackCard>
       </BackofficePrimaryPanel>
 
-      <BackofficeSectionPanel>
+      <div className="flex flex-wrap gap-2">
+        <BackofficeFilterPill
+          active={activeView === 'connections'}
+          onClick={() => setActiveView('connections')}
+        >
+          Connections
+        </BackofficeFilterPill>
+        <BackofficeFilterPill
+          active={activeView === 'matrix'}
+          onClick={() => setActiveView('matrix')}
+        >
+          Capability Matrix
+        </BackofficeFilterPill>
+      </div>
+
+      {activeView === 'connections' ? (
+        <>
+          <BackofficeSectionPanel>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Connections</h2>
@@ -310,6 +371,8 @@ function AiResourcesContent() {
               </div>
               <div className="grid gap-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
                 <div>Base URL: {connection.base_url || '-'}</div>
+                <div>Enabled: {connection.enabled ? 'yes' : 'no'}</div>
+                <div>Configured: {connection.configured ? 'yes' : 'no'}</div>
                 <div>Capabilities: {labelList(connection.capability_ids)}</div>
                 <div>Profiles: {labelList(connection.runtime_profile_ids)}</div>
               </div>
@@ -321,10 +384,10 @@ function AiResourcesContent() {
             </BackofficeStackCard>
           ))}
         </div>
-      </BackofficeSectionPanel>
+          </BackofficeSectionPanel>
 
-      {preferences ? (
-        <BackofficeSectionPanel>
+          {preferences ? (
+            <BackofficeSectionPanel>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Profile preferences</h2>
@@ -389,38 +452,53 @@ function AiResourcesContent() {
               {savingPreferences ? 'Saving...' : 'Save profile preferences'}
             </button>
           </div>
-        </BackofficeSectionPanel>
+            </BackofficeSectionPanel>
+          ) : null}
+        </>
       ) : null}
 
-      <BackofficeSectionPanel>
-        <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Capabilities</h2>
+      {activeView === 'matrix' ? (
+        <>
+          <BackofficeSectionPanel>
+        <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Capability Matrix</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          Cloud runtime mapping from capability to profile, provider, model, and write posture. This is operator detail, not a WordPress ability editor.
+        </p>
         <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-          <div className="grid grid-cols-[1fr_9rem_1.2fr_1fr] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
+          <div className="grid grid-cols-[1fr_8rem_1.1fr_1.2fr_1fr] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
             <span>Capability</span>
             <span>Status</span>
-            <span>Default profile</span>
+            <span>Profiles</span>
+            <span>Provider / model</span>
             <span>Write posture</span>
           </div>
-          {data.capabilities.map((capability) => (
+          {matrixRows.map((row) => (
             <div
-              key={capability.capability_id}
-              className="grid grid-cols-[1fr_9rem_1.2fr_1fr] gap-3 border-b border-slate-200 px-4 py-3 text-sm last:border-b-0 dark:border-slate-800"
+              key={row.capability_id}
+              className="grid grid-cols-[1fr_8rem_1.1fr_1.2fr_1fr] gap-3 border-b border-slate-200 px-4 py-3 text-sm last:border-b-0 dark:border-slate-800"
             >
               <div>
-                <div className="font-medium text-slate-950 dark:text-white">{capability.label}</div>
+                <div className="font-medium text-slate-950 dark:text-white">{row.label}</div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {labelList(capability.used_by)}
+                  {labelList(row.used_by)}
                 </div>
               </div>
-              <BackofficeStatusBadge label={capability.status} status={statusTone(capability.status)} />
-              <div className="text-slate-600 dark:text-slate-300">{capability.default_profile_id}</div>
-              <div className="text-slate-600 dark:text-slate-300">{capability.write_posture}</div>
+              <BackofficeStatusBadge label={row.status} status={statusTone(row.status)} />
+              <div className="text-slate-600 dark:text-slate-300">
+                <div>{row.default_profile_id}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{profileIds(row.profiles)}</div>
+              </div>
+              <div className="text-slate-600 dark:text-slate-300">{profileModelSummary(row.profiles)}</div>
+              <div className="text-slate-600 dark:text-slate-300">
+                <div>{row.write_posture}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{row.selection_owner}</div>
+              </div>
             </div>
           ))}
         </div>
-      </BackofficeSectionPanel>
+          </BackofficeSectionPanel>
 
-      <BackofficeSectionPanel>
+          <BackofficeSectionPanel>
         <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Runtime profiles</h2>
         <div className="mt-4 grid gap-3">
           {data.runtime_profiles.map((profile) => (
@@ -442,9 +520,9 @@ function AiResourcesContent() {
             </BackofficeStackCard>
           ))}
         </div>
-      </BackofficeSectionPanel>
+          </BackofficeSectionPanel>
 
-      <BackofficeSectionPanel>
+          <BackofficeSectionPanel>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Recent runtime evidence</h2>
@@ -482,7 +560,9 @@ function AiResourcesContent() {
             );
           })}
         </div>
-      </BackofficeSectionPanel>
+          </BackofficeSectionPanel>
+        </>
+      ) : null}
     </BackofficePageStack>
   );
 }

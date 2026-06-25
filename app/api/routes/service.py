@@ -269,7 +269,7 @@ class AIResourceProfilePreferencePayload(BaseModel):
 class WordPressAIRoutingProfilePayload(BaseModel):
     profile_id: str = Field(max_length=64)
     candidate_instance_ids: list[str] = Field(default_factory=list)
-    timeout_ms: int = Field(default=30000, ge=1000, le=60000)
+    timeout_ms: int = Field(default=30000, ge=1000, le=90000)
     allow_fallback: bool = True
     max_retries: int = Field(default=0, ge=0, le=1)
     note: str = Field(default="", max_length=512)
@@ -453,13 +453,19 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
         models_by_id = {model.model_id: model for model in models}
         instances_by_id = {instance.instance_id: instance for instance in instances}
 
-        available_instances = [
-            _serialize_wordpress_ai_instance(instance, models_by_id[instance.model_id])
-            for instance in instances
-            if instance.model_id in models_by_id
-            and models_by_id[instance.model_id].feature == "text"
-            and models_by_id[instance.model_id].status == "available"
-        ]
+        available_instances_by_kind: dict[str, list[dict[str, Any]]] = {
+            "text": [],
+            "image_generation": [],
+        }
+        for instance in instances:
+            model = models_by_id.get(instance.model_id)
+            if model is None or model.status != "available":
+                continue
+            if model.feature not in available_instances_by_kind:
+                continue
+            available_instances_by_kind[model.feature].append(
+                _serialize_wordpress_ai_instance(instance, model)
+            )
 
         profiles: list[dict[str, Any]] = []
         for spec in WP_AI_CONNECTOR_PROFILE_SPECS:
@@ -491,10 +497,13 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
                     "label": spec.label,
                     "description": spec.description,
                     "tasks": list(spec.tasks),
-                    "execution_kind": profile.execution_kind if profile is not None else "text",
+                    "execution_kind": (
+                        profile.execution_kind if profile is not None else spec.execution_kind
+                    ),
                     "candidate_instance_ids": candidate_instance_ids,
                     "candidates": candidate_items,
                     "timeout_ms": int(policy.get("timeout_ms") or spec.timeout_ms),
+                    "max_timeout_ms": spec.max_timeout_ms,
                     "allow_fallback": bool(policy.get("allow_fallback", spec.allow_fallback)),
                     "max_retries": int(policy.get("max_retries") or spec.max_retries),
                     "revision": str(binding.revision if binding is not None else ""),
@@ -515,7 +524,8 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
         "customer_model_selection": False,
         "direct_wordpress_write": False,
         "prompt_or_preset_editor": False,
-        "available_text_instances": available_instances,
+        "available_text_instances": available_instances_by_kind["text"],
+        "available_image_instances": available_instances_by_kind["image_generation"],
         "profiles": profiles,
         "boundary": {
             "public_runtime_accepts_raw_model_instance": False,
@@ -552,6 +562,13 @@ def _validate_wordpress_ai_routing_payload(
                 return [], f"profile {profile_id} requires at least one candidate instance"
             if len(candidate_instance_ids) != len(set(candidate_instance_ids)):
                 return [], f"profile {profile_id} includes duplicate candidate instances"
+            if profile_payload.timeout_ms > WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[
+                profile_id
+            ].max_timeout_ms:
+                return [], (
+                    f"profile {profile_id} timeout_ms exceeds max "
+                    f"{WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id].max_timeout_ms}"
+                )
 
             instances = repository.list_instances_by_ids(candidate_instance_ids)
             instances_by_id = {instance.instance_id: instance for instance in instances}
@@ -569,9 +586,11 @@ def _validate_wordpress_ai_routing_payload(
                 model = models_by_id.get(instance.model_id)
                 if model is None:
                     return [], f"profile {profile_id} references an instance without a model"
-                if model.feature != "text" or model.status != "available":
+                spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[profile_id]
+                if model.feature != spec.execution_kind or model.status != "available":
                     return [], (
-                        f"profile {profile_id} may only use available text instances"
+                        f"profile {profile_id} may only use available "
+                        f"{spec.execution_kind} instances"
                     )
 
     return payload.profiles, ""
@@ -2888,7 +2907,7 @@ async def update_admin_wordpress_ai_routing(
             ]
             repository.upsert_routing_profile(
                 profile_id=profile_id,
-                execution_kind="text",
+                execution_kind=spec.execution_kind,
                 default_policy_json={
                     "allow_fallback": profile_payload.allow_fallback,
                     "max_retries": profile_payload.max_retries,

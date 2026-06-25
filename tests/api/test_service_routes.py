@@ -619,12 +619,27 @@ def test_admin_ai_resources_projects_connections_capabilities_and_profiles(
     assert data["surface"] == "admin_ai_resources"
     connection_ids = {item["connection_id"] for item in data["connections"]}
     capability_ids = {item["capability_id"] for item in data["capabilities"]}
+    matrix_ids = {item["capability_id"] for item in data["capability_matrix"]}
     profile_ids = {item["profile_id"] for item in data["runtime_profiles"]}
     assert {"openai_compatible", "minimax_audio"}.issubset(connection_ids)
-    assert {"text_generation", "audio_generation"}.issubset(capability_ids)
-    assert {TEXT_AI_PROFILE_ID, "audio.narration.default", "audio.summary.default"}.issubset(
-        profile_ids
+    assert {"text_generation", "audio_generation", "image_generation", "embedding"}.issubset(
+        capability_ids
     )
+    assert {"text_generation", "audio_generation", "image_generation", "embedding"}.issubset(
+        matrix_ids
+    )
+    assert {
+        TEXT_AI_PROFILE_ID,
+        "audio.narration.default",
+        "audio.summary.default",
+        "grok-imagine-image-quality",
+        "embed.default",
+    }.issubset(profile_ids)
+    matrix = {item["capability_id"]: item for item in data["capability_matrix"]}
+    assert matrix["text_generation"]["selection_owner"] == "cloud_runtime_metadata"
+    assert matrix["text_generation"]["direct_wordpress_write"] is False
+    assert matrix["image_generation"]["write_posture"] == "candidate_artifact_only"
+    assert matrix["embedding"]["default_profile_id"] == "embed.default"
     assert data["boundary"]["direct_wordpress_write"] is False
     assert data["boundary"]["not_a_control_plane"] is True
     serialized = json.dumps(data)
@@ -662,6 +677,7 @@ def test_admin_ai_resources_reads_injected_runtime_provider_adapters(
     assert profiles[TEXT_AI_PROFILE_ID]["status"] == "ready"
     assert profiles["audio.narration.default"]["status"] == "ready"
     assert profiles["audio.summary.default"]["status"] == "ready"
+    assert profiles["grok-imagine-image-quality"]["status"] == "ready"
 
 
 def test_admin_ai_resources_exposes_recent_runtime_evidence_without_content(

@@ -37,6 +37,36 @@ assert.match(
 
 assert.match(
   pageSource,
+  /Capability Matrix/,
+  'AI resources page must expose the capability-to-provider-model matrix'
+);
+
+assert.match(
+  pageSource,
+  /Cloud runtime mapping from capability to profile, provider, model, and write posture/,
+  'AI resources matrix must explain the runtime mapping purpose'
+);
+
+assert.match(
+  pageSource,
+  /not a WordPress ability editor/,
+  'AI resources matrix must not present itself as a local ability editor'
+);
+
+assert.match(
+  pageSource,
+  /Enabled:/,
+  'AI resources connections view must expose provider enabled state'
+);
+
+assert.match(
+  pageSource,
+  /Configured:/,
+  'AI resources connections view must expose masked provider configured state'
+);
+
+assert.match(
+  pageSource,
   /Prompt and result content are not exposed here/,
   'AI resources runtime evidence must be metadata-only'
 );

@@ -13,7 +13,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { resolveUiErrorMessage } from '@/lib/errors';
 
-type TextInstance = {
+type RuntimeInstance = {
   instance_id: string;
   provider_id: string;
   model_id: string;
@@ -31,9 +31,11 @@ type RoutingProfile = {
   group_id: string;
   label: string;
   description: string;
+  execution_kind: string;
   tasks: string[];
   candidate_instance_ids: string[];
   timeout_ms: number;
+  max_timeout_ms: number;
   allow_fallback: boolean;
   max_retries: number;
   revision: string;
@@ -48,7 +50,8 @@ type RoutingData = {
   customer_model_selection: boolean;
   direct_wordpress_write: boolean;
   prompt_or_preset_editor: boolean;
-  available_text_instances: TextInstance[];
+  available_text_instances: RuntimeInstance[];
+  available_image_instances: RuntimeInstance[];
   profiles: RoutingProfile[];
   boundary: {
     public_runtime_accepts_raw_model_instance: boolean;
@@ -90,17 +93,35 @@ function normalizeRoutingData(raw: any): RoutingData {
           model_feature: String(item?.model_feature ?? ''),
         }))
       : [],
+    available_image_instances: Array.isArray(data.available_image_instances)
+      ? data.available_image_instances.map((item: any) => ({
+          instance_id: String(item?.instance_id ?? ''),
+          provider_id: String(item?.provider_id ?? ''),
+          model_id: String(item?.model_id ?? ''),
+          endpoint_variant: String(item?.endpoint_variant ?? ''),
+          region: String(item?.region ?? ''),
+          health_status: String(item?.health_status ?? ''),
+          weight: Number(item?.weight ?? 0) || 0,
+          capability_tags: Array.isArray(item?.capability_tags)
+            ? item.capability_tags.map(String)
+            : [],
+          model_status: String(item?.model_status ?? ''),
+          model_feature: String(item?.model_feature ?? ''),
+        }))
+      : [],
     profiles: Array.isArray(data.profiles)
       ? data.profiles.map((profile: any) => ({
           profile_id: String(profile?.profile_id ?? ''),
           group_id: String(profile?.group_id ?? ''),
           label: String(profile?.label ?? ''),
           description: String(profile?.description ?? ''),
+          execution_kind: String(profile?.execution_kind ?? 'text'),
           tasks: Array.isArray(profile?.tasks) ? profile.tasks.map(String) : [],
           candidate_instance_ids: Array.isArray(profile?.candidate_instance_ids)
             ? profile.candidate_instance_ids.map(String)
             : [],
           timeout_ms: Number(profile?.timeout_ms ?? 30000) || 30000,
+          max_timeout_ms: Number(profile?.max_timeout_ms ?? 60000) || 60000,
           allow_fallback: Boolean(profile?.allow_fallback),
           max_retries: Number(profile?.max_retries ?? 0) || 0,
           revision: String(profile?.revision ?? ''),
@@ -119,7 +140,7 @@ function normalizeRoutingData(raw: any): RoutingData {
   };
 }
 
-function instanceLabel(instance: TextInstance | undefined): string {
+function instanceLabel(instance: RuntimeInstance | undefined): string {
   if (!instance) {
     return 'Unassigned';
   }
@@ -142,12 +163,23 @@ export default function WordPressAIRoutingPage() {
   const [savedMessage, setSavedMessage] = useState('');
 
   const instancesById = useMemo(() => {
-    const map = new Map<string, TextInstance>();
-    for (const instance of data?.available_text_instances ?? []) {
+    const map = new Map<string, RuntimeInstance>();
+    for (const instance of [
+      ...(data?.available_text_instances ?? []),
+      ...(data?.available_image_instances ?? []),
+    ]) {
       map.set(instance.instance_id, instance);
     }
     return map;
-  }, [data?.available_text_instances]);
+  }, [data?.available_image_instances, data?.available_text_instances]);
+
+  const candidateInstancesFor = useCallback(
+    (profile: RoutingProfile): RuntimeInstance[] =>
+      profile.execution_kind === 'image_generation'
+        ? data?.available_image_instances ?? []
+        : data?.available_text_instances ?? [],
+    [data?.available_image_instances, data?.available_text_instances]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -295,7 +327,7 @@ export default function WordPressAIRoutingPage() {
         }
       >
         <BackofficeMetricStrip
-          columnsClassName="xl:grid-cols-4"
+          columnsClassName="xl:grid-cols-5"
           items={[
             {
               label: 'Task groups',
@@ -303,9 +335,14 @@ export default function WordPressAIRoutingPage() {
               detail: 'Fixed connector groups',
             },
             {
-              label: 'Text instances',
+              label: 'Text candidates',
               value: data.available_text_instances.length,
-              detail: 'Available catalog candidates',
+              detail: 'Available text instances',
+            },
+            {
+              label: 'Image candidates',
+              value: data.available_image_instances.length,
+              detail: 'Available image instances',
             },
             {
               label: 'Write posture',
@@ -349,6 +386,9 @@ export default function WordPressAIRoutingPage() {
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
                     {profile.profile_id}
                   </span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                    {profile.execution_kind}
+                  </span>
                 </div>
                 <p className="max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
                   {profile.description}
@@ -375,6 +415,7 @@ export default function WordPressAIRoutingPage() {
                 {[0, 1, 2].map((index) => {
                   const selectedId = profile.candidate_instance_ids[index] || '';
                   const selected = instancesById.get(selectedId);
+                  const candidateInstances = candidateInstancesFor(profile);
                   return (
                     <label
                       key={`${profile.profile_id}-${index}`}
@@ -391,7 +432,7 @@ export default function WordPressAIRoutingPage() {
                         className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                       >
                         <option value="">Unassigned</option>
-                        {data.available_text_instances.map((instance) => (
+                        {candidateInstances.map((instance) => (
                           <option
                             key={`${profile.profile_id}-${index}-${instance.instance_id}`}
                             value={instance.instance_id}
@@ -419,7 +460,7 @@ export default function WordPressAIRoutingPage() {
                   <input
                     type="number"
                     min={1000}
-                    max={60000}
+                    max={profile.max_timeout_ms}
                     step={1000}
                     value={profile.timeout_ms}
                     onChange={(event) =>

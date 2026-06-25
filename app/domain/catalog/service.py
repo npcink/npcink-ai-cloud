@@ -23,6 +23,7 @@ from app.domain.hosted_model_defaults import (
     VISION_AI_PROFILE_ID,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
+    WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_PROFILE_SPECS,
 )
 
@@ -497,7 +498,7 @@ class CatalogService:
         }
         profile_specs.update(
             {
-                spec.profile_id: ("text", list(spec.ordered_tiers))
+                spec.profile_id: (spec.execution_kind, list(spec.ordered_tiers))
                 for spec in WP_AI_CONNECTOR_PROFILE_SPECS
             }
         )
@@ -516,7 +517,11 @@ class CatalogService:
                 ordered_tiers,
                 exact_model_id=(
                     GROK_IMAGINE_IMAGE_MODEL_ID
-                    if profile_id == GROK_IMAGINE_IMAGE_PROFILE_ID
+                    if profile_id
+                    in {
+                        GROK_IMAGINE_IMAGE_PROFILE_ID,
+                        WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
+                    }
                     else AUDIO_NARRATION_MODEL_ID
                     if profile_id == AUDIO_NARRATION_PROFILE_ID
                     else AUDIO_NARRATION_QUALITY_MODEL_ID

@@ -92,6 +92,7 @@ from app.domain.wordpress_ai_connector.contracts import (
     WP_AI_CONNECTOR_EXECUTION_KIND,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
+    WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
     resolve_wordpress_ai_connector_profile_id,
 )
 
@@ -275,6 +276,19 @@ def _is_wordpress_ai_connector_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in WP_AI_CONNECTOR_ABILITIES
 
 
+def _is_wordpress_ai_image_generation_payload(payload: RuntimePayload) -> bool:
+    input_payload = payload.input if isinstance(payload.input, dict) else {}
+    return (
+        _is_image_generation_payload(payload)
+        and (
+            payload.channel == "wordpress_ai_connector"
+            or str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
+        )
+        and str(input_payload.get("connector_id") or "") == "npcink-cloud"
+        and str(input_payload.get("task") or "") == "image_generation"
+    )
+
+
 def _is_image_source_payload(payload: RuntimePayload) -> bool:
     return payload.ability_name in IMAGE_SOURCE_ABILITIES
 
@@ -386,6 +400,8 @@ def _resolve_profile_id(payload: RuntimePayload) -> str:
         return IMAGE_CONTEXT_EVIDENCE_PROFILE_ID
     if _is_audio_generation_payload(payload) and not payload.profile_id:
         return AUDIO_GENERATION_PROFILE_ID
+    if _is_wordpress_ai_image_generation_payload(payload) and not payload.profile_id:
+        return WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
     if _is_image_generation_payload(payload) and not payload.profile_id:
         return IMAGE_GENERATION_PROFILE_ID
     if _is_image_source_payload(payload) and not payload.profile_id:
