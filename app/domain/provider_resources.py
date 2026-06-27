@@ -41,6 +41,48 @@ AUDIO_PROFILE_MODEL_IDS = {
     AUDIO_NARRATION_PROFILE_ID: AUDIO_NARRATION_MODEL_ID,
     AUDIO_NARRATION_QUALITY_PROFILE_ID: AUDIO_NARRATION_QUALITY_MODEL_ID,
 }
+ABILITY_MODEL_RUNTIME_PROJECTION_VERSION = "admin-ability-model-runtime-projection.v1"
+
+_ABILITY_MODEL_MEDIA_BY_FEATURE_ID = {
+    "content_support": "text",
+    "site_knowledge_embedding": "text",
+    "evidence_preflight": "text",
+    "generated_image_candidates": "image",
+    "image_source_candidates": "image",
+    "audio_summary_script": "audio",
+    "article_narration": "audio",
+    "article_audio_summary": "audio",
+}
+
+_ABILITY_MODEL_DESCRIPTION_BY_FEATURE_ID = {
+    "content_support": (
+        "Cloud runtime support for writing assistance and evidence-backed editor help."
+    ),
+    "site_knowledge_embedding": (
+        "Embedding runtime used by Site Knowledge detail and retrieval support."
+    ),
+    "evidence_preflight": (
+        "External evidence preflight before handing control back to the local WordPress path."
+    ),
+    "generated_image_candidates": (
+        "Reviewable generated image candidates while WordPress keeps final media use."
+    ),
+    "image_source_candidates": (
+        "External image source candidates returned for operator review."
+    ),
+    "audio_summary_script": "Text profile used before generating audio summaries.",
+    "article_narration": "Audio profile used for article narration.",
+    "article_audio_summary": "Audio profile used for long-form summary playback.",
+}
+
+_ABILITY_MODEL_KIND_BY_CAPABILITY_ID = {
+    "text_generation": "text_model",
+    "audio_generation": "audio_model",
+    "image_generation": "image_model",
+    "embedding": "embedding_model",
+    "web_search": "search_text_model",
+    "image_source": "image_source_provider",
+}
 
 
 class AIResourceProfilePreferenceError(ValueError):
@@ -271,6 +313,13 @@ def build_admin_ai_resource_projection(
         },
     ]
 
+    audio_summary_connection_label = (
+        f"{text_connection_id or audio_summary_text_profile_id} + "
+        f"{audio_connection_id or audio_summary_audio_profile_id}"
+    )
+    audio_summary_provider_label = (
+        f"{text_provider_id or 'text'} + {audio_provider_id or 'audio'}"
+    )
     runtime_profiles = [
         {
             "profile_id": TEXT_AI_PROFILE_ID,
@@ -344,10 +393,8 @@ def build_admin_ai_resource_projection(
             "profile_id": "audio.summary.default",
             "kind": "pipeline_profile",
             "capability_id": "audio_generation",
-            "selected_connection_id": (
-                f"{text_connection_id or audio_summary_text_profile_id} + {audio_connection_id or audio_summary_audio_profile_id}"
-            ),
-            "selected_provider_id": f"{text_provider_id or 'text'} + {audio_provider_id or 'audio'}",
+            "selected_connection_id": audio_summary_connection_label,
+            "selected_provider_id": audio_summary_provider_label,
             "selected_model_id": (
                 f"{TEXT_PROFILE_MODEL_IDS[audio_summary_text_profile_id]} + "
                 f"{AUDIO_PROFILE_MODEL_IDS[audio_summary_audio_profile_id]}"
@@ -458,6 +505,139 @@ def build_admin_ai_resource_projection(
             ],
         },
     }
+
+
+def build_admin_ability_model_runtime_projection(
+    settings: Settings,
+    *,
+    providers: dict[str, ProviderAdapter] | None = None,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    resources = build_admin_ai_resource_projection(
+        settings,
+        providers=providers,
+        database_url=database_url,
+    )
+    feature_model_usage = [
+        item
+        for item in resources.get("feature_model_usage", [])
+        if isinstance(item, dict)
+    ]
+    rows = [
+        _build_ability_model_runtime_row(item, index=index)
+        for index, item in enumerate(feature_model_usage)
+    ]
+    media_groups: list[dict[str, Any]] = []
+    for media in ("text", "image", "audio", "video"):
+        media_rows = [row for row in rows if row["media"] == media]
+        media_groups.append(
+            {
+                "media": media,
+                "count": len(media_rows),
+                "connected_count": len(
+                    [row for row in media_rows if row["status"] == "connected"]
+                ),
+            }
+        )
+    return {
+        "surface": "admin_ability_model_runtime_projection",
+        "projection_version": ABILITY_MODEL_RUNTIME_PROJECTION_VERSION,
+        "owner": "cloud_runtime",
+        "source_surface": str(resources.get("surface") or "admin_ai_resources"),
+        "rows": rows,
+        "media_groups": media_groups,
+        "boundary": {
+            "read_only": True,
+            "direct_wordpress_write": False,
+            "not_a_control_plane": True,
+            "does_not_own": [
+                "wordpress_writes",
+                "approval_truth",
+                "ability_registry",
+                "workflow_registry",
+                "prompt_router_preset_truth",
+                "plugin_specific_overrides",
+            ],
+        },
+    }
+
+
+def _build_ability_model_runtime_row(
+    feature_usage: dict[str, Any],
+    *,
+    index: int,
+) -> dict[str, Any]:
+    feature_id = str(feature_usage.get("feature_id") or "")
+    capability_id = str(feature_usage.get("capability_id") or "")
+    profile_id = str(feature_usage.get("profile_id") or "")
+    raw_status = str(feature_usage.get("status") or "")
+    return {
+        "ability_id": feature_id,
+        "feature_id": feature_id,
+        "label": str(feature_usage.get("label") or feature_id),
+        "description": _ABILITY_MODEL_DESCRIPTION_BY_FEATURE_ID.get(feature_id, ""),
+        "media": _ABILITY_MODEL_MEDIA_BY_FEATURE_ID.get(
+            feature_id,
+            _media_from_capability_id(capability_id),
+        ),
+        "status": _ability_model_runtime_status(raw_status),
+        "raw_status": raw_status,
+        "capability_id": capability_id,
+        "model_kind": _ABILITY_MODEL_KIND_BY_CAPABILITY_ID.get(
+            capability_id,
+            "runtime_model",
+        ),
+        "profile_id": profile_id,
+        "provider_id": str(feature_usage.get("provider_id") or ""),
+        "model_id": str(feature_usage.get("model_id") or ""),
+        "surface": str(feature_usage.get("surface") or ""),
+        "connection_ids": _string_list(feature_usage.get("connection_ids")),
+        "selection_owner": str(
+            feature_usage.get("selection_owner") or "cloud_runtime_metadata"
+        ),
+        "write_posture": str(feature_usage.get("write_posture") or ""),
+        "can_configure": False,
+        "action": "runtime_managed",
+        "display_order": index,
+        "evidence": {
+            "content_exposed": False,
+            "source": "feature_model_usage",
+        },
+        "boundary": {
+            "read_only": True,
+            "direct_wordpress_write": False,
+            "not_a_control_plane": True,
+        },
+    }
+
+
+def _media_from_capability_id(capability_id: str) -> str:
+    if capability_id == "audio_generation":
+        return "audio"
+    if capability_id in {"image_generation", "image_source"}:
+        return "image"
+    return "text"
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item)]
+
+
+def _ability_model_runtime_status(raw_status: str) -> str:
+    normalized = raw_status.strip().lower()
+    if normalized in {"ready", "configured", "healthy", "available"}:
+        return "connected"
+    if normalized in {
+        "missing_provider",
+        "missing_secret",
+        "disabled",
+        "needs_candidates",
+        "not_configured",
+    }:
+        return "missing_provider"
+    return "unknown" if normalized else "unknown"
 
 
 def _selected_audio_summary_text_profile_id(settings: Settings) -> str:

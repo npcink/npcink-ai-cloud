@@ -422,6 +422,71 @@ def test_admin_ai_resources_projects_connections_capabilities_and_profiles(
     assert "group-test-secret" not in serialized
 
 
+def test_admin_ability_model_runtime_projection_is_read_only_and_feature_backed(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "openai_api_key": "openai-test-secret",
+            "openai_provider_label": "GPT 5.5 hosted",
+            "minimax_provider_enabled": True,
+            "minimax_api_key": "minimax-test-secret",
+            "minimax_group_id": "group-test-secret",
+        },
+    )
+
+    response = client.get(
+        "/internal/service/admin/ability-models/runtime-projection",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["surface"] == "admin_ability_model_runtime_projection"
+    assert data["projection_version"] == "admin-ability-model-runtime-projection.v1"
+    assert data["source_surface"] == "admin_ai_resources"
+    assert data["boundary"]["read_only"] is True
+    assert data["boundary"]["direct_wordpress_write"] is False
+    assert data["boundary"]["not_a_control_plane"] is True
+    assert "plugin_specific_overrides" in data["boundary"]["does_not_own"]
+
+    rows = {item["ability_id"]: item for item in data["rows"]}
+    assert {
+        "content_support",
+        "audio_summary_script",
+        "article_narration",
+        "article_audio_summary",
+        "generated_image_candidates",
+        "site_knowledge_embedding",
+        "evidence_preflight",
+        "image_source_candidates",
+    }.issubset(rows)
+    assert rows["content_support"]["media"] == "text"
+    assert rows["content_support"]["status"] == "connected"
+    assert rows["content_support"]["can_configure"] is False
+    assert rows["content_support"]["action"] == "runtime_managed"
+    assert rows["content_support"]["boundary"]["direct_wordpress_write"] is False
+    assert rows["article_narration"]["media"] == "audio"
+    assert rows["generated_image_candidates"]["media"] == "image"
+    assert rows["site_knowledge_embedding"]["model_kind"] == "embedding_model"
+    assert rows["evidence_preflight"]["model_kind"] == "search_text_model"
+
+    media_groups = {item["media"]: item for item in data["media_groups"]}
+    assert {"text", "image", "audio", "video"}.issubset(media_groups)
+    assert media_groups["text"]["count"] >= 3
+    assert media_groups["audio"]["count"] >= 3
+    assert media_groups["video"]["count"] == 0
+
+    serialized = json.dumps(data)
+    assert "openai-test-secret" not in serialized
+    assert "minimax-test-secret" not in serialized
+    assert "group-test-secret" not in serialized
+
+    unauthorized = client.get("/internal/service/admin/ability-models/runtime-projection")
+    assert unauthorized.status_code == 401
+
+
 def test_admin_provider_connections_store_encrypted_credentials_and_project_to_ai_resources(
     tmp_path: Path,
 ) -> None:

@@ -39,6 +39,7 @@ from app.domain.provider_connections.service import (
 from app.domain.provider_resources import (
     AIResourceProfilePreferenceError,
     AIResourceProfilePreferenceService,
+    build_admin_ability_model_runtime_projection,
     build_admin_ai_resource_projection,
 )
 from app.domain.runtime.models import (
@@ -3032,6 +3033,28 @@ async def get_admin_ai_resources(request: Request) -> Any:
         status="ok",
         message="AI resource projection loaded",
         data=build_admin_ai_resource_projection(
+            services.settings,
+            providers=resolve_live_provider_adapters(
+                services.settings,
+                base_providers=services.providers,
+                include_enabled_connections=True,
+            ),
+            database_url=services.settings.database_url,
+        ),
+        revision="m6",
+    )
+
+
+@router.get("/admin/ability-models/runtime-projection")
+async def get_admin_ability_model_runtime_projection(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    return build_envelope(
+        status="ok",
+        message="Ability model runtime projection loaded",
+        data=build_admin_ability_model_runtime_projection(
             services.settings,
             providers=resolve_live_provider_adapters(
                 services.settings,

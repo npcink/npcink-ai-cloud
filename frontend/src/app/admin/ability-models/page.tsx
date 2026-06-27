@@ -71,6 +71,24 @@ type EditableRoutingProfile = RoutingProfile & {
 
 type AbilityModelTab = 'wordpress' | 'cloud';
 type CloudAbilityMediaTab = 'text' | 'image' | 'audio' | 'video';
+type CloudAbilityRuntimeStatus = 'connected' | 'missing_provider' | 'planned' | 'unknown';
+
+type CloudAbilityRuntimeRow = {
+  ability_id: string;
+  label: string;
+  description: string;
+  media: CloudAbilityMediaTab;
+  status: CloudAbilityRuntimeStatus;
+  raw_status: string;
+  capability_id: string;
+  model_kind: string;
+  profile_id: string;
+  provider_id: string;
+  model_id: string;
+  surface: string;
+  can_configure: boolean;
+  action: string;
+};
 
 function normalizeProfilePreferences(raw: any): ProfilePreferences | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -133,6 +151,32 @@ function normalizeRoutingData(raw: any): RoutingData {
   };
 }
 
+function normalizeCloudAbilityRuntimeRows(raw: any): CloudAbilityRuntimeRow[] {
+  const rows = Array.isArray(raw?.rows) ? raw.rows : [];
+  const mediaValues = new Set(['text', 'image', 'audio', 'video']);
+  const statusValues = new Set(['connected', 'missing_provider', 'planned', 'unknown']);
+  return rows.map((row: any): CloudAbilityRuntimeRow => {
+    const media = String(row?.media ?? 'text');
+    const status = String(row?.status ?? 'unknown');
+    return {
+      ability_id: String(row?.ability_id ?? row?.feature_id ?? ''),
+      label: String(row?.label ?? ''),
+      description: String(row?.description ?? ''),
+      media: (mediaValues.has(media) ? media : 'text') as CloudAbilityMediaTab,
+      status: (statusValues.has(status) ? status : 'unknown') as CloudAbilityRuntimeStatus,
+      raw_status: String(row?.raw_status ?? ''),
+      capability_id: String(row?.capability_id ?? ''),
+      model_kind: String(row?.model_kind ?? ''),
+      profile_id: String(row?.profile_id ?? ''),
+      provider_id: String(row?.provider_id ?? ''),
+      model_id: String(row?.model_id ?? ''),
+      surface: String(row?.surface ?? ''),
+      can_configure: Boolean(row?.can_configure),
+      action: String(row?.action ?? 'runtime_managed'),
+    };
+  });
+}
+
 function resolveAdminApiPayloadMessage(payload: any, fallback: string): string {
   if (payload && typeof payload === 'object') {
     const message = typeof payload.message === 'string' ? payload.message : '';
@@ -171,6 +215,7 @@ export default function AbilityModelsPage() {
   const [preferences, setPreferences] = useState<ProfilePreferences | null>(null);
   const [routingData, setRoutingData] = useState<RoutingData | null>(null);
   const [routingDrafts, setRoutingDrafts] = useState<EditableRoutingProfile[]>([]);
+  const [cloudAbilityRows, setCloudAbilityRows] = useState<CloudAbilityRuntimeRow[]>([]);
   const [activeAbilityTab, setActiveAbilityTab] = useState<AbilityModelTab>('wordpress');
   const [activeCloudMediaTab, setActiveCloudMediaTab] = useState<CloudAbilityMediaTab>('text');
   const [activeProfileId, setActiveProfileId] = useState('');
@@ -219,10 +264,25 @@ export default function AbilityModelsPage() {
     }
   }, [aiText]);
 
+  const loadCloudAbilityRuntimeProjection = useCallback(async () => {
+    setPageError('');
+    try {
+      const response = await fetch('/api/admin/ability-models/runtime-projection', { credentials: 'include' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(resolveUiErrorMessage(payload, text('error_load_cloud_runtime_projection', 'Failed to load Cloud-native ability runtime projection.')));
+      }
+      setCloudAbilityRows(normalizeCloudAbilityRuntimeRows(payload.data));
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : text('error_load_cloud_runtime_projection', 'Failed to load Cloud-native ability runtime projection.'));
+    }
+  }, [text]);
+
   useEffect(() => {
     void loadPreferences();
     void loadRouting();
-  }, [loadPreferences, loadRouting]);
+    void loadCloudAbilityRuntimeProjection();
+  }, [loadCloudAbilityRuntimeProjection, loadPreferences, loadRouting]);
 
   const runtimeInstancesById = useMemo(() => {
     const instances = [
@@ -303,6 +363,54 @@ export default function AbilityModelsPage() {
       status: abilityModelHealthLabel(instance.health_status),
     })
   ), [abilityModelFeatureLabel, abilityModelHealthLabel, abilityModelRegionLabel, aiText]);
+
+  const cloudAbilityLabel = useCallback((row: CloudAbilityRuntimeRow): string => {
+    const labels: Record<string, string> = {
+      content_support: text('cloud_ability_content_support', 'Content support'),
+      site_knowledge_embedding: text('cloud_ability_site_knowledge_embedding', 'Site Knowledge embedding'),
+      evidence_preflight: text('cloud_ability_external_evidence', 'External evidence preflight'),
+      generated_image_candidates: text('cloud_ability_generated_image_candidates', 'Generated image candidates'),
+      image_source_candidates: text('cloud_ability_image_source_candidates', 'Image source candidates'),
+      audio_summary_script: text('cloud_ability_audio_summary_script', 'Audio summary script'),
+      article_narration: text('cloud_ability_article_narration', 'Article narration'),
+      article_audio_summary: text('cloud_ability_article_audio_summary', 'Long-form audio summary'),
+    };
+    return labels[row.ability_id] || row.label || row.ability_id;
+  }, [text]);
+
+  const cloudAbilityDescription = useCallback((row: CloudAbilityRuntimeRow): string => {
+    const descriptions: Record<string, string> = {
+      content_support: text('cloud_ability_content_support_desc', 'Cloud runtime support for writing assistance and evidence-backed editor help.'),
+      site_knowledge_embedding: text('cloud_ability_site_knowledge_embedding_desc', 'Embedding runtime used by Site Knowledge detail and retrieval support.'),
+      evidence_preflight: text('cloud_ability_external_evidence_desc', 'Prepare evidence grounding before handing control back to the local WordPress path.'),
+      generated_image_candidates: text('cloud_ability_generated_image_candidates_desc', 'Generate reviewable image candidates while WordPress keeps approval and final media use.'),
+      image_source_candidates: text('cloud_ability_image_source_candidates_desc', 'Search external image sources and return reviewable media candidates.'),
+      audio_summary_script: text('cloud_ability_audio_summary_script_desc', 'Text profile used before generating audio summaries.'),
+      article_narration: text('cloud_ability_article_narration_desc', 'Audio profile used for article narration.'),
+      article_audio_summary: text('cloud_ability_article_audio_summary_desc', 'Audio profile used for long-form summary playback.'),
+    };
+    return descriptions[row.ability_id] || row.description;
+  }, [text]);
+
+  const cloudAbilityModelKindLabel = useCallback((modelKind: string): string => {
+    const labels: Record<string, string> = {
+      text_model: text('cloud_model_kind_text', 'Text model'),
+      audio_model: text('cloud_model_kind_audio', 'Audio model'),
+      image_model: text('cloud_model_kind_vision_image', 'Vision / image model'),
+      embedding_model: text('cloud_model_kind_embedding', 'Embedding model'),
+      search_text_model: text('cloud_model_kind_search_text', 'Search + text model'),
+      image_source_provider: text('cloud_model_kind_image_source', 'Image source provider'),
+      runtime_model: text('cloud_model_kind_runtime', 'Runtime model'),
+    };
+    return labels[modelKind] || modelKind || text('cloud_model_kind_runtime', 'Runtime model');
+  }, [text]);
+
+  const cloudAbilityStatusLabel = useCallback((status: CloudAbilityRuntimeStatus): string => {
+    if (status === 'connected') return text('cloud_native_status_connected', 'Connected');
+    if (status === 'missing_provider') return text('cloud_native_status_missing_provider', 'Missing provider');
+    if (status === 'planned') return text('cloud_native_status_planned', 'Planned');
+    return text('cloud_native_status_unknown', 'Unknown');
+  }, [text]);
 
   const abilityModelRows = useMemo(() => routingDrafts.flatMap((profile) => {
     const primaryInstance = runtimeInstancesById.get(profile.candidate_instance_ids[0] || '');
@@ -503,79 +611,7 @@ export default function AbilityModelsPage() {
       ]
     : [];
 
-  const cloudNativeAbilityRows = [
-    {
-      id: 'content_support',
-      media: 'text',
-      status: 'connected',
-      label: text('cloud_ability_content_support', 'Content support'),
-      description: text('cloud_ability_content_support_desc', 'Cloud runtime support for writing assistance and evidence-backed editor help.'),
-      modelKind: text('cloud_model_kind_text', 'Text model'),
-      profile: text('cloud_native_profile_runtime', 'Runtime projection'),
-      action: text('cloud_native_action_readonly', 'Runtime managed'),
-    },
-    {
-      id: 'site_knowledge_summary',
-      media: 'text',
-      status: 'connected',
-      label: text('cloud_ability_site_knowledge_summary', 'Site knowledge summary'),
-      description: text('cloud_ability_site_knowledge_summary_desc', 'Summarize indexed site knowledge as runtime detail, not local knowledge-base truth.'),
-      modelKind: text('cloud_model_kind_text', 'Text model'),
-      profile: text('cloud_native_profile_runtime', 'Runtime projection'),
-      action: text('cloud_native_action_readonly', 'Runtime managed'),
-    },
-    {
-      id: 'external_evidence_preflight',
-      media: 'text',
-      status: 'connected',
-      label: text('cloud_ability_external_evidence', 'External evidence preflight'),
-      description: text('cloud_ability_external_evidence_desc', 'Prepare evidence grounding before handing control back to the local WordPress path.'),
-      modelKind: text('cloud_model_kind_search_text', 'Search + text model'),
-      profile: text('cloud_native_profile_runtime', 'Runtime projection'),
-      action: text('cloud_native_action_readonly', 'Runtime managed'),
-    },
-    {
-      id: 'generated_image_candidates',
-      media: 'image',
-      status: 'connected',
-      label: text('cloud_ability_generated_image_candidates', 'Generated image candidates'),
-      description: text('cloud_ability_generated_image_candidates_desc', 'Generate reviewable image candidates while WordPress keeps approval and final media use.'),
-      modelKind: text('cloud_model_kind_vision_image', 'Vision / image model'),
-      profile: text('cloud_native_profile_runtime', 'Runtime projection'),
-      action: text('cloud_native_action_readonly', 'Runtime managed'),
-    },
-    {
-      id: 'image_source_candidates',
-      media: 'image',
-      status: 'connected',
-      label: text('cloud_ability_image_source_candidates', 'Image source candidates'),
-      description: text('cloud_ability_image_source_candidates_desc', 'Search external image sources and return reviewable media candidates.'),
-      modelKind: text('cloud_model_kind_image_source', 'Image source provider'),
-      profile: text('cloud_native_profile_runtime', 'Runtime projection'),
-      action: text('cloud_native_action_readonly', 'Runtime managed'),
-    },
-    {
-      id: 'image_context_evidence',
-      media: 'image',
-      status: 'planned',
-      label: text('cloud_ability_image_context_evidence', 'Image context evidence'),
-      description: text('cloud_ability_image_context_evidence_desc', 'Use bounded vision evidence to describe media context without updating WordPress attachments.'),
-      modelKind: text('cloud_model_kind_vision_image', 'Vision / image model'),
-      profile: text('cloud_native_profile_pending', 'Not connected'),
-      action: text('cloud_native_action_pending', 'Configure after connection'),
-    },
-    {
-      id: 'media_derivative_plan',
-      media: 'image',
-      status: 'connected',
-      label: text('cloud_ability_media_derivative_plan', 'Media derivative plan'),
-      description: text('cloud_ability_media_derivative_plan_desc', 'Plan temporary media derivative artifacts while local WordPress keeps approval and writes.'),
-      modelKind: text('cloud_model_kind_vision_image', 'Vision / image model'),
-      profile: text('cloud_native_profile_runtime', 'Runtime projection'),
-      action: text('cloud_native_action_readonly', 'Runtime managed'),
-    },
-  ];
-  const activeCloudNativeAbilityRows = cloudNativeAbilityRows.filter((row) => row.media === activeCloudMediaTab);
+  const activeCloudNativeAbilityRows = cloudAbilityRows.filter((row) => row.media === activeCloudMediaTab);
 
   if (loading) {
     return <LoadingFallback />;
@@ -728,9 +764,68 @@ export default function AbilityModelsPage() {
             ))}
           </div>
 
+          {activeCloudNativeAbilityRows.length > 0 ? (
+            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+              <div className="hidden grid-cols-[8rem_1.4fr_1fr_1.1fr_1.2fr_9rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400 md:grid">
+                <span>{aiText('column_status', 'Status')}</span>
+                <span>{aiText('column_ability', 'Ability')}</span>
+                <span>{text('column_model_kind', 'Model kind')}</span>
+                <span>{aiText('column_profile', 'Profile')}</span>
+                <span>{aiText('column_provider_model', 'Provider / model')}</span>
+                <span className="text-right">{aiText('column_actions', 'Actions')}</span>
+              </div>
+              {activeCloudNativeAbilityRows.map((row) => (
+                <div
+                  key={row.ability_id}
+                  className="grid gap-3 border-b border-slate-200 px-4 py-4 text-sm last:border-b-0 dark:border-slate-800 md:grid-cols-[8rem_1.4fr_1fr_1.1fr_1.2fr_9rem] md:items-center"
+                >
+                  <BackofficeStatusBadge
+                    label={cloudAbilityStatusLabel(row.status)}
+                    status={row.status === 'connected' ? 'success' : row.status === 'missing_provider' ? 'warning' : 'inactive'}
+                  />
+                  <div>
+                    <div className="font-medium text-slate-950 dark:text-white">{cloudAbilityLabel(row)}</div>
+                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{cloudAbilityDescription(row)}</div>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-300">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 md:hidden">
+                      {text('column_model_kind', 'Model kind')}
+                    </div>
+                    <div className="mt-1 md:mt-0">{cloudAbilityModelKindLabel(row.model_kind)}</div>
+                  </div>
+                  <div className="font-mono text-sm text-slate-500 dark:text-slate-400">
+                    {row.profile_id || text('cloud_native_profile_pending', 'Not connected')}
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-300">
+                    <div>{row.provider_id || '-'}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{row.model_id || '-'}</div>
+                  </div>
+                  <div className="text-right">
+                    <button
+                      type="button"
+                      className="btn btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!row.can_configure}
+                    >
+                      {row.can_configure ? aiText('action_configure', 'Configure') : text('cloud_native_action_readonly', 'Runtime managed')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {activeCloudNativeAbilityRows.length === 0 ? (
+            <div className="mt-4">
+              <BackofficeEmptyState
+                title={text(`cloud_${activeCloudMediaTab}_empty_title`, 'No Cloud runtime abilities')}
+                description={text(`cloud_${activeCloudMediaTab}_empty_desc`, 'No read-only runtime projection is available for this media group yet.')}
+              />
+            </div>
+          ) : null}
+
           {activeCloudMediaTab === 'audio' && preferences ? (
             <>
-              <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+              <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
                 <div className="hidden grid-cols-[1.4fr_1fr_1.2fr] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400 md:grid">
                   <span>{text('column_audio_ability', 'Audio ability')}</span>
                   <span>{text('column_current_profile', 'Current profile')}</span>
@@ -790,62 +885,6 @@ export default function AbilityModelsPage() {
               <BackofficeEmptyState
                 title={text('audio_empty_title', 'Audio ability models unavailable')}
                 description={text('audio_empty_desc', 'Audio runtime profile preferences are not available from the provider management projection.')}
-              />
-            </div>
-          ) : null}
-
-          {activeCloudMediaTab !== 'audio' && activeCloudNativeAbilityRows.length > 0 ? (
-            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-              <div className="hidden grid-cols-[8rem_1.4fr_1fr_1.1fr_9rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400 md:grid">
-                <span>{aiText('column_status', 'Status')}</span>
-                <span>{aiText('column_ability', 'Ability')}</span>
-                <span>{text('column_model_kind', 'Model kind')}</span>
-                <span>{aiText('column_profile', 'Profile')}</span>
-                <span className="text-right">{aiText('column_actions', 'Actions')}</span>
-              </div>
-              {activeCloudNativeAbilityRows.map((row) => (
-                <div
-                  key={row.id}
-                  className="grid gap-3 border-b border-slate-200 px-4 py-4 text-sm last:border-b-0 dark:border-slate-800 md:grid-cols-[8rem_1.4fr_1fr_1.1fr_9rem] md:items-center"
-                >
-                  <BackofficeStatusBadge
-                    label={row.status === 'connected'
-                      ? text('cloud_native_status_connected', 'Connected')
-                      : text('cloud_native_status_planned', 'Planned')}
-                    status={row.status === 'connected' ? 'success' : 'warning'}
-                  />
-                  <div>
-                    <div className="font-medium text-slate-950 dark:text-white">{row.label}</div>
-                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{row.description}</div>
-                  </div>
-                  <div className="text-slate-600 dark:text-slate-300">
-                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 md:hidden">
-                      {text('column_model_kind', 'Model kind')}
-                    </div>
-                    <div className="mt-1 md:mt-0">{row.modelKind}</div>
-                  </div>
-                  <div className="font-mono text-sm text-slate-500 dark:text-slate-400">
-                    {row.profile}
-                  </div>
-                  <div className="text-right">
-                    <button
-                      type="button"
-                      className="btn btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled
-                    >
-                      {row.action}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {activeCloudMediaTab === 'video' ? (
-            <div className="mt-4">
-              <BackofficeEmptyState
-                title={text('video_empty_title', 'Video ability models are not connected')}
-                description={text('video_empty_desc', 'No Cloud video runtime contract is available yet. This tab is reserved for future video summary, transcription, and cover candidate abilities.')}
               />
             </div>
           ) : null}
