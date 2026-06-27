@@ -270,8 +270,20 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /cloudNativeAbilityRows[\s\S]*id: 'content_support'[\s\S]*media: 'text'[\s\S]*cloud_ability_content_support[\s\S]*id: 'image_source_candidates'[\s\S]*media: 'image'/,
-  'Cloud-native ability tab must list Cloud-owned runtime abilities without duplicating plugin content tasks'
+  /fetch\('\/api\/admin\/ability-models\/runtime-projection'/,
+  'Cloud-native ability tab must load read-only runtime rows from the backend projection'
+);
+
+assert.match(
+  abilityModelsSource,
+  /normalizeCloudAbilityRuntimeRows[\s\S]*payload\.data/,
+  'Cloud-native backend projection must be normalized before rendering'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /const cloudNativeAbilityRows = \[/,
+  'Cloud-native ability rows must not be hard-coded in the frontend'
 );
 
 assert.doesNotMatch(
@@ -294,14 +306,14 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /cloud_native_profile_runtime[\s\S]*cloud_native_action_readonly/,
-  'Cloud-native existing abilities must render as read-only runtime projections instead of all planned placeholders'
+  /can_configure: boolean[\s\S]*disabled=\{!row\.can_configure\}[\s\S]*cloud_native_action_readonly/,
+  'Cloud-native runtime projection rows must remain read-only unless the backend explicitly marks a row configurable'
 );
 
 assert.match(
   abilityModelsSource,
-  /status: 'planned'[\s\S]*cloud_native_profile_pending[\s\S]*cloud_native_action_pending/,
-  'Cloud-native planned abilities must keep configuration disabled until a Cloud routing projection exists'
+  /activeCloudNativeAbilityRows = cloudAbilityRows\.filter/,
+  'Cloud-native ability media tabs must filter backend runtime projection rows'
 );
 
 assert.match(
@@ -312,7 +324,7 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /activeCloudMediaTab === 'video'[\s\S]*video_empty_title[\s\S]*video_empty_desc/,
+  /cloud_\$\{activeCloudMediaTab\}_empty_title[\s\S]*cloud_\$\{activeCloudMediaTab\}_empty_desc/,
   'Cloud-native video tab must stay as an explicit empty state until a video runtime contract exists'
 );
 
