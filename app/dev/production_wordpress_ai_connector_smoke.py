@@ -12,8 +12,8 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 from app.dev.live_site_env import resolve_approval_text
-from app.dev.live_site_runtime_smoke import build_signed_headers, load_secret_payload
 from app.dev.live_site_preflight import _dict, _text
+from app.dev.live_site_runtime_smoke import build_signed_headers, load_secret_payload
 
 DEFAULT_BASE_URL = "https://cloud.npc.ink"
 DEFAULT_OUTPUT_DIR = Path(".tmp/production-wordpress-ai-connector-smoke")
@@ -49,7 +49,11 @@ def get_json(url: str, timeout_seconds: int) -> dict[str, object]:
         return {"ok": False, "status_code": exc.code, "response": _parse_json_body(body)}
     except URLError as exc:
         return {"ok": False, "status_code": 0, "error": str(exc)}
-    return {"ok": 200 <= status_code < 300, "status_code": status_code, "response": _parse_json_body(body)}
+    return {
+        "ok": 200 <= status_code < 300,
+        "status_code": status_code,
+        "response": _parse_json_body(body),
+    }
 
 
 def post_json(
@@ -368,8 +372,10 @@ def _next_steps(
         ]
     if not execute_title:
         return [
-            "resolve checks passed; rerun with --execute-title and the exact approval text to verify provider execution",
-            "after execute, inspect the production run record for profile_id/routing_intent/model evidence",
+            "resolve checks passed; rerun with --execute-title and the exact "
+            "approval text to verify provider execution",
+            "after execute, inspect the production run record for "
+            "profile_id/routing_intent/model evidence",
         ]
     return [
         "production runtime smoke passed",

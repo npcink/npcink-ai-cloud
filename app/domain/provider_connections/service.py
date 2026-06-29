@@ -417,7 +417,8 @@ class ProviderConnectionAdminService:
         probe_url = "https://example.com/"
         started = time.monotonic()
         try:
-            with httpx.Client(timeout=float(test_settings.web_search_jina_reader_timeout_seconds)) as client:
+            timeout = float(test_settings.web_search_jina_reader_timeout_seconds)
+            with httpx.Client(timeout=timeout) as client:
                 response = client.get(f"{base_url}/{probe_url}", headers=headers)
                 response.raise_for_status()
                 readable_count = 1 if bytes(response.content[:4096]).strip() else 0
@@ -502,7 +503,10 @@ class ProviderConnectionAdminService:
         runtime_profile_ids = _normalize_id_list(payload.get("runtime_profile_ids"))
         metadata = _dict(payload.get("metadata"))
         secretless = bool(payload.get("secretless") or config.get("secretless"))
-        if normalized_provider_type == "web_search_provider" and normalized_provider_id == "jina_reader":
+        if (
+            normalized_provider_type == "web_search_provider"
+            and normalized_provider_id == "jina_reader"
+        ):
             secretless = True
         config_json = {
             **config,
