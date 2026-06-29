@@ -150,7 +150,10 @@ configured = [
 
 payload = {
     "environment": settings.environment,
-    "database_url": settings.database_url,
+    "database": {
+        "configured": bool(settings.database_url),
+        "secret_exposure": "redacted",
+    },
     "providers": configured,
     "provider_connections": [
         {
