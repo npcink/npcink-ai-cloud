@@ -230,7 +230,9 @@ class SiteMonitoringOverviewService:
         active_key_count = self._coerce_int(key_state.get("active_key_count"))
         expires_in_days = key_state.get("expires_in_days")
         if active_key_count <= 0:
-            components.append(self._component("connection", "error", 0, "No active Cloud connection credential."))
+            components.append(
+                self._component("connection", "error", 0, "No active Cloud connection credential.")
+            )
             actions.append(
                 self._action(
                     code="site_monitoring.connection_credential_missing",
@@ -238,7 +240,10 @@ class SiteMonitoringOverviewService:
                     source="connection",
                     title="No active Cloud connection credential",
                     detail="This site cannot reliably send Cloud telemetry or runtime requests.",
-                    suggested_action="Reconnect the site from the WordPress plugin so Cloud can issue a fresh connection credential automatically.",
+                    suggested_action=(
+                        "Reconnect the site from the WordPress plugin so Cloud can issue "
+                        "a fresh connection credential automatically."
+                    ),
                     sort_weight=10,
                 )
             )

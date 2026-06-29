@@ -1134,7 +1134,12 @@ def test_admin_provider_connection_catalog_preview_returns_all_upstream_models(
             "display_name": "MiniMax",
             "enabled": True,
             "base_url": "https://api.minimaxi.com",
-            "capability_ids": ["text_generation", "image_generation", "audio_generation", "video_generation"],
+            "capability_ids": [
+                "text_generation",
+                "image_generation",
+                "audio_generation",
+                "video_generation",
+            ],
             "runtime_profile_ids": [],
             "credential": "preview-secret-value",
         },
@@ -1582,7 +1587,7 @@ def test_admin_provider_connection_test_runs_jina_reader_probe_as_secretless_enh
         def __init__(self, *, timeout: float) -> None:
             assert timeout > 0
 
-        def __enter__(self) -> "FakeReaderClient":
+        def __enter__(self) -> FakeReaderClient:
             return self
 
         def __exit__(self, *args: object) -> None:
