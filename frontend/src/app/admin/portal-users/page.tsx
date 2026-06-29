@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { CustomerAdminTabs } from '@/components/admin/CustomerAdminTabs';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   BackofficeMetricStrip,
@@ -414,6 +415,7 @@ export default function AdminPortalUsersPage() {
 
   return (
     <BackofficePageStack>
+      <CustomerAdminTabs />
       <BackofficePrimaryPanel
         eyebrow="Portal Users"
         title="自助注册用户"

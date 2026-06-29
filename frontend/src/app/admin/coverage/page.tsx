@@ -2,6 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { CustomerAdminTabs } from '@/components/admin/CustomerAdminTabs';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
@@ -335,6 +336,7 @@ function AdminCoverageContent() {
 
   return (
     <BackofficePageStack>
+      <CustomerAdminTabs />
       <BackofficePrimaryPanel
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.coverage_surface_title', {}, 'Customer service status')}
