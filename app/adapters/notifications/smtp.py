@@ -219,12 +219,12 @@ def build_portal_email_sender_from_config(config: dict[str, object]) -> PortalEm
 
     return SmtpPortalEmailSender(
         host=host,
-        port=int(config.get("smtp_port") or 465),
+        port=int(str(config.get("smtp_port") or 465)),
         username=username,
         password=password,
         use_ssl=use_ssl,
         use_starttls=use_starttls,
-        timeout_seconds=float(config.get("smtp_timeout_seconds") or 20.0),
+        timeout_seconds=float(str(config.get("smtp_timeout_seconds") or 20.0)),
         from_email=from_email,
         from_name=str(config.get("from_name") or "").strip(),
         reply_to=str(config.get("reply_to") or "").strip(),

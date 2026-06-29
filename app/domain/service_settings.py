@@ -551,7 +551,7 @@ def _bool(value: object, *, default: bool) -> bool:
 
 def _positive_int(value: object, *, default: int) -> int:
     try:
-        parsed = int(value)
+        parsed = int(_string(value))
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
@@ -559,7 +559,7 @@ def _positive_int(value: object, *, default: int) -> int:
 
 def _positive_float(value: object, *, default: float) -> float:
     try:
-        parsed = float(value)
+        parsed = float(_string(value))
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default

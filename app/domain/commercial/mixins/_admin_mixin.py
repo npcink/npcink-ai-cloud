@@ -796,17 +796,23 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             principal_grants = grants_by_principal.get(principal_id, [])
             if not principal_memberships and not principal_grants:
                 continue
-            membership = preferred_active(
+            selected_membership = preferred_active(
                 principal_memberships,
                 active_status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
             )
-            account = accounts_by_id.get(str(getattr(membership, "account_id", "") or ""))
-            grant = preferred_active(
+            account = accounts_by_id.get(str(getattr(selected_membership, "account_id", "") or ""))
+            selected_grant = preferred_active(
                 principal_grants,
                 active_status=SITE_USER_GRANT_STATUS_ACTIVE,
             )
-            site = sites_by_id.get(str(getattr(grant, "site_id", "") or ""))
-            source_value = metadata_source(principal, membership, account, site, grant)
+            site = sites_by_id.get(str(getattr(selected_grant, "site_id", "") or ""))
+            source_value = metadata_source(
+                principal,
+                selected_membership,
+                account,
+                site,
+                selected_grant,
+            )
             if normalized_source != "all" and source_value != normalized_source:
                 continue
             account_subscriptions = (

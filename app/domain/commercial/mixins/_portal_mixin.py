@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -138,7 +139,7 @@ def _portal_registration_code_metadata(value: object) -> dict[str, object]:
 
 
 def _first_accessible_site_id(
-    grants: list[tuple[Site, object, object]],
+    grants: Sequence[tuple[Site, object, object]],
 ) -> str:
     for site, _identity, _grant in grants:
         site_id = str(getattr(site, "site_id", "") or "").strip()

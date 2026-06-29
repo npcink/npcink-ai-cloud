@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from app.adapters.notifications.base import PortalEmailDeliveryError
@@ -273,7 +273,7 @@ def _set_portal_qq_oauth_nonce_cookie(
     )
 
 
-def _clear_portal_qq_oauth_nonce_cookie(response: JSONResponse) -> None:
+def _clear_portal_qq_oauth_nonce_cookie(response: Response) -> None:
     response.delete_cookie(COOKIE_PORTAL_QQ_OAUTH_NONCE, path="/portal/v1/auth/qq")
 
 
@@ -639,9 +639,12 @@ async def list_portal_identity_providers(request: Request) -> Any:
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    items = [
-        item for item in result.get("items", []) if isinstance(item, dict)
-    ]
+    raw_items = result.get("items", [])
+    items = (
+        [item for item in raw_items if isinstance(item, dict)]
+        if isinstance(raw_items, list)
+        else []
+    )
     qq_binding = next(
         (item for item in items if str(item.get("provider") or "") == "qq"),
         None,
