@@ -71,9 +71,21 @@ assert.match(
 );
 
 assert.match(
+  pageSource,
+  /CustomerAdminTabs/,
+  'portal users page must stay reachable through the shared customer tabs'
+);
+
+assert.match(
+  layoutSource,
+  /activePrefixes: \[[\s\S]*'\/admin\/accounts'[\s\S]*'\/admin\/sites'[\s\S]*'\/admin\/portal-users'[\s\S]*'\/admin\/coverage'[\s\S]*'\/admin\/subscriptions'[\s\S]*'\/admin\/plans'[\s\S]*\]/,
+  'admin customers navigation must cover customer, portal user, service status, subscription, and plan surfaces'
+);
+
+assert.doesNotMatch(
   layoutSource,
   /href: '\/admin\/portal-users'/,
-  'admin navigation must include the portal users surface'
+  'portal users must not remain a separate top-level admin navigation item'
 );
 
 assert.match(

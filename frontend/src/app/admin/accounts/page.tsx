@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { CustomerAdminTabs } from '@/components/admin/CustomerAdminTabs';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -562,6 +563,7 @@ function AccountsContent() {
           );
   return (
     <BackofficePageStack>
+      <CustomerAdminTabs />
       <BackofficePrimaryPanel
         eyebrow={t('admin.nav_group_commercial_ops', {}, 'Commercial Ops')}
         title={t('admin.accounts.list_title', {}, 'Users')}
