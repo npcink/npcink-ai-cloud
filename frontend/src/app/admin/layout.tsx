@@ -70,6 +70,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       label: t('admin.nav_ability_models', {}, 'Ability Models'),
     },
     {
+      href: '/admin/service-settings',
+      label: t('admin.nav_service_settings', {}, 'Service Settings'),
+    },
+    {
       href: '/admin/troubleshooting',
       label: t('admin.nav_advanced_troubleshooting', {}, 'Advanced Troubleshooting'),
       activePrefixes: [

@@ -37,9 +37,10 @@ from app.core.models import (
     RunRecord,
     RuntimeGuardEvent,
     ServiceAuditEvent,
+    ServiceSetting,
     UsageMeterEvent,
 )
-from app.core.secrets import decrypt_provider_connection_secret
+from app.core.secrets import decrypt_provider_connection_secret, decrypt_service_setting_secret
 from app.core.security import REPLAY_SCOPE_PUBLIC_POST_SITE
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
@@ -301,6 +302,124 @@ def test_admin_agent_workflow_metadata_projection_is_read_only(tmp_path: Path) -
 
     unauthorized = client.get("/internal/service/admin/agent-workflow-metadata")
     assert unauthorized.status_code in (401, 403)
+
+
+def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    initial_response = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert initial_response.status_code == 200
+    assert initial_response.json()["data"]["env_fallback"] == "disabled"
+    assert (
+        initial_response.json()["data"]["settings"]["portal_email"]["status"]
+        == "missing_config"
+    )
+
+    public_response = client.patch(
+        "/internal/service/admin/service-settings/portal-public",
+        json={"public_base_url": "https://cloud.example.com"},
+        headers=build_internal_headers(idempotency_key="service-settings-public-001"),
+    )
+    assert public_response.status_code == 200, public_response.text
+    assert public_response.json()["data"]["config"]["public_base_url"] == (
+        "https://cloud.example.com"
+    )
+
+    qq_response = client.patch(
+        "/internal/service/admin/service-settings/qq-login",
+        json={
+            "client_id": "qq-client-id",
+            "client_secret": "qq-client-secret",
+            "redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
+            "scope": "get_user_info",
+            "timeout_seconds": 10,
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-qq-001"),
+    )
+    assert qq_response.status_code == 200, qq_response.text
+    assert qq_response.json()["data"]["status"] == "ready"
+    assert qq_response.json()["data"]["secrets"]["client_secret"]["configured"] is True
+    assert "qq-client-secret" not in json.dumps(qq_response.json())
+
+    email_response = client.patch(
+        "/internal/service/admin/service-settings/email",
+        json={
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 465,
+            "smtp_username": "smtp-user",
+            "smtp_password": "smtp-password",
+            "smtp_use_ssl": True,
+            "smtp_use_starttls": False,
+            "smtp_timeout_seconds": 20,
+            "from_email": "noreply@example.com",
+            "from_name": "Npcink AI Cloud",
+            "reply_to": "support@example.com",
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-email-001"),
+    )
+    assert email_response.status_code == 200, email_response.text
+    assert email_response.json()["data"]["secrets"]["smtp_password"]["display"] == (
+        "configured"
+    )
+    assert "smtp-password" not in json.dumps(email_response.json())
+
+    with get_session(database_url) as session:
+        qq_row = session.get(ServiceSetting, "portal_qq_login")
+        email_row = session.get(ServiceSetting, "portal_email")
+        assert qq_row is not None
+        assert email_row is not None
+        assert decrypt_service_setting_secret(
+            str((qq_row.secret_ciphertext_json or {})["client_secret"]),
+            settings=_runtime_service_settings(database_url),
+        ) == "qq-client-secret"
+        assert decrypt_service_setting_secret(
+            str((email_row.secret_ciphertext_json or {})["smtp_password"]),
+            settings=_runtime_service_settings(database_url),
+        ) == "smtp-password"
+
+    list_response = client.get(
+        "/internal/service/admin/service-settings",
+        headers=build_internal_headers(),
+    )
+    assert list_response.status_code == 200
+    data = list_response.json()["data"]
+    assert data["settings"]["qq_login"]["configured"] is True
+    assert data["settings"]["portal_email"]["configured"] is True
+    assert data["boundary"]["wordpress_control_plane"] is False
+    assert "smtp-password" not in json.dumps(data)
+
+    dispose_engine(database_url)
+
+
+def test_admin_service_settings_reject_qq_redirect_outside_public_base(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    public_response = client.patch(
+        "/internal/service/admin/service-settings/portal-public",
+        json={"public_base_url": "https://cloud.example.com"},
+        headers=build_internal_headers(idempotency_key="service-settings-bad-public-001"),
+    )
+    assert public_response.status_code == 200
+
+    response = client.patch(
+        "/internal/service/admin/service-settings/qq-login",
+        json={
+            "client_id": "qq-client-id",
+            "client_secret": "qq-client-secret",
+            "redirect_uri": "https://evil.example.com/portal/v1/auth/qq/callback",
+            "scope": "get_user_info",
+            "timeout_seconds": 10,
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-bad-qq-001"),
+    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "service_settings.qq_redirect_uri_invalid"
+
+    dispose_engine(database_url)
 
 
 def test_admin_image_source_provider_env_settings_route_is_retired(

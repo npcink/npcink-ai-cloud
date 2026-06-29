@@ -506,9 +506,12 @@ config now fails fast when these are missing:
 - `NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`
 - `NPCINK_CLOUD_ADMIN_SESSION_SECRET`
 - `NPCINK_CLOUD_PORTAL_JWT_SECRET`
-- `NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL`
-- `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_HOST`
-- `NPCINK_CLOUD_PORTAL_EMAIL_FROM_EMAIL`
+- `NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST`
+- `NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST`
+
+After the first platform-admin login, configure Portal public URL, QQ login,
+and Portal email delivery in `/admin/service-settings`. These service settings
+are stored by Cloud runtime storage and are no longer read from `.env`.
 
 Additional hardening rules now enforced:
 
@@ -624,7 +627,9 @@ Portal member auth:
   `/portal/*` and `/portal/v1/*`
 - production deploys should set:
   - `NPCINK_CLOUD_PORTAL_JWT_SECRET`
-  - `NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL`
+- production deploys should configure in `/admin/service-settings`:
+  - Portal public URL
+  - QQ login, when enabled
   - SMTP sender settings for verification-code delivery
 Platform admin bootstrap auth:
 
@@ -671,7 +676,6 @@ For the fastest local verification loop:
 
 1. Configure local portal auth in `.env`:
    - `NPCINK_CLOUD_PORTAL_JWT_SECRET=dev-portal-jwt-secret-with-at-least-thirty-two-bytes`
-   - `NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL=http://127.0.0.1:8010`
 2. Start local Cloud:
    - `pnpm run dev`
    - optional frontend auto-sync loop: `pnpm run frontend:watch`
@@ -857,25 +861,13 @@ Portal email login delivery:
   locale; current supported values are `en`, `zh-CN`, and `zh-TW`
 - if SMTP is not configured, development/test mode falls back to returning the
   verification code in-app for local debugging
-- set `NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL` when email links must point at the
-  external customer-facing domain instead of the direct request host
-- for SMTP delivery, configure:
-  - `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_HOST`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_PORT`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_USERNAME`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_PASSWORD`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_USE_SSL`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_SMTP_USE_STARTTLS`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_FROM_EMAIL`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_FROM_NAME`
-  - `NPCINK_CLOUD_PORTAL_EMAIL_REPLY_TO`
+- configure Portal public URL and SMTP delivery in `/admin/service-settings`;
+  SMTP password is write-only and runtime delivery has no `.env` fallback
 
-For Alibaba Cloud enterprise mailbox, point the SMTP settings above at the
-SMTP host/port and SSL or STARTTLS mode provided by your mailbox admin panel.
+For Alibaba Cloud enterprise mailbox, point the service settings at the SMTP
+host/port and SSL or STARTTLS mode provided by your mailbox admin panel.
 This keeps Cloud generic while still supporting Aliyun enterprise mail as the
 actual sender.
-For Aliyun-specific deploys, keep the concrete SMTP values in the chosen deploy
-env file rather than committing provider-specific secrets.
 
 Portal email self-test:
 

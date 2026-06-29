@@ -181,6 +181,51 @@ def decrypt_provider_connection_secret(ciphertext: str | None, *, settings: Sett
         raise RuntimeError("provider connection secret could not be decrypted") from error
 
 
+def encrypt_service_setting_secret(secret: str, *, settings: Settings) -> str:
+    normalized = str(secret or "")
+    if not normalized:
+        return ""
+    return (
+        _build_fernet(
+            _resolve_encryption_secret(
+                (
+                    settings.admin_session_secret,
+                    settings.portal_jwt_secret,
+                    settings.internal_auth_token,
+                ),
+                error_message="service setting secret is not configured",
+            ),
+            purpose="service_setting_secret",
+        )
+        .encrypt(normalized.encode("utf-8"))
+        .decode("utf-8")
+    )
+
+
+def decrypt_service_setting_secret(ciphertext: str | None, *, settings: Settings) -> str:
+    token = str(ciphertext or "").strip()
+    if not token:
+        return ""
+    try:
+        return (
+            _build_fernet(
+                _resolve_encryption_secret(
+                    (
+                        settings.admin_session_secret,
+                        settings.portal_jwt_secret,
+                        settings.internal_auth_token,
+                    ),
+                    error_message="service setting secret is not configured",
+                ),
+                purpose="service_setting_secret",
+            )
+            .decrypt(token.encode("utf-8"))
+            .decode("utf-8")
+        )
+    except InvalidToken as error:
+        raise RuntimeError("service setting secret could not be decrypted") from error
+
+
 def _resolve_encryption_secret(
     candidates: Iterable[str | None],
     *,

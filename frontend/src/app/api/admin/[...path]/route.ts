@@ -99,6 +99,12 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
     return '/internal/service/admin/provider-connections';
   }
   if (
+    (upperMethod === 'PATCH' || upperMethod === 'POST') &&
+    /^service-settings(?:\/.+)?$/.test(normalized)
+  ) {
+    return `/internal/service/admin/${normalized}`;
+  }
+  if (
     upperMethod === 'POST' &&
     normalized === 'provider-connections/preview-catalog'
   ) {

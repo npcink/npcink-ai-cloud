@@ -48,6 +48,10 @@ from app.domain.runtime.models import (
     RUNTIME_DIAGNOSTIC_ISSUE_KIND_PATTERN,
 )
 from app.domain.runtime.service import RuntimeRunNotFoundError, RuntimeService
+from app.domain.service_settings import (
+    ServiceSettingsAdminError,
+    ServiceSettingsAdminService,
+)
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.usage.rollup import UsageRollupService
 from app.domain.wordpress_ai_connector.routing_profiles import (
@@ -265,6 +269,38 @@ class ProviderConnectionPayload(BaseModel):
     secretless: bool = False
 
 
+class PortalPublicServiceSettingsPayload(BaseModel):
+    enabled: bool = True
+    public_base_url: str = Field(max_length=500)
+
+
+class QQLoginServiceSettingsPayload(BaseModel):
+    enabled: bool = True
+    client_id: str = Field(max_length=191)
+    client_secret: str | None = Field(default=None, max_length=500)
+    redirect_uri: str = Field(default="", max_length=500)
+    scope: str = Field(default="get_user_info", max_length=128)
+    timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
+
+class PortalEmailServiceSettingsPayload(BaseModel):
+    enabled: bool = True
+    smtp_host: str = Field(max_length=191)
+    smtp_port: int = Field(default=465, gt=0, le=65535)
+    smtp_username: str = Field(default="", max_length=191)
+    smtp_password: str | None = Field(default=None, max_length=500)
+    smtp_use_ssl: bool = True
+    smtp_use_starttls: bool = False
+    smtp_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    from_email: str = Field(max_length=320)
+    from_name: str = Field(default="", max_length=191)
+    reply_to: str = Field(default="", max_length=320)
+
+
+class ServiceSettingsEmailTestPayload(BaseModel):
+    recipient_email: str = Field(min_length=3, max_length=320)
+
+
 class ModelReferenceSyncPayload(BaseModel):
     source_url: str = Field(default="", max_length=500)
     payload: dict[str, Any] | None = None
@@ -402,6 +438,46 @@ def _record_provider_connection_audit(
         )
     except Exception:
         return
+
+
+def _record_service_setting_audit(
+    request: Request,
+    *,
+    event_kind: str,
+    outcome: str,
+    setting_id: str,
+    result: dict[str, Any] | None = None,
+    error_code: str = "",
+    message: str = "",
+) -> None:
+    try:
+        _get_commercial_service(request).record_service_audit_event(
+            audit_context=_build_audit_context(request),
+            event_kind=event_kind,
+            outcome=outcome,
+            scope_kind="service_setting",
+            scope_id=setting_id,
+            payload_json={
+                "surface": "admin_service_settings",
+                "setting_id": setting_id,
+                "result": _service_setting_audit_result(result or {}),
+                "error_code": error_code,
+                "message": message,
+                "credential_value_exposure": "none",
+            },
+        )
+    except Exception:
+        return
+
+
+def _service_setting_audit_result(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "setting_id": str(result.get("setting_id") or ""),
+        "enabled": bool(result.get("enabled")),
+        "configured": bool(result.get("configured")),
+        "status": str(result.get("status") or ""),
+        "last_error_code": str(result.get("last_error_code") or ""),
+    }
 
 
 def _provider_connection_audit_payload(
@@ -2786,6 +2862,242 @@ async def get_admin_agent_workflow_metadata(request: Request) -> Any:
         status="ok",
         message="agent workflow metadata projection loaded",
         data=get_agent_workflow_metadata_projection(),
+        revision="m6",
+    )
+
+
+@router.get("/admin/service-settings")
+async def get_admin_service_settings(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = ServiceSettingsAdminService(
+        services.settings.database_url,
+        services.settings,
+    ).get_settings()
+    return build_envelope(
+        status="ok",
+        message="service settings loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/portal-public")
+async def update_admin_portal_public_settings(
+    request: Request,
+    payload: PortalPublicServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_portal_public(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="portal_public",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="portal_public",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="portal public settings saved",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/qq-login")
+async def update_admin_qq_login_settings(
+    request: Request,
+    payload: QQLoginServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_qq_login(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="portal_qq_login",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="portal_qq_login",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="QQ login settings saved",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/admin/service-settings/qq-login/test")
+async def test_admin_qq_login_settings(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = ServiceSettingsAdminService(
+        services.settings.database_url,
+        services.settings,
+    ).test_qq_login()
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.test",
+        outcome="succeeded" if result.get("status") == "ready" else "error",
+        setting_id="portal_qq_login",
+        result=result,
+        error_code="" if result.get("status") == "ready" else "service_settings.qq_not_ready",
+        message=str(result.get("message") or ""),
+    )
+    return build_envelope(
+        status="ok",
+        message="QQ login settings tested",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/email")
+async def update_admin_portal_email_settings(
+    request: Request,
+    payload: PortalEmailServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_email(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="portal_email",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="portal_email",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="portal email settings saved",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/admin/service-settings/email/test")
+async def test_admin_portal_email_settings(
+    request: Request,
+    payload: ServiceSettingsEmailTestPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).test_email(
+            recipient_email=payload.recipient_email,
+            project_name=services.settings.project_name,
+        )
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.test",
+            outcome="error",
+            setting_id="portal_email",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.test",
+        outcome="succeeded",
+        setting_id="portal_email",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="portal email settings tested",
+        data=result,
         revision="m6",
     )
 

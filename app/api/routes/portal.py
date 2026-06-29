@@ -4,7 +4,7 @@ import json
 import secrets
 from datetime import datetime
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, Query, Request
@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.adapters.notifications.base import PortalEmailDeliveryError
+from app.adapters.notifications.smtp import build_portal_email_sender
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalBearerTokenError,
@@ -60,6 +61,9 @@ from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.site_monitoring_overview import SiteMonitoringOverviewService
+from app.domain.service_settings import (
+    resolve_portal_qq_runtime_config,
+)
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.usage.service import UsageService
 
@@ -187,22 +191,22 @@ def _portal_session_cleared_response() -> JSONResponse:
 
 
 def _portal_qq_config_error(request: Request) -> JSONResponse | None:
-    settings = get_cloud_services(request).settings
-    if not str(settings.portal_qq_client_id or "").strip():
+    config = _portal_qq_config(request)
+    if not str(config.get("client_id") or "").strip():
         return portal_json_error(
             request,
             status_code=503,
             error_code="portal.qq_login_not_configured",
             message="QQ login is not configured",
         )
-    if not str(settings.portal_qq_client_secret or "").strip():
+    if not str(config.get("client_secret") or "").strip():
         return portal_json_error(
             request,
             status_code=503,
             error_code="portal.qq_login_not_configured",
             message="QQ login is not configured",
         )
-    if not _portal_qq_redirect_uri(request):
+    if not str(config.get("redirect_uri") or "").strip():
         return portal_json_error(
             request,
             status_code=503,
@@ -212,39 +216,13 @@ def _portal_qq_config_error(request: Request) -> JSONResponse | None:
     return None
 
 
+def _portal_qq_config(request: Request) -> dict[str, Any]:
+    settings = get_cloud_services(request).settings
+    return resolve_portal_qq_runtime_config(settings.database_url, settings)
+
+
 def _portal_qq_redirect_uri(request: Request) -> str:
-    settings = get_cloud_services(request).settings
-    configured = str(settings.portal_qq_redirect_uri or "").strip()
-    if configured:
-        return configured if _portal_qq_redirect_uri_allowed(request, configured) else ""
-    base_url = str(settings.portal_public_base_url or "").strip()
-    if not base_url:
-        return ""
-    parsed = urlsplit(base_url)
-    if not parsed.scheme or not parsed.netloc:
-        return ""
-    redirect_uri = urlunsplit(
-        (parsed.scheme, parsed.netloc, "/portal/v1/auth/qq/callback", "", "")
-    )
-    return redirect_uri if _portal_qq_redirect_uri_allowed(request, redirect_uri) else ""
-
-
-def _portal_qq_redirect_uri_allowed(request: Request, value: str) -> bool:
-    parsed = urlsplit(str(value or "").strip())
-    if parsed.path != "/portal/v1/auth/qq/callback":
-        return False
-    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
-        return False
-    settings = get_cloud_services(request).settings
-    environment = str(settings.environment or "").strip().lower()
-    if parsed.scheme != "https" and environment not in {"development", "test"}:
-        return False
-    allowed_hosts = {
-        str(urlsplit(str(settings.portal_public_base_url or "")).netloc or "").lower(),
-    }
-    if environment in {"development", "test"}:
-        allowed_hosts.add(str(urlsplit(str(request.base_url)).netloc or "").lower())
-    return parsed.netloc.lower() in {host for host in allowed_hosts if host}
+    return str(_portal_qq_config(request).get("redirect_uri") or "").strip()
 
 
 def _portal_qq_oauth_nonce(request: Request, payload_nonce: str = "") -> str:
@@ -274,14 +252,14 @@ def _clear_portal_qq_oauth_nonce_cookie(response: JSONResponse) -> None:
 
 
 def _build_qq_authorization_url(request: Request, *, state: str) -> str:
-    settings = get_cloud_services(request).settings
+    config = _portal_qq_config(request)
     query = urlencode(
         {
             "response_type": "code",
-            "client_id": str(settings.portal_qq_client_id or "").strip(),
-            "redirect_uri": _portal_qq_redirect_uri(request),
+            "client_id": str(config.get("client_id") or "").strip(),
+            "redirect_uri": str(config.get("redirect_uri") or "").strip(),
             "state": state,
-            "scope": str(settings.portal_qq_scope or "get_user_info").strip(),
+            "scope": str(config.get("scope") or "get_user_info").strip(),
         }
     )
     return f"https://graph.qq.com/oauth2.0/authorize?{query}"
@@ -300,16 +278,16 @@ def _parse_qq_me_response(value: str) -> dict[str, object]:
 
 
 def _exchange_qq_code(request: Request, *, code: str) -> dict[str, str]:
-    settings = get_cloud_services(request).settings
-    with httpx.Client(timeout=float(settings.portal_qq_timeout_seconds or 10.0)) as client:
+    config = _portal_qq_config(request)
+    with httpx.Client(timeout=float(config.get("timeout_seconds") or 10.0)) as client:
         response = client.get(
             "https://graph.qq.com/oauth2.0/token",
             params={
                 "grant_type": "authorization_code",
-                "client_id": str(settings.portal_qq_client_id or "").strip(),
-                "client_secret": str(settings.portal_qq_client_secret or "").strip(),
+                "client_id": str(config.get("client_id") or "").strip(),
+                "client_secret": str(config.get("client_secret") or "").strip(),
                 "code": code,
-                "redirect_uri": _portal_qq_redirect_uri(request),
+                "redirect_uri": str(config.get("redirect_uri") or "").strip(),
                 "fmt": "xhtml",
             },
         )
@@ -325,8 +303,8 @@ def _exchange_qq_code(request: Request, *, code: str) -> dict[str, str]:
 
 
 def _fetch_qq_openid(request: Request, *, access_token: str) -> dict[str, str]:
-    settings = get_cloud_services(request).settings
-    with httpx.Client(timeout=float(settings.portal_qq_timeout_seconds or 10.0)) as client:
+    config = _portal_qq_config(request)
+    with httpx.Client(timeout=float(config.get("timeout_seconds") or 10.0)) as client:
         response = client.get(
             "https://graph.qq.com/oauth2.0/me",
             params={
@@ -841,9 +819,13 @@ async def request_portal_login_code(
             error_code=error.error_code,
             message=error.message,
         )
-    ttl_seconds = resolve_portal_login_code_ttl_seconds(get_cloud_services(request).settings)
-    email_sender = get_cloud_services(request).portal_email_sender
-    environment = str(get_cloud_services(request).settings.environment or "").strip().lower()
+    services = get_cloud_services(request)
+    ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
+    email_sender = services.portal_email_sender or build_portal_email_sender(
+        services.settings,
+        database_url=services.settings.database_url,
+    )
+    environment = str(services.settings.environment or "").strip().lower()
     allow_development_code = environment in {"development", "test"} and (
         str(request.headers.get("x-npcink-dev-login-code") or "").strip() == "1"
         or str(request.headers.get("x-npcink-debug-portal-link") or "").strip() == "1"
@@ -875,7 +857,7 @@ async def request_portal_login_code(
                 principal_id=str(issued.get("principal_id") or ""),
                 code=str(issued.get("code") or ""),
                 expires_in_seconds=ttl_seconds,
-                project_name=get_cloud_services(request).settings.project_name,
+                project_name=services.settings.project_name,
                 locale=locale,
             )
         except PortalEmailDeliveryError as error:

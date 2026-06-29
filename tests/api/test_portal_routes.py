@@ -306,6 +306,48 @@ def _portal_bearer_headers_for_grant(
     )
 
 
+def _configure_portal_public_settings(
+    client: TestClient,
+    *,
+    public_base_url: str = "https://cloud.example.com",
+    idempotency_prefix: str = "portal-service-settings",
+) -> None:
+    response = client.patch(
+        "/internal/service/admin/service-settings/portal-public",
+        json={"public_base_url": public_base_url},
+        headers=build_internal_headers(idempotency_key=f"{idempotency_prefix}-public"),
+    )
+    assert response.status_code == 200, response.text
+
+
+def _configure_portal_qq_settings(
+    client: TestClient,
+    *,
+    public_base_url: str = "https://cloud.example.com",
+    redirect_uri: str | None = None,
+    idempotency_prefix: str = "portal-service-settings",
+) -> None:
+    _configure_portal_public_settings(
+        client,
+        public_base_url=public_base_url,
+        idempotency_prefix=idempotency_prefix,
+    )
+    response = client.patch(
+        "/internal/service/admin/service-settings/qq-login",
+        json={
+            "client_id": "qq-client-id",
+            "client_secret": "qq-client-secret",
+            "redirect_uri": redirect_uri
+            if redirect_uri is not None
+            else f"{public_base_url}/portal/v1/auth/qq/callback",
+            "scope": "get_user_info",
+            "timeout_seconds": 10,
+        },
+        headers=build_internal_headers(idempotency_key=f"{idempotency_prefix}-qq"),
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_portal_issue_rotate_list_and_revoke_site_key(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -1261,12 +1303,9 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_qq_client_id": "qq-client-id",
-            "portal_qq_client_secret": "qq-client-secret",
-            "portal_qq_redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
         },
     )
+    _configure_portal_qq_settings(client, idempotency_prefix="portal-qq-settings")
 
     def fake_exchange_qq_code(request: object, *, code: str) -> dict[str, str]:
         return {"access_token": f"token-{code}"}
@@ -1361,13 +1400,24 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
 def test_portal_qq_start_rejects_redirect_uri_outside_allowlist(tmp_path: Path) -> None:
     database_url, client = _build_client(
         tmp_path,
-        settings_overrides={
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_qq_client_id": "qq-client-id",
-            "portal_qq_client_secret": "qq-client-secret",
-            "portal_qq_redirect_uri": "https://evil.example.com/portal/v1/auth/qq/callback",
-        },
     )
+    _configure_portal_public_settings(
+        client,
+        public_base_url="https://cloud.example.com",
+        idempotency_prefix="portal-qq-bad-redirect-settings",
+    )
+    bad_redirect_response = client.patch(
+        "/internal/service/admin/service-settings/qq-login",
+        json={
+            "client_id": "qq-client-id",
+            "client_secret": "qq-client-secret",
+            "redirect_uri": "https://evil.example.com/portal/v1/auth/qq/callback",
+            "scope": "get_user_info",
+            "timeout_seconds": 10,
+        },
+        headers=build_internal_headers(idempotency_key="portal-qq-bad-redirect-settings-qq"),
+    )
+    assert bad_redirect_response.status_code == 400
 
     start_response = client.get("/portal/v1/auth/qq/start")
     assert start_response.status_code == 503
@@ -1384,12 +1434,9 @@ def test_portal_qq_bind_rejects_nonce_mismatch(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_qq_client_id": "qq-client-id",
-            "portal_qq_client_secret": "qq-client-secret",
-            "portal_qq_redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
         },
     )
+    _configure_portal_qq_settings(client, idempotency_prefix="portal-qq-nonce-settings")
 
     monkeypatch.setattr(
         portal_routes,
@@ -1458,12 +1505,9 @@ def test_portal_qq_bind_rejects_account_bound_to_other_principal(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_qq_client_id": "qq-client-id",
-            "portal_qq_client_secret": "qq-client-secret",
-            "portal_qq_redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
         },
     )
+    _configure_portal_qq_settings(client, idempotency_prefix="portal-qq-conflict-settings")
 
     monkeypatch.setattr(
         portal_routes,
@@ -1567,12 +1611,9 @@ def test_portal_qq_unbind_revokes_current_session(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_qq_client_id": "qq-client-id",
-            "portal_qq_client_secret": "qq-client-secret",
-            "portal_qq_redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
         },
     )
+    _configure_portal_qq_settings(client, idempotency_prefix="portal-qq-unbind-settings")
 
     monkeypatch.setattr(
         portal_routes,
@@ -1643,11 +1684,9 @@ def test_portal_qq_callback_requires_existing_binding(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_qq_client_id": "qq-client-id",
-            "portal_qq_client_secret": "qq-client-secret",
         },
     )
+    _configure_portal_qq_settings(client, idempotency_prefix="portal-qq-unbound-settings")
 
     monkeypatch.setattr(
         portal_routes,
@@ -1717,7 +1756,6 @@ def test_portal_login_code_request_uses_real_sender_when_configured(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
-            "portal_public_base_url": "https://cloud.example.com",
         },
         portal_email_sender=fake_sender,
     )
@@ -1796,7 +1834,6 @@ def test_portal_login_code_request_accepts_forwarded_host_with_port(
             "portal_jwt_issuer": "npcink-cloud-portal",
             "portal_jwt_audience": "npcink-cloud-customers",
             "portal_login_code_ttl_seconds": 300,
-            "portal_public_base_url": None,
         },
     )
 
@@ -1857,7 +1894,6 @@ def test_portal_login_code_request_accepts_localhost_loopback_alias(
             "portal_jwt_issuer": "npcink-cloud-portal",
             "portal_jwt_audience": "npcink-cloud-customers",
             "portal_login_code_ttl_seconds": 300,
-            "portal_public_base_url": "http://127.0.0.1:8010",
             "environment": "development",
         },
     )
@@ -1919,7 +1955,6 @@ def test_portal_login_code_request_skips_rate_limit_for_local_debug_loopback(
             "portal_jwt_issuer": "npcink-cloud-portal",
             "portal_jwt_audience": "npcink-cloud-customers",
             "portal_login_code_ttl_seconds": 300,
-            "portal_public_base_url": "http://127.0.0.1:8010",
             "environment": "development",
         },
     )
@@ -2196,10 +2231,8 @@ def test_portal_debug_bypass_is_disabled_in_production_even_with_allowlist(
         tmp_path,
         settings_overrides={
             "environment": "production",
-            "portal_public_base_url": "https://cloud.example.com",
-            "portal_email_smtp_host": "smtp.example.com",
-            "portal_email_from_email": "noreply@example.com",
             "admin_bootstrap_token": "b" * 32,
+            "browser_origin_allowlist": "https://cloud.example.com",
             "trusted_host_allowlist": "testserver,cloud.example.com",
             "debug_local_origin_allowlist": "http://127.0.0.1:8010",
         },

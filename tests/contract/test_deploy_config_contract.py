@@ -74,14 +74,11 @@ def test_env_example_production_payload_validates_with_canonical_names(
         "NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN=": "NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN=" + ("b" * 32),
         "NPCINK_CLOUD_ADMIN_SESSION_SECRET=": "NPCINK_CLOUD_ADMIN_SESSION_SECRET=" + ("a" * 32),
         "NPCINK_CLOUD_PORTAL_JWT_SECRET=": "NPCINK_CLOUD_PORTAL_JWT_SECRET=" + ("j" * 32),
-        "NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL=": (
-            "NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL=https://cloud.example.com"
+        "NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST=": (
+            "NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST=https://cloud.example.com"
         ),
-        "NPCINK_CLOUD_PORTAL_EMAIL_SMTP_HOST=": (
-            "NPCINK_CLOUD_PORTAL_EMAIL_SMTP_HOST=smtp.example.com"
-        ),
-        "NPCINK_CLOUD_PORTAL_EMAIL_FROM_EMAIL=": (
-            "NPCINK_CLOUD_PORTAL_EMAIL_FROM_EMAIL=noreply@example.com"
+        "NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST=": (
+            "NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST=cloud.example.com"
         ),
     }
     for original, updated in replacements.items():
@@ -111,9 +108,8 @@ def test_settings_accept_legacy_admin_aliases_without_requiring_openai_env(monke
     monkeypatch.setenv("NPCINK_CLOUD_ADMIN_SESSION_SECRET", "a" * 32)
     monkeypatch.setenv("NPCINK_CLOUD_OPS_SESSION_SECRET", "a" * 32)
     monkeypatch.setenv("NPCINK_CLOUD_PORTAL_JWT_SECRET", "j" * 32)
-    monkeypatch.setenv("NPCINK_CLOUD_PORTAL_PUBLIC_BASE_URL", "https://cloud.example.com")
-    monkeypatch.setenv("NPCINK_CLOUD_PORTAL_EMAIL_SMTP_HOST", "smtp.example.com")
-    monkeypatch.setenv("NPCINK_CLOUD_PORTAL_EMAIL_FROM_EMAIL", "noreply@example.com")
+    monkeypatch.setenv("NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST", "https://cloud.example.com")
+    monkeypatch.setenv("NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST", "cloud.example.com")
 
     settings = Settings(_env_file=None)
 
