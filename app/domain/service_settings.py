@@ -20,6 +20,12 @@ SERVICE_SETTING_QQ_LOGIN = "portal_qq_login"
 SERVICE_SETTING_PORTAL_EMAIL = "portal_email"
 
 SERVICE_SETTING_KIND_PORTAL = "portal"
+SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH = "/open/auth/qq/callback"
+SERVICE_SETTING_QQ_LEGACY_CALLBACK_PATH = "/portal/v1/auth/qq/callback"
+SERVICE_SETTING_QQ_ALLOWED_CALLBACK_PATHS = {
+    SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH,
+    SERVICE_SETTING_QQ_LEGACY_CALLBACK_PATH,
+}
 
 STATUS_READY = "ready"
 STATUS_DISABLED = "disabled"
@@ -498,7 +504,7 @@ def _default_qq_redirect_uri(public_base_url: str) -> str:
     parsed = urlsplit(public_base_url)
     if not parsed.scheme or not parsed.netloc:
         return ""
-    return urlunsplit((parsed.scheme, parsed.netloc, "/portal/v1/auth/qq/callback", "", ""))
+    return urlunsplit((parsed.scheme, parsed.netloc, SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH, "", ""))
 
 
 def _qq_redirect_uri_allowed(
@@ -509,7 +515,7 @@ def _qq_redirect_uri_allowed(
 ) -> bool:
     parsed = urlsplit(_string(value))
     public_parsed = urlsplit(_string(public_base_url))
-    if parsed.path != "/portal/v1/auth/qq/callback":
+    if parsed.path not in SERVICE_SETTING_QQ_ALLOWED_CALLBACK_PATHS:
         return False
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
         return False

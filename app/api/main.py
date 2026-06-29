@@ -16,6 +16,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.internal import router as internal_router
 from app.api.routes.media_derivatives import router as media_derivatives_router
 from app.api.routes.observability import router as observability_router
+from app.api.routes.open import router as open_router
 from app.api.routes.portal import router as portal_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.runtime import router as runtime_router
@@ -147,6 +148,7 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
     app.include_router(catalog_router)
     app.include_router(entitlements_router)
     app.include_router(internal_router)
+    app.include_router(open_router)
     app.include_router(portal_router)
     app.include_router(service_router)
     app.include_router(observability_router)

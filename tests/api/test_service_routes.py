@@ -591,7 +591,7 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
         json={
             "client_id": "qq-client-id",
             "client_secret": "qq-client-secret",
-            "redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
+            "redirect_uri": "https://cloud.example.com/open/auth/qq/callback",
             "scope": "get_user_info",
             "timeout_seconds": 10,
         },
@@ -668,7 +668,7 @@ def test_admin_service_settings_reject_qq_redirect_outside_public_base(
         json={
             "client_id": "qq-client-id",
             "client_secret": "qq-client-secret",
-            "redirect_uri": "https://evil.example.com/portal/v1/auth/qq/callback",
+            "redirect_uri": "https://evil.example.com/open/auth/qq/callback",
             "scope": "get_user_info",
             "timeout_seconds": 10,
         },
@@ -676,6 +676,35 @@ def test_admin_service_settings_reject_qq_redirect_outside_public_base(
     )
     assert response.status_code == 400
     assert response.json()["error_code"] == "service_settings.qq_redirect_uri_invalid"
+
+    dispose_engine(database_url)
+
+
+def test_admin_service_settings_allow_legacy_qq_redirect_path(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    public_response = client.patch(
+        "/internal/service/admin/service-settings/portal-public",
+        json={"public_base_url": "https://cloud.example.com"},
+        headers=build_internal_headers(idempotency_key="service-settings-legacy-public-001"),
+    )
+    assert public_response.status_code == 200
+
+    response = client.patch(
+        "/internal/service/admin/service-settings/qq-login",
+        json={
+            "client_id": "qq-client-id",
+            "client_secret": "qq-client-secret",
+            "redirect_uri": "https://cloud.example.com/portal/v1/auth/qq/callback",
+            "scope": "get_user_info",
+            "timeout_seconds": 10,
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-legacy-qq-001"),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["status"] == "ready"
 
     dispose_engine(database_url)
 
