@@ -311,6 +311,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert run.profile_id == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
         assert run.policy_json["managed_surface"] == "wordpress_ai_connector"
         assert run.policy_json["task_group"] == "short_text"
+        assert run.policy_json["routing_intent"] == "content.short_text"
         assert run.policy_json["timeout_ms"] == 20000
         assert run.policy_json["execution_contract"]["contract_version"] == (
             "wp_ai_connector_runtime.v1"
@@ -318,6 +319,11 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert (
             run.policy_json["execution_contract"]["managed_surface"]
             == "wordpress_ai_connector"
+        )
+        assert run.policy_json["execution_contract"]["task_group"] == "short_text"
+        assert (
+            run.policy_json["execution_contract"]["routing_intent"]
+            == "content.short_text"
         )
 
 
@@ -465,7 +471,12 @@ def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
         assert run.profile_id == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
         assert run.policy_json["managed_surface"] == "wordpress_ai_connector"
         assert run.policy_json["task_group"] == "image_generation"
+        assert run.policy_json["routing_intent"] == "media.image_generation"
         assert run.policy_json["timeout_ms"] == 90000
+        assert (
+            run.policy_json["execution_contract"]["routing_intent"]
+            == "media.image_generation"
+        )
 
 
 def test_wordpress_ai_connector_runtime_rejects_timeout_above_scene_limit(

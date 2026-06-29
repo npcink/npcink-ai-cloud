@@ -201,6 +201,9 @@ from app.domain.wordpress_ai_connector.contracts import (
     WordPressAIConnectorContractViolation,
     validate_wordpress_ai_connector_runtime_contract,
 )
+from app.domain.wordpress_ai_connector.routing_profiles import (
+    resolve_wordpress_ai_connector_profile_spec,
+)
 
 logger = get_logger(__name__)
 
@@ -288,10 +291,11 @@ class RuntimeService:
             merged_policy,
             execution_contract=execution_contract,
         )
-        if self._is_wordpress_ai_connector_request(request):
+        if self._is_wordpress_ai_connector_managed_request(request):
             merged_policy = self._apply_wordpress_ai_connector_managed_policy(
                 merged_policy,
                 default_policy=resolution.default_policy,
+                profile_id=resolution.profile_id,
             )
         merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
         merged_policy = self._apply_commercial_policy_overrides(
@@ -370,10 +374,11 @@ class RuntimeService:
                 merged_policy,
                 execution_contract=execution_contract,
             )
-            if self._is_wordpress_ai_connector_request(request):
+            if self._is_wordpress_ai_connector_managed_request(request):
                 merged_policy = self._apply_wordpress_ai_connector_managed_policy(
                     merged_policy,
                     default_policy=resolution.default_policy,
+                    profile_id=resolution.profile_id,
                 )
 
             if request.idempotency_key:
@@ -5449,6 +5454,18 @@ class RuntimeService:
     def _is_wordpress_ai_connector_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in WP_AI_CONNECTOR_ABILITIES
 
+    def _is_wordpress_ai_connector_managed_request(self, request: RuntimeRequest) -> bool:
+        if self._is_wordpress_ai_connector_request(request):
+            return True
+        input_payload = request.input_payload if isinstance(request.input_payload, dict) else {}
+        return (
+            self._is_image_generation_request(request)
+            and request.channel == "wordpress_ai_connector"
+            and str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
+            and str(input_payload.get("connector_id") or "") == "npcink-cloud"
+            and str(input_payload.get("task") or "") == "image_generation"
+        )
+
     def _is_image_source_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in IMAGE_SOURCE_ABILITIES
 
@@ -6727,22 +6744,30 @@ class RuntimeService:
         merged_policy: dict[str, object],
         *,
         default_policy: dict[str, object],
+        profile_id: str,
     ) -> dict[str, object]:
         if default_policy.get("managed_surface") != "wordpress_ai_connector":
             return merged_policy
 
         policy = dict(merged_policy)
+        spec = resolve_wordpress_ai_connector_profile_spec(profile_id)
         timeout_ms = max(1, self._coerce_int(default_policy.get("timeout_ms"), default=30_000))
         timeout_seconds = max(1, int((timeout_ms + 999) / 1000))
         max_retries = max(0, self._coerce_int(default_policy.get("max_retries"), default=0))
+        task_group = str(default_policy.get("task_group") or (spec.group_id if spec else ""))
+        routing_intent = str(
+            default_policy.get("routing_intent") or (spec.routing_intent if spec else "")
+        )
         policy["timeout_ms"] = timeout_ms
         policy["timeout_seconds"] = timeout_seconds
         policy["max_retries"] = max_retries
         policy["retry_max"] = max_retries
         policy["allow_fallback"] = bool(default_policy.get("allow_fallback", True))
         policy["managed_surface"] = "wordpress_ai_connector"
-        if default_policy.get("task_group"):
-            policy["task_group"] = str(default_policy.get("task_group") or "")
+        if task_group:
+            policy["task_group"] = task_group
+        if routing_intent:
+            policy["routing_intent"] = routing_intent
 
         execution_contract = policy.get("execution_contract")
         if isinstance(execution_contract, dict):
@@ -6750,6 +6775,10 @@ class RuntimeService:
             execution_contract["timeout_seconds"] = timeout_seconds
             execution_contract["retry_max"] = max_retries
             execution_contract["managed_surface"] = "wordpress_ai_connector"
+            if task_group:
+                execution_contract["task_group"] = task_group
+            if routing_intent:
+                execution_contract["routing_intent"] = routing_intent
             policy["execution_contract"] = execution_contract
         return policy
 
