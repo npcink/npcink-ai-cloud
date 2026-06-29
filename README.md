@@ -676,7 +676,6 @@ Buyer-facing web routes:
 - `GET /portal/login`
 - `GET /portal`
 - `GET /portal/sites`
-- `GET /portal/keys`
 - `GET /portal/usage`
 - `GET /portal/billing`
 - `GET /portal/audit`
@@ -721,7 +720,7 @@ Primary local verification routes:
 - `http://127.0.0.1:8010/portal/login`
 - `http://127.0.0.1:8010/portal`
 - `http://127.0.0.1:8010/portal/overview`
-- `http://127.0.0.1:8010/portal/keys`
+- `http://127.0.0.1:8010/portal/sites`
 
 `portal:bind:dev` marks its output as `"data_mode": "real_site_bootstrap"`
 and does not synthesize seeded runs or usage. It only binds a portal member

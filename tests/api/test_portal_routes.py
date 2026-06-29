@@ -877,6 +877,17 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
         assert site is not None
         site.status = "inactive"
         session.commit()
+    old_key_response = client.post(
+        "/internal/service/sites/site_primary-example-com/keys",
+        json={
+            "key_id": "key_addon_reconnect_old",
+            "secret": "old-addon-reconnect-secret",
+            "scopes": ["runtime:execute", "runtime:read", "runtime:resolve", "stats:read"],
+            "label": "Old addon key",
+        },
+        headers=build_internal_headers(idempotency_key="portal-addon-reactivate-old-key"),
+    )
+    assert old_key_response.status_code == 200, old_key_response.text
 
     return_url = (
         "https://wp.example.com/wp-admin/admin-post.php"
@@ -897,11 +908,23 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
     create_data = create_response.json()["data"]
     assert create_data["site_id"] == "site_primary-example-com"
     assert create_data["site_created"] is False
+    assert create_data["revoked_key_ids"] == ["key_addon_reconnect_old"]
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
         assert site.status == "active"
+        old_key = session.get(SiteApiKey, "key_addon_reconnect_old")
+        assert old_key is not None
+        assert old_key.status == "revoked"
+        active_keys = [
+            item
+            for item in session.scalars(
+                select(SiteApiKey).where(SiteApiKey.site_id == "site_primary-example-com")
+            )
+            if item.status == "active"
+        ]
+        assert [item.key_id for item in active_keys] == [create_data["key_id"]]
 
     dispose_engine(database_url)
 

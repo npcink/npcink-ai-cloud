@@ -143,6 +143,87 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             )
         return deactivated_sites
 
+    def _revoke_active_site_keys_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site_id: str,
+        now: datetime,
+        audit_context: ServiceAuditContext | None,
+        reason: str,
+    ) -> list[str]:
+        revoked_key_ids: list[str] = []
+        for api_key in repository.list_site_keys(site_id):
+            if str(api_key.status or "") != SITE_API_KEY_STATUS_ACTIVE:
+                continue
+            api_key.status = SITE_API_KEY_STATUS_REVOKED
+            api_key.revoked_at = now
+            revoked_key_ids.append(api_key.key_id)
+            key_payload = self._serialize_site_key(api_key)
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="site_key.revoke",
+                outcome="succeeded",
+                site_id=site_id,
+                key_id=api_key.key_id,
+                scope_kind="site_key",
+                scope_id=api_key.key_id,
+                payload_json={
+                    **key_payload,
+                    "reason": reason,
+                },
+            )
+        return revoked_key_ids
+
+    def _issue_automatic_runtime_site_key_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site: Site,
+        secret: str,
+        key_id: str,
+        label: str,
+        metadata_json: dict[str, object],
+        audit_context: ServiceAuditContext | None,
+        replaced_key_ids: list[str] | None = None,
+    ) -> SiteApiKey:
+        api_key = repository.upsert_site_key(
+            key_id=key_id,
+            site_id=site.site_id,
+            secret_hash=build_secret_hash(secret),
+            signing_secret_ciphertext=encrypt_site_api_signing_secret(
+                secret,
+                settings=self.settings,
+            ),
+            label=label,
+            scopes_json=expand_api_key_scopes(DEFAULT_PORTAL_RUNTIME_SCOPES),
+            metadata_json=metadata_json,
+            status=SITE_API_KEY_STATUS_ACTIVE,
+            rotated_from_key_id=None,
+            replaced_by_key_id=None,
+            expires_at=None,
+            revoked_at=None,
+        )
+        payload = self._serialize_site_key(api_key)
+        self._record_service_audit_in_session(
+            repository=repository,
+            audit_context=audit_context,
+            event_kind="site_key.issue",
+            outcome="succeeded",
+            account_id=site.account_id,
+            site_id=site.site_id,
+            key_id=api_key.key_id,
+            scope_kind="site_key",
+            scope_id=api_key.key_id,
+            payload_json={
+                **payload,
+                "source": "automatic_runtime_credential",
+                "replaced_key_ids": list(replaced_key_ids or []),
+            },
+        )
+        return api_key
+
     def provision_site(
         self,
         *,
@@ -352,7 +433,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     ),
                 },
                 "next": {
-                    "keys_path": f"/portal/keys?site={site.site_id}",
+                    "connection_path": f"/portal/sites/{site.site_id}",
                     "sites_path": f"/portal/sites?site={site.site_id}",
                 },
             }
@@ -952,25 +1033,27 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 metadata_json={"source": "wordpress_addon_connection"},
             )
 
-            api_key = repository.upsert_site_key(
-                key_id=key_id,
+            revoked_key_ids = self._revoke_active_site_keys_in_session(
+                repository=repository,
                 site_id=site.site_id,
-                secret_hash=build_secret_hash(key_secret),
-                signing_secret_ciphertext=encrypt_site_api_signing_secret(
-                    key_secret,
-                    settings=self.settings,
-                ),
+                now=now,
+                audit_context=audit_context,
+                reason="wordpress_addon_connection_reissued",
+            )
+            api_key = self._issue_automatic_runtime_site_key_in_session(
+                repository=repository,
+                site=site,
+                secret=key_secret,
+                key_id=key_id,
                 label="WordPress addon connection",
-                scopes_json=expand_api_key_scopes(DEFAULT_PORTAL_RUNTIME_SCOPES),
                 metadata_json={
                     "source": "wordpress_addon_connection",
                     "wordpress_url": canonical_wordpress_url,
+                    "credential_owner": "system",
+                    "user_visible": False,
                 },
-                status=SITE_API_KEY_STATUS_ACTIVE,
-                rotated_from_key_id=None,
-                replaced_by_key_id=None,
-                expires_at=None,
-                revoked_at=None,
+                audit_context=audit_context,
+                replaced_key_ids=revoked_key_ids,
             )
             if site.status in {SITE_STATUS_PROVISIONING, SITE_STATUS_INACTIVE}:
                 deactivated_site_ids = [
@@ -1039,6 +1122,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "site_id": site.site_id,
                 "key_id": api_key.key_id,
                 "site_created": site_created,
+                "revoked_key_ids": revoked_key_ids,
                 "expires_at": self._serialize_datetime(expires_at),
                 "return_url": safe_return_url,
             }
@@ -1612,8 +1696,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 self._build_diagnostic_check(
                     "active_key",
                     len(active_keys) > 0,
-                    "存在可用 API Key" if active_keys else "没有可用 API Key",
-                    "在密钥页创建或轮换一个有效 Key。",
+                    "连接凭证可用" if active_keys else "没有可用连接凭证",
+                    "从 WordPress 插件重新连接站点，系统会自动生成新的连接凭证。",
                 ),
                 self._build_diagnostic_check(
                     "wordpress_url",

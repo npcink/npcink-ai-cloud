@@ -104,8 +104,8 @@ function resolveActionTarget(
   if (source === 'quota' || source === 'runtime') {
     return { href: `/portal/usage?site=${encodeURIComponent(siteId)}`, label: 'Open Usage' };
   }
-  if (source === 'keys' || source === 'activity') {
-    return { href: `/portal/keys?site=${encodeURIComponent(siteId)}`, label: 'Open Keys' };
+  if (source === 'connection' || source === 'keys' || source === 'activity') {
+    return { href: `/portal/sites/${encodeURIComponent(siteId)}`, label: 'Open Site' };
   }
   return null;
 }

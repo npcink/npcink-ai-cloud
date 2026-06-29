@@ -39,14 +39,11 @@ type RestrictionItem = {
 function getHomeRiskLevel({
   selectedSite,
   currentSubscriptionStatus,
-  activeKeyCount,
 }: {
   selectedSite: Site;
   currentSubscriptionStatus: string;
-  activeKeyCount: number | null;
 }) {
   if (selectedSite.status !== 'active') return 'setup';
-  if (activeKeyCount === 0) return 'setup';
   if (currentSubscriptionStatus && currentSubscriptionStatus !== 'active') return 'package';
   return 'normal';
 }
@@ -72,7 +69,7 @@ function buildRestrictionItems({
           detail: t(
             'portal.home.restriction_setup_desc',
             {},
-            'This site is not fully active yet. Open API Keys to finish the first key flow and complete hosted service access.'
+            'This site is not active yet. Connect or reactivate the WordPress site to enable hosted service access.'
           ),
         }
       : null,
@@ -109,7 +106,6 @@ export default function PortalPage() {
   const [siteSummaryCache, setSiteSummaryCache] = useState<Record<string, PortalSiteSummaryRecord>>({});
   const [isInspectorLoading, setIsInspectorLoading] = useState(false);
   const [inspectorError, setInspectorError] = useState('');
-  const [currentSiteActiveKeyCount, setCurrentSiteActiveKeyCount] = useState<number | null>(null);
   const [currentSiteSummary, setCurrentSiteSummary] = useState<PortalSiteSummaryRecord | null>(null);
   const [currentSiteMonitoring, setCurrentSiteMonitoring] = useState<PortalPluginObservabilitySummary | null>(null);
   const [identityProviders, setIdentityProviders] = useState<PortalIdentityProviderStatus[]>([]);
@@ -170,45 +166,12 @@ export default function PortalPage() {
     };
   }, [inspectedSiteId, isInspectorOpen, siteSummaryCache, t]);
 
-  const selectedSiteForKeyCheck =
+  const selectedSiteForContext =
     session?.sites?.find((site) => site.site_id === session.site_id) || session?.sites?.[0] || null;
-  const selectedSiteForMonitoringId = selectedSiteForKeyCheck?.site_id || '';
+  const selectedSiteForMonitoringId = selectedSiteForContext?.site_id || '';
 
   useEffect(() => {
-    if (!selectedSiteForKeyCheck?.site_id) {
-      setCurrentSiteActiveKeyCount(null);
-      return;
-    }
-
-    let isCancelled = false;
-
-    setCurrentSiteActiveKeyCount(null);
-
-    void portalClient
-      .listApiKeys(selectedSiteForKeyCheck.site_id)
-      .then((response) => {
-        if (isCancelled) {
-          return;
-        }
-        const activeKeyCount = Array.isArray(response.data.items)
-          ? response.data.items.filter((item) => item.status === 'active').length
-          : 0;
-        setCurrentSiteActiveKeyCount(activeKeyCount);
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          console.error('Failed to load current site keys:', error);
-          setCurrentSiteActiveKeyCount(null);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedSiteForKeyCheck?.site_id]);
-
-  useEffect(() => {
-    if (!selectedSiteForKeyCheck?.site_id) {
+    if (!selectedSiteForContext?.site_id) {
       setCurrentSiteSummary(null);
       return;
     }
@@ -217,7 +180,7 @@ export default function PortalPage() {
     setCurrentSiteSummary(null);
 
     void portalClient
-      .getSiteSummary(selectedSiteForKeyCheck.site_id)
+      .getSiteSummary(selectedSiteForContext.site_id)
       .then((response) => {
         if (!isCancelled) {
           setCurrentSiteSummary(response.data as PortalSiteSummaryRecord);
@@ -233,7 +196,7 @@ export default function PortalPage() {
     return () => {
       isCancelled = true;
     };
-  }, [selectedSiteForKeyCheck?.site_id]);
+  }, [selectedSiteForContext?.site_id]);
 
   useEffect(() => {
     if (!selectedSiteForMonitoringId) {
@@ -370,7 +333,7 @@ export default function PortalPage() {
             description={t(
               'portal.home.no_sites_empty_desc',
               {},
-              'You do not have a connected site yet, so the workspace cannot show package, usage, or key activity. Connect a site first.'
+              'You do not have a connected site yet, so the workspace cannot show package, usage, or connection status. Connect a site first.'
             )}
           />
           <div className="mt-6">
@@ -501,7 +464,6 @@ export default function PortalPage() {
   const currentRiskLevel = getHomeRiskLevel({
     selectedSite,
     currentSubscriptionStatus: currentSubscription?.status || '',
-    activeKeyCount: currentSiteActiveKeyCount,
   });
   const shouldShowStatusPanel = currentRiskLevel !== 'normal';
   const qqProvider = identityProviders.find((provider) => provider.provider === 'qq') || null;
@@ -517,15 +479,15 @@ export default function PortalPage() {
       action: t('portal.home.onboarding_site_action', {}, '查看站点'),
     },
     {
-      key: 'key',
-      done: currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0,
-      title: t('portal.home.onboarding_key_title', {}, '创建 API Key'),
+      key: 'connection',
+      done: selectedSite.status === 'active',
+      title: t('portal.home.onboarding_connection_title', {}, '连接 WordPress'),
       detail:
-        currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0
-          ? t('portal.home.onboarding_key_ready', {}, '当前站点已有可用 Key。')
-          : t('portal.home.onboarding_key_needed', {}, '创建第一个 Key，WordPress 站点才能调用 Cloud 服务。'),
-      href: `/portal/keys?site=${selectedSite.site_id}`,
-      action: t('portal.home.onboarding_key_action', {}, '打开 Key'),
+        selectedSite.status === 'active'
+          ? t('portal.home.onboarding_connection_ready', {}, '当前站点已连接，连接凭证由系统自动维护。')
+          : t('portal.home.onboarding_connection_needed', {}, '从 WordPress 插件重新连接站点，系统会自动生成连接凭证。'),
+      href: `/portal/sites/${selectedSite.site_id}`,
+      action: t('portal.home.onboarding_connection_action', {}, '查看站点'),
     },
     {
       key: 'package',
@@ -634,8 +596,8 @@ export default function PortalPage() {
               <div className="w-full text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400 xl:text-right">
                 {t('portal.home.next_action_label', {}, 'Next action')}
               </div>
-              <Link href={`/portal/keys?site=${selectedSite.site_id}`} className="btn btn-primary btn-sm">
-                {t('portal.home.open_keys_action', {}, 'Open Keys')}
+              <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-primary btn-sm">
+                {t('portal.home.site_action', {}, 'Open Site')}
               </Link>
               <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
                 {t('portal.nav_sites', {}, 'Sites')}
@@ -677,8 +639,8 @@ export default function PortalPage() {
                   <Link href={`/portal/billing?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
                     {t('portal.home.billing_action', {}, 'View Billing')}
                   </Link>
-                  <Link href={`/portal/keys?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
-                    {t('portal.home.keys_action', {}, 'Manage Keys')}
+                  <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
+                    {t('portal.home.site_action', {}, 'Open Site')}
                   </Link>
                 </div>
               </div>

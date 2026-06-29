@@ -841,7 +841,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "next": {
                     "portal_path": "/portal",
                     "qq_bind_path": "/portal/account",
-                    "keys_path": f"/portal/keys?site={site.site_id}",
+                    "connection_path": f"/portal/sites/{site.site_id}",
                     "sites_path": f"/portal/sites?site={site.site_id}",
                 },
             }

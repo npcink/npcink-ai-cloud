@@ -27,7 +27,6 @@ export function PortalNavbar() {
   const primaryNavItems = useMemo(
     () => [
       { href: '/portal', label: t('portal.workspace_label', {}, 'Workspace') },
-      { href: '/portal/keys', label: t('common.keys') },
       { href: '/portal/usage', label: t('nav.usage') },
       { href: '/portal/billing', label: t('portal.nav_package', {}, 'Package') },
       { href: '/portal/sites', label: t('portal.nav_sites', {}, 'Sites') },

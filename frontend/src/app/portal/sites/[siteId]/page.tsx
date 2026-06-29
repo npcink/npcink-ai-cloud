@@ -133,8 +133,8 @@ function PortalSiteRecordContent() {
           },
         ]}
         primaryAction={
-          <Link href={`/portal/keys?site=${siteId}`} className="btn btn-primary">
-            {t('portal.home.open_keys_action', {}, 'Open Keys')}
+          <Link href={`/portal/monitoring?site=${siteId}`} className="btn btn-primary">
+            {t('portal.monitoring.nav_label', {}, 'Monitoring')}
           </Link>
         }
         secondaryActions={
@@ -196,13 +196,10 @@ function PortalSiteRecordContent() {
               {t('portal.site_record_runtime_label', {}, 'Runtime')}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('portal.site_record_runtime_title', {}, 'Runtime entry points')}
+              {t('portal.site_record_runtime_title', {}, 'Runtime detail')}
             </h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Link href={`/portal/keys?site=${siteId}`} className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
-              {t('portal.nav_keys', {}, 'Keys')}
-            </Link>
             <Link href={`/portal/usage?site=${siteId}`} className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
               {t('portal.nav_usage', {}, 'Usage')}
             </Link>

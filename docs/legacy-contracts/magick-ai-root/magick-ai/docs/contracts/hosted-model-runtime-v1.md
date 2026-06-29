@@ -153,8 +153,12 @@
   - `expired`
 - customer-facing `Cloud API Key` wrapper format 固定见 [cloud-customer-api-key-format-v1.md](cloud-customer-api-key-format-v1.md)；
   它只负责交付体验，不改变底层 `site_id + key_id + secret` auth truth。
-- 若未来上线 customer-facing Portal / self-serve key 管理，对外签发/轮换 contract 固定见 [cloud-portal-api-key-issue-v1.md](cloud-portal-api-key-issue-v1.md)；
-  但 canonical key lifecycle owner 继续是 Cloud service-plane internal ops。
+- 当前用户 Portal 不再暴露自助 key 管理面；`/portal/keys` 只作为旧入口重定向到站点管理。
+- WordPress addon 连接 / 重连会自动签发新的 customer-facing `Cloud API Key` wrapper，并撤销该站点旧的 active runtime keys；
+  用户只管理站点启用、停用和移除，不手工创建、复制或轮换底层 key。
+- 若未来重新上线 customer-facing Portal / self-serve key 管理，必须先重新评审
+  [cloud-portal-api-key-issue-v1.md](cloud-portal-api-key-issue-v1.md)；
+  canonical key lifecycle owner 继续是 Cloud service-plane internal ops。
 - public runtime auth 只接受未过期且未撤销的 `active` key；revoked 或 expired key 统一返回 `401 auth.invalid_key`。
 - `create / rotate / revoke / expire / audit` owner 固定在 Cloud `Service Plane / Internal Service Operations`；
   public runtime surface 不得隐式补发、续期、轮换或审计 key。
