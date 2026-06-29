@@ -550,7 +550,7 @@ export default function AdminServiceSettingsPage() {
               </label>
               <label className={labelClassName()}>
                 回调地址
-                <input className={fieldClassName()} value={qqForm.redirect_uri} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, redirect_uri: event.target.value }))} placeholder="https://cloud.example.com/portal/v1/auth/qq/callback" />
+                <input className={fieldClassName()} value={qqForm.redirect_uri} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, redirect_uri: event.target.value }))} placeholder="https://cloud.example.com/open/auth/qq/callback" />
               </label>
               <label className={labelClassName()}>
                 授权范围

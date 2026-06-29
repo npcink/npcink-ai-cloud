@@ -69,6 +69,8 @@ from app.domain.usage.service import UsageService
 
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
 COOKIE_PORTAL_QQ_OAUTH_NONCE = "magick_portal_qq_oauth_nonce"
+COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH = "/"
+COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY_PATH = "/portal/v1/auth/qq"
 
 
 class PortalSiteKeyPayload(BaseModel):
@@ -268,13 +270,17 @@ def _set_portal_qq_oauth_nonce_cookie(
         httponly=True,
         secure=portal_cookie_secure(request),
         samesite="lax",
-        path="/portal/v1/auth/qq",
+        path=COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH,
         max_age=max(60, int(max_age or 0)),
     )
 
 
 def _clear_portal_qq_oauth_nonce_cookie(response: Response) -> None:
-    response.delete_cookie(COOKIE_PORTAL_QQ_OAUTH_NONCE, path="/portal/v1/auth/qq")
+    response.delete_cookie(COOKIE_PORTAL_QQ_OAUTH_NONCE, path=COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH)
+    response.delete_cookie(
+        COOKIE_PORTAL_QQ_OAUTH_NONCE,
+        path=COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY_PATH,
+    )
 
 
 def _build_qq_authorization_url(request: Request, *, state: str) -> str:

@@ -55,6 +55,7 @@ Operational references:
 - [docs/cloud-ai-data-handling-standard-v1.md](docs/cloud-ai-data-handling-standard-v1.md)
 - [docs/cloud-production-release-policy-v1.md](docs/cloud-production-release-policy-v1.md)
 - [docs/cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md)
+- [docs/cloud-open-callback-boundary-v1.md](docs/cloud-open-callback-boundary-v1.md)
 - [docs/cloud-bulk-article-run-v1.md](docs/cloud-bulk-article-run-v1.md)
 - [docs/nightly-site-inspection-morning-brief-v1.md](docs/nightly-site-inspection-morning-brief-v1.md)
 - [docs/cloud-agent-positioning-v1.md](docs/cloud-agent-positioning-v1.md)

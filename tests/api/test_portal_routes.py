@@ -387,7 +387,7 @@ def _configure_portal_qq_settings(
             "client_secret": "qq-client-secret",
             "redirect_uri": redirect_uri
             if redirect_uri is not None
-            else f"{public_base_url}/portal/v1/auth/qq/callback",
+            else f"{public_base_url}/open/auth/qq/callback",
             "scope": "get_user_info",
             "timeout_seconds": 10,
         },
@@ -1853,7 +1853,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
     login_state = login_start_response.json()["data"]["state"]
 
     callback_response = client.get(
-        f"/portal/v1/auth/qq/callback?code=login-code&state={login_state}",
+        f"/open/auth/qq/callback?code=login-code&state={login_state}",
     )
     assert callback_response.status_code == 200, callback_response.text
     callback_data = callback_response.json()["data"]
@@ -1935,7 +1935,7 @@ def test_portal_qq_callback_bind_intent_binds_current_session(
     assert start_data["intent"] == "bind"
 
     callback_response = client.get(
-        f"/portal/v1/auth/qq/callback?code=bind-code&state={start_data['state']}",
+        f"/open/auth/qq/callback?code=bind-code&state={start_data['state']}",
     )
     assert callback_response.status_code == 200, callback_response.text
     callback_data = callback_response.json()["data"]
@@ -1966,7 +1966,7 @@ def test_portal_qq_start_rejects_redirect_uri_outside_allowlist(tmp_path: Path) 
         json={
             "client_id": "qq-client-id",
             "client_secret": "qq-client-secret",
-            "redirect_uri": "https://evil.example.com/portal/v1/auth/qq/callback",
+            "redirect_uri": "https://evil.example.com/open/auth/qq/callback",
             "scope": "get_user_info",
             "timeout_seconds": 10,
         },
@@ -1977,6 +1977,40 @@ def test_portal_qq_start_rejects_redirect_uri_outside_allowlist(tmp_path: Path) 
     start_response = client.get("/portal/v1/auth/qq/start")
     assert start_response.status_code == 503
     assert start_response.json()["error_code"] == "portal.qq_login_not_configured"
+
+    dispose_engine(database_url)
+
+
+def test_open_reserved_callbacks_fail_closed(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    wechat_login_response = client.get("/open/auth/wechat/callback?code=abc&state=xyz")
+    assert wechat_login_response.status_code == 501
+    wechat_login_data = wechat_login_response.json()
+    assert wechat_login_data["error_code"] == "open.wechat_login_not_enabled"
+    assert wechat_login_data["data"]["mutation_applied"] is False
+
+    alipay_notify_response = client.post(
+        "/open/payments/alipay/notify",
+        json={"out_trade_no": "pay_001"},
+    )
+    assert alipay_notify_response.status_code == 501
+    assert alipay_notify_response.json()["error_code"] == (
+        "open.alipay_payment_notify_not_enabled"
+    )
+
+    alipay_return_response = client.get("/open/payments/alipay/return")
+    assert alipay_return_response.status_code == 501
+    assert alipay_return_response.json()["data"]["callback_kind"] == "payment_return"
+
+    wechat_notify_response = client.post(
+        "/open/payments/wechat/notify",
+        json={"out_trade_no": "pay_002"},
+    )
+    assert wechat_notify_response.status_code == 501
+    assert wechat_notify_response.json()["error_code"] == (
+        "open.wechat_payment_notify_not_enabled"
+    )
 
     dispose_engine(database_url)
 
@@ -2258,7 +2292,7 @@ def test_portal_qq_callback_requires_existing_binding(
     assert start_response.status_code == 200
     state = start_response.json()["data"]["state"]
 
-    callback_response = client.get(f"/portal/v1/auth/qq/callback?code=qq-code&state={state}")
+    callback_response = client.get(f"/open/auth/qq/callback?code=qq-code&state={state}")
     assert callback_response.status_code == 200, callback_response.text
     data = callback_response.json()["data"]
     assert data["status"] == "binding_required"
