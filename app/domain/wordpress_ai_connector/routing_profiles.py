@@ -121,6 +121,12 @@ WP_AI_CONNECTOR_PROFILE_SPECS_BY_TASK = {
 }
 
 
+def resolve_wordpress_ai_connector_profile_spec(
+    profile_id: str,
+) -> WordPressAIConnectorProfileSpec | None:
+    return WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID.get(profile_id)
+
+
 def resolve_wordpress_ai_connector_profile_id(input_payload: dict[str, Any]) -> str:
     task = str(input_payload.get("task") or "").strip()
     spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_TASK.get(task)
