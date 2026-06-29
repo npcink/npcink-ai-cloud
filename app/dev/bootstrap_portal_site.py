@@ -148,7 +148,7 @@ def bootstrap_portal_site(
                 "login_url": f"{base_url}/portal/login",
                 "portal_url": f"{base_url}/portal",
                 "overview_url": f"{base_url}/portal/overview",
-                "keys_url": f"{base_url}/portal/keys",
+                "sites_url": f"{base_url}/portal/sites",
             },
             "auth_mode": "email_code",
             "login_code_request": {

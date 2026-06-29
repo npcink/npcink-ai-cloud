@@ -1255,8 +1255,8 @@ export interface PortalProvisionedSite {
     package_alias: string;
   } | null;
   next: {
-    keys_path: string;
-    settings_path: string;
+    connection_path: string;
+    sites_path: string;
   };
 }
 
