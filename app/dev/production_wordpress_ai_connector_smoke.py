@@ -434,8 +434,15 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
         return 2
 
-    print(json.dumps(redact_report(report), ensure_ascii=False, indent=2))
-    return 0 if bool(report.get("ok")) else 1
+    ok = bool(report.get("ok"))
+    summary = {
+        "ok": ok,
+        "contract_version": "production_wordpress_ai_connector_smoke.v1",
+        "report_written": True,
+        "credential_value_exposure": "none",
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

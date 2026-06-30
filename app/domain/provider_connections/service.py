@@ -217,7 +217,7 @@ class ProviderConnectionAdminService:
         except Exception as error:
             raise ProviderConnectionAdminError(
                 _map_test_error_code(error),
-                _truncate_message(str(error) or error.__class__.__name__),
+                "provider connection catalog preview failed",
                 status_code=502,
             ) from error
 

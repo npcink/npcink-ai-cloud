@@ -676,6 +676,10 @@ def _compact_dict(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _list_count(value: object) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
 def _redact_report(value: object) -> object:
     if isinstance(value, dict):
         redacted: dict[str, object] = {}
@@ -712,7 +716,16 @@ def main() -> None:
                 env_files=selected_env_files,
                 keys=set(result["env_keys_consumed"]),
             )
-    print(json.dumps(_redact_report(result), ensure_ascii=True, sort_keys=True))
+    summary = {
+        "surface": "provider_connections_env_import",
+        "mode": "apply" if args.apply else "dry_run",
+        "planned_count": _list_count(result.get("planned")),
+        "imported_count": _list_count(result.get("imported")),
+        "skipped_count": _list_count(result.get("skipped")),
+        "env_key_count": _list_count(result.get("env_keys_consumed")),
+        "credential_value_exposure": "none",
+    }
+    print(json.dumps(summary, ensure_ascii=True, sort_keys=True))
 
 
 if __name__ == "__main__":
