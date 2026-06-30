@@ -220,8 +220,8 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /type CloudAbilityMediaTab = 'text' \| 'image' \| 'audio' \| 'video'/,
-  'Cloud-native runtime abilities must be grouped by text, image, audio, and video media tabs'
+  /type CloudAbilityMediaTab = 'text' \| 'image' \| 'vector' \| 'audio' \| 'video'/,
+  'Cloud-native runtime abilities must be grouped by text, image, vector, audio, and video media tabs'
 );
 
 assert.match(
@@ -244,8 +244,8 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /\(\['text', 'image', 'audio', 'video'\] as CloudAbilityMediaTab\[\]\)\.map[\s\S]*cloud_media_tab_\$\{tab\}/,
-  'Cloud-native runtime abilities must expose text, image, audio, and video media tabs'
+  /\(\['text', 'image', 'vector', 'audio', 'video'\] as CloudAbilityMediaTab\[\]\)\.map[\s\S]*cloud_media_tab_\$\{tab\}/,
+  'Cloud-native runtime abilities must expose text, image, vector, audio, and video media tabs'
 );
 
 assert.match(
@@ -256,8 +256,26 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /type AudioAbilityModelRouteRow[\s\S]*routeTypeLabel: string[\s\S]*profileKindLabel: string/,
+  /type AudioAbilityModelRouteRow[\s\S]*routeTypeLabel: string/,
   'Audio ability-model routes must be modeled as first-class route rows with a visible route type'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /profileKindLabel: string/,
+  'Audio ability-model routes must not expose internal profile kind labels as a default table column'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /<option key=\{`\$\{row\.id\}-\$\{profileId\}`\} value=\{profileId\}>\{profileId\}<\/option>/,
+  'Audio ability-model route selectors must not show internal profile ids as option labels'
+);
+
+assert.doesNotMatch(
+  i18nSource,
+  /Cloud 运行时 profile|profile 偏好|当前 profile|配置 profile|文本 profile|音频 profile/,
+  'Ability-model routing copy must not expose internal profile terminology as user-facing Chinese labels'
 );
 
 assert.match(
@@ -416,10 +434,82 @@ assert.match(
   'Ability-model routing page must consume backend routing_intent metadata'
 );
 
-assert.match(
+assert.doesNotMatch(
   abilityModelsSource,
   /row\.profile\.routing_intent \|\| row\.profile\.label/,
-  'Ability-model routing rows must display the routing intent when available'
+  'Ability-model routing rows must not default-display internal routing intent identifiers'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /<div className="mt-1 font-mono text-sm md:mt-0">\{row\.profile\.profile_id\}<\/div>/,
+  'Ability-model routing rows must not default-display internal profile ids such as wp-ai.short-text'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /<div className="mt-1 text-xs text-slate-500 dark:text-slate-400">\{activeProfile\.profile_id\}<\/div>/,
+  'Ability-model routing dialog must not default-display internal profile ids such as wp-ai.short-text'
+);
+
+assert.match(
+  abilityModelsSource,
+  /normalizeProviderDisplayNames[\s\S]*display_name[\s\S]*setProviderDisplayNames/,
+  'Ability-model routing page must load provider display names from Provider Management instead of showing adapter ids as supplier names'
+);
+
+assert.match(
+  abilityModelsSource,
+  /isModelProviderConnection[\s\S]*web_search_provider[\s\S]*image_source_provider[\s\S]*embedding_provider[\s\S]*vector_store_provider[\s\S]*normalizeProviderDisplayNames/,
+  'Ability-model routing supplier filter must exclude non-model capability providers such as search, image-source, embedding, and vector-store connections'
+);
+
+assert.match(
+  abilityModelsSource,
+  /modelRouteLabel[\s\S]*providerDisplayName[\s\S]*providerLabel} \/ \$\{normalizedModelId/,
+  'Ability-model routing table must present current model as provider display name plus model id'
+);
+
+assert.match(
+  abilityModelsSource,
+  /modelProviderFilter[\s\S]*field_model_provider_filter[\s\S]*providerOptions/,
+  'Ability-model routing dialog must provide supplier filtering for runtime model candidates'
+);
+
+assert.match(
+  abilityModelsSource,
+  /Object\.entries\(providerDisplayNames\)[\s\S]*candidateCountsByProvider[\s\S]*candidateCount/,
+  'Ability-model routing supplier filter must show Provider Management suppliers even when the current ability has zero candidates for that supplier'
+);
+
+assert.match(
+  abilityModelsSource,
+  /disabled=\{option\.candidateCount === 0\}/,
+  'Ability-model routing supplier filter must keep zero-candidate suppliers visible but not selectable for the current ability'
+);
+
+assert.match(
+  abilityModelsSource,
+  /speech\|audio\|voice\|tts\|ocr\|vision\|image\|embed[\s\S]*featureTokens\.includes\('text'\)/,
+  'Ability-model routing must exclude obvious non-text model ids before accepting text-tagged candidates'
+);
+
+assert.match(
+  abilityModelsSource,
+  /modelSearchQuery[\s\S]*field_model_search[\s\S]*filteredCandidates/,
+  'Ability-model routing dialog must provide model search over runtime model candidates'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /updateRoutingCandidate\(activeProfile\.profile_id, index, event\.target\.value\)/,
+  'Ability-model routing dialog must not rely on the old long native candidate select for choosing models'
+);
+
+assert.match(
+  abilityModelsSource,
+  /advancedRuntimePolicyOpen[\s\S]*advanced_runtime_policy_title[\s\S]*field_timeout_ms[\s\S]*field_allow_fallback[\s\S]*field_retry_max/,
+  'Ability-model routing dialog must keep timeout, fallback, retry, and note behind an advanced runtime policy disclosure'
 );
 
 assert.match(
@@ -520,8 +610,8 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /can_configure: boolean[\s\S]*disabled=\{!row\.can_configure\}[\s\S]*cloud_native_action_readonly/,
-  'Cloud-native runtime projection rows must remain read-only unless the backend explicitly marks a row configurable'
+  /can_configure: boolean[\s\S]*disabled=\{!row\.can_configure\}[\s\S]*openCloudBindingDialog\(row\)[\s\S]*cloud_native_action_readonly/,
+  'Cloud-native runtime projection rows must remain disabled unless the backend explicitly marks a row configurable'
 );
 
 assert.match(
@@ -533,7 +623,7 @@ assert.match(
 assert.doesNotMatch(
   abilityModelsSource,
   /activeCloudMediaTab === 'audio' && preferences/,
-  'Cloud-native ability media tabs must stay read-only and must not hide audio preference writes inside the read-only projection'
+  'Cloud-native ability media tabs must not hide audio preference writes inside the Cloud-native projection'
 );
 
 assert.match(
@@ -550,8 +640,8 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /cloud_native_badge_readonly/,
-  'Cloud-native ability section must not present the whole list as planned when existing runtime projections are connected'
+  /cloud_native_badge_runtime_binding/,
+  'Cloud-native ability section must present bounded runtime binding instead of planned-only status'
 );
 
 assert.match(
@@ -569,7 +659,19 @@ assert.match(
 assert.doesNotMatch(
   abilityModelsSource,
   /\/api\/admin\/cloud-ability-routing|saveCloudNativeAbility|generateIdempotencyKey\('cloud_ability/,
-  'Cloud-native planned abilities must not introduce a fake Cloud ability routing write path'
+  'Cloud-native abilities must not introduce a fake Cloud ability routing write path'
+);
+
+assert.match(
+  abilityModelsSource,
+  /\/api\/admin\/ability-models\/runtime-binding[\s\S]*generateIdempotencyKey\('ability_models_runtime_binding'\)/,
+  'Site Knowledge embedding model binding must use the bounded runtime-binding endpoint'
+);
+
+assert.match(
+  abilityModelsSource,
+  /available_embedding_instances[\s\S]*cloudBindingDialogRow[\s\S]*available_embedding_instances/,
+  'Site Knowledge embedding dialog must source candidates from embedding runtime instances'
 );
 
 assert.doesNotMatch(
@@ -580,8 +682,8 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /hidden grid-cols-\[7rem_1\.55fr_6rem_1\.25fr_1\.35fr_1\.15fr_7rem\][\s\S]*md:grid-cols-\[7rem_1\.55fr_6rem_1\.25fr_1\.35fr_1\.15fr_7rem\]/,
-  'Unified ability-model routing table must use a desktop grid only at md and a stacked mobile layout below md'
+  /hidden grid-cols-\[7rem_1\.7fr_6rem_1\.45fr_1\.15fr_7rem\][\s\S]*md:grid-cols-\[7rem_1\.7fr_6rem_1\.45fr_1\.15fr_7rem\]/,
+  'Unified ability-model routing table must use a desktop grid only at md and a stacked mobile layout below md without a separate internal model-config column'
 );
 
 assert.match(
@@ -634,7 +736,7 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /MAX_DIALOG_CANDIDATE_OPTIONS = 12[\s\S]*slice\(0, MAX_DIALOG_CANDIDATE_OPTIONS\)/,
+  /MAX_DIALOG_CANDIDATE_OPTIONS = 24[\s\S]*filteredCandidates[\s\S]*slice\(0, MAX_DIALOG_CANDIDATE_OPTIONS\)/,
   'Ability model dialog must keep default model selectors bounded instead of exposing the entire runtime catalog'
 );
 
@@ -955,6 +1057,24 @@ assert.match(
   'Provider channel manually restored models must not be forced into text generation when no model intelligence exists'
 );
 
+assert.match(
+  pageSource,
+  /model_catalog_preview: isCapabilityProviderForm[\s\S]*catalogPreviewForMetadata\(providerCatalogPreview\)[\s\S]*catalogPreviewFromConnection\(connection\)/,
+  'Provider channel saves a sanitized upstream catalog preview and restores it when editing the connection'
+);
+
+assert.match(
+  pageSource,
+  /modelLookupKeys[\s\S]*selectedModelIdFor[\s\S]*hasModelMetadataFor[\s\S]*model_metadata_gap_hint/,
+  'Provider channel model rows must match provider-prefixed model IDs and explain saved-ID-only metadata gaps'
+);
+
+assert.match(
+  i18nSource,
+  /'admin\.ai_resources\.model_metadata_gap_hint': '[^']*只有已保存 ID[^']*'/,
+  'Provider channel metadata gap hint must be localized in Simplified Chinese'
+);
+
 assert.doesNotMatch(
   pageSource,
   /model_visibility_list_title|modelVisibilityRows\.length \? \([\s\S]*max-h-80 overflow-auto rounded-lg border/,
@@ -1141,10 +1261,22 @@ assert.match(
   'Capability supplier templates must include TEI as a built-in embedding supplier'
 );
 
-assert.match(
+assert.doesNotMatch(
   pageSource,
   /label: 'OpenAI Embedding'/,
-  'Capability supplier templates must include OpenAI embedding as a built-in embedding supplier'
+  'Capability supplier templates must not default-expose model-platform embedding as a separate capability supplier'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /label: 'SiliconFlow Embedding'/,
+  'Capability supplier templates must not duplicate SiliconFlow from model suppliers as a separate embedding capability supplier'
+);
+
+assert.match(
+  pageSource,
+  /id: 'siliconflow'[\s\S]*label: 'SiliconFlow'[\s\S]*kind: 'siliconflow'[\s\S]*capabilityIds: 'text_generation, embedding'/,
+  'SiliconFlow must stay represented as a model supplier with embedding capability metadata'
 );
 
 assert.doesNotMatch(

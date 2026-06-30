@@ -55,6 +55,8 @@ def apply_provider_connection_runtime_settings(
         config = _dict(row.config_json)
         kind = _string(config.get("kind") or row.provider_type).lower()
         provider_id = _string(config.get("provider_id") or row.connection_id).lower()
+        capability_ids = _string_list(config.get("capability_ids"))
+        runtime_profile_ids = _string_list(config.get("runtime_profile_ids"))
         credential = _decrypt_connection_credential(settings, row)
         if kind == "web_search_provider":
             applied = _apply_web_search_connection(
@@ -85,7 +87,11 @@ def apply_provider_connection_runtime_settings(
                 projection.applied_count += 1
                 image_source_seen = True
             continue
-        if kind == "embedding_provider":
+        if kind == "embedding_provider" or (
+            provider_id in {"siliconflow", "openai", "tei"}
+            and "embedding" in capability_ids
+            and "embed.default" in runtime_profile_ids
+        ):
             if _apply_embedding_connection(
                 settings,
                 row=row,
@@ -377,6 +383,21 @@ def _dict(value: object) -> dict[str, Any]:
 
 def _string(value: object) -> str:
     return str(value or "").strip()
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        raw_items = value
+    elif isinstance(value, str):
+        raw_items = value.split(",")
+    else:
+        raw_items = []
+    normalized: list[str] = []
+    for item in raw_items:
+        text = str(item or "").strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
 
 
 def _positive_float(value: object, default: object) -> float:

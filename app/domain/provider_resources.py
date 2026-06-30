@@ -45,7 +45,7 @@ ABILITY_MODEL_RUNTIME_PROJECTION_VERSION = "admin-ability-model-runtime-projecti
 
 _ABILITY_MODEL_MEDIA_BY_FEATURE_ID = {
     "content_support": "text",
-    "site_knowledge_embedding": "text",
+    "site_knowledge_embedding": "vector",
     "evidence_preflight": "text",
     "generated_image_candidates": "image",
     "image_source_candidates": "image",
@@ -528,7 +528,7 @@ def build_admin_ability_model_runtime_projection(
         for index, item in enumerate(feature_model_usage)
     ]
     media_groups: list[dict[str, Any]] = []
-    for media in ("text", "image", "audio", "video"):
+    for media in ("text", "image", "vector", "audio", "video"):
         media_rows = [row for row in rows if row["media"] == media]
         media_groups.append(
             {
@@ -547,7 +547,9 @@ def build_admin_ability_model_runtime_projection(
         "rows": rows,
         "media_groups": media_groups,
         "boundary": {
-            "read_only": True,
+            "read_only": False,
+            "runtime_binding_only": True,
+            "configurable_runtime_bindings": ["site_knowledge_embedding"],
             "direct_wordpress_write": False,
             "not_a_control_plane": True,
             "does_not_own": [
@@ -571,6 +573,7 @@ def _build_ability_model_runtime_row(
     capability_id = str(feature_usage.get("capability_id") or "")
     profile_id = str(feature_usage.get("profile_id") or "")
     raw_status = str(feature_usage.get("status") or "")
+    can_configure = feature_id == "site_knowledge_embedding"
     return {
         "ability_id": feature_id,
         "feature_id": feature_id,
@@ -596,15 +599,16 @@ def _build_ability_model_runtime_row(
             feature_usage.get("selection_owner") or "cloud_runtime_metadata"
         ),
         "write_posture": str(feature_usage.get("write_posture") or ""),
-        "can_configure": False,
-        "action": "runtime_managed",
+        "can_configure": can_configure,
+        "action": "configure_runtime_model" if can_configure else "runtime_managed",
         "display_order": index,
         "evidence": {
             "content_exposed": False,
             "source": "feature_model_usage",
         },
         "boundary": {
-            "read_only": True,
+            "read_only": not can_configure,
+            "runtime_binding_only": can_configure,
             "direct_wordpress_write": False,
             "not_a_control_plane": True,
         },

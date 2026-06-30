@@ -9,11 +9,13 @@ from typing import Any
 import httpx
 from sqlalchemy import select
 
+from app.adapters.providers.base import ProviderCatalogSnapshot
 from app.adapters.providers.registry import build_provider_adapter_from_connection
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import ProviderConnection
 from app.core.secrets import encrypt_provider_connection_secret
+from app.domain.catalog.service import CatalogService
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
@@ -310,6 +312,17 @@ class ProviderConnectionAdminService:
                 now=now,
             )
 
+        catalog_sync = self._store_model_provider_catalog(row, snapshot)
+        if catalog_sync.get("status") != "synced":
+            return _test_result(
+                connection=serialized,
+                status="catalog_sync_failed",
+                stage="catalog_sync",
+                error_code="provider_connection.catalog_sync_failed",
+                message=str(catalog_sync.get("message") or "provider catalog sync failed"),
+                now=now,
+            )
+
         return _test_result(
             connection=serialized,
             status="ready",
@@ -323,8 +336,36 @@ class ProviderConnectionAdminService:
                 "adapter_type": str(snapshot.adapter_type or ""),
                 "model_count": len(models),
                 "sample_model_ids": [str(model.model_id) for model in models[:5]],
+                "sync": catalog_sync,
             },
         )
+
+    def _store_model_provider_catalog(
+        self,
+        row: ProviderConnection,
+        snapshot: ProviderCatalogSnapshot,
+    ) -> dict[str, Any]:
+        try:
+            result = CatalogService(
+                self.database_url,
+                providers={},
+                settings=self.settings,
+            ).store_provider_snapshot(
+                snapshot,
+                source="provider_connection_test",
+                notes=f"connection={row.connection_id}",
+            )
+        except Exception as error:
+            return {
+                "status": "error",
+                "message": _truncate_message(str(error) or error.__class__.__name__),
+            }
+        return {
+            "status": "synced",
+            "revision": str(result.get("revision") or ""),
+            "provider_id": str(snapshot.provider_id or ""),
+            "model_count": len(list(snapshot.models or [])),
+        }
 
     def _build_web_search_test_result(
         self,

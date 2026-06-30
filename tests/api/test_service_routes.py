@@ -863,7 +863,7 @@ def test_admin_ai_resources_projects_connections_capabilities_and_profiles(
     assert "group-test-secret" not in serialized
 
 
-def test_admin_ability_model_runtime_projection_is_read_only_and_feature_backed(
+def test_admin_ability_model_runtime_projection_is_bounded_and_feature_backed(
     tmp_path: Path,
 ) -> None:
     _, client = _build_client(
@@ -887,7 +887,9 @@ def test_admin_ability_model_runtime_projection_is_read_only_and_feature_backed(
     assert data["surface"] == "admin_ability_model_runtime_projection"
     assert data["projection_version"] == "admin-ability-model-runtime-projection.v1"
     assert data["source_surface"] == "admin_ai_resources"
-    assert data["boundary"]["read_only"] is True
+    assert data["boundary"]["read_only"] is False
+    assert data["boundary"]["runtime_binding_only"] is True
+    assert data["boundary"]["configurable_runtime_bindings"] == ["site_knowledge_embedding"]
     assert data["boundary"]["direct_wordpress_write"] is False
     assert data["boundary"]["not_a_control_plane"] is True
     assert "plugin_specific_overrides" in data["boundary"]["does_not_own"]
@@ -910,12 +912,17 @@ def test_admin_ability_model_runtime_projection_is_read_only_and_feature_backed(
     assert rows["content_support"]["boundary"]["direct_wordpress_write"] is False
     assert rows["article_narration"]["media"] == "audio"
     assert rows["generated_image_candidates"]["media"] == "image"
+    assert rows["site_knowledge_embedding"]["media"] == "vector"
     assert rows["site_knowledge_embedding"]["model_kind"] == "embedding_model"
+    assert rows["site_knowledge_embedding"]["can_configure"] is True
+    assert rows["site_knowledge_embedding"]["action"] == "configure_runtime_model"
+    assert rows["site_knowledge_embedding"]["boundary"]["runtime_binding_only"] is True
     assert rows["evidence_preflight"]["model_kind"] == "search_text_model"
 
     media_groups = {item["media"]: item for item in data["media_groups"]}
-    assert {"text", "image", "audio", "video"}.issubset(media_groups)
-    assert media_groups["text"]["count"] >= 3
+    assert {"text", "image", "vector", "audio", "video"}.issubset(media_groups)
+    assert media_groups["text"]["count"] >= 2
+    assert media_groups["vector"]["count"] >= 1
     assert media_groups["audio"]["count"] >= 3
     assert media_groups["video"]["count"] == 0
 
@@ -926,6 +933,108 @@ def test_admin_ability_model_runtime_projection_is_read_only_and_feature_backed(
 
     unauthorized = client.get("/internal/service/admin/ability-models/runtime-projection")
     assert unauthorized.status_code == 401
+
+
+class FixedSiliconFlowEmbeddingProvider:
+    provider_id = "siliconflow"
+    display_name = "SiliconFlow"
+    adapter_type = "siliconflow"
+
+    def fetch_catalog(self) -> ProviderCatalogSnapshot:
+        return ProviderCatalogSnapshot(
+            provider_id=self.provider_id,
+            display_name=self.display_name,
+            adapter_type=self.adapter_type,
+            models=[
+                CatalogModelSeed(
+                    model_id="siliconflow/BAAI/bge-m3",
+                    family="bge",
+                    feature="embedding",
+                    status="available",
+                    context_window=8192,
+                    price_input=0.0,
+                    price_output=0.0,
+                    raw_json={"dimensions": 1024},
+                    instances=[
+                        CatalogInstanceSeed(
+                            instance_id="siliconflow-bge-m3-embed",
+                            endpoint_variant="embeddings",
+                            region="global",
+                            capability_tags=["embedding", "site-knowledge"],
+                            is_default=True,
+                            weight=100,
+                        )
+                    ],
+                )
+            ],
+        )
+
+    def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
+        raise ProviderExecutionError("provider.not_executed", "not used by this test")
+
+
+def test_admin_ability_model_runtime_binding_updates_site_knowledge_embedding(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        providers={"siliconflow": FixedSiliconFlowEmbeddingProvider()},
+    )
+    with get_session(database_url) as session:
+        session.add(
+            ProviderConnection(
+                connection_id="model_siliconflow",
+                provider_type="siliconflow",
+                display_name="SiliconFlow",
+                enabled=True,
+                base_url="https://api.siliconflow.cn/v1",
+                config_json={
+                    "provider_id": "siliconflow",
+                    "kind": "siliconflow",
+                    "capability_ids": ["text_generation", "embedding"],
+                    "runtime_profile_ids": ["text.ai", "embed.default"],
+                    "model_id": "siliconflow/Qwen/Qwen3-8B",
+                },
+                secret_ciphertext="configured-in-test",
+                status="configured",
+                source_role="execution_source",
+                metadata_json={},
+            )
+        )
+        session.commit()
+
+    response = client.post(
+        "/internal/service/admin/ability-models/runtime-binding",
+        headers=build_internal_headers(idempotency_key="ability-binding-save"),
+        json={
+            "ability_id": "site_knowledge_embedding",
+            "instance_id": "siliconflow-bge-m3-embed",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    row = {item["ability_id"]: item for item in data["rows"]}["site_knowledge_embedding"]
+    assert row["media"] == "vector"
+    assert row["can_configure"] is True
+    assert row["provider_id"] == "siliconflow"
+    assert row["model_id"] == "siliconflow/BAAI/bge-m3"
+    assert data["boundary"]["runtime_binding_only"] is True
+    assert data["boundary"]["direct_wordpress_write"] is False
+    assert data["receipt"]["event_kind"] == "ability_model_runtime_binding.update"
+
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, "model_siliconflow")
+        assert connection is not None
+        config = connection.config_json or {}
+        assert config["provider_id"] == "siliconflow"
+        assert config["model_id"] == "siliconflow/BAAI/bge-m3"
+        assert "embedding" in config["capability_ids"]
+        assert "embed.default" in config["runtime_profile_ids"]
+        assert config["dimensions"] == 1024
+
+    serialized = json.dumps(data)
+    assert "configured-in-test" not in serialized
 
 
 def test_admin_provider_connections_store_encrypted_credentials_and_project_to_ai_resources(
@@ -1087,6 +1196,94 @@ def test_admin_provider_connection_catalog_preview_fetches_models_without_persis
     assert "preview-secret-value" not in json.dumps(response.json())
     with get_session(database_url) as session:
         assert session.get(ProviderConnection, "mqzj_preview") is None
+
+
+def test_admin_provider_connection_test_syncs_catalog_for_openai_compatible_supplier(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client = _build_client(tmp_path)
+
+    def fake_fetch_catalog(self: Any) -> ProviderCatalogSnapshot:
+        provider_id = str(getattr(self, "provider_id", "") or "")
+        display_name = str(getattr(self, "display_name", "") or "")
+        return ProviderCatalogSnapshot(
+            provider_id=provider_id,
+            display_name=display_name,
+            adapter_type="openai",
+            models=[
+                CatalogModelSeed(
+                    model_id="deepseek-chat",
+                    family="deepseek",
+                    feature="text",
+                    status="available",
+                    instances=[
+                        CatalogInstanceSeed(
+                            instance_id=f"{provider_id}-global-deepseek-chat",
+                            endpoint_variant="chat_completions",
+                            region="global",
+                            capability_tags=["text", "balanced"],
+                            is_default=True,
+                            weight=100,
+                        )
+                    ],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        "app.adapters.providers.openai.OpenAIProviderAdapter.fetch_catalog",
+        fake_fetch_catalog,
+    )
+
+    create_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(idempotency_key="provider-connection-deepseek-save"),
+        json={
+            "connection_id": "deepseek",
+            "provider_id": "deepseek",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "DeepSeek",
+            "enabled": True,
+            "base_url": "https://api.deepseek.com/v1",
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+            "config": {"model_ids": ["deepseek-chat"], "model_id": "deepseek-chat"},
+            "credential": "deepseek-secret-value",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    test_response = client.post(
+        "/internal/service/admin/provider-connections/deepseek/test",
+        headers=build_internal_headers(idempotency_key="provider-connection-deepseek-test"),
+    )
+
+    assert test_response.status_code == 200, test_response.text
+    test_data = test_response.json()["data"]
+    assert test_data["catalog"]["provider_id"] == "deepseek"
+    assert test_data["catalog"]["display_name"] == "DeepSeek"
+    assert test_data["catalog"]["adapter_type"] == "openai"
+    assert test_data["catalog"]["sync"]["status"] == "synced"
+    assert "deepseek-secret-value" not in json.dumps(test_response.json())
+
+    routing_response = client.get(
+        "/internal/service/admin/wordpress-ai-routing",
+        headers=build_internal_headers(),
+    )
+
+    assert routing_response.status_code == 200, routing_response.text
+    routing_data = routing_response.json()["data"]
+    deepseek_instances = [
+        item
+        for item in routing_data["available_text_instances"]
+        if item["provider_id"] == "deepseek"
+    ]
+    assert deepseek_instances
+    assert deepseek_instances[0]["provider_display_name"] == "DeepSeek"
+    assert deepseek_instances[0]["adapter_type"] == "openai"
+    assert deepseek_instances[0]["model_id"] == "deepseek-chat"
 
 
 def test_admin_provider_connection_catalog_preview_returns_all_upstream_models(

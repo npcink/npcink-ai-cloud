@@ -44,6 +44,7 @@ type Connection = {
   last_error_message?: string;
   detail_href?: string;
   managed_by?: string;
+  metadata?: Record<string, any>;
 };
 
 type Capability = {
@@ -666,30 +667,6 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     descriptionFallback: 'Stock image reference source for photography and visual references.',
   },
   {
-    id: 'siliconflow',
-    label: 'SiliconFlow Embedding',
-    category: 'vector',
-    kind: 'embedding_provider',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    capabilityIds: 'embedding',
-    runtimeProfileIds: 'embed.default',
-    modelIds: 'BAAI/bge-m3',
-    descriptionKey: 'vector_help_siliconflow',
-    descriptionFallback: 'Embedding provider for Site Knowledge semantic vectors.',
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI Embedding',
-    category: 'vector',
-    kind: 'embedding_provider',
-    baseUrl: 'https://api.openai.com/v1',
-    capabilityIds: 'embedding',
-    runtimeProfileIds: 'embed.default',
-    modelIds: 'text-embedding-3-small',
-    descriptionKey: 'vector_help_openai_embedding',
-    descriptionFallback: 'OpenAI-compatible embedding provider for Site Knowledge semantic vectors.',
-  },
-  {
     id: 'tei',
     label: 'TEI Embedding',
     category: 'vector',
@@ -1031,6 +1008,117 @@ function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureF
   return 'all';
 }
 
+function normalizeModelLookupValue(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function modelLookupKeys(modelId: string, providerId: string): string[] {
+  const normalizedModelId = normalizeModelLookupValue(modelId);
+  const normalizedProviderId = normalizeModelLookupValue(providerId);
+  const keys = new Set<string>();
+  if (normalizedModelId) {
+    keys.add(normalizedModelId);
+    const slashIndex = normalizedModelId.indexOf('/');
+    if (slashIndex > 0 && slashIndex < normalizedModelId.length - 1) {
+      keys.add(normalizedModelId.slice(slashIndex + 1));
+    }
+    if (normalizedProviderId && normalizedModelId.startsWith(`${normalizedProviderId}/`)) {
+      keys.add(normalizedModelId.slice(normalizedProviderId.length + 1));
+    }
+    if (normalizedProviderId && !normalizedModelId.includes('/')) {
+      keys.add(`${normalizedProviderId}/${normalizedModelId}`);
+    }
+  }
+  return Array.from(keys);
+}
+
+function modelLookupKeySet(modelId: string, providerId: string): Set<string> {
+  return new Set(modelLookupKeys(modelId, providerId));
+}
+
+function selectedModelIdFor(
+  modelId: string,
+  providerId: string,
+  selectedModelIds: string[],
+  selectedLookup: Map<string, string>
+): string {
+  for (const key of modelLookupKeys(modelId, providerId)) {
+    const selectedModelId = selectedLookup.get(key);
+    if (selectedModelId) return selectedModelId;
+  }
+  return selectedModelIds.includes(modelId) ? modelId : '';
+}
+
+function hasModelMetadataFor(
+  modelId: string,
+  providerId: string,
+  references: ModelReferenceEntry[],
+  catalogModels: ProviderCatalogPreviewModel[]
+): boolean {
+  const keys = modelLookupKeySet(modelId, providerId);
+  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)))
+    || catalogModels.some((model) => modelLookupKeys(model.model_id, providerId).some((key) => keys.has(key)));
+}
+
+function normalizeProviderCatalogPreview(value: any): ProviderCatalogPreview | null {
+  if (!value || typeof value !== 'object') return null;
+  const models: ProviderCatalogPreviewModel[] = Array.isArray(value.models)
+    ? value.models
+      .map((model: any): ProviderCatalogPreviewModel => ({
+        model_id: String(model?.model_id ?? ''),
+        family: String(model?.family ?? ''),
+        feature: String(model?.feature ?? ''),
+        status: String(model?.status ?? ''),
+        is_deprecated: Boolean(model?.is_deprecated),
+        runtime_supported: Boolean(model?.runtime_supported),
+        verified: Boolean(model?.verified),
+        capability_tags: Array.isArray(model?.capability_tags) ? model.capability_tags.map(String) : [],
+      }))
+      .filter((model: ProviderCatalogPreviewModel) => model.model_id)
+    : [];
+  const modelIds = Array.isArray(value.model_ids)
+    ? value.model_ids.map(String).filter(Boolean)
+    : models.map((model) => model.model_id);
+  if (!modelIds.length && !models.length) return null;
+  return {
+    provider_id: String(value.provider_id ?? ''),
+    display_name: String(value.display_name ?? ''),
+    adapter_type: String(value.adapter_type ?? ''),
+    model_count: Number(value.model_count ?? modelIds.length) || modelIds.length,
+    model_ids: modelIds,
+    models,
+    truncated: Boolean(value.truncated),
+  };
+}
+
+function catalogPreviewForMetadata(preview: ProviderCatalogPreview | null): ProviderCatalogPreview | undefined {
+  if (!preview) return undefined;
+  return {
+    provider_id: preview.provider_id,
+    display_name: preview.display_name,
+    adapter_type: preview.adapter_type,
+    model_count: preview.model_count,
+    model_ids: preview.model_ids,
+    models: (preview.models || []).map((model) => ({
+      model_id: model.model_id,
+      family: model.family,
+      feature: model.feature,
+      status: model.status,
+      is_deprecated: model.is_deprecated,
+      runtime_supported: model.runtime_supported,
+      verified: model.verified,
+      capability_tags: model.capability_tags,
+    })),
+    truncated: preview.truncated,
+  };
+}
+
+function catalogPreviewFromConnection(connection: Connection): ProviderCatalogPreview | null {
+  return normalizeProviderCatalogPreview(
+    connection.metadata?.model_catalog_preview || connection.metadata?.model_catalog
+  );
+}
+
 function routingIdempotencyKey(): string {
   return generateIdempotencyKey('ai_resources_routing');
 }
@@ -1303,6 +1391,9 @@ function AiResourcesContent() {
             ui_source: 'ai_resources_channel_form',
             provider_preset: providerConnectionForm.providerPreset,
             model_ids: isCapabilityProviderForm ? [] : modelIds,
+            model_catalog_preview: isCapabilityProviderForm
+              ? undefined
+              : catalogPreviewForMetadata(providerCatalogPreview),
           },
           credential: providerConnectionForm.credential || undefined,
         }),
@@ -1577,11 +1668,12 @@ function AiResourcesContent() {
   }
 
   function editProviderConnection(connection: Connection) {
+    const storedCatalogPreview = catalogPreviewFromConnection(connection);
     setMessage(aiText('message_editing_connection', 'Editing {{name}}. Credential is left blank unless you replace it.', {
       name: connection.display_name,
     }));
     setError('');
-    setProviderCatalogPreview(null);
+    setProviderCatalogPreview(storedCatalogPreview);
     setModelReferenceProviderId(defaultReferenceProviderId(connection.provider_id, inferProviderPreset(connection)));
     setModelReferenceSearch('');
     setModelReferenceFeatureFilter('all');
@@ -1983,16 +2075,45 @@ function AiResourcesContent() {
   const referenceProviderCanBeChanged = canChooseReferenceProvider(providerConnectionForm.providerPreset);
   const providerUsesCustomRuntimeFields = !isCapabilityProviderForm && providerConnectionForm.providerPreset === 'custom';
 
+  const selectedModelLookup = useMemo(() => {
+    const lookup = new Map<string, string>();
+    for (const modelId of selectedProviderModelIds) {
+      for (const key of modelLookupKeys(modelId, modelReferenceProviderId)) {
+        if (!lookup.has(key)) {
+          lookup.set(key, modelId);
+        }
+      }
+    }
+    return lookup;
+  }, [modelReferenceProviderId, selectedProviderModelIds]);
+
+  const selectedModelMetadataGapCount = useMemo(
+    () => selectedProviderModelIds.filter((modelId) => !hasModelMetadataFor(
+      modelId,
+      modelReferenceProviderId,
+      modelReferences,
+      providerCatalogPreview?.models || []
+    )).length,
+    [modelReferenceProviderId, modelReferences, providerCatalogPreview, selectedProviderModelIds]
+  );
+
   const modelVisibilityRows = useMemo<ModelVisibilityRow[]>(() => {
     const rows = new Map<string, ModelVisibilityRow>();
 
     for (const reference of modelReferences) {
-      rows.set(reference.model_id, {
-        modelId: reference.model_id,
+      const selectedModelId = selectedModelIdFor(
+        reference.model_id,
+        reference.provider_id || modelReferenceProviderId,
+        selectedProviderModelIds,
+        selectedModelLookup
+      );
+      const rowModelId = selectedModelId || reference.model_id;
+      rows.set(rowModelId, {
+        modelId: rowModelId,
         family: reference.family || reference.source_label,
         feature: reference.feature,
         sourceLabel: reference.source_label,
-        selected: selectedProviderModelIds.includes(reference.model_id),
+        selected: Boolean(selectedModelId),
         verified: false,
         deprecated: reference.is_deprecated,
         reference,
@@ -2000,13 +2121,20 @@ function AiResourcesContent() {
     }
 
     for (const model of providerCatalogPreview?.models || []) {
-      const existing = rows.get(model.model_id);
-      rows.set(model.model_id, {
-        modelId: model.model_id,
+      const selectedModelId = selectedModelIdFor(
+        model.model_id,
+        modelReferenceProviderId,
+        selectedProviderModelIds,
+        selectedModelLookup
+      );
+      const rowModelId = selectedModelId || model.model_id;
+      const existing = rows.get(rowModelId);
+      rows.set(rowModelId, {
+        modelId: rowModelId,
         family: existing?.family || model.family,
         feature: existing?.feature || model.feature,
         sourceLabel: existing?.sourceLabel || aiText('model_source_upstream', 'Upstream catalog'),
-        selected: selectedProviderModelIds.includes(model.model_id),
+        selected: Boolean(selectedModelId),
         verified: model.verified || existing?.verified || false,
         deprecated: model.is_deprecated || existing?.deprecated || false,
         reference: existing?.reference,
@@ -2020,7 +2148,7 @@ function AiResourcesContent() {
           modelId,
           family: aiText('model_source_manual', 'Manually added'),
           feature: '',
-          sourceLabel: aiText('model_source_enabled_only', 'Enabled only'),
+          sourceLabel: aiText('model_source_enabled_only', 'Saved model ID only'),
           selected: true,
           verified: false,
           deprecated: false,
@@ -2053,8 +2181,10 @@ function AiResourcesContent() {
     modelReferenceSearch,
     modelReferenceShowDeprecated,
     modelReferenceVisibilityFilter,
+    modelReferenceProviderId,
     modelReferences,
     providerCatalogPreview,
+    selectedModelLookup,
     selectedProviderModelIds,
   ]);
 
@@ -2514,6 +2644,14 @@ function AiResourcesContent() {
                           {aiText('enabled_model_summary', 'Enabled {{enabled}} models.', {
                             enabled: String(splitList(providerConnectionForm.modelIds).length),
                           })}
+                          {selectedModelMetadataGapCount ? (
+                            <>
+                              {' '}
+                              {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
+                                count: String(selectedModelMetadataGapCount),
+                              })}
+                            </>
+                          ) : null}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
