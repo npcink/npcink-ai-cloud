@@ -138,7 +138,10 @@ class AudioWorkbenchService:
         try:
             result = runtime_service.execute(runtime_request)
         except (RuntimeErrorBase, RoutingError) as error:
-            raise _audio_preview_runtime_error(error, site_id=str(request_payload["site_id"])) from error
+            raise _audio_preview_runtime_error(
+                error,
+                site_id=str(request_payload["site_id"]),
+            ) from error
         return self._job_payload(
             result,
             site_id=str(request_payload["site_id"]),
