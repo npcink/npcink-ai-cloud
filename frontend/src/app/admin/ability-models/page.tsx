@@ -134,6 +134,8 @@ type AudioPreviewErrorState = {
   runId?: string;
 };
 
+type AbilityModelInspectorTab = 'policy' | 'preview';
+
 const MAX_DIALOG_CANDIDATE_OPTIONS = 24;
 
 function isModelProviderConnection(connection: ProviderConnectionProjection): boolean {
@@ -359,6 +361,7 @@ export default function AbilityModelsPage() {
   const [cloudBindingModelSearchQuery, setCloudBindingModelSearchQuery] = useState('');
   const [savingCloudBinding, setSavingCloudBinding] = useState(false);
   const [advancedRuntimePolicyOpen, setAdvancedRuntimePolicyOpen] = useState(false);
+  const [abilityModelInspectorTab, setAbilityModelInspectorTab] = useState<AbilityModelInspectorTab>('policy');
   const [audioPreviewCreating, setAudioPreviewCreating] = useState(false);
   const [audioPreviewJob, setAudioPreviewJob] = useState<AudioPreviewJob | null>(null);
   const [audioPreviewError, setAudioPreviewError] = useState<AudioPreviewErrorState | null>(null);
@@ -592,12 +595,35 @@ export default function AbilityModelsPage() {
     return labels[modelKind] || modelKind || text('cloud_model_kind_runtime', 'Runtime model');
   }, [text]);
 
+  const cloudAbilityRuntimeLabel = useCallback((row: CloudAbilityRuntimeRow): string => {
+    if (row.provider_id.trim() || row.model_id.trim()) {
+      return modelRouteLabel(row.provider_id, row.model_id);
+    }
+    if (row.model_kind === 'search_text_model') {
+      return text('cloud_runtime_managed_search_text', 'Cloud-managed search service');
+    }
+    if (row.model_kind === 'image_source_provider') {
+      return text('cloud_runtime_managed_image_source', 'Cloud-managed image source');
+    }
+    if (row.profile_id.trim()) {
+      return text('cloud_runtime_managed_projection', 'Cloud-managed runtime');
+    }
+    return text('cloud_native_runtime_unassigned', 'Not connected');
+  }, [modelRouteLabel, text]);
+
   const cloudAbilityStatusLabel = useCallback((status: CloudAbilityRuntimeStatus): string => {
     if (status === 'connected') return text('cloud_native_status_connected', 'Connected');
     if (status === 'missing_provider') return text('cloud_native_status_missing_provider', 'Missing provider');
     if (status === 'planned') return text('cloud_native_status_planned', 'Planned');
     return text('cloud_native_status_unknown', 'Unknown');
   }, [text]);
+
+  const cloudAbilityStatusClassName = useCallback((status: CloudAbilityRuntimeStatus): string => {
+    if (status === 'missing_provider') return 'text-amber-700 dark:text-amber-300';
+    if (status === 'planned') return 'text-slate-500 dark:text-slate-400';
+    if (status === 'unknown') return 'text-rose-700 dark:text-rose-300';
+    return 'text-slate-600 dark:text-slate-300';
+  }, []);
 
   const abilityRouteTitle = useCallback((profile: RoutingProfile): string => {
     const labels: Record<string, string> = {
@@ -782,6 +808,7 @@ export default function AbilityModelsPage() {
       activeProfile.routing_intent.startsWith('audio.')
     )
   );
+  const activeInspectorTab: AbilityModelInspectorTab = activeProfileIsAudioGeneration ? abilityModelInspectorTab : 'policy';
   const activeAudioPreviewSource = audioPreviewSource(audioPreviewJob);
   const activeAudioPreviewError = audioPreviewError ?? audioPreviewErrorFromJob(
     audioPreviewJob,
@@ -800,6 +827,13 @@ export default function AbilityModelsPage() {
       [text('audio_preview_run', 'Run'), activeAudioPreviewError.runId],
     ].filter((item): item is [string, string] => Boolean(item[1]))
     : [];
+  const activeAudioPreviewStatusLabel = audioPreviewJob?.status === 'succeeded'
+    ? text('audio_preview_status_succeeded', 'Preview ready')
+    : audioPreviewJob?.status === 'failed'
+      ? text('audio_preview_status_failed', 'Preview failed')
+      : audioPreviewJob?.status
+        ? text('audio_preview_status_running', 'Generating')
+        : '';
   const audioPreviewTextLength = audioPreviewText.trim().length;
 
   const activeCloudBindingModelData = useMemo(() => {
@@ -1055,10 +1089,16 @@ export default function AbilityModelsPage() {
   }, [audioPreviewJob?.run_id, audioPreviewJob?.status, loadAudioPreviewJob]);
 
   function openAbilityModelDialog(profileId: string) {
+    const profile = routingDrafts.find((item) => item.profile_id === profileId);
     setActiveProfileId(profileId);
     setModelProviderFilter('');
     setModelSearchQuery('');
     setAdvancedRuntimePolicyOpen(false);
+    setAbilityModelInspectorTab(
+      profile && (profile.execution_kind === 'audio_generation' || profile.routing_intent.startsWith('audio.'))
+        ? 'preview'
+        : 'policy'
+    );
     setDialogError('');
     setDialogMessage('');
     setPageError('');
@@ -1085,6 +1125,7 @@ export default function AbilityModelsPage() {
     setModelProviderFilter('');
     setModelSearchQuery('');
     setAdvancedRuntimePolicyOpen(false);
+    setAbilityModelInspectorTab('policy');
     setDialogError('');
     setDialogMessage('');
     setAudioPreviewJob(null);
@@ -1256,10 +1297,10 @@ export default function AbilityModelsPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                {text('cloud_native_title', 'Cloud-native runtime abilities')}
+                {text('cloud_native_title', 'Cloud internal runtime abilities')}
               </h2>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {text('cloud_native_desc', 'Cloud-owned runtime abilities are grouped by text, image, vector, audio, and video. Only Site Knowledge embedding supports a bounded runtime model binding here.')}
+                {text('cloud_native_desc', 'Read-only projection for Cloud-owned services. It shows runtime dependencies and only exposes bounded model binding where Cloud supports it.')}
               </p>
             </div>
             <BackofficeStatusBadge label={text('cloud_native_badge_runtime_binding', 'Runtime binding')} status="success" />
@@ -1279,49 +1320,84 @@ export default function AbilityModelsPage() {
 
           {activeCloudNativeAbilityRows.length > 0 ? (
             <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-              <div className="hidden grid-cols-[8rem_1.4fr_1fr_1.1fr_1.2fr_9rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400 md:grid">
+              <div className="hidden grid-cols-[7rem_1.7fr_1.05fr_1.35fr_8rem] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400 md:grid">
                 <span>{aiText('column_status', 'Status')}</span>
                 <span>{aiText('column_ability', 'Ability')}</span>
-                <span>{text('column_model_kind', 'Model kind')}</span>
-                <span>{aiText('column_profile', 'Profile')}</span>
-                <span>{aiText('column_provider_model', 'Provider / model')}</span>
+                <span>{text('column_runtime_dependency', 'Runtime dependency')}</span>
+                <span>{text('column_current_runtime', 'Current runtime')}</span>
                 <span className="text-right">{aiText('column_actions', 'Actions')}</span>
               </div>
               {activeCloudNativeAbilityRows.map((row) => (
                 <div
                   key={row.ability_id}
-                  className="grid gap-3 border-b border-slate-200 px-4 py-4 text-sm last:border-b-0 dark:border-slate-800 md:grid-cols-[8rem_1.4fr_1fr_1.1fr_1.2fr_9rem] md:items-center"
+                  className="grid gap-3 border-b border-slate-200 px-4 py-4 text-sm last:border-b-0 dark:border-slate-800 md:grid-cols-[7rem_1.7fr_1.05fr_1.35fr_8rem] md:items-center"
                 >
-                  <BackofficeStatusBadge
-                    label={cloudAbilityStatusLabel(row.status)}
-                    status={row.status === 'connected' ? 'success' : row.status === 'missing_provider' ? 'warning' : 'inactive'}
-                  />
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 md:hidden">
+                      {aiText('column_status', 'Status')}
+                    </div>
+                    <div className={`mt-1 text-sm font-medium md:mt-0 ${cloudAbilityStatusClassName(row.status)}`}>
+                      {cloudAbilityStatusLabel(row.status)}
+                    </div>
+                  </div>
                   <div>
                     <div className="font-medium text-slate-950 dark:text-white">{cloudAbilityLabel(row)}</div>
                     <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{cloudAbilityDescription(row)}</div>
+                    <details className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      <summary className="cursor-pointer select-none font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+                        {text('cloud_native_internal_details', 'Internal details')}
+                      </summary>
+                      <dl className="mt-2 grid gap-1 rounded-lg bg-slate-50 p-2 dark:bg-slate-900/45">
+                        <div className="grid gap-1 sm:grid-cols-[6rem_1fr]">
+                          <dt>{text('cloud_native_internal_config_id', 'Config ID')}</dt>
+                          <dd className="font-mono text-slate-700 dark:text-slate-200">
+                            {row.profile_id || text('cloud_native_internal_none', 'None')}
+                          </dd>
+                        </div>
+                        <div className="grid gap-1 sm:grid-cols-[6rem_1fr]">
+                          <dt>{text('cloud_native_internal_supplier', 'Supplier')}</dt>
+                          <dd>{row.provider_id ? providerDisplayName(row.provider_id) : text('cloud_native_internal_managed', 'Cloud managed')}</dd>
+                        </div>
+                        <div className="grid gap-1 sm:grid-cols-[6rem_1fr]">
+                          <dt>{text('cloud_native_internal_model', 'Model')}</dt>
+                          <dd>{row.model_id || text('cloud_native_internal_no_model', 'No model binding required')}</dd>
+                        </div>
+                      </dl>
+                    </details>
                   </div>
                   <div className="text-slate-600 dark:text-slate-300">
                     <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 md:hidden">
-                      {text('column_model_kind', 'Model kind')}
+                      {text('column_runtime_dependency', 'Runtime dependency')}
                     </div>
                     <div className="mt-1 md:mt-0">{cloudAbilityModelKindLabel(row.model_kind)}</div>
                   </div>
-                  <div className="font-mono text-sm text-slate-500 dark:text-slate-400">
-                    {row.profile_id || text('cloud_native_profile_pending', 'Not connected')}
-                  </div>
                   <div className="text-slate-600 dark:text-slate-300">
-                    <div>{providerDisplayName(row.provider_id) || '-'}</div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{row.model_id || '-'}</div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 md:hidden">
+                      {text('column_current_runtime', 'Current runtime')}
+                    </div>
+                    <div className="mt-1 font-medium text-slate-800 dark:text-slate-100 md:mt-0">
+                      {cloudAbilityRuntimeLabel(row)}
+                    </div>
+                    {!row.provider_id && !row.model_id ? (
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {text('cloud_native_no_model_note', 'No separate provider/model choice is required for this row.')}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="text-right">
-                    <button
-                      type="button"
-                      className="btn btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!row.can_configure}
-                      onClick={() => openCloudBindingDialog(row)}
-                    >
-                      {row.can_configure ? aiText('action_configure', 'Configure') : text('cloud_native_action_readonly', 'Runtime managed')}
-                    </button>
+                    {row.can_configure ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary justify-center"
+                        onClick={() => openCloudBindingDialog(row)}
+                      >
+                        {text('cloud_native_action_configure_model', 'Configure model')}
+                      </button>
+                    ) : (
+                      <span className="inline-flex rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                        {text('cloud_native_action_readonly', 'Cloud managed')}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1351,7 +1427,7 @@ export default function AbilityModelsPage() {
           aria-labelledby="ability-model-dialog-title"
         >
           <div className="absolute inset-0 bg-slate-950/55" />
-          <div className="relative z-10 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-950">
+          <div className="relative z-10 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-950">
             <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 id="ability-model-dialog-title" className="text-xl font-semibold text-slate-950 dark:text-white">
@@ -1365,34 +1441,36 @@ export default function AbilityModelsPage() {
                 {aiText('action_close_dialog', 'Close')}
               </button>
             </div>
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
-              <div className="space-y-4">
-                <div>
-                  <div className="text-base font-semibold text-slate-950 dark:text-white">{activeProfileTitle}</div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-base font-semibold text-slate-950 dark:text-white">{activeProfileTitle}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {activeProfile.tasks.map((taskId) => (
+                        <span
+                          key={taskId}
+                          className="rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"
+                        >
+                          {abilityTaskLabel(taskId)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {activeProfile.tasks.map((taskId) => (
-                    <span
-                      key={taskId}
-                      className="rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"
-                    >
-                      {abilityTaskLabel(taskId)}
-                    </span>
-                  ))}
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-2 md:grid-cols-2">
                   {[0, 1].map((index) => {
                     const selectedId = activeDialogModelData?.selectedIds[index] || '';
                     const selected = selectedId ? runtimeInstancesById.get(selectedId) : undefined;
                     return (
                       <div
                         key={`${activeProfile.profile_id}-selected-${index}`}
-                        className="rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/40"
+                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/30"
                       >
                         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                           {index === 0 ? aiText('ability_model_primary_model', 'Primary model') : aiText('ability_model_fallback_model', 'Fallback model')}
                         </div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+                        <div className="mt-2 truncate text-sm font-semibold text-slate-950 dark:text-white">
                           {selected
                             ? runtimeModelRouteLabel(selected)
                             : aiText('ability_model_unassigned', 'Unassigned')}
@@ -1415,51 +1493,49 @@ export default function AbilityModelsPage() {
                     );
                   })}
                 </div>
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40 md:grid-cols-[0.9fr_1.1fr]">
-                  <label className="block">
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                      {text('field_model_provider_filter', 'Supplier')}
-                    </span>
-                    <select
-                      value={modelProviderFilter}
-                      onChange={(event) => setModelProviderFilter(event.target.value)}
-                      className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    >
-                      <option value="">{text('filter_provider_all', 'All suppliers')}</option>
-                      {(activeDialogModelData?.providerOptions || []).map((option) => (
-                        <option
-                          key={option.providerId}
-                          value={option.providerId}
-                          disabled={option.candidateCount === 0}
-                        >
-                          {option.label} ({option.candidateCount})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                      {text('field_model_search', 'Search models')}
-                    </span>
-                    <input
-                      type="search"
-                      value={modelSearchQuery}
-                      onChange={(event) => setModelSearchQuery(event.target.value)}
-                      placeholder={text('placeholder_model_search', 'Search by supplier or model name')}
-                      className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    />
-                  </label>
-                </div>
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                      {text('available_models_title', 'Available models')}
+                <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div className="grid gap-3 border-b border-slate-200 bg-slate-50/80 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/35 lg:grid-cols-[minmax(0,1fr)_180px_220px] lg:items-end">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                        {text('available_models_title', 'Available models')}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {text('ability_model_candidate_count', '{{count}} matching runtime candidates shown', {
+                          count: String(activeDialogModelData?.filteredCandidates.length || 0),
+                        })}
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {text('ability_model_candidate_count', '{{count}} matching runtime candidates shown', {
-                        count: String(activeDialogModelData?.filteredCandidates.length || 0),
-                      })}
-                    </div>
+                    <label className="block">
+                      <span className="sr-only">{text('field_model_provider_filter', 'Supplier')}</span>
+                      <select
+                        value={modelProviderFilter}
+                        onChange={(event) => setModelProviderFilter(event.target.value)}
+                        className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                        aria-label={text('field_model_provider_filter', 'Supplier')}
+                      >
+                        <option value="">{text('filter_provider_all', 'All suppliers')}</option>
+                        {(activeDialogModelData?.providerOptions || []).map((option) => (
+                          <option
+                            key={option.providerId}
+                            value={option.providerId}
+                            disabled={option.candidateCount === 0}
+                          >
+                            {option.label} ({option.candidateCount})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="sr-only">{text('field_model_search', 'Search models')}</span>
+                      <input
+                        type="search"
+                        value={modelSearchQuery}
+                        onChange={(event) => setModelSearchQuery(event.target.value)}
+                        placeholder={text('placeholder_model_search', 'Search by supplier or model name')}
+                        className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                        aria-label={text('field_model_search', 'Search models')}
+                      />
+                    </label>
                   </div>
                   <div className="max-h-[360px] overflow-y-auto">
                     {(activeDialogModelData?.filteredCandidates.length || 0) > 0 ? (
@@ -1470,32 +1546,32 @@ export default function AbilityModelsPage() {
                         return (
                           <div
                             key={`${activeProfile.profile_id}-candidate-${instance.instance_id}`}
-                            className="grid gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0 dark:border-slate-800 md:grid-cols-[1fr_auto] md:items-center"
+                            className="grid gap-3 border-b border-slate-200 px-3 py-2.5 last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_120px_190px] md:items-center"
                           >
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-semibold text-slate-950 dark:text-white">
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="truncate text-sm font-semibold text-slate-950 dark:text-white">
                                   {runtimeModelRouteLabel(instance)}
                                 </span>
                                 <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                                   {statusLabel}
                                 </span>
-                                {isPrimary || isFallback ? (
-                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/35 dark:text-blue-200">
-                                    {isPrimary
-                                      ? aiText('ability_model_primary_model', 'Primary model')
-                                      : aiText('ability_model_fallback_model', 'Fallback model')}
-                                  </span>
-                                ) : null}
                               </div>
                               <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
                                 {abilityModelInstanceDetail(instance)}
                               </p>
                             </div>
+                            <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                              {isPrimary
+                                ? aiText('ability_model_primary_model', 'Primary model')
+                                : isFallback
+                                  ? aiText('ability_model_fallback_model', 'Fallback model')
+                                  : text('candidate_role_available', 'Available')}
+                            </div>
                             <div className="flex flex-wrap gap-2 md:justify-end">
                               <button
                                 type="button"
-                                className="btn btn-secondary justify-center text-xs"
+                                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
                                 disabled={isPrimary}
                                 onClick={() => updateRoutingCandidate(activeProfile.profile_id, 0, instance.instance_id)}
                               >
@@ -1503,7 +1579,7 @@ export default function AbilityModelsPage() {
                               </button>
                               <button
                                 type="button"
-                                className="btn btn-secondary justify-center text-xs"
+                                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
                                 disabled={isFallback}
                                 onClick={() => updateRoutingCandidate(activeProfile.profile_id, 1, instance.instance_id)}
                               >
@@ -1521,186 +1597,221 @@ export default function AbilityModelsPage() {
                   </div>
                 </div>
               </div>
-              <div className="space-y-3">
-                <div className="rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                    {text('runtime_policy_summary_title', 'Runtime policy')}
-                  </div>
-                  <dl className="mt-3 grid gap-2 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-slate-500 dark:text-slate-400">{aiText('field_timeout_ms', 'Timeout ms')}</dt>
-                      <dd className="font-medium text-slate-950 dark:text-white">
-                        {text('timeout_seconds_value', '{{seconds}}s', { seconds: String(Math.round(activeProfile.timeout_ms / 1000)) })}
-                      </dd>
+              <div className="space-y-3 lg:sticky lg:top-0 lg:self-start">
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-950/40">
+                  {activeProfileIsAudioGeneration ? (
+                    <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50/80 p-1 dark:border-slate-800 dark:bg-slate-900/35">
+                      {(['policy', 'preview'] as AbilityModelInspectorTab[]).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                            activeInspectorTab === tab
+                              ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-950 dark:text-white'
+                              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                          }`}
+                          onClick={() => setAbilityModelInspectorTab(tab)}
+                        >
+                          {tab === 'policy'
+                            ? text('inspector_tab_policy', 'Policy')
+                            : text('inspector_tab_preview', 'Preview')}
+                        </button>
+                      ))}
                     </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-slate-500 dark:text-slate-400">{aiText('field_allow_fallback', 'Provider fallback')}</dt>
-                      <dd className="font-medium text-slate-950 dark:text-white">
-                        {activeProfile.allow_fallback ? text('policy_enabled', 'Enabled') : text('policy_disabled', 'Disabled')}
-                      </dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-slate-500 dark:text-slate-400">{aiText('field_retry_max', 'Retry max')}</dt>
-                      <dd className="font-medium text-slate-950 dark:text-white">{activeProfile.max_retries}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white/70 px-3 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-100 dark:hover:bg-slate-900"
-                  aria-expanded={advancedRuntimePolicyOpen}
-                  onClick={() => setAdvancedRuntimePolicyOpen((current) => !current)}
-                >
-                  <span>{text('advanced_runtime_policy_title', 'Advanced runtime policy')}</span>
-                  <span className="text-slate-500 dark:text-slate-400">{advancedRuntimePolicyOpen ? '-' : '+'}</span>
-                </button>
-                {advancedRuntimePolicyOpen ? (
-                  <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        {aiText('field_timeout_ms', 'Timeout ms')}
-                      </span>
-                      <input
-                        type="number"
-                        min={1000}
-                        max={activeProfile.max_timeout_ms}
-                        step={1000}
-                        value={activeProfile.timeout_ms}
-                        onChange={(event) =>
-                          updateRoutingDraft(activeProfile.profile_id, {
-                            timeout_ms: Number(event.target.value) || 30000,
-                          })
-                        }
-                        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_allow_fallback', 'Provider fallback')}
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={activeProfile.allow_fallback}
-                        onChange={(event) =>
-                          updateRoutingDraft(activeProfile.profile_id, {
-                            allow_fallback: event.target.checked,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        {aiText('field_retry_max', 'Retry max')}
-                      </span>
-                      <select
-                        value={activeProfile.max_retries}
-                        onChange={(event) =>
-                          updateRoutingDraft(activeProfile.profile_id, {
-                            max_retries: Number(event.target.value) || 0,
-                          })
-                        }
-                        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                      >
-                        <option value={0}>0</option>
-                        <option value={1}>1</option>
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        {aiText('field_operator_note', 'Operator note')}
-                      </span>
-                      <textarea
-                        value={activeProfile.note}
-                        onChange={(event) => updateRoutingDraft(activeProfile.profile_id, { note: event.target.value })}
-                        rows={3}
-                        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                        placeholder={aiText('placeholder_ability_model_note', 'Why this ability-model route is being changed')}
-                      />
-                    </label>
-                  </div>
-                ) : null}
-                {activeProfileIsAudioGeneration ? (
-                  <div className="rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
+                  ) : null}
+                  <div className="p-3">
+                    {activeInspectorTab === 'policy' ? (
+                      <div className="space-y-3">
                         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                          {text('audio_preview_title_panel', 'Audio preview')}
+                          {text('runtime_policy_summary_title', 'Runtime policy')}
                         </div>
-                        <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                          {text('audio_preview_desc', 'Generate a short sample with the selected primary model. This does not save the route or write to WordPress.')}
-                        </p>
-                      </div>
-                      {audioPreviewJob?.status ? (
-                        <BackofficeStatusBadge
-                          label={audioPreviewJob.status}
-                          status={audioPreviewJob.status === 'failed' ? 'error' : audioPreviewJob.status === 'succeeded' ? 'success' : 'info'}
-                        />
-                      ) : null}
-                    </div>
-                    <label className="mt-3 grid gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      {text('audio_preview_text_label', 'Preview text')}
-                      <textarea
-                        className="min-h-24 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal leading-6 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                        value={audioPreviewText}
-                        maxLength={500}
-                        onChange={(event) => {
-                          setAudioPreviewText(event.target.value);
-                          setAudioPreviewError(null);
-                        }}
-                        placeholder={text('audio_preview_text_placeholder', 'Enter the text to read in the selected audio model.')}
-                      />
-                      <span className="font-normal text-slate-500 dark:text-slate-400">
-                        {text('audio_preview_text_help', '{{count}}/500 characters. Use a short sentence or paragraph for model audition.', {
-                          count: String(audioPreviewTextLength),
-                        })}
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      className="btn btn-secondary mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={audioPreviewCreating || !activeProfile.candidate_instance_ids[0]}
-                      onClick={() => void createAudioPreview()}
-                    >
-                      {audioPreviewCreating ? text('audio_preview_creating', 'Creating preview...') : text('audio_preview_action', 'Preview audio')}
-                    </button>
-                    {activeAudioPreviewError ? (
-                      <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
-                        <div className="font-semibold">{activeAudioPreviewError.message}</div>
-                        {activeAudioPreviewEvidence.length ? (
-                          <div className="mt-2 grid gap-1 text-rose-700 dark:text-rose-200/80">
-                            {activeAudioPreviewEvidence.map(([label, value]) => (
-                              <div key={label}>
-                                {label}: {value}
-                              </div>
-                            ))}
+                        <dl className="grid gap-2 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-slate-500 dark:text-slate-400">{text('field_timeout_seconds', 'Timeout')}</dt>
+                            <dd className="font-medium text-slate-950 dark:text-white">
+                              {text('timeout_seconds_value', '{{seconds}}s', { seconds: String(Math.round(activeProfile.timeout_ms / 1000)) })}
+                            </dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-slate-500 dark:text-slate-400">{aiText('field_allow_fallback', 'Provider fallback')}</dt>
+                            <dd className="font-medium text-slate-950 dark:text-white">
+                              {activeProfile.allow_fallback ? text('policy_enabled', 'Enabled') : text('policy_disabled', 'Disabled')}
+                            </dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-slate-500 dark:text-slate-400">{aiText('field_retry_max', 'Retry max')}</dt>
+                            <dd className="font-medium text-slate-950 dark:text-white">{activeProfile.max_retries}</dd>
+                          </div>
+                        </dl>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900"
+                          aria-expanded={advancedRuntimePolicyOpen}
+                          onClick={() => setAdvancedRuntimePolicyOpen((current) => !current)}
+                        >
+                          <span>{text('advanced_runtime_policy_title', 'Advanced runtime policy')}</span>
+                          <span className="text-slate-500 dark:text-slate-400">{advancedRuntimePolicyOpen ? '-' : '+'}</span>
+                        </button>
+                        {advancedRuntimePolicyOpen ? (
+                          <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                {aiText('field_timeout_ms', 'Timeout ms')}
+                              </span>
+                              <input
+                                type="number"
+                                min={1000}
+                                max={activeProfile.max_timeout_ms}
+                                step={1000}
+                                value={activeProfile.timeout_ms}
+                                onChange={(event) =>
+                                  updateRoutingDraft(activeProfile.profile_id, {
+                                    timeout_ms: Number(event.target.value) || 30000,
+                                  })
+                                }
+                                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              />
+                            </label>
+                            <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                {aiText('field_allow_fallback', 'Provider fallback')}
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={activeProfile.allow_fallback}
+                                onChange={(event) =>
+                                  updateRoutingDraft(activeProfile.profile_id, {
+                                    allow_fallback: event.target.checked,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                {aiText('field_retry_max', 'Retry max')}
+                              </span>
+                              <select
+                                value={activeProfile.max_retries}
+                                onChange={(event) =>
+                                  updateRoutingDraft(activeProfile.profile_id, {
+                                    max_retries: Number(event.target.value) || 0,
+                                  })
+                                }
+                                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              >
+                                <option value={0}>0</option>
+                                <option value={1}>1</option>
+                              </select>
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                {aiText('field_operator_note', 'Operator note')}
+                              </span>
+                              <textarea
+                                value={activeProfile.note}
+                                onChange={(event) => updateRoutingDraft(activeProfile.profile_id, { note: event.target.value })}
+                                rows={3}
+                                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                placeholder={aiText('placeholder_ability_model_note', 'Why this ability-model route is being changed')}
+                              />
+                            </label>
                           </div>
                         ) : null}
                       </div>
-                    ) : null}
-                    {audioPreviewJob ? (
-                      <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        <div>
-                          {text('audio_preview_model', 'Preview model')}: {audioPreviewJob.provider_id || '-'} / {audioPreviewJob.model_id || '-'}
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                              {text('audio_preview_title_panel', 'Audio preview')}
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                              {text('audio_preview_desc', 'Generate a short sample with the selected primary model. This does not save the route or write to WordPress.')}
+                            </p>
+                          </div>
+                          {activeAudioPreviewStatusLabel ? (
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                audioPreviewJob?.status === 'failed'
+                                  ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-200'
+                                  : audioPreviewJob?.status === 'succeeded'
+                                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-200'
+                                    : 'bg-blue-50 text-blue-700 dark:bg-blue-950/35 dark:text-blue-200'
+                              }`}
+                            >
+                              {activeAudioPreviewStatusLabel}
+                            </span>
+                          ) : null}
                         </div>
-                        <div>
-                          {text('audio_preview_run', 'Run')}: {audioPreviewJob.run_id}
-                        </div>
+                        {activeAudioPreviewSource ? (
+                          <audio className="w-full" controls src={activeAudioPreviewSource}>
+                            {text('audio_preview_unsupported', 'Your browser does not support audio playback.')}
+                          </audio>
+                        ) : audioPreviewJob && !['failed', 'canceled'].includes(audioPreviewJob.status) ? (
+                          <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                            {text('audio_preview_waiting', 'Waiting for a playable preview artifact.')}
+                          </div>
+                        ) : null}
+                        <label className={`grid gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 ${activeAudioPreviewSource ? 'rounded-lg border border-slate-200 p-2 dark:border-slate-800' : ''}`}>
+                          {activeAudioPreviewSource ? text('audio_preview_edit_text', 'Preview text') : text('audio_preview_text_label', 'Preview text')}
+                          <textarea
+                            className="min-h-20 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal leading-6 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                            value={audioPreviewText}
+                            maxLength={500}
+                            onChange={(event) => {
+                              setAudioPreviewText(event.target.value);
+                              setAudioPreviewError(null);
+                            }}
+                            placeholder={text('audio_preview_text_placeholder', 'Enter the text to read in the selected audio model.')}
+                          />
+                          <span className="font-normal text-slate-500 dark:text-slate-400">
+                            {text('audio_preview_text_help', '{{count}}/500 characters. Use a short sentence or paragraph for model audition.', {
+                              count: String(audioPreviewTextLength),
+                            })}
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          className="btn btn-secondary w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={audioPreviewCreating || !activeProfile.candidate_instance_ids[0]}
+                          onClick={() => void createAudioPreview()}
+                        >
+                          {audioPreviewCreating ? text('audio_preview_creating', 'Creating preview...') : text('audio_preview_action', 'Preview audio')}
+                        </button>
+                        {activeAudioPreviewError ? (
+                          <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
+                            <div className="font-semibold">{activeAudioPreviewError.message}</div>
+                            {activeAudioPreviewEvidence.length ? (
+                              <div className="mt-2 grid gap-1 text-rose-700 dark:text-rose-200/80">
+                                {activeAudioPreviewEvidence.map(([label, value]) => (
+                                  <div key={label}>
+                                    {label}: {value}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {audioPreviewJob ? (
+                          <details className="rounded-lg border border-slate-200 px-3 py-2 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            <summary className="cursor-pointer font-semibold text-slate-600 dark:text-slate-300">
+                              {text('audio_preview_run_detail', 'Run detail')}
+                            </summary>
+                            <div className="mt-2 break-all">
+                              {text('audio_preview_model', 'Preview model')}: {audioPreviewJob.provider_id || '-'} / {audioPreviewJob.model_id || '-'}
+                            </div>
+                            <div className="mt-1 break-all">
+                              {text('audio_preview_run', 'Run')}: {audioPreviewJob.run_id}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
-                    ) : null}
-                    {activeAudioPreviewSource ? (
-                      <audio className="mt-3 w-full" controls src={activeAudioPreviewSource}>
-                        {text('audio_preview_unsupported', 'Your browser does not support audio playback.')}
-                      </audio>
-                    ) : audioPreviewJob && !['failed', 'canceled'].includes(audioPreviewJob.status) ? (
-                      <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                        {text('audio_preview_waiting', 'Waiting for a playable preview artifact.')}
-                      </div>
-                    ) : null}
+                    )}
                   </div>
-                ) : null}
+                </div>
               </div>
             </div>
-            <div className="mt-5 grid gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+            <div className="sticky bottom-0 z-10 -mx-6 mt-5 grid gap-3 border-t border-slate-200 bg-white/95 px-6 py-4 text-sm text-slate-600 shadow-[0_-12px_24px_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-300">
               <div className="grid gap-2">
                 <span>{aiText('ability_model_save_notice', 'Saving updates the Cloud runtime profile binding used by this ability route.')}</span>
                 {dialogMessage ? (

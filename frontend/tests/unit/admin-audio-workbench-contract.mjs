@@ -35,7 +35,7 @@ assert.match(
 
 assert.match(
   abilityModelsPageSource,
-  /audio_preview_title_panel[\s\S]*<audio className="mt-3 w-full" controls/,
+  /inspector_tab_preview[\s\S]*audio_preview_title_panel[\s\S]*<audio className="w-full" controls/,
   'ability-model routing dialog must render the in-dialog audio preview player'
 );
 

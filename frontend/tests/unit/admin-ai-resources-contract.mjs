@@ -72,16 +72,22 @@ assert.doesNotMatch(
   'Advanced Troubleshooting must not own the provider management or ability-model routing active paths'
 );
 
-assert.match(
+assert.doesNotMatch(
   troubleshootingSource,
-  /Related operations/,
-  'Troubleshooting may expose AI resources only as a related operations link'
+  /\/admin\/ai-resources|Related operations|action_open_ai_resources/,
+  'Advanced Troubleshooting must not expose Provider Management as a related operations entry'
 );
 
-assert.match(
+assert.doesNotMatch(
   troubleshootingSource,
   /Top-level model and capability supplier operations/,
-  'Troubleshooting copy must explain provider management is a top-level operations entry'
+  'Advanced Troubleshooting must not keep duplicate Provider Management helper copy'
+);
+
+assert.doesNotMatch(
+  `${layoutSource}\n${troubleshootingSource}\n${i18nSource}`,
+  /\/admin\/hosted-models|admin\.nav_hosted_models|admin\.hosted_models\.|admin\.advanced\.hosted_models_desc/,
+  'Standalone Hosted Models navigation, troubleshooting copy, and page translations must be removed'
 );
 
 assert.match(
@@ -160,6 +166,24 @@ assert.match(
   pageSource,
   /fetch\('\/api\/admin\/ai-resources'/,
   'AI resources page must read the shared admin AI resources projection'
+);
+
+assert.match(
+  pageSource,
+  /recent_minutes: '1440'[\s\S]*limit: '25'[\s\S]*fetch\(`\/api\/admin\/hosted-model-governance\?\$\{params\.toString\(\)\}`/,
+  'Provider Management diagnostics must read the live runtime telemetry projection'
+);
+
+assert.match(
+  pageSource,
+  /runtime_telemetry_boundary_notice[\s\S]*run_records[\s\S]*provider_call_records[\s\S]*usage_meter_events/,
+  'Runtime telemetry must be framed as read-only evidence inside Provider Management diagnostics'
+);
+
+assert.match(
+  i18nSource,
+  /'admin\.ai_resources\.runtime_telemetry_status': '遥测状态'[\s\S]*'admin\.ai_resources\.runtime_telemetry_boundary_notice'/,
+  'Runtime telemetry diagnostics must provide Simplified Chinese copy under Provider Management'
 );
 
 assert.match(
@@ -326,7 +350,7 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /activeProfileIsAudioGeneration[\s\S]*createAudioPreview[\s\S]*preview_instance_id[\s\S]*<audio className="mt-3 w-full" controls/,
+  /activeProfileIsAudioGeneration[\s\S]*createAudioPreview[\s\S]*preview_instance_id[\s\S]*inspector_tab_preview[\s\S]*<audio className="w-full" controls/,
   'Ability-model audio route dialog must support in-dialog audio preview without saving the route'
 );
 
@@ -710,8 +734,20 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /can_configure: boolean[\s\S]*disabled=\{!row\.can_configure\}[\s\S]*openCloudBindingDialog\(row\)[\s\S]*cloud_native_action_readonly/,
-  'Cloud-native runtime projection rows must remain disabled unless the backend explicitly marks a row configurable'
+  /row\.can_configure \?[\s\S]*openCloudBindingDialog\(row\)[\s\S]*cloud_native_action_configure_model[\s\S]*cloud_native_action_readonly/,
+  'Cloud-native runtime projection rows must expose configure only when supported and render read-only rows as Cloud-managed'
+);
+
+assert.match(
+  abilityModelsSource,
+  /column_runtime_dependency[\s\S]*column_current_runtime[\s\S]*cloud_native_internal_details/,
+  'Cloud-native ability table must show operator-facing dependency/runtime columns and move internal profile ids into collapsed details'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /grid-cols-\[8rem_1\.4fr_1fr_1\.1fr_1\.2fr_9rem\]|column_model_kind[\s\S]*column_profile[\s\S]*column_provider_model/,
+  'Cloud-native ability table must not default-display model-kind/profile/provider technical columns'
 );
 
 assert.match(
@@ -943,7 +979,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /capability_channel_form_edit_title[\s\S]*Edit capability supplier/,
+  /providerDialogTitle = providerFormMode === 'edit'[\s\S]*isCapabilityProviderForm[\s\S]*capability_channel_form_edit_named_title[\s\S]*channel_form_edit_named_title/,
   'Capability supplier edit dialog must not reuse the model provider channel title'
 );
 
@@ -1151,6 +1187,12 @@ assert.match(
   'Provider channel model list must keep search above the table and move column filters into sticky headers'
 );
 
+assert.match(
+  pageSource,
+  /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(18rem,0\.8fr\)\][\s\S]*model_visibility_operations_title[\s\S]*model_visibility_status_title[\s\S]*manual_model_add_title[\s\S]*manual_model_add_desc/,
+  'Provider channel low-frequency model tools must separate actions, status, and manual model add'
+);
+
 assert.doesNotMatch(
   pageSource,
   /xl:grid-cols-\[minmax\(16rem,1fr\)_10rem_10rem_auto_auto\]/,
@@ -1167,6 +1209,12 @@ assert.match(
   pageSource,
   /field_visibility_filter[\s\S]*catalog_model_header_model[\s\S]*aria-pressed=\{row\.selected\}[\s\S]*status_model_enabled[\s\S]*status_model_disabled/,
   'Provider channel model rows must combine visibility status and enable-disable action into one visibility control'
+);
+
+assert.match(
+  pageSource,
+  /sourceKind: 'manual'[\s\S]*const canRemoveManualModel = row\.sourceKind === 'manual' && row\.selected[\s\S]*removeProviderModelId\(row\.modelId\)[\s\S]*action_remove_manual_model/,
+  'Provider channel manually added saved-ID rows must expose an explicit remove action'
 );
 
 assert.doesNotMatch(

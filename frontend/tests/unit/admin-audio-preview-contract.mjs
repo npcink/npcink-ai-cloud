@@ -22,6 +22,18 @@ assert.match(
 
 assert.match(
   routeSource,
+  /isAllowedCloudArtifactUrl[\s\S]*\/v1\\\/runtime\\\/artifacts\\\/art_\[A-Za-z0-9\]\+\\\/public-download/,
+  'audio preview proxy must allowlist Cloud runtime audio artifact URLs'
+);
+
+assert.match(
+  routeSource,
+  /buildBackendUrl\(`\$\{parsed\.url\.pathname\}\$\{parsed\.url\.search\}`\)/,
+  'audio preview proxy must fetch Cloud artifact URLs through the backend API base'
+);
+
+assert.match(
+  routeSource,
   /headers\.Range = range;/,
   'audio preview proxy must forward browser Range requests'
 );
