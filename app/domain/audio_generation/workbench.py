@@ -31,9 +31,8 @@ from app.domain.runtime.service import (
     RuntimeService,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
-    WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID,
+    WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
+    WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
 )
 
 ALLOWED_AUDIO_WORKBENCH_INTENTS = frozenset({"article_narration", "article_audio_summary"})
@@ -85,7 +84,16 @@ class AudioWorkbenchService:
         runtime_service = self._runtime_service()
         script_bundle = self._build_script_bundle(request_payload, runtime_service=runtime_service)
         audio_profile_id = self._audio_profile_id_for_intent(str(request_payload["intent"]))
+        preview_instance_id = self._validated_preview_instance_id(
+            request_payload,
+            audio_profile_id=audio_profile_id,
+            runtime_service=runtime_service,
+        )
         script_generation = _dict(script_bundle["generation"])
+        policy: dict[str, object] = {"allow_fallback": False}
+        if preview_instance_id:
+            policy["preferred_instance_id"] = preview_instance_id
+            policy["preview_source"] = "ability_model_dialog"
         runtime_request = RuntimeRequest(
             site_id=str(request_payload["site_id"]),
             ability_name=AUDIO_GENERATION_CLOUD_ABILITY,
@@ -120,9 +128,10 @@ class AudioWorkbenchService:
                     "script_source": script_bundle["source"],
                     "script_generation_present": bool(script_generation.get("run_id")),
                     "audio_profile_id": audio_profile_id,
+                    "preview_instance_id": preview_instance_id,
                 },
             },
-            policy={"allow_fallback": False},
+            policy=policy,
             idempotency_key=f"admin-audio-{uuid4().hex}",
             trace_id=f"admin-audio-{uuid4().hex}",
         )
@@ -235,10 +244,43 @@ class AudioWorkbenchService:
             "body": body,
             "site_id": site_id,
             "format": audio_format,
+            "preview_instance_id": str(payload.get("preview_instance_id") or "").strip(),
             "script_source": (
                 "full_article" if intent == "article_narration" else AUDIO_SUMMARY_SCRIPT_INTENT
             ),
         }
+
+    def _validated_preview_instance_id(
+        self,
+        payload: dict[str, object],
+        *,
+        audio_profile_id: str,
+        runtime_service: RuntimeService,
+    ) -> str:
+        preview_instance_id = str(payload.get("preview_instance_id") or "").strip()
+        if not preview_instance_id:
+            return ""
+        try:
+            resolution = runtime_service.routing_service.resolve(
+                profile_id=audio_profile_id,
+                execution_kind=AUDIO_GENERATION_EXECUTION_KIND,
+            )
+        except RoutingError as error:
+            raise AudioWorkbenchError(
+                "audio_workbench.preview_route_unavailable",
+                "audio preview route is not available",
+                details={"profile_id": audio_profile_id},
+            ) from error
+        if any(candidate.instance_id == preview_instance_id for candidate in resolution.candidates):
+            return preview_instance_id
+        raise AudioWorkbenchError(
+            "audio_workbench.preview_instance_invalid",
+            "audio preview model is not available for this route",
+            details={
+                "profile_id": audio_profile_id,
+                "preview_instance_id": preview_instance_id,
+            },
+        )
 
     def _build_script_bundle(
         self,
@@ -412,12 +454,10 @@ class AudioWorkbenchService:
         )
 
     def _audio_summary_text_profile_id(self) -> str:
-        return WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID
+        return WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
 
     def _audio_profile_id_for_intent(self, intent: str) -> str:
-        if intent == "article_audio_summary":
-            return WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID
-        return WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID
+        return WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID
 
     def _job_payload(
         self,

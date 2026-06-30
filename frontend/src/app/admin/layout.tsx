@@ -88,7 +88,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         '/admin/media-observability',
         '/admin/agent-feedback',
         '/admin/ai-advisor',
-        '/admin/audio-workbench',
         '/admin/vector-observability',
         '/admin/hosted-models',
         '/admin/wordpress-ai-routing',

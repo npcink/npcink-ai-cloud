@@ -4,9 +4,11 @@ import assert from 'node:assert/strict';
 
 const routePath = resolve(process.cwd(), 'src/app/api/admin/audio-preview/route.ts');
 const workbenchPagePath = resolve(process.cwd(), 'src/app/admin/audio-workbench/page.tsx');
+const abilityModelsPagePath = resolve(process.cwd(), 'src/app/admin/ability-models/page.tsx');
 
 const routeSource = readFileSync(routePath, 'utf8');
 const workbenchPageSource = readFileSync(workbenchPagePath, 'utf8');
+const abilityModelsPageSource = readFileSync(abilityModelsPagePath, 'utf8');
 
 assert.match(
   routeSource,
@@ -36,6 +38,18 @@ assert.match(
   workbenchPageSource,
   /\/api\/admin\/audio-preview\?url=\$\{encodeURIComponent\(audio\.url\)\}/,
   'audio workbench playback must use the same-origin audio preview proxy'
+);
+
+assert.match(
+  abilityModelsPageSource,
+  /\/api\/admin\/audio-preview\?url=\$\{encodeURIComponent\(audio\.url\)\}/,
+  'ability-model audio preview playback must use the same-origin audio preview proxy'
+);
+
+assert.match(
+  abilityModelsPageSource,
+  /preview_instance_id: previewInstanceId/,
+  'ability-model audio preview must pass the selected route candidate without saving the route'
 );
 
 console.log('admin_audio_preview_contract: ok');

@@ -99,6 +99,27 @@ type AbilityModelRouteRow = {
   routeTypeLabel: string;
 };
 
+type AudioPreviewJob = {
+  run_id: string;
+  status: string;
+  trace_id?: string;
+  provider_id?: string;
+  model_id?: string;
+  instance_id?: string;
+  profile_id?: string;
+  error_code?: string;
+  error_message?: string;
+  result_ready?: boolean;
+  result?: {
+    audios?: Array<{
+      url?: string;
+      b64_json?: string;
+      mime_type?: string;
+      duration_seconds?: number;
+    }>;
+  };
+};
+
 const MAX_DIALOG_CANDIDATE_OPTIONS = 24;
 
 function isModelProviderConnection(connection: ProviderConnectionProjection): boolean {
@@ -251,6 +272,14 @@ function resolveAdminApiPayloadMessage(payload: any, fallback: string): string {
   return resolveUiErrorMessage(payload, fallback);
 }
 
+function audioPreviewSource(job: AudioPreviewJob | null): string {
+  const audio = job?.result?.audios?.[0];
+  if (!audio) return '';
+  if (audio.url) return `/api/admin/audio-preview?url=${encodeURIComponent(audio.url)}`;
+  if (audio.b64_json) return `data:${audio.mime_type || 'audio/mpeg'};base64,${audio.b64_json}`;
+  return '';
+}
+
 export default function AbilityModelsPage() {
   const { t } = useLocale();
   const text = useCallback(
@@ -283,6 +312,9 @@ export default function AbilityModelsPage() {
   const [cloudBindingModelSearchQuery, setCloudBindingModelSearchQuery] = useState('');
   const [savingCloudBinding, setSavingCloudBinding] = useState(false);
   const [advancedRuntimePolicyOpen, setAdvancedRuntimePolicyOpen] = useState(false);
+  const [audioPreviewCreating, setAudioPreviewCreating] = useState(false);
+  const [audioPreviewJob, setAudioPreviewJob] = useState<AudioPreviewJob | null>(null);
+  const [audioPreviewError, setAudioPreviewError] = useState('');
 
   const loadProviderDisplayNames = useCallback(async () => {
     setLoading(true);
@@ -385,7 +417,7 @@ export default function AbilityModelsPage() {
       comment_moderation: aiText('ability_task_comment_moderation', 'Comment moderation'),
       content_classification: aiText('ability_task_content_classification', 'Content classification'),
       image_generation: aiText('ability_task_image_generation', 'Image generation'),
-      audio_summary_script: text('route_audio_summary_text', 'Audio summary text'),
+      audio_summary_script: text('cloud_ability_audio_summary_script', 'Audio summary script'),
       article_narration: text('route_article_narration_audio', 'Article narration audio'),
       article_audio_summary: text('route_audio_summary_playback', 'Audio summary playback'),
     };
@@ -525,9 +557,7 @@ export default function AbilityModelsPage() {
       'content.editorial': text('route_content_editorial', 'Editorial assistance'),
       'content.classification': text('route_content_classification', 'Content classification'),
       'media.image_generation': text('route_media_image_generation', 'Image generation candidates'),
-      'audio.summary_text': text('route_audio_summary_text', 'Audio summary text'),
-      'audio.article_narration': text('route_article_narration_audio', 'Article narration audio'),
-      'audio.summary_playback': text('route_audio_summary_playback', 'Audio summary playback'),
+      'audio.generation': text('route_audio_generation', 'Audio generation'),
     };
     if (profile.routing_intent && labels[profile.routing_intent]) return labels[profile.routing_intent];
     if (profile.tasks.length === 1) return abilityTaskLabel(profile.tasks[0]);
@@ -697,6 +727,14 @@ export default function AbilityModelsPage() {
     runtimeInstancesById,
     runtimeModelRouteLabel,
   ]);
+
+  const activeProfileIsAudioGeneration = Boolean(
+    activeProfile && (
+      activeProfile.execution_kind === 'audio_generation' ||
+      activeProfile.routing_intent.startsWith('audio.')
+    )
+  );
+  const activeAudioPreviewSource = audioPreviewSource(audioPreviewJob);
 
   const activeCloudBindingModelData = useMemo(() => {
     if (!cloudBindingDialogRow) return null;
@@ -876,6 +914,70 @@ export default function AbilityModelsPage() {
     }
   }
 
+  const loadAudioPreviewJob = useCallback(async (runId: string) => {
+    try {
+      const response = await fetch(`/api/admin/audio-jobs/${encodeURIComponent(runId)}`, {
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(resolveAdminApiPayloadMessage(payload, text('audio_preview_error_load', 'Failed to load audio preview.')));
+      }
+      setAudioPreviewJob(payload.data as AudioPreviewJob);
+    } catch (error) {
+      setAudioPreviewError(error instanceof Error ? error.message : text('audio_preview_error_load', 'Failed to load audio preview.'));
+    }
+  }, [text]);
+
+  async function createAudioPreview() {
+    if (!activeProfile || !activeProfileIsAudioGeneration) return;
+    const previewInstanceId = activeProfile.candidate_instance_ids[0] || '';
+    if (!previewInstanceId) {
+      setAudioPreviewError(text('audio_preview_error_no_model', 'Select a primary audio model before previewing.'));
+      return;
+    }
+    setAudioPreviewCreating(true);
+    setAudioPreviewError('');
+    setAudioPreviewJob(null);
+    try {
+      const response = await fetch('/api/admin/audio-jobs', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': generateIdempotencyKey('ability_audio_preview'),
+        },
+        body: JSON.stringify({
+          site_id: 'site_smoke',
+          intent: 'article_narration',
+          title: text('audio_preview_title', 'Audio model preview'),
+          body: text('audio_preview_sample_text', 'This is a short audio sample for checking the selected voice model.'),
+          format: 'mp3',
+          preview_instance_id: previewInstanceId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(resolveAdminApiPayloadMessage(payload, text('audio_preview_error_create', 'Failed to create audio preview.')));
+      }
+      setAudioPreviewJob(payload.data as AudioPreviewJob);
+    } catch (error) {
+      setAudioPreviewError(error instanceof Error ? error.message : text('audio_preview_error_create', 'Failed to create audio preview.'));
+    } finally {
+      setAudioPreviewCreating(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!audioPreviewJob?.run_id || ['succeeded', 'failed', 'canceled'].includes(audioPreviewJob.status)) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadAudioPreviewJob(audioPreviewJob.run_id);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [audioPreviewJob?.run_id, audioPreviewJob?.status, loadAudioPreviewJob]);
+
   function openAbilityModelDialog(profileId: string) {
     setActiveProfileId(profileId);
     setModelProviderFilter('');
@@ -885,6 +987,9 @@ export default function AbilityModelsPage() {
     setDialogMessage('');
     setPageError('');
     setPageMessage('');
+    setAudioPreviewJob(null);
+    setAudioPreviewError('');
+    setAudioPreviewCreating(false);
   }
 
   function openCloudBindingDialog(row: CloudAbilityRuntimeRow) {
@@ -905,6 +1010,9 @@ export default function AbilityModelsPage() {
     setAdvancedRuntimePolicyOpen(false);
     setDialogError('');
     setDialogMessage('');
+    setAudioPreviewJob(null);
+    setAudioPreviewError('');
+    setAudioPreviewCreating(false);
   }
 
   function closeCloudBindingDialog() {
@@ -1431,6 +1539,58 @@ export default function AbilityModelsPage() {
                         placeholder={aiText('placeholder_ability_model_note', 'Why this ability-model route is being changed')}
                       />
                     </label>
+                  </div>
+                ) : null}
+                {activeProfileIsAudioGeneration ? (
+                  <div className="rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                          {text('audio_preview_title_panel', 'Audio preview')}
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {text('audio_preview_desc', 'Generate a short sample with the selected primary model. This does not save the route or write to WordPress.')}
+                        </p>
+                      </div>
+                      {audioPreviewJob?.status ? (
+                        <BackofficeStatusBadge
+                          label={audioPreviewJob.status}
+                          status={audioPreviewJob.status === 'failed' ? 'error' : audioPreviewJob.status === 'succeeded' ? 'success' : 'info'}
+                        />
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={audioPreviewCreating || !activeProfile.candidate_instance_ids[0]}
+                      onClick={() => void createAudioPreview()}
+                    >
+                      {audioPreviewCreating ? text('audio_preview_creating', 'Creating preview...') : text('audio_preview_action', 'Preview audio')}
+                    </button>
+                    {audioPreviewError ? (
+                      <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
+                        {audioPreviewError}
+                      </div>
+                    ) : null}
+                    {audioPreviewJob ? (
+                      <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        <div>
+                          {text('audio_preview_model', 'Preview model')}: {audioPreviewJob.provider_id || '-'} / {audioPreviewJob.model_id || '-'}
+                        </div>
+                        <div>
+                          {text('audio_preview_run', 'Run')}: {audioPreviewJob.run_id}
+                        </div>
+                      </div>
+                    ) : null}
+                    {activeAudioPreviewSource ? (
+                      <audio className="mt-3 w-full" controls src={activeAudioPreviewSource}>
+                        {text('audio_preview_unsupported', 'Your browser does not support audio playback.')}
+                      </audio>
+                    ) : audioPreviewJob && !['failed', 'canceled'].includes(audioPreviewJob.status) ? (
+                      <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        {text('audio_preview_waiting', 'Waiting for a playable preview artifact.')}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

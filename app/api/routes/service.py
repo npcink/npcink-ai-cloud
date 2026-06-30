@@ -251,6 +251,7 @@ class AudioWorkbenchCreatePayload(BaseModel):
     title: str = Field(default="", max_length=240)
     body: str = Field(min_length=1, max_length=25000)
     format: str = Field(default="mp3", max_length=16)
+    preview_instance_id: str = Field(default="", max_length=191)
 
 
 class AIResourceProfilePreferencePayload(BaseModel):

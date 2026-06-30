@@ -355,6 +355,7 @@ class RuntimeService:
             execution_kind=request.execution_kind,
         )
         merged_policy = self._merge_policy(resolution.default_policy, request.policy)
+        resolution = self._prefer_routing_candidate(resolution, merged_policy)
         merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
@@ -6793,6 +6794,29 @@ class RuntimeService:
             self._serialize_routing_candidate(candidate) for candidate in resolution.candidates
         ]
         return policy
+
+    def _prefer_routing_candidate(
+        self,
+        resolution: RoutingResolution,
+        policy: dict[str, object],
+    ) -> RoutingResolution:
+        preferred_instance_id = str(policy.get("preferred_instance_id") or "").strip()
+        if not preferred_instance_id:
+            return resolution
+        candidates = list(resolution.candidates)
+        preferred = [
+            candidate
+            for candidate in candidates
+            if candidate.instance_id == preferred_instance_id
+        ]
+        if not preferred:
+            return resolution
+        resolution.candidates = preferred + [
+            candidate
+            for candidate in candidates
+            if candidate.instance_id != preferred_instance_id
+        ]
+        return resolution
 
     def _apply_commercial_policy_overrides(
         self,

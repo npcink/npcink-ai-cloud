@@ -33,6 +33,10 @@ const aiResourcesPrimaryPanelStart = pageSource.indexOf("description={aiText('de
 const aiResourcesPrimaryPanelSource = aiResourcesPrimaryPanelStart >= 0
   ? pageSource.slice(aiResourcesPrimaryPanelStart, pageSource.indexOf('</BackofficePrimaryPanel>', aiResourcesPrimaryPanelStart))
   : '';
+const autoSyncModelReferencesStart = pageSource.indexOf('const autoSyncModelReferences');
+const autoSyncModelReferencesSource = autoSyncModelReferencesStart >= 0
+  ? pageSource.slice(autoSyncModelReferencesStart, pageSource.indexOf('async function runProviderConnectionTest', autoSyncModelReferencesStart))
+  : '';
 
 const aiResourcesNavIndex = layoutSource.indexOf("href: '/admin/ai-resources'");
 const abilityModelsNavIndex = layoutSource.indexOf("href: '/admin/ability-models'");
@@ -316,6 +320,36 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   pageSource,
+  /profile_preferences|audio_summary_text_profile_id|audio_narration_profile_id|audio_summary_audio_profile_id/,
+  'AI resources page must not keep the old audio profile preference surface after routing moved to ability models'
+);
+
+assert.match(
+  abilityModelsSource,
+  /activeProfileIsAudioGeneration[\s\S]*createAudioPreview[\s\S]*preview_instance_id[\s\S]*<audio className="mt-3 w-full" controls/,
+  'Ability-model audio route dialog must support in-dialog audio preview without saving the route'
+);
+
+assert.match(
+  abilityModelsSource,
+  /\/api\/admin\/audio-preview\?url=\$\{encodeURIComponent\(audio\.url\)\}/,
+  'Ability-model audio preview must use the same-origin audio preview proxy'
+);
+
+assert.doesNotMatch(
+  layoutSource,
+  /\/admin\/audio-workbench/,
+  'Admin primary navigation must not expose the standalone audio workbench after preview moved into ability-model routing'
+);
+
+assert.doesNotMatch(
+  troubleshootingSource,
+  /\/admin\/audio-workbench|action_open_audio_workbench|nav_audio_workbench/,
+  'Advanced troubleshooting catalog must not expose the standalone audio workbench as a routine entry'
+);
+
+assert.doesNotMatch(
+  pageSource,
   /tab_ability_models/,
   'Provider Management must not expose Ability-Model Routing as an internal tab'
 );
@@ -364,8 +398,14 @@ assert.match(
 
 assert.match(
   pageSource,
-  /duplicateProviderConnectionChannel[\s\S]*credential: ''[\s\S]*action_create_backup_channel/,
-  'Provider channel form must let operators create a backup channel without copying the secret'
+  /addProviderCredentialChannel[\s\S]*credential: ''[\s\S]*action_add_credential_channel/,
+  'Provider channel form must let operators add a credential channel without copying the secret'
+);
+
+assert.match(
+  capabilitySupplierTableSource,
+  /capabilityProviderPurposeLabel\(connection\)[\s\S]*status_configured_label[\s\S]*showPriority[\s\S]*channel_priority_summary/,
+  'Capability supplier table must keep priority in the connection column instead of the supplier identity column'
 );
 
 assert.match(
@@ -1148,6 +1188,18 @@ assert.match(
 );
 
 assert.match(
+  autoSyncModelReferencesSource,
+  /catch \(syncError\)[\s\S]*setModelReferenceAutoSyncError/,
+  'Automatic models.dev sync failures must stay local to the model reference panel'
+);
+
+assert.doesNotMatch(
+  autoSyncModelReferencesSource,
+  /catch \(syncError\)[\s\S]*setError/,
+  'Automatic models.dev sync failures must not raise a page-level global error'
+);
+
+assert.match(
   pageSource,
   /disabled=\{syncingModelReferences \|\| autoSyncingModelReferences \|\| loadingModelReferences \|\| savingConnection\}/,
   'Provider channel reference sync action must be disabled while automatic models.dev sync is running'
@@ -1161,7 +1213,7 @@ assert.match(
 
 assert.match(
   i18nSource,
-  /'admin\.ai_resources\.model_reference_status_auto_syncing': '[^']*自动同步 models\.dev[^']*'[\s\S]*'admin\.ai_resources\.model_reference_status_loaded': '[^']*models\.dev[^']*'[\s\S]*'admin\.ai_resources\.model_reference_status_not_synced': '[^']*尚未同步[^']*'/,
+  /'admin\.ai_resources\.model_reference_status_auto_syncing': '[^']*自动同步 models\.dev[^']*'[\s\S]*'admin\.ai_resources\.model_reference_status_auto_sync_failed': '[^']*自动同步失败[^']*'[\s\S]*'admin\.ai_resources\.model_reference_status_loaded': '[^']*models\.dev[^']*'[\s\S]*'admin\.ai_resources\.model_reference_status_not_synced': '[^']*尚未同步[^']*'/,
   'Provider channel models.dev reference status copy must be localized in Simplified Chinese'
 );
 
@@ -1345,10 +1397,10 @@ assert.match(
   'Capability supplier templates must include Zhihu as a built-in search supplier'
 );
 
-assert.match(
+assert.doesNotMatch(
   pageSource,
   /label: 'TEI Embedding'/,
-  'Capability supplier templates must include TEI as a built-in embedding supplier'
+  'Capability supplier templates must not default-expose embedding model providers as capability suppliers'
 );
 
 assert.doesNotMatch(
@@ -1485,13 +1537,13 @@ assert.match(
 
 assert.match(
   i18nSource,
-  /capability_provider_purpose_search[\s\S]*capability_provider_purpose_image[\s\S]*capability_provider_purpose_embedding[\s\S]*capability_provider_purpose_rerank[\s\S]*capability_provider_purpose_vector_store/,
+  /capability_provider_purpose_search[\s\S]*capability_provider_purpose_image[\s\S]*capability_provider_purpose_rerank[\s\S]*capability_provider_purpose_vector_store/,
   'Capability supplier purpose labels must provide Simplified Chinese copy instead of exposing endpoints in the list'
 );
 
 assert.match(
   i18nSource,
-  /action_create_backup_channel[\s\S]*message_creating_backup_channel[\s\S]*field_channel_priority[\s\S]*field_channel_note/,
+  /action_add_credential_channel[\s\S]*message_creating_credential_channel[\s\S]*field_channel_priority[\s\S]*field_channel_note/,
   'Provider channel note and priority controls must provide Simplified Chinese copy'
 );
 
@@ -1539,8 +1591,14 @@ assert.match(
 
 assert.match(
   pageSource,
-  /isAiSupplier \? \(/,
-  'AI resources provider edit/test/delete actions must be limited to AI suppliers'
+  /deleteProviderConnection[\s\S]*\/api\/admin\/provider-connections\/\$\{encodeURIComponent\(connection\.connection_id\)\}[\s\S]*method: 'DELETE'/,
+  'AI resources provider connection rows must call the bounded provider-connection delete endpoint'
+);
+
+assert.match(
+  capabilitySupplierTableSource,
+  /connection\.managed_by === 'cloud_provider_connections'[\s\S]*deleteProviderConnection\(connection\)[\s\S]*action_delete/,
+  'Capability supplier rows must expose delete only for DB-managed provider connections'
 );
 
 assert.match(

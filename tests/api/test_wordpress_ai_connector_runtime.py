@@ -22,9 +22,7 @@ from app.core.models import RunRecord
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.wordpress_ai_connector.routing_profiles import (
-    WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID,
+    WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
@@ -333,7 +331,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
     assert provider.requests[0].ability_name == "npcink-cloud/wp-ai-connector"
     assert provider.requests[0].execution_kind == "text"
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
-    assert provider.requests[0].timeout_ms == 20000
+    assert provider.requests[0].timeout_ms == 45000
     provider_input = provider.requests[0].input_payload
     assert "messages" not in provider_input
     assert "tools" not in provider_input
@@ -353,7 +351,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert run.policy_json["managed_surface"] == "wordpress_ai_connector"
         assert run.policy_json["task_group"] == "short_text"
         assert run.policy_json["routing_intent"] == "content.short_text"
-        assert run.policy_json["timeout_ms"] == 20000
+        assert run.policy_json["timeout_ms"] == 45000
         assert run.policy_json["execution_contract"]["contract_version"] == (
             "wp_ai_connector_runtime.v1"
         )
@@ -576,6 +574,7 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
     assert data["direct_wordpress_write"] is False
     assert data["boundary"]["cloud_ability_registry"] is False
     assert data["boundary"]["wordpress_ability_truth"] == "local_plugin"
+    assert len(data["profiles"]) == 5
     assert data["available_text_instances"][0]["instance_id"] == (
         "openai-wp-ai-connector-test"
     )
@@ -591,6 +590,7 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
         "excerpt_generation",
         "meta_description",
         "title_generation",
+        "audio_summary_script",
     ]
     assert short_text["routing_intent"] == "content.short_text"
     image_generation = next(
@@ -603,33 +603,18 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
     assert image_generation["tasks"] == ["image_generation"]
     assert image_generation["candidate_instance_ids"] == ["openai-wp-ai-image-test"]
     assert image_generation["timeout_ms"] == 90000
-    audio_summary_text = next(
+    audio_generation = next(
         profile
         for profile in data["profiles"]
-        if profile["profile_id"] == WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID
+        if profile["profile_id"] == WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID
     )
-    assert audio_summary_text["execution_kind"] == "text"
-    assert audio_summary_text["routing_intent"] == "audio.summary_text"
-    assert audio_summary_text["tasks"] == ["audio_summary_script"]
-    assert audio_summary_text["candidate_instance_ids"] == ["openai-wp-ai-connector-test"]
-    article_narration = next(
-        profile
-        for profile in data["profiles"]
-        if profile["profile_id"] == WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID
-    )
-    assert article_narration["execution_kind"] == "audio_generation"
-    assert article_narration["routing_intent"] == "audio.article_narration"
-    assert article_narration["tasks"] == ["article_narration"]
-    assert article_narration["candidate_instance_ids"] == ["openai-wp-ai-audio-test"]
-    audio_summary_playback = next(
-        profile
-        for profile in data["profiles"]
-        if profile["profile_id"] == WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID
-    )
-    assert audio_summary_playback["execution_kind"] == "audio_generation"
-    assert audio_summary_playback["routing_intent"] == "audio.summary_playback"
-    assert audio_summary_playback["tasks"] == ["article_audio_summary"]
-    assert audio_summary_playback["candidate_instance_ids"] == ["openai-wp-ai-audio-test"]
+    assert audio_generation["execution_kind"] == "audio_generation"
+    assert audio_generation["routing_intent"] == "audio.generation"
+    assert audio_generation["tasks"] == [
+        "article_narration",
+        "article_audio_summary",
+    ]
+    assert audio_generation["candidate_instance_ids"] == ["openai-wp-ai-audio-test"]
 
     response = client.post(
         "/internal/service/admin/wordpress-ai-routing",

@@ -91,17 +91,6 @@ const advancedEntries: AdvancedEntry[] = [
     groupKey: 'admin.advanced.group_governance',
     groupFallback: 'Governance',
   },
-  {
-    href: '/admin/audio-workbench',
-    titleKey: 'admin.nav_audio_workbench',
-    titleFallback: 'Audio Workbench',
-    descKey: 'admin.advanced.audio_workbench_desc',
-    descFallback: 'Article narration and long-form audio summary job creation.',
-    actionKey: 'admin.advanced.action_open_audio_workbench',
-    actionFallback: 'Open audio workbench',
-    groupKey: 'admin.advanced.group_capabilities',
-    groupFallback: 'Capabilities',
-  },
 ];
 
 const relatedEntries: RelatedEntry[] = [

@@ -7,18 +7,14 @@ WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID = "wp-ai.short-text"
 WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID = "wp-ai.editorial"
 WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID = "wp-ai.classification"
 WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID = "wp-ai.image-generation"
-WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID = "wp-ai.audio-summary-text"
-WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID = "wp-ai.article-narration"
-WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID = "wp-ai.audio-summary-playback"
+WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID = "wp-ai.audio-generation"
 
 WP_AI_CONNECTOR_PROFILE_IDS = (
     WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
     WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID,
-    WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID,
+    WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
 )
 
 
@@ -50,15 +46,16 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
             "excerpt_generation",
             "meta_description",
             "title_generation",
+            "audio_summary_script",
         ),
         ordered_tiers=("balanced", "economy", "hosted-free", "free-gpt55"),
-        timeout_ms=20_000,
+        timeout_ms=45_000,
         max_timeout_ms=60_000,
         allow_fallback=True,
         max_retries=0,
         description=(
             "Low-latency WordPress AI suggestions for titles, SEO text, excerpts, "
-            "and alt text."
+            "alt text, and audio summary scripts."
         ),
     ),
     WordPressAIConnectorProfileSpec(
@@ -117,46 +114,24 @@ WP_AI_CONNECTOR_PROFILE_SPECS: tuple[WordPressAIConnectorProfileSpec, ...] = (
         ),
     ),
     WordPressAIConnectorProfileSpec(
-        profile_id=WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID,
-        group_id="audio_summary_text",
-        routing_intent="audio.summary_text",
-        label="Audio summary text",
-        execution_kind="text",
-        tasks=("audio_summary_script",),
-        ordered_tiers=("balanced", "economy", "hosted-free", "free-gpt55"),
-        timeout_ms=45_000,
-        max_timeout_ms=60_000,
-        allow_fallback=True,
-        max_retries=0,
-        description="Text model used to prepare scripts before generating audio summaries.",
-    ),
-    WordPressAIConnectorProfileSpec(
-        profile_id=WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID,
-        group_id="article_narration_audio",
-        routing_intent="audio.article_narration",
-        label="Article narration audio",
+        profile_id=WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
+        group_id="audio_generation",
+        routing_intent="audio.generation",
+        label="Audio generation",
         execution_kind="audio_generation",
-        tasks=("article_narration",),
+        tasks=(
+            "article_narration",
+            "article_audio_summary",
+        ),
         ordered_tiers=("default", "balanced", "narration", "quality"),
         timeout_ms=90_000,
         max_timeout_ms=120_000,
         allow_fallback=True,
         max_retries=0,
-        description="Audio model used to generate article narration candidates.",
-    ),
-    WordPressAIConnectorProfileSpec(
-        profile_id=WP_AI_CONNECTOR_AUDIO_SUMMARY_PLAYBACK_PROFILE_ID,
-        group_id="audio_summary_playback",
-        routing_intent="audio.summary_playback",
-        label="Audio summary playback",
-        execution_kind="audio_generation",
-        tasks=("article_audio_summary",),
-        ordered_tiers=("default", "balanced", "narration", "quality"),
-        timeout_ms=90_000,
-        max_timeout_ms=120_000,
-        allow_fallback=True,
-        max_retries=0,
-        description="Audio model used to generate long-form audio summary playback.",
+        description=(
+            "Audio model used to generate WordPress article narration and audio "
+            "summary playback."
+        ),
     ),
 )
 

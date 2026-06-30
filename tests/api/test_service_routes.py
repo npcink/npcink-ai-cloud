@@ -36,6 +36,7 @@ from app.core.models import (
     AccountUserMembership,
     BillingSnapshot,
     ModelReferenceModel,
+    ModelReferenceSource,
     PluginObservabilityEvent,
     Principal,
     ProviderCallRecord,
@@ -66,8 +67,8 @@ from app.domain.web_search.service import (
     WebSearchProviderUsage,
 )
 from app.domain.wordpress_ai_connector.routing_profiles import (
-    WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID,
-    WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID,
+    WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
+    WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
 )
 from app.workers.ops_cadence import run_due_tasks
 from tests.conftest import (
@@ -1572,6 +1573,11 @@ def test_admin_model_references_syncs_models_dev_payload_as_reference_only(
     assert sync_data["boundary"]["reference_only"] is True
     assert sync_data["boundary"]["routing_truth"] is False
 
+    with get_session(database_url) as session:
+        source = session.get(ModelReferenceSource, "models.dev")
+        assert source is not None
+        assert source.status == "active"
+
     list_response = client.get(
         "/internal/service/admin/model-references?provider_id=openai",
         headers=build_internal_headers(),
@@ -2315,18 +2321,6 @@ def test_admin_audio_workbench_creates_narration_job_and_exposes_result(
         site_id="site_audio_admin",
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
     )
-    with get_session(database_url) as session:
-        CatalogRepository(session).upsert_routing_binding(
-            profile_id=WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID,
-            candidate_instance_ids=["openai-global-hosted-free-next"],
-            selection_policy_json={
-                "strategy": "ordered",
-                "test_override": "fixed_audio_summary_script",
-            },
-            revision="audio-summary-script-test",
-        )
-        session.commit()
-
     response = client.post(
         "/internal/service/admin/audio-jobs",
         headers=build_internal_headers(idempotency_key="audio-workbench-narration"),
@@ -2336,12 +2330,14 @@ def test_admin_audio_workbench_creates_narration_job_and_exposes_result(
             "title": "Audio test",
             "body": "这是一段文章正文，用于生成旁白音频。",
             "format": "mp3",
+            "preview_instance_id": "minimax-global-speech-28-turbo",
         },
     )
 
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["status"] == "queued"
+    assert data["instance_id"] == "minimax-global-speech-28-turbo"
     assert data["script"]["source"] == "full_article"
     assert data["boundary"]["direct_wordpress_write"] is False
 
@@ -2357,6 +2353,47 @@ def test_admin_audio_workbench_creates_narration_job_and_exposes_result(
     assert status_data["result"]["artifact_type"] == "audio_generation_candidates"
     assert status_data["result"]["direct_wordpress_write"] is False
     assert status_data["result"]["audios"][0]["mime_type"] == "audio/mpeg"
+
+    dispose_engine(database_url)
+
+
+def test_admin_audio_workbench_rejects_unknown_preview_instance(
+    tmp_path: Path,
+) -> None:
+    provider = MiniMaxProviderAdapter(
+        allow_sample_catalog=True,
+        allow_sample_execution=True,
+    )
+    database_url, client = _build_client(
+        tmp_path,
+        providers={"minimax": provider},
+        settings_overrides={
+            "minimax_provider_enabled": True,
+            "minimax_api_key": "minimax-test-secret",
+        },
+    )
+    seed_site_auth(
+        database_url,
+        site_id="site_audio_admin",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+
+    response = client.post(
+        "/internal/service/admin/audio-jobs",
+        headers=build_internal_headers(idempotency_key="audio-workbench-preview-invalid"),
+        json={
+            "site_id": "site_audio_admin",
+            "intent": "article_narration",
+            "title": "Audio test",
+            "body": "这是一段文章正文，用于生成旁白音频。",
+            "format": "mp3",
+            "preview_instance_id": "not-an-audio-candidate",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error_code"] == "audio_workbench.preview_instance_invalid"
 
     dispose_engine(database_url)
 
@@ -2440,6 +2477,17 @@ def test_admin_audio_workbench_builds_summary_script_before_audio_job(
         site_id="site_audio_admin",
         scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
     )
+    with get_session(database_url) as session:
+        CatalogRepository(session).upsert_routing_binding(
+            profile_id=WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
+            candidate_instance_ids=["openai-global-hosted-free-next"],
+            selection_policy_json={
+                "strategy": "ordered",
+                "test_override": "fixed_audio_summary_script",
+            },
+            revision="audio-summary-script-test",
+        )
+        session.commit()
 
     response = client.post(
         "/internal/service/admin/audio-jobs",
@@ -2461,7 +2509,7 @@ def test_admin_audio_workbench_builds_summary_script_before_audio_job(
     assert data["script"]["generation"]["ability_name"] == "npcink-toolbox/ai-content-support"
     assert data["script"]["generation"]["contract_version"] == "hosted_ai_content_support.v1"
     assert data["script"]["generation"]["profile_id"] == (
-        WP_AI_CONNECTOR_AUDIO_SUMMARY_TEXT_PROFILE_ID
+        WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
     )
     assert data["script"]["output_json"]["opening"] == "这是一段适合收听的长文摘要。"
     assert "适合收听的长文摘要" in data["script"]["text"]
@@ -2612,9 +2660,9 @@ def test_admin_audio_workbench_uses_wordpress_audio_routing_profile(
 
     assert response.status_code == 200, response.text
     data = response.json()["data"]
-    assert data["profile_id"] == WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID
+    assert data["profile_id"] == WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID
     assert data["script"]["generation"]["audio_profile_id"] == (
-        WP_AI_CONNECTOR_ARTICLE_NARRATION_PROFILE_ID
+        WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID
     )
 
     dispose_engine(database_url)
