@@ -44,6 +44,30 @@ assert.match(
 
 assert.match(
   layoutSource,
+  /admin-shell[\s\S]*hidden w-60 flex-col[\s\S]*lg:pl-60/,
+  'Admin layout must keep a compact desktop shell instead of the old wide sidebar'
+);
+
+assert.match(
+  layoutSource,
+  /<p className="sr-only">[\s\S]*t\(group\.descKey/,
+  'Admin desktop sidebar should keep group descriptions available without rendering bulky helper text'
+);
+
+assert.match(
+  layoutSource,
+  /hidden items-center gap-2 md:flex[\s\S]*<LocaleSwitcher \/>[\s\S]*<ThemeToggle \/>/,
+  'Admin desktop top bar must carry compact utility controls'
+);
+
+assert.doesNotMatch(
+  layoutSource,
+  /w-72|lg:pl-72|rounded-2xl border border-blue-200\/80 bg-blue-50 px-3 py-2\.5/,
+  'Admin layout must not regress to the wide explanatory sidebar shell'
+);
+
+assert.match(
+  layoutSource,
   /admin\.nav_group_customer_service/,
   'Admin layout must expose a customer and service sidebar group'
 );

@@ -179,24 +179,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       data-ui={variant === 'desktop' ? 'admin-primary-nav' : 'admin-mobile-primary-nav'}
       className={cn(
         variant === 'desktop'
-          ? 'space-y-5'
+          ? 'space-y-4'
           : 'space-y-4'
       )}
       aria-label={t('admin.console', {}, 'Admin console')}
     >
       {navGroups.map((group) => (
-        <div key={group.groupKey} className="space-y-2">
+        <div key={group.groupKey} className="space-y-1.5">
           <div className={variant === 'desktop' ? 'px-2' : ''}>
-            <p className="text-[0.66rem] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+            <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
               {t(group.groupKey, {}, group.fallback)}
             </p>
             {variant === 'desktop' ? (
-              <p className="mt-1 line-clamp-2 text-[0.72rem] leading-4 text-slate-400 dark:text-slate-500">
+              <p className="sr-only">
                 {t(group.descKey, {}, group.descFallback)}
               </p>
             ) : null}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {group.items.map((item) => {
               const active = isActive(item);
               return (
@@ -205,9 +205,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   href={item.href}
                   prefetch={false}
                   className={cn(
-                    'admin-nav-link flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                    'admin-nav-link flex items-center justify-between rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
                     active
-                      ? 'admin-nav-link-active bg-slate-950 text-white shadow-sm dark:bg-blue-500 dark:text-slate-950'
+                      ? 'admin-nav-link-active bg-slate-200/85 text-slate-950 dark:bg-slate-800 dark:text-white'
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
                   )}
                   onClick={variant === 'mobile' ? () => setMobileNavOpen(false) : undefined}
@@ -260,58 +260,53 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen lg:flex">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-slate-200/80 bg-white/92 px-4 py-4 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/92 lg:flex">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 pb-4 dark:border-slate-800">
+    <div className="admin-shell min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100 lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-slate-200/80 bg-slate-50/96 px-3 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/94 lg:flex">
+        <div className="flex h-11 items-center justify-between gap-3">
           <Link href="/admin" className="flex min-w-0 items-center gap-3">
-            <span className="brand-mark shrink-0" aria-hidden="true">
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+            <span className="brand-mark h-9 w-9 shrink-0" aria-hidden="true">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
                 <path d="M6 15.25 12.2 4l.6 6.55H18l-6.2 9.45-.5-6.2H6Z" fill="currentColor" />
               </svg>
             </span>
             <span className="min-w-0 flex flex-col leading-none">
-              <span className="truncate text-[0.68rem] font-bold uppercase tracking-[0.3em] text-blue-600 dark:text-blue-300">
+              <span className="truncate text-[0.66rem] font-bold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-300">
                 Magick AI
               </span>
-              <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <span className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                 {t('admin.console')}
               </span>
             </span>
           </Link>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-blue-200/80 bg-blue-50 px-3 py-2.5 dark:border-blue-900/70 dark:bg-blue-950/30">
-          <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-blue-700 dark:text-blue-200">
+        <div className="mt-3 rounded-lg border border-blue-200/75 bg-blue-50/80 px-2.5 py-2 dark:border-blue-900/70 dark:bg-blue-950/25">
+          <p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-blue-700 dark:text-blue-200">
             {t('admin.internal_only')}
           </p>
-          <p className="mt-1 text-xs leading-5 text-blue-900/75 dark:text-blue-100/75">
+          <p className="mt-1 line-clamp-2 text-[0.72rem] leading-4 text-blue-900/70 dark:text-blue-100/70">
             {t('admin.layout_boundary_desc', {}, 'Service-plane operations only. Local WordPress control remains outside Cloud.')}
           </p>
         </div>
 
-        <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
           {renderNavGroups('desktop')}
         </div>
 
-        <div className="mt-4 space-y-3 border-t border-slate-200/70 pt-4 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <LocaleSwitcher />
-            <ThemeToggle />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Link href="/portal" className="btn btn-secondary justify-center">
-              {t('nav.portal')}
-            </Link>
-            <Link href="/admin/logout" prefetch={false} className="btn btn-outline justify-center">
-              {t('portal.logout')}
-            </Link>
-          </div>
+        <div className="mt-3 border-t border-slate-200/70 pt-3 dark:border-slate-800">
+          <Link
+            href="/portal"
+            className="flex items-center justify-between rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:text-white"
+          >
+            <span>{t('nav.portal')}</span>
+            <span aria-hidden="true">→</span>
+          </Link>
         </div>
       </aside>
 
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-72">
-        <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/82">
-          <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-4 py-2 md:px-6">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-60">
+        <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/86 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/86">
+          <div className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5 md:px-5">
             <Link
               href="/admin"
               className="flex items-center gap-3 lg:hidden"
@@ -331,33 +326,34 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
             </Link>
 
-            <div className="hidden min-w-0 lg:block">
-              <p className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+            <div className="hidden min-w-0 items-center gap-2 text-sm lg:flex">
+              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                 {t('admin.operator_surface', {}, 'Operator surface')}
-              </p>
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+              </span>
+              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
+              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
                 {activePrimaryLabel}
-              </p>
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="hidden rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200 md:inline-flex">
+              <span className="hidden rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200 md:inline-flex">
                 {t('admin.internal_only')}
               </span>
-              <div className="hidden items-center gap-2 md:flex lg:hidden">
+              <div className="hidden items-center gap-2 md:flex">
                 <LocaleSwitcher />
                 <ThemeToggle />
               </div>
               <Link
                 href="/admin/logout"
                 prefetch={false}
-                className="hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex lg:hidden"
+                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
               >
                 {t('portal.logout')}
               </Link>
               <Link
                 href="/portal"
-                className="hidden rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex lg:hidden"
+                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white md:inline-flex"
               >
                 {t('nav.portal')} →
               </Link>
@@ -421,14 +417,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Main Content */}
         <main className="flex-1 bg-transparent">
-          <div className="mx-auto w-full max-w-[96rem] px-4 py-5 md:px-6 md:py-6">
+          <div className="mx-auto w-full max-w-[110rem] px-3 py-4 md:px-5 md:py-5">
             {children}
           </div>
         </main>
 
         {/* Admin Footer */}
-        <footer className="border-t border-gray-200 py-4 dark:border-gray-800">
-          <div className="mx-auto w-full max-w-[96rem] px-4 text-center text-sm text-gray-500 md:px-6">
+        <footer className="border-t border-gray-200 py-2 dark:border-gray-800">
+          <div className="mx-auto w-full max-w-[110rem] px-4 text-center text-xs text-gray-500 md:px-5">
             <p>{t('admin.footer')}</p>
           </div>
         </footer>
