@@ -912,23 +912,17 @@ def test_admin_ability_model_runtime_projection_is_bounded_and_feature_backed(
 
     rows = {item["ability_id"]: item for item in data["rows"]}
     assert {
-        "content_support",
-        "generated_image_candidates",
         "site_knowledge_embedding",
         "evidence_preflight",
         "image_source_candidates",
     }.issubset(rows)
     assert {
+        "content_support",
+        "generated_image_candidates",
         "audio_summary_script",
         "article_narration",
         "article_audio_summary",
     }.isdisjoint(rows)
-    assert rows["content_support"]["media"] == "text"
-    assert rows["content_support"]["status"] == "connected"
-    assert rows["content_support"]["can_configure"] is False
-    assert rows["content_support"]["action"] == "runtime_managed"
-    assert rows["content_support"]["boundary"]["direct_wordpress_write"] is False
-    assert rows["generated_image_candidates"]["media"] == "image"
     assert rows["site_knowledge_embedding"]["media"] == "vector"
     assert rows["site_knowledge_embedding"]["model_kind"] == "embedding_model"
     assert rows["site_knowledge_embedding"]["can_configure"] is True
@@ -938,7 +932,8 @@ def test_admin_ability_model_runtime_projection_is_bounded_and_feature_backed(
 
     media_groups = {item["media"]: item for item in data["media_groups"]}
     assert {"text", "image", "vector", "audio", "video"}.issubset(media_groups)
-    assert media_groups["text"]["count"] >= 2
+    assert media_groups["text"]["count"] >= 1
+    assert media_groups["image"]["count"] >= 1
     assert media_groups["vector"]["count"] >= 1
     assert media_groups["audio"]["count"] == 0
     assert media_groups["video"]["count"] == 0

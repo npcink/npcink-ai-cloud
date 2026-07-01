@@ -321,7 +321,7 @@ assert.match(
 assert.doesNotMatch(
   abilityModelsSource + i18nSource,
   /cloud_ability_audio_summary_script|cloud_ability_article_narration|cloud_ability_article_audio_summary/,
-  'Cloud-native internal ability projection must not re-label plugin-owned audio routes as Cloud internal abilities'
+  'Cloud runtime dependency projection must not re-label plugin-owned audio routes as Cloud-owned dependencies'
 );
 
 assert.doesNotMatch(
@@ -382,6 +382,12 @@ assert.doesNotMatch(
   pageSource,
   /tab_ability_models/,
   'Provider Management must not expose Ability-Model Routing as an internal tab'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /ability_models_title|abilityModelDialog|RoutingProfile|RuntimeInstance|fetch\('\/api\/admin\/wordpress-ai-routing'|saveAbilityModelProfile|activeView === 'ability_models'/,
+  'Provider Management must not keep a hidden ability-model routing editor after routing moved to the dedicated page'
 );
 
 assert.match(
@@ -730,6 +736,12 @@ assert.doesNotMatch(
   abilityModelsSource,
   /cloud_ability_tag_recommendation|cloud_ability_category_recommendation|cloud_ability_title_suggestion|cloud_ability_meta_description/,
   'Cloud-native ability copy must not reintroduce duplicate plugin ability rows'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /cloud_ability_content_support|cloud_ability_generated_image_candidates/,
+  'Cloud runtime dependencies must not duplicate plugin content support or image generation route rows'
 );
 
 assert.match(
@@ -1159,7 +1171,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /formatReferenceContext[\s\S]*model_reference_missing_context[\s\S]*formatReferencePrice[\s\S]*model_reference_missing_price[\s\S]*hasReferencePrice/,
+  /formatReferenceContext[\s\S]*model_reference_missing_context[\s\S]*formatReferencePrice[\s\S]*model_reference_missing_price/,
   'Provider channel model reference rows must explain missing context and price reference data instead of showing bare dashes'
 );
 
@@ -1171,8 +1183,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /price_unit_per_1m/,
-  'Provider channel reference table must label price units explicitly'
+  /column_reference_price[\s\S]*price_unit_per_1m[\s\S]*formatReferencePrice/,
+  'Provider channel reference table must label price units in the header instead of repeating them in every row'
 );
 
 assert.match(

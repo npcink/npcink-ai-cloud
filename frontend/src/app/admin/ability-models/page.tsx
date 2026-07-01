@@ -557,10 +557,8 @@ export default function AbilityModelsPage() {
 
   const cloudAbilityLabel = useCallback((row: CloudAbilityRuntimeRow): string => {
     const labels: Record<string, string> = {
-      content_support: text('cloud_ability_content_support', 'Content support'),
       site_knowledge_embedding: text('cloud_ability_site_knowledge_embedding', 'Site Knowledge embedding'),
       evidence_preflight: text('cloud_ability_external_evidence', 'External evidence preflight'),
-      generated_image_candidates: text('cloud_ability_generated_image_candidates', 'Generated image candidates'),
       image_source_candidates: text('cloud_ability_image_source_candidates', 'Image source candidates'),
     };
     return labels[row.ability_id] || row.label || row.ability_id;
@@ -568,10 +566,8 @@ export default function AbilityModelsPage() {
 
   const cloudAbilityDescription = useCallback((row: CloudAbilityRuntimeRow): string => {
     const descriptions: Record<string, string> = {
-      content_support: text('cloud_ability_content_support_desc', 'Cloud runtime support for writing assistance and evidence-backed editor help.'),
       site_knowledge_embedding: text('cloud_ability_site_knowledge_embedding_desc', 'Embedding runtime used by Site Knowledge detail and retrieval support.'),
       evidence_preflight: text('cloud_ability_external_evidence_desc', 'Prepare evidence grounding before handing control back to the local WordPress path.'),
-      generated_image_candidates: text('cloud_ability_generated_image_candidates_desc', 'Generate reviewable image candidates while WordPress keeps approval and final media use.'),
       image_source_candidates: text('cloud_ability_image_source_candidates_desc', 'Search external image sources and return reviewable media candidates.'),
     };
     return descriptions[row.ability_id] || row.description;
@@ -1294,7 +1290,7 @@ export default function AbilityModelsPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-                {text('cloud_native_title', 'Cloud internal runtime abilities')}
+                {text('cloud_native_title', 'Cloud runtime dependencies')}
               </h2>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
                 {text('cloud_native_desc', 'Read-only projection for Cloud-owned services. It shows runtime dependencies and only exposes bounded model binding where Cloud supports it.')}

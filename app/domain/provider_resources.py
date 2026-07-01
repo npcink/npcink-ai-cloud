@@ -34,6 +34,8 @@ _ABILITY_MODEL_MEDIA_BY_FEATURE_ID = {
 
 _PLUGIN_ABILITY_ROUTE_FEATURE_IDS = frozenset(
     {
+        "content_support",
+        "generated_image_candidates",
         "audio_summary_script",
         "article_narration",
         "article_audio_summary",
