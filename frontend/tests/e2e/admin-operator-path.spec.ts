@@ -24,7 +24,7 @@ test('admin coverage page separates service status and packages with tabs', asyn
   await installAdminMocks(page);
 
   await page.goto('/admin/coverage');
-  await expect(page.getByRole('heading', { name: /^Customer service status$|^客户服务状态$|^客戶服務狀態$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Customer service workspace$|^客户服务工作区$|^客戶服務工作區$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toBeVisible();
   await expect(page.getByText(/Customers needing service follow-up|需要服务跟进的客户|需要服務跟進的客戶/i).first()).toBeVisible();
@@ -78,7 +78,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/ai-resources?view=diagnostics"]').first()).toBeVisible();
 
   await page.goto('/admin/coverage');
-  await expect(page.getByRole('heading', { name: /^Customer service status$|^客户服务状态$|^客戶服務狀態$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Customer service workspace$|^客户服务工作区$|^客戶服務工作區$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toBeVisible();
   await expect(page.getByText(/Customers needing service follow-up|需要服务跟进的客户|需要服務跟進的客戶/i).first()).toBeVisible();

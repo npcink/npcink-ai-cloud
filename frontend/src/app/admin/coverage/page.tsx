@@ -297,6 +297,7 @@ function AdminCoverageContent() {
       return item.severity === view;
     });
   }, [visibleQueueItems, view]);
+  const selectedQueueItem = visibleItems[0] || visibleQueueItems[0] || null;
 
   if (error) {
     return (
@@ -376,11 +377,11 @@ function AdminCoverageContent() {
       <CustomerAdminTabs />
       <BackofficePrimaryPanel
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
-        title={t('admin.coverage_surface_title', {}, 'Customer service status')}
+        title={t('admin.coverage_surface_title', {}, 'Customer service workspace')}
         description={t(
           'admin.coverage_surface_desc',
           {},
-          'Work from the highest-impact customer first. Each row shows the current blocker, evidence, and the next operator action.'
+          'Work from the highest-impact customer first. Keep service blockers, package posture, and the next operator action in one workspace.'
         )}
         aside={
           <div className="w-full xl:w-[44rem]">
@@ -590,6 +591,81 @@ function AdminCoverageContent() {
         </BackofficeSectionPanel>
 
         <div className="space-y-5">
+          <BackofficeSectionPanel className="space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('admin.coverage.inspector_eyebrow', {}, 'Inspector')}
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                  {t('admin.coverage.inspector_title', {}, 'Current customer focus')}
+                </h2>
+              </div>
+              {selectedQueueItem ? (
+                <CoverageStatusBadge
+                  severity={selectedQueueItem.severity}
+                  label={translateStatusLabel(selectedQueueItem.severity, t)}
+                />
+              ) : null}
+            </div>
+            {selectedQueueItem ? (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-base font-semibold text-slate-950 dark:text-white">
+                    {selectedQueueItem.account.name || t('admin.subscription_detail.current_customer_label', {}, 'Current customer')}
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    {translateReasonCode(t, selectedQueueItem.reason_code, selectedQueueItem.reason_label)}
+                  </p>
+                </div>
+                <dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <div className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 dark:border-slate-800">
+                    <dt>{t('common.package', {}, 'Package')}</dt>
+                    <dd className="font-semibold text-slate-950 dark:text-white">
+                      {selectedQueueItem.package?.display_package_label || t('common.not_available', {}, 'N/A')}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 dark:border-slate-800">
+                    <dt>{t('common.sites', {}, 'Sites')}</dt>
+                    <dd className="font-semibold tabular-nums text-slate-950 dark:text-white">
+                      {formatInteger(Number(selectedQueueItem.evidence.site_count || 0))}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 dark:border-slate-800">
+                    <dt>{t('admin.account_detail.active_api_keys_label', {}, 'Active API keys')}</dt>
+                    <dd className="font-semibold tabular-nums text-slate-950 dark:text-white">
+                      {formatInteger(Number(selectedQueueItem.evidence.active_key_site_count || 0))}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 pb-2">
+                    <dt>{t('admin.subscriptions.snapshot_status_metric', {}, 'Snapshot')}</dt>
+                    <dd className="font-semibold text-slate-950 dark:text-white">
+                      {translateStatusLabel(selectedQueueItem.evidence.billing_snapshot_status?.status || 'unknown', t)}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="flex flex-wrap gap-2">
+                  <Link href={selectedQueueItem.action_href || `/admin/accounts/${selectedQueueItem.account.account_id}`} className="btn btn-primary btn-sm">
+                    {translateActionLabel(t, selectedQueueItem.recommended_action, selectedQueueItem.action_label || t('common.open', {}, 'Open'))}
+                  </Link>
+                  <Link href={`/admin/accounts/${selectedQueueItem.account.account_id}`} className="btn btn-secondary btn-sm">
+                    {t('admin.coverage_open_customer_action', {}, 'Open customer')}
+                  </Link>
+                </div>
+                <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {t(
+                    'admin.coverage.inspector_boundary',
+                    {},
+                    'This inspector only opens existing customer, subscription, site, and package surfaces. It does not create customer-facing checkout, payment, or WordPress write controls.'
+                  )}
+                </p>
+              </div>
+            ) : (
+              <BackofficeStackCard className="text-sm text-slate-600 dark:text-slate-300">
+                {t('admin.coverage.inspector_empty', {}, 'No customer needs inspection in this snapshot.')}
+              </BackofficeStackCard>
+            )}
+          </BackofficeSectionPanel>
           <BackofficeSectionPanel className="space-y-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
