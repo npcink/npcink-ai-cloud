@@ -21,12 +21,32 @@ const troubleshootingKeys = Array.from(
   .filter((key, index, keys) => keys.indexOf(key) === index)
   .sort();
 
+const workspaceKeys = [
+  'admin.advanced.mode',
+  'admin.advanced.read_only',
+  'admin.advanced.catalog_eyebrow',
+  'admin.advanced.catalog_title',
+  'admin.advanced.group_filter_label',
+  'admin.advanced.all_groups',
+  'admin.advanced.all_groups_desc',
+  'admin.advanced.visible_entries',
+  'admin.advanced.inspector_eyebrow',
+  'admin.advanced.inspector_title',
+  'admin.advanced.inspector_desc',
+  'admin.advanced.suggested_first_step',
+  'admin.advanced.boundary_note',
+  'admin.advanced.group_runtime_desc',
+  'admin.advanced.group_governance_desc',
+];
+
+const requiredKeys = [...new Set([...troubleshootingKeys, ...workspaceKeys])].sort();
+
 assert.ok(
   troubleshootingKeys.length >= 17,
   'Advanced troubleshooting cards must declare i18n keys for title, description, action, and group copy'
 );
 
-for (const key of troubleshootingKeys) {
+for (const key of requiredKeys) {
   assert.match(
     enSource,
     new RegExp(`'${key.replaceAll('.', '\\.')}':`),
@@ -38,6 +58,24 @@ for (const key of troubleshootingKeys) {
     `${key} must exist in the Simplified Chinese translation dictionary`
   );
 }
+
+assert.match(
+  pageSource,
+  /useState<string>\('all'\)[\s\S]*role="tablist"[\s\S]*aria-selected=\{activeGroupKey === 'all'\}/,
+  'Advanced troubleshooting should present a compact diagnostic group filter'
+);
+
+assert.match(
+  pageSource,
+  /admin\.advanced\.inspector_title[\s\S]*admin\.advanced\.suggested_first_step[\s\S]*admin\.advanced\.boundary_note/,
+  'Advanced troubleshooting should keep a right-side read-only focus inspector'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /createCheckout|paymentIntent|invoice_create|wordpress_write|auto_apply|publish_to_wordpress|registerAbility|workflowRegistry|routerEditor|promptEditor/,
+  'Advanced troubleshooting must remain a read-only evidence catalog, not a mutation or control-plane surface'
+);
 
 assert.match(
   i18nSource,
