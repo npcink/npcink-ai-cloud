@@ -3163,7 +3163,7 @@ def test_execute_route_rejects_secret_like_runtime_input(tmp_path: Path) -> None
         "idempotency_key": "idem-secret-detected-001",
         "input": {
             "messages": [{"role": "user", "content": "summarize this draft"}],
-            "provider_key": "sk-testtesttesttesttesttesttest",
+            "provider_key": "redaction-fixture-provider-key",
         },
     }
     body = json.dumps(payload).encode("utf-8")

@@ -134,7 +134,7 @@ function serviceSettingsErrorMessage(
   const rawMessage = String(record.message || '').trim();
   if (errorCode === 'service_settings.email_delivery_failed') {
     if (/Authentication failure|authentication failed|auth/i.test(rawMessage)) {
-      return t('admin.service_settings.error_email_auth_failed', {}, 'SMTP authentication was rejected. Check the SMTP username, password, or app password, and confirm SMTP is enabled for the sender mailbox.');
+      return t('admin.service_settings.error_email_auth_failed', {}, 'SMTP 服务器拒绝认证。请检查 SMTP 用户名、密码或应用专用密码，并确认发件邮箱已启用 SMTP。');
     }
     if (/timed out|timeout/i.test(rawMessage)) {
       return t('admin.service_settings.error_email_timeout', {}, 'The SMTP connection timed out. Check the SMTP host, port, SSL/STARTTLS mode, and network connectivity.');
@@ -147,7 +147,7 @@ function serviceSettingsErrorMessage(
       : t('admin.service_settings.error_email_delivery_failed', {}, 'Test email failed. Check the SMTP host, port, authentication, and encryption mode.');
   }
   if (errorCode === 'service_settings.email_tls_mode_invalid') {
-    return t('admin.service_settings.error_tls_mode_invalid', {}, 'SSL and STARTTLS cannot be enabled at the same time. Port 465 usually uses SSL only; port 587 usually uses STARTTLS only.');
+    return t('admin.service_settings.error_tls_mode_invalid', {}, 'SMTP 加密方式不能同时启用 SSL 和 STARTTLS。465 端口通常只使用 SSL，587 端口通常只使用 STARTTLS。');
   }
   if (errorCode === 'service_settings.email_password_required') {
     return t('admin.service_settings.error_email_password_required', {}, 'SMTP password is required when an SMTP username is set. Leave the password field empty only if a password was already saved.');
@@ -193,7 +193,7 @@ function requestErrorMessage(
         : message;
     }
     if (response.status >= 500) {
-      return t('admin.service_settings.error_http_migration_hint', { message, status: String(response.status) }, '{{message}} (HTTP {{status}}). Confirm database migrations have run and check API logs.');
+      return t('admin.service_settings.error_http_migration_hint', { message, status: String(response.status) }, '{{message}}（HTTP {{status}}）。请确认数据库迁移已执行，并查看 API 日志。');
     }
     return message;
   }
@@ -201,7 +201,7 @@ function requestErrorMessage(
   const text = typeof payload === 'string' ? payload : '';
   if (response.status >= 500) {
     const detail = text ? `：${text.slice(0, 120)}` : '';
-    return t('admin.service_settings.error_backend_status', { fallback, status: String(response.status), detail }, '{{fallback}}: backend returned {{status}}{{detail}}. Confirm database migrations have run and check API logs.');
+    return t('admin.service_settings.error_backend_status', { fallback, status: String(response.status), detail }, '{{fallback}}：后端返回 {{status}}{{detail}}。请确认数据库迁移已执行，并查看 API 日志。');
   }
   if (text) {
     return t('admin.service_settings.error_with_detail', { fallback, detail: text }, '{{fallback}}: {{detail}}');
@@ -345,7 +345,7 @@ export default function AdminServiceSettingsPage() {
     try {
       await navigator.clipboard.writeText(qqRedirectUri);
       setError('');
-      setNotice(t('admin.service_settings.qq_redirect_copied', {}, 'QQ redirect URL copied.'));
+      setNotice(t('admin.service_settings.qq_redirect_copied', {}, 'QQ 回调地址已复制。'));
     } catch {
       setError(t('admin.service_settings.copy_failed', {}, 'This browser could not copy automatically. Copy the redirect URL manually.'));
       setNotice('');
@@ -475,12 +475,12 @@ export default function AdminServiceSettingsPage() {
   const tabs: Array<{ id: ServiceSettingsTab; label: string; description: string }> = [
     {
       id: 'login',
-      label: t('admin.service_settings.tab_login', {}, 'Login settings'),
+      label: t('admin.service_settings.tab_login', {}, '登录配置'),
       description: t('admin.service_settings.tab_login_desc', {}, 'Public URL and QQ quick login'),
     },
     {
       id: 'email',
-      label: t('admin.service_settings.tab_email', {}, 'Email settings'),
+      label: t('admin.service_settings.tab_email', {}, '邮件配置'),
       description: t('admin.service_settings.tab_email_desc', {}, 'SMTP and test email'),
     },
   ];
@@ -546,7 +546,7 @@ export default function AdminServiceSettingsPage() {
                 Portal URL
               </p>
               <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-                {t('admin.service_settings.portal_public_title', {}, 'Portal base URL')}
+                {t('admin.service_settings.portal_public_title', {}, '门户基础地址')}
               </h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 {t('admin.service_settings.portal_public_desc', {}, 'Used to generate public callback URLs for QQ login, WeChat login, and payment notifications.')}
@@ -581,7 +581,7 @@ export default function AdminServiceSettingsPage() {
                 <button type="submit" className="btn btn-primary" disabled={saving === 'portal-public'}>
                   {saving === 'portal-public'
                     ? t('admin.service_settings.saving', {}, 'Saving')
-                    : t('admin.service_settings.save_base_url', {}, 'Save base URL')}
+                    : t('admin.service_settings.save_base_url', {}, '保存基础地址')}
                 </button>
               </div>
             </form>
@@ -592,9 +592,9 @@ export default function AdminServiceSettingsPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 QQ OAuth
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.qq_title', {}, 'QQ quick login')}</h2>
+              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.qq_title', {}, 'QQ 快捷登录')}</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {t('admin.service_settings.qq_desc', {}, 'The redirect URL is generated from the Portal base URL. This section only stores QQ app credentials and the login switch.')}
+                {t('admin.service_settings.qq_desc', {}, '回调地址由门户基础地址自动生成。这里仅保存 QQ 应用凭证和登录开关。')}
               </p>
             </div>
             <form className="grid gap-4 lg:grid-cols-2" onSubmit={submitQq}>
@@ -635,7 +635,7 @@ export default function AdminServiceSettingsPage() {
                   <button
                     type="button"
                     role="switch"
-                    aria-label={t('admin.service_settings.qq_toggle_label', {}, 'Enable QQ quick login')}
+                    aria-label={t('admin.service_settings.qq_toggle_label', {}, '启用 QQ 快捷登录')}
                     aria-checked={qqForm.enabled}
                     className={switchButtonClassName(qqForm.enabled)}
                     disabled={loading}
@@ -643,7 +643,7 @@ export default function AdminServiceSettingsPage() {
                   >
                     <span className={switchKnobClassName(qqForm.enabled)} />
                   </button>
-                  {t('admin.service_settings.qq_enabled_label', {}, 'Enable QQ login')}
+                  {t('admin.service_settings.qq_enabled_label', {}, '启用 QQ 登录')}
                 </div>
                 <div className="flex gap-2">
                   <button type="button" className="btn btn-secondary" disabled={saving === 'qq-test'} onClick={() => postJson('/api/admin/service-settings/qq-login/test', {}, 'qq-test', t('admin.service_settings.qq_test_done', {}, 'QQ login configuration check completed.'))}>
@@ -652,7 +652,7 @@ export default function AdminServiceSettingsPage() {
                   <button type="submit" className="btn btn-primary" disabled={saving === 'qq-login'}>
                     {saving === 'qq-login'
                       ? t('admin.service_settings.saving', {}, 'Saving')
-                      : t('admin.service_settings.save_qq', {}, 'Save QQ settings')}
+                      : t('admin.service_settings.save_qq', {}, '保存 QQ 配置')}
                   </button>
                 </div>
               </div>
@@ -700,7 +700,7 @@ export default function AdminServiceSettingsPage() {
                         }))
                       }
                     />
-                    {t('admin.service_settings.same_as_from_email', {}, 'Same as sender email')}
+                    {t('admin.service_settings.same_as_from_email', {}, '同发件邮箱')}
                   </span>
                 </span>
                 <input

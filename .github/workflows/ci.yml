@@ -132,14 +132,8 @@ jobs:
       - name: Type Check
         run: pnpm run type-check
 
-      - name: i18n Contract
-        run: pnpm run test:i18n-contract
-
-      - name: Portal Proxy Contract
-        run: pnpm run test:portal-proxy-contract
-
-      - name: Admin Dev Autologin Contract
-        run: pnpm run test:admin-dev-autologin-contract
+      - name: Frontend Contracts
+        run: pnpm run test:contracts
 
   deploy-production:
     name: Deploy to cloud.npc.ink

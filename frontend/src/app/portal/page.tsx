@@ -14,6 +14,7 @@ import {
   portalClient,
   type PortalIdentityProviderStatus,
   type PortalPluginObservabilitySummary,
+  type PortalSiteDiagnostics,
   type PortalSiteSummaryRecord,
   type Site,
 } from '@/lib/portal-client';
@@ -106,6 +107,7 @@ export default function PortalPage() {
   const [isInspectorLoading, setIsInspectorLoading] = useState(false);
   const [inspectorError, setInspectorError] = useState('');
   const [currentSiteSummary, setCurrentSiteSummary] = useState<PortalSiteSummaryRecord | null>(null);
+  const [currentSiteDiagnostics, setCurrentSiteDiagnostics] = useState<PortalSiteDiagnostics | null>(null);
   const [currentSiteMonitoring, setCurrentSiteMonitoring] = useState<PortalPluginObservabilitySummary | null>(null);
   const [identityProviders, setIdentityProviders] = useState<PortalIdentityProviderStatus[]>([]);
   const [isMonitoringLoading, setIsMonitoringLoading] = useState(false);
@@ -196,6 +198,34 @@ export default function PortalPage() {
       isCancelled = true;
     };
   }, [selectedSiteForContext?.site_id]);
+
+  useEffect(() => {
+    if (!selectedSiteForMonitoringId) {
+      setCurrentSiteDiagnostics(null);
+      return;
+    }
+
+    let isCancelled = false;
+    setCurrentSiteDiagnostics(null);
+
+    void portalClient
+      .getSiteDiagnostics(selectedSiteForMonitoringId)
+      .then((response) => {
+        if (!isCancelled) {
+          setCurrentSiteDiagnostics(response.data);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          console.error('Failed to load current site diagnostics:', error);
+          setCurrentSiteDiagnostics(null);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedSiteForMonitoringId]);
 
   useEffect(() => {
     if (!selectedSiteForMonitoringId) {
@@ -404,6 +434,10 @@ export default function PortalPage() {
     : 0;
   const requestLimit = Number(session.entitlements?.requests_limit || 0);
   const tokenLimit = Number(session.entitlements?.tokens_limit || 0);
+  const currentSiteActiveKeyCount =
+    typeof currentSiteDiagnostics?.active_key_count === 'number'
+      ? currentSiteDiagnostics.active_key_count
+      : null;
   const restrictionItems = buildRestrictionItems({
     t,
     siteStatus: selectedSite.status,
@@ -478,15 +512,15 @@ export default function PortalPage() {
       action: t('portal.home.onboarding_site_action', {}, 'View site'),
     },
     {
-      key: 'connection',
-      done: selectedSite.status === 'active',
-      title: t('portal.home.onboarding_connection_title', {}, 'Connect WordPress'),
+      key: 'api-key',
+      done: currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0,
+      title: t('portal.home.onboarding_key_title', {}, 'Confirm API key'),
       detail:
-        selectedSite.status === 'active'
-          ? t('portal.home.onboarding_connection_ready', {}, 'This site is connected, and connection credentials are maintained automatically.')
-          : t('portal.home.onboarding_connection_needed', {}, 'Reconnect the site from the WordPress plugin. The system will generate connection credentials automatically.'),
+        currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0
+          ? t('portal.home.onboarding_key_ready', {}, 'This site has an active Cloud API key for plugin access.')
+          : t('portal.home.onboarding_key_needed', {}, 'Create or confirm an active Cloud API key before relying on hosted service access.'),
       href: `/portal/sites/${selectedSite.site_id}`,
-      action: t('portal.home.onboarding_connection_action', {}, 'View site'),
+      action: t('portal.home.onboarding_key_action', {}, 'View keys'),
     },
     {
       key: 'package',
