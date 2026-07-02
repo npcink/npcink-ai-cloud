@@ -42,11 +42,6 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = [
-  "--ignore=tests/domain/test_addon_projection_repository.py",
-  "--ignore=tests/api/test_addon_routes.py",
-  "--ignore=tests/workers/test_addon_projection_worker.py",
-]
 
 [tool.ruff]
 line-length = 100

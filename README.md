@@ -19,7 +19,8 @@ Current focus lock:
 - keep only minimum usage, error, and provider evidence needed to support that
   loop
 - pause new admin governance pages, dashboards, reports, alert-ranking
-  expansion, and commercial front-office work until the core AI path is proven
+  expansion, and broad commercial front-office work until the core AI path is
+  proven
 - do not add new orchestration infrastructure or move local plugin truth into
   Cloud
 
@@ -207,11 +208,15 @@ Still deferred in the current phase:
   and bounded abuse watchlists
 - broader queued/running lease recovery beyond the current queue-backed runtime
   worker plus callback dispatch stale-lease reclaim
-- customer-facing commercial front-office still remains deferred:
+- customer-facing commercial front-office remains bounded:
   - seat lifecycle
-  - checkout/payment
+  - real external checkout/payment provider integration
   - invoice/reconciliation
   - dunning-grade customer billing front-office
+  - the current credit-pack catalog, payment-order state, and simulated payment
+    gateway seams are launch service-plane details; real Alipay/WeChat Pay
+    integration remains deferred until provider signature verification,
+    callback replay, and amount/currency matching are implemented
 - richer platform admin directory/session inventory remains deferred
 
 Commercial acceptance freeze:
@@ -222,7 +227,8 @@ Commercial acceptance freeze:
 - `Free / Pro / Agency` remain the only current package presentation aliases
 - points are presentation, not a ledger
 - operator top-up means current billing period budget headroom only
-- no wallet, no permanent credit, no customer self-serve buy flow in the current phase
+- no wallet, no permanent credit, and no entitlement change without the Cloud
+  payment-order or operator service-plane path in the current phase
 
 ## Validation Ladder
 
@@ -598,20 +604,18 @@ source deploy/workspace-target.env.sh
 pnpm run wp-cron:ssh -- remove
 ```
 
-Platform identity/admin roadmap:
+Platform identity/admin and portal references:
 
-- current identity layering and third-party recommendation:
-  [cloud-identity-system-overview-and-roadmap.md](../../magick-ai/docs/archive/plans/cloud-identity-system-overview-and-roadmap.md)
-- current bounded read-only admin surface:
-  [cloud-admin-mvp-plan.md](../../magick-ai/docs/archive/plans/cloud-admin-mvp-plan.md)
-- current invite-only onboarding hardening slice:
-  [cloud-invite-only-onboarding-v1-1-plan.md](../../magick-ai/docs/archive/plans/cloud-invite-only-onboarding-v1-1-plan.md)
-- current member invite/login operator checklist:
-  [cloud-portal-member-invite-flow-checklist.md](../../magick-ai/docs/archive/plans/cloud-portal-member-invite-flow-checklist.md)
-- recommended platform super-admin plus controlled impersonation direction:
-  [cloud-platform-admin-and-impersonation-plan.md](../../magick-ai/docs/archive/plans/cloud-platform-admin-and-impersonation-plan.md)
-- current platform role contract:
-  [cloud-platform-admin-role-model-v1.md](../../magick-ai/docs/contracts/cloud-platform-admin-role-model-v1.md)
+- current bounded admin cleanup closeout:
+  [admin-surface-cleanup-closeout-2026-07-02.md](docs/admin-surface-cleanup-closeout-2026-07-02.md)
+- current account/portal stage closeout:
+  [cloud-account-portal-stage-closeout-summary-2026-06-29.md](docs/cloud-account-portal-stage-closeout-summary-2026-06-29.md)
+- current portal user management history:
+  [admin-portal-user-management-history-2026-06-29.md](docs/admin-portal-user-management-history-2026-06-29.md)
+- current payment seam summary:
+  [commercial-billing-payment-stage-summary-2026-06-23.md](docs/commercial-billing-payment-stage-summary-2026-06-23.md)
+- payment gateway contract:
+  [payment-gateway-contract-v1.md](docs/payment-gateway-contract-v1.md)
 
 Health endpoints:
 
@@ -669,7 +673,7 @@ Platform admin bootstrap auth:
 - platform-admin bootstrap uses the configured single platform admin reference
   and does not require a separate identity-provisioning surface
 - current operator runbook for lean validation:
-  - [cloud-platform-login-and-invite-runbook.md](../../magick-ai/docs/archive/plans/cloud-platform-login-and-invite-runbook.md)
+  - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
 Buyer-facing web routes:
 
 - `GET /`
@@ -682,9 +686,12 @@ Buyer-facing web routes:
 - `GET /portal/logout`
 
 These routes are a bounded Cloud service status and portal layer, not a
-customer-facing commercial front-office. Marketing pages, top-up catalog pages,
-impersonation pages, compliance pages, and request queues are intentionally
-removed.
+customer-facing commercial front-office. Marketing pages, standalone top-up
+catalog request pages, impersonation pages, compliance pages, and request queues
+are intentionally removed. The Portal usage surface may show credit-pack
+catalog, payment orders, and simulated payment status as bounded billing detail;
+real external payment provider checkout remains gated by
+[payment-gateway-contract-v1.md](docs/payment-gateway-contract-v1.md).
 
 ## Verification Quickstart
 
@@ -751,11 +758,9 @@ development-code helpers live under `deploy/dev/`:
 
 - `deploy/dev/remote-portal-login-code-smoke.sh`
 
-For the shortest command-only runbook, see
-[cloud-mvp-ops-runbook.md](../../magick-ai/docs/archive/plans/cloud-mvp-ops-runbook.md).
-
-For one current-state identity overview and recommended evolution path, see
-[cloud-identity-system-overview-and-roadmap.md](../../magick-ai/docs/archive/plans/cloud-identity-system-overview-and-roadmap.md).
+For formal operator procedures, see [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md).
+For the current portal/account state, see
+[cloud-account-portal-stage-closeout-summary-2026-06-29.md](docs/cloud-account-portal-stage-closeout-summary-2026-06-29.md).
 
 ## Admin Console
 
@@ -809,7 +814,8 @@ The bounded internal admin surface is now landed. It is:
 
 Plan and handoff truth:
 
-- [cloud-admin-mvp-plan.md](../../magick-ai/docs/archive/plans/cloud-admin-mvp-plan.md)
+- [admin-surface-cleanup-closeout-2026-07-02.md](docs/admin-surface-cleanup-closeout-2026-07-02.md)
+- [admin-customer-surface-consolidation-history-2026-06-30.md](docs/admin-customer-surface-consolidation-history-2026-06-30.md)
 
 Current internal admin routes:
 
@@ -853,8 +859,10 @@ and not a second control plane.
 In production-style deploys, the bundled proxy forwards `/admin` and `/admin/*`
 as the only public platform-admin surface. Legacy `/ops/*` paths are removed.
 
-Current acceptance receipt:
-[cloud-mvp-acceptance-receipt-2026-03-23.md](../../magick-ai/docs/archive/plans/cloud-mvp-acceptance-receipt-2026-03-23.md)
+Current acceptance and cleanup receipts:
+
+- [admin-surface-cleanup-closeout-2026-07-02.md](docs/admin-surface-cleanup-closeout-2026-07-02.md)
+- [admin-runtime-surface-cleanup-closeout-2026-07-01.md](docs/admin-runtime-surface-cleanup-closeout-2026-07-01.md)
 
 Current auth decision stays bounded:
 
@@ -1302,7 +1310,7 @@ pnpm run deploy:ssh -- --ssh-host your-cloud-host
 pnpm run env:ssh -- --ssh-host your-cloud-host
 ```
 
-From `cloud/`, you can also run:
+From the repository root, you can also run:
 
 ```bash
 make router-performance

@@ -167,7 +167,7 @@ function AccountPageContent() {
         description={t(
           'portal.account.description',
           undefined,
-          'Email remains the primary identity. QQ is only a quick-login binding, and Portal stays separate from platform admin.'
+          '邮箱是主账号，QQ 用作快捷登录绑定；Portal 和平台管理入口继续保持独立。'
         )}
         aside={(
           <BackofficeStatusBadge
@@ -282,8 +282,8 @@ function AccountPageContent() {
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
                   {qqProvider?.bound
-                    ? t('portal.account.qq_bound_desc', undefined, 'Use the bound QQ account for quick Portal login.')
-                    : t('portal.account.qq_unbound_desc', undefined, 'Bind QQ for quick login. Email remains the primary identity.')}
+                    ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
+                    : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')}
                 </p>
                 {qqProvider?.binding?.last_login_at ? (
                   <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

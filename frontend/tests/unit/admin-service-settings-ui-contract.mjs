@@ -13,8 +13,8 @@ assert.match(
 
 assert.match(
   source,
-  /label: '登录配置'[\s\S]*label: '邮件配置'/,
-  'service settings tabs must use Chinese operator labels'
+  /label: t\('admin\.service_settings\.tab_login', \{\}, '登录配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)/,
+  'service settings tabs must use Chinese operator label fallbacks'
 );
 
 assert.match(
@@ -133,7 +133,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /role="switch"[\s\S]*aria-label="启用 QQ 快捷登录"/,
+  /role="switch"[\s\S]*aria-label=\{t\('admin\.service_settings\.qq_toggle_label', \{\}, '启用 QQ 快捷登录'\)\}/,
   'QQ enable control must render as a switch'
 );
 
