@@ -46,12 +46,6 @@ function PortalSitesContent() {
   const { t } = useLocale();
   const { session, isLoading, isAuthenticated, selectSite } = useSession();
   const [searchQuery, setSearchQuery] = useState(() => searchParams?.get('q') || '');
-  const [siteFilter, setSiteFilter] = useState<'all' | 'active' | 'missing_url'>(
-    () => (searchParams?.get('filter') as 'all' | 'active' | 'missing_url') || 'all'
-  );
-  const [siteSort, setSiteSort] = useState<'current' | 'recent' | 'name'>(
-    () => (searchParams?.get('sort') as 'current' | 'recent' | 'name') || 'current'
-  );
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [siteSummaryCache, setSiteSummaryCache] = useState<Record<string, PortalSiteSummaryRecord>>({});
   const sites = session?.sites ?? EMPTY_SITES;
@@ -86,12 +80,6 @@ function PortalSitesContent() {
       if (site.status === 'archived') {
         return false;
       }
-      if (siteFilter === 'active' && site.status !== 'active') {
-        return false;
-      }
-      if (siteFilter === 'missing_url' && getPortalSiteWordPressUrl(site)) {
-        return false;
-      }
       if (!query) {
         return true;
       }
@@ -101,17 +89,9 @@ function PortalSitesContent() {
         (siteUrl || '').toLowerCase().includes(query)
       );
     });
-  }, [searchQuery, siteFilter, sites]);
+  }, [searchQuery, sites]);
   const sortedSites = useMemo(() => {
     const next = [...filteredSites];
-    if (siteSort === 'name') {
-      next.sort((left, right) => getPortalSiteDisplayName(left).localeCompare(getPortalSiteDisplayName(right)));
-      return next;
-    }
-    if (siteSort === 'recent') {
-      next.sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
-      return next;
-    }
     next.sort((left, right) => {
       if (left.site_id === selectedSiteId) {
         return -1;
@@ -122,8 +102,7 @@ function PortalSitesContent() {
       return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
     });
     return next;
-  }, [filteredSites, selectedSiteId, siteSort]);
-  const missingUrlCount = sites.filter((site) => !getPortalSiteWordPressUrl(site)).length;
+  }, [filteredSites, selectedSiteId]);
 
   useEffect(() => {
     if (!isAuthenticated || !siteIdsKey) {
@@ -153,10 +132,6 @@ function PortalSitesContent() {
 
   useEffect(() => {
     setSearchQuery(searchParams?.get('q') || '');
-    setSiteFilter(
-      (searchParams?.get('filter') as 'all' | 'active' | 'missing_url') || 'all'
-    );
-    setSiteSort((searchParams?.get('sort') as 'current' | 'recent' | 'name') || 'current');
   }, [searchParams]);
 
   useEffect(() => {
@@ -172,22 +147,14 @@ function PortalSitesContent() {
     } else {
       params.delete('q');
     }
-    if (siteFilter !== 'all') {
-      params.set('filter', siteFilter);
-    } else {
-      params.delete('filter');
-    }
-    if (siteSort !== 'current') {
-      params.set('sort', siteSort);
-    } else {
-      params.delete('sort');
-    }
+    params.delete('filter');
+    params.delete('sort');
     const nextQuery = params.toString();
     const currentQuery = searchParams?.toString() || '';
     if (nextQuery !== currentQuery) {
       router.replace(`${pathname}${nextQuery ? `?${nextQuery}` : ''}`, { scroll: false });
     }
-  }, [pathname, router, searchParams, searchQuery, siteFilter, siteSort]);
+  }, [pathname, router, searchParams, searchQuery]);
 
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
@@ -223,16 +190,6 @@ function PortalSitesContent() {
         selectedSiteName={selectedSite?.site_name}
         sites={session.sites}
         onSiteChange={(siteId) => void selectSite(siteId)}
-        secondaryActions={(
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setShowConnectModal(true)}
-            disabled={!selectedSite?.account_id}
-          >
-            {t('portal.connect_site_action', {}, 'Add site')}
-          </button>
-        )}
         metrics={[
           { label: t('common.sites', {}, 'Sites'), value: session.sites.length },
           {
@@ -254,71 +211,24 @@ function PortalSitesContent() {
             <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
               {t('portal.home.my_sites_title', {}, 'My sites')}
             </h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {t(
+                'portal.sites.simple_list_desc',
+                { count: String(sortedSites.length) },
+                'Showing connected sites. Use search if you have many sites.'
+              )}
+            </p>
           </div>
-          <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm lg:hidden"
-              onClick={() => setShowConnectModal(true)}
-              disabled={!selectedSite?.account_id}
-            >
-              {t('portal.connect_site_action', {}, 'Add site')}
-            </button>
+          <div className="w-full lg:w-auto">
             <input
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site, WordPress URL, or customer')}
+              placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
               className="input w-full lg:max-w-sm"
             />
           </div>
         </div>
-
-        <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={`btn btn-sm ${siteFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setSiteFilter('all')}
-                >
-                  {t('portal.all_sites_filter', {}, 'All')}
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${siteFilter === 'active' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setSiteFilter('active')}
-                >
-                  {t('portal.home.available_sites_label', {}, 'Available sites')}
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${siteFilter === 'missing_url' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setSiteFilter('missing_url')}
-                >
-                  {t('portal.home.needs_attention_sites_label', { count: String(missingUrlCount) }, 'Needs attention')}
-                </button>
-                <select
-                  value={siteSort}
-                  onChange={(event) => setSiteSort(event.target.value as 'current' | 'recent' | 'name')}
-                  className="rounded-full border border-slate-200/80 bg-white/90 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
-                >
-                  <option value="current">{t('portal.sites_sort_current', {}, 'Current first')}</option>
-                  <option value="recent">{t('portal.sites_sort_recent', {}, 'Recently connected')}</option>
-                  <option value="name">{t('portal.sites_sort_name', {}, 'Name A-Z')}</option>
-                </select>
-              </div>
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
-                className="input w-full lg:max-w-sm"
-              />
-            </div>
-          </div>
-        </BackofficeStackCard>
 
         <div className="grid gap-3">
           {filteredSites.length === 0 ? (
@@ -399,14 +309,14 @@ function PortalSitesContent() {
       </BackofficeSectionPanel>
 
       <Modal
-        isOpen={showConnectModal}
+        isOpen={addonConnectMode && showConnectModal}
         onClose={() => setShowConnectModal(false)}
-        title={t('portal.connect_site_heading', undefined, 'Add another WordPress site')}
-	        description={t(
-	          'portal.connect_site_desc',
-	          undefined,
-	          'Add a WordPress site to this account, then follow the setup steps in WordPress.'
-	        )}
+        title={t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')}
+        description={t(
+          'portal.connect_site_addon_desc',
+          undefined,
+          'Confirm this site connection, then return to WordPress to finish setup.'
+        )}
         size="lg"
       >
         {selectedSite?.account_id ? (

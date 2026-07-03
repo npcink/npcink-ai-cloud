@@ -371,7 +371,7 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["email"] == email
     assert items[0]["source"] == "portal_self_registration"
     assert items[0]["package_alias"] == "Free"
-    assert items[0]["plan_id"] == "plan_free"
+    assert items[0]["plan_id"] == "free"
     assert items[0]["qq_bound"] is False
     assert items[0]["site_id"] == "site_admin-portal-user-example-com"
 
@@ -3606,8 +3606,8 @@ def test_service_routes_account_default_free_binding_is_explicit(tmp_path: Path)
     assert "current_subscription" not in generic_response.json()["data"]
     assert onboarding_response.status_code == 200
     onboarding_payload = onboarding_response.json()["data"]
-    assert onboarding_payload["current_subscription"]["plan_id"] == "plan_free"
-    assert onboarding_payload["current_subscription"]["plan_version_id"] == "plan_free_v1"
+    assert onboarding_payload["current_subscription"]["plan_id"] == "free"
+    assert onboarding_payload["current_subscription"]["plan_version_id"] == "free_v1"
     assert onboarding_payload["current_subscription"]["package_alias"] == "Free"
 
     with get_session(database_url) as session:
@@ -3628,10 +3628,10 @@ def test_service_routes_account_default_free_binding_is_explicit(tmp_path: Path)
 
     assert generic_subscription is None
     assert free_subscription is not None
-    assert free_subscription.plan_id == "plan_free"
-    assert free_subscription.plan_version_id == "plan_free_v1"
+    assert free_subscription.plan_id == "free"
+    assert free_subscription.plan_version_id == "free_v1"
     assert free_snapshot is not None
-    assert free_snapshot.plan_version_id == "plan_free_v1"
+    assert free_snapshot.plan_version_id == "free_v1"
 
     dispose_engine(database_url)
 
@@ -3971,13 +3971,13 @@ def test_service_routes_plan_version_label_conflict_is_readable(tmp_path: Path) 
 
     plan_response = client.post(
         "/internal/service/plans",
-        json={"plan_id": "plan_free_conflict", "name": "Free Conflict"},
+        json={"plan_id": "free_conflict", "name": "Free Conflict"},
         headers=build_internal_headers(idempotency_key="svc-plan-conflict-001"),
     )
     first_version_response = client.post(
-        "/internal/service/plans/plan_free_conflict/versions",
+        "/internal/service/plans/free_conflict/versions",
         json={
-            "plan_version_id": "plan_free_conflict_v1",
+            "plan_version_id": "free_conflict_v1",
             "version_label": "v1",
             "budgets": {"max_runs_per_period": 10},
             "concurrency": {"max_active_runs": 1},
@@ -3985,9 +3985,9 @@ def test_service_routes_plan_version_label_conflict_is_readable(tmp_path: Path) 
         headers=build_internal_headers(idempotency_key="svc-plan-conflict-version-001"),
     )
     conflict_response = client.post(
-        "/internal/service/plans/plan_free_conflict/versions",
+        "/internal/service/plans/free_conflict/versions",
         json={
-            "plan_version_id": "free_v1",
+            "plan_version_id": "free_conflict_v2",
             "version_label": "v1",
             "budgets": {"max_runs_per_period": 20},
             "concurrency": {"max_active_runs": 2},
@@ -4001,7 +4001,7 @@ def test_service_routes_plan_version_label_conflict_is_readable(tmp_path: Path) 
     conflict_payload = conflict_response.json()
     assert conflict_payload["error_code"] == "service.plan_version_label_conflict"
     assert "already has version label 'v1'" in conflict_payload["message"]
-    assert "plan_free_conflict_v1" in conflict_payload["message"]
+    assert "free_conflict_v1" in conflict_payload["message"]
 
     dispose_engine(database_url)
 

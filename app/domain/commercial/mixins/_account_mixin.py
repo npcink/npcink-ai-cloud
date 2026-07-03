@@ -239,7 +239,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
             return None
 
         service = cast(Any, self)
-        plan_id, plan_version_id = service._ensure_plan_free_version_in_session(
+        plan_id, plan_version_id = service._ensure_free_version_in_session(
             repository=repository
         )
         now = self.now_factory()

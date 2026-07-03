@@ -25,7 +25,6 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
-import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
 import { PortalEmptyState } from '@/components/portal/PortalPageState';
 import { PortalSiteInspectorDrawer } from '@/components/portal/PortalSiteInspectorDrawer';
 
@@ -302,12 +301,9 @@ export default function PortalPage() {
             description={t(
               'portal.home.no_sites_empty_desc',
               {},
-              'You do not have a connected site yet, so the workspace cannot show package, usage, or connection status. Connect a site first.'
+              'Open npcink-cloud-addon in WordPress and start the connection there. After binding, this page will show your package, usage, and site status.'
             )}
           />
-          <div className="mt-6">
-            <PortalSiteConnectPanel accountId={session.account_id || ''} currentSiteId="" sites={[]} />
-          </div>
         </div>
       </div>
     );
@@ -320,11 +316,11 @@ export default function PortalPage() {
         <div className="surface-panel max-w-2xl p-8">
 	          <PortalEmptyState
 	            title={t('portal.no_active_sites_title', {}, 'No available sites')}
-	            description={t(
-	              'portal.no_active_sites_desc',
-	              {},
-	              'No site is currently available for this account. Add a site or contact support.'
-	            )}
+            description={t(
+              'portal.no_active_sites_desc',
+              {},
+              'No site is currently available for this account. Reconnect from the WordPress plugin, or contact support.'
+            )}
             actionLabel={t('portal.nav_sites', {}, 'Sites')}
             actionHref="/portal/sites"
           />
@@ -685,11 +681,11 @@ export default function PortalPage() {
       <div className="space-y-5">
         <BackofficeSectionPanel className="space-y-4">
           <div className="grid gap-3 lg:grid-cols-4">
-            <Link href="/portal/sites?filter=active" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
+            <Link href="/portal/sites" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.available_sites_label', {}, 'Available sites')}</p>
               <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{visibleSites.length}</p>
             </Link>
-            <Link href="/portal/sites?filter=attention" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
+            <Link href="/portal/sites" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.needs_attention_sites_label', {}, 'Needs attention')}</p>
               <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{restrictedCount}</p>
             </Link>

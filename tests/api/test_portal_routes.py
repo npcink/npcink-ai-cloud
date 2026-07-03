@@ -1477,6 +1477,74 @@ def test_portal_site_diagnostic_advisor_is_scoped_and_read_only(tmp_path: Path) 
     dispose_engine(database_url)
 
 
+def test_portal_site_diagnostics_is_scoped_and_available(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_diag_read", "name": "Portal Diagnostics Read"},
+        headers=build_internal_headers(idempotency_key="portal-diag-read-account-001"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_diag_read",
+            "account_id": "acct_portal_diag_read",
+            "name": "Portal Diagnostics Read Site",
+            "status": "active",
+            "metadata": {"wordpress_url": "https://diag-read.example.test"},
+        },
+        headers=build_internal_headers(idempotency_key="portal-diag-read-site-001"),
+    )
+    _grant_principal_access(
+        client,
+        site_id="site_portal_diag_read",
+        email="portal-diag-read@example.com",
+        idempotency_key="portal-diag-read-user-grants-001",
+    )
+    key_response = client.post(
+        "/portal/v1/sites/site_portal_diag_read/api-keys",
+        json={"label": "Portal Diagnostics Read Key"},
+        headers=build_portal_headers(
+            principal_id="principal:portal-diag-read@example.com",
+            idempotency_key="portal-diag-read-key-001",
+        ),
+    )
+    assert key_response.status_code == 200, key_response.text
+
+    response = client.get(
+        "/portal/v1/sites/site_portal_diag_read/diagnostics",
+        headers=build_portal_headers(principal_id="principal:portal-diag-read@example.com"),
+    )
+    outsider = client.get(
+        "/portal/v1/sites/site_portal_diag_read/diagnostics",
+        headers=build_portal_headers(principal_id="principal:outsider@example.com"),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["site_id"] == "site_portal_diag_read"
+    assert data["account_id"] == "acct_portal_diag_read"
+    assert data["identity_type"] == "user"
+    assert data["role"] == "user"
+    assert data["site_status"] == "active"
+    assert data["wordpress_url"] == "https://diag-read.example.test"
+    assert data["active_key_count"] == 1
+    assert data["key_summary"]["active"] == 1
+    assert data["recent_failures"] == []
+    assert {item["code"] for item in data["checks"]} == {
+        "site_status",
+        "active_key",
+        "wordpress_url",
+        "recent_failures",
+    }
+    assert all(item["ok"] for item in data["checks"])
+    assert outsider.status_code == 401
+    assert outsider.json()["error_code"] == "auth.portal_session_revoked"
+
+    dispose_engine(database_url)
+
+
 def test_portal_unknown_principal_cannot_access_site_keys(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -2449,7 +2517,7 @@ def test_portal_self_registration_opens_free_account_and_session(
     assert registration_data["site_id"] == "site_example-com"
     assert registration_data["site"]["status"] == "active"
     assert registration_data["site"]["wordpress_url"] == "https://example.com"
-    assert registration_data["subscription"]["plan_id"] == "plan_free"
+    assert registration_data["subscription"]["plan_id"] == "free"
     assert registration_data["subscription"]["package_alias"] == "Free"
     assert registration_data["session"]["state"] == "active"
     assert registration_data["session"]["transport"] == "cookie"
@@ -2492,8 +2560,8 @@ def test_portal_self_registration_opens_free_account_and_session(
             )
         )
         assert subscription is not None
-        assert subscription.plan_id == "plan_free"
-        assert subscription.plan_version_id == "plan_free_v1"
+        assert subscription.plan_id == "free"
+        assert subscription.plan_version_id == "free_v1"
         assert subscription.status == "active"
         assert (subscription.metadata_json or {})["source"] == "production_default_free_bind_v1"
         entitlement_snapshot = session.scalar(
@@ -2504,7 +2572,7 @@ def test_portal_self_registration_opens_free_account_and_session(
         )
         assert entitlement_snapshot is not None
         assert entitlement_snapshot.subscription_id == subscription.subscription_id
-        assert entitlement_snapshot.plan_version_id == "plan_free_v1"
+        assert entitlement_snapshot.plan_version_id == "free_v1"
         assert entitlement_snapshot.site_limit == 1
         assert entitlement_snapshot.budgets_json["max_ai_credits_per_period"] == 300
         assert entitlement_snapshot.concurrency_json["max_active_runs"] == 1
@@ -2512,7 +2580,7 @@ def test_portal_self_registration_opens_free_account_and_session(
     entitlements_response = client.get("/portal/v1/sites/site_example-com/entitlements")
     assert entitlements_response.status_code == 200, entitlements_response.text
     entitlements_data = entitlements_response.json()["data"]
-    assert entitlements_data["subscription"]["plan_id"] == "plan_free"
+    assert entitlements_data["subscription"]["plan_id"] == "free"
     assert entitlements_data["entitlement_snapshot"]["site_limit"] == 1
     assert (
         entitlements_data["entitlement_snapshot"]["budgets"]["max_ai_credits_per_period"]

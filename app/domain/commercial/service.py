@@ -209,8 +209,8 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
     },
 }
 DEFAULT_PLAN_TIER_ID = "pro"
-DEFAULT_FREE_PLAN_ID = "plan_free"
-DEFAULT_FREE_PLAN_VERSION_ID = "plan_free_v1"
+DEFAULT_FREE_PLAN_ID = "free"
+DEFAULT_FREE_PLAN_VERSION_ID = "free_v1"
 DEFAULT_FREE_PLAN_KIND = "default_free"
 DEFAULT_FREE_PLAN_SOURCE = "production_default_free_shell_v1"
 DEFAULT_FREE_SUBSCRIPTION_SOURCE = "production_default_free_bind_v1"

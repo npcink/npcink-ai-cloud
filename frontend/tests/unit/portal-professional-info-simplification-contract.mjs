@@ -9,6 +9,7 @@ const aiInsightsSource = readFileSync(resolve(root, 'src/app/portal/ai-insights/
 const monitoringSource = readFileSync(resolve(root, 'src/app/portal/monitoring/page.tsx'), 'utf8');
 const siteRecordSource = readFileSync(resolve(root, 'src/app/portal/sites/[siteId]/page.tsx'), 'utf8');
 const sitesSource = readFileSync(resolve(root, 'src/app/portal/sites/page.tsx'), 'utf8');
+const portalHomeSource = readFileSync(resolve(root, 'src/app/portal/page.tsx'), 'utf8');
 const auditSource = readFileSync(resolve(root, 'src/app/portal/audit/PortalAuditClient.tsx'), 'utf8');
 const pluginMonitoringSource = readFileSync(resolve(root, 'src/components/portal/PortalPluginMonitoringPanel.tsx'), 'utf8');
 const siteInspectorSource = readFileSync(resolve(root, 'src/components/portal/PortalSiteInspectorDrawer.tsx'), 'utf8');
@@ -100,6 +101,21 @@ assert.doesNotMatch(
   sitesSource,
   /sites_management_actions_title|handleExportFilteredSites|export_filtered_sites|select_visible_sites|remove_selected_sites|pendingBatchAction|activateSite|deactivateSite|removeSite/,
   'Portal site export, activation, and bulk management controls must not be part of the customer site list'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /secondaryActions|setSiteFilter|siteFilter|setSiteSort|siteSort|all_sites_filter|sites_sort_current|sites_sort_recent|sites_sort_name/,
+  'Portal site list must not expose add-site, filter-chip, or sort controls in the default customer view'
+);
+assert.match(
+  sitesSource,
+  /addonConnectMode && showConnectModal[\s\S]*PortalSiteConnectPanel/,
+  'Portal site connection panel should only open from the WordPress addon return flow'
+);
+assert.doesNotMatch(
+  portalHomeSource,
+  /PortalSiteConnectPanel|\/portal\/sites\?filter=/,
+  'Portal home must not embed the site creation form or link to hidden site-list filters'
 );
 
 assert.doesNotMatch(

@@ -156,6 +156,53 @@ bash scripts/dev-frontend-doctor.sh
 - `http://127.0.0.1:8010/` 是否渲染 Cloud 首页。
 - `http://127.0.0.1:8010/admin/ai-resources` 是否能进入前端路由或登录重定向。
 
+### 前端新增依赖的强制规范
+
+当修改 `frontend/package.json` 的 `dependencies` 或 `devDependencies` 时，
+必须同时维护两个 lockfile：
+
+- 根目录 `pnpm-lock.yaml`，用于仓库级工具和生产构建上下文。
+- `frontend/pnpm-lock.yaml`，用于 `frontend/Dockerfile.dev` 的本地 Docker
+  dev 构建上下文。
+
+后续 AI 或开发者不得只在宿主机执行一次依赖安装后就认为 Docker 开发环境已同步。
+Docker dev 的 `/app/node_modules` 是 named volume，可能继续保留旧依赖视图；
+如果 `frontend/pnpm-lock.yaml` 没同步，重建容器也可能仍然缺包。
+
+推荐流程：
+
+```bash
+pnpm install --lockfile-only --no-frozen-lockfile
+pnpm --dir frontend install --lockfile-only --ignore-workspace --no-frozen-lockfile
+pnpm run check:frontend-locks
+bash scripts/dev-frontend-doctor.sh
+```
+
+如果 `frontend` 容器已经启动，并且浏览器或日志出现
+`Module not found: Can't resolve '<package>'`，不要只在宿主机重复安装依赖。
+先确认 lockfile 一致，再恢复 Docker 依赖卷：
+
+```bash
+pnpm run check:frontend-locks
+bash scripts/dev-frontend-recover.sh
+```
+
+`pnpm run check:frontend-locks` 会检查 `frontend/package.json` 中声明的前端依赖
+是否同时出现在根 `pnpm-lock.yaml` 的 `frontend` importer 和
+`frontend/pnpm-lock.yaml` 的 `.` importer 中。该检查已接入
+`scripts/dev-frontend-doctor.sh`，因此本地 Docker 诊断会先阻止 lockfile 不一致
+的问题继续扩散。
+
+给后续 AI 的执行规则：
+
+- 新增前端依赖时，必须更新两个 lockfile，并运行 `pnpm run check:frontend-locks`。
+- 如果错误只出现在 Docker 中，优先怀疑 Docker named volume 中的
+  `/app/node_modules` 仍是旧视图。
+- 不要删除无关本地状态；需要恢复前端依赖时使用 `bash scripts/dev-frontend-recover.sh`。
+- 不要把 `frontend/.pnpm-store/`、`node_modules/`、`.next/` 等本地缓存加入提交。
+- 如果新增依赖是为了一个轻量 UI 行为库，必须同时确认前端 type-check、lint、
+  Docker doctor 通过。
+
 ### 恢复本地 frontend 依赖和容器
 
 ```bash
@@ -197,6 +244,7 @@ uv run --extra dev pytest \
 dev frontend guard 相关：
 
 ```bash
+pnpm run check:frontend-locks
 bash scripts/dev-frontend-doctor.sh
 bash scripts/dev-frontend-recover.sh
 docker compose -f docker-compose.dev.yml config -q

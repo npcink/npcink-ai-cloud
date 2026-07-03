@@ -239,8 +239,8 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
     },
 }
 DEFAULT_PLAN_TIER_ID = "pro"
-DEFAULT_FREE_PLAN_ID = "plan_free"
-DEFAULT_FREE_PLAN_VERSION_ID = "plan_free_v1"
+DEFAULT_FREE_PLAN_ID = "free"
+DEFAULT_FREE_PLAN_VERSION_ID = "free_v1"
 DEFAULT_FREE_PLAN_KIND = "default_free"
 DEFAULT_FREE_PLAN_SOURCE = "production_default_free_shell_v1"
 DEFAULT_FREE_SUBSCRIPTION_SOURCE = "production_default_free_bind_v1"
@@ -1124,7 +1124,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "items": [self._serialize_meter_event(event) for event in events],
             }
 
-    def _ensure_plan_free_version_in_session(
+    def _ensure_free_version_in_session(
         self,
         *,
         repository: CommercialRepository,
@@ -1201,7 +1201,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         tier_id: str,
     ) -> tuple[str, str]:
         if tier_id == "free":
-            return self._ensure_plan_free_version_in_session(repository=repository)
+            return self._ensure_free_version_in_session(repository=repository)
 
         baseline = PLAN_TIER_REGISTRY.get(tier_id)
         if baseline is None:

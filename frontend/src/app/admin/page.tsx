@@ -625,12 +625,11 @@ function AdminOverviewContent() {
     {
       href: '/admin/troubleshooting',
       label: t('admin.home_quick_runtime_diagnostics', {}, 'Runtime diagnostics'),
-      detail: t('admin.home_quick_runtime_diagnostics_desc', {}, 'Provider telemetry, meter coverage, and runtime evidence.'),
-    },
-    {
-      href: '/admin/troubleshooting',
-      label: t('admin.home_quick_troubleshooting', {}, 'Troubleshooting'),
-      detail: t('admin.home_quick_troubleshooting_desc', {}, 'Read-only advanced evidence for plugin, media, vector, and feedback quality.'),
+      detail: t(
+        'admin.home_quick_runtime_diagnostics_desc',
+        {},
+        'Runtime, plugin, media, vector, and feedback evidence.'
+      ),
     },
     {
       href: '/admin/ai-resources',

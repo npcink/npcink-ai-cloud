@@ -89,11 +89,11 @@ export function PortalSiteConnectPanel({
     <BackofficeStackCard className="space-y-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-	          {t('portal.connect_site_title', undefined, 'Add site')}
+          {t('portal.connect_site_title', undefined, 'Site connection')}
         </p>
         <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
           {isAddonConnection
-            ? t('portal.connect_site_addon_title', undefined, 'Authorize WordPress addon')
+            ? t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')
             : t('portal.connect_site_heading', undefined, 'Add another WordPress site')}
         </h2>
         <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
@@ -101,7 +101,7 @@ export function PortalSiteConnectPanel({
             ? t(
 	                'portal.connect_site_addon_desc',
 	                undefined,
-	                'Confirm this site connection, then return to WordPress to finish setup.'
+                'Confirm this site, then return to WordPress to finish setup.'
 	              )
 	            : t(
 	                'portal.connect_site_desc',
@@ -114,7 +114,7 @@ export function PortalSiteConnectPanel({
         <div className="rounded-[1rem] border border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-950">
           <p className="text-xs text-gray-500 dark:text-gray-400">{t('common.account', undefined, 'Account')}</p>
           <p className="mt-1 text-sm font-semibold text-gray-950 dark:text-white">
-            {t('portal.connect_site_current_customer', undefined, 'Current customer')}
+            {t('portal.connect_site_current_customer', undefined, 'Current account')}
           </p>
         </div>
         <div className="rounded-[1rem] border border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-950">
@@ -165,7 +165,7 @@ export function PortalSiteConnectPanel({
             {isSubmitting
               ? t('common.saving')
               : isAddonConnection
-                ? t('portal.connect_site_authorize_addon', undefined, 'Authorize addon')
+                ? t('portal.connect_site_authorize_addon', undefined, 'Finish connection')
                 : t('portal.connect_site_action', undefined, 'Add site')}
           </button>
           {onClose ? (
