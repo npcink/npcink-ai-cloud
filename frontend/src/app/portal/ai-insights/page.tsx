@@ -66,18 +66,6 @@ function getGenerationLabel(
   return t('portal.ai_insights.mode_rule_analysis', {}, 'Rule analysis');
 }
 
-function formatBoundaryToken(value: string): string {
-  return String(value || '-').replace(/_/g, ' ');
-}
-
-function getAgentBoundaryMetadata(
-  analysis: PortalAIInsightAnalysis | PortalAIInsightHistoryItem
-) {
-  return analysis.agent_registry_metadata?.agent_id
-    ? analysis.agent_registry_metadata
-    : analysis.agent_handoff;
-}
-
 function AIContentLabel({ analysis }: { analysis: PortalAIInsightAnalysis | PortalAIInsightHistoryItem }) {
   const { t } = useLocale();
   const disclosure = analysis.ai_disclosure;
@@ -139,26 +127,36 @@ function AnalysisPanel({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <BackofficeStatusBadge
-            status={statusTone(analysis.status)}
-            label={analysis.status || 'unknown'}
-          />
-          <BackofficeTag tone={severityTone(analysis.severity)}>
-            {analysis.severity || 'neutral'}
-          </BackofficeTag>
-        </div>
+	      <div className="flex shrink-0 flex-wrap gap-2">
+	        <BackofficeStatusBadge
+	          status={statusTone(analysis.status)}
+	          label={
+	            analysis.status === 'ok'
+	              ? t('portal.home.risk_level_normal', {}, 'Normal')
+	              : t('portal.home.filter_attention_only', {}, 'Needs attention')
+	          }
+	        />
+	        <BackofficeTag tone={severityTone(analysis.severity)}>
+	          {analysis.severity === 'high'
+	            ? t('portal.home.filter_attention_only', {}, 'Needs attention')
+	            : t('portal.monitoring.support_can_review', {}, 'Support can review details if needed')}
+	        </BackofficeTag>
+	      </div>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <BackofficeStackCard>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-            {t('portal.ai_insights.next_step', {}, 'Next step')}
-          </p>
-          <p className="mt-2 text-sm font-medium leading-6 text-slate-900 dark:text-slate-100">
-            {analysis.operator_next_step || t('common.not_found')}
-          </p>
-        </BackofficeStackCard>
+	          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+	            {t('portal.ai_insights.next_step', {}, 'Next step')}
+	          </p>
+	          <p className="mt-2 text-sm font-medium leading-6 text-slate-900 dark:text-slate-100">
+	            {t(
+	              'portal.monitoring.customer_issue_detail',
+	              {},
+	              'If this keeps showing, contact support and include the site name.'
+	            )}
+	          </p>
+	        </BackofficeStackCard>
         <BackofficeStackCard>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
             {t('portal.ai_insights.cache_state', {}, 'Analysis state')}
@@ -187,78 +185,7 @@ function AnalysisPanel({
       {analysis.safety_note ? (
         <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">{analysis.safety_note}</p>
       ) : null}
-      <AgentBoundaryPanel analysis={analysis} />
     </BackofficeSectionPanel>
-  );
-}
-
-function AgentBoundaryPanel({ analysis }: { analysis: PortalAIInsightAnalysis }) {
-  const { t } = useLocale();
-  const handoff = getAgentBoundaryMetadata(analysis);
-  if (!handoff?.agent_id) {
-    return null;
-  }
-
-  return (
-    <div className="mt-5 rounded-[1rem] border border-slate-200/80 bg-slate-50/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/35">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-            {t('portal.ai_insights.agent_boundary', {}, 'Agent boundary')}
-          </p>
-          <p className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
-            {handoff.agent_id}
-          </p>
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {formatBoundaryToken(handoff.handoff_type)} · {formatBoundaryToken(handoff.handoff_owner)}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <BackofficeStatusBadge
-            status={handoff.direct_wordpress_write ? 'error' : 'success'}
-            label={
-              handoff.direct_wordpress_write
-                ? t('portal.ai_insights.write_allowed', {}, 'write allowed')
-                : t('portal.ai_insights.write_blocked', {}, 'write blocked')
-            }
-          />
-          <BackofficeStatusBadge
-            status={handoff.requires_operator_review ? 'warning' : 'inactive'}
-            label={
-              handoff.requires_operator_review
-                ? t('portal.ai_insights.review_required', {}, 'review required')
-                : t('portal.ai_insights.review_optional', {}, 'review optional')
-            }
-          />
-        </div>
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            {t('portal.ai_insights.execution_pattern', {}, 'Execution')}
-          </p>
-          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
-            {handoff.execution_pattern || '-'}
-          </p>
-        </div>
-        <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            {t('portal.ai_insights.storage_mode', {}, 'Storage')}
-          </p>
-          <p className="mt-1 font-mono text-xs text-slate-700 dark:text-slate-200">
-            {handoff.storage_mode || '-'}
-          </p>
-        </div>
-        <div>
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            {t('portal.ai_insights.fail_closed', {}, 'Fail closed')}
-          </p>
-          <p className="mt-1 text-xs text-slate-700 dark:text-slate-200">
-            {formatBoundaryToken(handoff.fail_closed_behavior)}
-          </p>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -458,11 +385,11 @@ function PortalAIInsightsContent() {
     <BackofficePageStack>
       <PortalWorkspaceHeader
         eyebrow={t('portal.workspace_label', {}, 'Portal')}
-        title={t('portal.ai_insights.title', {}, 'AI Insights')}
+        title={t('portal.ai_insights.title', {}, 'Service suggestions')}
         description={t(
           'portal.ai_insights.subtitle',
           {},
-          'Manual operations analysis for the selected site. Provider, model, token usage, cost, and cache keys stay internal.'
+          'Get a short suggestion for the selected site. It does not change your WordPress site.'
         )}
         currentPage="ai-insights"
         selectedSiteId={selectedSiteId}
@@ -472,25 +399,25 @@ function PortalAIInsightsContent() {
         onSiteChange={handleSiteChange}
         metrics={[
           {
-            label: t('portal.ai_insights.metric_mode', {}, 'Current mode'),
+            label: t('portal.ai_insights.metric_mode', {}, 'Latest suggestion'),
             value: activeAnalysis
-              ? getGenerationLabel(activeAnalysis.generation.mode, t)
-              : t('portal.ai_insights.mode_manual', {}, 'Manual'),
+              ? t('portal.ai_insights.metric_ready', {}, 'Ready')
+              : t('portal.ai_insights.metric_not_run', {}, 'Not run'),
             detail: activeAnalysis?.generation.cache_hit
-              ? t('portal.ai_insights.metric_cache_hit', {}, 'Recent cached analysis')
-              : t('portal.ai_insights.metric_manual_detail', {}, 'No automatic AI call on page load'),
+              ? t('portal.ai_insights.metric_cache_hit', {}, 'Using a recent suggestion')
+              : t('portal.ai_insights.metric_manual_detail', {}, 'Runs only when you click the button'),
             size: 'compact',
           },
           {
             label: t('portal.ai_insights.metric_review', {}, 'Review'),
             value: activeAnalysis?.ai_disclosure.review_status || latestHistory?.ai_disclosure.review_status || t('portal.ai_insights.none', {}, 'None'),
-            detail: t('portal.ai_insights.metric_review_detail', {}, 'AI text is labeled for human review'),
+            detail: t('portal.ai_insights.metric_review_detail', {}, 'Read before acting on a suggestion'),
             size: 'compact',
           },
           {
-            label: t('portal.ai_insights.metric_history', {}, 'History'),
+            label: t('portal.ai_insights.metric_history', {}, 'Previous suggestions'),
             value: formatNumber(history.length),
-            detail: t('portal.ai_insights.metric_history_detail', {}, 'Read without new AI call'),
+            detail: t('portal.ai_insights.metric_history_detail', {}, 'Opening history does not create a new suggestion'),
           },
         ]}
         metricsColumnsClassName="lg:grid-cols-3"
@@ -502,8 +429,8 @@ function PortalAIInsightsContent() {
             onClick={() => void handleAnalyze(false)}
           >
             {isAnalyzing
-              ? t('portal.ai_insights.analyzing', {}, 'Analyzing...')
-              : t('portal.ai_insights.analyze', {}, 'Generate AI analysis')}
+              ? t('portal.ai_insights.analyzing', {}, 'Checking...')
+              : t('portal.ai_insights.analyze', {}, 'Get suggestions')}
           </button>
         }
         secondaryActions={
@@ -513,7 +440,7 @@ function PortalAIInsightsContent() {
             disabled={isAnalyzing}
             onClick={() => void handleAnalyze(true)}
           >
-            {t('portal.ai_insights.refresh', {}, 'Refresh analysis')}
+            {t('portal.ai_insights.refresh', {}, 'Refresh suggestions')}
           </button>
         }
       />
@@ -524,35 +451,42 @@ function PortalAIInsightsContent() {
         </div>
       ) : null}
 
-      <BackofficeMetricStrip
-        columnsClassName="lg:grid-cols-4"
-        items={[
-          {
-            label: t('portal.ai_insights.boundary_manual', {}, 'Trigger'),
-            value: t('portal.ai_insights.mode_manual', {}, 'Manual'),
-            detail: t('portal.ai_insights.boundary_manual_detail', {}, 'A page refresh only reads history'),
-            size: 'compact',
-          },
-          {
-            label: t('portal.ai_insights.boundary_payload', {}, 'Payload'),
-            value: t('portal.ai_insights.boundary_payload_value', {}, 'Redacted'),
-            detail: t('portal.ai_insights.boundary_payload_detail', {}, 'No secrets or raw WordPress content'),
-            size: 'compact',
-          },
-          {
-            label: t('portal.ai_insights.boundary_write', {}, 'WordPress write'),
-            value: t('portal.ai_insights.boundary_write_value', {}, 'Blocked'),
-            detail: t('portal.ai_insights.boundary_write_detail', {}, 'Analysis cannot publish or modify content'),
-            size: 'compact',
-          },
-          {
-            label: t('portal.ai_insights.boundary_internal', {}, 'Internal fields'),
-            value: t('portal.ai_insights.boundary_internal_value', {}, 'Hidden'),
-            detail: t('portal.ai_insights.boundary_internal_detail', {}, 'Provider, cost, tokens, cache key'),
-            size: 'compact',
-          },
-        ]}
-      />
+      <details className="overflow-hidden rounded-[1.1rem] border border-slate-200 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900/60">
+          {t('portal.ai_insights.how_it_works_title', {}, 'How suggestions work')}
+        </summary>
+        <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+          <BackofficeMetricStrip
+            columnsClassName="lg:grid-cols-4"
+            items={[
+              {
+                label: t('portal.ai_insights.boundary_manual', {}, 'Start'),
+                value: t('portal.ai_insights.mode_manual', {}, 'Manual'),
+                detail: t('portal.ai_insights.boundary_manual_detail', {}, 'A page refresh only reads history'),
+                size: 'compact',
+              },
+              {
+                label: t('portal.ai_insights.boundary_payload', {}, 'Private content'),
+                value: t('portal.ai_insights.boundary_payload_value', {}, 'Protected'),
+                detail: t('portal.ai_insights.boundary_payload_detail', {}, 'No secrets or raw WordPress content'),
+                size: 'compact',
+              },
+              {
+                label: t('portal.ai_insights.boundary_write', {}, 'Site changes'),
+                value: t('portal.ai_insights.boundary_write_value', {}, 'Not allowed'),
+                detail: t('portal.ai_insights.boundary_write_detail', {}, 'Suggestions cannot publish or modify content'),
+                size: 'compact',
+              },
+              {
+                label: t('portal.ai_insights.boundary_internal', {}, 'Support fields'),
+                value: t('portal.ai_insights.boundary_internal_value', {}, 'Hidden'),
+                detail: t('portal.ai_insights.boundary_internal_detail', {}, 'Technical details stay hidden unless support needs them'),
+                size: 'compact',
+              },
+            ]}
+          />
+        </div>
+      </details>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.85fr)]">
         <AnalysisPanel analysis={activeAnalysis} isLoading={isAnalyzing} />

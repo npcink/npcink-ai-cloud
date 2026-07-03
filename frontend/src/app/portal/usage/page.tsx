@@ -87,8 +87,8 @@ function portalQuotaResourceLabel(
     active_api_key_sites: t('portal.usage.resource_active_keys', {}, 'Active API keys'),
     concurrent_runs: t('portal.usage.resource_concurrent_runs', {}, 'Concurrent runs'),
     batch_items: t('portal.usage.resource_batch_items', {}, 'Batch items'),
-    vector_documents: t('portal.usage.resource_vector_documents', {}, 'Vector articles'),
-    vector_chunks: t('portal.usage.resource_vector_chunks', {}, 'Vector chunks'),
+    vector_documents: t('portal.usage.resource_vector_documents', {}, 'Knowledge articles'),
+    vector_chunks: t('portal.usage.resource_vector_chunks', {}, 'Knowledge pieces'),
     vector_sync_documents_per_run: t('portal.usage.resource_sync_documents', {}, 'Sync articles/run'),
     vector_sync_chunks_per_run: t('portal.usage.resource_sync_chunks', {}, 'Sync chunks/run'),
   };
@@ -102,12 +102,12 @@ function portalCreditBreakdownLabel(
 ): string {
   const labels: Record<string, string> = {
     runs: t('portal.usage.breakdown_runs', {}, 'Hosted runs'),
-    tokens_total: t('portal.usage.breakdown_tokens', {}, 'Model tokens'),
+    tokens_total: t('portal.usage.breakdown_tokens', {}, 'Point usage'),
     web_search: t('portal.usage.breakdown_search', {}, 'Search'),
     image_recommendation: t('portal.usage.breakdown_image', {}, 'Image recommendation'),
-    provider_calls_other: t('portal.usage.breakdown_provider_other', {}, 'Other provider calls'),
-    vector_documents: t('portal.usage.breakdown_vector_documents', {}, 'Vector articles'),
-    vector_chunks: t('portal.usage.breakdown_vector_chunks', {}, 'Vector chunks'),
+    provider_calls_other: t('portal.usage.breakdown_provider_other', {}, 'Other service usage'),
+    vector_documents: t('portal.usage.breakdown_vector_documents', {}, 'Knowledge articles'),
+    vector_chunks: t('portal.usage.breakdown_vector_chunks', {}, 'Knowledge pieces'),
   };
   return labels[key] || fallback || key;
 }
@@ -229,7 +229,6 @@ function PortalUsageContent() {
   }
 
   const usageWindow = usage?.windows?.rolling_24h || usage?.windows?.today || null;
-  const tokenTotal = usageWindow ? usageWindow.tokens_in_total + usageWindow.tokens_out_total : 0;
   const entitlementSnapshot = (entitlements?.entitlement_snapshot || {}) as {
     entitlements?: Record<string, unknown>;
     requests_limit?: number;
@@ -285,7 +284,6 @@ function PortalUsageContent() {
   const graceState = entitlements?.subscription_grace || {};
   const quotaSummary = entitlements?.quota_summary || null;
   const quotaCredit = quotaSummary?.credit || null;
-  const creditPolicy = quotaSummary?.credit_policy || {};
   const quotaResources = Array.isArray(quotaSummary?.resource_limits)
     ? quotaSummary.resource_limits
     : [];
@@ -304,7 +302,6 @@ function PortalUsageContent() {
     quotaResources.map((item) => [String(item.key || ''), item])
   );
   const boundSitesResource = quotaResourceByKey.get('bound_sites');
-  const vectorDocumentsResource = quotaResourceByKey.get('vector_documents');
   const remainingRequests = Math.max(0, toFinite(runBudgetState.limit || runsLimit) - toFinite(runBudgetState.current_total));
   const remainingTokens = Math.max(0, toFinite(tokenBudgetState.limit || tokensLimit) - toFinite(tokenBudgetState.current_total));
   const remainingCost = Math.max(0, toFinite(costBudgetState.limit || costLimit) - toFinite(costBudgetState.current_total));
@@ -331,14 +328,14 @@ function PortalUsageContent() {
       ? t(
           'portal.usage.tokens_over_limit_explainer',
           {},
-          'Token usage is already above the frozen package limit for this period.'
+          'Point usage is already above the package limit for this period.'
         )
       : '',
     costBudgetState.over_limit
       ? t(
           'portal.usage.cost_over_limit_explainer',
           {},
-          'Estimated provider cost is already above the package cost budget for this period.'
+          'Detailed service cost is already above the package budget for this period.'
         )
       : '',
     graceState.active
@@ -363,9 +360,9 @@ function PortalUsageContent() {
   const headroomMetrics = [
     quotaCredit
       ? {
-          label: t('portal.usage.ai_credits_label', {}, 'AI credits'),
+          label: t('portal.usage.ai_credits_label', {}, 'Package points'),
           value: `${formatQuotaValue(quotaCredit.used)} / ${formatQuotaValue(quotaCredit.limit, Boolean(quotaCredit.unlimited), unlimitedLabel)}`,
-          detail: t('portal.usage.ai_credits_metric_detail', {}, 'Recorded credits used this package period.'),
+          detail: t('portal.usage.ai_credits_metric_detail', {}, 'Points used in the current package.'),
         }
       : {
           label: t('portal.usage.remaining_requests_test_label', {}, 'Requests left'),
@@ -379,29 +376,18 @@ function PortalUsageContent() {
           detail: t('portal.usage.resource_bound_sites_detail', {}, 'Sites attached to this account.'),
         }
       : {
-          label: t('portal.usage.remaining_tokens_test_label', {}, 'Tokens left'),
-          value: formatCompactNumber(remainingTokens),
-          detail: `${formatCompactNumber(toFinite(tokenBudgetState.current_total))} / ${formatCompactNumber(toFinite(tokenBudgetState.limit || tokensLimit))}`,
-        },
-    vectorDocumentsResource
-      ? {
-          label: t('portal.usage.resource_vector_documents', {}, 'Vector articles'),
-          value: `${formatQuotaValue(vectorDocumentsResource.used)} / ${formatQuotaValue(vectorDocumentsResource.limit, Boolean(vectorDocumentsResource.unlimited), unlimitedLabel)}`,
-          detail: t('portal.usage.resource_vector_documents_detail', {}, 'Indexed article capacity remains a separate resource limit.'),
-        }
-      : {
-          label: t('portal.usage.remaining_cost_test_label', {}, 'Cost headroom'),
-          value: formatPreferredCurrency(remainingCost),
-          detail: `${formatPreferredCurrency(toFinite(costBudgetState.current_total))} / ${formatPreferredCurrency(toFinite(costBudgetState.limit || costLimit))}`,
+          label: t('portal.usage.remaining_service_uses_label', {}, 'Service uses left'),
+          value: formatNumber(remainingRequests),
+          detail: t('portal.usage.remaining_service_uses_detail', {}, 'Included service usage left.'),
         },
     {
       label: t('common.status'),
-      value: quotaSummary
-        ? t(`status.${quotaStatusTone(quotaSummary.status)}`, {}, quotaSummary.status || 'ok')
-        : headroomTone,
-      detail: quotaSummary?.period_start_at && quotaSummary?.period_end_at
-        ? `${t('common.period')}: ${formatDate(quotaSummary.period_start_at)} - ${formatDate(quotaSummary.period_end_at)}`
-        : usageWindow ? `${t('common.period')}: ${formatDate(usageWindow.start_at)} - ${formatDate(usageWindow.end_at)}` : undefined,
+      value: quotaStatusTone(quotaSummary?.status) === 'error' || overBudget
+        ? t('portal.home.service_status_attention', {}, 'Needs attention')
+        : quotaStatusTone(quotaSummary?.status) === 'warning'
+          ? t('portal.usage.headroom_watch', {}, 'Close to limit')
+          : t('portal.home.risk_level_normal', {}, 'Normal'),
+      detail: t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more points.'),
     },
   ];
 
@@ -430,12 +416,12 @@ function PortalUsageContent() {
   return (
     <BackofficePageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('usage.summary')}
-        title={t('portal.usage.primary_title')}
+        eyebrow={t('portal.usage.plan_summary_label', {}, 'Package')}
+        title={t('portal.nav_usage', {}, 'Plan and usage')}
         eyebrowInfo={t(
           'portal.usage.primary_desc',
           {},
-          'Review usage for this site and see how much headroom remains under the current package.'
+          'Review the current package, remaining usage, and available credit packs for this site.'
         )}
         currentPage="usage"
         selectedSiteId={selectedSiteId}
@@ -475,38 +461,88 @@ function PortalUsageContent() {
       ) : null}
 
       {quotaSummary && quotaCredit ? (
-        <BackofficeSectionPanel className="space-y-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('portal.usage.ai_credit_eyebrow', {}, 'Package usage')}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                {t('portal.usage.ai_credit_title', {}, 'AI credits and resource limits')}
-              </h2>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-                {t(
-                  'portal.usage.ai_credit_desc',
-                  {},
-                  'AI credits measure consumption. Site binding, concurrency, batch size, and vector capacity remain separate package limits.'
-                )}
-              </p>
+        <div data-portal-usage="plan-summary">
+          <BackofficeSectionPanel className="space-y-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('portal.usage.plan_summary_label', {}, 'Package')}
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+                  {t('portal.usage.plan_summary_title', {}, 'Current package')}
+                </h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+                  {t(
+                    'portal.usage.plan_summary_desc',
+                    {},
+                    'Start here to confirm the package, remaining credits, and whether this site needs more headroom.'
+                  )}
+                </p>
+              </div>
+              <BackofficeStatusBadge
+                status={quotaStatusTone(quotaSummary.status)}
+                label={
+                  quotaStatusTone(quotaSummary.status) === 'ok'
+                    ? t('portal.home.risk_level_normal', {}, 'Normal')
+                    : t('portal.home.filter_attention_only', {}, 'Needs attention')
+                }
+              />
             </div>
-            <BackofficeStatusBadge
-              status={quotaStatusTone(quotaSummary.status)}
-              label={t(`status.${quotaStatusTone(quotaSummary.status)}`, {}, quotaSummary.status || 'ok')}
-            />
-          </div>
+
+            <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-usage="current-package">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                  {t('portal.current_subscription_label', {}, 'Current package')}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="truncate text-lg font-semibold text-gray-950 dark:text-white">
+                    {planLabel}
+                  </p>
+                  <BackofficeStatusBadge
+                    status={overBudget ? 'over_budget' : 'within_budget'}
+                    label={overBudget ? t('status.over_budget') : t('status.within_budget')}
+                  />
+                </div>
+                <p className="mt-1 truncate text-sm text-gray-600 dark:text-gray-400">
+                  {getPortalSiteWordPressUrl(selectedSite) ||
+                    t('portal.site_url_missing', {}, 'WordPress URL not configured')}
+                </p>
+              </div>
+              <div className="grid gap-2 text-sm text-slate-700 dark:text-slate-200 sm:grid-cols-3 lg:min-w-[34rem]">
+                <span className="rounded-2xl border border-slate-200/80 px-3 py-2 dark:border-slate-800">
+                  {t('portal.usage.package_credit_allowance_label', {}, 'Package credits')}:{' '}
+                  <strong>
+                    {quotaCredit
+                      ? formatQuotaValue(quotaCredit.limit, Boolean(quotaCredit.unlimited), unlimitedLabel)
+                      : formatNumber(runsLimit)}
+                  </strong>
+                </span>
+                <span className="rounded-2xl border border-slate-200/80 px-3 py-2 dark:border-slate-800">
+                  {t('portal.usage.site_allowance_label', {}, 'Sites')}:{' '}
+                  <strong>
+                    {boundSitesResource
+                      ? `${formatQuotaValue(boundSitesResource.used)} / ${formatQuotaValue(boundSitesResource.limit, Boolean(boundSitesResource.unlimited), unlimitedLabel)}`
+                      : t('common.not_found')}
+                  </strong>
+                </span>
+                <span className="rounded-2xl border border-slate-200/80 px-3 py-2 dark:border-slate-800">
+                  {t('common.status')}: <strong>{headroomTone}</strong>
+                </span>
+              </div>
+            </div>
+          </BackofficeStackCard>
+
           <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
             <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                    {t('portal.usage.ai_credits_label', {}, 'AI credits')}
+                    {t('portal.usage.ai_credits_label', {}, 'Package points')}
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {quotaCredit.estimated
-                      ? t('portal.usage.ai_credits_estimated_desc', {}, 'No ledger entries yet; showing fallback metering.')
+                      ? t('portal.usage.ai_credits_estimated_desc', {}, 'Final records are still being prepared, so this is an estimate.')
                       : t('portal.usage.ai_credits_actual_desc', {}, 'Credits recorded for this package period.')}
                   </p>
                 </div>
@@ -534,56 +570,50 @@ function PortalUsageContent() {
                   </p>
                 </div>
               ) : null}
-              <div className="mt-4 grid gap-2 rounded-[1rem] border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950/35 dark:text-slate-400">
-                <div className="flex items-center justify-between gap-3">
-                  <span>{t('portal.usage.credit_policy_rate_version', {}, 'Rate version')}</span>
-                  <span className="font-medium text-slate-900 dark:text-slate-100">
-                    {String(creditPolicy.rate_version || quotaCredit.rate_version || 'ai-credit-ledger-v2')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>{t('portal.usage.credit_policy_renewal', {}, 'Renewal')}</span>
-                  <span className="text-right font-medium text-slate-900 dark:text-slate-100">
-                    {t('portal.usage.credit_policy_renewal_monthly', {}, 'Plan credits reset each package period')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>{t('portal.usage.credit_policy_topup', {}, 'Top-ups')}</span>
-                  <span className="text-right font-medium text-slate-900 dark:text-slate-100">
-                    {t('portal.usage.credit_policy_topup_current_period', {}, 'Credit packs apply to the selected period only')}
-                  </span>
-                </div>
-              </div>
-              {quotaBreakdown.length > 0 ? (
-                <div className="mt-5 rounded-[1rem] border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/35">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                    {t('portal.usage.credit_breakdown_title', {}, 'Credit breakdown')}
-                  </p>
-                  <div className="mt-3 divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                    {quotaBreakdown.map((item) => (
-                      <div key={item.key || item.label} className="flex items-start justify-between gap-4 py-2">
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">
-                            {portalCreditBreakdownLabel(String(item.key || ''), String(item.label || ''), t)}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {formatQuotaValue(item.quantity)} {item.unit}
+              <details className="mt-4 overflow-hidden rounded-[1rem] border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/35">
+                <summary className="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 hover:bg-white/70 dark:text-gray-400 dark:hover:bg-slate-900/60">
+	                  {t('portal.usage.plan_detail_toggle', {}, 'Point rules and details')}
+	                </summary>
+	                <div className="grid gap-2 border-t border-slate-200 p-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400">
+	                  <div className="flex items-center justify-between gap-3">
+	                    <span>{t('portal.usage.credit_policy_renewal', {}, 'Renewal')}</span>
+                    <span className="text-right font-medium text-slate-900 dark:text-slate-100">
+                      {t('portal.usage.credit_policy_renewal_monthly', {}, 'Plan credits reset each package period')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>{t('portal.usage.credit_policy_topup', {}, 'Top-ups')}</span>
+                    <span className="text-right font-medium text-slate-900 dark:text-slate-100">
+                      {t('portal.usage.credit_policy_topup_current_period', {}, 'Credit packs apply to the selected period only')}
+                    </span>
+                  </div>
+                  {quotaBreakdown.length > 0 ? (
+                    <div className="mt-2 divide-y divide-slate-200 text-sm dark:divide-slate-800">
+                      {quotaBreakdown.map((item) => (
+                        <div key={item.key || item.label} className="flex items-start justify-between gap-4 py-2">
+                          <div>
+                            <p className="font-medium text-slate-900 dark:text-slate-100">
+                              {portalCreditBreakdownLabel(String(item.key || ''), String(item.label || ''), t)}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {formatQuotaValue(item.quantity)} {item.unit}
+                            </p>
+                          </div>
+                          <p className="text-right font-semibold text-slate-950 dark:text-white">
+                            {formatQuotaValue(item.credits)}
                           </p>
                         </div>
-                        <p className="text-right font-semibold text-slate-950 dark:text-white">
-                          {formatQuotaValue(item.credits)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              </details>
             </BackofficeStackCard>
-            <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
-              <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                {t('portal.usage.resource_limits_title', {}, 'Resource limits')}
-              </p>
-              <div className="mt-4 space-y-4">
+            <details className="overflow-hidden rounded-[1.1rem] border border-slate-200/80 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950 hover:bg-slate-50 dark:text-white dark:hover:bg-slate-900/60">
+                {t('portal.usage.more_limits_title', {}, 'More package limits')}
+              </summary>
+              <div className="space-y-4 border-t border-slate-200 p-4 dark:border-slate-800">
                 {quotaResources.map((resource) => {
                   const status = String(resource.status || 'ok');
                   const progress = resource.unlimited
@@ -623,7 +653,7 @@ function PortalUsageContent() {
                   );
                 })}
               </div>
-            </BackofficeStackCard>
+            </details>
           </div>
           {availableCreditPacks.length > 0 ? (
             <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
@@ -636,7 +666,7 @@ function PortalUsageContent() {
                     {t(
                       'portal.usage.credit_packs_desc',
                       {},
-                      'Add AI credits to the current package period without changing your plan.'
+	                      'Add points to the current package period without changing your plan.'
                     )}
                   </p>
                 </div>
@@ -755,97 +785,109 @@ function PortalUsageContent() {
               </div>
             )}
           </BackofficeStackCard>
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                  {t('portal.usage.credit_ledger_title', {}, 'Credit ledger detail')}
-                </p>
-                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          <details
+            className="overflow-hidden rounded-[1.1rem] border border-slate-200/80 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45"
+            data-portal-usage="ledger-detail"
+          >
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950 hover:bg-slate-50 dark:text-white dark:hover:bg-slate-900/60">
+	              {t('portal.usage.credit_ledger_title', {}, 'Point record details')}
+            </summary>
+            <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   {t(
                     'portal.usage.credit_ledger_desc',
                     {},
-                    'Current-period AI credit consume records for this account.'
+	                    'Current-period package point records for this account.'
                   )}
                 </p>
-              </div>
-              <div className="text-left sm:text-right">
-                <p className="text-lg font-semibold text-gray-950 dark:text-white">
-                  {formatQuotaValue(creditLedgerTotal)}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {t(
-                    'portal.usage.credit_ledger_record_count',
-                    { count: formatQuotaValue(creditLedgerCount) },
-                    `${formatQuotaValue(creditLedgerCount)} records`
-                  )}
-                </p>
-              </div>
-            </div>
-            {creditLedgerItems.length > 0 ? (
-              <div className="mt-4 overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
-                <div className="hidden grid-cols-[1.1fr_0.8fr_0.6fr_0.9fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
-                  <span>{t('portal.usage.credit_ledger_source', {}, 'Source')}</span>
-                  <span>{t('portal.usage.credit_ledger_quantity', {}, 'Quantity')}</span>
-                  <span className="text-right">{t('portal.usage.credit_ledger_credits', {}, 'Credits')}</span>
-                  <span className="text-right">{t('portal.usage.credit_ledger_time', {}, 'Time')}</span>
+                <div className="text-left sm:text-right">
+                  <p className="text-lg font-semibold text-gray-950 dark:text-white">
+                    {formatQuotaValue(creditLedgerTotal)}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {t(
+                      'portal.usage.credit_ledger_record_count',
+                      { count: formatQuotaValue(creditLedgerCount) },
+                      `${formatQuotaValue(creditLedgerCount)} records`
+                    )}
+                  </p>
                 </div>
-                <div className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                  {creditLedgerItems.map((entry) => (
-                    <div
-                      key={entry.ledger_entry_id || `${entry.source_type}-${entry.created_at}`}
-                      className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.9fr] sm:gap-3"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-950 dark:text-white">
-                          {entry.category_label || portalCreditBreakdownLabel(entry.source_type, '', t)}
+              </div>
+              {creditLedgerItems.length > 0 ? (
+                <div className="mt-4 overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
+                  <div className="hidden grid-cols-[1.1fr_0.8fr_0.6fr_0.9fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
+                    <span>{t('portal.usage.credit_ledger_source', {}, 'Source')}</span>
+                    <span>{t('portal.usage.credit_ledger_quantity', {}, 'Quantity')}</span>
+                    <span className="text-right">{t('portal.usage.credit_ledger_credits', {}, 'Credits')}</span>
+                    <span className="text-right">{t('portal.usage.credit_ledger_time', {}, 'Time')}</span>
+                  </div>
+                  <div className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+                    {creditLedgerItems.map((entry) => (
+                      <div
+                        key={entry.ledger_entry_id || `${entry.source_type}-${entry.created_at}`}
+                        className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.9fr] sm:gap-3"
+                      >
+                        <div>
+                          <p className="font-medium text-slate-950 dark:text-white">
+                            {entry.category_label || portalCreditBreakdownLabel(entry.source_type, '', t)}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {entry.explanation ||
+                              entry.event_type ||
+                              t('portal.usage.credit_ledger_default_event', {}, 'Usage event')}
+                          </p>
+                        </div>
+                        <p className="text-slate-700 dark:text-slate-300">
+                          {formatQuotaValue(entry.quantity)} {entry.unit}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {entry.explanation ||
-                            entry.event_type ||
-                            t('portal.usage.credit_ledger_default_event', {}, 'Usage event')}
+                        <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
+                          {formatSignedCreditDelta(Number(entry.net_credit_delta ?? entry.credit_delta ?? 0))}
+                        </p>
+                        <p className="text-slate-500 dark:text-slate-400 sm:text-right">
+                          {entry.created_at ? formatDate(entry.created_at) : '-'}
                         </p>
                       </div>
-                      <p className="text-slate-700 dark:text-slate-300">
-                        {formatQuotaValue(entry.quantity)} {entry.unit}
-                      </p>
-                      <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
-                        {formatSignedCreditDelta(Number(entry.net_credit_delta ?? entry.credit_delta ?? 0))}
-                      </p>
-                      <p className="text-slate-500 dark:text-slate-400 sm:text-right">
-                        {entry.created_at ? formatDate(entry.created_at) : '-'}
-                      </p>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-[1rem] border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                {t(
-                  'portal.usage.credit_ledger_empty',
-                  {},
-                  'No AI credit ledger consume records are available for the current period.'
-                )}
-              </div>
-            )}
-          </BackofficeStackCard>
-        </BackofficeSectionPanel>
+              ) : (
+                <div className="mt-4 rounded-[1rem] border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  {t(
+                    'portal.usage.credit_ledger_empty',
+                    {},
+	                    'No package point records are available for the current period.'
+                  )}
+                </div>
+              )}
+            </div>
+            </details>
+          </BackofficeSectionPanel>
+        </div>
       ) : null}
 
-      {chartData.length > 0 ? (
-        <BackofficeSectionPanel className="space-y-5">
+      <details
+        className="overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45"
+        data-portal-usage="usage-detail"
+      >
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-950 hover:bg-slate-50 dark:text-white dark:hover:bg-slate-900/60">
+          {t('portal.usage.detail_toggle', {}, 'Usage details')}
+        </summary>
+        <div className="space-y-5 border-t border-slate-200 p-4 dark:border-slate-800">
+          {chartData.length > 0 ? (
+            <BackofficeSectionPanel className="space-y-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               {t('portal.usage.trends_label', {}, 'Usage trends')}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('portal.usage.trends_title', {}, 'Requests, tokens, and cost')}
+	              {t('portal.usage.trends_title', {}, 'Service uses, points, and budget')}
             </h2>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
             <BackofficeStackCard>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {t('usage.requests', {}, 'Requests')}
+	                {t('portal.usage.package_service_uses_label', {}, 'Service uses')}
               </p>
               <div className="mt-3">
                 <UsageBarChart data={chartData} type="requests" height={160} />
@@ -853,7 +895,7 @@ function PortalUsageContent() {
             </BackofficeStackCard>
             <BackofficeStackCard>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {t('usage.tokens', {}, 'Tokens')}
+	                {t('portal.usage.breakdown_tokens', {}, 'Point usage')}
               </p>
               <div className="mt-3">
                 <UsageBarChart data={chartData} type="tokens" height={160} />
@@ -861,7 +903,7 @@ function PortalUsageContent() {
             </BackofficeStackCard>
             <BackofficeStackCard>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {t('usage.cost', {}, 'Cost')}
+	                {t('portal.usage.package_budget_label', {}, 'Budget')}
               </p>
               <div className="mt-3">
                 <UsageBarChart data={chartData} type="cost" height={160} />
@@ -875,10 +917,10 @@ function PortalUsageContent() {
         <BackofficeSectionPanel className="space-y-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('portal.usage.quota_headroom_label', {}, 'Quota headroom')}
+              {t('portal.usage.quota_headroom_label', {}, 'Package use')}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('portal.usage.quota_headroom_title', {}, 'Plan utilization')}
+              {t('portal.usage.quota_headroom_title', {}, 'Current usage')}
             </h2>
           </div>
           <div className="space-y-4">
@@ -886,7 +928,7 @@ function PortalUsageContent() {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-gray-950 dark:text-white">{t('usage.requests', {}, 'Requests')}</span>
+	                    <span className="font-medium text-gray-950 dark:text-white">{t('portal.usage.package_service_uses_label', {}, 'Service uses')}</span>
                     <span className="text-gray-600 dark:text-gray-400">{runUtilizationPct}%</span>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
@@ -904,7 +946,7 @@ function PortalUsageContent() {
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-gray-950 dark:text-white">{t('usage.tokens', {}, 'Tokens')}</span>
+	                    <span className="font-medium text-gray-950 dark:text-white">{t('portal.usage.breakdown_tokens', {}, 'Point usage')}</span>
                     <span className="text-gray-600 dark:text-gray-400">{tokenUtilizationPct}%</span>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
@@ -922,7 +964,7 @@ function PortalUsageContent() {
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-gray-950 dark:text-white">{t('common.cost', {}, 'Cost')}</span>
+	                    <span className="font-medium text-gray-950 dark:text-white">{t('portal.usage.package_budget_label', {}, 'Budget')}</span>
                     <span className="text-gray-600 dark:text-gray-400">{costUtilizationPct}%</span>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
@@ -948,16 +990,16 @@ function PortalUsageContent() {
         <BackofficeSectionPanel className="space-y-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('portal.usage.cost_summary_label', {}, 'Cost summary')}
+	              {t('portal.usage.cost_summary_label', {}, 'Budget summary')}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('portal.usage.cost_summary_title', {}, 'Provider cost breakdown')}
+	              {t('portal.usage.cost_summary_title', {}, 'Service usage details')}
             </h2>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {t('portal.usage.estimated_total_cost', {}, 'Estimated total cost')}
+	                {t('portal.usage.estimated_total_cost', {}, 'Estimated service budget')}
               </p>
               <p className="mt-3 text-2xl font-semibold text-gray-950 dark:text-white">
                 {formatPreferredCurrency(toFinite(usageWindow.cost_total))}
@@ -968,7 +1010,7 @@ function PortalUsageContent() {
             </BackofficeStackCard>
             <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {t('portal.usage.input_tokens', {}, 'Input tokens')}
+	                {t('portal.usage.input_tokens', {}, 'Input points')}
               </p>
               <p className="mt-3 text-2xl font-semibold text-gray-950 dark:text-white">
                 {formatCompactNumber(toFinite(usageWindow.tokens_in_total))}
@@ -976,7 +1018,7 @@ function PortalUsageContent() {
             </BackofficeStackCard>
             <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {t('portal.usage.output_tokens', {}, 'Output tokens')}
+	                {t('portal.usage.output_tokens', {}, 'Output points')}
               </p>
               <p className="mt-3 text-2xl font-semibold text-gray-950 dark:text-white">
                 {formatCompactNumber(toFinite(usageWindow.tokens_out_total))}
@@ -1019,13 +1061,13 @@ function PortalUsageContent() {
                 </div>
                 <div className="grid gap-2 text-sm text-slate-700 dark:text-slate-200 sm:grid-cols-3 lg:min-w-[34rem]">
                   <span className="rounded-2xl border border-slate-200/80 px-3 py-2 dark:border-slate-800">
-                    {t('usage.requests_month')}: <strong>{formatNumber(runsLimit)}</strong>
+	                    {t('portal.usage.package_service_uses_label', {}, 'Service uses')}: <strong>{formatNumber(runsLimit)}</strong>
                   </span>
                   <span className="rounded-2xl border border-slate-200/80 px-3 py-2 dark:border-slate-800">
-                    {t('usage.tokens_month')}: <strong>{formatCompactNumber(tokensLimit)}</strong>
+	                    {t('portal.usage.package_point_limit_label', {}, 'Point limit')}: <strong>{formatCompactNumber(tokensLimit)}</strong>
                   </span>
                   <span className="rounded-2xl border border-slate-200/80 px-3 py-2 dark:border-slate-800">
-                    {t('common.cost')}: <strong>{formatPreferredCurrency(costLimit)}</strong>
+	                    {t('portal.usage.package_budget_label', {}, 'Budget')}: <strong>{formatPreferredCurrency(costLimit)}</strong>
                   </span>
                 </div>
               </div>
@@ -1098,8 +1140,10 @@ function PortalUsageContent() {
           )}
           actionLabel={t('portal.nav_package', {}, 'Open Package')}
           actionHref={selectedSiteId ? `/portal/billing?site=${selectedSiteId}` : '/portal/billing'}
-        />
-      )}
+          />
+        )}
+        </div>
+      </details>
     </BackofficePageStack>
   );
 }

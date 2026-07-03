@@ -174,7 +174,7 @@ function LoginFormContent() {
               {t(
                 'portal.login.notice',
                 undefined,
-                'Enter your Portal email address, receive a verification code, then continue into the portal workspace.'
+                'Enter your email address, receive a verification code, then continue into the service center.'
               )}
             </p>
           </BackofficeStackCard>

@@ -41,13 +41,6 @@ const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
   'subscription.canceled': 'audit.kind.subscription.canceled',
 };
 
-function humanizeAuditEventKind(eventKind: string) {
-  return eventKind
-    .replace(/[._]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 export function PortalAuditClient() {
   const pathname = usePathname();
   const router = useRouter();
@@ -91,10 +84,8 @@ export function PortalAuditClient() {
     () => Array.from(new Set(filteredAuditEvents.map((event) => event.event_kind))),
     [filteredAuditEvents]
   );
-  const successRate = useMemo(() => {
-    const total = filteredAuditEvents.length;
-    const succeeded = filteredAuditEvents.filter((event) => event.outcome === 'success').length;
-    return total > 0 ? Math.round((succeeded / total) * 100) : 0;
+  const attentionEventCount = useMemo(() => {
+    return filteredAuditEvents.filter((event) => event.outcome !== 'success').length;
   }, [filteredAuditEvents]);
 
   useEffect(() => {
@@ -233,7 +224,7 @@ export function PortalAuditClient() {
     if (key) {
       return t(key);
     }
-    return humanizeAuditEventKind(eventKind);
+    return t('portal.audit.generic_activity', {}, 'Service activity');
   };
 
   if (sessionLoading || isLoading) {
@@ -265,25 +256,31 @@ export function PortalAuditClient() {
     <BackofficePageStack>
       <PortalWorkspaceHeader
         eyebrow={t('portal.selected_site')}
-        title={t('audit.title')}
-        eyebrowInfo={t('audit.desc')}
+        title={t('portal.audit.nav_label', {}, 'Security records')}
+        eyebrowInfo={t('portal.audit.customer_desc', {}, 'Review recent sign-in and service activity for the selected site.')}
         currentPage="audit"
         selectedSiteId={selectedSiteId}
         selectedSiteName={selectedSite?.site_name}
         sites={sites}
         onSiteChange={handleSiteChange}
         metrics={[
-          { label: t('audit.total_events'), value: auditSummary?.totals?.events || 0 },
-          { label: t('portal.audit.visible_events', {}, 'Visible events'), value: filteredAuditEvents.length },
-          { label: t('audit.event_types'), value: eventKinds.length },
-          { label: t('audit.success_rate'), value: `${successRate}%` },
+          { label: t('portal.audit.records_total', {}, 'Total records'), value: auditSummary?.totals?.events || 0 },
+          { label: t('portal.audit.visible_records', {}, 'Visible records'), value: filteredAuditEvents.length },
+          {
+            label: t('portal.audit.attention_records', {}, 'Need review'),
+            value: attentionEventCount,
+            detail:
+              attentionEventCount > 0
+                ? t('portal.audit.attention_records_desc', {}, 'Some records may need support follow-up.')
+                : t('portal.audit.no_attention_records_desc', {}, 'No issue is visible in this view.'),
+          },
           {
             label: t('portal.updated_at', {}, 'Updated'),
-            value: auditSummary?.generated_at ? formatDate(auditSummary.generated_at) : t('common.not_found'),
+            value: auditSummary?.generated_at ? formatDate(auditSummary.generated_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
             size: 'compact',
           },
         ]}
-        metricsColumnsClassName="xl:grid-cols-5"
+        metricsColumnsClassName="xl:grid-cols-4"
       />
 
       {isSwitchingSite ? (
@@ -296,78 +293,85 @@ export function PortalAuditClient() {
         />
       ) : null}
 
-      <BackofficeSectionPanel className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={`btn btn-sm ${preset === 'all' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('all')}>
-            {t('portal.audit.preset_all', {}, 'All')}
-          </button>
-          <button type="button" className={`btn btn-sm ${preset === 'errors' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('errors')}>
-            {t('portal.audit.preset_errors', {}, 'Failures')}
-          </button>
-          <button type="button" className={`btn btn-sm ${preset === 'denied' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('denied')}>
-            {t('portal.audit.preset_denied', {}, 'Denied')}
-          </button>
-          <button type="button" className={`btn btn-sm ${preset === 'recent' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('recent')}>
-            {t('portal.audit.preset_recent', {}, 'Recent 10')}
-          </button>
+      <details className="overflow-hidden rounded-[1.4rem] border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-950">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-950 hover:bg-gray-50 dark:text-white dark:hover:bg-slate-900">
+          {t('portal.audit.filter_label', {}, 'Filter records')}
+        </summary>
+        <div className="border-t border-gray-200 p-5 dark:border-gray-800">
+          <BackofficeSectionPanel className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={`btn btn-sm ${preset === 'all' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('all')}>
+                {t('portal.audit.preset_all', {}, 'All')}
+              </button>
+              <button type="button" className={`btn btn-sm ${preset === 'errors' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('errors')}>
+                {t('portal.audit.preset_errors', {}, 'Needs review')}
+              </button>
+              <button type="button" className={`btn btn-sm ${preset === 'denied' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('denied')}>
+                {t('portal.audit.preset_denied', {}, 'Access blocked')}
+              </button>
+              <button type="button" className={`btn btn-sm ${preset === 'recent' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => applyPreset('recent')}>
+                {t('portal.audit.preset_recent', {}, 'Recent 10')}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium">{t('portal.audit.record_type_label', {}, 'Record type')}</label>
+                <select value={eventKindFilter} onChange={(e) => setEventKindFilter(e.target.value)} className="input">
+                  <option value="">{t('portal.audit.all_record_types', {}, 'All record types')}</option>
+                  {eventKinds.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {translateEventKind(kind)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium">{t('portal.audit.result_label', {}, 'Result')}</label>
+                <select value={outcomeFilter} onChange={(e) => setOutcomeFilter(e.target.value)} className="input">
+                  <option value="">{t('portal.audit.all_results', {}, 'All results')}</option>
+                  <option value="success">{t('status.success')}</option>
+                  <option value="error">{t('common.error')}</option>
+                  <option value="denied">{t('status.denied')}</option>
+                  <option value="warning">{t('status.warning')}</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium">{t('portal.audit.record_count_label', {}, 'Records shown')}</label>
+                <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="input">
+                  <option value={10}>10</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={500}>500</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium">
+                  {t('portal.audit.range_label', {}, 'Time range')}
+                </label>
+                <select
+                  value={timeRange}
+                  onChange={(e) => setTimeRange(e.target.value as 'all' | '24h' | '7d' | '30d')}
+                  className="input"
+                >
+                  <option value="all">{t('portal.audit.range_all', {}, 'All time')}</option>
+                  <option value="24h">{t('portal.audit.range_24h', {}, 'Last 24 hours')}</option>
+                  <option value="7d">{t('portal.audit.range_7d', {}, 'Last 7 days')}</option>
+                  <option value="30d">{t('portal.audit.range_30d', {}, 'Last 30 days')}</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button onClick={handleFilterChange} className="btn btn-primary w-full">
+                  {t('common.apply_filters')}
+                </button>
+              </div>
+            </div>
+          </BackofficeSectionPanel>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <div>
-            <label className="mb-2 block text-sm font-medium">{t('audit.event_type')}</label>
-            <select value={eventKindFilter} onChange={(e) => setEventKindFilter(e.target.value)} className="input">
-              <option value="">{t('audit.all_types', {}, 'All Types')}</option>
-              {eventKinds.map((kind) => (
-                <option key={kind} value={kind}>
-                  {translateEventKind(kind)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium">{t('audit.outcome')}</label>
-            <select value={outcomeFilter} onChange={(e) => setOutcomeFilter(e.target.value)} className="input">
-              <option value="">{t('audit.all_outcomes', {}, 'All Outcomes')}</option>
-              <option value="success">{t('status.success')}</option>
-              <option value="error">{t('common.error')}</option>
-              <option value="denied">{t('status.denied')}</option>
-              <option value="warning">{t('status.warning')}</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium">{t('audit.limit')}</label>
-            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="input">
-              <option value={10}>10</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={500}>500</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium">
-              {t('portal.audit.range_label', {}, 'Time range')}
-            </label>
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value as 'all' | '24h' | '7d' | '30d')}
-              className="input"
-            >
-              <option value="all">{t('portal.audit.range_all', {}, 'All time')}</option>
-              <option value="24h">{t('portal.audit.range_24h', {}, 'Last 24 hours')}</option>
-              <option value="7d">{t('portal.audit.range_7d', {}, 'Last 7 days')}</option>
-              <option value="30d">{t('portal.audit.range_30d', {}, 'Last 30 days')}</option>
-            </select>
-          </div>
-          <div className="flex items-end">
-            <button onClick={handleFilterChange} className="btn btn-primary w-full">
-              {t('common.apply_filters')}
-            </button>
-          </div>
-        </div>
-      </BackofficeSectionPanel>
+      </details>
 
       <BackofficeSectionPanel className="overflow-hidden p-0">
         <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
-          <h2 className="text-xl font-semibold text-gray-950 dark:text-white">{t('audit.events', {}, 'Audit Events')}</h2>
+          <h2 className="text-xl font-semibold text-gray-950 dark:text-white">{t('portal.audit.nav_label', {}, 'Security records')}</h2>
         </div>
         {filteredAuditEvents.length === 0 ? (
           <div className="p-6">
@@ -392,30 +396,24 @@ export function PortalAuditClient() {
                     <span className="font-medium">{translateEventKind(event.event_kind)}</span>
                     <BackofficeStatusBadge status={event.outcome} label={translateOutcome(event.outcome)} />
                   </div>
-                  {event.message ? <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">{event.message}</p> : null}
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-xs text-gray-500">{formatDate(event.created_at)}</p>
                     <details>
                       <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                         {t('common.view_details', {}, 'View details')}
                       </summary>
-                      <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 text-xs text-gray-600 dark:border-slate-800 dark:bg-slate-950/45 dark:text-gray-300 md:grid-cols-2">
-                        <AuditDetail label={t('common.created')} value={formatDate(event.created_at)} />
-                        <AuditDetail label={t('audit.actor', {}, 'Actor')} value={String(event.metadata?.actor_ref || event.metadata?.subject_ref || '—')} />
-                        <AuditDetail label={t('audit.target', {}, 'Target')} value={String(event.metadata?.target_ref || t('portal.current_site', {}, 'Current site'))} />
-                        <AuditDetail label={t('audit.failure_reason', {}, 'Failure reason')} value={String(event.metadata?.reason || event.metadata?.error || event.metadata?.error_code || '—')} />
-                        <details className="md:col-span-2">
-                          <summary className="cursor-pointer font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-                            {t('portal.support_information', {}, 'Support information')}
-                          </summary>
-                          <div className="mt-2 grid gap-2 rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-950/55 md:grid-cols-2">
-                            <AuditDetail label="Event ID" value={event.event_id} />
-                            <AuditDetail label={t('common.site', {}, 'Site')} value={String(event.metadata?.site_id || selectedSiteId || '—')} />
-                            <AuditDetail label={t('audit.path', {}, 'Path')} value={String(event.metadata?.path || event.metadata?.request_path || '—')} />
-                            <AuditDetail label={t('audit.trace_id', {}, 'Trace ID')} value={String(event.metadata?.trace_id || event.metadata?.request_id || '—')} />
-                          </div>
-                        </details>
-                      </div>
+	                      <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 text-xs text-gray-600 dark:border-slate-800 dark:bg-slate-950/45 dark:text-gray-300 md:grid-cols-2">
+	                        <AuditDetail label={t('common.created')} value={formatDate(event.created_at)} />
+	                        <AuditDetail label={t('common.status')} value={translateOutcome(event.outcome)} />
+	                        <AuditDetail
+	                          label={t('common.site', {}, 'Site')}
+	                          value={t('portal.current_site', {}, 'Current site')}
+	                        />
+	                        <AuditDetail
+	                          label={t('portal.audit.support_hint_label', {}, 'Need help?')}
+	                          value={t('portal.audit.support_hint', {}, 'Contact support with the site name and activity time.')}
+	                        />
+	                      </div>
                     </details>
                   </div>
                 </div>

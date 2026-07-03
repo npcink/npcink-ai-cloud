@@ -28,13 +28,6 @@ import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import { DEFAULT_PORTAL_CURRENCY, formatPortalCurrency, normalizePortalCurrency } from '@/lib/currency';
 import { formatCompactNumber, formatDate, formatNumber } from '@/lib/utils';
 
-function sumSnapshots(
-  snapshots: PortalBillingSnapshot[],
-  selector: (snapshot: PortalBillingSnapshot) => unknown
-): number {
-  return snapshots.reduce((total, snapshot) => total + coerceFiniteNumber(selector(snapshot)), 0);
-}
-
 function coerceFiniteNumber(value: unknown): number {
   const numeric = Number(value || 0);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -107,9 +100,6 @@ function PortalBillingContent() {
   }
 
   const currency = normalizePortalCurrency(snapshots[0]?.currency || DEFAULT_PORTAL_CURRENCY);
-  const totalRuns = sumSnapshots(snapshots, (snapshot) => snapshot.totals?.runs);
-  const totalTokens = sumSnapshots(snapshots, (snapshot) => snapshot.totals?.tokens_total);
-  const totalCost = sumSnapshots(snapshots, (snapshot) => snapshot.totals?.cost);
   const latestSnapshot = snapshots[0] || null;
   const syncState = reconciliation?.reconciliation?.in_sync;
   const currentSubscription = session.current_subscription || null;
@@ -123,14 +113,14 @@ function PortalBillingContent() {
     planKind: currentSubscription?.plan_kind,
     coverageState: currentSubscription ? 'covered' : 'uncovered',
   });
-  const packageLabel = packageDisplay.display_package_label || t('common.not_found');
+  const packageLabel = packageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm');
 
   return (
     <BackofficePageStack>
       <PortalWorkspaceHeader
         eyebrow={t('portal.workspace_label', {}, 'Portal')}
-        title={t('portal.nav_billing', {}, 'Billing')}
-        description={t('portal.billing.subtitle', {}, 'Read-only billing snapshots and ledger reconciliation for the selected site.')}
+        title={t('portal.billing.customer_title', {}, 'Package records')}
+        description={t('portal.billing.subtitle', {}, 'Confirm the current package and whether service records need review.')}
         currentPage="billing"
         sites={sites}
         selectedSiteId={selectedSiteId}
@@ -148,11 +138,22 @@ function PortalBillingContent() {
 
       <BackofficeMetricStrip
         items={[
-          { label: t('portal.billing.snapshots', {}, 'Snapshots'), value: formatNumber(snapshots.length) },
           { label: t('portal.current_subscription_label', {}, 'Current package'), value: packageLabel },
-          { label: t('common.requests', {}, 'Requests'), value: formatCompactNumber(totalRuns) },
-          { label: t('common.tokens', {}, 'Tokens'), value: formatCompactNumber(totalTokens) },
-          { label: t('common.cost', {}, 'Cost'), value: formatPortalCurrency(totalCost, { to: currency }) },
+          { label: t('portal.billing.records_count_label', {}, 'Records'), value: formatNumber(snapshots.length) },
+          {
+            label: t('portal.billing.service_record_status', {}, 'Record status'),
+            value: syncState === false ? t('common.attention', {}, 'Attention') : t('common.ok', {}, 'OK'),
+            detail:
+              syncState === false
+                ? t('portal.billing.service_record_attention_detail', {}, 'Ask support to review before relying on this record.')
+                : t('portal.billing.service_record_ready_detail', {}, 'No record issue is visible.'),
+            size: 'compact',
+          },
+          {
+            label: t('portal.updated_at', {}, 'Updated'),
+            value: latestSnapshot?.generated_at ? formatDate(latestSnapshot.generated_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
+            size: 'compact',
+          },
         ]}
       />
 
@@ -160,12 +161,12 @@ function PortalBillingContent() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('portal.billing.reconciliation', {}, 'Reconciliation')}
+              {t('portal.billing.service_record_label', {}, 'Service records')}
             </p>
             <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
               {syncState === false
-                ? t('portal.billing.reconciliation_attention', {}, 'Ledger and snapshot need operator review')
-                : t('portal.billing.reconciliation_ready', {}, 'Ledger and snapshot are readable')}
+                ? t('portal.billing.reconciliation_attention', {}, 'Service records need support review')
+                : t('portal.billing.reconciliation_ready', {}, 'Service records look normal')}
             </h2>
           </div>
           <span className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
@@ -185,7 +186,7 @@ function PortalBillingContent() {
               {t(
                 'portal.billing.operator_notice',
                 {},
-                'Package changes are operator-managed. This page stays read-only for customer users.'
+                'This page only shows the package currently attached to the site. Package changes are handled by support.'
               )}
             </p>
           </div>
@@ -203,24 +204,26 @@ function PortalBillingContent() {
           {t(
             'portal.billing.help_desc',
             {},
-            'Use this read-only billing detail to compare snapshots and ledger posture before asking the operator to review coverage.'
+            'If the package or record status looks wrong, contact support with the selected site name. Technical record IDs are hidden below unless support asks for them.'
           )}
         </p>
       </BackofficeStackCard>
 
       <details className="overflow-hidden rounded-[1.4rem] border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-950">
         <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-950 hover:bg-gray-50 dark:text-white dark:hover:bg-slate-900">
-          {t('portal.billing.records_title', {}, 'Recent package records')}
+          {t('portal.billing.records_title', {}, 'Support record details')}
         </summary>
         <div className="grid gap-4 border-t border-gray-200 p-4 dark:border-gray-800 lg:grid-cols-2">
           {snapshots.map((snapshot) => (
             <BackofficeStackCard key={`record-${snapshot.snapshot_id}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-gray-950 dark:text-white">
-                    {t('portal.billing.record_title', {}, 'Package record')}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{snapshot.snapshot_id}</p>
+	                  <p className="text-sm font-semibold text-gray-950 dark:text-white">
+	                    {t('portal.billing.record_title', {}, 'Package record')}
+	                  </p>
+	                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+	                    {t('portal.billing.record_support_hint', {}, 'Support can look up the technical record if needed.')}
+	                  </p>
                 </div>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
                   {formatDate(snapshot.generated_at)}
@@ -228,18 +231,18 @@ function PortalBillingContent() {
               </div>
               <BackofficeMetricStrip
                 items={[
-                  {
-                    label: t('common.requests', {}, 'Requests'),
-                    value: formatNumber(coerceFiniteNumber(snapshot.totals?.runs)),
-                  },
-                  {
-                    label: t('common.tokens', {}, 'Tokens'),
-                    value: formatCompactNumber(coerceFiniteNumber(snapshot.totals?.tokens_total)),
-                  },
-                  {
-                    label: t('common.cost', {}, 'Cost'),
-                    value: formatPortalCurrency(coerceFiniteNumber(snapshot.totals?.cost), { to: currency }),
-                  },
+	                  {
+	                    label: t('portal.usage.package_service_uses_label', {}, 'Service uses'),
+	                    value: formatNumber(coerceFiniteNumber(snapshot.totals?.runs)),
+	                  },
+	                  {
+	                    label: t('portal.usage.breakdown_tokens', {}, 'Point usage'),
+	                    value: formatCompactNumber(coerceFiniteNumber(snapshot.totals?.tokens_total)),
+	                  },
+	                  {
+	                    label: t('portal.usage.package_budget_label', {}, 'Budget'),
+	                    value: formatPortalCurrency(coerceFiniteNumber(snapshot.totals?.cost), { to: currency }),
+	                  },
                 ]}
               />
             </BackofficeStackCard>
@@ -252,40 +255,11 @@ function PortalBillingContent() {
         </div>
       </details>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {snapshots.map((snapshot) => (
-          <BackofficeStackCard key={snapshot.snapshot_id}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-gray-950 dark:text-white">{snapshot.snapshot_id}</p>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {formatDate(snapshot.period_start_at)} - {formatDate(snapshot.period_end_at)}
-                </p>
-              </div>
-              <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(snapshot.generated_at)}</span>
-            </div>
-            <BackofficeMetricStrip
-              items={[
-                { label: t('common.requests', {}, 'Requests'), value: formatNumber(coerceFiniteNumber(snapshot.totals?.runs)) },
-                { label: t('common.tokens', {}, 'Tokens'), value: formatCompactNumber(coerceFiniteNumber(snapshot.totals?.tokens_total)) },
-                { label: t('common.cost', {}, 'Cost'), value: formatPortalCurrency(coerceFiniteNumber(snapshot.totals?.cost), { to: currency }) },
-              ]}
-            />
-          </BackofficeStackCard>
-        ))}
-      </div>
-
       {!snapshots.length ? (
         <PortalEmptyState
-          title={t('portal.billing.empty_title', {}, 'No billing snapshots yet')}
-          description={t('portal.billing.empty_desc', {}, 'Snapshots appear after an operator rebuilds or the billing cadence records usage.')}
+          title={t('portal.billing.empty_title', {}, 'No package records yet')}
+          description={t('portal.billing.empty_desc', {}, 'Package records will appear after support finishes the first service cycle.')}
         />
-      ) : null}
-
-      {latestSnapshot ? (
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {t('portal.billing.latest_snapshot', {}, 'Latest snapshot')}: {latestSnapshot.snapshot_id}
-        </p>
       ) : null}
     </BackofficePageStack>
   );

@@ -13,12 +13,12 @@ import { cn, formatDate } from '@/lib/utils';
 import {
   portalClient,
   type PortalIdentityProviderStatus,
-  type PortalPluginObservabilitySummary,
   type PortalSiteDiagnostics,
   type PortalSiteSummaryRecord,
   type Site,
 } from '@/lib/portal-client';
 import {
+  BackofficeMetricStrip,
   BackofficePageStack,
   BackofficeSectionPanel,
   BackofficeStackCard,
@@ -27,7 +27,6 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { BackofficeTag } from '@/components/backoffice/BackofficeTag';
 import { PortalSiteConnectPanel } from '@/components/portal/PortalSiteConnectPanel';
 import { PortalEmptyState } from '@/components/portal/PortalPageState';
-import { PortalPluginMonitoringPanel } from '@/components/portal/PortalPluginMonitoringPanel';
 import { PortalSiteInspectorDrawer } from '@/components/portal/PortalSiteInspectorDrawer';
 
 type RestrictionItem = {
@@ -35,18 +34,6 @@ type RestrictionItem = {
   label: string;
   detail: string;
 };
-
-function getHomeRiskLevel({
-  selectedSite,
-  currentSubscriptionStatus,
-}: {
-  selectedSite: Site;
-  currentSubscriptionStatus: string;
-}) {
-  if (selectedSite.status !== 'active') return 'setup';
-  if (currentSubscriptionStatus && currentSubscriptionStatus !== 'active') return 'package';
-  return 'normal';
-}
 
 function buildRestrictionItems({
   t,
@@ -84,17 +71,17 @@ function buildRestrictionItems({
           ),
         }
       : null,
-    requestLimit > 0 || tokenLimit > 0
-      ? {
-          tone: 'info',
-          label: t('portal.home.restriction_limit_label', {}, 'Usage is bounded by current limits'),
-          detail: t(
-            'portal.home.restriction_limit_desc',
-            {},
-            'Open Usage to compare this period against the request and token limits in your current entitlement.'
-          ),
-        }
-      : null,
+	    requestLimit > 0 || tokenLimit > 0
+	      ? {
+	          tone: 'info',
+	          label: t('portal.home.restriction_limit_label', {}, 'Package usage is limited'),
+	          detail: t(
+	            'portal.home.restriction_limit_desc',
+	            {},
+	            'Open Plan and usage to see what is left in the current package period.'
+	          ),
+	        }
+	      : null,
   ].filter(Boolean) as RestrictionItem[];
 }
 
@@ -108,11 +95,7 @@ export default function PortalPage() {
   const [inspectorError, setInspectorError] = useState('');
   const [currentSiteSummary, setCurrentSiteSummary] = useState<PortalSiteSummaryRecord | null>(null);
   const [currentSiteDiagnostics, setCurrentSiteDiagnostics] = useState<PortalSiteDiagnostics | null>(null);
-  const [currentSiteMonitoring, setCurrentSiteMonitoring] = useState<PortalPluginObservabilitySummary | null>(null);
   const [identityProviders, setIdentityProviders] = useState<PortalIdentityProviderStatus[]>([]);
-  const [isMonitoringLoading, setIsMonitoringLoading] = useState(false);
-  const [monitoringError, setMonitoringError] = useState('');
-  const [monitoringRefreshNonce, setMonitoringRefreshNonce] = useState(0);
   const sessionSiteIdsKey = session?.sites?.map((site) => site.site_id).join('|') || '';
 
   const handleSiteSelect = async (siteId: string) => {
@@ -228,49 +211,6 @@ export default function PortalPage() {
   }, [selectedSiteForMonitoringId]);
 
   useEffect(() => {
-    if (!selectedSiteForMonitoringId) {
-      setCurrentSiteMonitoring(null);
-      setMonitoringError('');
-      setIsMonitoringLoading(false);
-      return;
-    }
-
-    let isCancelled = false;
-    setIsMonitoringLoading(true);
-    setMonitoringError('');
-
-    void portalClient
-      .getPluginObservability(selectedSiteForMonitoringId, { windowHours: 24 })
-      .then((response) => {
-        if (!isCancelled) {
-          setCurrentSiteMonitoring(response.data);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          console.error('Failed to load plugin monitoring:', error);
-          setCurrentSiteMonitoring(null);
-          setMonitoringError(
-            t(
-              'portal.monitoring.load_failed',
-              {},
-              'Plugin monitoring could not be loaded for the current site.'
-            )
-          );
-        }
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsMonitoringLoading(false);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [monitoringRefreshNonce, selectedSiteForMonitoringId, t]);
-
-  useEffect(() => {
     if (!isAuthenticated || !sessionSiteIdsKey || !session?.sites?.length) {
       return;
     }
@@ -378,13 +318,13 @@ export default function PortalPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="surface-panel max-w-2xl p-8">
-          <PortalEmptyState
-            title={t('portal.no_active_sites_title', {}, 'No active sites in the workspace')}
-            description={t(
-              'portal.no_active_sites_desc',
-              {},
-              'All of your current sites are archived. Open the site register to restore one or connect another site.'
-            )}
+	          <PortalEmptyState
+	            title={t('portal.no_active_sites_title', {}, 'No available sites')}
+	            description={t(
+	              'portal.no_active_sites_desc',
+	              {},
+	              'No site is currently available for this account. Add a site or contact support.'
+	            )}
             actionLabel={t('portal.nav_sites', {}, 'Sites')}
             actionHref="/portal/sites"
           />
@@ -395,14 +335,7 @@ export default function PortalPage() {
 
   const selectedSite =
     visibleSites.find((s) => s.site_id === session.site_id) || visibleSites[0];
-  const selectedSiteStatus = t(`status.${selectedSite.status}`, undefined, selectedSite.status);
-  const selectedAccount =
-    session.accounts?.find((account) => account.account_id === selectedSite.account_id) || null;
-  const currentAccountLabel =
-    selectedAccount?.name || t('portal.connect_site_current_customer', {}, 'Current customer');
   const currentSubscription = session.current_subscription;
-  const currentSubscriptionStatus =
-    currentSubscription?.status || t('common.not_found');
   const selectedSiteWordPressUrl = getPortalSiteWordPressUrl(selectedSite);
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSiteSummary?.coverage?.plan_id || currentSubscription?.plan_id,
@@ -477,8 +410,6 @@ export default function PortalPage() {
 
   const restrictedCount = visibleSites.filter((site) => site.status !== 'active' || !hasCachedSiteCoverage(site)).length;
   const clearCount = visibleSites.length - restrictedCount;
-  const archivedCount = session.sites.filter((site) => site.status === 'archived').length;
-  const uncoveredCount = visibleSites.filter((site) => !hasCachedSiteCoverage(site)).length;
   const missingUrlCount = visibleSites.filter((site) => !getPortalSiteWordPressUrl(site)).length;
   const sitePreviewLimit = 3;
   const previewSites = [...visibleSites]
@@ -494,12 +425,8 @@ export default function PortalPage() {
     })
     .slice(0, sitePreviewLimit);
   const hasHiddenSites = visibleSites.length > previewSites.length;
-  const currentRiskLevel = getHomeRiskLevel({
-    selectedSite,
-    currentSubscriptionStatus: currentSubscription?.status || '',
-  });
-  const shouldShowStatusPanel = currentRiskLevel !== 'normal';
   const qqProvider = identityProviders.find((provider) => provider.provider === 'qq') || null;
+  const hasPackageLabel = Boolean(currentPackageDisplay.display_package_label);
   const setupChecklistItems = [
     {
       key: 'site',
@@ -514,22 +441,22 @@ export default function PortalPage() {
     {
       key: 'api-key',
       done: currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0,
-      title: t('portal.home.onboarding_key_title', {}, 'Confirm API key'),
+      title: t('portal.home.onboarding_key_title', {}, 'Check site connection'),
       detail:
         currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0
-          ? t('portal.home.onboarding_key_ready', {}, 'This site has an active Cloud API key for plugin access.')
-          : t('portal.home.onboarding_key_needed', {}, 'Create or confirm an active Cloud API key before relying on hosted service access.'),
+          ? t('portal.home.onboarding_key_ready', {}, 'The WordPress site is connected and can use the service.')
+          : t('portal.home.onboarding_key_needed', {}, 'Reconnect the WordPress site before using the service.'),
       href: `/portal/sites/${selectedSite.site_id}`,
-      action: t('portal.home.onboarding_key_action', {}, 'View keys'),
+      action: t('portal.home.onboarding_key_action', {}, 'View site'),
     },
     {
       key: 'package',
-      done: Boolean(currentSubscription?.status === 'active'),
+      done: Boolean(currentSubscription?.status === 'active' || hasPackageLabel),
       title: t('portal.home.onboarding_package_title', {}, 'Review Free package'),
       detail:
         currentSubscription?.status === 'active'
           ? t('portal.home.onboarding_package_ready', {}, 'The current package is available.')
-          : t('portal.home.onboarding_package_needed', {}, 'Review the current package and quota to confirm what is available this period.'),
+	          : t('portal.home.onboarding_package_needed', {}, 'Review the current package and what remains this period.'),
       href: `/portal/billing?site=${selectedSite.site_id}`,
       action: t('portal.home.onboarding_package_action', {}, 'View package'),
     },
@@ -544,8 +471,66 @@ export default function PortalPage() {
       action: t('portal.home.onboarding_qq_action', {}, 'Account center'),
     },
   ];
-  const completedSetupCount = setupChecklistItems.filter((item) => item.done).length;
-  const shouldShowOnboardingChecklist = completedSetupCount < setupChecklistItems.length;
+  const requiredSetupItems = setupChecklistItems.filter((item) => item.key !== 'qq');
+  const requiredAttentionItems = requiredSetupItems.filter((item) => !item.done);
+  const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0;
+  const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
+      ? t('portal.home.package_available_label', {}, 'Available')
+      : t('portal.home.package_pending_label', {}, 'To confirm');
+  const currentServiceStatusToken =
+    selectedSite.status !== 'active' ||
+    (currentSubscription?.status && currentSubscription.status !== 'active') ||
+    currentSiteActiveKeyCount === 0
+      ? 'warning'
+      : 'active';
+  const currentServiceStatusLabel =
+    currentServiceStatusToken === 'active'
+      ? t('portal.home.service_status_live', {}, 'Ready')
+      : t('portal.home.service_status_attention', {}, 'Needs attention');
+  const activeKeySummaryLabel =
+    currentSiteActiveKeyCount === null
+      ? t('common.loading')
+      : currentSiteActiveKeyCount > 0
+        ? t('portal.home.connection_ready_label', {}, 'Connected')
+        : t('portal.home.connection_needed_label', {}, 'Needs setup');
+  const activeKeySummaryDetail =
+    currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0
+      ? t('portal.home.onboarding_key_ready', {}, 'The WordPress site is connected and can use the service.')
+      : t('portal.home.onboarding_key_needed', {}, 'Reconnect the WordPress site before using the service.');
+  const operationSummaryItems = [
+    {
+      label: t('portal.home.current_site_title', {}, 'Current site'),
+      value: getPortalSiteDisplayName(selectedSite),
+      detail: selectedSiteWordPressUrl || t('portal.site_url_missing', {}, 'WordPress URL not configured'),
+      size: 'compact' as const,
+    },
+    {
+      label: t('portal.home.package_card_label', {}, 'Current package'),
+      value: currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm'),
+      detail: currentSubscriptionStatusLabel,
+      size: 'compact' as const,
+    },
+    {
+      label: t('portal.home.connection_card_label', {}, 'Site connection'),
+      value: activeKeySummaryLabel,
+      detail: activeKeySummaryDetail,
+      size: 'compact' as const,
+    },
+  ];
+  const operationFocusItems =
+    restrictionItems.length > 0
+      ? restrictionItems
+      : [
+          {
+            tone: 'info' as const,
+            label: t('portal.home.recent_issues_empty_title', {}, 'No action needed'),
+            detail: t(
+              'portal.home.recent_issues_empty_desc',
+              {},
+              'The current site can use the service normally.'
+            ),
+          },
+        ];
 
   return (
     <BackofficePageStack>
@@ -564,65 +549,28 @@ export default function PortalPage() {
         onNavigateSite={openInspector}
         t={t}
       />
-      <section className="space-y-5">
-        <BackofficeSectionPanel>
-          <div className="grid gap-5 xl:grid-cols-[minmax(13rem,0.55fr)_minmax(0,1.45fr)_auto] xl:items-center">
+      <section className="space-y-5" data-portal-home="operation-overview">
+        <BackofficeSectionPanel className="space-y-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('portal.workspace_label', {}, 'Workspace')}
+                {t('portal.workspace_label', {}, 'Overview')}
               </p>
-              <h1 className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">
-                {t('portal.home.title', {}, 'Workspace')}
-              </h1>
-            </div>
-            <div className="grid min-w-0 gap-3 md:grid-cols-3">
-              <div className="min-w-0 rounded-[1rem] border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('portal.home.current_site_title', {}, 'Current site')}
-                </p>
-                <div className="mt-2 flex min-w-0 items-center gap-2">
-                  <p className="truncate text-base font-semibold text-gray-950 dark:text-white">
-                    {getPortalSiteDisplayName(selectedSite)}
-                  </p>
-                  <BackofficeStatusBadge
-                    status={selectedSite.status === 'active' ? 'active' : 'warning'}
-                    label={
-                      selectedSite.status === 'active'
-                        ? t('portal.home.service_status_live', {}, 'Ready')
-                        : t('portal.home.service_status_attention', {}, 'Needs attention')
-                    }
-                    className="shrink-0 text-[0.68rem]"
-                  />
-                </div>
-                <p className="mt-1 truncate text-xs text-gray-600 dark:text-gray-400">
-                  {selectedSiteWordPressUrl ||
-                    t('portal.site_url_missing', {}, 'WordPress URL not configured')}
-                </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-semibold text-gray-950 dark:text-white">
+                  {t('portal.home.title', {}, 'My service')}
+                </h1>
+                <BackofficeStatusBadge
+                  status={currentServiceStatusToken}
+                  label={currentServiceStatusLabel}
+                  className="shrink-0 text-[0.68rem]"
+                />
               </div>
-              <div className="min-w-0 rounded-[1rem] border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('common.plan')}
-                </p>
-                <p className="mt-2 truncate text-base font-semibold text-gray-950 dark:text-white">
-                  {currentPackageDisplay.display_package_label || t('common.not_found')}
-                </p>
-                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                  {t('portal.current_subscription_label', {}, 'Current package')}
-                </p>
-              </div>
-              <div className="min-w-0 rounded-[1rem] border border-slate-200/80 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('common.status')}
-                </p>
-                <p className="mt-2 truncate text-base font-semibold text-gray-950 dark:text-white">
-                  {selectedSiteStatus}
-                </p>
-                <p className="mt-1 truncate text-xs text-gray-600 dark:text-gray-400">
-                  {currentSubscription?.status && currentSubscription?.status !== selectedSite.status
-                    ? t(`status.${currentSubscription.status}`, undefined, currentSubscription.status)
-                    : t('portal.home.service_status_desc', {}, 'Current service status for this site.')}
-                </p>
-              </div>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+                {currentServiceStatusToken === 'active'
+                  ? t('portal.home.service_status_ok_desc', {}, 'This site can use the service normally.')
+                  : t('portal.home.service_status_issue_desc', {}, 'This site needs attention before normal use can continue.')}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2 xl:justify-end">
               <div className="w-full text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400 xl:text-right">
@@ -631,153 +579,127 @@ export default function PortalPage() {
               <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-primary btn-sm">
                 {t('portal.home.site_action', {}, 'Open Site')}
               </Link>
-              <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
-                {t('portal.nav_sites', {}, 'Sites')}
+              <Link href={`/portal/usage?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
+                {t('portal.home.usage_action', {}, 'View Usage')}
               </Link>
             </div>
           </div>
-        </BackofficeSectionPanel>
 
-        {shouldShowStatusPanel ? (
-          <BackofficeSectionPanel className="space-y-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('common.status')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('portal.home.current_status_title', {}, 'Current status')}
-                </h2>
-              </div>
-            </div>
-            <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
+          <BackofficeMetricStrip items={operationSummaryItems} columnsClassName="md:grid-cols-2 xl:grid-cols-4" />
+
+          <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-home="current-focus">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t(`portal.home.risk_level_${currentRiskLevel}`, {}, 'Status')}
+                    {t('common.status')}
                   </p>
-                  <p className="mt-3 text-lg font-semibold text-gray-950 dark:text-white">
-                    {restrictionItems[0]?.label || t('portal.home.recent_issues_empty_title', {}, 'No active restrictions')}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    {restrictionItems[0]?.detail ||
-                      t('portal.home.recent_issues_empty_desc', {}, 'The current site looks ready for normal usage. Open Usage or Package if you need more detail.')}
-                  </p>
+                  <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
+                    {t('portal.home.current_status_title', {}, 'Service status')}
+                  </h2>
                 </div>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <Link href={`/portal/usage?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
-                    {t('portal.home.usage_action', {}, 'View Usage')}
-                  </Link>
-                  <Link href={`/portal/billing?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
-                    {t('portal.home.billing_action', {}, 'View Billing')}
-                  </Link>
-                  <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
-                    {t('portal.home.site_action', {}, 'Open Site')}
-                  </Link>
-                </div>
+                <BackofficeTag tone={currentServiceStatusToken === 'active' ? 'success' : 'warning'}>
+                  {currentServiceStatusLabel}
+                </BackofficeTag>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span>{requestLimit > 0 ? `${requestLimit} ${t('common.requests')}` : t('common.not_found')}</span>
-                <span>{tokenLimit > 0 ? `${tokenLimit} ${t('common.tokens')}` : t('common.not_found')}</span>
-                <span>
-                  {currentSubscription?.current_period_start && currentSubscription?.current_period_end
-                    ? `${formatDate(currentSubscription.current_period_start)} - ${formatDate(currentSubscription.current_period_end)}`
-                    : t('common.not_found')}
-                </span>
-              </div>
-            </BackofficeStackCard>
-          </BackofficeSectionPanel>
-        ) : null}
-
-        {shouldShowOnboardingChecklist ? (
-          <BackofficeSectionPanel className="space-y-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('portal.home.onboarding_label', {}, 'Getting started')}
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-                  {t('portal.home.onboarding_title', {}, 'First-use checklist')}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                  {t(
-                    'portal.home.onboarding_desc',
-                    {},
-                    'Complete these steps in order to make the Free account ready to use.'
-                  )}
-                </p>
-              </div>
-              <BackofficeTag tone={completedSetupCount === setupChecklistItems.length ? 'success' : 'info'}>
-                {completedSetupCount} / {setupChecklistItems.length}
-              </BackofficeTag>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {setupChecklistItems.map((item, index) => (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={cn(
-                    'group flex min-h-32 gap-4 rounded-[1.1rem] border px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-sm',
-                    item.done
-                      ? 'border-emerald-200 bg-emerald-50/65 dark:border-emerald-900/60 dark:bg-emerald-950/20'
-                      : 'border-slate-200/80 bg-white/85 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/45 dark:hover:bg-slate-900/60'
-                  )}
-                >
-                  <span
+              <div className="mt-4 space-y-3">
+                {operationFocusItems.slice(0, 3).map((item) => (
+                  <div
+                    key={item.label}
                     className={cn(
-                      'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-semibold',
-                      item.done
-                        ? 'border-emerald-500 bg-emerald-500 text-white'
-                        : 'border-slate-300 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                      'rounded-xl border px-3 py-3',
+                      item.tone === 'warn'
+                        ? 'border-amber-200 bg-amber-50/75 dark:border-amber-900/70 dark:bg-amber-950/25'
+                        : 'border-slate-200/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/35'
                     )}
                   >
-                    {item.done ? 'OK' : String(index + 1)}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-base font-semibold text-slate-950 dark:text-white">
-                      {item.title}
-                    </span>
-                    <span className="mt-2 block text-sm leading-6 text-slate-600 dark:text-slate-300">
-                      {item.detail}
-                    </span>
-                    <span className="mt-3 inline-flex text-sm font-semibold text-blue-700 group-hover:text-blue-800 dark:text-blue-300 dark:group-hover:text-blue-200">
-                      {item.action}
-                    </span>
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </BackofficeSectionPanel>
-        ) : null}
+                    <p className="text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
+                    <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </BackofficeStackCard>
+
+            {shouldShowOnboardingChecklist ? (
+              <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-home="setup-checklist">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                      {t('portal.home.onboarding_label', {}, 'Needs attention')}
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
+                      {t('portal.home.onboarding_title', {}, 'Before you continue')}
+                    </h2>
+                  </div>
+                  <BackofficeTag tone="warning">
+                    {requiredAttentionItems.length} {t('portal.home.filter_attention_only', {}, 'Needs attention')}
+                  </BackofficeTag>
+                </div>
+                <div className="mt-4 divide-y divide-slate-200/80 dark:divide-slate-800">
+                  {requiredAttentionItems.map((item, index) => (
+                    <Link
+                      key={item.key}
+                      href={item.href}
+                      className="group flex gap-3 py-3 text-sm transition first:pt-0 last:pb-0 hover:text-blue-700 dark:hover:text-blue-300"
+                    >
+                      <span
+                        className={cn(
+                          'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[0.68rem] font-semibold',
+                          'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-200'
+                        )}
+                      >
+                        {String(index + 1)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-slate-950 dark:text-white">{item.title}</span>
+                        <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {item.detail}
+                        </span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </BackofficeStackCard>
+            ) : (
+              <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-home="quick-links">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('portal.home.next_action_label', {}, 'Next action')}
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
+                  {t('portal.home.recent_issues_empty_title', {}, 'No active restrictions')}
+                </h2>
+                <div className="mt-4 grid gap-2">
+                  <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm justify-center">
+                    {t('portal.home.site_action', {}, 'Open Site')}
+                  </Link>
+                  <Link href={`/portal/usage?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm justify-center">
+                    {t('portal.home.usage_action', {}, 'View Usage')}
+                  </Link>
+                </div>
+              </BackofficeStackCard>
+            )}
+          </div>
+        </BackofficeSectionPanel>
       </section>
 
       <div className="space-y-5">
-        <PortalPluginMonitoringPanel
-          siteId={selectedSite.site_id}
-          summary={currentSiteMonitoring}
-          isLoading={isMonitoringLoading}
-          error={monitoringError}
-          compact
-          onRetry={() => setMonitoringRefreshNonce((current) => current + 1)}
-        />
-
         <BackofficeSectionPanel className="space-y-4">
           <div className="grid gap-3 lg:grid-cols-4">
             <Link href="/portal/sites?filter=active" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.active_sites_filter', {}, 'Active')}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.available_sites_label', {}, 'Available sites')}</p>
               <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{visibleSites.length}</p>
             </Link>
-            <Link href="/portal/sites?filter=removed" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.removed_sites_filter', {}, 'Removed')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{archivedCount}</p>
+            <Link href="/portal/sites?filter=attention" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.needs_attention_sites_label', {}, 'Needs attention')}</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{restrictedCount}</p>
             </Link>
-            <Link href="/portal/sites?filter=uncovered" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.uncovered_sites_filter', {}, 'Uncovered')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{uncoveredCount}</p>
+            <Link href="/portal/usage" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.package_card_label', {}, 'Current package')}</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')}</p>
             </Link>
-            <Link href="/portal/sites?filter=missing_url" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.missing_url_sites_filter', {}, 'Missing URL')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{missingUrlCount}</p>
+            <Link href="/portal/sites" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.configured_sites_label', {}, 'Site address')}</p>
+              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{missingUrlCount > 0 ? t('portal.home.site_address_needs_setup', {}, 'Needs setup') : t('portal.site_address_configured', {}, 'Configured')}</p>
             </Link>
           </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -807,9 +729,9 @@ export default function PortalPage() {
           )}>
             <div className="hidden grid-cols-[minmax(0,1.8fr)_120px_140px_240px] gap-4 border-b border-slate-200/80 bg-slate-50/70 px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:border-slate-800 dark:bg-slate-950/45 dark:text-gray-400 lg:grid">
               <span>{t('common.site')}</span>
-              <span>{t('common.status')}</span>
-              <span>{t('common.plan')}</span>
-              <span>{t('common.actions')}</span>
+              <span>{t('portal.home.service_state_label', {}, 'Service status')}</span>
+              <span>{t('portal.home.package_card_label', {}, 'Current package')}</span>
+              <span>{t('portal.home.view_label', {}, 'View')}</span>
             </div>
 
             <div className="divide-y divide-slate-200/80 dark:divide-slate-800">
@@ -859,8 +781,8 @@ export default function PortalPage() {
                           t('portal.site_url_missing', {}, 'WordPress URL not configured')}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 lg:hidden">
-                        <span>{t('common.status')}: {t(`status.${site.status}`, undefined, site.status)}</span>
-                        <span>{t('common.plan')}: {sitePackageDisplay.display_package_label || t('common.not_found')}</span>
+                        <span>{t('portal.home.service_state_label', {}, 'Service status')}: {hasAttention ? t('portal.home.service_status_attention', {}, 'Needs attention') : t('portal.home.risk_level_normal', {}, 'Normal')}</span>
+                        <span>{t('portal.home.package_card_label', {}, 'Current package')}: {sitePackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')}</span>
                         <span>{t('common.connected_on', { date: formatDate(site.created_at) })}</span>
                       </div>
                       <p className="mt-2 hidden text-xs text-gray-500 dark:text-gray-400 lg:block">
@@ -871,21 +793,21 @@ export default function PortalPage() {
                     <div className="hidden lg:block">
                       <BackofficeStatusBadge
                         status={site.status}
-                        label={t(`status.${site.status}`, undefined, site.status)}
+                        label={hasAttention ? t('portal.home.service_status_attention', {}, 'Needs attention') : t('portal.home.risk_level_normal', {}, 'Normal')}
                         className="text-[0.68rem]"
                       />
                     </div>
 
                     <div className="hidden text-sm text-gray-700 dark:text-gray-300 lg:block">
-                      {sitePackageDisplay.display_package_label || t('common.not_found')}
+                      {sitePackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')}
                     </div>
-                    <div className="flex flex-wrap gap-2 lg:col-start-5 lg:justify-end">
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
                       <Link
                         href={`/portal/sites/${site.site_id}`}
                         onClick={(event) => event.stopPropagation()}
                         className="btn btn-secondary btn-sm"
                       >
-                        {t('portal.site_record', {}, 'Site record')}
+                        {t('portal.home.view_site_record_action', {}, 'View site')}
                       </Link>
                     </div>
                   </div>

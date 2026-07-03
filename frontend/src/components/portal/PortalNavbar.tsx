@@ -22,31 +22,19 @@ export function PortalNavbar() {
   const { session, isAuthenticated, selectSite, logout } = useSession();
   const [isSwitchingSite, setIsSwitchingSite] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isSiteMenuOpen, setIsSiteMenuOpen] = useState(false);
   const [siteSearchQuery, setSiteSearchQuery] = useState('');
-  const moreMenuRef = useRef<HTMLDivElement>(null);
   const siteMenuRef = useRef<HTMLDivElement>(null);
 
   const primaryNavItems = useMemo(
     () => [
-      { href: '/portal', label: t('portal.workspace_label', {}, 'Workspace') },
-      { href: '/portal/usage', label: t('nav.usage') },
-      { href: '/portal/billing', label: t('portal.nav_package', {}, 'Package') },
-      { href: '/portal/sites', label: t('portal.nav_sites', {}, 'Sites') },
+      { href: '/portal', label: t('portal.workspace_label', {}, 'Overview') },
+      { href: '/portal/usage', label: t('portal.nav_usage', {}, 'Plan and usage') },
+      { href: '/portal/sites', label: t('portal.nav_sites', {}, 'Sites and domain') },
       { href: '/portal/account', label: t('portal.nav_account', {}, 'Account') },
     ],
     [t]
   );
-  const secondaryNavItems = useMemo(
-    () => [
-      { href: '/portal/ai-insights', label: t('portal.ai_insights.nav_label', {}, 'AI Insights') },
-      { href: '/portal/monitoring', label: t('portal.monitoring.nav_label', {}, 'Monitoring') },
-      { href: '/portal/audit', label: t('nav.audit') },
-    ],
-    [t]
-  );
-
   const isActive = useCallback(
     (href: string) => {
       const baseHref = href.split('?')[0] || href;
@@ -92,20 +80,16 @@ export function PortalNavbar() {
   }, [logout, router]);
 
   useEffect(() => {
-    setIsMoreMenuOpen(false);
     setIsSiteMenuOpen(false);
     setSiteSearchQuery('');
   }, [pathname]);
 
   useEffect(() => {
-    if (!isMoreMenuOpen && !isSiteMenuOpen) {
+    if (!isSiteMenuOpen) {
       return;
     }
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
-        setIsMoreMenuOpen(false);
-      }
       if (siteMenuRef.current && !siteMenuRef.current.contains(event.target as Node)) {
         setIsSiteMenuOpen(false);
       }
@@ -113,7 +97,6 @@ export function PortalNavbar() {
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setIsMoreMenuOpen(false);
         setIsSiteMenuOpen(false);
       }
     };
@@ -125,7 +108,7 @@ export function PortalNavbar() {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [isMoreMenuOpen, isSiteMenuOpen]);
+  }, [isSiteMenuOpen]);
 
   const visibleSites = useMemo(
     () => (session?.sites || []).filter((site) => site.status !== 'archived'),
@@ -141,8 +124,7 @@ export function PortalNavbar() {
       const secondary = (getPortalSiteSecondaryLabel(site) || '').toLowerCase();
       return (
         displayName.includes(query) ||
-        secondary.includes(query) ||
-        site.site_id.toLowerCase().includes(query)
+        secondary.includes(query)
       );
     });
   }, [siteSearchQuery, visibleSites]);
@@ -196,14 +178,14 @@ export function PortalNavbar() {
                   type="button"
                   aria-haspopup="listbox"
                   aria-expanded={isSiteMenuOpen}
-                  className="flex min-w-[20rem] items-center justify-between rounded-full border border-slate-200/80 bg-white/90 px-4 py-2 text-left text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-600"
+                  className="flex w-[min(22rem,40vw)] min-w-0 items-center justify-between rounded-full border border-slate-200/80 bg-white/90 px-4 py-2 text-left text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-slate-600"
                   onClick={() => setIsSiteMenuOpen((current) => !current)}
                   disabled={isSwitchingSite}
                 >
                   <span className="truncate">
                     {selectedSite
                       ? `${visibleSiteLabel(selectedSite)} · ${visibleSiteSecondaryLabel(selectedSite)}`
-                      : t('common.not_found')}
+                      : t('portal.no_site_selected', {}, 'No site selected')}
                   </span>
                   <svg className="ml-3 h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
@@ -322,42 +304,6 @@ export function PortalNavbar() {
             ))}
               </nav>
             </div>
-            <div ref={moreMenuRef} className="relative shrink-0">
-              <button
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={isMoreMenuOpen}
-                className="relative rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-                onClick={() => setIsMoreMenuOpen((current) => !current)}
-              >
-                {t('portal.nav_more', {}, 'More')}
-              </button>
-              {isMoreMenuOpen ? (
-                <div
-                  className="absolute right-0 top-full z-10 mt-2 min-w-48 rounded-2xl border border-slate-200/80 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-950"
-                  role="menu"
-                >
-                  {secondaryNavItems.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      role="menuitem"
-                      onClick={() => setIsMoreMenuOpen(false)}
-                      className={cn(
-                        'block rounded-xl px-3 py-2 text-sm font-medium transition-colors',
-                        isActive(item.href)
-                          ? 'bg-slate-900 text-white dark:bg-blue-500 dark:text-slate-950'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
-                      )}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        {item.label}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </div>
           </div>
         </div>
       </div>
@@ -406,28 +352,6 @@ export function PortalNavbar() {
               {item.label}
             </Link>
           ))}
-          <div className="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {t('portal.nav_more', {}, 'More')}
-            </p>
-            {secondaryNavItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'block rounded-2xl px-4 py-3 text-sm font-medium transition-colors',
-                  isActive(item.href)
-                    ? 'bg-slate-900 text-white dark:bg-blue-500 dark:text-slate-950'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
-                )}
-                onClick={() => setMobileNavOpen(false)}
-              >
-                <span className="inline-flex items-center gap-2">
-                  {item.label}
-                </span>
-              </Link>
-            ))}
-          </div>
           <div className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <LocaleSwitcher />

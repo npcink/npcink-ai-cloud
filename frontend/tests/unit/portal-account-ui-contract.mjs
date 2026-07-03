@@ -42,8 +42,32 @@ assert.match(
 
 assert.match(
   accountSource,
-  /邮箱是主账号，QQ 用作快捷登录绑定/,
-  'account center must keep email as the primary account and QQ as quick login'
+  /resolvePortalContactEmail/,
+  'account center must resolve a customer-readable contact instead of showing principal IDs as the account'
+);
+
+assert.match(
+  accountSource,
+  /data-portal-account="contact-info"/,
+  'account center must make contact information the primary customer-facing account surface'
+);
+
+assert.doesNotMatch(
+  accountSource,
+  /data-portal-account="support-details"/,
+  'customer account page must not render an internal support details disclosure'
+);
+
+assert.doesNotMatch(
+  accountSource,
+  /session\.(account_id|role|principal_id)|BackofficeIdentifier|maskSupportIdentifier/,
+  'customer account page must not expose internal account, role, or principal identifiers'
+);
+
+assert.doesNotMatch(
+  accountSource,
+  /label:\s*t\('portal\.account\.email_label'[\s\S]*value:\s*accountEmail/,
+  'top account summary must not show the raw principal-derived account value'
 );
 
 assert.match(

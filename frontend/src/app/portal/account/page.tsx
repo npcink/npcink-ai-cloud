@@ -10,7 +10,6 @@ import {
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
-import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   PortalLoadingState,
@@ -20,12 +19,40 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
+  type PortalSession,
   type PortalIdentityProviderStatus,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { cn, formatDate } from '@/lib/utils';
 
 type AccountActionState = 'idle' | 'loading' | 'binding' | 'unbinding' | 'error';
+
+function normalizePortalContact(value?: string): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  const withoutPrefix = trimmed.replace(/^user:/, '');
+  return withoutPrefix.includes('@') && !withoutPrefix.startsWith('prn_') ? withoutPrefix : '';
+}
+
+function resolvePortalContactEmail(session: PortalSession): string {
+  const memberRef = (session as PortalSession & { member_ref?: string }).member_ref;
+  const candidates = [
+    session.site_admin_ref,
+    memberRef,
+    session.accounts?.[0]?.site_admin_ref,
+  ];
+
+  for (const candidate of candidates) {
+    const email = normalizePortalContact(candidate);
+    if (email) {
+      return email;
+    }
+  }
+
+  return '';
+}
 
 function AccountPageContent() {
   const { t } = useLocale();
@@ -39,13 +66,8 @@ function AccountPageContent() {
     () => providers.find((provider) => provider.provider === 'qq') || null,
     [providers]
   );
-  const primaryAccount = session?.accounts?.[0] || null;
-  const packageLabel =
-    session?.current_subscription?.package_alias ||
-    session?.current_subscription?.tier_id ||
-    session?.current_subscription?.plan_id ||
-    t('common.not_found');
-  const accountEmail = session?.site_admin_ref || session?.principal_id || '';
+  const contactEmail = session ? resolvePortalContactEmail(session) : '';
+  const displayContact = contactEmail || t('portal.account.contact_missing', undefined, 'Needs setup');
   const qqStatus = searchParams?.get('qq') || '';
 
   const loadProviders = useCallback(async () => {
@@ -163,11 +185,11 @@ function AccountPageContent() {
     <BackofficePageStack>
       <BackofficePrimaryPanel
         eyebrow={t('portal.account.eyebrow', undefined, 'Account')}
-        title={t('portal.account.title', undefined, 'Account Center')}
+        title={t('portal.account.title', undefined, 'Contact')}
         description={t(
           'portal.account.description',
           undefined,
-          '邮箱是主账号，QQ 用作快捷登录绑定；Portal 和平台管理入口继续保持独立。'
+          'Manage the email used for verification codes and optional quick login.'
         )}
         aside={(
           <BackofficeStatusBadge
@@ -180,22 +202,32 @@ function AccountPageContent() {
             columnsClassName="md:grid-cols-2 xl:grid-cols-4"
             items={[
               {
-                label: t('portal.account.email_label', undefined, 'Account'),
-                value: accountEmail || t('common.not_found'),
+                label: t('portal.account.contact_status_label', undefined, 'Contact'),
+                value: contactEmail
+                  ? t('portal.account.contact_ready', undefined, 'Configured')
+                  : t('portal.account.contact_missing', undefined, 'Needs setup'),
+                detail: displayContact,
                 size: 'compact',
               },
               {
-                label: t('portal.account.package_label', undefined, 'Package'),
-                value: packageLabel,
+                label: t('portal.account.login_security_label', undefined, 'Sign-in'),
+                value: t('portal.account.login_security_value', undefined, 'Email code'),
+                detail: t('portal.account.login_security_detail', undefined, 'Primary login method'),
+                size: 'compact',
+              },
+              {
+                label: t('portal.account.qq_status_label', undefined, 'QQ login'),
+                value: qqProvider?.bound
+                  ? t('portal.account.bound', undefined, 'Bound')
+                  : t('portal.account.unbound', undefined, 'Not bound'),
+                detail: qqProvider?.bound
+                  ? t('portal.account.qq_status_detail_bound', undefined, 'Available for quick login')
+                  : t('portal.account.qq_status_detail_unbound', undefined, 'Optional quick login'),
                 size: 'compact',
               },
               {
                 label: t('portal.account.site_count_label', undefined, 'Sites'),
                 value: String(session.sites?.length || 0),
-              },
-              {
-                label: t('portal.account.account_count_label', undefined, 'Accounts'),
-                value: String(session.accounts?.length || 0),
               },
             ]}
           />
@@ -220,7 +252,7 @@ function AccountPageContent() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {t('portal.account.identity_label', undefined, 'Identity')}
+                {t('portal.account.login_methods_label', undefined, 'Login')}
               </p>
               <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
                 {t('portal.account.login_methods_title', undefined, 'Login methods')}
@@ -249,7 +281,7 @@ function AccountPageContent() {
                   />
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {accountEmail || t('common.not_found')}
+                  {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
                 </p>
               </div>
               <Link href="/portal/login" className="btn btn-secondary">
@@ -321,50 +353,56 @@ function AccountPageContent() {
           </BackofficeStackCard>
         </BackofficeSectionPanel>
 
-        <BackofficeSectionPanel className="space-y-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {t('portal.account.scope_label', undefined, 'Portal')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
-              {t('portal.account.portal_scope_title', undefined, 'Current Portal permissions')}
-            </h2>
-          </div>
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {t('portal.account.account_name_label', undefined, 'Account')}
-            </p>
-            <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-              {primaryAccount?.name || t('portal.connect_site_current_customer', undefined, 'Current customer')}
-            </p>
-            {(primaryAccount?.account_id || session.account_id) ? (
-              <details className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                <summary className="cursor-pointer font-medium">
-                  {t('portal.support_information', undefined, 'Support information')}
-                </summary>
-                <div className="mt-2">
-                  <BackofficeIdentifier value={primaryAccount?.account_id || session.account_id || t('common.not_found')} full />
-                </div>
-              </details>
-            ) : null}
-          </BackofficeStackCard>
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {t('portal.account.role_label', undefined, 'Role')}
-            </p>
-            <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-              {session.role || t('common.not_found')}
-            </p>
-          </BackofficeStackCard>
-          <BackofficeStackCard>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {t('portal.account.principal_label', undefined, 'Principal')}
-            </p>
-            <p className="mt-2 break-all text-sm font-semibold text-slate-950 dark:text-white">
-              {session.principal_id || t('common.not_found')}
-            </p>
-          </BackofficeStackCard>
-        </BackofficeSectionPanel>
+        <div data-portal-account="contact-info">
+          <BackofficeSectionPanel className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                {t('portal.account.contact_label', undefined, 'Contact')}
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+                {t('portal.account.contact_title', undefined, 'Contact information')}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {t(
+                  'portal.account.contact_desc',
+                  undefined,
+                  'This is the information used for login codes, service notices, and support follow-up.'
+                )}
+              </p>
+            </div>
+
+            <BackofficeStackCard className="space-y-2 bg-white/80 dark:bg-slate-950/55">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-base font-semibold text-slate-950 dark:text-white">
+                  {t('portal.account.primary_contact_title', undefined, 'Primary contact')}
+                </p>
+                <BackofficeStatusBadge
+                  label={contactEmail ? t('portal.account.contact_ready', undefined, 'Configured') : t('portal.account.contact_missing', undefined, 'Needs setup')}
+                  status={contactEmail ? 'active' : 'warning'}
+                />
+              </div>
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {displayContact}
+              </p>
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {t('portal.account.primary_contact_detail', undefined, 'Verification codes and service notices use this contact.')}
+              </p>
+            </BackofficeStackCard>
+
+            <BackofficeStackCard className="space-y-2 bg-white/80 dark:bg-slate-950/55">
+              <p className="text-base font-semibold text-slate-950 dark:text-white">
+                {t('portal.account.contact_change_title', undefined, 'Need to change contact?')}
+              </p>
+              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {t(
+                  'portal.account.contact_change_desc',
+                  undefined,
+                  'Ask the operator to update the contact email before changing login or service notifications.'
+                )}
+              </p>
+            </BackofficeStackCard>
+          </BackofficeSectionPanel>
+        </div>
       </div>
     </BackofficePageStack>
   );

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStackCard } from '@/components/backoffice/BackofficeScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
 import { portalClient, type Site } from '@/lib/portal-client';
@@ -90,7 +89,7 @@ export function PortalSiteConnectPanel({
     <BackofficeStackCard className="space-y-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-          {t('portal.connect_site_title', undefined, 'Site provisioning')}
+	          {t('portal.connect_site_title', undefined, 'Add site')}
         </p>
         <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
           {isAddonConnection
@@ -100,15 +99,15 @@ export function PortalSiteConnectPanel({
         <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
           {isAddonConnection
             ? t(
-                'portal.connect_site_addon_desc',
-                undefined,
-                'Create or activate this Cloud site connection, then return to WordPress with a one-time authorization code.'
-              )
-            : t(
-                'portal.connect_site_desc',
-                undefined,
-                'Create the Cloud-side site record for the current customer, then issue a site key and finish the addon binding inside WordPress.'
-              )}
+	                'portal.connect_site_addon_desc',
+	                undefined,
+	                'Confirm this site connection, then return to WordPress to finish setup.'
+	              )
+	            : t(
+	                'portal.connect_site_desc',
+	                undefined,
+	                'Add a WordPress site to this account, then follow the setup steps in WordPress.'
+	              )}
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -130,21 +129,6 @@ export function PortalSiteConnectPanel({
           ) : null}
         </div>
       </div>
-      <details className="rounded-[1rem] border border-dashed border-gray-200 px-3 py-3 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-        <summary className="cursor-pointer font-medium text-gray-600 dark:text-gray-300">
-          {t('portal.support_information', undefined, 'Support information')}
-        </summary>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <div>
-            <p>{t('common.account', undefined, 'Account')}</p>
-            <BackofficeIdentifier value={accountId || t('common.not_found', undefined, 'Not found')} className="mt-1 block" />
-          </div>
-          <div>
-            <p>{t('common.site', undefined, 'Site')}</p>
-            <BackofficeIdentifier value={currentSiteId || currentSite?.site_id || t('common.not_found', undefined, 'Not found')} className="mt-1 block" />
-          </div>
-        </div>
-      </details>
       <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <label className="block">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
