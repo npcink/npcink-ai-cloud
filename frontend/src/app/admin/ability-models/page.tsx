@@ -1650,8 +1650,13 @@ export default function AbilityModelsPage() {
                         );
                       })
                     ) : (
-                      <div className="px-3 py-5 text-sm text-slate-500 dark:text-slate-400">
-                        {text('model_search_empty', 'No runtime model matches the current filters.')}
+                      <div className="grid gap-1 px-3 py-5 text-sm text-slate-500 dark:text-slate-400">
+                        <div className="font-semibold text-slate-700 dark:text-slate-200">
+                          {text('model_search_empty', 'No enabled runtime model matches the current filters.')}
+                        </div>
+                        <div className="text-xs leading-5">
+                          {text('model_search_empty_hint', 'Enable models in Model suppliers first. Ability routes can only use models listed in the supplier model allowlist.')}
+                        </div>
                       </div>
                     )}
                   </div>

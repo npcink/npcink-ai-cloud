@@ -26,7 +26,7 @@ from app.domain.hosted_model_defaults import (
 )
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
-from tests.conftest import seed_site_auth
+from tests.conftest import seed_openai_model_allowlist, seed_site_auth
 
 
 def _sqlite_url(tmp_path: Path) -> str:
@@ -407,6 +407,7 @@ def test_scan_provider_health_degrades_instance_after_failures(tmp_path: Path) -
 
     catalog_service = CatalogService(database_url)
     catalog_service.refresh_catalog()
+    seed_openai_model_allowlist(database_url)
     seed_site_auth(database_url, site_id="site_alpha")
     runtime_service = RuntimeService(database_url)
     runtime_service.execute(

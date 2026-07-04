@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.db import get_session
+from app.domain.provider_connections.model_allowlist import build_provider_model_allowlist
 from app.domain.routing.errors import (
     RoutingExecutionKindMismatchError,
     RoutingNoCandidatesError,
@@ -20,6 +21,7 @@ class RoutingService:
         profile_id: str,
         execution_kind: str,
     ) -> RoutingResolution:
+        provider_model_allowlist = build_provider_model_allowlist(self.database_url)
         with get_session(self.database_url) as session:
             repository = CatalogRepository(session)
             profile = repository.get_routing_profile(profile_id)
@@ -58,6 +60,10 @@ class RoutingService:
             if instance.health_status != "unhealthy"
             and instance.model_id in models_by_id
             and models_by_id[instance.model_id].status == "available"
+            and provider_model_allowlist.allows(
+                provider_id=instance.provider_id,
+                model_id=instance.model_id,
+            )
         ]
 
         if not candidates:

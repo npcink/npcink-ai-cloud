@@ -35,6 +35,9 @@ from app.domain.media_derivatives.metrics import MediaDerivativeObservabilitySer
 from app.domain.model_references import ModelReferenceError, ModelReferenceService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
+from app.domain.provider_connections.model_allowlist import (
+    build_provider_model_allowlist,
+)
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
@@ -660,6 +663,7 @@ def _serialize_wordpress_ai_instance(
 
 
 def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
+    provider_model_allowlist = build_provider_model_allowlist(database_url)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         instances = repository.list_instances_for_provider()
@@ -680,6 +684,11 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
         for instance in instances:
             model = models_by_id.get(instance.model_id)
             if model is None or model.status != "available":
+                continue
+            if not provider_model_allowlist.allows(
+                provider_id=instance.provider_id,
+                model_id=instance.model_id,
+            ):
                 continue
             if model.feature not in available_instances_by_kind:
                 continue
@@ -705,6 +714,7 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
                 list(binding.candidate_instance_ids or []) if binding is not None else []
             )
             candidate_items = []
+            effective_candidate_instance_ids = []
             for instance_id in candidate_instance_ids:
                 if instance_id not in instances_by_id:
                     continue
@@ -712,6 +722,12 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
                 model = models_by_id.get(instance.model_id)
                 if model is None:
                     continue
+                if not provider_model_allowlist.allows(
+                    provider_id=instance.provider_id,
+                    model_id=instance.model_id,
+                ):
+                    continue
+                effective_candidate_instance_ids.append(instance_id)
                 candidate_items.append(
                     _serialize_wordpress_ai_instance(
                         instance,
@@ -731,7 +747,7 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
                     "execution_kind": (
                         profile.execution_kind if profile is not None else spec.execution_kind
                     ),
-                    "candidate_instance_ids": candidate_instance_ids,
+                    "candidate_instance_ids": effective_candidate_instance_ids,
                     "candidates": candidate_items,
                     "timeout_ms": int(policy.get("timeout_ms") or spec.timeout_ms),
                     "max_timeout_ms": spec.max_timeout_ms,
@@ -744,7 +760,9 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
                         else ""
                     ),
                     "selection_policy": selection_policy,
-                    "status": "configured" if candidate_instance_ids else "needs_candidates",
+                    "status": (
+                        "configured" if effective_candidate_instance_ids else "needs_candidates"
+                    ),
                 }
             )
 
@@ -781,6 +799,7 @@ def _validate_wordpress_ai_routing_payload(
 
     known_profile_ids = set(WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID)
     seen_profile_ids: set[str] = set()
+    provider_model_allowlist = build_provider_model_allowlist(database_url)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         for profile_payload in payload.profiles:
@@ -828,6 +847,14 @@ def _validate_wordpress_ai_routing_payload(
                     return [], (
                         f"profile {profile_id} may only use available "
                         f"{spec.execution_kind} instances"
+                    )
+                if not provider_model_allowlist.allows(
+                    provider_id=instance.provider_id,
+                    model_id=instance.model_id,
+                ):
+                    return [], (
+                        f"profile {profile_id} may only use models enabled "
+                        f"for provider {instance.provider_id}: {instance.model_id}"
                     )
 
     return payload.profiles, ""

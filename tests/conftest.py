@@ -53,6 +53,7 @@ from app.core.models import (
     AccountEntitlementSnapshot,
     AccountSubscription,
     PlanVersion,
+    ProviderConnection,
     Site,
     SiteApiKey,
 )
@@ -191,6 +192,48 @@ def seed_site_auth(
             if policy is not None:
                 snapshot.policy_json = policy
 
+        session.commit()
+
+
+def seed_openai_model_allowlist(
+    database_url: str,
+    *,
+    model_ids: list[str] | None = None,
+    connection_id: str = "openai",
+) -> None:
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, connection_id)
+        config_json = {
+            "provider_id": "openai",
+            "kind": "openai_compatible",
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": ["text.balanced"],
+            "model_ids": model_ids or ["gpt-4.1-mini"],
+        }
+        if row is None:
+            row = ProviderConnection(
+                connection_id=connection_id,
+                provider_type="openai_compatible",
+                display_name="OpenAI",
+                enabled=True,
+                base_url="https://api.openai.test/v1",
+                config_json=config_json,
+                secret_ciphertext="configured-in-test",
+                status="ready",
+                source_role="execution_source",
+                metadata_json={},
+            )
+            session.add(row)
+        else:
+            row.provider_type = "openai_compatible"
+            row.display_name = row.display_name or "OpenAI"
+            row.enabled = True
+            row.base_url = row.base_url or "https://api.openai.test/v1"
+            row.config_json = config_json
+            row.secret_ciphertext = row.secret_ciphertext or "configured-in-test"
+            row.status = "ready"
+            row.source_role = row.source_role or "execution_source"
+            row.metadata_json = row.metadata_json or {}
         session.commit()
 
 

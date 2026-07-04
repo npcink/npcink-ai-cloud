@@ -786,6 +786,12 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
+  /model_search_empty_hint[\s\S]*supplier model allowlist/,
+  'Ability-model routing empty state must explain that candidates come from the supplier model allowlist'
+);
+
+assert.match(
+  abilityModelsSource,
   /speech\|audio\|voice\|tts\|ocr\|vision\|image\|embed[\s\S]*featureTokens\.includes\('text'\)/,
   'Ability-model routing must exclude obvious non-text model ids before accepting text-tagged candidates'
 );
@@ -1633,6 +1639,18 @@ assert.match(
   pageSource,
   /column_enabled_models/,
   'Model supplier list must expose enabled model count as the main model column'
+);
+
+assert.match(
+  pageSource,
+  /column_enabled_models', 'Runtime allowlist'[\s\S]*model_catalog_allowlist_short_hint/,
+  'Model supplier list must label enabled models as the runtime allowlist used by ability routes'
+);
+
+assert.match(
+  pageSource,
+  /model_visibility_allowlist_desc[\s\S]*Only enabled models[\s\S]*ability-model routing/,
+  'Provider channel form must state that selected models are the runtime allowlist'
 );
 
 assert.match(

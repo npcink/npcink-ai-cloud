@@ -2742,6 +2742,9 @@ function AiResourcesContent() {
                       <div className="min-w-0">
                         <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
                         <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
+                          {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can appear in ability-model routing or be used by Cloud runtime.')}
+                        </p>
+                        <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
                           {aiText('model_visibility_compact_summary', 'Enabled {{enabled}} / available {{available}} · {{status}}', {
                             enabled: String(splitList(providerConnectionForm.modelIds).length),
                             available: String(availableModelCount),
@@ -3214,7 +3217,7 @@ function AiResourcesContent() {
                         </select>
                       </th>
                       <th className="px-4 py-3">{aiText('column_provider', 'Provider')}</th>
-                      <th className="px-4 py-3">{aiText('column_enabled_models', 'Enabled models')}</th>
+                      <th className="px-4 py-3">{aiText('column_enabled_models', 'Runtime allowlist')}</th>
                       <th className="px-4 py-3">{aiText('last_test', 'Last test')}</th>
                       <th className="w-44 px-4 py-3 text-center">{aiText('column_actions', 'Actions')}</th>
                     </tr>
@@ -3251,6 +3254,9 @@ function AiResourcesContent() {
                               {modelIds.length
                                 ? aiText('model_catalog_enabled_count_short', '{{count}} models', { count: String(modelIds.length) })
                                 : aiText('model_catalog_none_enabled_short', '0 models')}
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                              {aiText('model_catalog_allowlist_short_hint', 'Only these models can be selected by ability routes.')}
                             </div>
                           </td>
                           <td className="max-w-[18rem] px-4 py-4 text-slate-600 dark:text-slate-300">
