@@ -662,8 +662,12 @@ def _serialize_wordpress_ai_instance(
     }
 
 
-def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
-    provider_model_allowlist = build_provider_model_allowlist(database_url)
+def _build_wordpress_ai_routing_projection(
+    database_url: str,
+    *,
+    settings: Any | None = None,
+) -> dict[str, Any]:
+    provider_model_allowlist = build_provider_model_allowlist(database_url, settings=settings)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         instances = repository.list_instances_for_provider()
@@ -793,13 +797,15 @@ def _build_wordpress_ai_routing_projection(database_url: str) -> dict[str, Any]:
 def _validate_wordpress_ai_routing_payload(
     database_url: str,
     payload: WordPressAIRoutingSettingsPayload,
+    *,
+    settings: Any | None = None,
 ) -> tuple[list[WordPressAIRoutingProfilePayload], str]:
     if not payload.profiles:
         return [], "at least one WordPress AI routing profile is required"
 
     known_profile_ids = set(WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID)
     seen_profile_ids: set[str] = set()
-    provider_model_allowlist = build_provider_model_allowlist(database_url)
+    provider_model_allowlist = build_provider_model_allowlist(database_url, settings=settings)
     with get_session(database_url) as session:
         repository = CatalogRepository(session)
         for profile_payload in payload.profiles:
@@ -3542,7 +3548,7 @@ async def preview_admin_provider_connection_catalog(
             content=build_envelope(
                 status="error",
                 error_code=error.error_code,
-                message="provider connection catalog preview failed",
+                message=error.message,
                 revision="m6",
             ),
         )
@@ -3929,7 +3935,10 @@ async def get_admin_wordpress_ai_routing(request: Request) -> Any:
     return build_envelope(
         status="ok",
         message="WordPress AI connector routing loaded",
-        data=_build_wordpress_ai_routing_projection(services.settings.database_url),
+        data=_build_wordpress_ai_routing_projection(
+            services.settings.database_url,
+            settings=services.settings,
+        ),
         revision="m6",
     )
 
@@ -3946,6 +3955,7 @@ async def update_admin_wordpress_ai_routing(
     profiles, error_message = _validate_wordpress_ai_routing_payload(
         services.settings.database_url,
         payload,
+        settings=services.settings,
     )
     if error_message:
         return JSONResponse(
@@ -4013,7 +4023,10 @@ async def update_admin_wordpress_ai_routing(
     except Exception:
         audit_event = None
 
-    result = _build_wordpress_ai_routing_projection(services.settings.database_url)
+    result = _build_wordpress_ai_routing_projection(
+        services.settings.database_url,
+        settings=services.settings,
+    )
     return build_envelope(
         status="ok",
         message="WordPress AI connector routing saved",

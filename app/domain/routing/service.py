@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.adapters.repositories.catalog_repository import CatalogRepository
+from app.core.config import Settings
 from app.core.db import get_session
 from app.domain.provider_connections.model_allowlist import build_provider_model_allowlist
 from app.domain.routing.errors import (
@@ -12,8 +13,16 @@ from app.domain.routing.models import RoutingCandidate, RoutingResolution
 
 
 class RoutingService:
-    def __init__(self, database_url: str) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        settings: Settings | None = None,
+        execution_provider_ids: set[str] | None = None,
+    ) -> None:
         self.database_url = database_url
+        self.settings = settings
+        self.execution_provider_ids = execution_provider_ids or set()
 
     def resolve(
         self,
@@ -21,7 +30,11 @@ class RoutingService:
         profile_id: str,
         execution_kind: str,
     ) -> RoutingResolution:
-        provider_model_allowlist = build_provider_model_allowlist(self.database_url)
+        provider_model_allowlist = build_provider_model_allowlist(
+            self.database_url,
+            settings=self.settings,
+            execution_provider_ids=self.execution_provider_ids,
+        )
         with get_session(self.database_url) as session:
             repository = CatalogRepository(session)
             profile = repository.get_routing_profile(profile_id)
@@ -60,6 +73,7 @@ class RoutingService:
             if instance.health_status != "unhealthy"
             and instance.model_id in models_by_id
             and models_by_id[instance.model_id].status == "available"
+            and not models_by_id[instance.model_id].is_deprecated
             and provider_model_allowlist.allows(
                 provider_id=instance.provider_id,
                 model_id=instance.model_id,

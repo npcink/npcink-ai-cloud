@@ -59,7 +59,12 @@ from app.core.security import REPLAY_SCOPE_PUBLIC_POST_SITE
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
-from app.domain.hosted_model_defaults import TEXT_AI_PROFILE_ID
+from app.domain.hosted_model_defaults import (
+    AUDIO_NARRATION_MODEL_ID,
+    AUDIO_NARRATION_PROFILE_ID,
+    TEXT_AI_PROFILE_ID,
+)
+from app.domain.provider_connections.service import ProviderConnectionAdminService
 from app.domain.runtime.service import RuntimeService
 from app.domain.web_search.service import (
     TavilyWebSearchProvider,
@@ -78,6 +83,7 @@ from tests.conftest import (
     build_auth_headers,
     build_internal_headers,
     merge_json_headers,
+    seed_provider_model_allowlist,
     seed_site_auth,
 )
 
@@ -284,6 +290,37 @@ def _bind_audio_summary_script_profile(database_url: str, *, revision: str) -> N
             revision=revision,
         )
         session.commit()
+
+
+def _seed_minimax_audio_model_allowlist(database_url: str) -> None:
+    seed_provider_model_allowlist(
+        database_url,
+        provider_id="minimax",
+        kind="minimax",
+        model_ids=[AUDIO_NARRATION_MODEL_ID],
+        capability_ids=["audio_generation"],
+        runtime_profile_ids=[
+            AUDIO_NARRATION_PROFILE_ID,
+            WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
+        ],
+        base_url="https://api.minimaxi.com",
+    )
+
+
+def _seed_openai_text_model_allowlist(
+    database_url: str,
+    *,
+    model_ids: list[str] | None = None,
+) -> None:
+    seed_provider_model_allowlist(
+        database_url,
+        provider_id="openai",
+        kind="openai_compatible",
+        model_ids=model_ids or ["gpt-4.1-mini", "gpt-hosted-free-next", "gpt-5.5"],
+        capability_ids=["text_generation"],
+        runtime_profile_ids=[TEXT_AI_PROFILE_ID, WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID],
+        base_url="https://api.openai.test/v1",
+    )
 
 
 class FlakyAudioSummaryScriptProvider(FixedAudioSummaryScriptProvider):
@@ -1440,6 +1477,62 @@ def test_admin_provider_connection_catalog_preview_uses_saved_secret_without_exp
         assert session.get(ProviderConnection, "mqzj_saved") is not None
 
 
+def test_admin_provider_connection_catalog_preview_reports_unreadable_saved_secret(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    create_response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(
+            idempotency_key="provider-connection-preview-unreadable-create"
+        ),
+        json={
+            "connection_id": "minimax_unreadable",
+            "provider_id": "minimax",
+            "provider_type": "minimax",
+            "kind": "minimax",
+            "display_name": "MiniMax",
+            "enabled": True,
+            "base_url": "https://api.minimaxi.com",
+            "capability_ids": ["audio_generation"],
+            "runtime_profile_ids": [AUDIO_NARRATION_PROFILE_ID],
+            "credential": "saved-preview-secret",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "minimax_unreadable")
+        assert row is not None
+        row.secret_ciphertext = "not-a-valid-fernet-token"
+        session.commit()
+
+    response = client.post(
+        "/internal/service/admin/provider-connections/preview-catalog",
+        headers=build_internal_headers(
+            idempotency_key="provider-connection-preview-unreadable"
+        ),
+        json={
+            "connection_id": "minimax_unreadable",
+            "provider_id": "minimax",
+            "provider_type": "minimax",
+            "kind": "minimax",
+            "display_name": "MiniMax",
+            "enabled": True,
+            "base_url": "https://api.minimaxi.com",
+            "capability_ids": ["audio_generation"],
+            "runtime_profile_ids": [AUDIO_NARRATION_PROFILE_ID],
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    payload = response.json()
+    assert payload["error_code"] == "provider_connection.saved_credential_unreadable"
+    assert payload["message"] == (
+        "saved provider credential cannot be decrypted; enter the API key again and save"
+    )
+    assert "saved-preview-secret" not in json.dumps(payload)
+
+
 def test_admin_provider_connection_catalog_preview_error_hides_upstream_detail(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2281,6 +2374,7 @@ def test_admin_audio_workbench_creates_narration_job_and_exposes_result(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -2322,6 +2416,119 @@ def test_admin_audio_workbench_creates_narration_job_and_exposes_result(
     dispose_engine(database_url)
 
 
+def test_admin_audio_workbench_uses_saved_minimax_execution_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    CatalogService(
+        database_url,
+        providers={"minimax": MiniMaxProviderAdapter(allow_sample_catalog=True)},
+    ).refresh_catalog()
+    services = client.app.state.services
+    ProviderConnectionAdminService(database_url, services.settings).save_connection(
+        {
+            "connection_id": "minimax",
+            "provider_id": "minimax",
+            "provider_type": "minimax",
+            "kind": "minimax",
+            "display_name": "MiniMax",
+            "enabled": True,
+            "base_url": "https://api.minimaxi.com",
+            "capability_ids": ["audio_generation"],
+            "runtime_profile_ids": [
+                AUDIO_NARRATION_PROFILE_ID,
+                WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
+            ],
+            "config": {"model_ids": [AUDIO_NARRATION_MODEL_ID]},
+            "credential": "saved-minimax-secret",
+        }
+    )
+    _seed_minimax_audio_model_allowlist(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_audio_admin",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+
+    def fake_execute_http(
+        self: MiniMaxProviderAdapter,
+        request: ProviderExecutionRequest,
+    ) -> ProviderExecutionResult:
+        return self._execute_sample(request)
+
+    monkeypatch.setattr(MiniMaxProviderAdapter, "_execute_http", fake_execute_http)
+
+    response = client.post(
+        "/internal/service/admin/audio-jobs",
+        headers=build_internal_headers(
+            idempotency_key="audio-workbench-saved-minimax-connection"
+        ),
+        json={
+            "site_id": "site_audio_admin",
+            "intent": "article_narration",
+            "title": "Audio test",
+            "body": "这是一段文章正文，用于验证已保存的 MiniMax 凭据连接会进入运行时。",
+            "format": "mp3",
+            "preview_instance_id": "minimax-global-speech-28-turbo",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "queued"
+    assert data["provider_id"] == "minimax"
+    assert data["instance_id"] == "minimax-global-speech-28-turbo"
+
+    status_response = client.get(
+        f"/internal/service/admin/audio-jobs/{data['run_id']}",
+        headers=build_internal_headers(),
+    )
+    assert status_response.status_code == 200, status_response.text
+    status_data = status_response.json()["data"]
+    assert status_data["status"] == "succeeded"
+    assert status_data["error_code"] in ("", None)
+
+    dispose_engine(database_url)
+
+
+def test_admin_audio_workbench_rejects_minimax_route_without_execution_connection(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    CatalogService(
+        database_url,
+        providers={"minimax": MiniMaxProviderAdapter(allow_sample_catalog=True)},
+    ).refresh_catalog()
+    _seed_minimax_audio_model_allowlist(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_audio_admin",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+
+    response = client.post(
+        "/internal/service/admin/audio-jobs",
+        headers=build_internal_headers(
+            idempotency_key="audio-workbench-minimax-not-executable"
+        ),
+        json={
+            "site_id": "site_audio_admin",
+            "intent": "article_narration",
+            "title": "Audio test",
+            "body": "这是一段文章正文，用于验证不可执行连接不会进入试听候选。",
+            "format": "mp3",
+            "preview_instance_id": "minimax-global-speech-28-turbo",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error_code"] == "audio_workbench.preview_route_unavailable"
+
+    dispose_engine(database_url)
+
+
 def test_admin_audio_workbench_without_site_uses_active_preview_site(
     tmp_path: Path,
 ) -> None:
@@ -2337,6 +2544,7 @@ def test_admin_audio_workbench_without_site_uses_active_preview_site(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_smoke",
@@ -2427,6 +2635,7 @@ def test_admin_audio_workbench_rejects_unknown_preview_instance(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -2468,6 +2677,7 @@ def test_admin_audio_workbench_recent_runs_are_lightweight_runtime_evidence(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -2527,6 +2737,8 @@ def test_admin_audio_workbench_builds_summary_script_before_audio_job(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
+    _seed_openai_text_model_allowlist(database_url, model_ids=["gpt-hosted-free-next"])
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -2594,6 +2806,8 @@ def test_admin_audio_workbench_retries_transient_summary_script_failure(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
+    _seed_openai_text_model_allowlist(database_url, model_ids=["gpt-hosted-free-next"])
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -2644,6 +2858,8 @@ def test_admin_audio_workbench_returns_friendly_empty_summary_script_error(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
+    _seed_openai_text_model_allowlist(database_url, model_ids=["gpt-hosted-free-next"])
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -2695,6 +2911,7 @@ def test_admin_audio_workbench_uses_wordpress_audio_routing_profile(
             "minimax_api_key": "minimax-test-secret",
         },
     )
+    _seed_minimax_audio_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_audio_admin",
@@ -3692,6 +3909,7 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
+    _seed_openai_text_model_allowlist(database_url)
 
     client.post(
         "/internal/service/accounts",
@@ -4008,6 +4226,7 @@ def test_service_routes_plan_version_label_conflict_is_readable(tmp_path: Path) 
 
 def test_service_routes_admin_read_facade(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
+    _seed_openai_text_model_allowlist(database_url)
 
     client.post(
         "/internal/service/accounts",
@@ -5003,6 +5222,7 @@ def test_service_routes_inspect_commercial_policy_and_reconciliation(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
+    _seed_openai_text_model_allowlist(database_url)
 
     client.post(
         "/internal/service/accounts",
@@ -5183,6 +5403,7 @@ def test_service_routes_inspect_commercial_policy_and_reconciliation(
 
 def test_service_routes_cleanup_retention_and_record_audit(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
+    _seed_openai_text_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_cleanup",
@@ -5436,8 +5657,9 @@ def test_service_routes_runtime_diagnostics_summaries_and_abuse_guard(
             "internal_post_rate_limit_window_seconds": 600,
             "internal_post_max_requests_per_window": 10,
             "internal_post_max_requests_per_ip_window": 10,
-        },
-    )
+            },
+        )
+    _seed_openai_text_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_diag",
@@ -5898,6 +6120,7 @@ def test_service_routes_runtime_callback_dispatch_recovery_is_operator_visible(
         return httpx.Response(202)
 
     database_url, client = _build_client(tmp_path)
+    _seed_openai_text_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_recovery",
@@ -6012,6 +6235,7 @@ def test_service_routes_runtime_backlog_diagnostics_exposes_scope_and_stale_laye
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
+    _seed_openai_text_model_allowlist(database_url)
     seed_site_auth(
         database_url,
         site_id="site_backlog_a",

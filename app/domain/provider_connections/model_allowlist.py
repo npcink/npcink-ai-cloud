@@ -5,6 +5,11 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.adapters.providers.registry import (
+    EXECUTION_PROVIDER_SOURCE_ROLES,
+    build_provider_adapter_from_connection,
+)
+from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import ProviderConnection
 
@@ -18,7 +23,12 @@ class ProviderModelAllowlist:
         return bool(provider_models and model_id in provider_models)
 
 
-def build_provider_model_allowlist(database_url: str) -> ProviderModelAllowlist:
+def build_provider_model_allowlist(
+    database_url: str,
+    *,
+    settings: Settings | None = None,
+    execution_provider_ids: set[str] | None = None,
+) -> ProviderModelAllowlist:
     if not database_url:
         return ProviderModelAllowlist(allowed_model_ids_by_provider={})
 
@@ -34,7 +44,12 @@ def build_provider_model_allowlist(database_url: str) -> ProviderModelAllowlist:
         config = _dict(row.config_json)
         metadata = _dict(row.metadata_json)
         provider_id = str(config.get("provider_id") or row.connection_id or "").strip()
-        if not provider_id or not _connection_configured(row, config):
+        if not provider_id or not _connection_execution_ready(
+            row,
+            config,
+            settings=settings,
+            execution_provider_ids=execution_provider_ids or set(),
+        ):
             continue
         model_ids = _normalize_id_list(config.get("model_ids"))
         if not model_ids:
@@ -48,13 +63,28 @@ def build_provider_model_allowlist(database_url: str) -> ProviderModelAllowlist:
     )
 
 
-def _connection_configured(row: ProviderConnection, config: dict[str, Any]) -> bool:
+def _connection_execution_ready(
+    row: ProviderConnection,
+    config: dict[str, Any],
+    *,
+    settings: Settings | None,
+    execution_provider_ids: set[str],
+) -> bool:
     provider_id = str(config.get("provider_id") or row.connection_id or "").strip()
-    return (
+    if str(row.source_role or "").strip() not in EXECUTION_PROVIDER_SOURCE_ROLES:
+        return False
+    if provider_id in execution_provider_ids:
+        return True
+    configured = (
         bool(str(row.secret_ciphertext or "").strip())
         or bool(config.get("secretless"))
         or provider_id == "jina_reader"
     )
+    if not configured:
+        return False
+    if settings is None:
+        return True
+    return build_provider_adapter_from_connection(settings, row) is not None
 
 
 def _dict(value: object) -> dict[str, Any]:
