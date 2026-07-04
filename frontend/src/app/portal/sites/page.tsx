@@ -205,7 +205,7 @@ function PortalSitesContent() {
         metricsColumnsClassName="lg:grid-cols-3"
       />
 
-      <BackofficeSectionPanel className="space-y-4">
+      <BackofficeSectionPanel className="space-y-4" variant="portal">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
@@ -230,6 +230,19 @@ function PortalSitesContent() {
           </div>
         </div>
 
+        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
+          <p className="font-semibold">
+            {t('portal.sites.connect_hint_title', {}, 'Need to connect another site?')}
+          </p>
+          <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
+            {t(
+              'portal.sites.connect_hint_desc',
+              {},
+              'Open npcink-cloud-addon in WordPress and start the connection there. After binding, the site will appear here.'
+            )}
+          </p>
+        </div>
+
         <div className="grid gap-3">
           {filteredSites.length === 0 ? (
             <PortalEmptyState
@@ -245,6 +258,7 @@ function PortalSitesContent() {
           ) : sortedSites.map((site) => (
             <BackofficeStackCard
               key={site.site_id}
+              variant="portal"
               className={
                 site.site_id === selectedSiteId
                   ? 'border-[color:var(--brand-primary)]/20 bg-[color:var(--brand-primary-soft)]/35 ring-1 ring-[color:var(--brand-primary)]/10 dark:bg-blue-500/10'
@@ -290,6 +304,7 @@ function PortalSitesContent() {
                       { label: t('site_details.connected', {}, 'Connected'), value: formatDate(site.created_at) },
                     ]}
                     columnsClassName="lg:grid-cols-2"
+                    variant="portal"
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">

@@ -20,6 +20,11 @@ assert.match(
 );
 
 const billingPageSource = readFileSync(billingPagePath, 'utf8');
+const billingMetricStart = billingPageSource.indexOf('<BackofficeMetricStrip');
+const billingMetricStrip = billingPageSource.slice(
+  billingMetricStart,
+  billingPageSource.indexOf('<BackofficeStackCard', billingMetricStart)
+);
 assert.match(
   billingPageSource,
   /function coerceFiniteNumber/,
@@ -37,6 +42,21 @@ assert.match(
 );
 assert.match(
   billingPageSource,
+  /upgrade_action[\s\S]*credit_packs_title[\s\S]*payment_orders_title/,
+  'Portal package page must own package upgrades, credit packs, and payment orders'
+);
+assert.doesNotMatch(
+  billingMetricStrip,
+  /package_credit_allowance_label|site_allowance_label/,
+  'Portal package header must not repeat package rights that are already shown in the rights card'
+);
+assert.match(
+  billingPageSource,
+  /package_rights_label[\s\S]*package_credit_allowance_label[\s\S]*site_allowance_label/,
+  'Portal package rights must keep credits and site allowance together in one card'
+);
+assert.match(
+  billingPageSource,
   /<details className="overflow-hidden rounded-\[1\.4rem\] border/,
   'Portal package page must keep package records behind an explicit details reveal'
 );
@@ -49,6 +69,11 @@ assert.doesNotMatch(
 const siteRecordSource = readFileSync(siteRecordPath, 'utf8');
 assert.match(
   siteRecordSource,
-  /This is the clearest place to confirm the current package, current period, your role, and allowed actions for this site\./,
-  'Site record must explicitly position itself as the main read-only entry for package and access verification'
+  /label: t\('common\.package'[\s\S]*value: packageLabel/,
+  'Site record header must keep the package summary visible for ordinary customers'
+);
+assert.doesNotMatch(
+  siteRecordSource,
+  /This is the clearest place to confirm the current package, service status, and connected site address\./,
+  'Site record body must not repeat package and service status cards after the header summary'
 );

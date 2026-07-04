@@ -1,10 +1,9 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { BackofficeMetricStrip, BackofficePageStack, BackofficeSectionPanel, BackofficeStackCard } from '@/components/backoffice/BackofficeScaffold';
+import { BackofficePageStack, BackofficeSectionPanel, BackofficeStackCard } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalErrorState, PortalLoadingState, PortalSignedOutState } from '@/components/portal/PortalPageState';
@@ -103,6 +102,7 @@ function PortalSiteRecordContent() {
   const siteStatusLabel = siteNeedsAttention
     ? t('portal.home.filter_attention_only', {}, 'Needs attention')
     : t('portal.home.risk_level_normal', {}, 'Normal');
+  const contactStatusLabel = t('portal.site_record_contact_available', {}, 'Available in Contact');
 
   return (
     <BackofficePageStack>
@@ -135,41 +135,76 @@ function PortalSiteRecordContent() {
             value: site.created_at ? formatDate(site.created_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
           },
         ]}
-        primaryAction={
-            <Link href={`/portal/usage?site=${siteId}`} className="btn btn-primary">
-              {t('portal.nav_usage', {}, 'Plan and usage')}
-            </Link>
-        }
-        secondaryActions={
-          <Link href="/portal/sites" className="btn btn-secondary">
-            {t('portal.nav_sites', {}, 'Sites')}
-          </Link>
-        }
       />
 
-      <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <BackofficeSectionPanel className="space-y-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('portal.site_record_package_label', {}, 'Package')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{packageLabel}</h2>
-            <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-              {t(
-                'portal.site_record_package_access_desc',
+      <BackofficeSectionPanel className="space-y-4" variant="portal">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+            {t('portal.site_record_current_label', {}, 'Current site')}
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+            {t('portal.site_record_current_title', {}, 'What needs attention?')}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+            {siteNeedsAttention
+              ? t(
+                'portal.site_record_attention_desc',
                 {},
-                'This is the clearest place to confirm the current package, service status, and connected site address.'
+                'This site still has information to confirm. Contact support if it looks wrong.'
+              )
+              : t(
+                'portal.site_record_ready_desc',
+                {},
+                'This site address and service status look normal.'
               )}
-            </p>
-          </div>
-          <BackofficeStackCard>
-            <div className="flex items-start justify-between gap-3">
-              <div>
+          </p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-3">
+          <BackofficeStackCard variant="portal">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('portal.site_address_label', {}, 'Site address')}
+              </p>
+              <p className="break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {siteUrl || t('portal.site_url_missing', {}, 'WordPress URL not configured')}
+              </p>
+            </div>
+          </BackofficeStackCard>
+          <BackofficeStackCard variant="portal">
+            <div className="flex h-full items-start justify-between gap-3">
+              <div className="space-y-1">
                 <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                  {t('portal.home.package_card_label', {}, 'Current package')}
+                  {t('portal.nav_account', {}, 'Contact')}
                 </p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  {packageLabel}
+                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {t(
+                    'portal.site_record_contact_desc',
+                    {},
+                    'Use the Contact page to confirm the email and service contact details for this account.'
+                  )}
+                </p>
+              </div>
+              <BackofficeStatusBadge status="active" label={contactStatusLabel} />
+            </div>
+          </BackofficeStackCard>
+          <BackofficeStackCard variant="portal">
+            <div className="flex h-full items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                  {t('portal.site_record_attention_title', {}, 'Need to handle?')}
+                </p>
+                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {siteNeedsAttention
+                    ? t(
+                      'portal.site_record_attention_action',
+                      {},
+                      'The site status or address needs confirmation.'
+                    )
+                    : t(
+                      'portal.site_record_ready_action',
+                      {},
+                      'No action is needed for this site right now.'
+                    )}
                 </p>
               </div>
               <BackofficeStatusBadge
@@ -178,46 +213,8 @@ function PortalSiteRecordContent() {
               />
             </div>
           </BackofficeStackCard>
-          <BackofficeMetricStrip
-            columnsClassName="md:grid-cols-2"
-            items={[
-              {
-                label: t('portal.home.service_state_label', {}, 'Service status'),
-                value: siteStatusLabel,
-              },
-              {
-                label: t('common.created_at', {}, 'Created'),
-                value: site.created_at ? formatDate(site.created_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
-              },
-            ]}
-          />
-        </BackofficeSectionPanel>
-
-        <BackofficeSectionPanel className="space-y-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('portal.site_record_service_label', {}, 'Service pages')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('portal.site_record_service_title', {}, 'What can I view here?')}
-            </h2>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Link href={`/portal/usage?site=${siteId}`} className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
-              {t('portal.nav_usage', {}, 'Usage')}
-            </Link>
-            <Link href="/portal/sites" className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
-              {t('portal.nav_sites', {}, 'Sites')}
-            </Link>
-            <Link href="/portal/account" className="rounded-[1rem] border border-slate-200/80 px-4 py-4 text-sm font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-100 dark:hover:bg-slate-900/60">
-              {t('portal.nav_account', {}, 'Contact')}
-            </Link>
-          </div>
-          <BackofficeStackCard className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {siteUrl || t('portal.site_url_missing', {}, 'WordPress URL not configured')}
-          </BackofficeStackCard>
-        </BackofficeSectionPanel>
-      </div>
+        </div>
+      </BackofficeSectionPanel>
     </BackofficePageStack>
   );
 }

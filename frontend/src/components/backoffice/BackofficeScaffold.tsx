@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 type BackofficeFrameProps = React.HTMLAttributes<HTMLDivElement> & {
   children: React.ReactNode;
   className?: string;
+  variant?: 'default' | 'portal';
 };
 
 type BackofficeHeaderProps = {
@@ -51,6 +52,7 @@ type BackofficeMetricItem = {
 type BackofficeMetricStripProps = {
   items: BackofficeMetricItem[];
   columnsClassName?: string;
+  variant?: 'default' | 'portal';
 };
 
 type BackofficeSummaryStripProps = {
@@ -216,11 +218,23 @@ export function BackofficeLayer({
   );
 }
 
-export function BackofficeSectionPanel({ children, className }: BackofficeFrameProps) {
-  return <div className={cn('surface-panel rounded-[1.35rem] p-5 md:p-6', className)}>{children}</div>;
+export function BackofficeSectionPanel({ children, className, variant = 'default', ...rest }: BackofficeFrameProps) {
+  return (
+    <div
+      className={cn(
+        variant === 'portal'
+          ? 'rounded-[1.1rem] border border-slate-200/80 bg-white/78 p-4 shadow-none dark:border-slate-800 dark:bg-slate-950/45 md:p-5'
+          : 'surface-panel rounded-[1.35rem] p-5 md:p-6',
+        className
+      )}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
 }
 
-export function BackofficeMetricStrip({ items, columnsClassName }: BackofficeMetricStripProps) {
+export function BackofficeMetricStrip({ items, columnsClassName, variant = 'default' }: BackofficeMetricStripProps) {
   return (
     <div className={cn('grid gap-3 md:grid-cols-2 xl:grid-cols-4', columnsClassName)}>
       {items.map((item) => {
@@ -234,9 +248,20 @@ export function BackofficeMetricStrip({ items, columnsClassName }: BackofficeMet
         return (
           <div
             key={item.label}
-            className="rounded-[1.1rem] border border-slate-200/80 bg-white/80 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/45"
+            className={cn(
+              variant === 'portal'
+                ? 'rounded-xl border border-slate-200/75 bg-white/65 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30'
+                : 'rounded-[1.1rem] border border-slate-200/80 bg-white/80 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/45'
+            )}
           >
-            <p className="flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+            <p
+              className={cn(
+                'flex items-center gap-1.5 text-gray-500 dark:text-gray-400',
+                variant === 'portal'
+                  ? 'text-xs font-medium'
+                  : 'text-[0.68rem] font-semibold uppercase tracking-[0.18em]'
+              )}
+            >
               <span>{item.label}</span>
               {item.detail && item.detailDisplay === 'hint' ? (
                 <BackofficeInfoHint detail={item.detail} className="h-4 w-4 text-[0.6rem]" />
@@ -281,11 +306,17 @@ export function BackofficeSummaryStrip({ items, className }: BackofficeSummarySt
 export function BackofficeStackCard({
   children,
   className,
+  variant = 'default',
   ...rest
 }: BackofficeFrameProps) {
   return (
     <div
-      className={cn('rounded-[1.1rem] border border-slate-200/80 bg-slate-50/75 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/45', className)}
+      className={cn(
+        variant === 'portal'
+          ? 'rounded-xl border border-slate-200/75 bg-slate-50/60 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/30'
+          : 'rounded-[1.1rem] border border-slate-200/80 bg-slate-50/75 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/45',
+        className
+      )}
       {...rest}
     >
       {children}

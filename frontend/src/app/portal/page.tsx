@@ -77,7 +77,7 @@ function buildRestrictionItems({
 	          detail: t(
 	            'portal.home.restriction_limit_desc',
 	            {},
-	            'Open Plan and usage to see what is left in the current package period.'
+		            'Open Usage to see what is left in the current package period.'
 	          ),
 	        }
 	      : null,
@@ -426,24 +426,21 @@ export default function PortalPage() {
   const setupChecklistItems = [
     {
       key: 'site',
-      done: selectedSite.status === 'active' && Boolean(selectedSiteWordPressUrl),
-      title: t('portal.home.onboarding_site_title', {}, 'Confirm site'),
-      detail: selectedSiteWordPressUrl
-        ? t('portal.home.onboarding_site_ready', {}, 'The site URL is recorded and this site can be used in the Portal workspace.')
-        : t('portal.home.onboarding_site_needed', {}, 'Add the WordPress site URL so keys and usage are easier to verify later.'),
+      done:
+        selectedSite.status === 'active' &&
+        Boolean(selectedSiteWordPressUrl) &&
+        currentSiteActiveKeyCount !== null &&
+        currentSiteActiveKeyCount > 0,
+      title: t('portal.home.onboarding_site_title', {}, 'Confirm site connection'),
+      detail:
+        selectedSite.status === 'active' &&
+        Boolean(selectedSiteWordPressUrl) &&
+        currentSiteActiveKeyCount !== null &&
+        currentSiteActiveKeyCount > 0
+          ? t('portal.home.onboarding_site_ready', {}, 'The WordPress site is connected and can use the service.')
+          : t('portal.home.onboarding_site_needed', {}, 'Open the WordPress plugin to reconnect the site if the address or service connection is not ready.'),
       href: `/portal/sites/${selectedSite.site_id}`,
       action: t('portal.home.onboarding_site_action', {}, 'View site'),
-    },
-    {
-      key: 'api-key',
-      done: currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0,
-      title: t('portal.home.onboarding_key_title', {}, 'Check site connection'),
-      detail:
-        currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0
-          ? t('portal.home.onboarding_key_ready', {}, 'The WordPress site is connected and can use the service.')
-          : t('portal.home.onboarding_key_needed', {}, 'Reconnect the WordPress site before using the service.'),
-      href: `/portal/sites/${selectedSite.site_id}`,
-      action: t('portal.home.onboarding_key_action', {}, 'View site'),
     },
     {
       key: 'package',
@@ -491,8 +488,8 @@ export default function PortalPage() {
         : t('portal.home.connection_needed_label', {}, 'Needs setup');
   const activeKeySummaryDetail =
     currentSiteActiveKeyCount !== null && currentSiteActiveKeyCount > 0
-      ? t('portal.home.onboarding_key_ready', {}, 'The WordPress site is connected and can use the service.')
-      : t('portal.home.onboarding_key_needed', {}, 'Reconnect the WordPress site before using the service.');
+      ? t('portal.home.onboarding_site_ready', {}, 'The WordPress site is connected and can use the service.')
+      : t('portal.home.onboarding_site_needed', {}, 'Open the WordPress plugin to reconnect the site if the address or service connection is not ready.');
   const operationSummaryItems = [
     {
       label: t('portal.home.current_site_title', {}, 'Current site'),
@@ -546,7 +543,7 @@ export default function PortalPage() {
         t={t}
       />
       <section className="space-y-5" data-portal-home="operation-overview">
-        <BackofficeSectionPanel className="space-y-5">
+        <BackofficeSectionPanel className="space-y-5" variant="portal">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -568,23 +565,12 @@ export default function PortalPage() {
                   : t('portal.home.service_status_issue_desc', {}, 'This site needs attention before normal use can continue.')}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 xl:justify-end">
-              <div className="w-full text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400 xl:text-right">
-                {t('portal.home.next_action_label', {}, 'Next action')}
-              </div>
-              <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-primary btn-sm">
-                {t('portal.home.site_action', {}, 'Open Site')}
-              </Link>
-              <Link href={`/portal/usage?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm">
-                {t('portal.home.usage_action', {}, 'View Usage')}
-              </Link>
-            </div>
           </div>
 
-          <BackofficeMetricStrip items={operationSummaryItems} columnsClassName="md:grid-cols-2 xl:grid-cols-4" />
+          <BackofficeMetricStrip items={operationSummaryItems} columnsClassName="md:grid-cols-2 xl:grid-cols-4" variant="portal" />
 
           <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-            <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-home="current-focus">
+            <BackofficeStackCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="current-focus">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -617,7 +603,7 @@ export default function PortalPage() {
             </BackofficeStackCard>
 
             {shouldShowOnboardingChecklist ? (
-              <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-home="setup-checklist">
+              <BackofficeStackCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="setup-checklist">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -657,21 +643,16 @@ export default function PortalPage() {
                 </div>
               </BackofficeStackCard>
             ) : (
-              <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/45" data-portal-home="quick-links">
+              <BackofficeStackCard className="bg-white/70 dark:bg-slate-950/35" variant="portal" data-portal-home="no-action-summary">
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  {t('portal.home.next_action_label', {}, 'Next action')}
+                  {t('portal.home.recent_issues_label', {}, 'Current status')}
                 </p>
                 <h2 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
                   {t('portal.home.recent_issues_empty_title', {}, 'No active restrictions')}
                 </h2>
-                <div className="mt-4 grid gap-2">
-                  <Link href={`/portal/sites/${selectedSite.site_id}`} className="btn btn-secondary btn-sm justify-center">
-                    {t('portal.home.site_action', {}, 'Open Site')}
-                  </Link>
-                  <Link href={`/portal/usage?site=${selectedSite.site_id}`} className="btn btn-secondary btn-sm justify-center">
-                    {t('portal.home.usage_action', {}, 'View Usage')}
-                  </Link>
-                </div>
+                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                  {t('portal.home.recent_issues_empty_desc', {}, 'The current site can use the service normally.')}
+                </p>
               </BackofficeStackCard>
             )}
           </div>
@@ -679,31 +660,13 @@ export default function PortalPage() {
       </section>
 
       <div className="space-y-5">
-        <BackofficeSectionPanel className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-4">
-            <Link href="/portal/sites" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.available_sites_label', {}, 'Available sites')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{visibleSites.length}</p>
-            </Link>
-            <Link href="/portal/sites" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.needs_attention_sites_label', {}, 'Needs attention')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{restrictedCount}</p>
-            </Link>
-            <Link href="/portal/usage" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.package_card_label', {}, 'Current package')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{currentPackageDisplay.display_package_label || t('portal.home.package_pending_label', {}, 'To confirm')}</p>
-            </Link>
-            <Link href="/portal/sites" className="rounded-[1.25rem] border border-slate-200/80 bg-white/85 px-4 py-4 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{t('portal.home.configured_sites_label', {}, 'Site address')}</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{missingUrlCount > 0 ? t('portal.home.site_address_needs_setup', {}, 'Needs setup') : t('portal.site_address_configured', {}, 'Configured')}</p>
-            </Link>
-          </div>
+        <BackofficeSectionPanel className="space-y-4" variant="portal">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {t('portal.site_register', {}, 'Sites')}
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+              <h2 className="mt-1 text-xl font-semibold text-gray-950 dark:text-white">
                 {t('portal.home.my_sites_title', {}, 'My sites')}
               </h2>
             </div>
