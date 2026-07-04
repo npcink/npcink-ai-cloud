@@ -548,6 +548,14 @@ export default function AbilityModelsPage() {
       : '-'
   ), [modelRouteLabel]);
 
+  const runtimeModelCandidateLabel = useCallback((instance: RuntimeInstance): string => {
+    const filteredProviderId = modelProviderFilter.trim();
+    if (filteredProviderId && filteredProviderId === instance.provider_id.trim()) {
+      return instance.model_id.trim() || runtimeModelRouteLabel(instance);
+    }
+    return runtimeModelRouteLabel(instance);
+  }, [modelProviderFilter, runtimeModelRouteLabel]);
+
   const abilityModelInstanceDetail = useCallback((instance: RuntimeInstance): string => (
     aiText('ability_model_instance_detail', 'Instance: {{instance}} · Capability: {{feature}} · Region: {{region}} · Status: {{status}}', {
       instance: instance.instance_id,
@@ -1603,7 +1611,7 @@ export default function AbilityModelsPage() {
                             <div className="min-w-0">
                               <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <span className="truncate text-sm font-semibold text-slate-950 dark:text-white">
-                                  {runtimeModelRouteLabel(instance)}
+                                  {runtimeModelCandidateLabel(instance)}
                                 </span>
                                 <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
                                   {statusLabel}

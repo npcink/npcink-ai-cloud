@@ -450,9 +450,19 @@ type ProviderPreset = {
   kind: string;
   displayName: string;
   baseUrl: string;
+  websiteUrl?: string;
+  statusUrl?: string;
+  docsUrl?: string;
   capabilityIds: string;
   runtimeProfileIds: string;
   modelIds: string;
+};
+
+type ProviderExternalLinkItem = {
+  key: 'website' | 'status' | 'docs';
+  labelKey: string;
+  fallback: string;
+  href: string;
 };
 
 type CapabilityProviderTemplate = {
@@ -461,6 +471,9 @@ type CapabilityProviderTemplate = {
   category: CapabilityProviderCategory;
   kind: string;
   baseUrl: string;
+  websiteUrl?: string;
+  statusUrl?: string;
+  docsUrl?: string;
   capabilityIds: string;
   runtimeProfileIds: string;
   modelIds: string;
@@ -488,6 +501,9 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'openai_compatible',
     displayName: 'OpenAI Compatible',
     baseUrl: 'https://api.openai.com/v1',
+    websiteUrl: 'https://openai.com/',
+    statusUrl: 'https://status.openai.com/',
+    docsUrl: 'https://developers.openai.com/api/docs',
     capabilityIds: 'text_generation, image_generation',
     runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
     modelIds: '',
@@ -499,6 +515,8 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'openai_compatible',
     displayName: 'New API channel',
     baseUrl: 'https://api.example.com/v1',
+    websiteUrl: 'https://www.newapi.ai/en',
+    docsUrl: 'https://www.newapi.ai/en/docs',
     capabilityIds: 'text_generation, image_generation',
     runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
     modelIds: '',
@@ -510,6 +528,9 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'openai_compatible',
     displayName: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
+    websiteUrl: 'https://www.deepseek.com/',
+    statusUrl: 'https://status.deepseek.com/',
+    docsUrl: 'https://api-docs.deepseek.com/',
     capabilityIds: 'text_generation',
     runtimeProfileIds: 'text.ai',
     modelIds: 'deepseek-chat, deepseek-reasoner',
@@ -521,6 +542,9 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'anthropic',
     displayName: 'Anthropic',
     baseUrl: 'https://api.anthropic.com',
+    websiteUrl: 'https://www.anthropic.com/',
+    statusUrl: 'https://status.claude.com/',
+    docsUrl: 'https://platform.claude.com/docs',
     capabilityIds: 'text_generation',
     runtimeProfileIds: 'text.ai',
     modelIds: 'claude-3-5-sonnet-latest',
@@ -532,6 +556,9 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'openrouter',
     displayName: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
+    websiteUrl: 'https://openrouter.ai/',
+    statusUrl: 'https://status.openrouter.ai/',
+    docsUrl: 'https://openrouter.ai/docs',
     capabilityIds: 'text_generation',
     runtimeProfileIds: 'text.ai',
     modelIds: '',
@@ -543,6 +570,8 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'siliconflow',
     displayName: 'SiliconFlow',
     baseUrl: 'https://api.siliconflow.cn/v1',
+    websiteUrl: 'https://www.siliconflow.com/',
+    docsUrl: 'https://docs.siliconflow.com/en/userguide/introduction',
     capabilityIds: 'text_generation, embedding',
     runtimeProfileIds: 'text.ai, embed.default',
     modelIds: '',
@@ -554,6 +583,9 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: 'minimax',
     displayName: 'MiniMax',
     baseUrl: '',
+    websiteUrl: 'https://www.minimax.io/',
+    statusUrl: 'https://status.minimax.io/',
+    docsUrl: 'https://platform.minimax.io/docs',
     capabilityIds: 'text_generation, image_generation, audio_generation, video_generation',
     runtimeProfileIds: '',
     modelIds: '',
@@ -578,6 +610,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'search',
     kind: 'web_search_provider',
     baseUrl: 'https://api.tavily.com',
+    websiteUrl: 'https://www.tavily.com/',
+    statusUrl: 'https://status.tavily.com/',
+    docsUrl: 'https://docs.tavily.com/welcome',
     capabilityIds: 'web_search',
     runtimeProfileIds: 'web-search.managed',
     modelIds: '',
@@ -590,6 +625,8 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'search',
     kind: 'web_search_provider',
     baseUrl: 'https://api.bochaai.com/v1',
+    websiteUrl: 'https://open.bochaai.com/',
+    docsUrl: 'https://open.bochaai.com/',
     capabilityIds: 'web_search',
     runtimeProfileIds: 'web-search.managed',
     modelIds: '',
@@ -602,6 +639,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'search',
     kind: 'web_search_provider',
     baseUrl: 'https://r.jina.ai',
+    websiteUrl: 'https://jina.ai/',
+    statusUrl: 'https://status.jina.ai/',
+    docsUrl: 'https://jina.ai/reader/',
     capabilityIds: 'web_search',
     runtimeProfileIds: 'web-search.reader',
     modelIds: '',
@@ -614,6 +654,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'search',
     kind: 'web_search_provider',
     baseUrl: 'https://api.apify.com/v2',
+    websiteUrl: 'https://apify.com/',
+    statusUrl: 'https://status.apify.com/',
+    docsUrl: 'https://docs.apify.com/api/v2',
     capabilityIds: 'web_search',
     runtimeProfileIds: 'web-search.managed',
     modelIds: '',
@@ -626,6 +669,8 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'search',
     kind: 'web_search_provider',
     baseUrl: 'https://developer.zhihu.com',
+    websiteUrl: 'https://developer.zhihu.com/',
+    docsUrl: 'https://developer.zhihu.com/',
     capabilityIds: 'web_search',
     runtimeProfileIds: 'web-search.managed',
     modelIds: '',
@@ -638,6 +683,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'image',
     kind: 'image_source_provider',
     baseUrl: 'https://api.unsplash.com',
+    websiteUrl: 'https://unsplash.com/',
+    statusUrl: 'https://status.unsplash.com/',
+    docsUrl: 'https://unsplash.com/documentation',
     capabilityIds: 'image_source',
     runtimeProfileIds: 'image-source.managed',
     modelIds: '',
@@ -650,6 +698,8 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'image',
     kind: 'image_source_provider',
     baseUrl: 'https://pixabay.com/api/',
+    websiteUrl: 'https://pixabay.com/',
+    docsUrl: 'https://pixabay.com/api/docs/',
     capabilityIds: 'image_source',
     runtimeProfileIds: 'image-source.managed',
     modelIds: '',
@@ -662,6 +712,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'image',
     kind: 'image_source_provider',
     baseUrl: 'https://api.pexels.com/v1',
+    websiteUrl: 'https://www.pexels.com/',
+    statusUrl: 'https://status.pexels.com/',
+    docsUrl: 'https://www.pexels.com/api/documentation/',
     capabilityIds: 'image_source',
     runtimeProfileIds: 'image-source.managed',
     modelIds: '',
@@ -674,6 +727,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'vector',
     kind: 'rerank_provider',
     baseUrl: 'https://api.jina.ai',
+    websiteUrl: 'https://jina.ai/',
+    statusUrl: 'https://status.jina.ai/',
+    docsUrl: 'https://api.jina.ai/docs',
     capabilityIds: 'site_knowledge_rerank',
     runtimeProfileIds: 'site-knowledge.rerank',
     modelIds: 'jina-reranker-v3',
@@ -686,6 +742,9 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
     category: 'vector',
     kind: 'vector_store_provider',
     baseUrl: '',
+    websiteUrl: 'https://zilliz.com/',
+    statusUrl: 'https://status.zilliz.com/',
+    docsUrl: 'https://docs.zilliz.com/docs',
     capabilityIds: 'vector_store',
     runtimeProfileIds: 'site-knowledge.vector-store',
     modelIds: '',
@@ -780,6 +839,85 @@ function connectionHost(value: string): string {
   } catch {
     return trimmed.replace(/^https?:\/\//, '').split('/')[0] || trimmed;
   }
+}
+
+function externalUrlValue(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function providerExternalLinkItems(values: {
+  websiteUrl?: unknown;
+  statusUrl?: unknown;
+  docsUrl?: unknown;
+}): ProviderExternalLinkItem[] {
+  return [
+    {
+      key: 'website' as const,
+      labelKey: 'provider_link_website',
+      fallback: 'Website',
+      href: externalUrlValue(values.websiteUrl),
+    },
+    {
+      key: 'status' as const,
+      labelKey: 'provider_link_status',
+      fallback: 'Status',
+      href: externalUrlValue(values.statusUrl),
+    },
+    {
+      key: 'docs' as const,
+      labelKey: 'provider_link_docs',
+      fallback: 'Docs',
+      href: externalUrlValue(values.docsUrl),
+    },
+  ].filter((item) => item.href);
+}
+
+function capabilityTemplateByProvider(kind: string, providerId: string): CapabilityProviderTemplate | undefined {
+  return CAPABILITY_PROVIDER_TEMPLATES.find(
+    (template) => template.kind === kind && template.id === providerId
+  );
+}
+
+function providerReferenceLinksForForm(form: ProviderConnectionForm): {
+  websiteUrl?: unknown;
+  statusUrl?: unknown;
+  docsUrl?: unknown;
+} {
+  const template = capabilityTemplateByProvider(form.kind, form.providerId);
+  if (template) return template;
+  const preset = providerPresetById(form.providerPreset);
+  return preset.id === 'custom' ? {} : preset;
+}
+
+function providerReferenceLinksForConnection(connection: Connection): {
+  websiteUrl?: unknown;
+  statusUrl?: unknown;
+  docsUrl?: unknown;
+} {
+  const template = capabilityTemplateByProvider(connection.kind, connection.provider_id);
+  if (template) return template;
+  const preset = providerPresetById(inferProviderPreset(connection));
+  if (preset.id === 'custom') return {};
+  if (
+    preset.id === 'openai_compatible' &&
+    connection.provider_id.toLowerCase() !== 'openai' &&
+    !connection.base_url.toLowerCase().includes('api.openai.com')
+  ) {
+    return {};
+  }
+  return preset;
+}
+
+function connectionExternalLinkItems(connection: Connection): ProviderExternalLinkItem[] {
+  return providerExternalLinkItems(providerReferenceLinksForConnection(connection));
 }
 
 function supplierCategory(connection: Connection): SupplierCategory {
@@ -1267,7 +1405,7 @@ function AiResourcesContent() {
   const [modelReferenceSearch, setModelReferenceSearch] = useState('');
   const [modelReferenceFeatureFilter, setModelReferenceFeatureFilter] = useState<ModelReferenceFeatureFilter>('all');
   const [modelReferenceVisibilityFilter, setModelReferenceVisibilityFilter] = useState<ModelReferenceVisibilityFilter>('all');
-  const [modelReferenceShowDeprecated, setModelReferenceShowDeprecated] = useState(true);
+  const [modelReferenceShowDeprecated, setModelReferenceShowDeprecated] = useState(false);
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
   const [providerFormOpen, setProviderFormOpen] = useState(false);
   const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
@@ -1424,6 +1562,10 @@ function AiResourcesContent() {
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
     const modelConfig = !isCapabilityProviderForm && modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
+    const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
+    const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
+    const statusUrl = externalUrlValue(referenceLinks.statusUrl);
+    const docsUrl = externalUrlValue(referenceLinks.docsUrl);
     setSavingConnection(true);
     setError('');
     setMessage('');
@@ -1451,6 +1593,9 @@ function AiResourcesContent() {
             provider_preset: providerConnectionForm.providerPreset,
             note: providerConnectionForm.note,
             priority: Number(providerConnectionForm.priority) || 100,
+            website_url: websiteUrl || undefined,
+            status_url: statusUrl || undefined,
+            docs_url: docsUrl || undefined,
             model_ids: isCapabilityProviderForm ? [] : modelIds,
             model_catalog_preview: isCapabilityProviderForm
               ? undefined
@@ -1522,11 +1667,46 @@ function AiResourcesContent() {
     }
   }
 
+  async function syncModelReferencesForProvider(
+    providerId: string,
+    options: { announce?: boolean; idempotencyKeyPrefix?: string } = {}
+  ): Promise<void> {
+    const normalizedProviderId = providerId.trim().toLowerCase();
+    if (!normalizedProviderId || normalizedProviderId === 'custom') return;
+    setSyncingModelReferences(true);
+    setModelReferenceAutoSyncError('');
+    try {
+      const response = await fetch('/api/admin/model-references/sync', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': generateIdempotencyKey(options.idempotencyKeyPrefix || 'model_references_sync'),
+        },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(resolveUiErrorMessage(payload, aiText('error_sync_model_references', 'Failed to sync model reference data.')));
+      }
+      await loadModelReferences(normalizedProviderId);
+      if (options.announce) {
+        setMessage(aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.'));
+      }
+    } finally {
+      setSyncingModelReferences(false);
+    }
+  }
+
   async function fetchProviderCatalogPreview() {
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
     const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
+    const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
+    const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
+    const statusUrl = externalUrlValue(referenceLinks.statusUrl);
+    const docsUrl = externalUrlValue(referenceLinks.docsUrl);
     if (!providerConnectionForm.credential.trim() && providerFormMode === 'create') {
       setError(aiText('error_fetch_catalog_credential_required', 'Enter an API key before fetching upstream models. Existing saved credentials are not returned to the browser.'));
       return;
@@ -1555,6 +1735,9 @@ function AiResourcesContent() {
           metadata: {
             ui_source: 'ai_resources_catalog_preview',
             provider_preset: providerConnectionForm.providerPreset,
+            website_url: websiteUrl || undefined,
+            status_url: statusUrl || undefined,
+            docs_url: docsUrl || undefined,
           },
           credential: providerConnectionForm.credential,
         }),
@@ -1566,14 +1749,39 @@ function AiResourcesContent() {
       const preview = payload.data as ProviderCatalogPreview;
       setProviderCatalogPreview(preview);
       const verifiedModelIds = (preview.models || [])
-        .filter((model) => model.verified || model.runtime_supported)
+        .filter((model) => !model.is_deprecated && (model.verified || model.runtime_supported))
         .map((model) => model.model_id);
       if (!splitList(providerConnectionForm.modelIds).length && verifiedModelIds.length) {
         setProviderModelIds(verifiedModelIds);
       }
-      setMessage(aiText('message_catalog_fetched', 'Fetched {{count}} upstream models.', {
-        count: String(preview.model_count || preview.model_ids?.length || 0),
-      }));
+      const referenceProviderId = inferReferenceProviderFromModelIds(
+        verifiedModelIds.length ? verifiedModelIds : (preview.model_ids || []),
+        defaultReferenceProviderId(normalizedProviderId, providerConnectionForm.providerPreset)
+      );
+      if (referenceProviderId !== modelReferenceProviderId) {
+        setModelReferenceProviderId(referenceProviderId);
+      }
+      let referenceSyncFailed = '';
+      try {
+        await syncModelReferencesForProvider(referenceProviderId, {
+          idempotencyKeyPrefix: `model_references_catalog_sync_${referenceProviderId}`,
+        });
+      } catch (syncError) {
+        referenceSyncFailed = syncError instanceof Error
+          ? syncError.message
+          : aiText('error_sync_model_references', 'Failed to sync model reference data.');
+        setModelReferenceAutoSyncError(referenceSyncFailed);
+        await loadModelReferences(referenceProviderId);
+      }
+      setMessage(aiText(
+        referenceSyncFailed ? 'message_catalog_fetched_reference_failed' : 'message_catalog_and_references_synced',
+        referenceSyncFailed
+          ? 'Fetched {{count}} upstream models. Reference intelligence refresh failed; saved models and runtime calls are not affected.'
+          : 'Fetched {{count}} upstream models and refreshed reference intelligence.',
+        {
+          count: String(preview.model_count || preview.model_ids?.length || 0),
+        }
+      ));
     } catch (catalogError) {
       setError(catalogError instanceof Error ? catalogError.message : aiText('error_fetch_catalog', 'Failed to fetch upstream models.'));
     } finally {
@@ -1582,24 +1790,9 @@ function AiResourcesContent() {
   }
 
   async function syncModelReferences() {
-    setSyncingModelReferences(true);
     setError('');
     setMessage('');
-    setModelReferenceAutoSyncError('');
     try {
-      const response = await fetch('/api/admin/model-references/sync', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': generateIdempotencyKey('model_references_sync'),
-        },
-        body: JSON.stringify({}),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(resolveUiErrorMessage(payload, aiText('error_sync_model_references', 'Failed to sync model reference data.')));
-      }
       const effectiveReferenceProviderId = inferReferenceProviderFromModelIds(
         splitList(providerConnectionForm.modelIds),
         modelReferenceProviderId
@@ -1607,8 +1800,10 @@ function AiResourcesContent() {
       if (effectiveReferenceProviderId !== modelReferenceProviderId) {
         setModelReferenceProviderId(effectiveReferenceProviderId);
       }
-      await loadModelReferences(effectiveReferenceProviderId);
-      setMessage(aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.'));
+      await syncModelReferencesForProvider(effectiveReferenceProviderId, {
+        announce: true,
+        idempotencyKeyPrefix: 'model_references_manual_sync',
+      });
     } catch (syncError) {
       const effectiveReferenceProviderId = inferReferenceProviderFromModelIds(
         splitList(providerConnectionForm.modelIds),
@@ -1616,8 +1811,6 @@ function AiResourcesContent() {
       );
       await loadModelReferences(effectiveReferenceProviderId);
       setError(syncError instanceof Error ? syncError.message : aiText('error_sync_model_references', 'Failed to sync model reference data.'));
-    } finally {
-      setSyncingModelReferences(false);
     }
   }
 
@@ -1718,6 +1911,7 @@ function AiResourcesContent() {
   function editProviderConnection(connection: Connection) {
     setConfirmingDeleteConnectionId('');
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
+    const providerPreset = inferProviderPreset(connection);
     setMessage(aiText('message_editing_connection', 'Editing {{name}}. Credential is left blank unless you replace it.', {
       name: connection.display_name,
     }));
@@ -1732,7 +1926,7 @@ function AiResourcesContent() {
     setProviderFormMode('edit');
     setConnectionDetailsOpen(false);
     setProviderConnectionForm({
-      providerPreset: inferProviderPreset(connection),
+      providerPreset,
       connectionId: connection.connection_id,
       providerId: connection.provider_id,
       displayName: connection.display_name,
@@ -2138,6 +2332,9 @@ function AiResourcesContent() {
 
   const referenceProviderCanBeChanged = canChooseReferenceProvider(providerConnectionForm.providerPreset);
   const providerUsesCustomRuntimeFields = !isCapabilityProviderForm && providerConnectionForm.providerPreset === 'custom';
+  const providerFormExternalLinkItems = providerExternalLinkItems(
+    providerReferenceLinksForForm(providerConnectionForm)
+  );
 
   const selectedModelLookup = useMemo(() => {
     const lookup = new Map<string, string>();
@@ -2326,7 +2523,7 @@ function AiResourcesContent() {
     const normalizedSearch = modelReferenceSearch.trim().toLowerCase();
     return Array.from(rows.values())
       .filter((row) => {
-        if (!modelReferenceShowDeprecated && row.deprecated) return false;
+        if (!modelReferenceShowDeprecated && row.deprecated && !row.selected) return false;
         if (modelReferenceVisibilityFilter === 'enabled' && !row.selected) return false;
         if (modelReferenceVisibilityFilter === 'disabled' && row.selected) return false;
         if (modelReferenceFeatureFilter !== 'all' && normalizeModelReferenceFeature(row.feature) !== modelReferenceFeatureFilter) {
@@ -2619,6 +2816,12 @@ function AiResourcesContent() {
                         {connectionHost(providerConnectionForm.baseUrl) || aiText('connection_summary_base_url_missing', 'No base URL')}
                         <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
                         {providerConnectionForm.enabled ? aiText('field_enabled', 'Enabled') : aiText('status_disabled_label', 'Disabled')}
+                        {providerFormExternalLinkItems.length ? (
+                          <>
+                            <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
+                            {aiText('provider_links_configured', 'Reference links configured')}
+                          </>
+                        ) : null}
                       </p>
                     </div>
                     <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -2732,6 +2935,27 @@ function AiResourcesContent() {
                         {aiText('field_enabled_runtime', 'Enabled for runtime use')}
                       </label>
                     </div>
+
+                    {providerFormExternalLinkItems.length ? (
+                      <div className="grid gap-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {aiText('provider_links_title', 'Reference links')}
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {providerFormExternalLinkItems.map((item) => (
+                            <a
+                              key={item.key}
+                              className="rounded-full border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                              href={item.href}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {aiText(item.labelKey, item.fallback)}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </details>
 
@@ -2786,22 +3010,22 @@ function AiResourcesContent() {
                                   <button
                                     type="button"
                                     className="btn btn-primary h-9 px-3 py-1 text-xs"
-                                    disabled={fetchingProviderCatalog || savingConnection}
+                                    disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
                                     onClick={() => void fetchProviderCatalogPreview()}
                                   >
-                                    {fetchingProviderCatalog
-                                      ? aiText('action_fetching_upstream_models', 'Fetching...')
-                                      : aiText('action_fetch_upstream_models', 'Sync model catalog')}
+                                    {fetchingProviderCatalog || syncingModelReferences
+                                      ? aiText('action_fetching_upstream_models', 'Syncing...')
+                                      : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
                                   </button>
                                   <button
                                     type="button"
                                     className="h-9 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700"
-                                    disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
+                                    disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
                                     onClick={() => void syncModelReferences()}
                                   >
                                     {syncingModelReferences || autoSyncingModelReferences
                                       ? aiText('action_syncing_model_references', 'Syncing...')
-                                      : aiText('action_sync_model_references', 'Sync reference data')}
+                                      : aiText('action_sync_model_references', 'Retry intelligence only')}
                                   </button>
                                   <button
                                     type="button"
@@ -2817,7 +3041,7 @@ function AiResourcesContent() {
                                       checked={modelReferenceShowDeprecated}
                                       onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
                                     />
-                                    {aiText('field_show_deprecated_models', 'Show deprecated')}
+                                    {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
                                   </label>
                                 </div>
                               </div>
@@ -2955,6 +3179,7 @@ function AiResourcesContent() {
                                 const tagLabels = tags.map(modelReferenceCapabilityLabel);
                                 const visibleTagLabels = tagLabels.slice(0, 3);
                                 const canRemoveManualModel = row.sourceKind === 'manual' && row.selected;
+                                const deprecatedEnableBlocked = row.deprecated && !row.selected;
                                 return (
                                   <tr key={row.modelId}>
                                     <td className="px-3 py-2">
@@ -2965,24 +3190,29 @@ function AiResourcesContent() {
                                           row.selected
                                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
                                             : 'bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300'
-                                        } hover:ring-2 hover:ring-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:ring-slate-700`}
+                                        } hover:ring-2 hover:ring-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:ring-slate-700`}
                                           aria-pressed={row.selected}
+                                          disabled={deprecatedEnableBlocked}
                                           title={
-                                            row.selected
-                                              ? aiText('action_disable_catalog_model', 'Disable')
-                                              : aiText('action_enable_catalog_model', 'Enable')
+                                            deprecatedEnableBlocked
+                                              ? aiText('action_enable_deprecated_model_blocked', 'Deprecated models cannot be newly enabled')
+                                              : row.selected
+                                                ? aiText('action_disable_catalog_model', 'Disable')
+                                                : aiText('action_enable_catalog_model', 'Enable')
                                           }
                                           onClick={() => {
                                             if (row.selected) {
                                               removeProviderModelId(row.modelId);
-                                            } else {
+                                            } else if (!row.deprecated) {
                                               setProviderModelIds([...selectedProviderModelIds, row.modelId]);
                                             }
                                           }}
                                         >
                                           {row.selected
                                             ? aiText('status_model_enabled', 'Enabled')
-                                            : aiText('status_model_disabled', 'Not enabled')}
+                                            : deprecatedEnableBlocked
+                                              ? aiText('status_model_deprecated_disabled', 'Deprecated')
+                                              : aiText('status_model_disabled', 'Not enabled')}
                                         </button>
                                         {row.deprecated ? (
                                           <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
@@ -2999,6 +3229,11 @@ function AiResourcesContent() {
                                         {row.verified ? ` · ${aiText('catalog_model_status_verified', 'Verified')}` : ''}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
+                                      {row.deprecated && row.selected ? (
+                                        <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                          {aiText('deprecated_selected_model_hint', 'Deprecated model is kept only because it is already saved. Remove it before saving new routing choices.')}
+                                        </div>
+                                      ) : null}
                                       {canRemoveManualModel ? (
                                         <button
                                           type="button"
@@ -3230,6 +3465,7 @@ function AiResourcesContent() {
                       const isDeleting = deletingConnectionId === connection.connection_id;
                       const isConfirmingDelete = confirmingDeleteConnectionId === connection.connection_id;
                       const modelIds = connection.model_ids || [];
+                      const providerLinkItems = connectionExternalLinkItems(connection);
                       return (
                         <tr key={connection.connection_id} className="align-top">
                           <td className="px-4 py-4">
@@ -3246,6 +3482,21 @@ function AiResourcesContent() {
                             </div>
                             {connection.note ? (
                               <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{connection.note}</div>
+                            ) : null}
+                            {providerLinkItems.length ? (
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                {providerLinkItems.map((item) => (
+                                  <a
+                                    key={item.key}
+                                    className="font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4 transition hover:text-slate-950 dark:text-slate-300 dark:decoration-slate-700 dark:hover:text-white"
+                                    href={item.href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {aiText(item.labelKey, item.fallback)}
+                                  </a>
+                                ))}
+                              </div>
                             ) : null}
                             {renderConnectionIssue(connection)}
                           </td>

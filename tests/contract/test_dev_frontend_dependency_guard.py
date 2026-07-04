@@ -41,6 +41,8 @@ def test_api_dev_reload_ignores_frontend_dependency_churn() -> None:
 
     assert "--reload-dir app" in compose_text
     assert "--reload-dir migrations" in compose_text
+    assert "--reload-exclude app/workers/*" in compose_text
+    assert "--timeout-graceful-shutdown 5" in compose_text
     assert "--reload-dir frontend" not in compose_text
     assert "--reload-dir node_modules" not in compose_text
 

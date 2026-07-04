@@ -55,6 +55,8 @@ services:
       --reload
       --reload-dir app
       --reload-dir migrations
+      --reload-exclude app/workers/*
+      --timeout-graceful-shutdown 5
     env_file:
       - ./.env
       - ./.env.local

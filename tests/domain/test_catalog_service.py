@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 from sqlalchemy import select
 
 import app.domain.catalog.service as catalog_service_module
@@ -11,7 +12,10 @@ from app.adapters.providers.base import (
     CatalogModelSeed,
     ProviderCatalogSnapshot,
 )
-from app.adapters.providers.minimax import MiniMaxProviderAdapter
+from app.adapters.providers.minimax import (
+    MINIMAX_OFFICIAL_SCHEMA_SOURCES,
+    MiniMaxProviderAdapter,
+)
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import CatalogRevision
@@ -340,12 +344,41 @@ def test_audio_narration_profile_filters_to_minimax_audio_model(tmp_path: Path) 
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
 
+    source_urls = {source.url for source in MINIMAX_OFFICIAL_SCHEMA_SOURCES}
+
+    def minimax_handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) in source_urls:
+            return httpx.Response(
+                200,
+                json={
+                    "openapi": "3.1.0",
+                    "components": {
+                        "schemas": {
+                            "Request": {
+                                "properties": {"model": {"type": "string", "enum": []}}
+                            }
+                        }
+                    },
+                },
+            )
+        assert request.url.path.endswith("/v1/models")
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": AUDIO_NARRATION_MODEL_ID},
+                    {"id": "MiniMax-M3"},
+                ]
+            },
+        )
+
     service = CatalogService(
         database_url,
         providers={
             "minimax": MiniMaxProviderAdapter(
                 api_key="test-api-key",
                 group_id="test-group",
+                transport=httpx.MockTransport(minimax_handler),
             )
         },
     )

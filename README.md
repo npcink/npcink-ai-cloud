@@ -486,6 +486,60 @@ Expected results: the required containers are `Up`, the restart policy prints
 entrypoint returns HTTP `200`. A running `proxy` with `502 Bad Gateway` usually
 means `api` or `frontend` is not running yet.
 
+### API reload recovery
+
+The dev API runs `uvicorn --reload` so API-side Python edits are picked up
+without a manual rebuild. The reload watcher is intentionally limited to `app`
+and `migrations`, excludes `app/workers/*`, and sets
+`--timeout-graceful-shutdown 5` so a stale in-process background task cannot
+hold reload forever.
+
+If an admin page such as `/admin/ability-models` keeps showing a loading state
+but has no visible error, first separate auth and API latency:
+
+```bash
+curl -i http://127.0.0.1:8010/admin/ability-models
+docker compose -f docker-compose.dev.yml logs --tail=120 api
+docker compose -f docker-compose.dev.yml logs --tail=120 frontend
+```
+
+Normal unauthenticated behavior is a `307` redirect to
+`/admin/login?redirect=...`. A stuck dev reload typically shows
+`Waiting for background tasks to complete` in the API logs, while the frontend
+logs show `/api/admin/*` requests taking tens of seconds. Recover with:
+
+```bash
+docker compose -f docker-compose.dev.yml restart api
+```
+
+After restart, the same admin data endpoints should return in milliseconds. Do
+not treat this as a Cloud runtime routing bug unless the API has restarted and
+the specific endpoint still returns an application error.
+
+Worker-only edits should not reload the API. If `frontend` logs show
+`/api/admin/ability-models/runtime-projection`,
+`/api/admin/ai-resources`, and `/api/admin/wordpress-ai-routing` all taking
+tens of seconds after a worker file edit, confirm the compose command still
+contains `--reload-exclude app/workers/*` and recreate the dev API container:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d api
+```
+
+If a queued runtime action such as audio preview reports
+`runtime.provider_not_configured` even though the provider page is enabled and
+healthy, check the runtime worker as well:
+
+```bash
+docker compose -f docker-compose.dev.yml logs --tail=120 worker
+docker compose -f docker-compose.dev.yml restart worker
+```
+
+The dev worker refreshes DB-managed execution providers before each queue poll,
+so provider connection edits should not require a worker restart after this
+code is loaded. A restart is still useful when the worker process itself was
+started before local code changes were mounted.
+
 The default dev compose stack does not start `otel-collector`. To keep API
 reloads responsive, it clears `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` for
 local containers even if `.env` contains the production-style collector URL.
