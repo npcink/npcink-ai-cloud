@@ -7,7 +7,6 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from app.core.config import Settings
 from app.domain.commercial.errors import CommercialValidationError
 from app.domain.commercial.payment_gateways import (
     PAYMENT_GATEWAY_CONTRACT_VERSION,
@@ -114,16 +113,17 @@ def test_alipay_gateway_verifies_payment_and_refund_callbacks() -> None:
 
 def test_real_alipay_gateway_signs_order_and_verifies_callback() -> None:
     private_key, private_pem, public_pem = _alipay_test_keys()
-    settings = Settings(
-        _env_file=None,
-        alipay_payment_enabled=True,
-        alipay_app_id="2026000000000001",
-        alipay_private_key=private_pem,
-        alipay_public_key=public_pem,
-        alipay_notify_url="https://cloud.example.com/open/payments/alipay/notify",
-        alipay_return_url="https://cloud.example.com/portal/billing",
-    )
-    gateway = get_payment_gateway_provider("alipay", settings=settings)
+    config = {
+        "configured": True,
+        "enabled": True,
+        "app_id": "2026000000000001",
+        "private_key": private_pem,
+        "public_key": public_pem,
+        "gateway_url": "https://openapi.alipay.com/gateway.do",
+        "notify_url": "https://cloud.example.com/open/payments/alipay/notify",
+        "return_url": "https://cloud.example.com/open/payments/alipay/return",
+    }
+    gateway = get_payment_gateway_provider("alipay", config=config)
 
     order = gateway.create_order(
         PaymentGatewayOrderRequest(

@@ -54,6 +54,9 @@ Payment callbacks use provider-specific paths under `/open/payments`.
 - Alipay notify may mark orders paid only when real Alipay mode is configured,
   RSA2 signature verification succeeds, and order amount/currency/identity
   checks pass.
+- Real Alipay mode is configured only through the Cloud Admin
+  `payment_alipay` service setting. Deployment environment variables are not a
+  payment callback enablement source.
 - WeChat Pay notify remains reserved and must fail closed until its provider
   signature verification and reconciliation path are implemented.
 

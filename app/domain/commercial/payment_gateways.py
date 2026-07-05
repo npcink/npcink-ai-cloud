@@ -12,7 +12,6 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from app.core.config import Settings
 from app.domain.commercial.errors import CommercialValidationError
 
 PAYMENT_GATEWAY_CONTRACT_VERSION = "payment-gateway-contract-v1"
@@ -142,11 +141,11 @@ def normalize_payment_gateway_provider(provider: str) -> str:
 def get_payment_gateway_provider(
     provider: str,
     *,
-    settings: Settings | None = None,
+    config: Mapping[str, object] | None = None,
 ) -> PaymentGatewayProvider:
     normalized = normalize_payment_gateway_provider(provider)
     if normalized == "alipay":
-        return AlipayPaymentGatewayProvider(settings=settings)
+        return AlipayPaymentGatewayProvider(config=config)
     if normalized == "wechat_pay":
         return WeChatPayPaymentGatewayProvider()
     return ManualPaymentGatewayProvider()
@@ -266,24 +265,25 @@ class SimulatedPaymentGatewayProvider:
 class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
     provider = "alipay"
 
-    def __init__(self, *, settings: Settings | None = None) -> None:
-        self.settings = settings
+    def __init__(self, *, config: Mapping[str, object] | None = None) -> None:
+        self.config = dict(config or {})
 
     def create_order(self, request: PaymentGatewayOrderRequest) -> PaymentGatewayOrderResult:
         if not self._real_gateway_enabled():
             return super().create_order(request)
         self._assert_provider(request.provider)
-        settings = self._require_settings()
+        config = self._require_config()
         timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         amount = _format_cny_amount(request.amount)
         biz_content = {
             "out_trade_no": request.order_id,
             "total_amount": amount,
             "subject": request.subject[:256],
-            "product_code": "FAST_INSTANT_TRADE_PAY",
+            "product_code": _config_text(config, "payment_product_code")
+            or "FAST_INSTANT_TRADE_PAY",
         }
         params: dict[str, str] = {
-            "app_id": settings.alipay_app_id.strip(),
+            "app_id": _config_text(config, "app_id"),
             "method": "alipay.trade.page.pay",
             "format": "JSON",
             "charset": "utf-8",
@@ -292,12 +292,12 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
             "version": "1.0",
             "biz_content": json.dumps(biz_content, ensure_ascii=False, separators=(",", ":")),
         }
-        if settings.alipay_notify_url.strip():
-            params["notify_url"] = settings.alipay_notify_url.strip()
-        if settings.alipay_return_url.strip():
-            params["return_url"] = settings.alipay_return_url.strip()
+        if _config_text(config, "notify_url"):
+            params["notify_url"] = _config_text(config, "notify_url")
+        if _config_text(config, "return_url"):
+            params["return_url"] = _config_text(config, "return_url")
         params["sign"] = self._sign_params(params)
-        checkout_url = f"{settings.alipay_gateway_url.strip()}?{urlencode(params)}"
+        checkout_url = f"{_config_text(config, 'gateway_url')}?{urlencode(params)}"
         return PaymentGatewayOrderResult(
             provider=self.provider,
             external_order_no=request.order_id,
@@ -331,28 +331,28 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
         return super().verify_refund_callback(payload)
 
     def _real_gateway_enabled(self) -> bool:
-        settings = self.settings
-        if settings is None or not settings.alipay_payment_enabled:
+        config = self.config
+        if not bool(config.get("configured")) or not bool(config.get("enabled", True)):
             return False
         return bool(
-            settings.alipay_app_id.strip()
-            and settings.alipay_private_key.strip()
-            and settings.alipay_public_key.strip()
-            and settings.alipay_gateway_url.strip()
+            _config_text(config, "app_id")
+            and _config_text(config, "private_key")
+            and _config_text(config, "public_key")
+            and _config_text(config, "gateway_url")
         )
 
-    def _require_settings(self) -> Settings:
-        if self.settings is None:
+    def _require_config(self) -> dict[str, object]:
+        if not self._real_gateway_enabled():
             raise CommercialValidationError(
                 "service.alipay_gateway_not_configured",
                 "Alipay payment gateway settings are not configured",
             )
-        return self.settings
+        return self.config
 
     def _sign_params(self, params: Mapping[str, object]) -> str:
-        settings = self._require_settings()
+        config = self._require_config()
         private_key = serialization.load_pem_private_key(
-            _normalize_private_key_pem(settings.alipay_private_key),
+            _normalize_private_key_pem(_config_text(config, "private_key")),
             password=None,
         )
         if not isinstance(private_key, rsa.RSAPrivateKey):
@@ -368,9 +368,9 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
         return base64.b64encode(signature).decode("ascii")
 
     def _verify_callback_signature(self, payload: dict[str, object]) -> None:
-        settings = self._require_settings()
+        config = self._require_config()
         app_id = _first_text(payload, "app_id")
-        if app_id and app_id != settings.alipay_app_id.strip():
+        if app_id and app_id != _config_text(config, "app_id"):
             raise CommercialValidationError(
                 "service.payment_callback_app_mismatch",
                 "Alipay callback app_id does not match the configured app",
@@ -382,7 +382,7 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 "Alipay callback is missing its signature",
             )
         public_key = serialization.load_pem_public_key(
-            _normalize_public_key_pem(settings.alipay_public_key)
+            _normalize_public_key_pem(_config_text(config, "public_key"))
         )
         if not isinstance(public_key, rsa.RSAPublicKey):
             raise CommercialValidationError(
@@ -401,6 +401,49 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
                 "service.payment_callback_signature_invalid",
                 "Alipay callback signature is invalid",
             ) from error
+
+
+def validate_alipay_gateway_config(config: Mapping[str, object]) -> None:
+    normalized = dict(config or {})
+    required_keys = [
+        "app_id",
+        "gateway_url",
+        "notify_url",
+        "return_url",
+        "private_key",
+        "public_key",
+    ]
+    if any(not _config_text(normalized, key) for key in required_keys):
+        raise CommercialValidationError(
+            "service.alipay_gateway_not_configured",
+            "Alipay payment gateway settings are not configured",
+        )
+    private_key = serialization.load_pem_private_key(
+        _normalize_private_key_pem(_config_text(normalized, "private_key")),
+        password=None,
+    )
+    if not isinstance(private_key, rsa.RSAPrivateKey):
+        raise CommercialValidationError(
+            "service.alipay_private_key_invalid",
+            "Alipay private key must be an RSA private key",
+        )
+    public_key = serialization.load_pem_public_key(
+        _normalize_public_key_pem(_config_text(normalized, "public_key"))
+    )
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        raise CommercialValidationError(
+            "service.alipay_public_key_invalid",
+            "Alipay public key must be an RSA public key",
+        )
+    probe = b"npcink-ai-cloud-alipay-config-check"
+    signature = private_key.sign(probe, padding.PKCS1v15(), hashes.SHA256())
+    try:
+        public_key.verify(signature, probe, padding.PKCS1v15(), hashes.SHA256())
+    except InvalidSignature as error:
+        raise CommercialValidationError(
+            "service.alipay_key_pair_mismatch",
+            "Alipay private key and public key do not match",
+        ) from error
 
 
 class WeChatPayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
@@ -437,6 +480,10 @@ def _first_text(payload: dict[str, object], *keys: str) -> str:
         if value is not None and str(value).strip():
             return str(value).strip()
     return ""
+
+
+def _config_text(config: Mapping[str, object], key: str) -> str:
+    return str(config.get(key) or "").strip()
 
 
 def _first_float(payload: dict[str, object], *keys: str) -> float | None:

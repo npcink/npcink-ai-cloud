@@ -46,6 +46,7 @@ from app.domain.commercial.payment_gateways import (
     normalize_payment_gateway_provider,
 )
 from app.domain.commercial.service import PRO_MONTHLY_BILLING_CYCLE, PRO_MONTHLY_PRICE_CNY
+from app.domain.service_settings import resolve_alipay_payment_runtime_config
 
 
 class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
@@ -172,7 +173,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             }
             gateway = get_payment_gateway_provider(
                 normalized_provider,
-                settings=getattr(service, "settings", None),
+                config=self._payment_gateway_runtime_config(normalized_provider),
             )
             gateway_order = gateway.create_order(
                 PaymentGatewayOrderRequest(
@@ -272,7 +273,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             metadata.setdefault("refund_policy", "customer_requested_full_refund")
             gateway = get_payment_gateway_provider(
                 normalized_provider,
-                settings=getattr(service, "settings", None),
+                config=self._payment_gateway_runtime_config(normalized_provider),
             )
             gateway_order = gateway.create_order(
                 PaymentGatewayOrderRequest(
@@ -379,7 +380,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             }
             gateway = get_payment_gateway_provider(
                 normalized_provider,
-                settings=getattr(service, "settings", None),
+                config=self._payment_gateway_runtime_config(normalized_provider),
             )
             gateway_order = gateway.create_order(
                 PaymentGatewayOrderRequest(
@@ -602,7 +603,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             refund_metadata = dict(metadata_json or {})
             gateway = get_payment_gateway_provider(
                 order.provider,
-                settings=getattr(service, "settings", None),
+                config=self._payment_gateway_runtime_config(order.provider),
             )
             gateway_refund = gateway.create_refund(
                 PaymentGatewayRefundRequest(
@@ -755,7 +756,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         normalized_provider = self._normalize_payment_provider(provider)
         gateway = get_payment_gateway_provider(
             normalized_provider,
-            settings=getattr(self, "settings", None),
+            config=self._payment_gateway_runtime_config(normalized_provider),
         )
         return gateway.verify_payment_callback(dict(raw_event or {})).to_payload()
 
@@ -768,7 +769,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         normalized_provider = self._normalize_payment_provider(provider)
         gateway = get_payment_gateway_provider(
             normalized_provider,
-            settings=getattr(self, "settings", None),
+            config=self._payment_gateway_runtime_config(normalized_provider),
         )
         return gateway.verify_refund_callback(dict(raw_event or {})).to_payload()
 
@@ -783,7 +784,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         normalized_provider = self._normalize_payment_provider(provider)
         gateway = get_payment_gateway_provider(
             normalized_provider,
-            settings=getattr(service, "settings", None),
+            config=self._payment_gateway_runtime_config(normalized_provider),
         )
         callback = gateway.verify_payment_callback(dict(raw_event or {}))
         if callback.status != "succeeded":
@@ -1088,6 +1089,16 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "payment currency must be CNY or USD",
             )
         return normalized
+
+    def _payment_gateway_runtime_config(self, provider: str) -> dict[str, object]:
+        normalized_provider = normalize_payment_gateway_provider(provider)
+        if normalized_provider == "alipay":
+            service = cast(Any, self)
+            return resolve_alipay_payment_runtime_config(
+                service.database_url,
+                service.settings,
+            )
+        return {}
 
     def _normalize_payment_amount(self, amount: float) -> float:
         try:

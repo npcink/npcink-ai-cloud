@@ -18,19 +18,21 @@ use Free, start Pro trial, or pay for Pro monthly service.
 
 ## Alipay Configuration
 
-Set these environment variables before collecting real payments:
+Configure Alipay from Cloud Admin, not from deployment environment variables:
 
-```text
-NPCINK_CLOUD_ALIPAY_PAYMENT_ENABLED=true
-NPCINK_CLOUD_ALIPAY_GATEWAY_URL=https://openapi.alipay.com/gateway.do
-NPCINK_CLOUD_ALIPAY_APP_ID=<alipay app id>
-NPCINK_CLOUD_ALIPAY_PRIVATE_KEY=<cloud app RSA private key>
-NPCINK_CLOUD_ALIPAY_PUBLIC_KEY=<alipay platform RSA public key>
-NPCINK_CLOUD_ALIPAY_NOTIFY_URL=https://<cloud-host>/open/payments/alipay/notify
-NPCINK_CLOUD_ALIPAY_RETURN_URL=https://<cloud-host>/open/payments/alipay/return
-```
+1. Open `/admin/service-settings`.
+2. Save the Portal base URL in `登录配置`.
+3. Open `支付配置`.
+4. Enter the Alipay app id, gateway URL, Cloud application private key, and
+   Alipay public key.
+5. Copy the generated notify URL and return URL into the Alipay platform:
+   - `https://<cloud-host>/open/payments/alipay/notify`
+   - `https://<cloud-host>/open/payments/alipay/return`
+6. Save and run `检查支付宝配置`.
 
-Do not commit key values. Keep private keys in deploy secrets only.
+The key values are stored in Cloud `service_settings` encrypted secret storage
+and must not be committed. Deployment environment variables are not a payment
+gateway configuration source.
 
 ## Required Checks
 

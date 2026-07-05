@@ -11,6 +11,7 @@ from app.api.envelope import build_envelope
 from app.api.routes.portal import finish_portal_qq_login
 from app.api.routes.service import _get_commercial_service
 from app.domain.commercial.errors import CommercialServiceError
+from app.domain.service_settings import resolve_alipay_payment_runtime_config
 
 router = APIRouter(prefix="/open", tags=["open"])
 
@@ -66,13 +67,12 @@ async def finish_open_wechat_login(
 
 @router.post("/payments/alipay/notify")
 async def receive_open_alipay_payment_notify(request: Request) -> Any:
-    settings = get_cloud_services(request).settings
-    if not (
-        settings.alipay_payment_enabled
-        and settings.alipay_app_id.strip()
-        and settings.alipay_private_key.strip()
-        and settings.alipay_public_key.strip()
-    ):
+    services = get_cloud_services(request)
+    alipay_config = resolve_alipay_payment_runtime_config(
+        services.settings.database_url,
+        services.settings,
+    )
+    if not alipay_config.get("configured"):
         return _not_enabled(
             error_code="open.alipay_payment_notify_not_enabled",
             message="Alipay payment notify callback is reserved but not enabled",
@@ -100,8 +100,12 @@ async def receive_open_alipay_payment_notify(request: Request) -> Any:
 
 @router.get("/payments/alipay/return")
 async def receive_open_alipay_payment_return(request: Request) -> Any:
-    settings = get_cloud_services(request).settings
-    if not settings.alipay_payment_enabled:
+    services = get_cloud_services(request)
+    alipay_config = resolve_alipay_payment_runtime_config(
+        services.settings.database_url,
+        services.settings,
+    )
+    if not alipay_config.get("configured"):
         return _not_enabled(
             error_code="open.alipay_payment_return_not_enabled",
             message="Alipay payment return callback is reserved but not enabled",

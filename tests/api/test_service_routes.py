@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -86,6 +88,20 @@ from tests.conftest import (
     seed_provider_model_allowlist,
     seed_site_auth,
 )
+
+
+def _alipay_test_keys() -> tuple[str, str]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_pem, public_pem
 
 
 def _sqlite_url(tmp_path: Path) -> str:
@@ -627,6 +643,7 @@ def test_admin_agent_workflow_metadata_projection_is_read_only(tmp_path: Path) -
 
 def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
+    alipay_private_key, alipay_public_key = _alipay_test_keys()
 
     initial_response = client.get(
         "/internal/service/admin/service-settings",
@@ -636,6 +653,10 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert initial_response.json()["data"]["env_fallback"] == "disabled"
     assert (
         initial_response.json()["data"]["settings"]["portal_email"]["status"]
+        == "missing_config"
+    )
+    assert (
+        initial_response.json()["data"]["settings"]["alipay_payment"]["status"]
         == "missing_config"
     )
 
@@ -687,11 +708,46 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     )
     assert "smtp-password" not in json.dumps(email_response.json())
 
+    alipay_response = client.patch(
+        "/internal/service/admin/service-settings/alipay-payment",
+        json={
+            "enabled": True,
+            "app_id": "2026000000000099",
+            "gateway_url": "https://openapi.alipay.com/gateway.do",
+            "notify_url": "https://cloud.example.com/open/payments/alipay/notify",
+            "return_url": "https://cloud.example.com/open/payments/alipay/return",
+            "private_key": alipay_private_key,
+            "public_key": alipay_public_key,
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-alipay-001"),
+    )
+    assert alipay_response.status_code == 200, alipay_response.text
+    assert alipay_response.json()["data"]["status"] == "ready"
+    assert (
+        alipay_response.json()["data"]["secrets"]["private_key"]["display"]
+        == "configured"
+    )
+    assert (
+        alipay_response.json()["data"]["secrets"]["public_key"]["display"]
+        == "configured"
+    )
+    assert alipay_private_key not in json.dumps(alipay_response.json())
+    assert alipay_public_key not in json.dumps(alipay_response.json())
+
+    alipay_test_response = client.post(
+        "/internal/service/admin/service-settings/alipay-payment/test",
+        headers=build_internal_headers(idempotency_key="service-settings-alipay-test-001"),
+    )
+    assert alipay_test_response.status_code == 200, alipay_test_response.text
+    assert alipay_test_response.json()["data"]["status"] == "ready"
+
     with get_session(database_url) as session:
         qq_row = session.get(ServiceSetting, "portal_qq_login")
         email_row = session.get(ServiceSetting, "portal_email")
+        alipay_row = session.get(ServiceSetting, "payment_alipay")
         assert qq_row is not None
         assert email_row is not None
+        assert alipay_row is not None
         assert decrypt_service_setting_secret(
             str((qq_row.secret_ciphertext_json or {})["client_secret"]),
             settings=_runtime_service_settings(database_url),
@@ -700,6 +756,14 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
             str((email_row.secret_ciphertext_json or {})["smtp_password"]),
             settings=_runtime_service_settings(database_url),
         ) == "smtp-password"
+        assert decrypt_service_setting_secret(
+            str((alipay_row.secret_ciphertext_json or {})["private_key"]),
+            settings=_runtime_service_settings(database_url),
+        ) == alipay_private_key.strip()
+        assert decrypt_service_setting_secret(
+            str((alipay_row.secret_ciphertext_json or {})["public_key"]),
+            settings=_runtime_service_settings(database_url),
+        ) == alipay_public_key.strip()
 
     list_response = client.get(
         "/internal/service/admin/service-settings",
@@ -709,8 +773,11 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     data = list_response.json()["data"]
     assert data["settings"]["qq_login"]["configured"] is True
     assert data["settings"]["portal_email"]["configured"] is True
+    assert data["settings"]["alipay_payment"]["configured"] is True
     assert data["boundary"]["wordpress_control_plane"] is False
     assert "smtp-password" not in json.dumps(data)
+    assert alipay_private_key not in json.dumps(data)
+    assert alipay_public_key not in json.dumps(data)
 
     dispose_engine(database_url)
 

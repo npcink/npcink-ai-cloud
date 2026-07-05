@@ -3013,14 +3013,28 @@ def test_open_alipay_notify_marks_pro_monthly_order_paid(
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
             "portal_login_code_ttl_seconds": 300,
-            "alipay_payment_enabled": True,
-            "alipay_app_id": "2026000000000099",
-            "alipay_private_key": private_pem,
-            "alipay_public_key": public_pem,
-            "alipay_notify_url": "http://testserver/open/payments/alipay/notify",
-            "alipay_return_url": "http://testserver/portal/billing",
         },
     )
+    public_settings_response = client.patch(
+        "/internal/service/admin/service-settings/portal-public",
+        json={"public_base_url": "http://testserver"},
+        headers=build_internal_headers(idempotency_key="portal-real-alipay-public-001"),
+    )
+    assert public_settings_response.status_code == 200, public_settings_response.text
+    alipay_settings_response = client.patch(
+        "/internal/service/admin/service-settings/alipay-payment",
+        json={
+            "enabled": True,
+            "app_id": "2026000000000099",
+            "gateway_url": "https://openapi.alipay.com/gateway.do",
+            "notify_url": "http://testserver/open/payments/alipay/notify",
+            "return_url": "http://testserver/open/payments/alipay/return",
+            "private_key": private_pem,
+            "public_key": public_pem,
+        },
+        headers=build_internal_headers(idempotency_key="portal-real-alipay-settings-001"),
+    )
+    assert alipay_settings_response.status_code == 200, alipay_settings_response.text
     request_data = _request_portal_registration_code(
         client,
         email="alipay-paid-pro-user@example.com",

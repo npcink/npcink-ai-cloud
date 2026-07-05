@@ -48,11 +48,19 @@ Supported provider keys are:
 
 Providers run in simulated mode by default.
 
-Alipay can run in real page-pay mode when `NPCINK_CLOUD_ALIPAY_PAYMENT_ENABLED`
-is true and app id, RSA private key, RSA public key, gateway URL, notify URL,
-and return URL are configured. Real Alipay mode signs `alipay.trade.page.pay`
-orders with RSA2 and verifies asynchronous notify callbacks before any payment
-order is marked paid.
+Alipay can run in real page-pay mode only when the operator saves the
+`payment_alipay` service setting through the Cloud Admin service settings
+surface. App id, RSA private key, Alipay RSA public key, gateway URL, notify
+URL, and return URL are stored in Cloud runtime storage; private/public key
+material is saved in the encrypted service-setting secret store and is not
+read from deployment environment variables. Real Alipay mode signs
+`alipay.trade.page.pay` orders with RSA2 and verifies asynchronous notify
+callbacks before any payment order is marked paid.
+
+Deployment environment variables are not a payment gateway configuration
+source. If `payment_alipay` is missing, disabled, incomplete, or fails key
+validation, public Alipay callbacks must fail closed and checkout orders must
+not depend on stale `.env` values.
 
 WeChat Pay remains simulated/reserved in this phase.
 

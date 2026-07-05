@@ -302,6 +302,16 @@ class PortalEmailServiceSettingsPayload(BaseModel):
     reply_to: str = Field(default="", max_length=320)
 
 
+class AlipayPaymentServiceSettingsPayload(BaseModel):
+    enabled: bool = True
+    app_id: str = Field(default="", max_length=191)
+    gateway_url: str = Field(default="https://openapi.alipay.com/gateway.do", max_length=500)
+    notify_url: str = Field(default="", max_length=500)
+    return_url: str = Field(default="", max_length=500)
+    private_key: str | None = Field(default=None, max_length=20000)
+    public_key: str | None = Field(default=None, max_length=20000)
+
+
 class ServiceSettingsEmailTestPayload(BaseModel):
     recipient_email: str = Field(min_length=3, max_length=320)
 
@@ -3419,6 +3429,99 @@ async def test_admin_portal_email_settings(
     return build_envelope(
         status="ok",
         message="portal email settings tested",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/alipay-payment")
+async def update_admin_alipay_payment_settings(
+    request: Request,
+    payload: AlipayPaymentServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_alipay_payment(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="payment_alipay",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="payment_alipay",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="Alipay payment settings saved",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.post("/admin/service-settings/alipay-payment/test")
+async def test_admin_alipay_payment_settings(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).test_alipay_payment()
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.test",
+            outcome="error",
+            setting_id="payment_alipay",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.test",
+        outcome="succeeded" if result.get("status") == "ready" else "error",
+        setting_id="payment_alipay",
+        result=result,
+        error_code="" if result.get("status") == "ready" else "service_settings.alipay_not_ready",
+        message=str(result.get("message") or ""),
+    )
+    return build_envelope(
+        status="ok",
+        message="Alipay payment settings tested",
         data=result,
         revision="m6",
     )
