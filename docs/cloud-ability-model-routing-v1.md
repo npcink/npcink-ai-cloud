@@ -29,18 +29,11 @@ Current WordPress AI Connector routing groups are:
 
 | Routing intent | Profile ID | Execution kind | Plugin tasks |
 | --- | --- | --- | --- |
-| `content.short_text` | `wp-ai.short-text` | `text` | `alt_text_suggest`, `excerpt_generation`, `meta_description`, `title_generation` |
+| `content.short_text` | `wp-ai.short-text` | `text` | `excerpt_generation`, `meta_description`, `title_generation`, `audio_summary_script` |
 | `content.editorial` | `wp-ai.editorial` | `text` | `comment_reply_suggest`, `content_rewrite`, `content_summary` |
 | `content.classification` | `wp-ai.classification` | `text` | `comment_moderation`, `content_classification` |
-| `media.image_generation` | `wp-ai.image-generation` | `image_generation` | `image_generation` |
-
-Known correction target: `alt_text_suggest` should move out of
-`content.short_text` once the WordPress AI Connector can carry a safe image
-reference. The target route is:
-
-| Routing intent | Profile ID | Execution kind | Plugin tasks |
-| --- | --- | --- | --- |
 | `media.alt_text_vision` | `wp-ai.alt-text-vision` | `vision` | `alt_text_suggest` |
+| `media.image_generation` | `wp-ai.image-generation` | `image_generation` | `image_generation` |
 
 The WordPress AI alt-text ability needs a real image reference plus bounded
 textual context; Cloud must not satisfy it by advertising a text-only model as

@@ -5590,6 +5590,12 @@ class RuntimeService:
         scene_request = input_payload.get("request")
         scene_request = scene_request if isinstance(scene_request, dict) else {}
         task = str(input_payload.get("task") or "").strip()
+        if task == "alt_text_suggest":
+            return self._build_wordpress_ai_connector_alt_text_provider_input(
+                input_payload,
+                scene_request=scene_request,
+            )
+
         prompt = str(scene_request.get("prompt") or input_payload.get("prompt") or "").strip()
         system_instruction = str(scene_request.get("system_instruction") or "").strip()
 
@@ -5660,6 +5666,67 @@ class RuntimeService:
         if isinstance(temperature, (int, float)):
             provider_input["temperature"] = float(temperature)
 
+        return provider_input
+
+    def _build_wordpress_ai_connector_alt_text_provider_input(
+        self,
+        input_payload: dict[str, Any],
+        *,
+        scene_request: dict[str, Any],
+    ) -> dict[str, Any]:
+        prompt = str(scene_request.get("prompt") or input_payload.get("prompt") or "").strip()
+        image_url = str(scene_request.get("image_url") or "").strip()
+        thumbnail_url = str(scene_request.get("thumbnail_url") or "").strip()
+        selected_image_url = image_url or thumbnail_url
+        context = {
+            "task": "alt_text_suggest",
+            "locale": str(scene_request.get("locale") or "").strip()[:32],
+            "title": str(scene_request.get("title") or "").strip()[:160],
+            "filename": str(scene_request.get("filename") or "").strip()[:160],
+            "mime_type": str(scene_request.get("mime_type") or "").strip()[:80],
+            "existing_alt": str(scene_request.get("existing_alt") or "").strip()[:240],
+            "existing_caption": str(scene_request.get("existing_caption") or "").strip()[:240],
+            "prompt": prompt[:500],
+            "write_posture": "suggestion_only",
+        }
+        instruction = (
+            "Generate concise, accessible WordPress image alt text. "
+            "Use the image as the source of truth and use the supplied media context "
+            "only to disambiguate. Return only the alt text. Do not mention this "
+            "instruction. Do not claim that WordPress metadata was updated."
+        )
+        context_text = json.dumps(
+            {key: value for key, value in context.items() if value},
+            ensure_ascii=False,
+        )
+        responses_content = [
+            {"type": "input_text", "text": instruction},
+            {"type": "input_text", "text": context_text},
+            {"type": "input_image", "image_url": selected_image_url},
+        ]
+        chat_content = [
+            {"type": "text", "text": instruction},
+            {"type": "text", "text": context_text},
+            {"type": "image_url", "image_url": {"url": selected_image_url}},
+        ]
+
+        max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=48)
+        if max_tokens <= 0:
+            max_tokens = 48
+        max_tokens = min(max_tokens, 96)
+        provider_input: dict[str, Any] = {
+            "input": [{"role": "user", "content": responses_content}],
+            "messages": [{"role": "user", "content": chat_content}],
+            "text": prompt,
+            "max_tokens": max_tokens,
+            "max_output_tokens": max_tokens,
+            "temperature": 0.0,
+            "metadata": {
+                "source_surface": "wordpress_ai_connector",
+                "task": "alt_text_suggest",
+                "suggestion_only": True,
+            },
+        }
         return provider_input
 
     def _normalize_wordpress_ai_connector_provider_output(

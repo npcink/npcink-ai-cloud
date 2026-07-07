@@ -1,6 +1,6 @@
 # WordPress AI Alt Text Vision Contract Feasibility v1
 
-Status: proposed.
+Status: accepted, Cloud runtime implemented.
 Date: 2026-07-07.
 
 ## Context
@@ -23,10 +23,9 @@ Cloud already has enough runtime foundation to make the capability feasible:
 - WordPress AI Connector routing already has managed runtime profiles for text,
   classification, image generation, and audio generation.
 
-The gap is narrower: `alt_text_suggest` is currently grouped under
-`wp-ai.short-text`, and the WordPress AI Connector provider input builder turns
-it into text-only prompt input. That cannot satisfy `ai/alt-text-generation`
-when the source image itself is required.
+The remaining integration risk is addon-side evidence quality: WordPress must
+send Cloud a fetchable image reference and bounded media context without making
+the addon a write owner or a second control plane.
 
 ## Decision
 

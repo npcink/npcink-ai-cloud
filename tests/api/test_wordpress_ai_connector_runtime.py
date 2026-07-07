@@ -22,6 +22,7 @@ from app.core.models import ProviderConnection, RunRecord
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.wordpress_ai_connector.routing_profiles import (
+    WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
     WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
@@ -45,11 +46,16 @@ def test_wordpress_ai_connector_text_profiles_prefer_balanced_defaults() -> None
     short_text_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[
         WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
     ]
+    alt_text_vision_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[
+        WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+    ]
     classification_spec = WP_AI_CONNECTOR_PROFILE_SPECS_BY_ID[
         WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID
     ]
 
     assert short_text_spec.ordered_tiers[0] == "balanced"
+    assert alt_text_vision_spec.execution_kind == "vision"
+    assert alt_text_vision_spec.tasks == ("alt_text_suggest",)
     assert classification_spec.ordered_tiers[0] == "balanced"
 
 
@@ -104,6 +110,26 @@ class WordPressAIConnectorTextProvider:
                             capability_tags=["text", "balanced", "hosted-free"],
                             is_default=False,
                             weight=50,
+                        )
+                    ],
+                ),
+                CatalogModelSeed(
+                    model_id="gpt-wp-ai-vision-test",
+                    family="gpt-vision-test",
+                    feature="vision",
+                    status="available",
+                    context_window=128000,
+                    price_input=0.0,
+                    price_output=0.0,
+                    raw_json={"surface": "wordpress_ai_connector_vision_test"},
+                    instances=[
+                        CatalogInstanceSeed(
+                            instance_id="openai-wp-ai-vision-test",
+                            endpoint_variant="responses",
+                            region="global",
+                            capability_tags=["vision", "default", "quality"],
+                            is_default=True,
+                            weight=100,
                         )
                     ],
                 ),
@@ -207,6 +233,17 @@ class WordPressAIConnectorTextProvider:
                 "Npcink Cloud Addon connects verified Cloud settings to fixed WordPress "
                 "AI editing scenes without exposing chat or direct writes. ### Details"
             )
+        if request.execution_kind == "vision":
+            return ProviderExecutionResult(
+                output={
+                    "output_text": "Blue ceramic mug on a white table",
+                    "model_id": request.model_id,
+                },
+                latency_ms=18,
+                tokens_in=42,
+                tokens_out=7,
+                cost=0.0,
+            )
         if request.execution_kind == "image_generation":
             return ProviderExecutionResult(
                 output={
@@ -275,17 +312,20 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
                     "kind": "openai_compatible",
                     "capability_ids": [
                         "text_generation",
+                        "vision",
                         "image_generation",
                         "audio_generation",
                     ],
                     "runtime_profile_ids": [
                         WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
+                        WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
                         WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID,
                         WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
                     ],
                     "model_ids": [
                         "gpt-wp-ai-connector-test",
                         "gpt-wp-ai-connector-fallback-test",
+                        "gpt-wp-ai-vision-test",
                         "grok-imagine-wp-ai-test",
                         "speech-wp-ai-connector-test",
                     ],
@@ -380,6 +420,45 @@ def _image_payload(input_overrides: dict[str, Any] | None = None) -> dict[str, A
     }
 
 
+def _alt_text_payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    input_payload: dict[str, Any] = {
+        "contract_version": "wp_ai_connector_runtime.v1",
+        "source_surface": "wordpress_ai_connector",
+        "connector_id": "npcink-cloud",
+        "task": "alt_text_suggest",
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+        "no_conversation": True,
+        "expected_response_contract": "wp_ai_connector_result.v1",
+        "request": {
+            "prompt": "Generate accessible alt text for this media item.",
+            "image_url": "https://example.test/uploads/blue-mug.jpg",
+            "mime_type": "image/jpeg",
+            "filename": "blue-mug.jpg",
+            "title": "Blue mug",
+            "existing_alt": "",
+            "existing_caption": "",
+            "locale": "en_US",
+        },
+    }
+    input_payload.update(input_overrides or {})
+    return {
+        "ability_name": "npcink-cloud/wp-ai-connector",
+        "contract_version": "wp_ai_connector_runtime.v1",
+        "channel": "wordpress_ai_connector",
+        "execution_kind": "wordpress_ai_connector",
+        "profile_id": "text.balanced",
+        "execution_pattern": "inline",
+        "storage_mode": "result_only",
+        "data_classification": "public_reference_media",
+        "timeout_seconds": 60,
+        "retry_max": 0,
+        "retention_ttl": 86400,
+        "input": input_payload,
+        "policy": {"allow_fallback": False},
+    }
+
+
 def _execute(
     client: TestClient,
     payload: dict[str, Any],
@@ -450,6 +529,122 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
             run.policy_json["execution_contract"]["routing_intent"]
             == "content.short_text"
         )
+
+
+def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+
+    response = _execute(client, _alt_text_payload(), idempotency_key="wp-ai-alt-text")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["result"]["output_text"] == "Blue ceramic mug on a white table"
+    assert data["execution_context"]["ability_family"] == "vision"
+    assert data["execution_context"]["data_classification"] == "public_reference_media"
+    assert provider.requests[0].execution_kind == "vision"
+    assert provider.requests[0].profile_id == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["metadata"]["task"] == "alt_text_suggest"
+    assert provider_input["max_tokens"] == 48
+    assert provider_input["max_output_tokens"] == 48
+    assert provider_input["temperature"] == 0.0
+    responses_content = provider_input["input"][0]["content"]
+    expected_image_part = {
+        "type": "input_image",
+        "image_url": "https://example.test/uploads/blue-mug.jpg",
+    }
+    assert expected_image_part in responses_content
+    assert "messages" in provider_input
+
+    with get_session(database_url) as session:
+        run = session.execute(select(RunRecord)).scalar_one()
+        assert run.ability_name == "npcink-cloud/wp-ai-connector"
+        assert run.channel == "wordpress_ai_connector"
+        assert run.execution_kind == "vision"
+        assert run.ability_family == "vision"
+        assert run.profile_id == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+        assert run.policy_json["task_group"] == "alt_text_vision"
+        assert run.policy_json["routing_intent"] == "media.alt_text_vision"
+        assert run.policy_json["execution_contract"]["task_group"] == "alt_text_vision"
+        assert (
+            run.policy_json["execution_contract"]["routing_intent"]
+            == "media.alt_text_vision"
+        )
+
+
+@pytest.mark.parametrize(
+    ("request_overrides", "expected_error"),
+    [
+        (
+            {"request": {"prompt": "Generate alt text."}},
+            "wp_ai_connector.alt_text_image_required",
+        ),
+        (
+            {"request": {"prompt": "Generate alt text.", "image_url": "notaurl"}},
+            "wp_ai_connector.alt_text_image_url_invalid",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "image_url": "https://example.test/file.svg",
+                    "mime_type": "image/svg+xml",
+                }
+            },
+            "wp_ai_connector.alt_text_mime_type_not_allowed",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "image_url": "https://example.test/file.jpg",
+                    "image_base64": "abc",
+                }
+            },
+            "wp_ai_connector.chat_or_secret_field_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "image_url": "https://example.test/file.jpg",
+                    "update_attachment_metadata": True,
+                }
+            },
+            "wp_ai_connector.chat_or_secret_field_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "image_url": "https://example.test/file.jpg",
+                    "messages": [{"role": "user", "content": "chat"}],
+                }
+            },
+            "wp_ai_connector.chat_or_secret_field_forbidden",
+        ),
+    ],
+)
+def test_wordpress_ai_connector_alt_text_contract_fails_closed(
+    tmp_path: Path,
+    request_overrides: dict[str, Any],
+    expected_error: str,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _alt_text_payload(request_overrides)
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key=f"wp-ai-alt-text-invalid-{expected_error}",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == expected_error
+    assert provider.requests == []
 
 
 def test_wordpress_ai_connector_runtime_strips_reasoning_noise_from_title(
@@ -771,9 +966,12 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
     assert data["direct_wordpress_write"] is False
     assert data["boundary"]["cloud_ability_registry"] is False
     assert data["boundary"]["wordpress_ability_truth"] == "local_plugin"
-    assert len(data["profiles"]) == 5
+    assert len(data["profiles"]) == 6
     assert data["available_text_instances"][0]["instance_id"] == (
         "openai-wp-ai-connector-test"
+    )
+    assert data["available_vision_instances"][0]["instance_id"] == (
+        "openai-wp-ai-vision-test"
     )
     assert data["available_image_instances"][0]["instance_id"] == "openai-wp-ai-image-test"
     assert data["available_audio_instances"][0]["instance_id"] == "openai-wp-ai-audio-test"
@@ -783,13 +981,21 @@ def test_admin_wordpress_ai_routing_updates_platform_managed_candidates(
         if profile["profile_id"] == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
     )
     assert short_text["tasks"] == [
-        "alt_text_suggest",
         "excerpt_generation",
         "meta_description",
         "title_generation",
         "audio_summary_script",
     ]
     assert short_text["routing_intent"] == "content.short_text"
+    alt_text_vision = next(
+        profile
+        for profile in data["profiles"]
+        if profile["profile_id"] == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
+    )
+    assert alt_text_vision["execution_kind"] == "vision"
+    assert alt_text_vision["routing_intent"] == "media.alt_text_vision"
+    assert alt_text_vision["tasks"] == ["alt_text_suggest"]
+    assert alt_text_vision["candidate_instance_ids"] == ["openai-wp-ai-vision-test"]
     image_generation = next(
         profile
         for profile in data["profiles"]
