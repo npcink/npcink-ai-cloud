@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import re
 import time
+from dataclasses import replace
 from typing import Any
 
 import httpx
