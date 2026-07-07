@@ -34,6 +34,19 @@ Current WordPress AI Connector routing groups are:
 | `content.classification` | `wp-ai.classification` | `text` | `comment_moderation`, `content_classification` |
 | `media.image_generation` | `wp-ai.image-generation` | `image_generation` | `image_generation` |
 
+Known correction target: `alt_text_suggest` should move out of
+`content.short_text` once the WordPress AI Connector can carry a safe image
+reference. The target route is:
+
+| Routing intent | Profile ID | Execution kind | Plugin tasks |
+| --- | --- | --- | --- |
+| `media.alt_text_vision` | `wp-ai.alt-text-vision` | `vision` | `alt_text_suggest` |
+
+The WordPress AI alt-text ability needs a real image reference plus bounded
+textual context; Cloud must not satisfy it by advertising a text-only model as
+vision-capable. The implementation contract is tracked in
+[WordPress AI Alt Text Vision Contract Feasibility v1](wordpress-ai-alt-text-vision-contract-feasibility-v1.md).
+
 ## Ownership
 
 Cloud may own and expose:
@@ -78,7 +91,9 @@ WordPress/plugin side continues to own:
   invent callable model candidates that the supplier account did not return.
 - New plugin tasks should first map into an existing routing intent. Create a
   new routing intent only when real runtime evidence shows materially different
-  latency, cost, output shape, storage, or execution-kind needs.
+  latency, cost, output shape, storage, or execution-kind needs. `alt_text_suggest`
+  is the current exception because it changes the execution kind from text to
+  vision and requires bounded image-reference validation.
 - Cloud-native runtime abilities may have read-only projections in Admin, but
   they must not duplicate plugin task rows such as title generation, SEO
   metadata, taxonomy suggestions, or WordPress write workflows.
