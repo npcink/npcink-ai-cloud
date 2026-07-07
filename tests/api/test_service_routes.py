@@ -629,7 +629,8 @@ def test_admin_agent_workflow_metadata_projection_is_read_only(tmp_path: Path) -
     data = response.json()["data"]
     assert data["projection_version"] == "cloud-agent-workflow-metadata.v1"
     assert data["projection_kind"] == "read_only_runtime_metadata"
-    assert data["registry_version"] == "cloud-agent-workflow-metadata.v1"
+    assert "compatibility_registry_version" not in data
+    assert "registry_version" not in data
     agents = {item["agent_id"]: item for item in data["agents"]}
     assert "internal_ops_advisor_agent" in agents
     assert agents["site_knowledge_suggestion_agent"]["handoff_owner"] == ("wordpress_local")
@@ -3645,17 +3646,18 @@ def test_internal_ai_advisor_routes_are_internal_and_evidence_backed(
         ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["direct_wordpress_write"]
         is False
     )
-    assert ops_summary_payload["agent_registry_metadata"]["agent_id"] == (
+    assert "agent_registry_metadata" not in ops_summary_payload
+    assert ops_summary_payload["agent_metadata_projection"]["agent_id"] == (
         "internal_ops_advisor_agent"
     )
     assert (
-        ops_summary_payload["agent_registry_metadata"]["agent_role"]
+        ops_summary_payload["agent_metadata_projection"]["agent_role"]
         == (ops_summary_payload["source_context"]["advisor"]["agent_handoff"]["agent_role"])
     )
-    assert ops_summary_payload["agent_registry_metadata"]["direct_wordpress_write"] is False
+    assert ops_summary_payload["agent_metadata_projection"]["direct_wordpress_write"] is False
     assert (
         "cloud_workflow_truth"
-        in ops_summary_payload["agent_registry_metadata"]["forbidden_actions"]
+        in ops_summary_payload["agent_metadata_projection"]["forbidden_actions"]
     )
     assert ops_summary_payload["support_draft"]
     assert "article" not in ops_summary_payload["support_draft"].lower()
