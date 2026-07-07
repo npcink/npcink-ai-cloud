@@ -217,8 +217,21 @@ class WordPressAIConnectorTextProvider:
                 "How to Verify a Hosted AI Runtime Connector: Essential Steps "
                 "This title balances clarity and search intent."
             )
+        elif task == "title_generation" and "title bundle" in source_text:
+            output_text = (
+                "下面是基于内容整理的标题建议：\n"
+                "## 标题建议\n"
+                "1. WordPress AI 连接器测试：云端生成，本地审核\n"
+                "2. 用云端运行时增强 WordPress 内容工作流"
+            )
         if task == "content_classification":
             output_text = "- WordPress AI\n- Cloud connector\n- Scene runtime"
+        elif task == "content_rewrite" and "rewrite variants" in source_text:
+            output_text = (
+                "可以优化为更自然、专业一点的表达，例如：\n\n"
+                "**这个插件非常实用，能够帮助站长高效完成大量内容相关工作。**\n\n"
+                "如果你愿意，我还可以继续帮你调整风格。"
+            )
         elif task == "content_summary":
             output_text = (
                 "### **1. Fast editing support**\n"
@@ -228,11 +241,14 @@ class WordPressAIConnectorTextProvider:
                 "direct WordPress writes.\n\n### **2. Safe operations**"
             )
         elif task == "meta_description":
-            output_text = (
-                "**Npcink Cloud AI Connector: WordPress AI plugin scene runtime** "
-                "Npcink Cloud Addon connects verified Cloud settings to fixed WordPress "
-                "AI editing scenes without exposing chat or direct writes. ### Details"
-            )
+            if "meta boilerplate" in source_text:
+                output_text = "以下是基于你提供的文章内容生成的结果："
+            else:
+                output_text = (
+                    "**Npcink Cloud AI Connector: WordPress AI plugin scene runtime** "
+                    "Npcink Cloud Addon connects verified Cloud settings to fixed WordPress "
+                    "AI editing scenes without exposing chat or direct writes. ### Details"
+                )
         if request.execution_kind == "vision":
             return ProviderExecutionResult(
                 output={
@@ -782,6 +798,53 @@ def test_wordpress_ai_connector_runtime_strips_title_explanation_tail(
     )
 
 
+def test_wordpress_ai_connector_runtime_extracts_single_title_from_title_bundle(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "request": {
+                "prompt": "Suggest a concise title for a title bundle response.",
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-title-bundle")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert "multiple options" in provider_input["input"]
+    assert "numbered lists" in provider_input["input"]
+    assert (
+        response.json()["data"]["result"]["output_text"]
+        == "WordPress AI 连接器测试：云端生成，本地审核"
+    )
+
+
+def test_wordpress_ai_connector_runtime_normalizes_rewrite_variant_bundle(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_rewrite",
+            "request": {
+                "prompt": "Rewrite this paragraph for a rewrite variants response.",
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-rewrite-bundle")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert "Return exactly one rewritten version" in provider_input["input"]
+    result_text = response.json()["data"]["result"]["output_text"]
+    assert result_text == "这个插件非常实用，能够帮助站长高效完成大量内容相关工作。"
+    assert "如果你愿意" not in result_text
+
+
 def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
     tmp_path: Path,
 ) -> None:
@@ -845,6 +908,31 @@ def test_wordpress_ai_connector_runtime_normalizes_meta_description_scene(
     assert "###" not in result_text
     assert len(result_text) <= 155
     assert "云端运行时" in result_text
+
+
+def test_wordpress_ai_connector_runtime_falls_back_on_meta_boilerplate(
+    tmp_path: Path,
+) -> None:
+    _, client, _ = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "meta_description",
+            "request": {
+                "prompt": (
+                    "为这篇文章生成 SEO 描述：meta boilerplate。Npcink Cloud Addon "
+                    "让 WordPress AI 插件在固定能力场景中调用云端运行时，只提供"
+                    "建议式输出，不提供通用聊天入口。"
+                ),
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-meta-boilerplate")
+
+    assert response.status_code == 200
+    result_text = response.json()["data"]["result"]["output_text"]
+    assert "以下是基于" not in result_text
+    assert "建议式输出" in result_text
 
 
 def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(
