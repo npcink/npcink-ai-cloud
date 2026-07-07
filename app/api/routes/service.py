@@ -698,6 +698,7 @@ def _build_wordpress_ai_routing_projection(
 
         available_instances_by_kind: dict[str, list[dict[str, Any]]] = {
             "text": [],
+            "vision": [],
             "image_generation": [],
             "audio_generation": [],
             "embedding": [],
@@ -797,6 +798,7 @@ def _build_wordpress_ai_routing_projection(
         "direct_wordpress_write": False,
         "prompt_or_preset_editor": False,
         "available_text_instances": available_instances_by_kind["text"],
+        "available_vision_instances": available_instances_by_kind["vision"],
         "available_image_instances": available_instances_by_kind["image_generation"],
         "available_audio_instances": available_instances_by_kind["audio_generation"],
         "available_embedding_instances": available_instances_by_kind["embedding"],

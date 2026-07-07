@@ -5590,6 +5590,12 @@ class RuntimeService:
         scene_request = input_payload.get("request")
         scene_request = scene_request if isinstance(scene_request, dict) else {}
         task = str(input_payload.get("task") or "").strip()
+        if task == "alt_text_suggest":
+            return self._build_wordpress_ai_connector_alt_text_provider_input(
+                input_payload,
+                scene_request=scene_request,
+            )
+
         prompt = str(scene_request.get("prompt") or input_payload.get("prompt") or "").strip()
         system_instruction = str(scene_request.get("system_instruction") or "").strip()
 
@@ -5605,7 +5611,7 @@ class RuntimeService:
                 '[{"term":"...","confidence":0.8,"is_new":false}]}. No markdown.'
             ),
             "content_rewrite": (
-                "Rewrite the content as requested. Return only the rewritten content."
+                "Rewrite the content as requested. Return exactly one rewritten version."
             ),
             "content_summary": "Summarize the content. Return only the summary.",
             "excerpt_generation": "Generate a concise excerpt. Return only the excerpt.",
@@ -5620,6 +5626,11 @@ class RuntimeService:
         fragments.append(
             "Use the same language as the scene input unless a WordPress ability "
             "instruction explicitly asks for another language."
+        )
+        fragments.append(
+            "Output contract: return only the final value for this one task. Do not "
+            "include introductions, headings, Markdown, bullet lists, numbered lists, "
+            "multiple options, labels, explanations, or offers to continue."
         )
         if system_instruction:
             fragments.append(system_instruction)
@@ -5662,6 +5673,67 @@ class RuntimeService:
 
         return provider_input
 
+    def _build_wordpress_ai_connector_alt_text_provider_input(
+        self,
+        input_payload: dict[str, Any],
+        *,
+        scene_request: dict[str, Any],
+    ) -> dict[str, Any]:
+        prompt = str(scene_request.get("prompt") or input_payload.get("prompt") or "").strip()
+        image_url = str(scene_request.get("image_url") or "").strip()
+        thumbnail_url = str(scene_request.get("thumbnail_url") or "").strip()
+        selected_image_url = image_url or thumbnail_url
+        context = {
+            "task": "alt_text_suggest",
+            "locale": str(scene_request.get("locale") or "").strip()[:32],
+            "title": str(scene_request.get("title") or "").strip()[:160],
+            "filename": str(scene_request.get("filename") or "").strip()[:160],
+            "mime_type": str(scene_request.get("mime_type") or "").strip()[:80],
+            "existing_alt": str(scene_request.get("existing_alt") or "").strip()[:240],
+            "existing_caption": str(scene_request.get("existing_caption") or "").strip()[:240],
+            "prompt": prompt[:500],
+            "write_posture": "suggestion_only",
+        }
+        instruction = (
+            "Generate concise, accessible WordPress image alt text. "
+            "Use the image as the source of truth and use the supplied media context "
+            "only to disambiguate. Return only the alt text. Do not mention this "
+            "instruction. Do not claim that WordPress metadata was updated."
+        )
+        context_text = json.dumps(
+            {key: value for key, value in context.items() if value},
+            ensure_ascii=False,
+        )
+        responses_content = [
+            {"type": "input_text", "text": instruction},
+            {"type": "input_text", "text": context_text},
+            {"type": "input_image", "image_url": selected_image_url},
+        ]
+        chat_content = [
+            {"type": "text", "text": instruction},
+            {"type": "text", "text": context_text},
+            {"type": "image_url", "image_url": {"url": selected_image_url}},
+        ]
+
+        max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=48)
+        if max_tokens <= 0:
+            max_tokens = 48
+        max_tokens = min(max_tokens, 96)
+        provider_input: dict[str, Any] = {
+            "input": [{"role": "user", "content": responses_content}],
+            "messages": [{"role": "user", "content": chat_content}],
+            "text": prompt,
+            "max_tokens": max_tokens,
+            "max_output_tokens": max_tokens,
+            "temperature": 0.0,
+            "metadata": {
+                "source_surface": "wordpress_ai_connector",
+                "task": "alt_text_suggest",
+                "suggestion_only": True,
+            },
+        }
+        return provider_input
+
     def _normalize_wordpress_ai_connector_provider_output(
         self,
         output: dict[str, Any],
@@ -5696,15 +5768,23 @@ class RuntimeService:
                 output_text,
                 source_text=str(input_payload.get("text") or ""),
             )
-        elif task in ("title_generation", "excerpt_generation", "content_summary"):
+        elif task in (
+            "title_generation",
+            "excerpt_generation",
+            "content_summary",
+            "content_rewrite",
+        ):
             normalized_text = self._normalize_wordpress_ai_plain_text_output(
                 output_text,
                 limit={
+                    "content_rewrite": 320,
                     "title_generation": 80,
                     "excerpt_generation": 180,
                     "content_summary": 220,
                 }[task],
-                strip_explanation=task == "title_generation",
+                strip_explanation=task in {"title_generation", "content_rewrite"},
+                source_text=str(input_payload.get("text") or ""),
+                task=task,
             )
 
         if not normalized_text and not strips_reasoning_noise:
@@ -5801,7 +5881,11 @@ class RuntimeService:
         text = re.split(r"\s+#{1,6}\s+", text, maxsplit=1)[0].strip()
         if ":" in text[:64] and len(text.split(":", 1)[1].strip()) >= 40:
             text = text.split(":", 1)[1].strip()
-        if self._is_latin_heavy(text):
+        if self._is_latin_heavy(text) or self._is_wordpress_ai_boilerplate_output(text):
+            cjk_fallback = self._extract_wordpress_ai_cjk_text(source_text, limit=155)
+            if cjk_fallback:
+                return cjk_fallback
+        if len(text) < 40:
             cjk_fallback = self._extract_wordpress_ai_cjk_text(source_text, limit=155)
             if cjk_fallback:
                 return cjk_fallback
@@ -5813,10 +5897,17 @@ class RuntimeService:
         *,
         limit: int,
         strip_explanation: bool = False,
+        source_text: str = "",
+        task: str = "",
     ) -> str:
-        text = self._strip_wordpress_ai_markdown(
-            self._strip_wordpress_ai_reasoning_noise(output_text)
+        raw_text = self._strip_wordpress_ai_reasoning_noise(output_text)
+        text = self._extract_wordpress_ai_task_candidate(
+            raw_text,
+            task=task,
+            limit=limit,
         )
+        if not text:
+            text = self._strip_wordpress_ai_markdown(raw_text)
         if strip_explanation:
             text = re.split(
                 r"\s+(?:说明|解释|理由|Explanation|Reasoning)\s*[:：]|"
@@ -5824,6 +5915,13 @@ class RuntimeService:
                 text,
                 maxsplit=1,
             )[0].strip()
+        if task in {"excerpt_generation", "content_summary"} and (
+            self._is_wordpress_ai_boilerplate_output(text)
+            or self._looks_like_wordpress_ai_title_bundle(raw_text)
+        ):
+            cjk_fallback = self._extract_wordpress_ai_cjk_text(source_text, limit=limit)
+            if cjk_fallback:
+                return cjk_fallback
         return self._trim_incomplete_wordpress_ai_tail(
             self._truncate_wordpress_ai_text(text, limit=limit)
         )
@@ -5957,6 +6055,79 @@ class RuntimeService:
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
+    def _extract_wordpress_ai_task_candidate(
+        self,
+        output_text: str,
+        *,
+        task: str,
+        limit: int,
+    ) -> str:
+        if task == "content_rewrite":
+            bold_candidate = self._extract_wordpress_ai_bold_candidate(output_text)
+            if bold_candidate:
+                return self._truncate_wordpress_ai_text(bold_candidate, limit=limit)
+        if task == "title_generation":
+            list_candidate = self._extract_wordpress_ai_first_list_item(output_text)
+            if list_candidate:
+                return self._truncate_wordpress_ai_text(list_candidate, limit=limit)
+        return ""
+
+    def _extract_wordpress_ai_bold_candidate(self, output_text: str) -> str:
+        for match in re.finditer(r"\*\*(.{4,260}?)\*\*", output_text, flags=re.S):
+            candidate = self._strip_wordpress_ai_markdown(match.group(1))
+            if re.search(r"(?:版|version|option)\s*[:：]?$", candidate, flags=re.I):
+                continue
+            if len(candidate) >= 8:
+                return candidate
+        return ""
+
+    def _extract_wordpress_ai_first_list_item(self, output_text: str) -> str:
+        for line in output_text.splitlines():
+            match = re.match(r"\s*(?:[-*]|\d+[.)、])\s*(.+?)\s*$", line)
+            if match is None:
+                continue
+            candidate = self._strip_wordpress_ai_markdown(match.group(1))
+            candidate = re.sub(r"^[\"'“”‘’《》]+|[\"'“”‘’《》]+$", "", candidate).strip()
+            if 4 <= len(candidate) <= 120:
+                return candidate
+        match = re.search(
+            r"(?:^|\s)\d+[.)、]\s*(.+?)(?=\s+\d+[.)、]\s+|$)",
+            output_text,
+        )
+        if match is not None:
+            candidate = self._strip_wordpress_ai_markdown(match.group(1))
+            candidate = re.sub(r"^[\"'“”‘’《》]+|[\"'“”‘’《》]+$", "", candidate).strip()
+            if 4 <= len(candidate) <= 120:
+                return candidate
+        return ""
+
+    def _is_wordpress_ai_boilerplate_output(self, text: str) -> bool:
+        lowered = text.lower()
+        return any(
+            phrase in lowered
+            for phrase in (
+                "以下是基于",
+                "下面是",
+                "以下是",
+                "如果你愿意",
+                "我还可以",
+                "here are",
+                "based on your",
+                "i can also",
+                "title suggestions",
+                "标题建议",
+                "多个版本",
+            )
+        )
+
+    def _looks_like_wordpress_ai_title_bundle(self, text: str) -> bool:
+        return bool(
+            re.search(r"(?:标题建议|title suggestions)", text, flags=re.I)
+            or re.search(r"(?m)^\s*\d+[.)、]\s*.{4,80}$", text)
+            and len(re.findall(r"(?m)^\s*\d+[.)、]\s+", text)) >= 2
+            or re.match(r"^\s*《[^》]{4,80}》\s*(?:#{1,6}\s*)?", text)
+        )
+
     def _strip_wordpress_ai_reasoning_noise(self, output_text: str) -> str:
         text = output_text.strip()
         text = re.sub(r"(?is)<think\b[^>]*>.*?</think>", " ", text)
@@ -5984,13 +6155,13 @@ class RuntimeService:
 
     def _extract_wordpress_ai_cjk_text(self, source_text: str, *, limit: int) -> str:
         fragments = re.findall(
-            r"[\u4e00-\u9fff][\u4e00-\u9fffA-Za-z0-9，。！？、：；（）《》“”\"'\\s-]{16,}",
+            r"[\u4e00-\u9fff][\u4e00-\u9fffA-Za-z0-9，。！？、：；（）《》“”\"'\s-]{16,}",
             source_text,
         )
         if not fragments:
             return ""
         text = max((fragment.strip() for fragment in fragments), key=len)
-        text = re.sub(r"\s+", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
         return self._truncate_wordpress_ai_text(text, limit=limit)
 
     def _trim_incomplete_wordpress_ai_tail(self, text: str) -> str:
