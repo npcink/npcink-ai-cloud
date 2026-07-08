@@ -282,6 +282,9 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
 def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -> None:
     cloud_root = _cloud_root()
     ci_workflow = (cloud_root / ".github" / "workflows" / "ci.yml").read_text()
+    deploy_workflow = (
+        cloud_root / ".github" / "workflows" / "deploy-production.yml"
+    ).read_text()
     maintenance_workflow = (
         cloud_root / ".github" / "workflows" / "production-maintenance.yml"
     ).read_text()
@@ -401,8 +404,13 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert '--cache-to type=gha,mode=max' in bundle_script
     assert "actions: write" in ci_workflow
     assert 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"' in ci_workflow
+    assert 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"' in deploy_workflow
     assert "deploy_required:" in ci_workflow
     assert "needs.classify.outputs.deploy_required == 'true'" in ci_workflow
+    assert ".github/workflows/ci.yml|.github/workflows/deploy-production.yml" in (
+        ci_workflow
+    )
+    assert "docker-compose*.yml|Dockerfile|deploy/*.sh" in ci_workflow
     assert "docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-worker:prod" in remote_load_script
     assert "otel-collector.tar.gz" in remote_load_script
     assert "jaeger.tar.gz" in remote_load_script

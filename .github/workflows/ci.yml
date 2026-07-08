@@ -57,6 +57,9 @@ jobs:
                   static_terms_only="false"
                 fi
                 case "${changed_file}" in
+                  .github/workflows/ci.yml|.github/workflows/deploy-production.yml|docker-compose*.yml|Dockerfile|deploy/*.sh)
+                    deploy_required="true"
+                    ;;
                   .github/*|.github/workflows/*|docs/*|docs/**/*|tests/*|tests/**/*|deploy/RELEASE_CHECKLIST.md)
                     ;;
                   site/terms/*)
