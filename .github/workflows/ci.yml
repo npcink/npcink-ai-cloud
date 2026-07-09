@@ -79,9 +79,25 @@ jobs:
           printf 'deploy_required=%s\n' "${deploy_required}"
           printf 'static_terms_only=%s\n' "${static_terms_only}"
 
-  backend:
+  backend-scope:
     needs: [classify]
     if: needs.classify.outputs.static_terms_only != 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      requires_full_backend: ${{ steps.scope.outputs.requires_full_backend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify backend gate scope
+        id: scope
+        run: bash scripts/check-pr-backend-gate.sh --classify-only
+
+  backend-targeted:
+    needs: [classify, backend-scope]
+    if: needs.classify.outputs.static_terms_only != 'true' && github.event_name == 'pull_request' && needs['backend-scope'].outputs.requires_full_backend != '1'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -111,34 +127,116 @@ jobs:
         run: make bootstrap-dev
 
       - name: PR backend fast gate
-        if: github.event_name == 'pull_request'
-        run: bash scripts/check-pr-backend-gate.sh
+        run: bash scripts/check-pr-backend-gate.sh --targeted-only
+
+  backend-static:
+    needs: [classify, backend-scope]
+    if: needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+
+      - name: Bootstrap Cloud Dev Environment
+        run: make bootstrap-dev
 
       - name: Anti Drift Unit
-        if: github.event_name != 'pull_request'
         run: pnpm run test:anti-drift
 
       - name: Ruff
-        if: github.event_name != 'pull_request'
         run: .venv/bin/ruff check .
 
       - name: Mypy
-        if: github.event_name != 'pull_request'
         run: .venv/bin/mypy app
 
-      - name: Pytest
-        if: github.event_name != 'pull_request'
+  backend-pytest:
+    needs: [classify, backend-scope]
+    if: needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend == '1'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+
+      - name: Bootstrap Cloud Dev Environment
+        run: make bootstrap-dev
+
+      - name: Select pytest shard
         run: |
+          set -euo pipefail
           mkdir -p artifacts
-          .venv/bin/python -m pytest tests/api tests/contract tests/domain -q \
-            --junitxml=artifacts/pytest-backend.xml \
+          python3 scripts/select-pytest-shard.py \
+            --shards 3 \
+            --shard "${{ matrix.shard }}" \
+            tests/api tests/contract tests/domain \
+            > "artifacts/pytest-files-shard-${{ matrix.shard }}.txt"
+          echo "## Pytest Shard ${{ matrix.shard }}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Selected files:" >> "${GITHUB_STEP_SUMMARY}"
+          sed 's/^/- `/' "artifacts/pytest-files-shard-${{ matrix.shard }}.txt" \
+            | sed 's/$/`/' >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Pytest
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          mapfile -t pytest_files < "artifacts/pytest-files-shard-${{ matrix.shard }}.txt"
+          if [ "${#pytest_files[@]}" -eq 0 ]; then
+            echo "No pytest files selected for shard ${{ matrix.shard }}." >&2
+            exit 1
+          fi
+          .venv/bin/python -m pytest "${pytest_files[@]}" -q \
+            --junitxml="artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" \
             --durations=25
 
       - name: Summarize pytest timing
-        if: always() && github.event_name != 'pull_request'
+        if: always()
         run: |
-          if [ -f artifacts/pytest-backend.xml ]; then
-            python3 scripts/report-junit-timing.py artifacts/pytest-backend.xml --top 25 \
+          if [ -f "artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" ]; then
+            python3 scripts/report-junit-timing.py "artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" --top 25 \
               >> "${GITHUB_STEP_SUMMARY}"
           else
             echo "## Pytest Timing Report" >> "${GITHUB_STEP_SUMMARY}"
@@ -147,12 +245,56 @@ jobs:
           fi
 
       - name: Upload pytest timing artifact
-        if: always() && github.event_name != 'pull_request'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-backend-timing
-          path: artifacts/pytest-backend.xml
+          name: pytest-backend-timing-shard-${{ matrix.shard }}
+          path: |
+            artifacts/pytest-backend-shard-${{ matrix.shard }}.xml
+            artifacts/pytest-files-shard-${{ matrix.shard }}.txt
           if-no-files-found: ignore
+
+  backend:
+    name: backend
+    needs: [classify, backend-scope, backend-targeted, backend-static, backend-pytest]
+    if: always() && needs.classify.outputs.static_terms_only != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify backend gate result
+        env:
+          BACKEND_SCOPE_RESULT: ${{ needs['backend-scope'].result }}
+          BACKEND_TARGETED_RESULT: ${{ needs['backend-targeted'].result }}
+          BACKEND_STATIC_RESULT: ${{ needs['backend-static'].result }}
+          BACKEND_PYTEST_RESULT: ${{ needs['backend-pytest'].result }}
+          REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
+        run: |
+          set -euo pipefail
+          echo "scope=${BACKEND_SCOPE_RESULT}"
+          echo "targeted=${BACKEND_TARGETED_RESULT}"
+          echo "static=${BACKEND_STATIC_RESULT}"
+          echo "pytest=${BACKEND_PYTEST_RESULT}"
+          echo "requires_full_backend=${REQUIRES_FULL_BACKEND}"
+
+          if [ "${BACKEND_SCOPE_RESULT}" != "success" ]; then
+            echo "backend scope classification did not pass" >&2
+            exit 1
+          fi
+
+          if [ "${REQUIRES_FULL_BACKEND}" = "1" ]; then
+            if [ "${BACKEND_STATIC_RESULT}" != "success" ]; then
+              echo "backend static gate did not pass" >&2
+              exit 1
+            fi
+            if [ "${BACKEND_PYTEST_RESULT}" != "success" ]; then
+              echo "backend pytest shards did not pass" >&2
+              exit 1
+            fi
+          else
+            if [ "${BACKEND_TARGETED_RESULT}" != "success" ]; then
+              echo "targeted backend gate did not pass" >&2
+              exit 1
+            fi
+          fi
 
   frontend:
     needs: [classify]

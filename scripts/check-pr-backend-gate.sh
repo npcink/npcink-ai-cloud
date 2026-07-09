@@ -7,6 +7,52 @@ TMP_CHANGED="$(mktemp)"
 TMP_TESTS="$(mktemp)"
 trap 'rm -f "${TMP_CHANGED}" "${TMP_TESTS}"' EXIT
 
+MODE="${1:-auto}"
+case "${MODE}" in
+	--classify-only)
+		MODE="classify-only"
+		;;
+	--targeted-only)
+		MODE="targeted-only"
+		;;
+	auto|"")
+		MODE="auto"
+		;;
+	*)
+		echo "[error] unknown mode: ${MODE}" >&2
+		exit 2
+		;;
+esac
+
+emit_scope_output() {
+	local value="$1"
+	printf 'requires_full_backend=%s\n' "${value}"
+	if [ -n "${GITHUB_OUTPUT:-}" ]; then
+		printf 'requires_full_backend=%s\n' "${value}" >> "${GITHUB_OUTPUT}"
+	fi
+}
+
+run_full_backend_gate() {
+	echo "[info] High-risk backend surface changed; running full backend gate."
+	.venv/bin/ruff check .
+	.venv/bin/mypy app
+	.venv/bin/python -m pytest tests/api tests/contract tests/domain -q
+}
+
+if [ -n "${GITHUB_EVENT_NAME:-}" ] && [ "${GITHUB_EVENT_NAME}" != "pull_request" ]; then
+	echo "[info] Non-PR backend event; full backend gate required."
+	emit_scope_output 1
+	if [ "${MODE}" = "classify-only" ]; then
+		exit 0
+	fi
+	if [ "${MODE}" = "targeted-only" ]; then
+		echo "[error] targeted-only mode cannot run a non-PR full backend gate." >&2
+		exit 1
+	fi
+	run_full_backend_gate
+	exit 0
+fi
+
 if ! git -C "${ROOT_DIR}" rev-parse --verify --quiet "${BASE_REF}" >/dev/null; then
 	git -C "${ROOT_DIR}" fetch origin "${GITHUB_BASE_REF:-master}" --depth=1
 fi
@@ -51,11 +97,17 @@ while IFS= read -r path; do
 	esac
 done < "${TMP_CHANGED}"
 
+emit_scope_output "${requires_full_backend}"
+if [ "${MODE}" = "classify-only" ]; then
+	exit 0
+fi
+
 if [ "${requires_full_backend}" = "1" ]; then
-	echo "[info] High-risk backend surface changed; running full backend gate."
-	.venv/bin/ruff check .
-	.venv/bin/mypy app
-	.venv/bin/python -m pytest tests/api tests/contract tests/domain -q
+	if [ "${MODE}" = "targeted-only" ]; then
+		echo "[error] targeted-only mode received a high-risk backend change." >&2
+		exit 1
+	fi
+	run_full_backend_gate
 	exit 0
 fi
 
