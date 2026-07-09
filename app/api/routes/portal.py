@@ -162,6 +162,15 @@ class PortalProMonthlyOrderPayload(BaseModel):
     provider: str = "alipay"
 
 
+class PortalSupportRequestPayload(BaseModel):
+    topic: str = Field(default="general", max_length=64)
+    title: str = Field(default="", max_length=191)
+    description: str = Field(default="", max_length=4000)
+    site_id: str = Field(default="", max_length=191)
+    source_path: str = Field(default="", max_length=191)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
 def _object_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
 
@@ -1041,6 +1050,13 @@ async def request_portal_login_code(
         database_url=services.settings.database_url,
     )
     allow_development_code = _allow_development_login_code(request)
+    if email_sender is None and not allow_development_code:
+        return portal_json_error(
+            request,
+            status_code=503,
+            error_code="portal.email_not_configured",
+            message="Portal email delivery is not configured",
+        )
     try:
         issued = _get_commercial_service(request).issue_portal_login_code(
             email=email,
@@ -1673,6 +1689,112 @@ async def list_portal_account_payment_orders(
             "account_id": account_id,
             "principal_id": auth.principal_id,
         },
+    )
+
+
+@router.get("/support-requests")
+async def list_portal_support_requests(
+    request: Request,
+    status: str = Query(default="", max_length=32),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_id = _resolve_primary_portal_account_id(
+        request,
+        principal_id=auth.principal_id,
+    )
+    if isinstance(account_id, JSONResponse):
+        return account_id
+    try:
+        result = _get_commercial_service(request).list_portal_support_requests(
+            principal_id=auth.principal_id,
+            account_id=account_id,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support requests loaded",
+        data=result,
+    )
+
+
+@router.post("/support-requests")
+async def create_portal_support_request(
+    request: Request,
+    payload: PortalSupportRequestPayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_id = _resolve_primary_portal_account_id(
+        request,
+        principal_id=auth.principal_id,
+    )
+    if isinstance(account_id, JSONResponse):
+        return account_id
+    try:
+        result = _get_commercial_service(request).create_portal_support_request(
+            principal_id=auth.principal_id,
+            account_id=account_id,
+            site_id=payload.site_id,
+            topic=payload.topic,
+            title=payload.title,
+            description=payload.description,
+            source_path=payload.source_path,
+            context_json=payload.context,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request created",
+        data={
+            "request": result,
+            "account_id": account_id,
+            "principal_id": auth.principal_id,
+        },
+    )
+
+
+@router.get("/support-requests/{request_id}")
+async def get_portal_support_request(request: Request, request_id: str) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        result = _get_commercial_service(request).get_portal_support_request(
+            principal_id=auth.principal_id,
+            request_id=request_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request loaded",
+        data={"request": result},
     )
 
 

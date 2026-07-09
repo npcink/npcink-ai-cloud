@@ -626,6 +626,92 @@ def test_portal_issue_rotate_list_and_revoke_site_key(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
+def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_support", "name": "Portal Support Account"},
+        headers=build_internal_headers(idempotency_key="portal-support-account-001"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_support",
+            "account_id": "acct_portal_support",
+            "name": "Portal Support Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="portal-support-site-001"),
+    )
+    _grant_principal_access(
+        client,
+        site_id="site_portal_support",
+        email="portal-support@example.com",
+        idempotency_key="portal-support-user-grants-001",
+    )
+
+    create_response = client.post(
+        "/portal/v1/support-requests",
+        json={
+            "topic": "billing",
+            "title": "Payment order needs review",
+            "description": "The latest payment order still shows pending after provider return.",
+            "site_id": "site_portal_support",
+            "source_path": "/portal/billing",
+        },
+        headers=build_portal_headers(
+            principal_id="principal:portal-support@example.com",
+            idempotency_key="portal-support-create-001",
+        ),
+    )
+    assert create_response.status_code == 200, create_response.text
+    request_item = create_response.json()["data"]["request"]
+    request_id = request_item["request_id"]
+    assert request_item["account_id"] == "acct_portal_support"
+    assert request_item["site_id"] == "site_portal_support"
+    assert request_item["topic"] == "billing"
+    assert request_item["status"] == "open"
+
+    portal_list_response = client.get(
+        "/portal/v1/support-requests?status=open",
+        headers=build_portal_headers(principal_id="principal:portal-support@example.com"),
+    )
+    assert portal_list_response.status_code == 200, portal_list_response.text
+    portal_items = portal_list_response.json()["data"]["items"]
+    assert [item["request_id"] for item in portal_items] == [request_id]
+
+    admin_update_response = client.patch(
+        f"/internal/service/admin/support-requests/{request_id}",
+        json={"status": "in_progress", "admin_note": "Checking payment provider event."},
+        headers=build_internal_headers(idempotency_key="portal-support-admin-update-001"),
+    )
+    assert admin_update_response.status_code == 200, admin_update_response.text
+    assert admin_update_response.json()["data"]["request"]["status"] == "in_progress"
+
+    admin_list_response = client.get(
+        "/internal/service/admin/support-requests?status=in_progress",
+        headers=build_internal_headers(),
+    )
+    assert admin_list_response.status_code == 200, admin_list_response.text
+    admin_items = admin_list_response.json()["data"]["items"]
+    assert [item["request_id"] for item in admin_items] == [request_id]
+
+    with get_session(database_url) as session:
+        audit_kinds = {
+            event.event_kind
+            for event in session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_kind == "support_request",
+                    ServiceAuditEvent.scope_id == request_id,
+                )
+            )
+        }
+    assert audit_kinds == {"support_request.created", "support_request.updated"}
+
+    dispose_engine(database_url)
+
+
 def test_portal_activate_site_deactivates_other_active_sites_for_account(
     tmp_path: Path,
 ) -> None:
@@ -2871,6 +2957,55 @@ def test_portal_login_code_request_uses_real_sender_when_configured(
     dispose_engine(database_url)
 
 
+def test_portal_login_code_request_fails_when_email_delivery_not_configured(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+        },
+    )
+
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_mail_missing", "name": "Portal Mail Missing"},
+        headers=build_internal_headers(idempotency_key="portal-mail-missing-account-001"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_mail_missing",
+            "account_id": "acct_portal_mail_missing",
+            "name": "Portal Mail Missing Site",
+            "status": "provisioning",
+        },
+        headers=build_internal_headers(idempotency_key="portal-mail-missing-site-001"),
+    )
+    client.post(
+        "/internal/service/sites/site_portal_mail_missing/activate",
+        headers=build_internal_headers(
+            idempotency_key="portal-mail-missing-site-activate-001"
+        ),
+    )
+    _grant_principal_access(
+        client,
+        site_id="site_portal_mail_missing",
+        email="portal-mail-missing@example.com",
+        idempotency_key="portal-mail-missing-user-grants-001",
+    )
+
+    response = client.post(
+        "/portal/v1/auth/code/request",
+        json={"email": "portal-mail-missing@example.com", "locale": "zh-CN"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error_code"] == "portal.email_not_configured"
+
+    dispose_engine(database_url)
+
+
 def test_portal_registration_code_request_uses_registration_sender(
     tmp_path: Path,
 ) -> None:
@@ -2905,11 +3040,13 @@ def test_portal_registration_code_request_uses_registration_sender(
 def test_portal_login_code_request_masks_missing_principal_access(
     tmp_path: Path,
 ) -> None:
+    fake_sender = FakePortalEmailSender()
     database_url, client = _build_client(
         tmp_path,
         settings_overrides={
             "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
         },
+        portal_email_sender=fake_sender,
     )
 
     response = client.post(
@@ -2920,6 +3057,7 @@ def test_portal_login_code_request_masks_missing_principal_access(
     assert response.status_code == 200
     assert response.json()["data"]["delivery"] == "email"
     assert response.json()["data"]["code"] == ""
+    assert fake_sender.messages == []
 
     dispose_engine(database_url)
 

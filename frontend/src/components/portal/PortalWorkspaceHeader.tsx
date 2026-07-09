@@ -13,7 +13,8 @@ export type PortalWorkspacePage =
   | 'audit'
   | 'monitoring'
   | 'record'
-  | 'sites';
+  | 'sites'
+  | 'support';
 
 export type PortalWorkspaceMetric = {
   label: string;

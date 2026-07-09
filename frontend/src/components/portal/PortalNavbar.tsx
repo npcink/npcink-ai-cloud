@@ -32,6 +32,7 @@ export function PortalNavbar() {
       { href: '/portal/billing', label: t('portal.nav_package', {}, 'Package') },
       { href: '/portal/usage', label: t('portal.nav_usage', {}, 'Usage') },
       { href: '/portal/sites', label: t('portal.nav_sites', {}, 'Sites') },
+      { href: '/portal/support', label: t('portal.nav_support_requests', {}, 'Tickets') },
       { href: '/portal/account', label: t('portal.nav_account', {}, 'Account') },
     ],
     [t]

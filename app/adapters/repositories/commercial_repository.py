@@ -46,6 +46,7 @@ from app.core.models import (
     SiteKnowledgeDocument,
     SiteKnowledgeIndexJobMetric,
     SiteUserGrant,
+    SupportRequest,
     UsageMeterEvent,
 )
 
@@ -83,6 +84,135 @@ class CommercialRepository:
         if status:
             statement = statement.where(Account.status == status)
         return int(self.session.scalar(statement) or 0)
+
+    def get_support_request(self, request_id: str) -> SupportRequest | None:
+        return self.session.get(SupportRequest, request_id)
+
+    def create_support_request(
+        self,
+        *,
+        request_id: str,
+        account_id: str,
+        site_id: str | None,
+        principal_id: str | None,
+        email: str,
+        topic: str,
+        title: str,
+        description: str,
+        status: str,
+        priority: str,
+        source_path: str,
+        admin_note: str | None = None,
+        context_json: dict[str, object] | None = None,
+    ) -> SupportRequest:
+        request = SupportRequest(
+            request_id=request_id,
+            account_id=account_id,
+            site_id=site_id or None,
+            principal_id=principal_id or None,
+            email=email,
+            topic=topic,
+            title=title,
+            description=description,
+            status=status,
+            priority=priority,
+            source_path=source_path,
+            admin_note=admin_note,
+            context_json=context_json,
+        )
+        self.session.add(request)
+        self.session.flush()
+        return request
+
+    def list_support_requests(
+        self,
+        *,
+        account_id: str | None = None,
+        site_id: str | None = None,
+        principal_id: str | None = None,
+        status: str | None = None,
+        topic: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[SupportRequest]:
+        statement = select(SupportRequest).where(
+            *self._support_request_filters(
+                account_id=account_id,
+                site_id=site_id,
+                principal_id=principal_id,
+                status=status,
+                topic=topic,
+                query=query,
+            )
+        )
+        statement = statement.order_by(
+            SupportRequest.updated_at.desc(),
+            SupportRequest.created_at.desc(),
+            SupportRequest.request_id.desc(),
+        )
+        if offset > 0:
+            statement = statement.offset(offset)
+        if limit is not None and limit > 0:
+            statement = statement.limit(limit)
+        return list(self.session.scalars(statement))
+
+    def count_support_requests(
+        self,
+        *,
+        account_id: str | None = None,
+        site_id: str | None = None,
+        principal_id: str | None = None,
+        status: str | None = None,
+        topic: str | None = None,
+        query: str | None = None,
+    ) -> int:
+        statement = select(func.count(SupportRequest.request_id)).where(
+            *self._support_request_filters(
+                account_id=account_id,
+                site_id=site_id,
+                principal_id=principal_id,
+                status=status,
+                topic=topic,
+                query=query,
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def _support_request_filters(
+        self,
+        *,
+        account_id: str | None,
+        site_id: str | None,
+        principal_id: str | None,
+        status: str | None,
+        topic: str | None,
+        query: str | None,
+    ) -> list[SQLAFilter]:
+        filters: list[SQLAFilter] = []
+        if account_id:
+            filters.append(SupportRequest.account_id == account_id)
+        if site_id:
+            filters.append(SupportRequest.site_id == site_id)
+        if principal_id:
+            filters.append(SupportRequest.principal_id == principal_id)
+        if status:
+            filters.append(SupportRequest.status == status)
+        if topic:
+            filters.append(SupportRequest.topic == topic)
+        normalized_query = str(query or "").strip().lower()
+        if normalized_query:
+            pattern = f"%{normalized_query}%"
+            filters.append(
+                or_(
+                    func.lower(SupportRequest.request_id).like(pattern),
+                    func.lower(SupportRequest.email).like(pattern),
+                    func.lower(SupportRequest.title).like(pattern),
+                    func.lower(SupportRequest.account_id).like(pattern),
+                    func.lower(SupportRequest.site_id).like(pattern),
+                )
+            )
+        return filters
 
     def upsert_account(
         self,

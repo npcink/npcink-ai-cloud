@@ -1424,6 +1424,53 @@ export interface PortalPaymentOrderListPayload {
   items: PortalPaymentOrder[];
 }
 
+export type PortalSupportRequestStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+export interface PortalSupportRequest {
+  request_id: string;
+  account_id: string;
+  site_id?: string;
+  principal_id?: string;
+  email: string;
+  topic: string;
+  title: string;
+  description: string;
+  status: PortalSupportRequestStatus;
+  priority: string;
+  source_path?: string;
+  admin_note?: string;
+  context?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+  resolved_at?: string;
+  closed_at?: string;
+}
+
+export interface PortalSupportRequestListPayload {
+  account_id?: string;
+  principal_id?: string;
+  items: PortalSupportRequest[];
+  pagination?: {
+    limit?: number;
+    offset?: number;
+    total?: number;
+    has_more?: boolean;
+  };
+  summary?: {
+    open?: number;
+    in_progress?: number;
+  };
+}
+
+export interface CreatePortalSupportRequestPayload {
+  topic: string;
+  title: string;
+  description: string;
+  site_id?: string;
+  source_path?: string;
+  context?: Record<string, unknown>;
+}
+
 export interface PortalCreditLedgerPayload {
   site_id: string;
   account_id: string;
@@ -1958,6 +2005,28 @@ export class PortalClient {
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/account/payment-orders${query}`, undefined, { requireAuth: true });
+  }
+
+  async listSupportRequests(
+    options?: { status?: string; limit?: number; offset?: number }
+  ): Promise<PortalEnvelope<PortalSupportRequestListPayload>> {
+    const params = new URLSearchParams();
+    if (options?.status) params.set('status', options.status);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request('GET', `/support-requests${query}`, undefined, { requireAuth: true });
+  }
+
+  async createSupportRequest(
+    payload: CreatePortalSupportRequestPayload
+  ): Promise<PortalEnvelope<{ request: PortalSupportRequest }>> {
+    return this.request('POST', '/support-requests', payload, { requireAuth: true });
+  }
+
+  async getSupportRequest(requestId: string): Promise<PortalEnvelope<{ request: PortalSupportRequest }>> {
+    return this.request('GET', `/support-requests/${requestId}`, undefined, { requireAuth: true });
   }
 
   async createCreditPackOrder(

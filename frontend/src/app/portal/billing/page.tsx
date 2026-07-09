@@ -487,6 +487,9 @@ function PortalBillingContent() {
       )}
     </BackofficeStackCard>
   );
+  const supportRequestHref = selectedSiteId
+    ? `/portal/support?new=1&topic=billing&site=${encodeURIComponent(selectedSiteId)}`
+    : '/portal/support?new=1&topic=billing';
 
   if (!sites.length || !selectedSiteId || !selectedSite) {
     return (
@@ -499,6 +502,11 @@ function PortalBillingContent() {
           sites={sites}
           selectedSiteId={selectedSiteId}
           onSiteChange={handleSiteChange}
+          actions={
+            <Link href={supportRequestHref} className="btn btn-secondary">
+              {t('portal.support_request_new_action', {}, 'Submit ticket')}
+            </Link>
+          }
         />
         {paymentReturnNotice}
         <BackofficeMetricStrip
@@ -578,6 +586,11 @@ function PortalBillingContent() {
         sites={sites}
         selectedSiteId={selectedSiteId}
         onSiteChange={handleSiteChange}
+        actions={
+          <Link href={supportRequestHref} className="btn btn-secondary">
+            {t('portal.support_request_new_action', {}, 'Submit ticket')}
+          </Link>
+        }
       />
 
       {paymentReturnNotice}
@@ -700,19 +713,6 @@ function PortalBillingContent() {
       ) : null}
 
       {paymentOrdersCard}
-
-      <BackofficeStackCard variant="portal" className="bg-white/70 dark:bg-slate-950/35">
-        <p className="text-sm font-semibold text-gray-950 dark:text-white">
-          {t('portal.billing.help_title', {}, 'Need help?')}
-        </p>
-        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-          {t(
-            'portal.billing.help_desc',
-            {},
-            'If the package or record status looks wrong, contact support with your account email. Technical record IDs are hidden below unless support asks for them.'
-          )}
-        </p>
-      </BackofficeStackCard>
     </BackofficePageStack>
   );
 }

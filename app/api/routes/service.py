@@ -112,6 +112,11 @@ class PortalUsersBatchDisablePayload(BaseModel):
     reason: str = ""
 
 
+class AdminSupportRequestUpdatePayload(BaseModel):
+    status: str = ""
+    admin_note: str = ""
+
+
 class SiteProvisionPayload(BaseModel):
     site_id: str
     account_id: str
@@ -2584,6 +2589,102 @@ async def list_admin_accounts(
         message="admin accounts loaded",
         data=result,
         revision="m7",
+    )
+
+
+@router.get("/admin/support-requests")
+async def list_admin_support_requests(
+    request: Request,
+    status: str = Query(default="", max_length=32),
+    topic: str = Query(default="", max_length=64),
+    q: str = Query(default="", max_length=191),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).list_admin_support_requests(
+            status=status,
+            topic=topic,
+            query=q,
+            limit=limit,
+            offset=offset,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="support requests loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/support-requests/{request_id}")
+async def get_admin_support_request(request: Request, request_id: str) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).list_admin_support_requests(
+            query=request_id,
+            limit=1,
+            offset=0,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    items = result.get("items") if isinstance(result, dict) else []
+    match = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict) and str(item.get("request_id") or "") == request_id
+        ),
+        None,
+    )
+    if match is None:
+        return JSONResponse(
+            status_code=404,
+            content=build_envelope(
+                status="error",
+                message="support request was not found",
+                data={"error_code": "service.support_request_not_found"},
+                revision="m6",
+            ),
+        )
+    return build_envelope(
+        status="ok",
+        message="support request loaded",
+        data={"request": match},
+        revision="m6",
+    )
+
+
+@router.patch("/admin/support-requests/{request_id}")
+async def update_admin_support_request(
+    request: Request,
+    request_id: str,
+    payload: AdminSupportRequestUpdatePayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).update_admin_support_request(
+            request_id=request_id,
+            status=payload.status,
+            admin_note=payload.admin_note,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="support request updated",
+        data={"request": result},
+        revision="m6",
     )
 
 

@@ -171,6 +171,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
+          href: '/admin/support-requests',
+          labelKey: 'admin.nav_support_requests',
+          fallback: 'Tickets',
+        },
+        {
           href: '/admin/coverage',
           labelKey: 'admin.nav_coverage',
           fallback: 'Service Status',

@@ -54,6 +54,11 @@ ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED = "revoked"
 SITE_USER_GRANT_STATUS_ACTIVE = "active"
 SITE_USER_GRANT_STATUS_REVOKED = "revoked"
 
+SUPPORT_REQUEST_STATUS_OPEN = "open"
+SUPPORT_REQUEST_STATUS_IN_PROGRESS = "in_progress"
+SUPPORT_REQUEST_STATUS_RESOLVED = "resolved"
+SUPPORT_REQUEST_STATUS_CLOSED = "closed"
+
 PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN = "platform_admin"
 
 PLATFORM_ADMIN_STATUS_ACTIVE = "active"
@@ -356,6 +361,46 @@ class AccountUserMembership(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'in_progress', 'resolved', 'closed')",
+            name="ck_support_requests_status",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.account_id"), index=True)
+    site_id: Mapped[str | None] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    principal_id: Mapped[str | None] = mapped_column(
+        ForeignKey("principals.principal_id"),
+        index=True,
+    )
+    email: Mapped[str] = mapped_column(String(255), default="", index=True)
+    topic: Mapped[str] = mapped_column(String(64), default="general", index=True)
+    title: Mapped[str] = mapped_column(String(191))
+    description: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default=SUPPORT_REQUEST_STATUS_OPEN, index=True)
+    priority: Mapped[str] = mapped_column(String(32), default="normal", index=True)
+    source_path: Mapped[str] = mapped_column(String(191), default="")
+    admin_note: Mapped[str | None] = mapped_column(Text)
+    context_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        index=True,
     )
 
 
