@@ -430,6 +430,7 @@ export interface PortalUsageWindow {
 
 export interface PortalUsageSummaryPayload {
   site_id: string;
+  site_ids?: string[];
   account_id?: string;
   site_admin_ref?: string;
   role?: string;
@@ -2030,6 +2031,10 @@ export class PortalClient {
     return this.request('GET', `/sites/${siteId}/entitlements`, undefined, { requireAuth: true });
   }
 
+  async getAccountEntitlements(): Promise<PortalEnvelope<Entitlements>> {
+    return this.request('GET', '/account/entitlements', undefined, { requireAuth: true });
+  }
+
   /**
    * 获取本期积分账本明细
    * GET /portal/v1/sites/{siteId}/credit-ledger
@@ -2046,8 +2051,23 @@ export class PortalClient {
     return this.request('GET', `/sites/${siteId}/credit-ledger${query}`, undefined, { requireAuth: true });
   }
 
+  async getAccountCreditLedger(
+    options?: { limit?: number; offset?: number }
+  ): Promise<PortalEnvelope<PortalCreditLedgerPayload>> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request('GET', `/account/credit-ledger${query}`, undefined, { requireAuth: true });
+  }
+
   async listCreditPacks(siteId: string): Promise<PortalEnvelope<PortalCreditPackCatalogPayload>> {
     return this.request('GET', `/sites/${siteId}/credit-packs`, undefined, { requireAuth: true });
+  }
+
+  async listAccountCreditPacks(): Promise<PortalEnvelope<PortalCreditPackCatalogPayload>> {
+    return this.request('GET', '/account/credit-packs', undefined, { requireAuth: true });
   }
 
   async listPaymentOrders(
@@ -2141,6 +2161,18 @@ export class PortalClient {
     );
   }
 
+  async createAccountCreditPackOrder(
+    packId: string,
+    provider = 'alipay'
+  ): Promise<PortalEnvelope<PortalCreditPackOrderPayload>> {
+    return this.request(
+      'POST',
+      '/account/credit-pack-orders',
+      { pack_id: packId, provider },
+      { requireAuth: true }
+    );
+  }
+
   async startProTrial(): Promise<PortalEnvelope<PortalProTrialPayload>> {
     return this.request('POST', '/account/pro-trial', {}, { requireAuth: true });
   }
@@ -2162,6 +2194,10 @@ export class PortalClient {
     return this.request('GET', `/sites/${siteId}/audit-summary`, undefined, { requireAuth: true });
   }
 
+  async getAccountAuditSummary(): Promise<PortalEnvelope<PortalAuditSummary>> {
+    return this.request('GET', '/account/audit-summary', undefined, { requireAuth: true });
+  }
+
   /**
    * 获取审计事件列表
    * GET /portal/v1/sites/{siteId}/audit-events
@@ -2181,6 +2217,22 @@ export class PortalClient {
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/sites/${siteId}/audit-events${query}`, undefined, { requireAuth: true });
+  }
+
+  async listAccountAuditEvents(
+    options?: {
+      eventKind?: string;
+      outcome?: string;
+      limit?: number;
+    }
+  ): Promise<PortalEnvelope<PortalAuditEventList>> {
+    const params = new URLSearchParams();
+    if (options?.eventKind) params.set('event_kind', options.eventKind);
+    if (options?.outcome) params.set('outcome', options.outcome);
+    if (options?.limit) params.set('limit', String(options.limit));
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request('GET', `/account/audit-events${query}`, undefined, { requireAuth: true });
   }
 
   /**
@@ -2216,7 +2268,11 @@ export class PortalClient {
     };
   }
 
-  async getUsageBundle(siteId: string): Promise<PortalUsageBundle> {
+  async getAccountUsageSummary(): Promise<PortalEnvelope<PortalUsageSummaryPayload>> {
+    return this.request('GET', '/account/usage-summary', undefined, { requireAuth: true });
+  }
+
+  async getUsageBundle(): Promise<PortalUsageBundle> {
     const [
       usageResponse,
       entitlementsResponse,
@@ -2224,10 +2280,10 @@ export class PortalClient {
       creditPacksResponse,
       paymentOrdersResponse,
     ] = await Promise.all([
-      this.getUsageSummary(siteId),
-      this.getEntitlements(siteId),
-      this.getCreditLedger(siteId, { limit: 12 }),
-      this.listCreditPacks(siteId),
+      this.getAccountUsageSummary(),
+      this.getAccountEntitlements(),
+      this.getAccountCreditLedger({ limit: 12 }),
+      this.listAccountCreditPacks(),
       this.listAccountPaymentOrders({ limit: 8 }),
     ]);
     return {
@@ -2239,8 +2295,27 @@ export class PortalClient {
     };
   }
 
+  async getAccountCommercialBundle(): Promise<Pick<PortalUsageBundle, 'entitlements' | 'creditLedger' | 'creditPacks' | 'paymentOrders'>> {
+    const [
+      entitlementsResponse,
+      creditLedgerResponse,
+      creditPacksResponse,
+      paymentOrdersResponse,
+    ] = await Promise.all([
+      this.getAccountEntitlements(),
+      this.getAccountCreditLedger({ limit: 12 }),
+      this.listAccountCreditPacks(),
+      this.listAccountPaymentOrders({ limit: 8 }),
+    ]);
+    return {
+      entitlements: entitlementsResponse.data,
+      creditLedger: creditLedgerResponse.data,
+      creditPacks: creditPacksResponse.data,
+      paymentOrders: paymentOrdersResponse.data,
+    };
+  }
+
   async getAuditBundle(
-    siteId: string,
     options?: {
       eventKind?: string;
       outcome?: string;
@@ -2248,8 +2323,8 @@ export class PortalClient {
     }
   ): Promise<PortalAuditBundle> {
     const [summaryResponse, eventsResponse] = await Promise.all([
-      this.getAuditSummary(siteId),
-      this.listAuditEvents(siteId, options),
+      this.getAccountAuditSummary(),
+      this.listAccountAuditEvents(options),
     ]);
     return {
       summary: summaryResponse.data,

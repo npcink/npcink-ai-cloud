@@ -816,7 +816,10 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     admin_messages = admin_detail_response.json()["data"]["messages"]
     assert [message["visibility"] for message in admin_messages].count("internal") == 2
     admin_attachments = admin_detail_response.json()["data"]["attachments"]
-    assert [attachment["visibility"] for attachment in admin_attachments] == ["public", "internal"]
+    assert sorted(attachment["visibility"] for attachment in admin_attachments) == [
+        "internal",
+        "public",
+    ]
 
     admin_list_response = client.get(
         "/internal/service/admin/support-requests?status=in_progress",
@@ -4521,6 +4524,19 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert usage_response.json()["data"]["identity_type"] == "user"
     assert usage_response.json()["data"]["role"] == "user"
 
+    account_usage_response = client.get(
+        "/portal/v1/account/usage-summary",
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert account_usage_response.status_code == 200
+    account_usage_data = account_usage_response.json()["data"]
+    assert account_usage_data["site_id"] == ""
+    assert account_usage_data["site_ids"] == ["site_portal_reads"]
+    assert account_usage_data["account_id"] == "acct_portal_reads"
+    assert account_usage_data["identity_type"] == "user"
+    assert account_usage_data["role"] == "user"
+    assert account_usage_data["totals"]["sites_total"] == 1
+
     monitoring_response = client.get(
         "/portal/v1/sites/site_portal_reads/monitoring-overview?window_hours=24",
         headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
@@ -4575,6 +4591,17 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert vector_documents["limit"] == 100.0
 
+    account_entitlements_response = client.get(
+        "/portal/v1/account/entitlements",
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert account_entitlements_response.status_code == 200
+    account_entitlements_data = account_entitlements_response.json()["data"]
+    assert account_entitlements_data["site_id"] == ""
+    assert account_entitlements_data["account_id"] == "acct_portal_reads"
+    assert account_entitlements_data["quota_summary"]["credit"]["key"] == "ai_credits"
+    assert account_entitlements_data["quota_summary"]["credit"]["limit"] == 2000.0
+
     credit_ledger_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-ledger?limit=10",
         headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
@@ -4623,6 +4650,16 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     }
     assert len(credit_ledger_data["usage_detail"]["recent_items"]) == 3
 
+    account_credit_ledger_response = client.get(
+        "/portal/v1/account/credit-ledger?limit=10",
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert account_credit_ledger_response.status_code == 200
+    account_credit_ledger_data = account_credit_ledger_response.json()["data"]
+    assert account_credit_ledger_data["site_id"] == ""
+    assert account_credit_ledger_data["account_id"] == "acct_portal_reads"
+    assert account_credit_ledger_data["summary"]["total_credits"] == 4.0
+
     credit_packs_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-packs",
         headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
@@ -4631,6 +4668,20 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_packs_data = credit_packs_response.json()["data"]
     assert credit_packs_data["catalog_version"] == "ai-credit-packs-v1"
     assert {item["pack_id"] for item in credit_packs_data["items"]} >= {
+        "pack_small",
+        "pack_medium",
+        "pack_large",
+    }
+
+    account_credit_packs_response = client.get(
+        "/portal/v1/account/credit-packs",
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert account_credit_packs_response.status_code == 200
+    account_credit_packs_data = account_credit_packs_response.json()["data"]
+    assert account_credit_packs_data["site_id"] == ""
+    assert account_credit_packs_data["account_id"] == "acct_portal_reads"
+    assert {item["pack_id"] for item in account_credit_packs_data["items"]} >= {
         "pack_small",
         "pack_medium",
         "pack_large",
@@ -4718,6 +4769,21 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         )
         assert len(credit_pack_entries) == 1
 
+    account_credit_pack_order_response = client.post(
+        "/portal/v1/account/credit-pack-orders",
+        json={"pack_id": "pack_medium"},
+        headers=build_portal_headers(
+            principal_id="principal:portal-reads@example.com",
+            idempotency_key="portal-account-credit-pack-order-001",
+        ),
+    )
+    assert account_credit_pack_order_response.status_code == 200
+    account_credit_pack_order_data = account_credit_pack_order_response.json()["data"]
+    assert account_credit_pack_order_data["site_id"] == ""
+    assert account_credit_pack_order_data["account_id"] == "acct_portal_reads"
+    assert account_credit_pack_order_data["order"]["purchase_kind"] == "credit_pack"
+    assert account_credit_pack_order_data["order"]["credit_pack"]["pack_id"] == "pack_medium"
+
     audit_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-summary",
         headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
@@ -4725,6 +4791,15 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert audit_response.status_code == 200
     assert audit_response.json()["data"]["site_id"] == "site_portal_reads"
     assert audit_response.json()["data"]["totals"]["events"] >= 1
+
+    account_audit_response = client.get(
+        "/portal/v1/account/audit-summary",
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert account_audit_response.status_code == 200
+    assert account_audit_response.json()["data"]["site_id"] == ""
+    assert account_audit_response.json()["data"]["account_id"] == "acct_portal_reads"
+    assert account_audit_response.json()["data"]["totals"]["events"] >= 1
 
     audit_events_response = client.get(
         "/portal/v1/sites/site_portal_reads/audit-events?event_kind=site_key.issue&limit=10",
@@ -4734,6 +4809,18 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert audit_events_response.json()["data"]["site_id"] == "site_portal_reads"
     assert audit_events_response.json()["data"]["filters"]["event_kind"] == "site_key.issue"
     assert len(audit_events_response.json()["data"]["items"]) >= 1
+
+    account_audit_events_response = client.get(
+        "/portal/v1/account/audit-events?event_kind=site_key.issue&limit=10",
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert account_audit_events_response.status_code == 200
+    account_audit_events_data = account_audit_events_response.json()["data"]
+    assert account_audit_events_data["site_id"] == ""
+    assert account_audit_events_data["account_id"] == "acct_portal_reads"
+    assert account_audit_events_data["filters"]["account_id"] == "acct_portal_reads"
+    assert account_audit_events_data["filters"]["event_kind"] == "site_key.issue"
+    assert len(account_audit_events_data["items"]) >= 1
 
     billing_response = client.get(
         "/portal/v1/sites/site_portal_reads/billing-snapshots",

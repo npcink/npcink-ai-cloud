@@ -89,7 +89,7 @@ assert.doesNotMatch(
 assert.match(
   siteRecordSource,
   /site_address_label[\s\S]*site_record_current_label[\s\S]*site_record_current_title/,
-  'Portal site record should focus on the site address and current site status'
+  'Portal site record should focus on the site address and site record status'
 );
 assert.doesNotMatch(
   siteRecordSource,
@@ -128,15 +128,40 @@ assert.match(
   'Portal site list should explain that new site connections start from the WordPress addon'
 );
 assert.doesNotMatch(
+  sitesSource,
+  /selectSite\(site\.site_id\)|home\.select_site_action|common\.current/,
+  'Portal site list must not expose current-site switching controls'
+);
+assert.doesNotMatch(
   portalHomeSource,
   /PortalSiteConnectPanel|\/portal\/sites\?filter=/,
   'Portal home must not embed the site creation form or link to hidden site-list filters'
 );
+assert.doesNotMatch(
+  portalHomeSource,
+  /onSelectCurrentSite|isCurrentSite|home\.select_site_action|common\.current/,
+  'Portal home must not expose current-site switching controls'
+);
 
 assert.doesNotMatch(
   auditSource,
-  /t\('audit\.title'|audit\.event_types|audit\.success_rate|eventKindFilter|outcomeFilter|record_type_label|all_record_types|all_results|record_count_label|range_label|apply_filters|<details/,
+  /t\('audit\.title'|audit\.event_types|audit\.success_rate|eventKindFilter|outcomeFilter|record_type_label|all_record_types|all_results|record_count_label|range_label|apply_filters/,
   'Portal recent activity must not expose audit-log copy, advanced filters, or event-type controls'
+);
+assert.doesNotMatch(
+  auditSource,
+  /usePortalSiteSelection|selectedSiteId|getAuditBundle\(siteId|getAuditBundle\(selectedSiteId|listAuditEvents\(siteId/,
+  'Portal recent activity must load account-level activity instead of depending on a selected site'
+);
+assert.match(
+  auditSource,
+  /portalClient\.getAuditBundle\(\{ limit: 10 \}\)/,
+  'Portal recent activity must use the account-level audit bundle'
+);
+assert.match(
+  auditSource,
+  /<details[\s\S]*portal\.support_information[\s\S]*Event ID[\s\S]*audit\.trace_id/,
+  'Portal recent activity must collapse support identifiers behind support information'
 );
 assert.match(
   auditSource,
@@ -147,8 +172,8 @@ assert.match(
 for (const expectedCopy of [
   "'portal.billing.customer_title': 'Package'",
   "'portal.billing.customer_title': '套餐'",
-  "'portal.site_record_current_label': 'Current site'",
-  "'portal.site_record_current_label': '当前站点'",
+  "'portal.site_record_current_label': 'Site record'",
+  "'portal.site_record_current_label': '站点记录'",
   "'portal.audit.recent_desc': 'Only recent customer-readable activity is shown here.'",
   "'portal.audit.recent_desc': '这里只显示最近的客户可读活动。'",
   "'portal.usage.remaining_service_uses_label': 'Service uses left'",

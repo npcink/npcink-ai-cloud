@@ -2392,20 +2392,21 @@ class CommercialRepository:
         self,
         *,
         site_id: str | None = None,
+        site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
         limit: int = 50,
     ) -> list[ServiceAuditEvent]:
-        statement = select(ServiceAuditEvent)
-        if site_id:
-            statement = statement.where(ServiceAuditEvent.site_id == site_id)
-        if account_id:
-            statement = statement.where(ServiceAuditEvent.account_id == account_id)
-        if event_kind:
-            statement = statement.where(ServiceAuditEvent.event_kind == event_kind)
-        if outcome:
-            statement = statement.where(ServiceAuditEvent.outcome == outcome)
+        statement = select(ServiceAuditEvent).where(
+            *self._service_audit_filters(
+                site_id=site_id,
+                site_ids=site_ids,
+                account_id=account_id,
+                event_kind=event_kind,
+                outcome=outcome,
+            )
+        )
         statement = statement.order_by(
             ServiceAuditEvent.created_at.desc(),
             ServiceAuditEvent.id.desc(),
@@ -2438,6 +2439,7 @@ class CommercialRepository:
         self,
         *,
         site_id: str | None = None,
+        site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
@@ -2452,6 +2454,7 @@ class CommercialRepository:
                     .where(
                         *self._service_audit_filters(
                             site_id=site_id,
+                            site_ids=site_ids,
                             account_id=account_id,
                             event_kind=event_kind,
                             outcome=outcome,
@@ -2467,6 +2470,7 @@ class CommercialRepository:
         self,
         *,
         site_id: str | None = None,
+        site_ids: list[str] | None = None,
         account_id: str | None = None,
         since: datetime | None = None,
         limit: int = 20,
@@ -2485,6 +2489,7 @@ class CommercialRepository:
             .where(
                 *self._service_audit_filters(
                     site_id=site_id,
+                    site_ids=site_ids,
                     account_id=account_id,
                     since=since,
                 )
@@ -2718,15 +2723,36 @@ class CommercialRepository:
         self,
         *,
         site_id: str | None = None,
+        site_ids: list[str] | None = None,
         account_id: str | None = None,
         event_kind: str | None = None,
         outcome: str | None = None,
         since: datetime | None = None,
     ) -> list[SQLAFilter]:
         filters: list[SQLAFilter] = []
+        normalized_site_ids = (
+            sorted({str(item).strip() for item in site_ids if str(item).strip()})
+            if site_ids is not None
+            else None
+        )
         if site_id:
             filters.append(ServiceAuditEvent.site_id == site_id)
-        if account_id:
+        elif account_id and normalized_site_ids is not None:
+            if normalized_site_ids:
+                filters.append(
+                    or_(
+                        ServiceAuditEvent.account_id == account_id,
+                        ServiceAuditEvent.site_id.in_(normalized_site_ids),
+                    )
+                )
+            else:
+                filters.append(ServiceAuditEvent.account_id == account_id)
+        elif normalized_site_ids is not None:
+            if normalized_site_ids:
+                filters.append(ServiceAuditEvent.site_id.in_(normalized_site_ids))
+            else:
+                filters.append(ServiceAuditEvent.id == -1)
+        elif account_id:
             filters.append(ServiceAuditEvent.account_id == account_id)
         if event_kind:
             filters.append(ServiceAuditEvent.event_kind == event_kind)
