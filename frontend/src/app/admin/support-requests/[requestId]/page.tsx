@@ -43,9 +43,32 @@ type SupportRequestMessage = {
   created_at?: string;
 };
 
+type SupportRequestAttachment = {
+  attachment_id: string;
+  request_id: string;
+  uploader_kind: string;
+  visibility: string;
+  filename: string;
+  content_type: string;
+  byte_size: number;
+  content_base64?: string;
+  created_at?: string;
+};
+
+type SupportRequestFeedback = {
+  feedback_id: string;
+  request_id: string;
+  resolved: boolean;
+  rating: number;
+  comment?: string;
+  created_at?: string;
+};
+
 type SupportRequestDetailPayload = {
   request?: SupportRequest;
   messages?: SupportRequestMessage[];
+  attachments?: SupportRequestAttachment[];
+  feedback?: SupportRequestFeedback | null;
 };
 
 const NEXT_STATUSES: SupportRequestStatus[] = ['open', 'in_progress', 'resolved', 'closed'];
@@ -86,6 +109,60 @@ async function createSupportRequestMessage(
   });
 }
 
+async function createSupportRequestAttachment(
+  requestId: string,
+  payload: {
+    filename: string;
+    content_type: string;
+    content_base64: string;
+    visibility: 'public' | 'internal';
+  }
+): Promise<Response> {
+  return fetch(`/api/admin/support-requests/${encodeURIComponent(requestId)}/attachments`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function fetchSupportRequestAttachment(
+  requestId: string,
+  attachmentId: string
+): Promise<Response> {
+  return fetch(
+    `/api/admin/support-requests/${encodeURIComponent(requestId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    {
+      credentials: 'include',
+      cache: 'no-store',
+    }
+  );
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',', 2)[1] || '');
+    reader.onerror = () => reject(reader.error || new Error('failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadAttachmentFile(attachment: SupportRequestAttachment): void {
+  if (!attachment.content_base64) return;
+  const binary = atob(attachment.content_base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  const url = URL.createObjectURL(new Blob([bytes], { type: attachment.content_type || 'application/octet-stream' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = attachment.filename || 'support-attachment';
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 function authorLabel(authorKind: string, visibility: string, t: ReturnType<typeof useLocale>['t']): string {
   if (visibility === 'internal') return t('admin.support_message_internal_note', {}, 'Internal note');
   if (authorKind === 'operator') return t('admin.support_message_author_operator', {}, 'Support');
@@ -99,9 +176,13 @@ export default function AdminSupportRequestDetailPage() {
   const { t } = useLocale();
   const [supportRequest, setSupportRequest] = useState<SupportRequest | null>(null);
   const [messages, setMessages] = useState<SupportRequestMessage[]>([]);
+  const [attachments, setAttachments] = useState<SupportRequestAttachment[]>([]);
+  const [feedback, setFeedback] = useState<SupportRequestFeedback | null>(null);
   const [statusDraft, setStatusDraft] = useState<SupportRequestStatus>('open');
   const [publicReply, setPublicReply] = useState('');
   const [internalNote, setInternalNote] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentVisibility, setAttachmentVisibility] = useState<'public' | 'internal'>('public');
   const [isLoading, setIsLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState('');
   const [error, setError] = useState('');
@@ -119,6 +200,8 @@ export default function AdminSupportRequestDetailPage() {
       }
       setSupportRequest(payload.data.request);
       setMessages(payload.data.messages || []);
+      setAttachments(payload.data.attachments || []);
+      setFeedback(payload.data.feedback || null);
       setStatusDraft(payload.data.request.status);
     } catch (err) {
       setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_load')));
@@ -186,6 +269,56 @@ export default function AdminSupportRequestDetailPage() {
       setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save')));
     } finally {
       setPendingAction('');
+    }
+  };
+
+  const handleAttachmentUpload = async () => {
+    if (!attachmentFile) return;
+    setPendingAction('attachment');
+    setError('');
+    setNotice('');
+    try {
+      const contentBase64 = await readFileAsBase64(attachmentFile);
+      const response = await createSupportRequestAttachment(requestId, {
+        filename: attachmentFile.name,
+        content_type: attachmentFile.type || 'application/octet-stream',
+        content_base64: contentBase64,
+        visibility: attachmentVisibility,
+      });
+      const payload = await readResponsePayload<{
+        data?: { request?: SupportRequest; attachment?: SupportRequestAttachment };
+        message?: string;
+      }>(response);
+      const responseData = 'data' in payload ? payload.data : undefined;
+      if (!response.ok || !responseData?.request || !responseData.attachment) {
+        throw new Error(resolveUiErrorMessage('message' in payload ? payload.message : null, t('error.failed_save')));
+      }
+      setSupportRequest(responseData.request);
+      setAttachments((current) => [...current, responseData.attachment as SupportRequestAttachment]);
+      setAttachmentFile(null);
+      setNotice(t('admin.support_attachment_created', {}, 'Attachment uploaded.'));
+    } catch (err) {
+      setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save')));
+    } finally {
+      setPendingAction('');
+    }
+  };
+
+  const handleAttachmentDownload = async (attachment: SupportRequestAttachment) => {
+    setError('');
+    try {
+      const response = await fetchSupportRequestAttachment(requestId, attachment.attachment_id);
+      const payload = await readResponsePayload<{
+        data?: { attachment?: SupportRequestAttachment };
+        message?: string;
+      }>(response);
+      const responseData = 'data' in payload ? payload.data : undefined;
+      if (!response.ok || !responseData?.attachment) {
+        throw new Error(resolveUiErrorMessage('message' in payload ? payload.message : null, t('error.failed_load')));
+      }
+      downloadAttachmentFile(responseData.attachment);
+    } catch (err) {
+      setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_load')));
     }
   };
 
@@ -258,6 +391,103 @@ export default function AdminSupportRequestDetailPage() {
           ))}
         </div>
       </BackofficeSectionPanel>
+
+      <BackofficeSectionPanel>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-slate-950 dark:text-white">
+            {t('admin.support_attachments_title', {}, 'Attachments')}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t('admin.support_attachment_limit', {}, 'PDF, image, text, CSV, or JSON. Max 5 MB each.')}
+          </p>
+        </div>
+        {attachments.length ? (
+          <div className="mb-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            {attachments.map((attachment) => (
+              <div key={attachment.attachment_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-950 dark:text-white">{attachment.filename}</p>
+                    <BackofficeStatusBadge
+                      status={attachment.visibility === 'internal' ? 'warning' : 'read_only'}
+                      label={
+                        attachment.visibility === 'internal'
+                          ? t('admin.support_attachment_internal', {}, 'Internal')
+                          : t('admin.support_attachment_public', {}, 'Public')
+                      }
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {attachment.content_type} · {Math.ceil((attachment.byte_size || 0) / 1024)} KB
+                  </p>
+                </div>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleAttachmentDownload(attachment)}>
+                  {t('common.download', {}, 'Download')}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-center">
+          <input
+            className="input"
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+            onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
+          />
+          <select
+            className="input"
+            value={attachmentVisibility}
+            onChange={(event) => setAttachmentVisibility(event.target.value as 'public' | 'internal')}
+          >
+            <option value="public">{t('admin.support_attachment_public', {}, 'Public')}</option>
+            <option value="internal">{t('admin.support_attachment_internal', {}, 'Internal')}</option>
+          </select>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={pendingAction === 'attachment' || !attachmentFile}
+            onClick={() => void handleAttachmentUpload()}
+          >
+            {pendingAction === 'attachment'
+              ? t('common.saving', {}, 'Saving...')
+              : t('admin.support_attachment_upload_action', {}, 'Upload')}
+          </button>
+        </div>
+      </BackofficeSectionPanel>
+
+      {feedback ? (
+        <BackofficeSectionPanel>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('admin.support_feedback_title', {}, 'Close evaluation')}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {feedback.comment || t('admin.support_feedback_no_comment', {}, 'No comment provided.')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <BackofficeStatusBadge
+                status={feedback.resolved ? 'success' : 'warning'}
+                label={
+                  feedback.resolved
+                    ? t('admin.support_feedback_resolved', {}, 'Resolved')
+                    : t('admin.support_feedback_unresolved', {}, 'Not resolved')
+                }
+              />
+              <BackofficeStatusBadge
+                status="read_only"
+                label={t(
+                  'admin.support_feedback_rating_value',
+                  { rating: String(feedback.rating) },
+                  '{{rating}}/5'
+                )}
+              />
+            </div>
+          </div>
+        </BackofficeSectionPanel>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <BackofficeSectionPanel>

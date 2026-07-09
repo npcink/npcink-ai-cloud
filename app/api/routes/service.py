@@ -125,6 +125,14 @@ class AdminSupportRequestMessagePayload(BaseModel):
     visibility: str = Field(default="public", max_length=32)
 
 
+class AdminSupportRequestAttachmentPayload(BaseModel):
+    filename: str = Field(default="", max_length=191)
+    content_type: str = Field(default="", max_length=128)
+    content_base64: str = ""
+    visibility: str = Field(default="public", max_length=32)
+    message_id: str = Field(default="", max_length=191)
+
+
 class SiteProvisionPayload(BaseModel):
     site_id: str
     account_id: str
@@ -2721,6 +2729,59 @@ async def create_admin_support_request_message(
         status="ok",
         message="support request message created",
         data={**result, "notification": notification},
+        revision="m6",
+    )
+
+
+@router.post("/admin/support-requests/{request_id}/attachments")
+async def create_admin_support_request_attachment(
+    request: Request,
+    request_id: str,
+    payload: AdminSupportRequestAttachmentPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).create_admin_support_request_attachment(
+            request_id=request_id,
+            filename=payload.filename,
+            content_type=payload.content_type,
+            content_base64=payload.content_base64,
+            visibility=payload.visibility,
+            message_id=payload.message_id,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="support request attachment created",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/support-requests/{request_id}/attachments/{attachment_id}")
+async def get_admin_support_request_attachment(
+    request: Request,
+    request_id: str,
+    attachment_id: str,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).get_admin_support_request_attachment(
+            request_id=request_id,
+            attachment_id=attachment_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="support request attachment loaded",
+        data=result,
         revision="m6",
     )
 

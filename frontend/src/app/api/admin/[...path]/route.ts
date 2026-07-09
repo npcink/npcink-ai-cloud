@@ -124,6 +124,12 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
   }
   if (
     upperMethod === 'POST' &&
+    /^support-requests\/[^/]+\/attachments$/.test(normalized)
+  ) {
+    return `/internal/service/admin/${normalized}`;
+  }
+  if (
+    upperMethod === 'POST' &&
     normalized === 'provider-connections/preview-catalog'
   ) {
     return '/internal/service/admin/provider-connections/preview-catalog';

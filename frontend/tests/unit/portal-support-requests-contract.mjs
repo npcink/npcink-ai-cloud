@@ -76,6 +76,11 @@ assert.match(
   'Portal ticket detail page must load messages and let customers reply'
 );
 assert.match(
+  portalSupportDetailPageSource,
+  /createSupportRequestAttachment[\s\S]*getSupportRequestAttachment[\s\S]*submitSupportRequestFeedback/,
+  'Portal ticket detail page must support attachments, downloads, and close evaluation'
+);
+assert.match(
   adminLayoutSource,
   /href: '\/admin\/support-requests'[\s\S]*admin\.nav_support_requests/,
   'Admin navigation must expose the support request queue'
@@ -104,6 +109,11 @@ assert.match(
   adminSupportDetailPageSource,
   /createSupportRequestMessage[\s\S]*visibility[\s\S]*public[\s\S]*internal/,
   'Admin ticket detail must support public replies and internal notes'
+);
+assert.match(
+  adminSupportDetailPageSource,
+  /createSupportRequestAttachment[\s\S]*fetchSupportRequestAttachment[\s\S]*support_feedback_title/,
+  'Admin ticket detail must support attachments and show close evaluation'
 );
 assert.match(
   adminProxySource,

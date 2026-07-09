@@ -175,6 +175,19 @@ class PortalSupportRequestMessagePayload(BaseModel):
     body: str = Field(default="", max_length=4000)
 
 
+class PortalSupportRequestAttachmentPayload(BaseModel):
+    filename: str = Field(default="", max_length=191)
+    content_type: str = Field(default="", max_length=128)
+    content_base64: str = ""
+    message_id: str = Field(default="", max_length=191)
+
+
+class PortalSupportRequestFeedbackPayload(BaseModel):
+    resolved: bool = True
+    rating: int = Field(default=5, ge=1, le=5)
+    comment: str = Field(default="", max_length=2000)
+
+
 def _object_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
 
@@ -1832,6 +1845,106 @@ async def create_portal_support_request_message(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal support request message created",
+        data=result,
+    )
+
+
+@router.post("/support-requests/{request_id}/attachments")
+async def create_portal_support_request_attachment(
+    request: Request,
+    request_id: str,
+    payload: PortalSupportRequestAttachmentPayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        result = _get_commercial_service(request).create_portal_support_request_attachment(
+            principal_id=auth.principal_id,
+            request_id=request_id,
+            filename=payload.filename,
+            content_type=payload.content_type,
+            content_base64=payload.content_base64,
+            message_id=payload.message_id,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request attachment created",
+        data=result,
+    )
+
+
+@router.get("/support-requests/{request_id}/attachments/{attachment_id}")
+async def get_portal_support_request_attachment(
+    request: Request,
+    request_id: str,
+    attachment_id: str,
+) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        result = _get_commercial_service(request).get_portal_support_request_attachment(
+            principal_id=auth.principal_id,
+            request_id=request_id,
+            attachment_id=attachment_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request attachment loaded",
+        data=result,
+    )
+
+
+@router.post("/support-requests/{request_id}/feedback")
+async def submit_portal_support_request_feedback(
+    request: Request,
+    request_id: str,
+    payload: PortalSupportRequestFeedbackPayload,
+) -> Any:
+    same_origin = _portal_same_origin_guard(request, always=True)
+    if same_origin is not None:
+        return same_origin
+    write_guard = _portal_write_guard(request)
+    if write_guard is not None:
+        return write_guard
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=True,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        result = _get_commercial_service(request).submit_portal_support_request_feedback(
+            principal_id=auth.principal_id,
+            request_id=request_id,
+            resolved=payload.resolved,
+            rating=payload.rating,
+            comment=payload.comment,
+            audit_context=_build_portal_audit_context(request, auth.principal_id),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal support request feedback submitted",
         data=result,
     )
 

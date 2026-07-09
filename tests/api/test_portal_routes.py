@@ -762,6 +762,52 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     assert [message["visibility"] for message in portal_messages] == ["public", "public", "public"]
     assert "Internal:" not in "\n".join(message["body"] for message in portal_messages)
 
+    portal_attachment_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/attachments",
+        json={
+            "filename": "payment-note.txt",
+            "content_type": "text/plain",
+            "content_base64": "cGF5bWVudCBub3Rl",
+        },
+        headers=build_portal_headers(
+            principal_id="principal:portal-support@example.com",
+            idempotency_key="portal-support-attachment-001",
+        ),
+    )
+    assert portal_attachment_response.status_code == 200, portal_attachment_response.text
+    portal_attachment = portal_attachment_response.json()["data"]["attachment"]
+    assert portal_attachment["visibility"] == "public"
+
+    admin_attachment_response = client.post(
+        f"/internal/service/admin/support-requests/{request_id}/attachments",
+        json={
+            "filename": "operator-note.txt",
+            "content_type": "text/plain",
+            "content_base64": "aW50ZXJuYWwgbm90ZQ==",
+            "visibility": "internal",
+        },
+        headers=build_internal_headers(idempotency_key="portal-support-admin-attachment-001"),
+    )
+    assert admin_attachment_response.status_code == 200, admin_attachment_response.text
+    admin_attachment = admin_attachment_response.json()["data"]["attachment"]
+    assert admin_attachment["visibility"] == "internal"
+
+    portal_attachment_download_response = client.get(
+        f"/portal/v1/support-requests/{request_id}/attachments/{portal_attachment['attachment_id']}",
+        headers=build_portal_headers(principal_id="principal:portal-support@example.com"),
+    )
+    assert portal_attachment_download_response.status_code == 200
+    assert (
+        portal_attachment_download_response.json()["data"]["attachment"]["content_base64"]
+        == "cGF5bWVudCBub3Rl"
+    )
+
+    portal_internal_attachment_response = client.get(
+        f"/portal/v1/support-requests/{request_id}/attachments/{admin_attachment['attachment_id']}",
+        headers=build_portal_headers(principal_id="principal:portal-support@example.com"),
+    )
+    assert portal_internal_attachment_response.status_code == 404
+
     admin_detail_response = client.get(
         f"/internal/service/admin/support-requests/{request_id}",
         headers=build_internal_headers(),
@@ -769,6 +815,8 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     assert admin_detail_response.status_code == 200, admin_detail_response.text
     admin_messages = admin_detail_response.json()["data"]["messages"]
     assert [message["visibility"] for message in admin_messages].count("internal") == 2
+    admin_attachments = admin_detail_response.json()["data"]["attachments"]
+    assert [attachment["visibility"] for attachment in admin_attachments] == ["public", "internal"]
 
     admin_list_response = client.get(
         "/internal/service/admin/support-requests?status=in_progress",
@@ -777,6 +825,37 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     assert admin_list_response.status_code == 200, admin_list_response.text
     admin_items = admin_list_response.json()["data"]["items"]
     assert [item["request_id"] for item in admin_items] == [request_id]
+
+    admin_resolve_response = client.patch(
+        f"/internal/service/admin/support-requests/{request_id}",
+        json={"status": "resolved", "admin_note": ""},
+        headers=build_internal_headers(idempotency_key="portal-support-admin-resolve-001"),
+    )
+    assert admin_resolve_response.status_code == 200, admin_resolve_response.text
+    assert admin_resolve_response.json()["data"]["request"]["status"] == "resolved"
+
+    portal_feedback_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/feedback",
+        json={"resolved": True, "rating": 5, "comment": "Handled clearly."},
+        headers=build_portal_headers(
+            principal_id="principal:portal-support@example.com",
+            idempotency_key="portal-support-feedback-001",
+        ),
+    )
+    assert portal_feedback_response.status_code == 200, portal_feedback_response.text
+    assert portal_feedback_response.json()["data"]["request"]["status"] == "closed"
+    assert portal_feedback_response.json()["data"]["feedback"]["rating"] == 5
+
+    portal_reopen_feedback_response = client.post(
+        f"/portal/v1/support-requests/{request_id}/feedback",
+        json={"resolved": False, "rating": 2, "comment": "The order still needs review."},
+        headers=build_portal_headers(
+            principal_id="principal:portal-support@example.com",
+            idempotency_key="portal-support-feedback-002",
+        ),
+    )
+    assert portal_reopen_feedback_response.status_code == 200, portal_reopen_feedback_response.text
+    assert portal_reopen_feedback_response.json()["data"]["request"]["status"] == "open"
 
     with get_session(database_url) as session:
         audit_kinds = {
@@ -789,7 +868,9 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
             )
         }
     assert audit_kinds == {
+        "support_request.attachment_created",
         "support_request.created",
+        "support_request.feedback_submitted",
         "support_request.message_created",
         "support_request.updated",
     }

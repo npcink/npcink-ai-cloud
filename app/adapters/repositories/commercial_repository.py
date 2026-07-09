@@ -47,6 +47,8 @@ from app.core.models import (
     SiteKnowledgeIndexJobMetric,
     SiteUserGrant,
     SupportRequest,
+    SupportRequestAttachment,
+    SupportRequestFeedback,
     SupportRequestMessage,
     UsageMeterEvent,
 )
@@ -170,6 +172,115 @@ class CommercialRepository:
             SupportRequestMessage.message_id.asc(),
         )
         return list(self.session.scalars(statement))
+
+    def create_support_request_attachment(
+        self,
+        *,
+        attachment_id: str,
+        request: SupportRequest,
+        uploader_kind: str,
+        visibility: str,
+        filename: str,
+        content_type: str,
+        content_bytes: bytes,
+        message_id: str | None = None,
+        principal_id: str | None = None,
+        email: str = "",
+        metadata_json: dict[str, object] | None = None,
+    ) -> SupportRequestAttachment:
+        attachment = SupportRequestAttachment(
+            attachment_id=attachment_id,
+            request_id=str(request.request_id or ""),
+            message_id=str(message_id or "") or None,
+            account_id=str(request.account_id or ""),
+            site_id=str(request.site_id or "") or None,
+            principal_id=str(principal_id or request.principal_id or "") or None,
+            email=str(email or request.email or ""),
+            uploader_kind=uploader_kind,
+            visibility=visibility,
+            filename=filename,
+            content_type=content_type,
+            byte_size=len(content_bytes),
+            content_bytes=content_bytes,
+            metadata_json=metadata_json,
+        )
+        request.updated_at = datetime.now(UTC)
+        self.session.add(attachment)
+        self.session.flush()
+        return attachment
+
+    def get_support_request_attachment(
+        self,
+        attachment_id: str,
+    ) -> SupportRequestAttachment | None:
+        return self.session.get(SupportRequestAttachment, attachment_id)
+
+    def list_support_request_attachments(
+        self,
+        *,
+        request_id: str,
+        include_internal: bool = False,
+    ) -> list[SupportRequestAttachment]:
+        statement = select(SupportRequestAttachment).where(
+            SupportRequestAttachment.request_id == request_id
+        )
+        if not include_internal:
+            statement = statement.where(SupportRequestAttachment.visibility == "public")
+        statement = statement.order_by(
+            SupportRequestAttachment.created_at.asc(),
+            SupportRequestAttachment.attachment_id.asc(),
+        )
+        return list(self.session.scalars(statement))
+
+    def count_support_request_attachments(self, *, request_id: str) -> int:
+        statement = select(func.count(SupportRequestAttachment.attachment_id)).where(
+            SupportRequestAttachment.request_id == request_id
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def get_support_request_feedback(self, request_id: str) -> SupportRequestFeedback | None:
+        statement = select(SupportRequestFeedback).where(
+            SupportRequestFeedback.request_id == request_id
+        )
+        return self.session.scalar(statement)
+
+    def upsert_support_request_feedback(
+        self,
+        *,
+        feedback_id: str,
+        request: SupportRequest,
+        principal_id: str,
+        email: str,
+        resolved: bool,
+        rating: int,
+        comment: str,
+        metadata_json: dict[str, object] | None = None,
+    ) -> SupportRequestFeedback:
+        feedback = self.get_support_request_feedback(str(request.request_id or ""))
+        if feedback is None:
+            feedback = SupportRequestFeedback(
+                feedback_id=feedback_id,
+                request_id=str(request.request_id or ""),
+                account_id=str(request.account_id or ""),
+                site_id=str(request.site_id or "") or None,
+                principal_id=principal_id,
+                email=email,
+                resolved=resolved,
+                rating=rating,
+                comment=comment,
+                metadata_json=metadata_json,
+            )
+            self.session.add(feedback)
+        else:
+            feedback.principal_id = principal_id
+            feedback.email = email
+            feedback.resolved = resolved
+            feedback.rating = rating
+            feedback.comment = comment
+            feedback.metadata_json = metadata_json
+        request.updated_at = datetime.now(UTC)
+        self.session.flush()
+        return feedback
 
     def list_support_requests(
         self,

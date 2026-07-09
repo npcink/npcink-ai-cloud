@@ -1460,6 +1460,34 @@ export interface PortalSupportRequestMessage {
   created_at?: string;
 }
 
+export interface PortalSupportRequestAttachment {
+  attachment_id: string;
+  request_id: string;
+  message_id?: string;
+  account_id: string;
+  site_id?: string;
+  principal_id?: string;
+  email?: string;
+  uploader_kind: 'customer' | 'operator' | string;
+  visibility: 'public' | 'internal' | string;
+  filename: string;
+  content_type: string;
+  byte_size: number;
+  metadata?: Record<string, unknown>;
+  content_base64?: string;
+  created_at?: string;
+}
+
+export interface PortalSupportRequestFeedback {
+  feedback_id: string;
+  request_id: string;
+  resolved: boolean;
+  rating: number;
+  comment?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface PortalSupportRequestListPayload {
   account_id?: string;
   principal_id?: string;
@@ -1479,6 +1507,8 @@ export interface PortalSupportRequestListPayload {
 export interface PortalSupportRequestDetailPayload {
   request: PortalSupportRequest;
   messages: PortalSupportRequestMessage[];
+  attachments?: PortalSupportRequestAttachment[];
+  feedback?: PortalSupportRequestFeedback | null;
 }
 
 export interface CreatePortalSupportRequestPayload {
@@ -1492,6 +1522,19 @@ export interface CreatePortalSupportRequestPayload {
 
 export interface CreatePortalSupportRequestMessagePayload {
   body: string;
+}
+
+export interface CreatePortalSupportRequestAttachmentPayload {
+  filename: string;
+  content_type: string;
+  content_base64: string;
+  message_id?: string;
+}
+
+export interface SubmitPortalSupportRequestFeedbackPayload {
+  resolved: boolean;
+  rating: number;
+  comment?: string;
 }
 
 export interface PortalCreditLedgerPayload {
@@ -2057,6 +2100,32 @@ export class PortalClient {
     payload: CreatePortalSupportRequestMessagePayload
   ): Promise<PortalEnvelope<{ request: PortalSupportRequest; message: PortalSupportRequestMessage }>> {
     return this.request('POST', `/support-requests/${requestId}/messages`, payload, { requireAuth: true });
+  }
+
+  async createSupportRequestAttachment(
+    requestId: string,
+    payload: CreatePortalSupportRequestAttachmentPayload
+  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; attachment: PortalSupportRequestAttachment }>> {
+    return this.request('POST', `/support-requests/${requestId}/attachments`, payload, { requireAuth: true });
+  }
+
+  async getSupportRequestAttachment(
+    requestId: string,
+    attachmentId: string
+  ): Promise<PortalEnvelope<{ attachment: PortalSupportRequestAttachment }>> {
+    return this.request(
+      'GET',
+      `/support-requests/${requestId}/attachments/${attachmentId}`,
+      undefined,
+      { requireAuth: true }
+    );
+  }
+
+  async submitSupportRequestFeedback(
+    requestId: string,
+    payload: SubmitPortalSupportRequestFeedbackPayload
+  ): Promise<PortalEnvelope<{ request: PortalSupportRequest; feedback: PortalSupportRequestFeedback }>> {
+    return this.request('POST', `/support-requests/${requestId}/feedback`, payload, { requireAuth: true });
   }
 
   async createCreditPackOrder(
