@@ -35,8 +35,8 @@ assert.match(
 );
 assert.match(
   billingSource,
-  /portal\.usage\.credit_pack_validity_days/,
-  'Portal billing must show the purchased credit validity window'
+  /portal\.usage\.credit_packs_desc[\s\S]*portal\.usage\.credit_packs_period_badge/,
+  'Portal billing must show the purchased credit validity window at section level'
 );
 assert.match(
   billingSource,

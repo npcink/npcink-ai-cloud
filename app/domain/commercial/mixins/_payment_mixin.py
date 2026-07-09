@@ -721,6 +721,17 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "service.payment_order_not_found",
                     f"payment order '{order_id}' was not found",
                 )
+            if self._cancel_expired_pending_payment_order_in_session(order, now=now):
+                session.commit()
+                raise CommercialConflictError(
+                    "service.payment_order_expired",
+                    "expired payment orders cannot be marked paid",
+                )
+            if order.status == PAYMENT_ORDER_STATUS_CANCELED:
+                raise CommercialConflictError(
+                    "service.payment_order_canceled",
+                    "canceled payment orders cannot be marked paid",
+                )
             if order.status == PAYMENT_ORDER_STATUS_REFUNDED:
                 raise CommercialConflictError(
                     "service.payment_order_already_refunded",
@@ -1440,6 +1451,60 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         )
         return payload
 
+    def _normalize_payment_order_datetime(self, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
+
+    def _cancel_expired_pending_payment_order_in_session(
+        self,
+        order: PaymentOrder,
+        *,
+        now: datetime,
+    ) -> bool:
+        if order.status != PAYMENT_ORDER_STATUS_PENDING:
+            return False
+        created_at = self._normalize_payment_order_datetime(order.created_at)
+        current_time = self._normalize_payment_order_datetime(now) or datetime.now(UTC)
+        if created_at is None or created_at + PAYMENT_ORDER_PENDING_TTL > current_time:
+            return False
+        metadata = dict(order.metadata_json or {})
+        metadata["cancellation_reason"] = "unpaid_order_expired"
+        metadata["payment_order_expires_after_seconds"] = int(
+            PAYMENT_ORDER_PENDING_TTL.total_seconds()
+        )
+        metadata["expired_at"] = cast(Any, self)._serialize_datetime(current_time)
+        order.status = PAYMENT_ORDER_STATUS_CANCELED
+        order.canceled_at = current_time
+        order.metadata_json = metadata
+        return True
+
+    def _cancel_expired_pending_payment_orders_in_session(
+        self,
+        repository: CommercialRepository,
+        *,
+        account_id: str | None,
+        site_id: str | None,
+        now: datetime,
+    ) -> int:
+        current_time = self._normalize_payment_order_datetime(now) or datetime.now(UTC)
+        cutoff = current_time - PAYMENT_ORDER_PENDING_TTL
+        expired_orders = repository.list_pending_payment_orders_before(
+            cutoff=cutoff,
+            account_id=account_id,
+            site_id=site_id,
+        )
+        expired_count = 0
+        for order in expired_orders:
+            if self._cancel_expired_pending_payment_order_in_session(
+                order,
+                now=current_time,
+            ):
+                expired_count += 1
+        return expired_count
+
     def _payment_order_status_detail(self, order: PaymentOrder) -> dict[str, object]:
         provider_label = {
             "alipay": "Alipay",
@@ -1477,6 +1542,15 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "simulated_payment": False,
             }
         if order.status == PAYMENT_ORDER_STATUS_CANCELED:
+            metadata = dict(order.metadata_json or {})
+            if metadata.get("cancellation_reason") == "unpaid_order_expired":
+                return {
+                    "code": "expired_unpaid",
+                    "label": "Expired",
+                    "detail": "The payment order expired before provider confirmation.",
+                    "next_action": "none",
+                    "simulated_payment": False,
+                }
             return {
                 "code": "canceled",
                 "label": "Canceled",
