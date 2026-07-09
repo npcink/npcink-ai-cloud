@@ -32,7 +32,9 @@ current Cloud CI keeps that pattern:
 
 - pull requests use a targeted backend gate by default;
 - high-risk backend or release surfaces escalate to the full backend gate;
-- `master`, `main`, and `production` pushes still run the full backend gate.
+- `master`, `main`, and `production` pushes still run the full backend gate;
+- the full backend gate is split into static checks and pytest shards only
+  after scope classification says the full gate is required.
 
 This keeps PR feedback faster without weakening release branches.
 
@@ -42,11 +44,13 @@ Large CI systems treat timing data as release evidence instead of relying on
 manual log reading. Cloud CI now emits:
 
 - a run-level timing summary through `scripts/report-release-timing.py`;
-- a pytest JUnit artifact for full backend push runs;
+- pytest JUnit artifacts for full backend shard runs;
 - a slow-test markdown summary through `scripts/report-junit-timing.py`.
 
-The immediate goal is observability. Test splitting should be based on collected
-slow-test evidence instead of guesses.
+The immediate goal is observability. Test splitting is based on collected
+slow-test evidence instead of guesses. `ci/pytest-backend-durations.json` stores
+the current per-file duration weights generated from the production CI JUnit
+artifact.
 
 ### Smoke automation with explicit human remainder
 
@@ -68,16 +72,20 @@ release gate. When the backend suite is split, add a stable aggregate job that
 depends on all shards and make the aggregate the required check. This prevents
 branch protection from depending on changing shard names.
 
+Cloud CI now follows this shape: `backend-scope` decides targeted versus full
+backend, `backend-targeted` handles the cheap PR path, `backend-static` runs
+anti-drift/Ruff/Mypy for the full path, `backend-pytest` runs three weighted
+pytest shards, and the stable `backend` job aggregates the result for deploys
+and branch protection.
+
 ## Follow-Up Order
 
-1. Collect several `pytest-backend-timing` artifacts from real `master` and
-   `production` runs.
-2. Identify the slowest backend test files and whether the long pole is setup,
-   mypy, ruff, or pytest.
-3. Split only the proven long pole:
-   - start with pytest groups if pytest dominates;
-   - split lint/type/test jobs only if bootstrap duplication still improves
-     wall time.
+1. Refresh `ci/pytest-backend-durations.json` from several successful
+   `pytest-backend-timing-shard-*` artifacts after the new split has run.
+2. Compare actual wall time for `backend-static` and the three pytest shards
+   against the previous 7-8 minute monolithic backend gate.
+3. Rebalance shard count only if one shard remains the long pole for several
+   releases.
 4. Keep `production` deployment dependent on stable aggregate gates, not on
    individual shard names.
 

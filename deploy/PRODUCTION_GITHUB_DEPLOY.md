@@ -28,11 +28,20 @@ are immediately backported to Git.
 
 Pull requests use a targeted backend gate by default: release-policy contract,
 anti-drift checks, changed Python quality, contract tests, and changed pytest
-files. High-risk backend surfaces still escalate to the full backend gate. Pushes
-to `master`, `main`, and `production` continue to run full Ruff, Mypy, and
-`tests/api tests/contract tests/domain` before release promotion or deploy.
-Full backend push runs also upload a `pytest-backend-timing` JUnit artifact and
-write a slow-test table to the job summary.
+files. High-risk backend surfaces escalate to the full backend gate. Pushes to
+`master`, `main`, and `production` also use the full backend gate before release
+promotion or deploy.
+
+The public backend release check remains named `backend`, but it is an aggregate
+gate. It depends on backend scope classification, the targeted PR gate when a
+targeted gate is enough, or the full backend path split into `backend-static`
+and three `backend-pytest` shards when the full gate is required. The pytest
+shards are selected from `ci/pytest-backend-durations.json`, which is generated
+from real JUnit timing artifacts rather than hand-picked test names.
+
+Full backend runs upload `pytest-backend-timing-shard-*` artifacts containing
+each shard's JUnit report and selected file list, then write slow-test tables to
+the job summary.
 
 On `production` push events, `Cloud CI` runs `backend` and `frontend` first,
 then runs the `deploy-production` job only after both pass. `Deploy Production`
@@ -83,7 +92,7 @@ After each release, capture job timing with:
 ```bash
 pnpm run release:timing -- <github-actions-run-id>
 pnpm run release:timing --from-file /tmp/github-run.json
-pnpm run release:junit-timing -- artifacts/pytest-backend.xml
+pnpm run release:junit-timing -- artifacts/pytest-backend-shard-1.xml
 ```
 
 Use the report to separate approval wait time from actual CI, bundle upload, and
