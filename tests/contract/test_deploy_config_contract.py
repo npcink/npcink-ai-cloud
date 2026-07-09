@@ -421,6 +421,14 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "static_terms_only" in ci_workflow
     assert "site/terms/*" in ci_workflow
     assert "needs: [classify, backend, frontend, static-terms]" in ci_workflow
+    assert "backend-scope:" in ci_workflow
+    assert "backend-targeted:" in ci_workflow
+    assert "backend-static:" in ci_workflow
+    assert "backend-pytest:" in ci_workflow
+    assert "matrix:" in ci_workflow
+    assert "shard: [1, 2, 3]" in ci_workflow
+    assert "scripts/select-pytest-shard.py" in ci_workflow
+    assert "backend pytest shards did not pass" in ci_workflow
     assert "bash deploy/deploy-static-terms-to-ssh-host.sh" in ci_workflow
     assert "post-production-smoke:" in ci_workflow
     assert "needs['deploy-production'].result == 'success'" in ci_workflow
@@ -429,10 +437,12 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "bash deploy/release-smoke.sh --base-url" in ci_workflow
     assert "ci-observability:" in ci_workflow
     assert "python3 scripts/report-release-timing.py" in ci_workflow
-    assert "artifacts/pytest-backend.xml" in ci_workflow
+    assert "artifacts/pytest-backend-shard-${{ matrix.shard }}.xml" in ci_workflow
+    assert "artifacts/pytest-files-shard-${{ matrix.shard }}.txt" in ci_workflow
     assert "python3 scripts/report-junit-timing.py" in ci_workflow
     assert "actions/upload-artifact@v4" in ci_workflow
-    assert "pytest-backend-timing" in ci_workflow
+    assert "pytest-backend-timing-shard-${{ matrix.shard }}" in ci_workflow
+    assert (cloud_root / "ci" / "pytest-backend-durations.json").is_file()
     assert "deploy:static-terms:ssh" in package_json
     assert "release:junit-timing" in package_json
     assert "CURRENT_LINK=\"${REMOTE_DIR}/current\"" in static_terms_deploy_script
