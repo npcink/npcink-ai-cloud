@@ -253,18 +253,21 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             str(item.get("currency") or default_item.get("currency") or "CNY")
         )
         raw_tiers = item.get("recommended_for_tiers", default_item.get("recommended_for_tiers"))
+        raw_tier_values = raw_tiers if isinstance(raw_tiers, list) else []
         recommended_for_tiers = [
             tier
             for tier in [
                 str(raw_tier or "").strip()
-                for raw_tier in (raw_tiers if isinstance(raw_tiers, list) else [])
+                for raw_tier in raw_tier_values
             ]
             if tier in {"free", "pro", "plus", "agency"}
         ]
         if not recommended_for_tiers:
+            default_raw_tiers = default_item.get("recommended_for_tiers")
+            default_tier_values = default_raw_tiers if isinstance(default_raw_tiers, list) else []
             recommended_for_tiers = [
                 str(raw_tier or "").strip()
-                for raw_tier in default_item.get("recommended_for_tiers", [])
+                for raw_tier in default_tier_values
                 if str(raw_tier or "").strip()
             ]
         validity_days = self._normalize_credit_pack_positive_int(
@@ -295,7 +298,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         maximum: int,
     ) -> int:
         try:
-            normalized = int(value or 0)
+            normalized = int(cast(Any, value) or 0)
         except (TypeError, ValueError):
             normalized = 0
         if normalized <= 0 or normalized > maximum:
@@ -420,6 +423,9 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 )
             period_start_at, period_end_at = service._resolve_period(primary_subscription, now)
             order_id = f"pay_{uuid4().hex[:24]}"
+            pack_amount = cast(float, pack["amount"])
+            pack_ai_credits = cast(int, pack["ai_credits"])
+            pack_validity_days = cast(int, pack["validity_days"])
             metadata = {
                 "source": "portal_credit_pack",
                 "purchase_kind": "credit_pack",
@@ -430,9 +436,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     period_start_at
                 ),
                 "subscription_period_at_order_end_at": service._serialize_datetime(period_end_at),
-                "validity_days": int(
-                    pack.get("validity_days") or DEFAULT_CREDIT_PACK_VALIDITY_DAYS
-                ),
+                "validity_days": pack_validity_days,
                 "credit_expiry_policy": CREDIT_PACK_EXPIRY_POLICY,
                 "grant_policy": "payment_success_grants_paid_credit_until_expiry",
             }
@@ -444,11 +448,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 PaymentGatewayOrderRequest(
                     provider=normalized_provider,
                     order_id=order_id,
-                    amount=round(float(pack.get("amount") or 0.0), 6),
+                    amount=round(pack_amount, 6),
                     currency=str(pack.get("currency") or "CNY"),
                     subject=(
                         f"{str(pack.get('label') or 'Credit pack')} "
-                        f"({int(pack.get('ai_credits') or 0)} AI credits)"
+                        f"({pack_ai_credits} AI credits)"
                     ),
                     metadata=metadata,
                 )
@@ -464,11 +468,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 provider=normalized_provider,
                 external_order_no=gateway_order.external_order_no,
                 status=PAYMENT_ORDER_STATUS_PENDING,
-                amount=round(float(pack.get("amount") or 0.0), 6),
+                amount=round(pack_amount, 6),
                 currency=str(pack.get("currency") or "CNY"),
                 subject=(
                     f"{str(pack.get('label') or 'Credit pack')} "
-                    f"({int(pack.get('ai_credits') or 0)} AI credits)"
+                    f"({pack_ai_credits} AI credits)"
                 ),
                 checkout_url=gateway_order.checkout_url or None,
                 refund_window_end_at=now + timedelta(days=14),
@@ -1148,7 +1152,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             order.paid_at = paid_at
             order.subscription_id = subscription.subscription_id
         period_start_at, period_end_at = service._resolve_period(subscription, paid_at)
-        validity_days = int(pack.get("validity_days") or DEFAULT_CREDIT_PACK_VALIDITY_DAYS)
+        validity_days = cast(int, pack["validity_days"])
         grant_expires_at = (order.paid_at or paid_at) + timedelta(days=validity_days)
         ledger_entry = repository.record_credit_ledger_entry(
             account_id=order.account_id,
@@ -1347,10 +1351,12 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         if not isinstance(pack, dict):
             return None
         pack_id = str(pack.get("pack_id") or "").strip()
-        ai_credits = int(pack.get("ai_credits") or 0)
+        ai_credits = int(cast(Any, pack.get("ai_credits")) or 0)
         if not pack_id or ai_credits <= 0:
             return None
-        validity_days = int(pack.get("validity_days") or DEFAULT_CREDIT_PACK_VALIDITY_DAYS)
+        validity_days = int(
+            cast(Any, pack.get("validity_days")) or DEFAULT_CREDIT_PACK_VALIDITY_DAYS
+        )
         return {
             **pack,
             "pack_id": pack_id,
@@ -1395,7 +1401,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
 
     def _normalize_payment_amount(self, amount: object) -> float:
         try:
-            normalized = round(float(amount), 6)
+            normalized = round(float(cast(Any, amount)), 6)
         except (TypeError, ValueError):
             normalized = 0.0
         if normalized <= 0:
