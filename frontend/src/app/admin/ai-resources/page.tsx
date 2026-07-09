@@ -754,73 +754,6 @@ const CAPABILITY_PROVIDER_TEMPLATES: CapabilityProviderTemplate[] = [
   },
 ];
 
-const RUNTIME_TELEMETRY_TEXT_KEYS: Record<string, string> = {
-  'Hosted model governance has telemetry gaps to review before traffic expands.':
-    'runtime_telemetry_text_coverage_gaps',
-  'Runtime telemetry has coverage gaps to review before traffic expands.':
-    'runtime_telemetry_text_coverage_gaps',
-  'Hosted model governance has coverage or provider errors that need review.':
-    'runtime_telemetry_text_errors',
-  'Runtime telemetry has coverage or provider errors that need review.':
-    'runtime_telemetry_text_errors',
-  'Hosted model governance is covered in this window.':
-    'runtime_telemetry_text_covered',
-  'Runtime telemetry is covered in this window.':
-    'runtime_telemetry_text_covered',
-  'No hosted model runs were observed in this governance window.':
-    'runtime_telemetry_text_no_runs',
-  'No runtime runs were observed in this telemetry window.':
-    'runtime_telemetry_text_no_runs',
-  'Hosted model provider call coverage gap':
-    'runtime_telemetry_text_provider_call_gap_title',
-  'Provider call coverage gap':
-    'runtime_telemetry_text_provider_call_gap_title',
-  'Hosted model meter coverage gap':
-    'runtime_telemetry_text_meter_gap_title',
-  'Runtime meter coverage gap':
-    'runtime_telemetry_text_meter_gap_title',
-  'Hosted model provider errors':
-    'runtime_telemetry_text_provider_errors_title',
-  'Provider call errors':
-    'runtime_telemetry_text_provider_errors_title',
-  'Hosted model failed runs':
-    'runtime_telemetry_text_failed_runs_title',
-  'Runtime runs failed':
-    'runtime_telemetry_text_failed_runs_title',
-  'Some hosted runs do not have matching provider call telemetry.':
-    'runtime_telemetry_text_provider_call_gap_summary',
-  'Some runtime runs do not have matching provider call telemetry.':
-    'runtime_telemetry_text_provider_call_gap_summary',
-  'Some hosted model runs are not represented in usage metering.':
-    'runtime_telemetry_text_meter_gap_summary',
-  'Some runtime runs are not represented in usage metering.':
-    'runtime_telemetry_text_meter_gap_summary',
-  'Provider calls are returning errors in the current governance window.':
-    'runtime_telemetry_text_provider_errors_summary',
-  'Provider calls are returning errors in the current telemetry window.':
-    'runtime_telemetry_text_provider_errors_summary',
-  'Hosted model runs are failing before or during provider execution.':
-    'runtime_telemetry_text_failed_runs_summary',
-  'Runtime runs are failing before or during provider execution.':
-    'runtime_telemetry_text_failed_runs_summary',
-  'Review hosted model families before promoting new providers.':
-    'runtime_telemetry_text_review_guidance',
-  'Inspect capabilities below full metering coverage before enabling new runtime providers at higher traffic.':
-    'runtime_telemetry_text_review_guidance',
-  continue_monitoring: 'runtime_telemetry_action_continue_monitoring',
-  inspect_provider_call_recording_for_hosted_profiles:
-    'runtime_telemetry_action_inspect_provider_calls',
-  inspect_metering_callback_or_usage_event_mapping:
-    'runtime_telemetry_action_inspect_metering',
-  inspect_provider_credentials_quota_and_health:
-    'runtime_telemetry_action_inspect_provider_health',
-  inspect_runtime_failure_detail:
-    'runtime_telemetry_action_inspect_runtime_failure',
-  inspect_runtime_failure_detail_for_hosted_models:
-    'runtime_telemetry_action_inspect_runtime_failure',
-  inspect_runtime_telemetry: 'runtime_telemetry_action_inspect_runtime',
-};
-
 function statusTone(status: ResourceStatus): 'success' | 'warning' | 'disabled' | 'info' {
   if (status === 'ready') return 'success';
   if (status === 'disabled') return 'disabled';
@@ -2577,17 +2510,6 @@ function AiResourcesContent() {
     selectedProviderModelIds.length
   );
 
-  const translateRuntimeTelemetryText = useCallback(
-    (value: string | undefined): string => {
-      const text = String(value || '').trim();
-      if (!text) return '';
-      const key = RUNTIME_TELEMETRY_TEXT_KEYS[text];
-      return key ? aiText(key, text) : text;
-    },
-    [aiText]
-  );
-  const runtimeTelemetryStatus = runtimeTelemetry?.alertSummary.status || 'inactive';
-
   if (loading) {
     return <LoadingFallback />;
   }
@@ -2614,6 +2536,9 @@ function AiResourcesContent() {
   const readyCapabilitySupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'capability' && connection.status === 'ready'
   ).length;
+  const attentionSupplierCount = data.connections.filter(
+    (connection) => connection.status !== 'ready'
+  ).length;
   return (
     <BackofficePageStack>
       <BackofficePrimaryPanel
@@ -2634,7 +2559,7 @@ function AiResourcesContent() {
         actions={null}
         contentClassName="py-4 md:py-4"
       >
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
               {aiText('overview_model_suppliers', 'Model suppliers')}
@@ -2659,36 +2584,17 @@ function AiResourcesContent() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              {aiText('overview_runtime_profiles', 'Runtime profiles')}
-            </p>
-            <p className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">
-              {data.runtime_profiles.length}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {aiText('overview_runtime_profiles_detail', 'Cloud runtime metadata only')}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/45">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              {aiText('overview_telemetry', 'Telemetry')}
+              {aiText('overview_attention_suppliers', 'Needs attention')}
             </p>
             <p className={`mt-2 text-lg font-semibold ${
-              runtimeTelemetryStatus === 'error'
-                ? 'text-rose-600 dark:text-rose-400'
-                : runtimeTelemetryStatus === 'warning'
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : runtimeTelemetryStatus === 'ok'
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-slate-950 dark:text-white'
+              attentionSupplierCount > 0
+                ? 'text-amber-600 dark:text-amber-400'
+                : 'text-emerald-600 dark:text-emerald-400'
             }`}>
-              {translateRuntimeTelemetryText(runtimeTelemetryStatus)}
+              {attentionSupplierCount}
             </p>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {runtimeTelemetry
-                ? aiText('overview_runtime_runs_detail', '{{count}} runs in 24h', {
-                    count: formatInteger(runtimeTelemetry.totals.runs),
-                  })
-                : aiText('status_not_observed', 'Not observed')}
+              {aiText('overview_attention_detail', 'Disabled, missing, or unhealthy supplier channels')}
             </p>
           </div>
         </div>

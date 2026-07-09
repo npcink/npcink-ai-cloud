@@ -889,8 +889,14 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /overview_model_suppliers[\s\S]*overview_capability_suppliers[\s\S]*overview_runtime_profiles[\s\S]*overview_telemetry/,
-  'AI resources overview must use a compact runtime resource status strip'
+  /overview_model_suppliers[\s\S]*overview_capability_suppliers[\s\S]*overview_attention_suppliers/,
+  'AI resources overview must use a compact supplier status strip'
+);
+
+assert.doesNotMatch(
+  aiResourcesPrimaryPanelSource,
+  /overview_runtime_profiles|overview_telemetry/,
+  'AI resources primary panel must keep runtime profile and telemetry evidence out of the supplier first screen'
 );
 
 assert.doesNotMatch(

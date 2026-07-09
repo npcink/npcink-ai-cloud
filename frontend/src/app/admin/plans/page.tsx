@@ -360,7 +360,7 @@ function PlansContent() {
         )}
         descriptionDisplay="hint"
         aside={
-          <div className="w-full xl:w-[44rem]">
+          <div className="flex w-full flex-col gap-3 xl:w-[44rem]">
             <BackofficeMetricStrip
               items={[
                 {
@@ -383,6 +383,11 @@ function PlansContent() {
               ]}
               columnsClassName="md:grid-cols-3 xl:grid-cols-3"
             />
+            <div className="flex justify-end">
+              <Link href="/admin/credit-packs" className="btn btn-secondary w-fit">
+                {t('admin.plans.open_credit_packs', {}, 'Open credit packs')}
+              </Link>
+            </div>
           </div>
         }
       >

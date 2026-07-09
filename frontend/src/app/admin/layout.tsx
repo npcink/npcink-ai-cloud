@@ -184,11 +184,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           href: '/admin/plans',
           labelKey: 'admin.nav_plan_catalog',
           fallback: 'Package Catalog',
-        },
-        {
-          href: '/admin/credit-packs',
-          labelKey: 'admin.nav_credit_packs',
-          fallback: 'Credit Packs',
+          activePrefixes: ['/admin/plans', '/admin/credit-packs'],
         },
       ],
     },
