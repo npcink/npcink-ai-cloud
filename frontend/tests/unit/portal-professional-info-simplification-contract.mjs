@@ -139,8 +139,13 @@ assert.doesNotMatch(
 );
 assert.match(
   sitesSource,
-  /portalAccountId[\s\S]*accountId=\{portalAccountId\}[\s\S]*currentSiteId=\{firstVisibleSiteId\}/,
-  'Portal site connection panel must use account context and only pass the first visible site as a compatibility hint'
+  /portalAccountId[\s\S]*accountId=\{portalAccountId\}/,
+  'Portal site connection panel must use account context for addon binding'
+);
+assert.doesNotMatch(
+  sitesSource,
+  /visibleSites\.find\(\(site\) => site\.account_id\)|currentSiteId=\{firstVisibleSiteId\}|firstVisibleSiteId/,
+  'Portal site connection panel must not derive account context from a site record compatibility fallback'
 );
 assert.doesNotMatch(
   portalHomeSource,

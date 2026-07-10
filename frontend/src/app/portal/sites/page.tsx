@@ -55,9 +55,7 @@ function PortalSitesContent() {
   const portalAccountId =
     session?.account_id ||
     session?.accounts?.find((account) => account.account_id)?.account_id ||
-    visibleSites.find((site) => site.account_id)?.account_id ||
     '';
-  const firstVisibleSiteId = visibleSites[0]?.site_id || '';
   const latestConnectedSite = [...visibleSites].sort(
     (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
   )[0] || null;
@@ -328,7 +326,6 @@ function PortalSitesContent() {
         {portalAccountId ? (
           <PortalSiteConnectPanel
             accountId={portalAccountId}
-            currentSiteId={firstVisibleSiteId}
             sites={session.sites}
             onSiteCreated={(siteId) => handleSiteCreated(siteId)}
             mode="modal"
@@ -340,11 +337,11 @@ function PortalSitesContent() {
           />
         ) : (
           <PortalEmptyState
-            title={t('portal.connect_site_account_required_title', {}, 'Customer account required')}
+            title={t('portal.connect_site_account_required_title', {}, 'Customer account missing')}
             description={t(
               'portal.connect_site_account_required_desc',
               {},
-              'A bound customer account is required before adding another site here.'
+              'Your signed-in user has no active customer account. Please create a service center account, then restart the WordPress addon connection.'
             )}
             actionLabel={t('portal.workspace_label', {}, 'Workspace')}
             actionHref="/portal"

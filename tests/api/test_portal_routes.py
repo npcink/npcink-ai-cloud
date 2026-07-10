@@ -1416,7 +1416,7 @@ def test_portal_site_key_write_requires_manage_site_keys_action(tmp_path: Path) 
     dispose_engine(database_url)
 
 
-def test_portal_site_access_allows_legacy_site_grant_without_account_membership(
+def test_portal_site_access_rejects_site_grant_without_account_membership(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
@@ -1457,11 +1457,8 @@ def test_portal_site_access_allows_legacy_site_grant_without_account_membership(
         "/portal/v1/sites/site_portal_legacy_grant/summary",
         headers=_portal_headers_for_grant(grant),
     )
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["site"]["site_id"] == "site_portal_legacy_grant"
-    assert data["role"] == "user"
-    assert "view_usage" in data["allowed_actions"]
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "service.principal_access_required"
 
     dispose_engine(database_url)
 
@@ -3957,12 +3954,12 @@ def test_portal_session_sites_selection_and_logout_support_cookie_session(
     assert session_data["principal_id"] == _GRANTS_BY_EMAIL[
         "portal-session@example.com"
     ]["principal_id"]
-    assert session_data["site_id"] == "site_portal_session"
+    assert session_data["site_id"] == ""
     assert session_data["account_id"] == "acct_portal_session"
     assert session_data["identity_type"] == "user"
     assert session_data["role"] == "user"
     assert session_data["accounts"][0]["account_id"] == "acct_portal_session"
-    assert session_data["site"]["site_id"] == "site_portal_session"
+    assert session_data["site"] is None
 
     sites_response = client.get("/portal/v1/sites")
     assert sites_response.status_code == 200
@@ -4249,9 +4246,10 @@ def test_portal_session_route_supports_jwt_with_session_cookies(tmp_path: Path) 
     assert data["principal_id"] == _GRANTS_BY_EMAIL[
         "portal-session-jwt@example.com"
     ]["principal_id"]
-    assert data["site_id"] == "site_portal_session_jwt"
+    assert data["site_id"] == ""
     assert data["auth_mode"] == "jwt"
     assert len(data["sites"]) == 1
+    assert data["site"] is None
     assert data["session"]["transport"] == "header"
     assert data["session"]["revocable"] is False
     assert data["session"]["expires_at"] != ""
