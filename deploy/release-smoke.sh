@@ -273,7 +273,12 @@ import os
 print(json.dumps({"email": os.environ["MEMBER_EMAIL_VALUE"]}, ensure_ascii=True))
 PY
 )"
-	http_request "POST" "${BASE_URL%/}/portal/v1/auth/code/request" "${PORTAL_COOKIE_JAR}" "${REQUEST_BODY}"
+	http_request \
+		"POST" \
+		"${BASE_URL%/}/portal/v1/auth/code/request" \
+		"${PORTAL_COOKIE_JAR}" \
+		"${REQUEST_BODY}" \
+		"Origin: ${BASE_URL%/}"
 	assert_status "${HTTP_STATUS}" "200" "portal login code request should succeed"
 
 	DELIVERY_MODE="$(json_read_path "${HTTP_BODY}" "data.delivery" 2>/dev/null || true)"
@@ -294,7 +299,12 @@ import os
 print(json.dumps({"email": os.environ["MEMBER_EMAIL_VALUE"], "code": os.environ["LOGIN_CODE_VALUE"]}, ensure_ascii=True))
 PY
 )"
-http_request "POST" "${BASE_URL%/}/portal/v1/auth/code/verify" "${PORTAL_COOKIE_JAR}" "${VERIFY_BODY}"
+http_request \
+	"POST" \
+	"${BASE_URL%/}/portal/v1/auth/code/verify" \
+	"${PORTAL_COOKIE_JAR}" \
+	"${VERIFY_BODY}" \
+	"Origin: ${BASE_URL%/}"
 assert_status "${HTTP_STATUS}" "200" "portal login code verify should succeed"
 assert_json_non_empty "${HTTP_BODY}" "data.member_ref" "portal session should include member_ref"
 

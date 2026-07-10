@@ -611,6 +611,7 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert 'if [ -z "${LOGIN_CODE}" ]; then' in release_smoke_script
     assert "Using pre-issued Portal login code" in release_smoke_script
     assert "skips requesting a replacement code" in release_smoke_env_example
+    assert release_smoke_script.count('"Origin: ${BASE_URL%/}"') >= 3
 
 
 def test_lightweight_release_policy_gate_is_documented() -> None:
