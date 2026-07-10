@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
@@ -142,6 +143,20 @@ def _decode_support_attachment_content(value: str) -> bytes:
 
 
 class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
+    if TYPE_CHECKING:
+        def resolve_portal_site_access(
+            self,
+            *,
+            site_id: str,
+            principal_id: str,
+        ) -> dict[str, object]: ...
+
+        def get_portal_principal_profile(
+            self,
+            *,
+            principal_id: str,
+        ) -> dict[str, object]: ...
+
     def create_portal_support_request(
         self,
         *,
@@ -456,7 +471,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 body=normalized_body,
                 metadata_json={"source": "portal_reply"},
             )
-            payload = {
+            payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),
             }
@@ -521,7 +536,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 body=normalized_body,
                 metadata_json={"source": "admin_reply"},
             )
-            payload = {
+            payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),
             }
@@ -599,7 +614,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 content_bytes=content,
                 metadata_json={"source": "portal_upload"},
             )
-            payload = {
+            payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "attachment": self._serialize_support_request_attachment(attachment),
             }
@@ -672,7 +687,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 content_bytes=content,
                 metadata_json={"source": "admin_upload"},
             )
-            payload = {
+            payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "attachment": self._serialize_support_request_attachment(attachment),
             }
@@ -808,7 +823,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 comment=normalized_comment,
                 metadata_json={"source": "portal_close_evaluation"},
             )
-            payload = {
+            payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
                 "feedback": self._serialize_support_request_feedback(feedback),
             }
