@@ -340,6 +340,6 @@ assert_body_contains "${HTTP_HEADERS}" "npcink_admin_session_token" "admin boots
 
 http_request "GET" "${BASE_URL%/}/admin/session" "${ADMIN_COOKIE_JAR}"
 assert_status "${HTTP_STATUS}" "200" "admin session should load"
-assert_json_non_empty "${HTTP_BODY}" "data.platform_admin_ref" "admin session should include platform admin ref"
+assert_json_non_empty "${HTTP_BODY}" "data.principal_id" "admin session should include principal_id"
 
 ok "Release smoke passed"
