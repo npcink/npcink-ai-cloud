@@ -19,6 +19,7 @@ const adminLoginPath = resolve(process.cwd(), 'src/app/admin/login/page.tsx');
 const providerReferenceLinksPath = resolve(process.cwd(), 'src/components/admin/ProviderReferenceLinks.tsx');
 const supplierSummaryCardsPath = resolve(process.cwd(), 'src/components/admin/SupplierSummaryCards.tsx');
 const supplierToolbarPath = resolve(process.cwd(), 'src/components/admin/SupplierToolbar.tsx');
+const supplierConnectionTablesPath = resolve(process.cwd(), 'src/components/admin/SupplierConnectionTables.tsx');
 const pageSource = readFileSync(pagePath, 'utf8');
 const abilityModelsSource = readFileSync(abilityModelsPath, 'utf8');
 const aiAdvisorSource = readFileSync(aiAdvisorPath, 'utf8');
@@ -34,18 +35,19 @@ const adminLoginSource = readFileSync(adminLoginPath, 'utf8');
 const providerReferenceLinksSource = readFileSync(providerReferenceLinksPath, 'utf8');
 const supplierSummaryCardsSource = readFileSync(supplierSummaryCardsPath, 'utf8');
 const supplierToolbarSource = readFileSync(supplierToolbarPath, 'utf8');
+const supplierConnectionTablesSource = readFileSync(supplierConnectionTablesPath, 'utf8');
 const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
 const openCapabilityTemplateStart = pageSource.indexOf('function openCapabilityProviderTemplate');
 const openCapabilityTemplateSource = openCapabilityTemplateStart >= 0
-  ? pageSource.slice(openCapabilityTemplateStart, pageSource.indexOf('const resourceStatusLabel', openCapabilityTemplateStart))
+  ? pageSource.slice(openCapabilityTemplateStart, pageSource.indexOf('function configureCapabilityConnection', openCapabilityTemplateStart))
   : '';
 const capabilityDiagnosticsStart = pageSource.indexOf('capability_diagnostics_title');
 const capabilityDiagnosticsSource = capabilityDiagnosticsStart >= 0
   ? pageSource.slice(capabilityDiagnosticsStart, pageSource.indexOf('{providerUsesCustomRuntimeFields', capabilityDiagnosticsStart))
   : '';
-const capabilitySupplierTableStart = pageSource.indexOf('activeCapabilityConnections.map');
+const capabilitySupplierTableStart = supplierConnectionTablesSource.indexOf('export function CapabilitySupplierTable');
 const capabilitySupplierTableSource = capabilitySupplierTableStart >= 0
-  ? pageSource.slice(pageSource.lastIndexOf('<table', capabilitySupplierTableStart), pageSource.indexOf('{capabilityAddDialogOpen', capabilitySupplierTableStart))
+  ? supplierConnectionTablesSource.slice(capabilitySupplierTableStart)
   : '';
 const connectionsToolbarStart = pageSource.indexOf("activeView === 'connections'");
 const connectionsToolbarSource = connectionsToolbarStart >= 0
@@ -390,7 +392,7 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /providerTestStageLabel\(testResult\.stage\)[\s\S]*providerTestMessage\(testResult\)/,
   'Provider test results must render through localized stage and message helpers'
 );
@@ -582,8 +584,8 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  pageSource,
-  /value=\{connectionStatusFilter\}[\s\S]*setConnectionStatusFilter[\s\S]*status_filter_label[\s\S]*filter_ready[\s\S]*filter_missing_secret[\s\S]*filter_disabled/,
+  supplierConnectionTablesSource,
+  /value=\{value\}[\s\S]*onChange[\s\S]*status_filter_label[\s\S]*filter_ready[\s\S]*filter_missing_secret[\s\S]*filter_disabled/,
   'Provider channel status filtering must live in a status-column select'
 );
 
@@ -595,13 +597,13 @@ assert.match(
 
 assert.match(
   capabilitySupplierTableSource,
-  /value=\{capabilityCategoryFilter\}[\s\S]*setCapabilityCategoryFilter[\s\S]*capability_category_filter/,
+  /value=\{categoryFilter\}[\s\S]*onCategoryFilterChange[\s\S]*capability_category_filter/,
   'Capability supplier category filtering must live in the category-column select'
 );
 
 assert.match(
-  capabilitySupplierTableSource,
-  /w-36[\s\S]*filter_all_categories[\s\S]*w-36[\s\S]*filter_all_statuses/,
+  supplierConnectionTablesSource,
+  /filter_all_statuses[\s\S]*export function CapabilitySupplierTable[\s\S]*w-36[\s\S]*filter_all_categories[\s\S]*StatusFilter[\s\S]*className="w-36"/,
   'Capability supplier header filters must use explicit all-category and all-status labels with consistent width'
 );
 
@@ -630,8 +632,8 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  pageSource,
-  /supplierGroup\.connections\.map[\s\S]*channel_priority_summary[\s\S]*model_catalog_enabled_count/,
+  supplierConnectionTablesSource.slice(0, capabilitySupplierTableStart),
+  /channel_priority_summary[\s\S]*model_catalog_enabled_count/,
   'Model supplier list must not show provider priority because routing priority belongs to model-call configuration'
 );
 
@@ -643,19 +645,19 @@ assert.match(
 
 assert.match(
   capabilitySupplierTableSource,
-  /capabilityProviderPurposeLabel\(connection\)[\s\S]*status_configured_label[\s\S]*showPriority[\s\S]*channel_priority_summary/,
+  /purposeLabel\(connection\)[\s\S]*status_configured_label[\s\S]*showPriority[\s\S]*channel_priority_summary/,
   'Capability supplier table must keep priority in the connection column instead of the supplier identity column'
 );
 
 assert.match(
   pageSource,
-  /activeCapabilityConnections\.map[\s\S]*onClick=\{\(\) => \{[\s\S]*editProviderConnection\(connection\)/,
+  /function configureCapabilityConnection[\s\S]*editProviderConnection\(connection\)[\s\S]*<CapabilitySupplierTable[\s\S]*onConfigure=\{configureCapabilityConnection\}/,
   'Capability supplier Configure action must open the shared provider connection form'
 );
 
 assert.match(
   capabilitySupplierTableSource,
-  /column_provider[\s\S]*capability_category_filter[\s\S]*status_filter_label[\s\S]*column_connection[\s\S]*last_test[\s\S]*column_actions/,
+  /column_provider[\s\S]*capability_category_filter[\s\S]*StatusFilter[\s\S]*column_connection[\s\S]*last_test[\s\S]*column_actions/,
   'Capability supplier list must use provider/category-filter/status-filter/connection/test/actions columns'
 );
 
@@ -673,7 +675,7 @@ assert.doesNotMatch(
 
 assert.match(
   capabilitySupplierTableSource,
-  /capabilityProviderPurposeLabel\(connection\)[\s\S]*capabilityCategoryLabel\(category\)[\s\S]*status_configured_label/,
+  /purposeLabel\(connection\)[\s\S]*categoryLabel\(category\)[\s\S]*status_configured_label/,
   'Capability supplier list must show supplier purpose, category column, and compact configured state'
 );
 
@@ -697,7 +699,7 @@ assert.doesNotMatch(
 
 assert.match(
   capabilitySupplierTableSource,
-  /connectionTestResults\[connection\.connection_id\][\s\S]*runProviderConnectionTest\(connection\.connection_id\)/,
+  /testResults\[connection\.connection_id\][\s\S]*onTest\(connection\.connection_id\)/,
   'Capability supplier list must expose a per-connection self-test action'
 );
 
@@ -1601,9 +1603,15 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  pageSource,
-  /connectionExternalLinkItems\(connection\)[\s\S]*ProviderReferenceLinks[\s\S]*items=\{providerLinkItems\}[\s\S]*variant="inline"/,
+  supplierConnectionTablesSource,
+  /referenceLinksForConnection\(connection\)[\s\S]*ProviderReferenceLinks[\s\S]*items=\{providerLinkItems\}[\s\S]*variant="inline"/,
   'Provider channel list must render provider reference links through the shared component without mixing them into model rows'
+);
+
+assert.match(
+  pageSource,
+  /<ModelSupplierTable[\s\S]*referenceLinksForConnection=\{connectionExternalLinkItems\}/,
+  'AI resources page must supply sanitized provider reference links to the model supplier table'
 );
 
 assert.match(
@@ -1751,13 +1759,13 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /column_enabled_models/,
   'Model supplier list must expose enabled model count as the main model column'
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /column_enabled_models', 'Runtime allowlist'[\s\S]*model_catalog_allowlist_short_hint/,
   'Model supplier list must label enabled models as the runtime allowlist used by ability routes'
 );
@@ -1769,25 +1777,25 @@ assert.match(
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /filter_all_statuses[\s\S]*column_provider[\s\S]*column_enabled_models[\s\S]*model_catalog_enabled_count_short[\s\S]*model_catalog_none_enabled_short/,
   'Model supplier list must use explicit all-status filtering and compact enabled model counts'
 );
 
 assert.doesNotMatch(
-  pageSource,
+  supplierConnectionTablesSource,
   /column_enabled_models[\s\S]*model_catalog_enabled_count'[\s\S]*model_catalog_none_enabled'/,
   'Model supplier enabled-model rows must not repeat full enabled-model sentence copy'
 );
 
 assert.doesNotMatch(
-  pageSource,
+  supplierConnectionTablesSource,
   /column_base_url[\s\S]*model_catalog_enabled_count_short|modelSample/,
   'Model supplier list must keep base URL and model-name previews out of the main table'
 );
 
 assert.doesNotMatch(
-  pageSource,
+  supplierConnectionTablesSource,
   /column_capabilities_profiles/,
   'Model supplier list must not foreground capability/profile scope as a main table column'
 );
@@ -2094,7 +2102,7 @@ assert.match(
 
 assert.match(
   capabilitySupplierTableSource,
-  /connection\.managed_by === 'cloud_provider_connections'[\s\S]*setConfirmingDeleteConnectionId\(connection\.connection_id\)[\s\S]*action_delete/,
+  /connection\.managed_by === 'cloud_provider_connections'[\s\S]*onRequestDelete\(connection\.connection_id\)[\s\S]*action_delete/,
   'Capability supplier rows must expose delete only for DB-managed provider connections and enter inline confirmation first'
 );
 
@@ -2105,13 +2113,13 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  pageSource,
-  /confirmingDeleteConnectionId[\s\S]*isConfirmingDelete[\s\S]*action_confirm_delete[\s\S]*deleteProviderConnection\(connection\)[\s\S]*action_cancel/,
+  supplierConnectionTablesSource,
+  /confirmingDeleteConnectionId[\s\S]*isConfirmingDelete[\s\S]*action_confirm_delete[\s\S]*onDelete\(connection\)[\s\S]*action_cancel/,
   'Provider connection delete must require an inline second confirmation with a cancel action'
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /w-44 px-4 py-3 text-center[\s\S]*column_actions[\s\S]*w-44 px-4 py-4 text-center/,
   'Model supplier action column must center its header and row actions'
 );
@@ -2123,13 +2131,13 @@ assert.match(
 );
 
 assert.match(
-  pageSource,
-  /action_open_config/,
-  'AI resources capability supplier rows must use a distinct open-config action'
+  capabilitySupplierTableSource,
+  /onConfigure\(connection\)[\s\S]*action_configure/,
+  'AI resources capability supplier rows must use the shared configure action'
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /resourceStatusLabel/,
   'AI resources provider channel list must translate raw runtime statuses for operators'
 );
@@ -2141,19 +2149,19 @@ assert.match(
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /<table className="min-w-\[760px\]/,
   'AI resources model suppliers must render as a compact table instead of wide cards or duplicated panels'
 );
 
 assert.match(
-  pageSource,
-  /renderConnectionIssue[\s\S]*connection\.enabled && connection\.configured[\s\S]*return null[\s\S]*provider_issue_runtime_disabled[\s\S]*provider_issue_missing_credential/,
+  supplierConnectionTablesSource,
+  /ConnectionIssue[\s\S]*connection\.enabled && connection\.configured[\s\S]*return null[\s\S]*provider_issue_runtime_disabled[\s\S]*provider_issue_missing_credential/,
   'AI resources provider channel table must hide normal enabled/configured state and reserve row text for problems'
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /QUIET_STATUS_BADGE_CLASS[\s\S]*connection\.status === 'ready'/,
   'AI resources provider channel table must keep ready statuses visually quiet'
 );
@@ -2351,19 +2359,19 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /field_enabled/,
   'AI resources connections view must expose provider enabled state'
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /status_configured_label[\s\S]*status_missing_secret_label/,
   'AI resources connections view must expose masked provider configured state'
 );
 
 assert.match(
-  pageSource,
+  supplierConnectionTablesSource,
   /last_test/,
   'AI resources connections view must expose masked provider test diagnostics'
 );
