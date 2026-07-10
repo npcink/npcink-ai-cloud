@@ -198,7 +198,6 @@ def _login_platform_admin(
     assert response.headers["location"].startswith("/admin"), response.headers["location"]
     set_cookie_header = response.headers.get("set-cookie", "")
     assert "npcink_admin_session_token" in set_cookie_header
-    assert "magick_admin_session_token" in set_cookie_header
     assert "Max-Age=0" in set_cookie_header
     return client
 

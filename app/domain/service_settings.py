@@ -22,13 +22,8 @@ SERVICE_SETTING_PAYMENT_ALIPAY = "payment_alipay"
 
 SERVICE_SETTING_KIND_PORTAL = "portal"
 SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH = "/open/auth/qq/callback"
-SERVICE_SETTING_QQ_LEGACY_CALLBACK_PATH = "/portal/v1/auth/qq/callback"
 SERVICE_SETTING_ALIPAY_NOTIFY_PATH = "/open/payments/alipay/notify"
 SERVICE_SETTING_ALIPAY_RETURN_PATH = "/open/payments/alipay/return"
-SERVICE_SETTING_QQ_ALLOWED_CALLBACK_PATHS = {
-    SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH,
-    SERVICE_SETTING_QQ_LEGACY_CALLBACK_PATH,
-}
 
 STATUS_READY = "ready"
 STATUS_DISABLED = "disabled"
@@ -185,8 +180,7 @@ class ServiceSettingsAdminService:
                     "service_settings.email_password_required",
                     "SMTP password is required when username is configured",
                 )
-            if self.settings.service_settings_secret:
-                password_value = existing_password
+            password_value = existing_password
         if not username and (password_value is not None and _string(password_value)):
             raise ServiceSettingsAdminError(
                 "service_settings.email_username_required",
@@ -275,11 +269,10 @@ class ServiceSettingsAdminService:
                 "service_settings.alipay_public_key_required",
                 "Alipay public key is required",
             )
-        if self.settings.service_settings_secret:
-            if private_key_value is None and existing_private_key:
-                private_key_value = existing_private_key
-            if public_key_value is None and existing_public_key:
-                public_key_value = existing_public_key
+        if private_key_value is None and existing_private_key:
+            private_key_value = existing_private_key
+        if public_key_value is None and existing_public_key:
+            public_key_value = existing_public_key
         row = self._save(
             setting_id=SERVICE_SETTING_PAYMENT_ALIPAY,
             config={
@@ -757,7 +750,7 @@ def _qq_redirect_uri_allowed(
 ) -> bool:
     parsed = urlsplit(_string(value))
     public_parsed = urlsplit(_string(public_base_url))
-    if parsed.path not in SERVICE_SETTING_QQ_ALLOWED_CALLBACK_PATHS:
+    if parsed.path != SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH:
         return False
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
         return False

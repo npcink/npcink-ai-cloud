@@ -3,7 +3,6 @@ export type Locale = 'en' | 'zh-CN';
 export const DEFAULT_LOCALE: Locale = 'zh-CN';
 export const LOCALE_STORAGE_KEY = 'locale';
 export const LOCALE_COOKIE_NAME = 'npcink_locale';
-const LOCALE_COOKIE_NAME_LEGACY = 'magick_locale';
 
 export interface TranslationMap {
   [key: string]: string;
@@ -9265,7 +9264,6 @@ export function persistLocale(locale: Locale) {
   }
   const normalizedLocale = resolveLocale(locale) ?? DEFAULT_LOCALE;
   window.localStorage.setItem(LOCALE_STORAGE_KEY, normalizedLocale);
-  document.cookie = `${LOCALE_COOKIE_NAME_LEGACY}=; path=/; max-age=0; samesite=lax`;
   document.cookie = `${LOCALE_COOKIE_NAME}=${encodeURIComponent(normalizedLocale)}; path=/; max-age=31536000; samesite=lax`;
 }
 

@@ -774,7 +774,7 @@ def test_admin_service_settings_email_replaces_unreadable_existing_password(
 ) -> None:
     database_url, client = _build_client(tmp_path)
     old_settings = _runtime_service_settings(database_url)
-    old_settings.admin_session_secret = "old-admin-session-secret-32b"
+    old_settings.service_settings_secret = "old-service-settings-secret-32b"
     bad_ciphertext = encrypt_service_setting_secret("old-password", settings=old_settings)
 
     with get_session(database_url) as session:
@@ -832,203 +832,30 @@ def test_admin_service_settings_email_replaces_unreadable_existing_password(
     dispose_engine(database_url)
 
 
-def test_service_setting_secret_prefers_dedicated_key_and_reads_legacy() -> None:
-    legacy_settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
-    legacy_ciphertext = encrypt_service_setting_secret(
-        "legacy-service-secret",
-        settings=legacy_settings,
-    )
+def test_service_setting_secret_only_uses_dedicated_key() -> None:
     dedicated_settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
-    dedicated_settings.service_settings_secret = (
-        "dedicated-service-settings-secret-32b"
-    )
-
-    assert (
-        decrypt_service_setting_secret(legacy_ciphertext, settings=dedicated_settings)
-        == "legacy-service-secret"
-    )
-
+    dedicated_settings.service_settings_secret = "dedicated-service-settings-secret-32b"
     dedicated_ciphertext = encrypt_service_setting_secret(
         "dedicated-service-secret",
         settings=dedicated_settings,
     )
-    rotated_admin_settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
-    rotated_admin_settings.admin_session_secret = "rotated-admin-session-secret-32b"
-    rotated_admin_settings.service_settings_secret = (
-        "dedicated-service-settings-secret-32b"
-    )
     assert (
         decrypt_service_setting_secret(
             dedicated_ciphertext,
-            settings=rotated_admin_settings,
+            settings=dedicated_settings,
         )
         == "dedicated-service-secret"
     )
 
+    missing_key_settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
+    missing_key_settings.service_settings_secret = None
+    with pytest.raises(RuntimeError, match="service setting secret is not configured"):
+        decrypt_service_setting_secret(dedicated_ciphertext, settings=missing_key_settings)
+
+    wrong_key_settings = _runtime_service_settings("sqlite+pysqlite:///:memory:")
+    wrong_key_settings.service_settings_secret = "different-service-settings-secret-32b"
     with pytest.raises(RuntimeError, match="service setting secret could not be decrypted"):
-        decrypt_service_setting_secret(dedicated_ciphertext, settings=legacy_settings)
-
-
-def test_admin_service_settings_email_migrates_readable_legacy_password_to_dedicated_key(
-    tmp_path: Path,
-) -> None:
-    dedicated_secret = "dedicated-service-settings-secret-32b"
-    database_url, client = _build_client(
-        tmp_path,
-        settings_overrides={"service_settings_secret": dedicated_secret},
-    )
-    legacy_settings = _runtime_service_settings(database_url)
-    legacy_ciphertext = encrypt_service_setting_secret(
-        "legacy-password",
-        settings=legacy_settings,
-    )
-
-    with get_session(database_url) as session:
-        session.add(
-            ServiceSetting(
-                setting_id="portal_email",
-                setting_kind="portal",
-                enabled=True,
-                config_json={
-                    "smtp_host": "smtp.example.com",
-                    "smtp_port": 465,
-                    "smtp_username": "smtp-user",
-                    "smtp_use_ssl": True,
-                    "smtp_use_starttls": False,
-                    "smtp_timeout_seconds": 20,
-                    "from_email": "noreply@example.com",
-                    "from_name": "Npcink AI Cloud",
-                    "reply_to": "support@example.com",
-                },
-                secret_ciphertext_json={"smtp_password": legacy_ciphertext},
-                status="ready",
-                metadata_json={},
-            )
-        )
-        session.commit()
-
-    response = client.patch(
-        "/internal/service/admin/service-settings/email",
-        json={
-            "enabled": True,
-            "smtp_host": "smtp.example.com",
-            "smtp_port": 465,
-            "smtp_username": "smtp-user",
-            "smtp_password": None,
-            "smtp_use_ssl": True,
-            "smtp_use_starttls": False,
-            "smtp_timeout_seconds": 20,
-            "from_email": "noreply@example.com",
-            "from_name": "Npcink AI Cloud",
-            "reply_to": "support@example.com",
-        },
-        headers=build_internal_headers(idempotency_key="service-settings-email-migrate-001"),
-    )
-
-    assert response.status_code == 200, response.text
-    with get_session(database_url) as session:
-        row = session.get(ServiceSetting, "portal_email")
-        assert row is not None
-        migrated_ciphertext = str((row.secret_ciphertext_json or {})["smtp_password"])
-
-    migrated_settings = _runtime_service_settings(database_url)
-    migrated_settings.service_settings_secret = dedicated_secret
-    migrated_settings.admin_session_secret = "rotated-admin-session-secret-32b"
-    assert (
-        decrypt_service_setting_secret(migrated_ciphertext, settings=migrated_settings)
-        == "legacy-password"
-    )
-    with pytest.raises(RuntimeError, match="service setting secret could not be decrypted"):
-        decrypt_service_setting_secret(migrated_ciphertext, settings=legacy_settings)
-
-    dispose_engine(database_url)
-
-
-def test_admin_service_settings_alipay_migrates_readable_legacy_keys_to_dedicated_key(
-    tmp_path: Path,
-) -> None:
-    dedicated_secret = "dedicated-service-settings-secret-32b"
-    database_url, client = _build_client(
-        tmp_path,
-        settings_overrides={"service_settings_secret": dedicated_secret},
-    )
-    legacy_settings = _runtime_service_settings(database_url)
-    private_key, public_key = _alipay_test_keys()
-    legacy_private_ciphertext = encrypt_service_setting_secret(
-        private_key,
-        settings=legacy_settings,
-    )
-    legacy_public_ciphertext = encrypt_service_setting_secret(
-        public_key,
-        settings=legacy_settings,
-    )
-
-    with get_session(database_url) as session:
-        session.add(
-            ServiceSetting(
-                setting_id="portal_public",
-                setting_kind="portal",
-                enabled=True,
-                config_json={"public_base_url": "https://cloud.example.com"},
-                secret_ciphertext_json={},
-                status="ready",
-                metadata_json={},
-            )
-        )
-        session.add(
-            ServiceSetting(
-                setting_id="payment_alipay",
-                setting_kind="portal",
-                enabled=True,
-                config_json={
-                    "app_id": "alipay-app-id",
-                    "gateway_url": "https://openapi.alipay.com/gateway.do",
-                    "notify_url": "https://cloud.example.com/open/payments/alipay/notify",
-                    "return_url": "https://cloud.example.com/open/payments/alipay/return",
-                    "sign_type": "RSA2",
-                    "payment_product_code": "FAST_INSTANT_TRADE_PAY",
-                },
-                secret_ciphertext_json={
-                    "private_key": legacy_private_ciphertext,
-                    "public_key": legacy_public_ciphertext,
-                },
-                status="ready",
-                metadata_json={},
-            )
-        )
-        session.commit()
-
-    response = client.patch(
-        "/internal/service/admin/service-settings/alipay-payment",
-        json={
-            "enabled": True,
-            "app_id": "alipay-app-id",
-            "gateway_url": "https://openapi.alipay.com/gateway.do",
-            "notify_url": "https://cloud.example.com/open/payments/alipay/notify",
-            "return_url": "https://cloud.example.com/open/payments/alipay/return",
-        },
-        headers=build_internal_headers(idempotency_key="service-settings-alipay-migrate-001"),
-    )
-    assert response.status_code == 200, response.text
-
-    with get_session(database_url) as session:
-        row = session.get(ServiceSetting, "payment_alipay")
-        assert row is not None
-        migrated_ciphertexts = dict(row.secret_ciphertext_json or {})
-
-    migrated_settings = _runtime_service_settings(database_url)
-    migrated_settings.service_settings_secret = dedicated_secret
-    migrated_settings.admin_session_secret = "rotated-admin-session-secret-32b"
-    assert decrypt_service_setting_secret(
-        str(migrated_ciphertexts["private_key"]),
-        settings=migrated_settings,
-    ) == private_key.strip()
-    assert decrypt_service_setting_secret(
-        str(migrated_ciphertexts["public_key"]),
-        settings=migrated_settings,
-    ) == public_key.strip()
-
-    dispose_engine(database_url)
+        decrypt_service_setting_secret(dedicated_ciphertext, settings=wrong_key_settings)
 
 
 def test_admin_service_settings_email_requires_reentry_for_unreadable_saved_password(
@@ -1036,7 +863,7 @@ def test_admin_service_settings_email_requires_reentry_for_unreadable_saved_pass
 ) -> None:
     database_url, client = _build_client(tmp_path)
     old_settings = _runtime_service_settings(database_url)
-    old_settings.admin_session_secret = "old-admin-session-secret-32b"
+    old_settings.service_settings_secret = "old-service-settings-secret-32b"
     bad_ciphertext = encrypt_service_setting_secret("old-password", settings=old_settings)
 
     with get_session(database_url) as session:
@@ -1116,7 +943,7 @@ def test_admin_service_settings_reject_qq_redirect_outside_public_base(
     dispose_engine(database_url)
 
 
-def test_admin_service_settings_allow_legacy_qq_redirect_path(
+def test_admin_service_settings_reject_legacy_qq_redirect_path(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(tmp_path)
@@ -1139,8 +966,8 @@ def test_admin_service_settings_allow_legacy_qq_redirect_path(
         headers=build_internal_headers(idempotency_key="service-settings-legacy-qq-001"),
     )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["data"]["status"] == "ready"
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "service_settings.qq_redirect_uri_invalid"
 
     dispose_engine(database_url)
 
