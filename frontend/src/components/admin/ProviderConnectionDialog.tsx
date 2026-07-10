@@ -1,4 +1,7 @@
+'use client';
+
 import type { FormEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 type ProviderConnectionDialogProps = {
   open: boolean;
@@ -42,9 +45,9 @@ export function ProviderConnectionDialog({
     onSubmit();
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm sm:py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-6 backdrop-blur-sm sm:py-10"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -104,6 +107,7 @@ export function ProviderConnectionDialog({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

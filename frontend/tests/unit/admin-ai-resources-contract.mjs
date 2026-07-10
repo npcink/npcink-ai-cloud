@@ -1305,6 +1305,12 @@ assert.match(
 );
 
 assert.match(
+  providerConnectionDialogSource,
+  /createPortal\([\s\S]*fixed inset-0[\s\S]*overflow-y-auto[\s\S]*document\.body/,
+  'Provider channel dialog must render at the document root so scrolled mobile tables cannot move it outside the viewport'
+);
+
+assert.match(
   pageSource,
   /connectionDetailsOpen[\s\S]*setConnectionDetailsOpen\(true\)[\s\S]*setProviderFormMode\('edit'\)[\s\S]*setConnectionDetailsOpen\(false\)[\s\S]*<details[\s\S]*open=\{connectionDetailsOpen\}[\s\S]*onToggle=\{\(event\) => setConnectionDetailsOpen\(event\.currentTarget\.open\)\}/,
   'Provider channel connection fields must be explicitly open for new channels and collapsed by default while editing'
