@@ -70,9 +70,7 @@ from app.domain.usage.service import UsageService
 
 router = APIRouter(prefix="/portal/v1", tags=["portal"])
 COOKIE_PORTAL_QQ_OAUTH_NONCE = "npcink_portal_qq_oauth_nonce"
-COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY = "magick_portal_qq_oauth_nonce"
 COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH = "/"
-COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY_PATH = "/portal/v1/auth/qq"
 
 
 class PortalSiteKeyPayload(BaseModel):
@@ -321,18 +319,6 @@ def _set_portal_qq_oauth_nonce_cookie(
 
 def _clear_portal_qq_oauth_nonce_cookie(response: Response) -> None:
     response.delete_cookie(COOKIE_PORTAL_QQ_OAUTH_NONCE, path=COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH)
-    response.delete_cookie(
-        COOKIE_PORTAL_QQ_OAUTH_NONCE,
-        path=COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY_PATH,
-    )
-    response.delete_cookie(
-        COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY,
-        path=COOKIE_PORTAL_QQ_OAUTH_NONCE_PATH,
-    )
-    response.delete_cookie(
-        COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY,
-        path=COOKIE_PORTAL_QQ_OAUTH_NONCE_LEGACY_PATH,
-    )
 
 
 def _build_qq_authorization_url(request: Request, *, state: str) -> str:
@@ -554,8 +540,7 @@ async def start_portal_qq_login(
     return response
 
 
-@router.get("/auth/qq/callback")
-async def finish_portal_qq_login(
+async def finish_qq_login_callback(
     request: Request,
     code: str = Query(default=""),
     state: str = Query(default=""),

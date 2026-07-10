@@ -20,7 +20,8 @@ router truth, and final writes remain local.
 - Account, provider, service-settings, SMTP preview, and Alipay configuration
   surfaces load on a 1280px PC viewport without page-level horizontal overflow.
 - Portal and admin browser sessions cannot substitute for each other.
-- Local database migration state is `20260709_0056 (head)`.
+- Local database migration state is `20260710_0057 (head)`; the obsolete
+  `site_user_grants` table is absent.
 - Public preflight against `https://cloud.npc.ink` passes health, login-page,
   anonymous admin protection, and Alipay callback safety checks.
 
@@ -37,14 +38,27 @@ router truth, and final writes remain local.
   is at migration head, but autogenerate still reports historical index and
   unique-constraint naming differences that are outside the CNY migration.
 
+## Release-Candidate Follow-up
+
+- Portal authorization now uses `account_user_memberships` as its only truth.
+- Alembic `20260710_0057` fails closed if legacy site-grant rows exist, then
+  removes the obsolete table and adds the account-membership access index.
+- The retired QQ callback, runtime config aliases, old cookies, and service-secret
+  fallback are removed.
+- Local API and workers restarted successfully with all three stored service
+  credentials readable from the dedicated key only.
+- PC Addon binding preserves its full query through email-code login and returns
+  the complete payload to WordPress in Playwright coverage.
+
 ## Rollback
 
 1. Record the current production release SHA and database backup before merge.
 2. If the frontend/admin changes regress, redeploy the previous production SHA;
    do not rotate or remove `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET`.
-3. Keep migration `20260709_0056` applied during an application-only rollback.
-   It changes commercial currency defaults and existing USD rows to CNY; its
-   downgrade changes defaults only and intentionally does not rewrite CNY data.
+3. For an application-only rollback, preserve the database backup and the
+   dedicated service-settings key. Downgrade `0057` only if the previous build
+   still requires the empty compatibility table; do not expect old grant rows
+   to be reconstructed.
 4. Restore the database backup only for a confirmed data/schema incident, then
    rerun health, Portal login, provider runtime, payment callback, and SMTP smoke.
 

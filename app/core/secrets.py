@@ -246,9 +246,6 @@ def encrypt_service_setting_secret(secret: str, *, settings: Settings) -> str:
             _resolve_encryption_secret(
                 (
                     settings.service_settings_secret,
-                    settings.admin_session_secret,
-                    settings.portal_jwt_secret,
-                    settings.internal_auth_token,
                 ),
                 error_message="service setting secret is not configured",
             ),
@@ -263,29 +260,18 @@ def decrypt_service_setting_secret(ciphertext: str | None, *, settings: Settings
     token = str(ciphertext or "").strip()
     if not token:
         return ""
-    candidates = _resolve_encryption_secrets(
-        (
-            settings.service_settings_secret,
-            settings.admin_session_secret,
-            settings.portal_jwt_secret,
-            settings.internal_auth_token,
-        ),
+    secret = _resolve_encryption_secret(
+        (settings.service_settings_secret,),
         error_message="service setting secret is not configured",
     )
-    last_error: InvalidToken | None = None
-    for candidate in candidates:
-        try:
-            return (
-                _build_fernet(
-                    candidate,
-                    purpose="service_setting_secret",
-                )
-                .decrypt(token.encode("utf-8"))
-                .decode("utf-8")
-            )
-        except InvalidToken as error:
-            last_error = error
-    raise RuntimeError("service setting secret could not be decrypted") from last_error
+    try:
+        return (
+            _build_fernet(secret, purpose="service_setting_secret")
+            .decrypt(token.encode("utf-8"))
+            .decode("utf-8")
+        )
+    except InvalidToken as error:
+        raise RuntimeError("service setting secret could not be decrypted") from error
 
 
 def _resolve_encryption_secret(
@@ -298,23 +284,6 @@ def _resolve_encryption_secret(
         if secret:
             return secret
     raise RuntimeError(error_message)
-
-
-def _resolve_encryption_secrets(
-    candidates: Iterable[str | None],
-    *,
-    error_message: str,
-) -> list[str]:
-    secrets: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        secret = str(candidate or "").strip()
-        if secret and secret not in seen:
-            secrets.append(secret)
-            seen.add(secret)
-    if not secrets:
-        raise RuntimeError(error_message)
-    return secrets
 
 
 def _build_fernet(signing_secret: str, *, purpose: str) -> Fernet:

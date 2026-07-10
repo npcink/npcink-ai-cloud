@@ -215,22 +215,18 @@ explicitly approved:
 - Cloud metadata projection remains read-only detail rather than registry
   truth.
 
-## 5. Remaining Historical Debt
+## 5. Historical Debt Closeout
 
-The historical cleanup is not completely finished. The remaining items should
-be handled as separate, test-backed changes rather than folded into unrelated
-feature work.
+The historical cleanup items below were closed on the follow-up release-candidate
+branch with focused tests. Production promotion remains a separate operator gate.
 
 ### 5.1 Old configuration aliases
 
-`app/core/config.py` still accepts old `OPS_*` names alongside canonical
-`ADMIN_*` names. It also accepts older `OPENAI_COMPATIBLE_*` environment names
-alongside the current OpenAI fields.
+`app/core/config.py` now accepts only canonical `ADMIN_*` and `OPENAI_*` runtime
+environment names. Retired `OPS_*` and `OPENAI_COMPATIBLE_*` runtime aliases are
+ignored and covered by rejection tests.
 
-The production examples and release documents already require canonical names,
-so the remaining aliases are code-level compatibility. Before public release,
-remove them after confirming the production `.env.deploy` uses only canonical
-names. Add tests that old names no longer satisfy required production config.
+Production `.env.deploy` must use only canonical names before promotion.
 
 Provider import tooling may continue to recognize external provider formats
 when explicitly used as an import command; that does not require the runtime
@@ -238,58 +234,48 @@ settings object to accept the same aliases forever.
 
 ### 5.2 Old QQ callback route
 
-`app/domain/service_settings.py` still accepts both:
+`app/domain/service_settings.py` accepts only:
 
 ```text
 /open/auth/qq/callback
-/portal/v1/auth/qq/callback
 ```
 
-The second path is an active compatibility contract. Confirm the QQ Open
-Platform application is configured with the canonical `/open/auth/qq/callback`
-path, then remove the old path and invert the current positive legacy test into
-a rejection test.
+The second path is now retired and rejected. QQ Open Platform must use the
+canonical `/open/auth/qq/callback` path.
 
 ### 5.3 Service-setting encryption fallback
 
-Service-setting encryption prefers `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET`, but
-the code can still decrypt ciphertext produced from admin-session, Portal JWT,
-or internal-auth secrets. The migration path now re-encrypts readable SMTP and
-Alipay secrets with the dedicated key when those settings are saved.
+Service-setting encryption now requires `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET`
+and no longer tries admin-session, Portal JWT, or internal-auth secrets.
 
-This fallback is temporarily useful for migration, but it couples unrelated
-secret lifecycles. Before general availability:
+The pre-removal migration was completed for local stored SMTP and Alipay
+credentials. Before production promotion:
 
 1. keep `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` stable on the production host;
 2. exercise SMTP, QQ, and Alipay settings so readable legacy ciphertext is
    migrated;
 3. restart the API and confirm all stored credentials remain readable;
 4. verify no legacy-encrypted rows remain;
-5. remove fallback decryption and require the dedicated key for new writes.
+5. confirm the deployed build has no fallback decryption.
 
 Do not rotate or remove the dedicated key as part of an application rollback.
 
 ### 5.4 Mypy debt exceptions
 
-`scripts/check-changed-python-quality.sh` still skips targeted Mypy checks for:
+`scripts/check-changed-python-quality.sh` now runs targeted Mypy checks for:
 
 - `app/domain/commercial/service.py`
 - `app/domain/runtime/service.py`
 
-The full CI Mypy gate currently passes, but the changed-file fast path retains
-these explicit debt exceptions. Remove each exception only after its file is
-clean under the targeted command and the full gate remains green.
+Both files pass the targeted command and the explicit debt exceptions were removed.
 
 ### 5.5 Cleanup-only old cookies
 
-Old `magick_*` admin, Portal, QQ nonce, and locale cookie names remain mainly so
-new sessions can delete stale browser state. Backend authentication does not use
-the old Portal/admin cookie names as the canonical session source.
+Old `magick_*` admin, Portal, QQ nonce, and locale cookie cleanup branches were
+removed after canonical PC login and Addon-binding browser tests passed.
 
-This is low-risk, one-way cleanup residue rather than a second auth contract.
-Because there are no external users, it can be removed before release after a
-browser test confirms canonical login, logout, locale persistence, and QQ state
-cleanup work without it.
+Canonical login, logout, locale persistence, QQ state cleanup, and Addon return
+behavior remain covered without the retired cookie names.
 
 ### 5.6 Internal legacy adapter seams
 
@@ -339,11 +325,12 @@ Use the following order before formal public release:
    scope is understood;
 2. run the production-readiness checks and record backup, rollback, SMTP, QQ,
    Alipay, and signed-site evidence;
-3. remove old `OPS_*` and runtime `OPENAI_COMPATIBLE_*` aliases;
-4. remove the old QQ callback path after provider configuration confirmation;
-5. complete service-setting ciphertext migration and remove old-key fallback;
-6. remove the two targeted-Mypy debt exceptions;
-7. remove cleanup-only old cookies after canonical browser-flow verification;
+3. done on the release-candidate branch: old `OPS_*` and runtime
+   `OPENAI_COMPATIBLE_*` aliases are removed;
+4. done: the old QQ callback path is rejected;
+5. done in code and local data: old-key fallback is removed;
+6. done: the two targeted-Mypy debt exceptions are removed;
+7. done: cleanup-only old cookies are removed after browser-flow verification;
 8. promote `master` to `production` through the documented release PR and
    monitor the timing summary, deploy smoke, runtime health, and rollback path.
 
