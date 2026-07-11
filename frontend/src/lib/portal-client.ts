@@ -2387,7 +2387,7 @@ export class PortalClient {
     ] = await Promise.all([
       this.getAccountUsageSummary(),
       this.getAccountEntitlements(),
-      this.getAccountCreditLedger({ limit: 12 }),
+      this.getAccountCreditLedger({ limit: 20 }),
       this.listAccountCreditPacks(),
       this.listAccountPaymentOrders({ statusGroup: 'all', limit: 10 }),
     ]);

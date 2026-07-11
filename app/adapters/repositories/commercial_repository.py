@@ -1389,6 +1389,7 @@ class CommercialRepository:
         site_ids: list[str] | None = None,
         plan_id: str | None = None,
         current_period_end_before: datetime | None = None,
+        offset: int = 0,
         limit: int | None = None,
     ) -> list[AccountSubscription]:
         statement = select(AccountSubscription)
@@ -1430,6 +1431,8 @@ class CommercialRepository:
         )
         if joined_sites:
             statement = statement.distinct()
+        if offset > 0:
+            statement = statement.offset(offset)
         if limit is not None and limit > 0:
             statement = statement.limit(limit)
         return list(self.session.scalars(statement))
@@ -1439,12 +1442,24 @@ class CommercialRepository:
         *,
         status: str | None = None,
         statuses: list[str] | None = None,
+        account_id: str | None = None,
+        plan_id: str | None = None,
+        current_period_end_before: datetime | None = None,
     ) -> int:
         statement = select(func.count(AccountSubscription.subscription_id))
         if status:
             statement = statement.where(AccountSubscription.status == status)
         if statuses:
             statement = statement.where(AccountSubscription.status.in_(statuses))
+        if account_id:
+            statement = statement.where(AccountSubscription.account_id == account_id)
+        if plan_id:
+            statement = statement.where(AccountSubscription.plan_id == plan_id)
+        if current_period_end_before is not None:
+            statement = statement.where(
+                AccountSubscription.current_period_end_at.is_not(None),
+                AccountSubscription.current_period_end_at <= current_period_end_before,
+            )
         return int(self.session.scalar(statement) or 0)
 
     def summarize_subscription_status_counts(self) -> dict[str, int]:
