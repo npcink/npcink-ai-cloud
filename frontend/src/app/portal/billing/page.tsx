@@ -197,6 +197,7 @@ function PortalBillingContent() {
   const [paymentReturnOrderState, setPaymentReturnOrderState] = useState<PortalPaymentOrder | null>(null);
   const [paymentReturnError, setPaymentReturnError] = useState<string | null>(null);
   const [paymentReturnTimedOut, setPaymentReturnTimedOut] = useState(false);
+  const [paymentReturnReconciled, setPaymentReturnReconciled] = useState(false);
   const paymentOrderTabInitialized = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -282,10 +283,12 @@ function PortalBillingContent() {
 
   const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
   const paymentReturnOrderId = String(searchParams.get('out_trade_no') || '').trim();
-  const hasAlipayReturn = paymentReturnProvider === 'alipay' && Boolean(paymentReturnOrderId);
+  const shouldPollAlipayReturn = paymentReturnProvider === 'alipay' && Boolean(paymentReturnOrderId);
+  const hasAlipayReturn = shouldPollAlipayReturn || Boolean(paymentReturnOrderState);
+  const activePaymentReturnOrderId = paymentReturnOrderId || paymentReturnOrderState?.order_id || '';
 
   useEffect(() => {
-    if (!isAuthenticated || !session?.account_id || !hasAlipayReturn) return;
+    if (!isAuthenticated || !session?.account_id || !shouldPollAlipayReturn) return;
     let canceled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempts = 0;
@@ -294,12 +297,14 @@ function PortalBillingContent() {
       if (canceled) return;
       const status = normalizePaymentText(order?.status);
       if (status && status !== 'pending') {
+        setPaymentReturnReconciled(false);
         window.history.replaceState(window.history.state, '', '/portal/billing');
         await Promise.all([
           refresh(),
           loadBilling(),
           loadPaymentOrders('all', 0),
         ]);
+        if (!canceled) setPaymentReturnReconciled(true);
         return;
       }
       attempts += 1;
@@ -316,7 +321,6 @@ function PortalBillingContent() {
       if (timer) clearTimeout(timer);
     };
   }, [
-    hasAlipayReturn,
     isAuthenticated,
     loadBilling,
     loadPaymentOrders,
@@ -324,6 +328,7 @@ function PortalBillingContent() {
     paymentReturnOrderId,
     refresh,
     session?.account_id,
+    shouldPollAlipayReturn,
   ]);
 
   useEffect(() => {
@@ -492,22 +497,35 @@ function PortalBillingContent() {
 
   const handleRefreshPaymentReturn = async () => {
     setPaymentReturnTimedOut(false);
+    setPaymentReturnReconciled(false);
+    const order = await loadPaymentReturnOrder(activePaymentReturnOrderId);
     await Promise.all([
       refresh(),
       loadBilling(),
       loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset),
-      loadPaymentReturnOrder(paymentReturnOrderId),
     ]);
+    if (normalizePaymentText(order?.status) !== 'pending') {
+      setPaymentReturnReconciled(true);
+    }
   };
 
   const paymentReturnStatus = normalizePaymentText(paymentReturnOrderState?.status);
   const paymentReturnPaid = paymentReturnStatus === 'paid';
   const paymentReturnClosed = ['canceled', 'cancelled', 'failed', 'refunded'].includes(paymentReturnStatus);
   const paymentReturnCredits = Number(paymentReturnOrderState?.credit_pack?.ai_credits || 0);
+  const paymentReturnQuota = entitlements?.quota_summary?.credit;
+  const paymentReturnTotalAvailableValue = paymentReturnQuota?.total_remaining;
+  const paymentReturnTotalAvailable = paymentReturnTotalAvailableValue == null
+    ? null
+    : Number(paymentReturnTotalAvailableValue);
+  const paymentReturnNextExpiry = String(paymentReturnQuota?.paid_next_expires_at || '');
 
   const paymentReturnNotice = hasAlipayReturn ? (
     <BackofficeStackCard
       variant="portal"
+      data-ui="payment-return-notice"
+      role="status"
+      aria-live="polite"
       className={paymentReturnPaid
         ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/20'
         : paymentReturnClosed
@@ -542,9 +560,41 @@ function PortalBillingContent() {
                       'You have returned from Alipay. Cloud is checking the verified asynchronous notification.'
                     )}
           </p>
-          {paymentReturnOrderId ? (
+          {paymentReturnPaid && paymentReturnCredits > 0 && paymentReturnReconciled ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <div data-payment-return-metric="credited" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('portal.package.alipay_return_credited_label', {}, 'Added this time')}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                  {formatNumber(paymentReturnCredits)}
+                </p>
+              </div>
+              <div data-payment-return-metric="total-available" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('portal.usage.total_remaining_label', {}, 'Total available')}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                  {paymentReturnTotalAvailable != null && Number.isFinite(paymentReturnTotalAvailable)
+                    ? formatNumber(paymentReturnTotalAvailable)
+                    : t('common.not_available', {}, 'Not available')}
+                </p>
+              </div>
+              <div data-payment-return-metric="next-expiry" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('portal.package.alipay_return_expiry_label', {}, 'Nearest paid-credit expiry')}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
+                  {paymentReturnNextExpiry
+                    ? formatDate(paymentReturnNextExpiry)
+                    : t('common.not_available', {}, 'Not available')}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {activePaymentReturnOrderId ? (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {t('portal.package.alipay_return_order', { order: paymentReturnOrderId }, `Order ${paymentReturnOrderId}`)}
+              {t('portal.package.alipay_return_order', { order: activePaymentReturnOrderId }, `Order ${activePaymentReturnOrderId}`)}
             </p>
           ) : null}
           {paymentReturnError ? <p className="mt-2 text-sm text-red-700 dark:text-red-300">{paymentReturnError}</p> : null}

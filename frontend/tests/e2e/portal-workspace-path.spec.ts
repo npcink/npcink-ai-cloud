@@ -96,9 +96,14 @@ function buildPortalSession(selectedSiteId: string) {
   };
 }
 
-async function installPortalMocks(page: Page) {
+async function installPortalMocks(
+  page: Page,
+  options: { paymentReturnFlow?: boolean } = {}
+) {
   let selectedSiteId = 'site_attention';
   const canceledPaymentOrderIds = new Set<string>();
+  let paymentReturnPollCount = 0;
+  let paymentReturnConfirmed = false;
 
   await page.context().addCookies([
     {
@@ -183,6 +188,9 @@ async function installPortalMocks(page: Page) {
     }
 
     if (pathname === '/account/entitlements') {
+      const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
+      const packageRemaining = 2419;
+      const totalRemaining = packageRemaining + paidRemaining;
       await fulfillJson(route, {
         site_id: '',
         account_id: 'acct_portal',
@@ -265,10 +273,16 @@ async function installPortalMocks(page: Page) {
           credit: {
             key: 'ai_credits',
             used: 581,
-            limit: 3000,
-            remaining: 2419,
+            limit: 581 + totalRemaining,
+            remaining: totalRemaining,
             unlimited: false,
             unit: 'credits',
+            package_limit: 3000,
+            package_remaining: packageRemaining,
+            paid_remaining: paidRemaining,
+            paid_grant_count: paidRemaining > 0 ? 1 : 0,
+            paid_next_expires_at: paidRemaining > 0 ? '2027-04-07T10:00:00Z' : '',
+            total_remaining: totalRemaining,
           },
           resource_limits: [
             {
@@ -413,6 +427,44 @@ async function installPortalMocks(page: Page) {
         },
       });
       return;
+    }
+
+    const paymentOrderDetail = pathname.match(/^\/account\/payment-orders\/([^/]+)$/);
+    if (paymentOrderDetail && route.request().method() === 'GET') {
+      const orderId = decodeURIComponent(paymentOrderDetail[1]);
+      if (options.paymentReturnFlow && orderId === 'pay_return_polling') {
+        paymentReturnPollCount += 1;
+        const status = paymentReturnPollCount >= 2 ? 'paid' : 'pending';
+        paymentReturnConfirmed = status === 'paid';
+        await fulfillJson(route, {
+          account_id: 'acct_portal',
+          order: {
+            order_id: orderId,
+            account_id: 'acct_portal',
+            provider: 'alipay',
+            status,
+            amount: 0.01,
+            currency: 'CNY',
+            subject: 'Npcink AI Cloud 小积分包（10,000 AI 积分）',
+            checkout_url: '',
+            available_actions: status === 'pending' ? ['cancel'] : [],
+            purchase_kind: 'credit_pack',
+            credit_pack: {
+              pack_id: 'pack_small',
+              label: 'Small credit pack',
+              ai_credits: 10000,
+              amount: 0.01,
+              currency: 'CNY',
+            },
+            status_detail: {
+              code: status === 'paid' ? 'paid_and_granted' : 'awaiting_payment_confirmation',
+            },
+            created_at: '2026-04-07T10:00:00Z',
+            paid_at: status === 'paid' ? '2026-04-07T10:01:00Z' : '',
+          },
+        });
+        return;
+      }
     }
 
     if (pathname === '/account/payment-orders') {
@@ -1295,6 +1347,24 @@ test('portal workspace interaction path: account overview to site drawer and ser
   await page.getByRole('tab', { name: /Closed|已关闭/i }).click();
   await expect(page.locator('[data-payment-order-id="pay_pending_visible"]')).toContainText(/Canceled|已取消/i);
   await expect(page.getByText(/Medium credit pack|中积分包|中積分包/i)).toBeVisible();
+});
+
+test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
+  page,
+}) => {
+  await installPortalMocks(page, { paymentReturnFlow: true });
+
+  await page.goto(
+    '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
+  );
+
+  const notice = page.locator('[data-ui="payment-return-notice"]');
+  await expect(notice.getByText(/Payment confirmation is pending|正在等待支付确认/i)).toBeVisible();
+  await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 10_000 });
+  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
+  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
+  await expect(page).toHaveURL('/portal/billing');
 });
 
 test('portal sites page stays a site-record list without current-site switching', async ({ page }) => {

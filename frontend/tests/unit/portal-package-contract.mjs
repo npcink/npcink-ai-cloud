@@ -101,6 +101,16 @@ assert.match(
 );
 assert.match(
   billingPageSource,
+  /paymentReturnReconciled[\s\S]*data-payment-return-metric="credited"[\s\S]*data-payment-return-metric="total-available"[\s\S]*data-payment-return-metric="next-expiry"/,
+  'Confirmed credit-pack payment notice must show credited amount, total available, and expiry after reconciliation'
+);
+assert.match(
+  billingPageSource,
+  /shouldPollAlipayReturn[\s\S]*hasAlipayReturn[\s\S]*paymentReturnOrderState/,
+  'Payment success notice must remain visible after return query parameters are cleaned'
+);
+assert.match(
+  billingPageSource,
   /paid_offer_desc[\s\S]*formatPortalCurrency\(plusOffer\.amount\)[\s\S]*formatPortalCurrency\(proOffer\.amount\)/,
   'Portal paid package copy must render live offer prices instead of hard-coded amounts'
 );
