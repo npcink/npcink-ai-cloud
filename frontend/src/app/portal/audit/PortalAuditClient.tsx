@@ -39,6 +39,12 @@ const AUDIT_EVENT_KIND_LABELS: Record<string, string> = {
   'subscription.canceled': 'audit.kind.subscription.canceled',
 };
 
+const SUCCESSFUL_AUDIT_OUTCOMES = new Set(['success', 'succeeded', 'ok', 'completed']);
+
+function isSuccessfulAuditOutcome(outcome: string): boolean {
+  return SUCCESSFUL_AUDIT_OUTCOMES.has(String(outcome || '').trim().toLowerCase());
+}
+
 function getAuditTraceId(event: PortalAuditEvent): string {
   const traceId = event.metadata?.trace_id;
   return typeof traceId === 'string' ? traceId : '';
@@ -54,7 +60,7 @@ export function PortalAuditClient() {
 
   const recentEvents = useMemo(() => auditEvents.slice(0, 10), [auditEvents]);
   const attentionEventCount = useMemo(() => {
-    return recentEvents.filter((event) => event.outcome !== 'success').length;
+    return recentEvents.filter((event) => !isSuccessfulAuditOutcome(event.outcome)).length;
   }, [recentEvents]);
 
   const loadActivity = useCallback(async () => {
@@ -82,6 +88,9 @@ export function PortalAuditClient() {
   }, [isAuthenticated, loadActivity, session]);
 
   const translateOutcome = (outcome: string) => {
+    if (isSuccessfulAuditOutcome(outcome)) {
+      return t('status.success', {}, 'Success');
+    }
     if (outcome === 'error') {
       return t('common.error');
     }
@@ -204,7 +213,7 @@ export function PortalAuditClient() {
                       </div>
                     </details>
                   </div>
-                  {event.outcome !== 'success' ? (
+                  {!isSuccessfulAuditOutcome(event.outcome) ? (
                     <BackofficeStackCard className="max-w-md border-amber-200 bg-amber-50/70 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
                       {t('portal.audit.support_hint', {}, 'Contact support with the site name and activity time.')}
                     </BackofficeStackCard>

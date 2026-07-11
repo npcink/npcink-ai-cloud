@@ -77,12 +77,12 @@ assert.match(i18nSource, /'portal\.nav_usage': 'Usage'/, 'English nav copy must 
 assert.match(i18nSource, /'portal\.workspace_label': 'Overview'/, 'English overview copy must name the user summary surface');
 assert.match(i18nSource, /'portal\.nav_sites': 'Sites'/, 'English nav copy must keep the site entry short');
 assert.match(i18nSource, /'portal\.nav_support_requests': 'Tickets'/, 'English nav copy must expose support tickets as their own entry');
-assert.match(i18nSource, /'portal\.nav_account': 'Contact'/, 'English nav copy must emphasize contact settings');
+assert.match(i18nSource, /'portal\.nav_account': 'Account'/, 'English nav copy must expose account and sign-in settings');
 assert.match(i18nSource, /'portal\.nav_package': '套餐'/, 'Chinese nav copy must expose package as its own entry');
 assert.match(i18nSource, /'portal\.nav_usage': '用量'/, 'Chinese nav copy must expose usage as its own entry');
 assert.match(i18nSource, /'portal\.workspace_label': '概览'/, 'Chinese overview copy must name the user summary surface');
 assert.match(i18nSource, /'portal\.nav_sites': '站点'/, 'Chinese nav copy must keep the site entry short');
 assert.match(i18nSource, /'portal\.nav_support_requests': '工单'/, 'Chinese nav copy must expose support tickets as their own entry');
-assert.match(i18nSource, /'portal\.nav_account': '联系方式'/, 'Chinese nav copy must emphasize contact settings');
+assert.match(i18nSource, /'portal\.nav_account': '账号'/, 'Chinese nav copy must expose account and sign-in settings');
 
 console.log('portal_navigation_simplification_contract: ok');

@@ -49,7 +49,7 @@ export function PortalNavbar() {
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/78 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
       <div className="container mx-auto px-4">
         <div className="grid min-h-[3.9rem] grid-cols-[auto_1fr] items-center gap-4 py-2.5 lg:grid-cols-[auto_1fr_auto]">
-          <Link href="/portal" className="flex items-center gap-3">
+          <Link href="/portal" className="flex min-h-11 items-center gap-3">
             <span className="brand-mark" aria-hidden="true">
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
                 <path d="M6 15.25 12.2 4l.6 6.55H18l-6.2 9.45-.5-6.2H6Z" fill="currentColor" />
@@ -107,7 +107,7 @@ export function PortalNavbar() {
             ) : null}
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white/85 text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white md:hidden"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white/85 text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white md:hidden"
               aria-controls="portal-mobile-nav"
               aria-expanded={mobileNavOpen}
               aria-label={mobileNavOpen ? t('common.close') : t('common.open_menu', undefined, 'Open menu')}

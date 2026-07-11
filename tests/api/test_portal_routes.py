@@ -4712,6 +4712,23 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             rate_version="ai-credit-ledger-v2",
             idempotency_key="portal-credit-ledger-component-only-001",
         )
+        repository.record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id="site_other_portal_reads",
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id=None,
+            provider_call_id=None,
+            source_type="runs",
+            source_id="site-other-portal-ledger-run",
+            credit_delta=-1,
+            quantity=1,
+            unit="run",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="portal-credit-ledger-other-site-001",
+        )
         session.commit()
     client.post(
         "/portal/v1/sites/site_portal_reads/api-keys",
@@ -4875,7 +4892,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     assert account_credit_ledger_data["site_id"] == ""
     assert account_credit_ledger_data["account_id"] == "acct_portal_reads"
-    assert account_credit_ledger_data["summary"]["total_credits"] == 4.0
+    assert account_credit_ledger_data["summary"]["total_credits"] == 5.0
+    assert account_credit_ledger_data["pagination"]["total"] == 4
+    assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
+        "site_portal_reads",
+        "site_other_portal_reads",
+    }
 
     credit_packs_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-packs",

@@ -221,6 +221,7 @@ function RegisterFormContent() {
                   <input
                     id="email"
                     type="email"
+                    autoComplete="email"
                     value={form.email}
                     onChange={(event) => setField('email', event.target.value)}
                     placeholder={t('auth.email_placeholder')}
@@ -240,6 +241,7 @@ function RegisterFormContent() {
                       id="code"
                       type="text"
                       inputMode="numeric"
+                      autoComplete="one-time-code"
                       value={form.code}
                       onChange={(event) => setField('code', event.target.value)}
                       placeholder={t('auth.verification_code_placeholder', undefined, 'Enter the 6-digit code')}

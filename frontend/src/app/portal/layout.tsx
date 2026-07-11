@@ -11,7 +11,7 @@ export default function PortalLayout({
   return (
     <PortalSessionProvider>
       <PortalSessionBoundary>
-        <div className="flex min-h-screen flex-col">
+        <div className="portal-shell flex min-h-[100dvh] flex-col">
           <Suspense fallback={null}>
             <PortalNavbar />
           </Suspense>

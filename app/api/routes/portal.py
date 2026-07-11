@@ -3070,6 +3070,7 @@ async def get_portal_site_credit_ledger(
             str(access.get("account_id") or ""),
             limit=limit,
             offset=offset,
+            site_id=site_id,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

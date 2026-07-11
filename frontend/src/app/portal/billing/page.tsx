@@ -1147,7 +1147,9 @@ function PortalBillingContent() {
         variant="portal"
       />
 
-      {packageActions}
+      <div id="package-options" className="scroll-mt-24">
+        {packageActions}
+      </div>
 
       <BackofficeStackCard variant="portal" className="bg-white/70 dark:bg-slate-950/35">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -1159,7 +1161,7 @@ function PortalBillingContent() {
             />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            <Link href="/portal/account" className="btn btn-primary">
+            <Link href="#package-options" className="btn btn-primary">
               {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
             </Link>
           </div>

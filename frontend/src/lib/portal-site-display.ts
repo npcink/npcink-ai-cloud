@@ -1,6 +1,8 @@
 import type { Site } from '@/lib/portal-client';
 
-type SiteLike = Pick<Site, 'site_id' | 'site_name' | 'wordpress_url' | 'metadata'>;
+type SiteLike = Pick<Site, 'site_id' | 'site_name' | 'wordpress_url' | 'metadata'> & {
+  status?: string;
+};
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -48,4 +50,16 @@ export function getPortalSiteSecondaryLabel(site: SiteLike | null | undefined): 
   }
 
   return normalizeString(site.site_id);
+}
+
+export function getVisiblePortalSites<T extends SiteLike>(sites: readonly T[] | null | undefined): T[] {
+  return (sites || []).filter((site) => normalizeString(site.status).toLowerCase() !== 'archived');
+}
+
+export function portalSiteNeedsAttention(site: SiteLike | null | undefined): boolean {
+  if (!site) {
+    return true;
+  }
+
+  return normalizeString(site.status).toLowerCase() !== 'active' || !getPortalSiteWordPressUrl(site);
 }
