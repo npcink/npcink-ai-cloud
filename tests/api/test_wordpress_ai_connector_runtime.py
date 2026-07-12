@@ -224,6 +224,16 @@ class WordPressAIConnectorTextProvider:
                 "1. WordPress AI 连接器测试：云端生成，本地审核\n"
                 "2. 用云端运行时增强 WordPress 内容工作流"
             )
+        elif task == "title_generation" and "title article boilerplate" in source_text:
+            output_text = (
+                "下面是我根据你提供的内容，整理润色后的文章版本，适合直接作为 "
+                "WordPress 文章发布：\n---\n# WordPress - 流行的建站程序介绍与下载\n正文"
+            )
+        elif task == "title_generation" and "title summary tail" in source_text:
+            output_text = (
+                "WordPress - 流行的建站程序介绍与下载 摘要： "
+                "WordPress是一款能让您建立出色网站、博客或应用的开源软件"
+            )
         if task == "content_classification":
             output_text = "- WordPress AI\n- Cloud connector\n- Scene runtime"
         elif task == "content_rewrite" and "rewrite variants" in source_text:
@@ -541,6 +551,82 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert run.policy_json["execution_contract"]["routing_intent"] == "content.short_text"
 
 
+def test_wordpress_ai_connector_runtime_accepts_registered_task_projection(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "seo_headline",
+            "request": {
+                "prompt": "Write one accurate headline for this article.",
+                "site_knowledge_reference": {
+                    "enabled": True,
+                    "mode": "site_title_style",
+                },
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "example/seo-headline",
+                    "task": "seo_headline",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content", "site_style_profile"],
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                    "output_schema": {"type": "string"},
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-registered-task")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["metadata"]["ability_name"] == "example/seo-headline"
+    assert provider_input["metadata"]["task_family"] == "generation"
+    assert provider_input["metadata"]["task_constraints"] == [
+        "no_new_numbers",
+        "single_value",
+        "source_grounded",
+    ]
+    assert "Generate the requested value" in provider_input["input"]
+    assert "Return exactly one value" in provider_input["input"]
+    assert provider_input["max_tokens"] == 160
+    assert provider_input["metadata"]["generation_context_reason"] != (
+        "task_policy_unavailable"
+    )
+
+
+def test_wordpress_ai_connector_runtime_rejects_open_ended_task_projection(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "general_chat",
+            "request": {
+                "prompt": "Talk about anything.",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "example/general-chat",
+                    "task": "general_chat",
+                    "task_family": "chat",
+                    "context_requirements": ["none"],
+                    "constraints": [],
+                    "output_schema": {"type": "string"},
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-open-task")
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "wp_ai_connector.ai_task_contract_identity_invalid"
+    assert provider.requests == []
+
+
 def test_wordpress_ai_connector_title_generation_uses_hidden_site_title_style(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -659,6 +745,8 @@ def test_wordpress_ai_connector_title_generation_silently_falls_back_when_site_k
     ("task", "mode", "expected_marker"),
     [
         ("excerpt_generation", "site_excerpt_style", "Aggregate style profile"),
+        ("meta_description", "site_meta_style", "Aggregate style profile"),
+        ("content_summary", "site_summary_style", "Aggregate style profile"),
         (
             "content_classification",
             "site_taxonomy_history",
@@ -751,7 +839,7 @@ def test_wordpress_ai_connector_uses_task_bound_hidden_site_reference(
         ("content_summary", "site_summary_style"),
     ],
 )
-def test_wordpress_ai_connector_defers_context_without_task_appropriate_source_data(
+def test_wordpress_ai_connector_new_style_tasks_fall_back_when_retrieval_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     task: str,
@@ -759,14 +847,14 @@ def test_wordpress_ai_connector_defers_context_without_task_appropriate_source_d
 ) -> None:
     _, client, provider = _build_client(tmp_path)
 
-    def fail_if_retrieval_runs(
+    def fail_site_knowledge_retrieval(
         self: SiteKnowledgeService,
         **kwargs: Any,
     ) -> dict[str, Any]:
         del self, kwargs
-        raise AssertionError("deferred tasks must not perform vector retrieval")
+        raise RuntimeError("Site Knowledge retrieval unavailable")
 
-    monkeypatch.setattr(SiteKnowledgeService, "execute", fail_if_retrieval_runs)
+    monkeypatch.setattr(SiteKnowledgeService, "execute", fail_site_knowledge_retrieval)
     response = _execute(
         client,
         _payload(
@@ -785,7 +873,7 @@ def test_wordpress_ai_connector_defers_context_without_task_appropriate_source_d
     provider_input = provider.requests[0].input_payload
     assert "Generation context" not in provider_input["input"]
     assert provider_input["metadata"]["generation_context_status"] == "unavailable"
-    assert provider_input["metadata"]["generation_context_reason"] == ("task_policy_unavailable")
+    assert provider_input["metadata"]["generation_context_reason"] == "retrieval_failed"
 
 
 def test_wordpress_ai_connector_title_generation_ignores_non_list_site_knowledge_results(
@@ -1152,6 +1240,37 @@ def test_wordpress_ai_connector_runtime_extracts_single_title_from_title_bundle(
         response.json()["data"]["result"]["output_text"]
         == "WordPress AI 连接器测试：云端生成，本地审核"
     )
+
+
+@pytest.mark.parametrize(
+    ("marker", "expected"),
+    [
+        ("title article boilerplate", "WordPress - 流行的建站程序介绍与下载"),
+        ("title summary tail", "WordPress - 流行的建站程序介绍与下载"),
+    ],
+)
+def test_wordpress_ai_connector_runtime_extracts_title_from_article_shaped_output(
+    tmp_path: Path,
+    marker: str,
+    expected: str,
+) -> None:
+    _, client, _ = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "request": {
+                "prompt": f"Suggest a title. {marker}",
+            }
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key=f"wp-ai-{marker.replace(' ', '-')}",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["result"]["output_text"] == expected
 
 
 def test_wordpress_ai_connector_runtime_normalizes_rewrite_variant_bundle(
