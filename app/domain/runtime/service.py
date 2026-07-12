@@ -6329,9 +6329,33 @@ class RuntimeService:
             if bold_candidate:
                 return self._truncate_wordpress_ai_text(bold_candidate, limit=limit)
         if task == "title_generation":
+            heading_candidate = self._extract_wordpress_ai_title_heading(output_text)
+            if heading_candidate:
+                return self._truncate_wordpress_ai_text(heading_candidate, limit=limit)
             list_candidate = self._extract_wordpress_ai_first_list_item(output_text)
             if list_candidate:
                 return self._truncate_wordpress_ai_text(list_candidate, limit=limit)
+            text = self._strip_wordpress_ai_markdown(output_text)
+            text = re.split(
+                r"\s+(?:摘要|summary)\s*[:：]|\s+---\s+",
+                text,
+                maxsplit=1,
+                flags=re.I,
+            )[0].strip()
+            if not self._is_wordpress_ai_boilerplate_output(text):
+                return self._truncate_wordpress_ai_text(text, limit=limit)
+        return ""
+
+    def _extract_wordpress_ai_title_heading(self, output_text: str) -> str:
+        for line in output_text.splitlines():
+            match = re.match(r"\s*#{1,6}\s+(.+?)\s*$", line)
+            if match is None:
+                continue
+            candidate = self._strip_wordpress_ai_markdown(match.group(1))
+            if self._is_wordpress_ai_boilerplate_output(candidate):
+                continue
+            if 4 <= len(candidate) <= 120:
+                return candidate
         return ""
 
     def _extract_wordpress_ai_bold_candidate(self, output_text: str) -> str:
@@ -6400,7 +6424,9 @@ class RuntimeService:
             "",
             text,
         )
-        return re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
 
     def _has_wordpress_ai_reasoning_noise(self, output_text: str) -> bool:
         return bool(

@@ -224,6 +224,16 @@ class WordPressAIConnectorTextProvider:
                 "1. WordPress AI 连接器测试：云端生成，本地审核\n"
                 "2. 用云端运行时增强 WordPress 内容工作流"
             )
+        elif task == "title_generation" and "title article boilerplate" in source_text:
+            output_text = (
+                "下面是我根据你提供的内容，整理润色后的文章版本，适合直接作为 "
+                "WordPress 文章发布：\n---\n# WordPress - 流行的建站程序介绍与下载\n正文"
+            )
+        elif task == "title_generation" and "title summary tail" in source_text:
+            output_text = (
+                "WordPress - 流行的建站程序介绍与下载 摘要： "
+                "WordPress是一款能让您建立出色网站、博客或应用的开源软件"
+            )
         if task == "content_classification":
             output_text = "- WordPress AI\n- Cloud connector\n- Scene runtime"
         elif task == "content_rewrite" and "rewrite variants" in source_text:
@@ -1230,6 +1240,37 @@ def test_wordpress_ai_connector_runtime_extracts_single_title_from_title_bundle(
         response.json()["data"]["result"]["output_text"]
         == "WordPress AI 连接器测试：云端生成，本地审核"
     )
+
+
+@pytest.mark.parametrize(
+    ("marker", "expected"),
+    [
+        ("title article boilerplate", "WordPress - 流行的建站程序介绍与下载"),
+        ("title summary tail", "WordPress - 流行的建站程序介绍与下载"),
+    ],
+)
+def test_wordpress_ai_connector_runtime_extracts_title_from_article_shaped_output(
+    tmp_path: Path,
+    marker: str,
+    expected: str,
+) -> None:
+    _, client, _ = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "request": {
+                "prompt": f"Suggest a title. {marker}",
+            }
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key=f"wp-ai-{marker.replace(' ', '-')}",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["result"]["output_text"] == expected
 
 
 def test_wordpress_ai_connector_runtime_normalizes_rewrite_variant_bundle(
