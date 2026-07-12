@@ -19,6 +19,7 @@ from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
 from app.core.models import (
+    CreditLedgerEntry,
     ProviderCallRecord,
     SiteKnowledgeChunk,
     SiteKnowledgeDocument,
@@ -370,6 +371,41 @@ def test_toolbox_exact_sync_payload_queues_without_routing_fields(tmp_path: Path
     assert data["execution_context"]["data_classification"] == "public_site_content"
     assert data["profile_id"] == "site-knowledge.managed"
     assert data["result"] == {}
+
+
+def test_sync_remains_available_after_ordinary_ai_credits_are_exhausted(
+    tmp_path: Path,
+) -> None:
+    database_url, _, _, client = _build_client(tmp_path)
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read"],
+        budgets={"max_ai_credits_per_period": 1},
+    )
+
+    search_result = _execute(
+        client,
+        _search_payload("consume the only ordinary credit"),
+        idempotency_key="exhaust-credit-search",
+    )
+    sync_result = _execute(
+        client,
+        _sync_payload(),
+        idempotency_key="sync-after-credit-exhaustion",
+    )
+
+    assert search_result["status_code"] == 200
+    assert sync_result["status_code"] == 200
+    assert sync_result["json"]["data"]["status"] == "queued"
+    sync_run_id = sync_result["json"]["data"]["run_id"]
+    with get_session(database_url) as session:
+        sync_credit_entries = list(
+            session.scalars(
+                select(CreditLedgerEntry).where(CreditLedgerEntry.run_id == sync_run_id)
+            )
+        )
+    assert sync_credit_entries == []
 
 
 def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
@@ -1618,7 +1654,11 @@ def test_sync_uses_cloud_managed_tei_embedding_provider(tmp_path: Path) -> None:
         },
         providers={"tei": provider},
     )
-    sync_result = _execute(client, _sync_payload(), idempotency_key="tei-sync")
+    sync_payload = _sync_payload()
+    sync_input = sync_payload["input"]
+    assert isinstance(sync_input, dict)
+    sync_input["metering_class"] = "ordinary_ai_inference"
+    sync_result = _execute(client, sync_payload, idempotency_key="tei-sync")
 
     RuntimeService(
         database_url,
@@ -1645,6 +1685,9 @@ def test_sync_uses_cloud_managed_tei_embedding_provider(tmp_path: Path) -> None:
                 .order_by(UsageMeterEvent.id.asc())
             )
         )
+        credit_entries = list(
+            session.scalars(select(CreditLedgerEntry).where(CreditLedgerEntry.run_id == run_id))
+        )
     assert chunk.embedding_model == "tei:BAAI/bge-m3"
     assert chunk.embedding_json == [0.25] * 1024
     assert provider_calls
@@ -1656,8 +1699,15 @@ def test_sync_uses_cloud_managed_tei_embedding_provider(tmp_path: Path) -> None:
         "provider_calls",
         "tokens_in",
         "tokens_total",
+        "vector_documents",
+        "vector_chunks",
     ]
     assert all(event.ability_family == "knowledge" for event in meter_events)
+    assert all(
+        event.payload_json["metering_class"] == "site_knowledge_index_maintenance"
+        for event in meter_events
+    )
+    assert credit_entries == []
 
 
 def test_sync_uses_cloud_managed_siliconflow_embedding_provider(tmp_path: Path) -> None:

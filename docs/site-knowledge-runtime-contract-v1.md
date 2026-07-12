@@ -52,6 +52,25 @@ ability registry.
 - Long `site-knowledge-sync` runs use the existing runtime worker path and
   `run_records`; no second queue, scheduler, or workflow engine is introduced.
 
+## Metering Boundary
+
+`npcink-cloud/site-knowledge-sync` is server-classified index maintenance. It
+must remain entitlement-, capacity-, concurrency-, and provider-cost-governed,
+but it does not consume the customer's ordinary `ai_credits` allowance.
+
+Cloud still records its run, embedding provider calls, tokens, provider cost,
+indexed `vector_documents`, and indexed `vector_chunks` as usage evidence. All
+of those events carry `metering_class=site_knowledge_index_maintenance`; they
+must not create consume entries in `credit_ledger_entries`. The classification
+comes only from the canonical managed ability name. Request payload fields
+cannot select or override it.
+
+`site-knowledge-search`, writing-context retrieval, writing-package generation,
+article generation, and other user-initiated inference continue through their
+ordinary AI-credit policy. Index maintenance therefore cannot become an
+unmetered provider-cost bypass, and an exhausted AI-credit balance cannot block
+the maintenance needed to keep an already-entitled Site Knowledge index fresh.
+
 ## Vector Backend
 
 The default MVP backend stores one Cloud-owned read model in PostgreSQL:

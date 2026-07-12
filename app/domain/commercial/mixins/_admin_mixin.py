@@ -36,9 +36,9 @@ from app.domain.commercial.credits import (
     AI_CREDIT_COMPONENT_LABELS,
     AI_CREDIT_RATE_VERSION,
     build_credit_breakdown_from_ledger,
+    is_site_knowledge_index_meter_event,
     package_credit_used,
     rounded_token_credits,
-    rounded_vector_chunk_credits,
 )
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
@@ -2991,7 +2991,14 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         web_search_calls = 0.0
         image_calls = 0.0
         other_provider_calls = 0.0
+        maintenance_totals: dict[str, float] = defaultdict(float)
         for event in meter_events:
+            if is_site_knowledge_index_meter_event(event):
+                meter_key = str(getattr(event, "meter_key", "") or "")
+                maintenance_totals[meter_key] += service._coerce_float(
+                    getattr(event, "quantity", 0.0)
+                )
+                continue
             if str(getattr(event, "meter_key", "") or "") != "provider_calls":
                 continue
             execution_kind = str(getattr(event, "execution_kind", "") or "").lower()
@@ -3003,8 +3010,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 image_calls += quantity
             else:
                 other_provider_calls += quantity
-        run_count = service._coerce_float(totals.get("runs"))
-        token_credits = rounded_token_credits(service._coerce_float(totals.get("tokens_total")))
+        run_count = max(
+            0.0,
+            service._coerce_float(totals.get("runs")) - maintenance_totals["runs"],
+        )
+        token_count = max(
+            0.0,
+            service._coerce_float(totals.get("tokens_total"))
+            - maintenance_totals["tokens_total"],
+        )
+        token_credits = rounded_token_credits(token_count)
         items = [
             {
                 "key": "runs",
@@ -3017,7 +3032,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             {
                 "key": "tokens_total",
                 "label": "Model tokens",
-                "quantity": round(service._coerce_float(totals.get("tokens_total")), 6),
+                "quantity": round(token_count, 6),
                 "unit": "token",
                 "rate": 1.0,
                 "rate_unit": "1000_tokens_rounded_up",
@@ -3049,20 +3064,19 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             },
             {
                 "key": "vector_documents",
-                "label": "Vector indexed articles",
+                "label": "Vector indexed articles (meter only)",
                 "quantity": indexed_document_count,
                 "unit": "document",
-                "rate": 2.0,
-                "credits": round(indexed_document_count * 2.0, 6),
+                "rate": 0.0,
+                "credits": 0.0,
             },
             {
                 "key": "vector_chunks",
-                "label": "Vector indexed chunks",
+                "label": "Vector indexed chunks (meter only)",
                 "quantity": indexed_chunk_count,
                 "unit": "chunk",
-                "rate": 1.0,
-                "rate_unit": "10_chunks",
-                "credits": rounded_vector_chunk_credits(indexed_chunk_count),
+                "rate": 0.0,
+                "credits": 0.0,
             },
         ]
         return [item for item in items if service._coerce_float(item.get("quantity")) > 0]
