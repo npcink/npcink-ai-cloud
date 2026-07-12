@@ -743,6 +743,7 @@ function AdminPluginObservabilityContent() {
           <input
             type="text"
             value={siteIdInput}
+            aria-label={t('admin.plugin_obs_site_filter_label', {}, 'Filter by site ID')}
             onChange={(e) => setSiteIdInput(e.target.value)}
             onKeyDown={handleSiteIdKeyDown}
             placeholder={t('admin.plugin_obs_site_filter', {}, 'Site ID')}

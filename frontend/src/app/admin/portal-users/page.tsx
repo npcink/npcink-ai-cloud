@@ -450,6 +450,7 @@ export default function AdminPortalUsersPage() {
               value={filters.q}
               onChange={(event) => updateFilter('q', event.target.value)}
               className="input h-11"
+              aria-label={t('admin.portal_users.search_label', {}, 'Search users')}
               placeholder={t('admin.portal_users.search_placeholder', {}, 'Email, account, site, or domain')}
             />
             <select
@@ -466,6 +467,7 @@ export default function AdminPortalUsersPage() {
               value={filters.package_alias}
               onChange={(event) => updateFilter('package_alias', event.target.value)}
               className="input h-11"
+              aria-label={t('admin.portal_users.package_filter_label', {}, 'Package filter')}
               placeholder={t('common.package', {}, 'Package')}
             />
             <select

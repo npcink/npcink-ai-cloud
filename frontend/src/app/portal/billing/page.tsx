@@ -186,6 +186,7 @@ function PortalBillingContent() {
   const [creditPackError, setCreditPackError] = useState<string | null>(null);
   const [packagePending, setPackagePending] = useState<string | null>(null);
   const [packageError, setPackageError] = useState<string | null>(null);
+  const [trialTierSelection, setTrialTierSelection] = useState<'plus' | 'pro'>('pro');
   const [cancelPendingOrderId, setCancelPendingOrderId] = useState<string | null>(null);
   const [cancelConfirmOrderId, setCancelConfirmOrderId] = useState<string | null>(null);
   const [paymentOrderError, setPaymentOrderError] = useState<string | null>(null);
@@ -194,6 +195,10 @@ function PortalBillingContent() {
   const [paymentOrderOffset, setPaymentOrderOffset] = useState(0);
   const [paymentOrdersLoading, setPaymentOrdersLoading] = useState(false);
   const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
+  const [paymentReturnOrderState, setPaymentReturnOrderState] = useState<PortalPaymentOrder | null>(null);
+  const [paymentReturnError, setPaymentReturnError] = useState<string | null>(null);
+  const [paymentReturnTimedOut, setPaymentReturnTimedOut] = useState(false);
+  const [paymentReturnReconciled, setPaymentReturnReconciled] = useState(false);
   const paymentOrderTabInitialized = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -244,6 +249,20 @@ function PortalBillingContent() {
     [t]
   );
 
+  const loadPaymentReturnOrder = useCallback(async (orderId: string) => {
+    const normalizedOrderId = String(orderId || '').trim();
+    if (!normalizedOrderId) return null;
+    try {
+      const response = await portalClient.getAccountPaymentOrder(normalizedOrderId);
+      setPaymentReturnOrderState(response.data.order);
+      setPaymentReturnError(null);
+      return response.data.order;
+    } catch (err) {
+      setPaymentReturnError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+      return null;
+    }
+  }, [t]);
+
   useEffect(() => {
     if (!isAuthenticated || !session?.account_id) {
       setIsLoading(false);
@@ -261,6 +280,62 @@ function PortalBillingContent() {
     paymentOrderOffset,
     paymentOrderStatusGroup,
     session?.account_id,
+  ]);
+
+  useEffect(() => {
+    const allowedTiers = planOffers?.trial?.allowed_tiers || [];
+    if (!allowedTiers.length || allowedTiers.includes(trialTierSelection)) return;
+    setTrialTierSelection(allowedTiers.includes('pro') ? 'pro' : allowedTiers[0]);
+  }, [planOffers?.trial?.allowed_tiers, trialTierSelection]);
+
+  const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
+  const paymentReturnOrderId = String(searchParams.get('out_trade_no') || '').trim();
+  const shouldPollAlipayReturn = paymentReturnProvider === 'alipay' && Boolean(paymentReturnOrderId);
+  const hasAlipayReturn = shouldPollAlipayReturn || Boolean(paymentReturnOrderState);
+  const activePaymentReturnOrderId = paymentReturnOrderId || paymentReturnOrderState?.order_id || '';
+
+  useEffect(() => {
+    if (!isAuthenticated || !session?.account_id || !shouldPollAlipayReturn) return;
+    let canceled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const poll = async () => {
+      const order = await loadPaymentReturnOrder(paymentReturnOrderId);
+      if (canceled) return;
+      const status = normalizePaymentText(order?.status);
+      if (status && status !== 'pending') {
+        setPaymentReturnReconciled(false);
+        window.history.replaceState(window.history.state, '', '/portal/billing');
+        await Promise.all([
+          refresh(),
+          loadBilling(),
+          loadPaymentOrders('all', 0),
+        ]);
+        if (!canceled) setPaymentReturnReconciled(true);
+        return;
+      }
+      attempts += 1;
+      if (attempts >= 20) {
+        setPaymentReturnTimedOut(true);
+        return;
+      }
+      timer = setTimeout(() => void poll(), 3000);
+    };
+    setPaymentReturnTimedOut(false);
+    void poll();
+    return () => {
+      canceled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [
+    isAuthenticated,
+    loadBilling,
+    loadPaymentOrders,
+    loadPaymentReturnOrder,
+    paymentReturnOrderId,
+    refresh,
+    session?.account_id,
+    shouldPollAlipayReturn,
   ]);
 
   useEffect(() => {
@@ -408,21 +483,23 @@ function PortalBillingContent() {
   const plusOffer = offersByTier.get('plus');
   const proOffer = offersByTier.get('pro');
   const agencyOffer = offersByTier.get('agency');
-  const canTrialTier = (tierId: 'plus' | 'pro') => {
-    const offer = offersByTier.get(tierId);
-    return Boolean(
-      offer?.trial_enabled
-      && (planOffers?.trial?.available !== false || planOffers?.trial?.status === 'active')
-      && currentStatus !== 'active'
-      && tierRank[tierId] > currentRank
-    );
-  };
+  const trial = planOffers?.trial;
+  const trialState = trial?.state
+    || (trial?.status === 'active' ? 'active' : trial?.available === false ? 'used' : 'eligible');
+  const allowedTrialTiers = (trial?.allowed_tiers || []).filter(
+    (tier): tier is 'plus' | 'pro' => tier === 'plus' || tier === 'pro'
+  );
+  const selectedTrialTier = allowedTrialTiers.includes(trialTierSelection)
+    ? trialTierSelection
+    : allowedTrialTiers.includes('pro')
+      ? 'pro'
+      : allowedTrialTiers[0];
+  const selectedTrialOffer = selectedTrialTier ? offersByTier.get(selectedTrialTier) : null;
+  const trialDays = Number(trial?.trial_days || selectedTrialOffer?.trial_days || 14);
+  const activeTrialTier = String(trial?.highest_tier_id || trial?.tier_id || currentPlanId || '').toLowerCase();
+  const activeTrialTierLabel = activeTrialTier === 'plus' ? 'Plus' : activeTrialTier === 'pro' ? 'Pro' : '';
   const canBuyTier = (tierId: 'plus' | 'pro' | 'agency') =>
     Boolean(offersByTier.get(tierId));
-  const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
-  const paymentReturnOrder = String(searchParams.get('out_trade_no') || '').trim();
-  const paymentReturnStatus = String(searchParams.get('trade_status') || '').trim();
-  const hasAlipayReturn = paymentReturnProvider === 'alipay';
   const allPaymentOrders = paymentOrders?.items || [];
   const paymentOrderCounts = paymentOrders?.counts || {
     all: allPaymentOrders.length,
@@ -432,44 +509,118 @@ function PortalBillingContent() {
   };
 
   const handleRefreshPaymentReturn = async () => {
-    await refresh();
-    await loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset);
+    setPaymentReturnTimedOut(false);
+    setPaymentReturnReconciled(false);
+    const order = await loadPaymentReturnOrder(activePaymentReturnOrderId);
+    await Promise.all([
+      refresh(),
+      loadBilling(),
+      loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset),
+    ]);
+    if (normalizePaymentText(order?.status) !== 'pending') {
+      setPaymentReturnReconciled(true);
+    }
   };
 
+  const paymentReturnStatus = normalizePaymentText(paymentReturnOrderState?.status);
+  const paymentReturnPaid = paymentReturnStatus === 'paid';
+  const paymentReturnClosed = ['canceled', 'cancelled', 'failed', 'refunded'].includes(paymentReturnStatus);
+  const paymentReturnCredits = Number(paymentReturnOrderState?.credit_pack?.ai_credits || 0);
+  const paymentReturnQuota = entitlements?.quota_summary?.credit;
+  const paymentReturnTotalAvailableValue = paymentReturnQuota?.total_remaining;
+  const paymentReturnTotalAvailable = paymentReturnTotalAvailableValue == null
+    ? null
+    : Number(paymentReturnTotalAvailableValue);
+  const paymentReturnNextExpiry = String(paymentReturnQuota?.paid_next_expires_at || '');
+
   const paymentReturnNotice = hasAlipayReturn ? (
-    <BackofficeStackCard variant="portal" className="border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/20">
+    <BackofficeStackCard
+      variant="portal"
+      data-ui="payment-return-notice"
+      role="status"
+      aria-live="polite"
+      className={paymentReturnPaid
+        ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/20'
+        : paymentReturnClosed
+          ? 'border-red-200 bg-red-50/70 dark:border-red-900/60 dark:bg-red-950/20'
+          : 'border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/20'}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {t('portal.package.alipay_return_title', {}, 'Payment confirmation is pending')}
+            {paymentReturnPaid
+              ? t('portal.package.alipay_return_paid_title', {}, 'Payment confirmed')
+              : paymentReturnClosed
+                ? t('portal.package.alipay_return_closed_title', {}, 'Payment was not completed')
+                : t('portal.package.alipay_return_title', {}, 'Payment confirmation is pending')}
           </p>
           <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t(
-              'portal.package.alipay_return_desc',
-              {},
-              'You have returned from Alipay. The final package status is updated after the verified Alipay notification reaches Cloud.'
-            )}
+            {paymentReturnPaid
+              ? paymentReturnCredits > 0
+                ? t(
+                    'portal.package.alipay_return_paid_credits_desc',
+                    { count: formatNumber(paymentReturnCredits) },
+                    `Payment is confirmed and ${formatNumber(paymentReturnCredits)} credits were added.`
+                  )
+                : t('portal.package.alipay_return_paid_desc', {}, 'Payment is confirmed and your package has been updated.')
+              : paymentReturnClosed
+                ? t('portal.package.alipay_return_closed_desc', {}, 'This order is closed. You can create a new order if needed.')
+                : paymentReturnTimedOut
+                  ? t('portal.package.alipay_return_timeout_desc', {}, 'Confirmation is taking longer than expected. Refresh again or contact support with the order number.')
+                  : t(
+                      'portal.package.alipay_return_desc',
+                      {},
+                      'You have returned from Alipay. Cloud is checking the verified asynchronous notification.'
+                    )}
           </p>
-          {paymentReturnOrder || paymentReturnStatus ? (
+          {paymentReturnPaid && paymentReturnCredits > 0 && paymentReturnReconciled ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <div data-payment-return-metric="credited" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('portal.package.alipay_return_credited_label', {}, 'Added this time')}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                  {formatNumber(paymentReturnCredits)}
+                </p>
+              </div>
+              <div data-payment-return-metric="total-available" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('portal.usage.total_remaining_label', {}, 'Total available')}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+                  {paymentReturnTotalAvailable != null && Number.isFinite(paymentReturnTotalAvailable)
+                    ? formatNumber(paymentReturnTotalAvailable)
+                    : t('common.not_available', {}, 'Not available')}
+                </p>
+              </div>
+              <div data-payment-return-metric="next-expiry" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('portal.package.alipay_return_expiry_label', {}, 'Nearest paid-credit expiry')}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
+                  {paymentReturnNextExpiry
+                    ? formatDate(paymentReturnNextExpiry)
+                    : t('common.not_available', {}, 'Not available')}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {activePaymentReturnOrderId ? (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {[
-                paymentReturnOrder
-                  ? t('portal.package.alipay_return_order', { order: paymentReturnOrder }, `Order ${paymentReturnOrder}`)
-                  : '',
-                paymentReturnStatus
-                  ? t('portal.package.alipay_return_status', { status: paymentReturnStatus }, `Alipay status ${paymentReturnStatus}`)
-                  : '',
-              ].filter(Boolean).join(' · ')}
+              {t('portal.package.alipay_return_order', { order: activePaymentReturnOrderId }, `Order ${activePaymentReturnOrderId}`)}
             </p>
           ) : null}
+          {paymentReturnError ? <p className="mt-2 text-sm text-red-700 dark:text-red-300">{paymentReturnError}</p> : null}
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary shrink-0"
-          onClick={() => void handleRefreshPaymentReturn()}
-        >
-          {t('common.refresh', {}, 'Refresh')}
-        </button>
+        {!paymentReturnPaid ? (
+          <button
+            type="button"
+            className="btn btn-secondary shrink-0"
+            onClick={() => void handleRefreshPaymentReturn()}
+          >
+            {t('common.refresh', {}, 'Refresh')}
+          </button>
+        ) : null}
       </div>
     </BackofficeStackCard>
   ) : null;
@@ -509,6 +660,76 @@ function PortalBillingContent() {
 
   const packageActions = (
     <BackofficeStackCard variant="portal" className="bg-white/70 dark:bg-slate-950/35">
+      <section className="mb-4 rounded-[1rem] border border-blue-200 bg-blue-50/55 p-4 dark:border-blue-900/60 dark:bg-blue-950/20" aria-labelledby="portal-trial-eligibility-title">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
+              {t('portal.package.trial_eyebrow', {}, 'Trial eligibility')}
+            </p>
+            <h2 id="portal-trial-eligibility-title" className="mt-1 text-base font-semibold text-slate-950 dark:text-white">
+              {trialState === 'eligible'
+                ? t('portal.package.trial_eligible_title', { days: String(trialDays) }, `${trialDays}-day paid-package trial available`)
+                : trialState === 'active'
+                  ? t('portal.package.trial_active_title', { tier: activeTrialTierLabel }, `${activeTrialTierLabel} trial is active`)
+                  : trialState === 'used'
+                    ? t('portal.package.trial_used_title', {}, 'Trial already used')
+                    : trialState === 'blocked'
+                      ? t('portal.package.trial_blocked_title', {}, 'Trial unavailable with an active paid package')
+                      : t('portal.package.trial_unavailable_title', {}, 'Trial is not currently offered')}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+              {trialState === 'eligible'
+                ? t('portal.package.trial_shared_desc', {}, 'Each account has one shared paid-package trial. You may move to a higher tier during the trial, but the end date will not be extended.')
+                : trialState === 'active'
+                  ? t(
+                      'portal.package.trial_active_desc',
+                      {
+                        tier: activeTrialTierLabel,
+                        date: trial?.trial_ends_at ? formatDate(trial.trial_ends_at) : t('common.unknown', {}, 'To confirm'),
+                      },
+                      `${activeTrialTierLabel} trial ends ${trial?.trial_ends_at ? formatDate(trial.trial_ends_at) : 'to be confirmed'}. Moving to a higher tier does not extend the end date.`
+                    )
+                  : trialState === 'used'
+                    ? t('portal.package.trial_used_desc', {}, 'This account has already used its paid-package trial. You can still purchase a package below.')
+                    : trialState === 'blocked'
+                      ? t('portal.package.trial_blocked_desc', {}, 'This account already has an active paid package, so a trial cannot be started. Renew or change the package below.')
+                      : t('portal.package.trial_unavailable_desc', {}, 'No self-service trial is available for this account. Package purchase remains available.')}
+            </p>
+          </div>
+          {selectedTrialTier && (trialState === 'eligible' || trialState === 'active') ? (
+            <div className="w-full shrink-0 space-y-3 lg:w-auto lg:min-w-[18rem]">
+              {allowedTrialTiers.length > 1 ? (
+                <div className="grid grid-cols-2 gap-2" aria-label={t('portal.package.trial_choose_tier', {}, 'Choose trial package')}>
+                  {allowedTrialTiers.map((tier) => (
+                    <button
+                      key={tier}
+                      type="button"
+                      className={tier === selectedTrialTier ? 'btn btn-primary' : 'btn btn-secondary'}
+                      aria-pressed={tier === selectedTrialTier}
+                      disabled={packagePending !== null}
+                      onClick={() => setTrialTierSelection(tier)}
+                    >
+                      {tier === 'plus' ? 'Plus' : 'Pro'}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-primary w-full"
+                disabled={packagePending !== null}
+                onClick={() => void handleStartPlanTrial(selectedTrialTier)}
+              >
+                {packagePending === `trial:${selectedTrialTier}`
+                  ? t('common.saving', {}, 'Saving...')
+                  : trialState === 'active'
+                    ? t('portal.package.trial_upgrade_action', { tier: selectedTrialTier === 'plus' ? 'Plus' : 'Pro' }, `Move trial to ${selectedTrialTier === 'plus' ? 'Plus' : 'Pro'}`)
+                    : t('portal.package.trial_start_action', { tier: selectedTrialTier === 'plus' ? 'Plus' : 'Pro', days: String(trialDays) }, `Start ${trialDays}-day ${selectedTrialTier === 'plus' ? 'Plus' : 'Pro'} trial`)}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </section>
       <div className="grid gap-3 lg:grid-cols-4">
         <div className="rounded-[1rem] border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/35">
           <p className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -539,23 +760,27 @@ function PortalBillingContent() {
             {t('portal.package.plus_title', {}, 'Plus')}
           </p>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            {t('portal.package.plus_desc', {}, 'CNY 15 for 30 days, with one shared 14-day paid-package trial.')}
+            {plusOffer
+              ? t(
+                  'portal.package.paid_offer_desc',
+                  {
+                    amount: formatPortalCurrency(plusOffer.amount),
+                  },
+                  `${formatPortalCurrency(plusOffer.amount)} for 30 days.`
+                )
+              : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.')}
           </p>
-          <BackofficeStatusBadge
-            status={currentPlanId === 'plus' ? 'ok' : 'neutral'}
-            label={currentPlanId === 'plus' ? t('common.current', {}, 'Current') : t('common.available', {}, 'Available')}
-          />
+          {currentPlanId === 'plus' || !plusOffer ? (
+            <BackofficeStatusBadge
+              status={currentPlanId === 'plus' ? 'ok' : 'warning'}
+              label={currentPlanId === 'plus'
+                ? currentStatus === 'trialing'
+                  ? t('portal.package.pro_trial_active', {}, 'Trial active')
+                  : t('common.current', {}, 'Current')
+                : t('portal.package.offer_unavailable', {}, 'Unavailable')}
+            />
+          ) : null}
           <div className="mt-4 flex flex-col gap-2">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canTrialTier('plus') || packagePending !== null}
-              onClick={() => void handleStartPlanTrial('plus')}
-            >
-              {packagePending === 'trial:plus'
-                ? t('common.saving', {}, 'Saving...')
-                : t('portal.package.start_plus_trial', {}, 'Start 14-day trial')}
-            </button>
             <button
               type="button"
               className="btn btn-primary"
@@ -577,19 +802,27 @@ function PortalBillingContent() {
             {t('portal.package.pro_title', {}, 'Pro')}
           </p>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            {t('portal.package.pro_desc', {}, 'Start with a 14-day trial, then continue for CNY 29 per month through Alipay.')}
+            {proOffer
+              ? t(
+                  'portal.package.paid_offer_desc',
+                  {
+                    amount: formatPortalCurrency(proOffer.amount),
+                  },
+                  `${formatPortalCurrency(proOffer.amount)} for 30 days.`
+                )
+              : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.')}
           </p>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!canTrialTier('pro') || packagePending !== null}
-              onClick={() => void handleStartPlanTrial('pro')}
-            >
-              {packagePending === 'trial:pro'
-                ? t('common.saving', {}, 'Saving...')
-                : t('portal.package.start_pro_trial', {}, 'Start 14-day trial')}
-            </button>
+          {currentPlanId === 'pro' || !proOffer ? (
+            <BackofficeStatusBadge
+              status={currentPlanId === 'pro' ? 'ok' : 'warning'}
+              label={currentPlanId === 'pro'
+                ? currentStatus === 'trialing'
+                  ? t('portal.package.pro_trial_active', {}, 'Trial active')
+                  : t('common.current', {}, 'Current')
+                : t('portal.package.offer_unavailable', {}, 'Unavailable')}
+            />
+          ) : null}
+          <div className="mt-4 flex flex-col gap-2">
             <button
               type="button"
               className="btn btn-primary"
@@ -971,7 +1204,9 @@ function PortalBillingContent() {
         variant="portal"
       />
 
-      {packageActions}
+      <div id="package-options" className="scroll-mt-24">
+        {packageActions}
+      </div>
 
       <BackofficeStackCard variant="portal" className="bg-white/70 dark:bg-slate-950/35">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -983,7 +1218,7 @@ function PortalBillingContent() {
             />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            <Link href="/portal/account" className="btn btn-primary">
+            <Link href="#package-options" className="btn btn-primary">
               {t('portal.billing.upgrade_action', {}, 'Upgrade package')}
             </Link>
           </div>

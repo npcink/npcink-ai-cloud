@@ -3460,6 +3460,12 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
         "plus",
         "pro",
     ]
+    eligible_trial = offers_response.json()["data"]["trial"]
+    assert eligible_trial["available"] is True
+    assert eligible_trial["trial_days"] == 14
+    assert eligible_trial["state"] == "eligible"
+    assert eligible_trial["reason_code"] == "trial_available"
+    assert eligible_trial["allowed_tiers"] == ["plus", "pro"]
 
     trial_response = client.post(
         "/portal/v1/account/plan-trials",
@@ -3477,6 +3483,17 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert trial_data["subscription"]["metadata"]["trial_for_tier"] == "pro"
     assert trial_data["trial"]["trial_days"] == 14
     assert trial_data["session"]["current_subscription"]["plan_id"] == "pro"
+
+    active_offers_response = client.get(
+        "/portal/v1/account/plan-offers",
+        headers=build_portal_headers(principal_id=str(registration["principal_id"])),
+    )
+    assert active_offers_response.status_code == 200, active_offers_response.text
+    active_trial = active_offers_response.json()["data"]["trial"]
+    assert active_trial["state"] == "active"
+    assert active_trial["reason_code"] == "trial_active"
+    assert active_trial["allowed_tiers"] == []
+    assert active_trial["trial_ends_at"]
 
     order_response = client.post(
         "/portal/v1/account/subscription-orders",
@@ -3523,6 +3540,16 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert listed_order["status"] == "pending"
     assert listed_order["metadata"]["billing_cycle"] == "monthly"
     assert listed_order["expires_at"]
+
+    order_detail_response = client.get(
+        f"/portal/v1/account/payment-orders/{order['order_id']}",
+        headers=build_portal_headers(principal_id=str(registration["principal_id"])),
+    )
+    assert order_detail_response.status_code == 200, order_detail_response.text
+    order_detail = order_detail_response.json()["data"]
+    assert order_detail["account_id"] == account_id
+    assert order_detail["order"]["order_id"] == order["order_id"]
+    assert order_detail["order"]["status"] == "pending"
 
     cancel_response = client.delete(
         f"/portal/v1/account/subscription-orders/{order['metadata']['subscription_order_id']}",
@@ -4702,6 +4729,23 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             rate_version="ai-credit-ledger-v2",
             idempotency_key="portal-credit-ledger-component-only-001",
         )
+        repository.record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id="site_other_portal_reads",
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id=None,
+            provider_call_id=None,
+            source_type="runs",
+            source_id="site-other-portal-ledger-run",
+            credit_delta=-1,
+            quantity=1,
+            unit="run",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="portal-credit-ledger-other-site-001",
+        )
         session.commit()
     client.post(
         "/portal/v1/sites/site_portal_reads/api-keys",
@@ -4865,7 +4909,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     assert account_credit_ledger_data["site_id"] == ""
     assert account_credit_ledger_data["account_id"] == "acct_portal_reads"
-    assert account_credit_ledger_data["summary"]["total_credits"] == 4.0
+    assert account_credit_ledger_data["summary"]["total_credits"] == 5.0
+    assert account_credit_ledger_data["pagination"]["total"] == 4
+    assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
+        "site_portal_reads",
+        "site_other_portal_reads",
+    }
 
     credit_packs_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-packs",

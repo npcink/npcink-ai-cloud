@@ -236,6 +236,7 @@ function LoginFormContent() {
                   <input
                     id="email"
                     type="email"
+                    autoComplete="email"
                     value={form.email}
                     onChange={(event) =>
                       setForm((prev) => ({
@@ -260,6 +261,7 @@ function LoginFormContent() {
                       id="code"
                       type="text"
                       inputMode="numeric"
+                      autoComplete="one-time-code"
                       value={form.code}
                       onChange={(event) =>
                         setForm((prev) => ({

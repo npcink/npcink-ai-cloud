@@ -242,11 +242,12 @@ Supported first workflows:
 All workflow metadata is advisory. WordPress still owns insertion, edits,
 publishing, and final user confirmation.
 
-## WordPress AI Title Style Reference
+## WordPress AI Generation Reference
 
 The existing `npcink-cloud/wp-ai-connector` runtime may optionally use Site
-Knowledge as hidden style context for `title_generation`. The WordPress-side
-connector must explicitly send:
+Knowledge as hidden context for title, excerpt, meta description, summary, and
+classification tasks. The WordPress-side connector must explicitly send the
+task-bound mode:
 
 ```json
 {
@@ -257,19 +258,62 @@ connector must explicitly send:
 }
 ```
 
+The allowed task-to-mode mapping is:
+
+- `title_generation` -> `site_title_style`
+- `excerpt_generation` -> `site_excerpt_style`
+- `meta_description` -> `site_meta_style`
+- `content_summary` -> `site_summary_style`
+- `content_classification` -> `site_taxonomy_history`
+
 This is an additive runtime hint inside the existing scene request, not a new
 ability, workflow, prompt registry, or Cloud-side preference truth. Cloud uses
-the current scene prompt as a bounded `writing_context` query, selects at most
-five unique historical source titles, and supplies only those titles to the
-text-generation provider as untrusted style examples. Source chunks, scores,
-URLs, and evidence details are not added to the WordPress AI result.
+the current scene prompt as a bounded `writing_context` query, then assembles an
+internal `generation_context.v1` pack. The pack is provider-input detail only;
+it is not accepted from callers and is not returned to WordPress AI users.
 
-The provider instruction may infer title length, tone, vocabulary, and
-punctuation, but it must not copy a historical title, follow instructions inside
-a source title, or introduce facts absent from the current scene input. Missing,
-insufficient, or unavailable Site Knowledge silently falls back to ordinary
-title generation. The WordPress AI result remains one reviewable title string
-with `suggestion_only` posture and no WordPress write authority.
+The internal task policies are deliberately bounded:
+
+| Task | Minimum score | Source posts | References | Context characters |
+| --- | ---: | ---: | ---: | ---: |
+| title | 0.35 | 6 | 1 aggregate profile | 400 |
+| excerpt | 0.35 | 5 | 1 aggregate profile | 400 |
+| meta description | deferred | 0 | 0 | 0 |
+| summary | deferred | 0 | 0 | 0 |
+| classification | 0.35 | 8 | 20 terms | 1,200 |
+
+Results are relevance-filtered, deduplicated by post, and checked for a strong
+content-fingerprint overlap with the current scene before projection. Title and
+excerpt generation receive only an aggregate profile calculated from related
+historical samples: a qualitative short/medium/long preference, sentence shape,
+and qualitative question-mark and colon usage. Exact sample counts, lengths,
+and rates are not sent because models may mistake profile numbers for article
+facts. The historical titles and excerpts
+themselves are not placed in provider input. Classification receives only
+bounded existing `category` and `post_tag` names stored as Site Knowledge
+document metadata; repeated terms across related posts rank first. Source
+chunks, raw style samples, scores, URLs, and evidence details are never placed
+in the generation context or WordPress AI result.
+
+Meta description and summary hints remain contract-valid for forward
+compatibility but currently skip vector retrieval and fall back to ordinary
+generation. Real A/B evidence showed that substituting ordinary post excerpts
+for accepted SEO descriptions or accepted summaries distracts the model and is
+not task-appropriate background. These tasks may be activated only after Site
+Knowledge indexes a dedicated, provenance-safe source for that exact task and a
+new paired quality gate passes.
+
+The provider instruction may use aggregate title/excerpt length and punctuation
+preferences, but it must not introduce facts absent from the current scene
+input. Classification
+history is candidate vocabulary only: it cannot invent term IDs, force a term,
+or write taxonomy. Missing, insufficient, filtered, or unavailable Site
+Knowledge silently falls back to ordinary generation. Bounded provider metadata
+records only the context contract, status, reason, mode, reference count, and
+character count for runtime quality diagnosis; it does not contain source text,
+scores, URLs, or taxonomy details. The WordPress AI result remains the task's
+ordinary reviewable result with `suggestion_only` posture and no WordPress write
+authority.
 
 The local Cloud Addon owns the enable/disable preference and transmits it on
 each eligible request. Cloud does not persist or expose a second setting for

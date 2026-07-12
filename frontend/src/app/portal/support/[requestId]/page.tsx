@@ -304,13 +304,16 @@ export default function PortalSupportRequestDetailPage() {
             ))}
           </div>
         ) : null}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <input
-            className="input"
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
-            onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
-          />
+        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+          <label className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+            {t('portal.support_attachment_choose_label', {}, 'Choose attachment')}
+            <input
+              className="input mt-2"
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv,application/json"
+              onChange={(event) => setAttachmentFile(event.target.files?.[0] || null)}
+            />
+          </label>
           <button
             type="button"
             className="btn btn-secondary"

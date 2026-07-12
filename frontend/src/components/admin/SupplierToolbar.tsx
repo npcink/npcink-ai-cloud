@@ -7,6 +7,8 @@ type SupplierToolbarProps = {
   onSupplierTypeFilterChange: (value: SupplierTypeFilter) => void;
   connectionSearch: string;
   onConnectionSearchChange: (value: string) => void;
+  hasLatestOperation: boolean;
+  onOpenLatestOperation: () => void;
   onAddModelSupplier: () => void;
   onAddCapabilitySupplier: () => void;
   translate: (key: string, fallback: string) => string;
@@ -17,6 +19,8 @@ export function SupplierToolbar({
   onSupplierTypeFilterChange,
   connectionSearch,
   onConnectionSearchChange,
+  hasLatestOperation,
+  onOpenLatestOperation,
   onAddModelSupplier,
   onAddCapabilitySupplier,
   translate,
@@ -58,6 +62,11 @@ export function SupplierToolbar({
             placeholder={translate('placeholder_search_connections', 'Name, provider, model, capability')}
           />
         </label>
+        {hasLatestOperation ? (
+          <button type="button" className="btn btn-secondary justify-center" onClick={onOpenLatestOperation}>
+            {translate('action_latest_operation', 'Latest operation')}
+          </button>
+        ) : null}
         <button type="button" className="btn btn-primary justify-center" onClick={onAddModelSupplier}>
           {translate('action_add_model_supplier', 'Add model supplier')}
         </button>

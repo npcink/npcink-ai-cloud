@@ -444,6 +444,7 @@ function AdminVectorObservabilityContent() {
             <input
               type="text"
               value={siteIdInput}
+              aria-label={t('admin.vector_obs.site_filter_label', {}, 'Filter by site ID')}
               onChange={(event) => setSiteIdInput(event.target.value)}
               placeholder={t('admin.vector_obs.site_filter', {}, 'Site ID')}
               className="input input-bordered input-sm w-56"

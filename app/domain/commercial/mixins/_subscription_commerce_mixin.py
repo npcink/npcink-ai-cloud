@@ -90,13 +90,17 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 now=now,
             )
             claim = repository.find_trial_claim(account_id=account_id)
+            current = cast(Any, self)._select_primary_subscription(
+                repository.list_account_subscriptions(account_id)
+            )
             session.commit()
             return {
                 "items": [self._serialize_plan_offer(offer) for offer in offers],
-                "trial": (
-                    self._serialize_trial_claim(claim)
-                    if claim is not None
-                    else {"available": True, "trial_days": PAID_PACKAGE_TRIAL_DAYS}
+                "trial": self._serialize_account_trial_eligibility(
+                    claim=claim,
+                    current=current,
+                    offers=offers,
+                    now=now,
                 ),
             }
 
@@ -536,6 +540,19 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 principal_id=resolved_principal_id or None,
                 site_domain=normalized_domain or None,
             )
+            current = service._select_primary_subscription(
+                repository.list_account_subscriptions(account_id)
+            )
+            if (
+                claim is None
+                and current is not None
+                and current.status == SUBSCRIPTION_STATUS_ACTIVE
+                and self._subscription_tier(current) != "free"
+            ):
+                raise CommercialValidationError(
+                    "service.paid_plan_trial_not_available",
+                    "An account with an active paid package cannot start a trial",
+                )
             target_rank = PAID_TIER_ORDER[normalized_tier]
             if claim is not None:
                 if claim.account_id != account_id:
@@ -1187,33 +1204,71 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
 
     def _ensure_standard_plan_offers_in_session(self, repository: CommercialRepository) -> None:
         service = cast(Any, self)
-        for tier_id, settings in STANDARD_PLAN_OFFERS.items():
-            offer_id = str(settings["offer_id"])
-            if repository.get_plan_offer(offer_id) is not None:
-                continue
+        for tier_id in STANDARD_PLAN_OFFERS:
             plan_id, plan_version_id = service._ensure_plan_tier_version_in_session(
                 repository=repository,
                 tier_id=tier_id,
             )
-            repository.upsert_plan_offer(
-                offer_id=offer_id,
+            self._sync_standard_plan_offer_in_session(
+                repository,
+                tier_id=tier_id,
                 plan_id=plan_id,
                 plan_version_id=plan_version_id,
-                account_id=None,
-                tier_id=tier_id,
-                billing_cycle="monthly",
-                amount=cast(Decimal, settings["amount"]),
-                currency="CNY",
-                purchase_mode=PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
-                status=PLAN_OFFER_STATUS_ACTIVE,
-                trial_enabled=True,
-                trial_days=PAID_PACKAGE_TRIAL_DAYS,
-                trial_credit_limit=int(cast(int, settings["trial_credit_limit"])),
-                trial_requires_approval=False,
-                valid_from_at=None,
-                valid_until_at=None,
-                metadata_json={"source": "canonical_paid_offer_v1"},
+                sales_price_cny=None,
             )
+
+    def _sync_standard_plan_offer_in_session(
+        self,
+        repository: CommercialRepository,
+        *,
+        tier_id: str,
+        plan_id: str,
+        plan_version_id: str,
+        sales_price_cny: float | None,
+    ) -> PlanOffer:
+        settings = STANDARD_PLAN_OFFERS[tier_id]
+        offer_id = str(settings["offer_id"])
+        existing = repository.get_plan_offer(offer_id)
+        amount = (
+            self._money(sales_price_cny)
+            if sales_price_cny is not None
+            else self._money(existing.amount if existing is not None else settings["amount"])
+        )
+        if amount <= Decimal("0.00"):
+            raise CommercialValidationError(
+                "service.plan_offer_amount_invalid",
+                "paid package sales price must be positive",
+            )
+        return repository.upsert_plan_offer(
+            offer_id=offer_id,
+            plan_id=plan_id,
+            plan_version_id=plan_version_id,
+            account_id=None,
+            tier_id=tier_id,
+            billing_cycle="monthly",
+            amount=amount,
+            currency="CNY",
+            purchase_mode=PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
+            status=PLAN_OFFER_STATUS_ACTIVE,
+            trial_enabled=(existing.trial_enabled if existing is not None else True),
+            trial_days=(
+                existing.trial_days if existing is not None else PAID_PACKAGE_TRIAL_DAYS
+            ),
+            trial_credit_limit=(
+                existing.trial_credit_limit
+                if existing is not None
+                else int(cast(int, settings["trial_credit_limit"]))
+            ),
+            trial_requires_approval=(
+                existing.trial_requires_approval if existing is not None else False
+            ),
+            valid_from_at=(existing.valid_from_at if existing is not None else None),
+            valid_until_at=(existing.valid_until_at if existing is not None else None),
+            metadata_json={
+                **((existing.metadata_json or {}) if existing is not None else {}),
+                "source": "canonical_paid_offer_v1",
+            },
+        )
 
     def _assert_offer_purchasable(
         self,
@@ -1446,4 +1501,81 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 getattr(claim, "started_at", None)
             ),
             "trial_ends_at": cast(Any, self)._serialize_datetime(getattr(claim, "ends_at", None)),
+        }
+
+    def _serialize_account_trial_eligibility(
+        self,
+        *,
+        claim: object | None,
+        current: object | None,
+        offers: list[PlanOffer],
+        now: datetime,
+    ) -> dict[str, object]:
+        trial_tiers = [
+            offer.tier_id
+            for offer in offers
+            if offer.tier_id in {"plus", "pro"}
+            and offer.trial_enabled
+            and not offer.trial_requires_approval
+        ]
+        if claim is not None:
+            payload = self._serialize_trial_claim(claim)
+            claim_status = str(getattr(claim, "status", "") or "")
+            claim_ends_at = getattr(claim, "ends_at", None)
+            is_active = (
+                claim_status == TRIAL_CLAIM_STATUS_ACTIVE
+                and claim_ends_at is not None
+                and self._aware_datetime(claim_ends_at) > now
+            )
+            if is_active:
+                highest_tier = str(getattr(claim, "highest_tier_id", "") or "")
+                highest_rank = PAID_TIER_ORDER.get(highest_tier, 0)
+                payload.update(
+                    {
+                        "state": "active",
+                        "reason_code": "trial_active",
+                        "allowed_tiers": [
+                            tier
+                            for tier in trial_tiers
+                            if PAID_TIER_ORDER.get(tier, 0) > highest_rank
+                        ],
+                    }
+                )
+                return payload
+            payload.update(
+                {
+                    "state": "used",
+                    "reason_code": "trial_already_used",
+                    "allowed_tiers": [],
+                }
+            )
+            return payload
+
+        current_tier = self._subscription_tier(current)
+        if (
+            current is not None
+            and getattr(current, "status", "") == SUBSCRIPTION_STATUS_ACTIVE
+            and current_tier != "free"
+        ):
+            return {
+                "available": True,
+                "trial_days": PAID_PACKAGE_TRIAL_DAYS,
+                "state": "blocked",
+                "reason_code": "paid_plan_active",
+                "allowed_tiers": [],
+            }
+        if trial_tiers:
+            return {
+                "available": True,
+                "trial_days": PAID_PACKAGE_TRIAL_DAYS,
+                "state": "eligible",
+                "reason_code": "trial_available",
+                "allowed_tiers": trial_tiers,
+            }
+        return {
+            "available": False,
+            "trial_days": PAID_PACKAGE_TRIAL_DAYS,
+            "state": "unavailable",
+            "reason_code": "trial_not_offered",
+            "allowed_tiers": [],
         }

@@ -927,6 +927,7 @@ export default function AdminServiceSettingsPage() {
                     <input
                       className={fieldClassName()}
                       value={qqRedirectUri}
+                      aria-label={t('admin.service_settings.redirect_uri_label', {}, 'Redirect URL')}
                       readOnly
                       disabled={loading}
                       placeholder={t('admin.service_settings.redirect_uri_placeholder', {}, 'Generated after a public base URL is entered')}

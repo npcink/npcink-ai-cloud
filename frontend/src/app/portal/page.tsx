@@ -8,6 +8,8 @@ import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import {
   getPortalSiteDisplayName,
   getPortalSiteWordPressUrl,
+  getVisiblePortalSites,
+  portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
 import {
@@ -319,7 +321,7 @@ export default function PortalPage() {
     );
   }
 
-  const visibleSites = (session.sites || []).filter((site) => site.status !== 'archived');
+  const visibleSites = getVisiblePortalSites(session.sites);
   const selectedSite =
     visibleSites.find((s) => s.site_id === session.site_id) || visibleSites[0] || null;
   const currentSubscription = session.current_subscription;
@@ -386,16 +388,16 @@ export default function PortalPage() {
     setInspectorError('');
   };
 
-  const restrictedCount = visibleSites.filter((site) => site.status !== 'active' || !getPortalSiteWordPressUrl(site)).length;
+  const restrictedCount = visibleSites.filter(portalSiteNeedsAttention).length;
   const clearCount = visibleSites.length - restrictedCount;
   const missingUrlCount = visibleSites.filter((site) => !getPortalSiteWordPressUrl(site)).length;
   const sitePreviewLimit = 3;
   const previewSites = [...visibleSites]
     .sort((left, right) => {
       const leftPriority =
-        left.status !== 'active' || !getPortalSiteWordPressUrl(left) ? 0 : 1;
+        portalSiteNeedsAttention(left) ? 0 : 1;
       const rightPriority =
-        right.status !== 'active' || !getPortalSiteWordPressUrl(right) ? 0 : 1;
+        portalSiteNeedsAttention(right) ? 0 : 1;
       if (leftPriority !== rightPriority) {
         return leftPriority - rightPriority;
       }
@@ -666,22 +668,12 @@ export default function PortalPage() {
 
             <div className="divide-y divide-slate-200/80 dark:divide-slate-800">
               {previewSites.length > 0 ? previewSites.map((site) => {
-                const hasAttention = site.status !== 'active' || !getPortalSiteWordPressUrl(site);
+                const hasAttention = portalSiteNeedsAttention(site);
                 return (
                   <div
                     key={site.site_id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${getPortalSiteDisplayName(site)} ${t('common.view', {}, 'View')}`}
-                    onClick={() => openInspector(site.site_id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        openInspector(site.site_id);
-                      }
-                    }}
                     className={cn(
-                      'group grid cursor-pointer gap-3 px-4 py-4 transition-all active:translate-y-px lg:grid-cols-[minmax(0,1.8fr)_120px_240px] lg:items-center',
+                      'group grid gap-3 px-4 py-4 transition-colors lg:grid-cols-[minmax(0,1.8fr)_120px_240px] lg:items-center',
                       hasAttention
                           ? 'border-l-4 border-amber-300 bg-amber-50/40 hover:bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/10 dark:hover:bg-amber-950/20'
                           : 'border-l-4 border-transparent bg-white/80 hover:bg-slate-50/90 dark:bg-slate-950/35 dark:hover:bg-slate-900/60'
@@ -722,7 +714,6 @@ export default function PortalPage() {
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                       <Link
                         href={`/portal/sites/${site.site_id}`}
-                        onClick={(event) => event.stopPropagation()}
                         className="btn btn-secondary btn-sm"
                       >
                         {t('portal.home.view_site_record_action', {}, 'View site')}

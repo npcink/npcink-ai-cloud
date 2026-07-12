@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { BackofficePageStack, BackofficeSectionPanel, BackofficeStackCard } from '@/components/backoffice/BackofficeScaffold';
@@ -226,10 +227,20 @@ function PortalSiteRecordContent() {
                       'No action is needed for this site right now.'
                     )}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link href={`/portal/monitoring?site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm">
+                    {t('portal.site_record_service_status_action', {}, 'View service status')}
+                  </Link>
+                  {siteNeedsAttention ? (
+                    <Link href={`/portal/support?new=1&topic=site&site=${encodeURIComponent(siteId)}`} className="btn btn-secondary btn-sm">
+                      {t('portal.support_request_new_action', {}, 'Submit ticket')}
+                    </Link>
+                  ) : null}
+                </div>
                 {canRemoveThisSite ? (
                   <button
                     type="button"
-                    className="btn btn-danger btn-sm mt-3"
+                    className="btn btn-secondary btn-sm mt-3 text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
                     onClick={() => setShowRemoveModal(true)}
                   >
                     {t('portal.remove_site_action', {}, 'Remove site')}

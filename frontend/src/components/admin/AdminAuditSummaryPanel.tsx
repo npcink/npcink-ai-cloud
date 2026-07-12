@@ -49,6 +49,7 @@ export function AdminAuditSummaryPanel({
   const [summary, setSummary] = useState<AuditSummaryPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const href = useMemo(() => {
     const params = new URLSearchParams();
@@ -116,7 +117,7 @@ export function AdminAuditSummaryPanel({
     return () => {
       cancelled = true;
     };
-  }, [href, t]);
+  }, [href, reloadKey, t]);
 
   const totals = summary?.totals ?? {};
   const groups = Array.isArray(summary?.groups) ? summary.groups : [];
@@ -144,11 +145,20 @@ export function AdminAuditSummaryPanel({
       </div>
 
       {isLoading ? (
-        <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-4 text-sm text-slate-500 dark:text-slate-400" role="status">
           {t('common.loading', {}, 'Loading...')}
         </p>
       ) : error ? (
-        <p className="mt-4 text-sm text-red-600 dark:text-red-300">{error}</p>
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-3 dark:border-red-900/70 dark:bg-red-950/30" role="alert">
+          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm mt-3"
+            onClick={() => setReloadKey((current) => current + 1)}
+          >
+            {t('common.retry', {}, 'Retry')}
+          </button>
+        </div>
       ) : (
         <>
           <div className="mt-4">

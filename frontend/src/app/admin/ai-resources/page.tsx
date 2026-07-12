@@ -26,6 +26,8 @@ import { SupplierSummaryCards } from '@/components/admin/SupplierSummaryCards';
 import { SupplierToolbar, type SupplierTypeFilter } from '@/components/admin/SupplierToolbar';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { Modal } from '@/components/ui/Modal';
+import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { generateIdempotencyKey } from '@/lib/idempotency';
@@ -483,7 +485,98 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     docsUrl: 'https://api-docs.deepseek.com/',
     capabilityIds: 'text_generation',
     runtimeProfileIds: 'text.ai',
-    modelIds: 'deepseek-chat, deepseek-reasoner',
+    modelIds: 'deepseek-v4-flash, deepseek-v4-pro',
+  },
+  {
+    id: 'kimi',
+    label: 'Kimi',
+    providerId: 'kimi',
+    kind: 'openai_compatible',
+    displayName: 'Kimi',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    websiteUrl: 'https://www.kimi.com/',
+    docsUrl: 'https://platform.kimi.com/docs/api/overview',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'kimi-k2.6',
+  },
+  {
+    id: 'doubao',
+    label: 'Doubao / Volcengine Ark',
+    providerId: 'doubao',
+    kind: 'openai_compatible',
+    displayName: 'Doubao / Volcengine Ark',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    websiteUrl: 'https://www.volcengine.com/product/ark',
+    docsUrl: 'https://docs.volcengine.com/docs/82379/1795150',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'doubao-seed-2-0-lite-260215',
+  },
+  {
+    id: 'xiaomi_mimo',
+    label: 'Xiaomi MiMo',
+    providerId: 'xiaomi_mimo',
+    kind: 'openai_compatible',
+    displayName: 'Xiaomi MiMo',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    websiteUrl: 'https://mimo.mi.com/',
+    docsUrl: 'https://mimo.mi.com/docs/quick-start/first-api-call',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'mimo-v2.5-pro',
+  },
+  {
+    id: 'longcat',
+    label: 'LongCat / Meituan',
+    providerId: 'longcat',
+    kind: 'openai_compatible',
+    displayName: 'LongCat / Meituan',
+    baseUrl: 'https://api.longcat.chat/openai/v1',
+    websiteUrl: 'https://longcat.chat/',
+    docsUrl: 'https://longcat.chat/platform/docs/APIDocs.html',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'LongCat-2.0',
+  },
+  {
+    id: 'qwen',
+    label: 'Qwen / Alibaba Cloud Model Studio',
+    providerId: 'qwen',
+    kind: 'openai_compatible',
+    displayName: 'Qwen / Alibaba Cloud Model Studio',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    websiteUrl: 'https://www.aliyun.com/product/bailian',
+    docsUrl: 'https://help.aliyun.com/zh/model-studio/base-url',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'qwen3.6-plus',
+  },
+  {
+    id: 'hunyuan',
+    label: 'Hunyuan / Tencent TokenHub',
+    providerId: 'hunyuan',
+    kind: 'openai_compatible',
+    displayName: 'Hunyuan / Tencent TokenHub',
+    baseUrl: 'https://tokenhub.tencentmaas.com/v1',
+    websiteUrl: 'https://cloud.tencent.com/product/hunyuan',
+    docsUrl: 'https://cloud.tencent.com/document/product/1729/131925',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'hy3-preview',
+  },
+  {
+    id: 'zhipu_glm',
+    label: 'Zhipu GLM',
+    providerId: 'zhipu_glm',
+    kind: 'openai_compatible',
+    displayName: 'Zhipu GLM',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    websiteUrl: 'https://www.bigmodel.cn/',
+    docsUrl: 'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
+    capabilityIds: 'text_generation',
+    runtimeProfileIds: 'text.ai',
+    modelIds: 'glm-5.1',
   },
   {
     id: 'anthropic',
@@ -876,11 +969,31 @@ function providerPresetById(presetId: string): ProviderPreset {
   return PROVIDER_PRESETS.find((preset) => preset.id === presetId) || PROVIDER_PRESETS[0];
 }
 
+function providerHostname(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function matchesProviderHostname(hostname: string, allowedDomains: string[]): boolean {
+  return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
 function inferProviderPreset(connection: Connection): string {
   const kind = connection.kind.toLowerCase();
   const providerId = connection.provider_id.toLowerCase();
-  if (providerId.includes('newapi') || connection.base_url.toLowerCase().includes('newapi')) return 'newapi';
-  if (providerId.includes('deepseek') || connection.base_url.toLowerCase().includes('deepseek')) return 'deepseek';
+  const hostname = providerHostname(connection.base_url);
+  if (providerId.includes('newapi')) return 'newapi';
+  if (providerId.includes('deepseek') || matchesProviderHostname(hostname, ['deepseek.com'])) return 'deepseek';
+  if (providerId.includes('kimi') || providerId.includes('moonshot') || matchesProviderHostname(hostname, ['moonshot.cn'])) return 'kimi';
+  if (providerId.includes('doubao') || providerId.includes('volcengine') || matchesProviderHostname(hostname, ['volces.com'])) return 'doubao';
+  if (providerId.includes('xiaomi_mimo') || providerId === 'mimo' || matchesProviderHostname(hostname, ['xiaomimimo.com'])) return 'xiaomi_mimo';
+  if (providerId.includes('longcat') || providerId.includes('meituan') || matchesProviderHostname(hostname, ['longcat.chat'])) return 'longcat';
+  if (providerId.includes('qwen') || providerId.includes('dashscope') || matchesProviderHostname(hostname, ['dashscope.aliyuncs.com', 'maas.aliyuncs.com'])) return 'qwen';
+  if (providerId.includes('hunyuan') || providerId.includes('tencent') || matchesProviderHostname(hostname, ['tencentmaas.com', 'hunyuan.cloud.tencent.com'])) return 'hunyuan';
+  if (providerId.includes('zhipu') || providerId.includes('glm') || matchesProviderHostname(hostname, ['bigmodel.cn'])) return 'zhipu_glm';
   if (kind === 'anthropic') return 'anthropic';
   if (kind === 'openrouter') return 'openrouter';
   if (kind === 'siliconflow') return 'siliconflow';
@@ -1253,6 +1366,7 @@ function resolveAdminApiPayloadMessage(payload: any, fallback: string): string {
 
 function AiResourcesContent() {
   const { t } = useLocale();
+  const toast = useToast();
   const searchParams = useSearchParams();
   const aiText = useCallback(
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.ai_resources.${key}`, params, fallback),
@@ -1297,6 +1411,7 @@ function AiResourcesContent() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
+  const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [runtimeTelemetry, setRuntimeTelemetry] = useState<RuntimeTelemetrySummary | null>(null);
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
   const providerFormCapabilityIds = splitList(providerConnectionForm.capabilityIds);
@@ -1450,7 +1565,6 @@ function AiResourcesContent() {
     setSavingConnection(true);
     setError('');
     setMessage('');
-    setLastReceipt(null);
     try {
       const response = await fetch('/api/admin/provider-connections', {
         method: 'POST',
@@ -1493,10 +1607,12 @@ function AiResourcesContent() {
       const savedConnectionId = String(payload.data?.connection_id || normalizedConnectionId);
       setLastReceipt((payload.data?.receipt || null) as AdminMutationReceiptPayload | null);
       let testFailed = false;
+      let successMessage = '';
       setMessage(aiText('message_connection_saved_testing', 'Provider connection saved. Running connection test now.'));
       try {
         await runProviderConnectionTest(savedConnectionId, { announce: false, reload: false });
-        setMessage(aiText('message_connection_saved_and_tested', 'Provider connection saved and tested. Credential status is masked in this page.'));
+        successMessage = aiText('message_connection_saved_and_tested', 'Provider connection saved and tested. Credential status is masked in this page.');
+        setMessage(successMessage);
       } catch (testError) {
         testFailed = true;
         setError(
@@ -1510,6 +1626,8 @@ function AiResourcesContent() {
         setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
         setProviderFormMode('create');
         setProviderFormOpen(false);
+        setMessage('');
+        toast.success(successMessage, t('common.success'));
       }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : aiText('error_save_connection', 'Failed to save provider connection.'));
@@ -1523,7 +1641,6 @@ function AiResourcesContent() {
     setDeletingConnectionId(connection.connection_id);
     setError('');
     setMessage('');
-    setLastReceipt(null);
     try {
       const response = await fetch(`/api/admin/provider-connections/${encodeURIComponent(connection.connection_id)}`, {
         method: 'DELETE',
@@ -1537,7 +1654,9 @@ function AiResourcesContent() {
         throw new Error(resolveUiErrorMessage(payload, aiText('error_delete_connection', 'Failed to delete provider connection.')));
       }
       setLastReceipt((payload.data?.receipt || null) as AdminMutationReceiptPayload | null);
-      setMessage(aiText('message_connection_deleted', 'Provider connection deleted.'));
+      const successMessage = aiText('message_connection_deleted', 'Provider connection deleted.');
+      setMessage('');
+      toast.success(successMessage, t('common.success'));
       if (providerConnectionForm.connectionId === connection.connection_id) {
         setProviderFormOpen(false);
         setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
@@ -1546,7 +1665,9 @@ function AiResourcesContent() {
       setConfirmingDeleteConnectionId('');
       await loadResources({ showLoading: false });
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : aiText('error_delete_connection', 'Failed to delete provider connection.'));
+      const deleteMessage = deleteError instanceof Error ? deleteError.message : aiText('error_delete_connection', 'Failed to delete provider connection.');
+      setError(deleteMessage);
+      toast.error(deleteMessage, t('common.error'));
     } finally {
       setDeletingConnectionId('');
     }
@@ -1738,9 +1859,6 @@ function AiResourcesContent() {
     setTestingConnectionId(connectionId);
     setError('');
     if (announce) {
-      setLastReceipt(null);
-    }
-    if (announce) {
       setMessage('');
     }
     try {
@@ -1764,7 +1882,9 @@ function AiResourcesContent() {
       }
       if (announce) {
         setLastReceipt((payload.data?.receipt || null) as AdminMutationReceiptPayload | null);
-        setMessage(result ? providerTestMessage(result) : aiText('message_connection_tested', 'Provider connection tested.'));
+        const successMessage = result ? providerTestMessage(result) : aiText('message_connection_tested', 'Provider connection tested.');
+        setMessage('');
+        toast.success(successMessage, t('common.success'));
       }
       if (reload) {
         await loadResources({ showLoading: false });
@@ -1772,7 +1892,9 @@ function AiResourcesContent() {
       return result;
     } catch (testError) {
       if (announce) {
-        setError(testError instanceof Error ? testError.message : aiText('error_test_connection', 'Provider connection test failed.'));
+        const testMessage = testError instanceof Error ? testError.message : aiText('error_test_connection', 'Provider connection test failed.');
+        setError(testMessage);
+        toast.error(testMessage, t('common.error'));
       }
       throw testError;
     } finally {
@@ -2480,17 +2602,6 @@ function AiResourcesContent() {
         <p className="border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
           {aiText('workspace_boundary_notice', 'This page opens Cloud service-plane detail only. Local plugin prompts, routers, approval, and WordPress writes stay outside Cloud.')}
         </p>
-        {!providerFormOpen && message ? (
-          <BackofficeStackCard role="status" aria-live="polite" className="border-emerald-200 bg-emerald-50 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/25 dark:text-emerald-200">
-            {message}
-          </BackofficeStackCard>
-        ) : null}
-        {!providerFormOpen && error ? (
-          <BackofficeStackCard role="alert" className="border-rose-200 bg-rose-50 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
-            {error}
-          </BackofficeStackCard>
-        ) : null}
-        {!providerFormOpen ? <AdminMutationReceipt receipt={lastReceipt} /> : null}
       </BackofficePrimaryPanel>
 
       {activeView === 'connections' ? (
@@ -2501,6 +2612,8 @@ function AiResourcesContent() {
           onSupplierTypeFilterChange={setSupplierTypeFilter}
           connectionSearch={connectionSearch}
           onConnectionSearchChange={setConnectionSearch}
+          hasLatestOperation={Boolean(lastReceipt)}
+          onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
           onAddModelSupplier={openNewProviderConnection}
           onAddCapabilitySupplier={() => setCapabilityAddDialogOpen(true)}
           translate={aiText}
@@ -3269,6 +3382,16 @@ function AiResourcesContent() {
           </BackofficeSectionPanel>
         </>
       ) : null}
+
+      <Modal
+        isOpen={receiptDetailsOpen && Boolean(lastReceipt)}
+        onClose={() => setReceiptDetailsOpen(false)}
+        title={aiText('latest_operation_title', 'Latest operation')}
+        description={aiText('latest_operation_desc', 'Audit evidence from the most recent supplier change in this session.')}
+        size="lg"
+      >
+        <AdminMutationReceipt receipt={lastReceipt} title={aiText('latest_operation_receipt', 'Operation receipt')} />
+      </Modal>
 
       </BackofficePageStack>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   BackofficeMetricStrip,
   BackofficePageStack,
@@ -21,7 +21,7 @@ import {
   type Site,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
-import { getPortalSiteDisplayName } from '@/lib/portal-site-display';
+import { getPortalSiteDisplayName, getVisiblePortalSites } from '@/lib/portal-site-display';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 function resolveSelectedSite(
@@ -69,6 +69,7 @@ function customerIssueTitle(item: PortalMonitoringOverviewAction, t: ReturnType<
 
 function PortalMonitoringContent() {
   const { t } = useLocale();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { session, isLoading, isAuthenticated, selectSite } = useSession();
   const [overview, setOverview] = useState<PortalMonitoringOverviewSummary | null>(null);
@@ -76,7 +77,7 @@ function PortalMonitoringContent() {
   const [overviewError, setOverviewError] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
   const requestedSiteId = searchParams.get('site') || '';
-  const sites = session?.sites || [];
+  const sites = getVisiblePortalSites(session?.sites);
   const selectedSite = resolveSelectedSite(sites, requestedSiteId, session?.site_id || '');
   const selectedSiteId = selectedSite?.site_id || '';
 
@@ -164,6 +165,7 @@ function PortalMonitoringContent() {
         sites={sites}
         onSiteChange={(siteId) => {
           void selectSite(siteId);
+          router.replace(`/portal/monitoring?site=${encodeURIComponent(siteId)}`, { scroll: false });
         }}
         showSiteContextSummary
         metrics={[

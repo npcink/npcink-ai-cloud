@@ -23,6 +23,8 @@ import { useSession } from '@/hooks/useSession';
 import {
   getPortalSiteDisplayName,
   getPortalSiteWordPressUrl,
+  getVisiblePortalSites,
+  portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
 import { portalClient } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
@@ -51,7 +53,7 @@ function PortalSitesContent() {
   const [removeNotice, setRemoveNotice] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
   const sites = session?.sites ?? EMPTY_SITES;
-  const visibleSites = sites.filter((site) => site.status !== 'archived');
+  const visibleSites = getVisiblePortalSites(sites);
   const portalAccountId =
     session?.account_id ||
     session?.accounts?.find((account) => account.account_id)?.account_id ||
@@ -186,12 +188,12 @@ function PortalSitesContent() {
           'Use this page to review connected WordPress sites and open a site record when connection details need attention.'
         )}
         currentPage="sites"
-        sites={session.sites}
+        sites={visibleSites}
         metrics={[
-          { label: t('common.sites', {}, 'Sites'), value: session.sites.length },
+          { label: t('common.sites', {}, 'Sites'), value: visibleSites.length },
           {
             label: t('portal.home.filter_attention_only', {}, 'Needs attention'),
-            value: session.sites.filter((site) => site.status !== 'active' || !getPortalSiteWordPressUrl(site)).length,
+            value: visibleSites.filter(portalSiteNeedsAttention).length,
           },
           {
             label: t('portal.sites.latest_connected_label', {}, 'Latest connected'),
@@ -214,7 +216,11 @@ function PortalSitesContent() {
             </h2>
           </div>
           <div className="w-full lg:w-auto">
+            <label htmlFor="portal-site-search" className="sr-only">
+              {t('portal.home.search_sites_placeholder', {}, 'Search site name or URL')}
+            </label>
             <input
+              id="portal-site-search"
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
@@ -269,11 +275,11 @@ function PortalSitesContent() {
                       {getPortalSiteDisplayName(site)}
                     </p>
                     <BackofficeStatusBadge
-                      status={site.status === 'active' && getPortalSiteWordPressUrl(site) ? 'active' : 'warning'}
+                      status={portalSiteNeedsAttention(site) ? 'warning' : 'active'}
                       label={
-                        site.status === 'active' && getPortalSiteWordPressUrl(site)
-                          ? t('portal.home.risk_level_normal', {}, 'Normal')
-                          : t('portal.home.filter_attention_only', {}, 'Needs attention')
+                        portalSiteNeedsAttention(site)
+                          ? t('portal.home.filter_attention_only', {}, 'Needs attention')
+                          : t('portal.home.risk_level_normal', {}, 'Normal')
                       }
                       className="text-[0.68rem]"
                     />
@@ -302,7 +308,7 @@ function PortalSitesContent() {
                     <button
                       type="button"
                       onClick={() => openRemoveSiteModal(site)}
-                      className="btn btn-danger btn-sm"
+                      className="btn btn-secondary btn-sm text-red-700 hover:border-red-300 hover:bg-red-50 dark:text-red-300 dark:hover:border-red-900 dark:hover:bg-red-950/30"
                     >
                       {t('portal.remove_site_action', {}, 'Remove site')}
                     </button>

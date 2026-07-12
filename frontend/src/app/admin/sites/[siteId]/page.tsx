@@ -14,7 +14,9 @@ import {
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
+import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
 import { localizeAdminCommercialCopy } from '@/lib/admin-commercial-copy';
@@ -106,12 +108,12 @@ interface SiteDetail {
 function SiteDetailContent() {
   const params = useParams();
   const { t } = useLocale();
+  const toast = useToast();
   const { siteId } = params as { siteId: string };
   
   const [site, setSite] = useState<SiteDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [siteNotice, setSiteNotice] = useState<string | null>(null);
   const [siteActionError, setSiteActionError] = useState<string | null>(null);
   const [isActivatingSite, setIsActivatingSite] = useState(false);
 
@@ -122,7 +124,6 @@ function SiteDetailContent() {
 
     setIsActivatingSite(true);
     setSiteActionError(null);
-    setSiteNotice(null);
 
     try {
       const response = await fetch(`/api/admin/sites/${encodeURIComponent(site.site_id)}/activate`, {
@@ -143,12 +144,13 @@ function SiteDetailContent() {
         );
       }
       setSite((current) => (current ? { ...current, status: 'active' } : current));
-      setSiteNotice(
+      toast.success(
         t(
           'admin.site_detail.activate_success',
           undefined,
           'Site is now active. Signed addon probes and hosted runtime requests can proceed.'
-        )
+        ),
+        t('admin.site_detail.activate_success_title', undefined, 'Site activated')
       );
     } catch (err) {
       setSiteActionError(
@@ -266,14 +268,7 @@ function SiteDetailContent() {
   }, [siteId, t]);
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin text-4xl mb-4">⏳</div>
-          <p className="text-gray-600 dark:text-gray-400">{t('common.loading')}</p>
-        </div>
-      </div>
-    );
+    return <AdminRouteSkeleton />;
   }
 
   if (error) {
@@ -431,6 +426,17 @@ function SiteDetailContent() {
     site.commercial_follow_up?.next_operator_follow_up,
     t
   );
+  const formatUsageAgainstLimit = (
+    current: number,
+    limit: number,
+    formatter: (value: number) => string
+  ) => limit > 0
+    ? `${formatter(current)} / ${formatter(limit)}`
+    : t(
+        'admin.site_detail.usage_without_limit',
+        { used: formatter(current) },
+        `Used ${formatter(current)} · limit not configured`
+      );
 
   return (
     <BackofficePageStack>
@@ -483,11 +489,6 @@ function SiteDetailContent() {
                     undefined,
                     'This site record exists, but hosted runtime is still blocked until the site is activated.'
                   )}
-                </p>
-              ) : null}
-              {siteNotice ? (
-                <p className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-                  {siteNotice}
                 </p>
               ) : null}
               {siteActionError ? (
@@ -676,15 +677,27 @@ function SiteDetailContent() {
                 <div className="grid gap-3 md:grid-cols-3">
                   <CoverageMetric
                     label={t('billing.runs', {}, 'Runs')}
-                    value={`${formatInteger(Number(runBudget.current_total || 0))} / ${formatInteger(Number(runBudget.limit || 0))}`}
+                    value={formatUsageAgainstLimit(
+                      Number(runBudget.current_total || 0),
+                      Number(runBudget.limit || 0),
+                      formatInteger
+                    )}
                   />
                   <CoverageMetric
                     label={t('common.tokens')}
-                    value={`${formatInteger(Number(tokenBudget.current_total || 0))} / ${formatInteger(Number(tokenBudget.limit || 0))}`}
+                    value={formatUsageAgainstLimit(
+                      Number(tokenBudget.current_total || 0),
+                      Number(tokenBudget.limit || 0),
+                      formatInteger
+                    )}
                   />
                   <CoverageMetric
                     label={t('common.cost')}
-                    value={`${formatAdminCurrency(Number(costBudget.current_total || 0))} / ${formatAdminCurrency(Number(costBudget.limit || 0))}`}
+                    value={formatUsageAgainstLimit(
+                      Number(costBudget.current_total || 0),
+                      Number(costBudget.limit || 0),
+                      formatAdminCurrency
+                    )}
                   />
                 </div>
                 <div className="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-300">

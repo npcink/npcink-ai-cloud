@@ -26,6 +26,11 @@ import {
   type PortalSupportRequestStatus,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import {
+  getPortalSiteDisplayName,
+  getPortalSiteSecondaryLabel,
+  getVisiblePortalSites,
+} from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
 const SUPPORT_TOPICS = ['billing', 'payment', 'site', 'usage', 'account', 'general'] as const;
@@ -95,7 +100,7 @@ function PortalSupportContent() {
   }, [loadRequests]);
 
   const visibleSites = useMemo(
-    () => (session?.sites || []).filter((site) => site.status !== 'archived'),
+    () => getVisiblePortalSites(session?.sites),
     [session?.sites]
   );
   const supportStatusRules = [
@@ -179,8 +184,12 @@ function PortalSupportContent() {
         }
       />
 
-      <BackofficeSectionPanel className="space-y-3" variant="portal" data-portal-support="status-rules">
-        <div>
+      <details className="rounded-[1rem] border border-slate-200/80 bg-white/70 dark:border-slate-800 dark:bg-slate-950/35" data-portal-support="status-rules">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-950 dark:text-white">
+          {t('portal.support_status_rules_title', {}, 'Ticket status')}
+        </summary>
+        <div className="space-y-3 border-t border-slate-200/80 p-4 dark:border-slate-800">
+          <div>
           <p className="text-sm font-semibold text-slate-950 dark:text-white">
             {t('portal.support_status_rules_title', {}, 'Ticket status')}
           </p>
@@ -201,8 +210,9 @@ function PortalSupportContent() {
               <p className="mt-1 text-xs leading-5">{rule.label}</p>
             </div>
           ))}
+          </div>
         </div>
-      </BackofficeSectionPanel>
+      </details>
 
       {notice ? (
         <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
@@ -241,7 +251,7 @@ function PortalSupportContent() {
                 <option value="">{t('portal.support_request_no_site', {}, 'Account-level issue')}</option>
                 {visibleSites.map((site) => (
                   <option key={site.site_id} value={site.site_id}>
-                    {site.site_name || site.wordpress_url || site.site_id}
+                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)}, {formatDate(site.created_at)})
                   </option>
                 ))}
               </select>
@@ -260,6 +270,7 @@ function PortalSupportContent() {
           <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">
             {t('portal.support_request_desc_label', {}, 'Description')}
             <textarea
+              aria-describedby="portal-support-description-help"
               className="input mt-2 min-h-32"
               value={description}
               maxLength={4000}
@@ -267,6 +278,13 @@ function PortalSupportContent() {
               placeholder={t('portal.support_request_desc_placeholder', {}, 'Describe what happened and which page or order should be checked.')}
             />
           </label>
+          <p id="portal-support-description-help" className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t(
+              'portal.support_request_desc_help',
+              { count: String(description.trim().length) },
+              'Enter at least 10 characters. Current length: {{count}}.'
+            )}
+          </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <button
               type="button"
@@ -307,6 +325,7 @@ function PortalSupportContent() {
               key={status || 'all'}
               type="button"
               className={statusFilter === status ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+              aria-pressed={statusFilter === status}
               onClick={() => {
                 setOffset(0);
                 setStatusFilter(status);
@@ -336,7 +355,7 @@ function PortalSupportContent() {
                       {item.description}
                     </p>
                     <Link
-                      className="mt-3 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
+                      className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
                       href={`/portal/support/${encodeURIComponent(item.request_id)}`}
                     >
                       {t('portal.support_request_view_detail', {}, 'View detail')}

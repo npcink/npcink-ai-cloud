@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
@@ -27,6 +28,11 @@ import {
 } from '@/lib/currency';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatCompactNumber, formatDate, formatNumber } from '@/lib/utils';
+import {
+  getPortalSiteDisplayName,
+  getPortalSiteSecondaryLabel,
+  getVisiblePortalSites,
+} from '@/lib/portal-site-display';
 import {
   BackofficePageStack,
   BackofficeSectionPanel,
@@ -80,6 +86,7 @@ function portalCreditBreakdownLabel(
 
 function PortalUsageContent() {
   const { t } = useLocale();
+  const searchParams = useSearchParams();
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const [usage, setUsage] = useState<PortalUsageSummaryPayload | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
@@ -87,6 +94,9 @@ function PortalUsageContent() {
   const [creditLedgerOffset, setCreditLedgerOffset] = useState(0);
   const [creditLedgerLoading, setCreditLedgerLoading] = useState(false);
   const [creditLedgerError, setCreditLedgerError] = useState('');
+  const [creditLedgerSiteId, setCreditLedgerSiteId] = useState(
+    () => searchParams.get('site') || ''
+  );
   const creditLedgerPageSize = 20;
 
   const loadBundle = useCallback(async () => {
@@ -102,14 +112,19 @@ function PortalUsageContent() {
     backoffMultiplier: 2,
   });
 
-  const loadCreditLedgerPage = async (nextOffset: number) => {
+  const loadCreditLedgerPage = useCallback(async (nextOffset: number) => {
     setCreditLedgerLoading(true);
     setCreditLedgerError('');
     try {
-      const response = await portalClient.getAccountCreditLedger({
-        limit: creditLedgerPageSize,
-        offset: nextOffset,
-      });
+      const response = creditLedgerSiteId
+        ? await portalClient.getCreditLedger(creditLedgerSiteId, {
+            limit: creditLedgerPageSize,
+            offset: nextOffset,
+          })
+        : await portalClient.getAccountCreditLedger({
+            limit: creditLedgerPageSize,
+            offset: nextOffset,
+          });
       setCreditLedger(response.data);
       setCreditLedgerOffset(nextOffset);
     } catch (err) {
@@ -117,7 +132,7 @@ function PortalUsageContent() {
     } finally {
       setCreditLedgerLoading(false);
     }
-  };
+  }, [creditLedgerSiteId, t]);
 
   useEffect(() => {
     if (!session || !isAuthenticated) {
@@ -125,6 +140,18 @@ function PortalUsageContent() {
     }
     void execute();
   }, [isAuthenticated, session, execute]);
+
+  useEffect(() => {
+    if (!session || !isAuthenticated) {
+      return;
+    }
+    const selectableSiteIds = new Set(getVisiblePortalSites(session.sites).map((site) => site.site_id));
+    if (creditLedgerSiteId && !selectableSiteIds.has(creditLedgerSiteId)) {
+      setCreditLedgerSiteId('');
+      return;
+    }
+    void loadCreditLedgerPage(0);
+  }, [creditLedgerSiteId, isAuthenticated, loadCreditLedgerPage, session]);
 
   const toFinite = (value: unknown): number => {
     const numeric = Number(value || 0);
@@ -174,9 +201,8 @@ function PortalUsageContent() {
   const subscription = entitlements?.subscription || null;
   const quotaSummary = entitlements?.quota_summary || null;
   const creditLedgerItems = creditLedger?.items || [];
-  const creditLedgerTotal = Number(
-    creditLedger?.summary?.net_used_credits ?? creditLedger?.summary?.total_credits ?? 0
-  );
+  const visibleSites = getVisiblePortalSites(session.sites);
+  const availableCredits = Number(quotaSummary?.credit?.total_remaining ?? 0);
   const creditLedgerCount = Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0);
   const formatPreferredCurrency = (value: number) => formatPortalCurrency(value, { to: DEFAULT_PORTAL_CURRENCY });
   const chartTotals = chartData.reduce(
@@ -281,9 +307,10 @@ function PortalUsageContent() {
     return formatCreditPoints(0);
   };
 
-  const usageStatusLabel = quotaStatusTone(quotaSummary?.status) === 'error' || overBudget
+  const creditStatus = quotaSummary?.credit?.status;
+  const usageStatusLabel = quotaStatusTone(creditStatus) === 'error' || overBudget
     ? t('portal.home.service_status_attention', {}, 'Needs attention')
-    : quotaStatusTone(quotaSummary?.status) === 'warning'
+    : quotaStatusTone(creditStatus) === 'warning'
       ? t('portal.usage.headroom_watch', {}, 'Close to limit')
       : t('portal.home.risk_level_normal', {}, 'Normal');
   const usageHeaderMetrics = [
@@ -341,9 +368,11 @@ function PortalUsageContent() {
             </div>
             <div className="text-left sm:text-right">
               <p className="text-lg font-semibold text-gray-950 dark:text-white">
-                {formatQuotaValue(creditLedgerTotal)}
+                {formatQuotaValue(availableCredits)}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('portal.usage.total_available_label', {}, 'Available now')}
+                {' · '}
                 {t(
                   'portal.usage.credit_ledger_record_count',
                   { count: formatQuotaValue(creditLedgerCount) },
@@ -351,6 +380,31 @@ function PortalUsageContent() {
                 )}
               </p>
             </div>
+          </div>
+          <div className="max-w-md">
+            <label htmlFor="portal-usage-site" className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t('portal.usage.site_filter_label', {}, 'Usage scope')}
+            </label>
+            <select
+              id="portal-usage-site"
+              className="input"
+              value={creditLedgerSiteId}
+              disabled={creditLedgerLoading}
+              onChange={(event) => {
+                setCreditLedgerSiteId(event.target.value);
+                setCreditLedgerOffset(0);
+              }}
+            >
+              <option value="">{t('portal.usage.all_sites_option', {}, 'All sites')}</option>
+              {visibleSites.map((site) => (
+                <option key={site.site_id} value={site.site_id}>
+                  {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)}, {formatDate(site.created_at)})
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {t('portal.usage.site_filter_desc', {}, 'Choose a site to view only the point records created by that site.')}
+            </p>
           </div>
           {creditLedgerItems.length > 0 ? (
             <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">

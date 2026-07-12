@@ -23,6 +23,7 @@ import {
   type PortalIdentityProviderStatus,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { getVisiblePortalSites } from '@/lib/portal-site-display';
 import { cn, formatDate } from '@/lib/utils';
 
 type AccountActionState =
@@ -78,7 +79,6 @@ function AccountPageContent() {
     [providers]
   );
   const contactEmail = session ? resolvePortalContactEmail(session) : '';
-  const displayContact = contactEmail || t('portal.account.contact_missing', undefined, 'Needs setup');
   const qqStatus = searchParams?.get('qq') || '';
 
   const loadProviders = useCallback(async () => {
@@ -287,16 +287,8 @@ function AccountPageContent() {
         )}
         summary={(
           <BackofficeMetricStrip
-            columnsClassName="md:grid-cols-2 xl:grid-cols-4"
+            columnsClassName="md:grid-cols-3"
             items={[
-              {
-                label: t('portal.account.contact_status_label', undefined, 'Contact'),
-                value: contactEmail
-                  ? t('portal.account.contact_ready', undefined, 'Configured')
-                  : t('portal.account.contact_missing', undefined, 'Needs setup'),
-                detail: displayContact,
-                size: 'compact',
-              },
               {
                 label: t('portal.account.login_security_label', undefined, 'Sign-in'),
                 value: t('portal.account.login_security_value', undefined, 'Email code'),
@@ -315,7 +307,7 @@ function AccountPageContent() {
               },
               {
                 label: t('portal.account.site_count_label', undefined, 'Sites'),
-                value: String(session.sites?.length || 0),
+                value: String(getVisiblePortalSites(session.sites).length),
               },
             ]}
           />
@@ -346,14 +338,6 @@ function AccountPageContent() {
                 {t('portal.account.login_methods_title', undefined, 'Login methods')}
               </h2>
             </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void loadProviders()}
-              disabled={status === 'loading'}
-            >
-              {t('common.refresh', undefined, 'Refresh')}
-            </button>
           </div>
 
           <BackofficeStackCard className="space-y-4 bg-white/80 dark:bg-slate-950/55">
@@ -405,6 +389,11 @@ function AccountPageContent() {
                     ? t('portal.account.qq_bound_desc', undefined, '可使用已绑定的 QQ 账号快捷登录 Portal。')
                     : t('portal.account.qq_unbound_desc', undefined, '绑定后可使用 QQ 快捷登录，邮箱仍是主账号。')}
                 </p>
+                {!qqProvider?.configured ? (
+                  <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                    {t('portal.account.qq_unavailable_desc', undefined, 'QQ quick login is not available in the current environment. Email login remains available.')}
+                  </p>
+                ) : null}
                 {qqProvider?.binding?.last_login_at ? (
                   <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                     {t('portal.account.qq_last_login', undefined, 'Last QQ login')}:
@@ -458,24 +447,6 @@ function AccountPageContent() {
                 )}
               </p>
             </div>
-
-            <BackofficeStackCard className="space-y-2 bg-white/80 dark:bg-slate-950/55">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-base font-semibold text-slate-950 dark:text-white">
-                  {t('portal.account.primary_contact_title', undefined, 'Primary contact')}
-                </p>
-                <BackofficeStatusBadge
-                  label={contactEmail ? t('portal.account.contact_ready', undefined, 'Configured') : t('portal.account.contact_missing', undefined, 'Needs setup')}
-                  status={contactEmail ? 'active' : 'warning'}
-                />
-              </div>
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {displayContact}
-              </p>
-              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                {t('portal.account.primary_contact_detail', undefined, 'Verification codes and service notices use this contact.')}
-              </p>
-            </BackofficeStackCard>
 
             <BackofficeStackCard className="space-y-2 bg-white/80 dark:bg-slate-950/55">
               <p className="text-base font-semibold text-slate-950 dark:text-white">
