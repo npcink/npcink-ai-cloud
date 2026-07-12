@@ -196,6 +196,26 @@ Search defaults to `source_types=["post","page"]`. Callers must explicitly pass
 `filters.source_types=["comment"]` or include `comment` in the list when a
 workflow should use comments, such as FAQ or user-feedback analysis.
 
+## Search Result Granularity
+
+`site_knowledge_search.v1` accepts the optional additive input
+`result_granularity`:
+
+- `chunk` is the compatibility default and preserves ranked chunk results;
+- `document` returns each public source document once after evidence filtering
+  and reranking, then applies `max_results`.
+
+Document results keep the best-ranked chunk as the primary evidence and add a
+bounded `matched_chunks` list containing only `source_type`, `source_id`,
+`chunk_index`, and `score`. They do not duplicate chunk text. The response also
+returns `result_granularity` and `result_grouping` metadata, including
+`duplicate_chunks_collapsed`, so consumers can verify that grouping occurred.
+
+Cloud owns this grouping because it owns Site Knowledge search quality and
+ranking. Toolbox and other consumers may request a granularity, but they must
+not implement independent semantic dedupe or relevance scoring. Existing
+callers that omit the field continue to receive chunk-level results.
+
 ## Product Workflows
 
 `site-knowledge-search` remains one runtime ability. Product workflows are

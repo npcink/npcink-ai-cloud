@@ -28,6 +28,7 @@ from app.domain.site_knowledge.backends import (
     build_vector_backend,
 )
 from app.domain.site_knowledge.contracts import (
+    ALLOWED_RESULT_GRANULARITIES,
     ALLOWED_SEARCH_INTENTS,
     ALLOWED_SYNC_MODES,
     PUBLIC_COMMENT_STATUSES,
@@ -561,6 +562,9 @@ class SiteKnowledgeService:
             default=8,
             maximum=20,
         )
+        result_granularity = _normalize_result_granularity(
+            input_payload.get("result_granularity")
+        )
         evidence_policy = _resolve_evidence_policy(input_payload.get("evidence_policy"))
         filters = input_payload.get("filters")
         filters = filters if isinstance(filters, dict) else {}
@@ -593,11 +597,12 @@ class SiteKnowledgeService:
             query=query,
         )
         if results is not None:
-            results, rerank = self._prepare_search_results(
+            results, rerank, result_grouping = self._prepare_search_results(
                 query=query,
                 results=results,
                 evidence_policy=evidence_policy,
                 max_results=max_results,
+                result_granularity=result_granularity,
             )
             workflow_support = _workflow_support_for_intent(intent)
             evidence_gate = _evidence_gate(results, evidence_policy)
@@ -615,6 +620,8 @@ class SiteKnowledgeService:
                 ),
                 "evidence_gate": evidence_gate,
                 "rerank": rerank,
+                "result_granularity": result_granularity,
+                "result_grouping": result_grouping,
                 "results": results,
                 "write_posture": "suggestion_only",
                 "direct_wordpress_write": False,
@@ -641,6 +648,7 @@ class SiteKnowledgeService:
                 source_type=chunk.source_type,
                 source_id=chunk.source_id,
                 parent_post_id=chunk.parent_post_id or 0,
+                chunk_index=chunk.chunk_index,
                 title=chunk.title,
                 url=chunk.url,
                 chunk_text=chunk.chunk_text,
@@ -650,11 +658,12 @@ class SiteKnowledgeService:
             )
             for score, chunk in scored
         ]
-        results, rerank = self._prepare_search_results(
+        results, rerank, result_grouping = self._prepare_search_results(
             query=query,
             results=results,
             evidence_policy=evidence_policy,
             max_results=max_results,
+            result_granularity=result_granularity,
         )
         workflow_support = _workflow_support_for_intent(intent)
         evidence_gate = _evidence_gate(results, evidence_policy)
@@ -673,6 +682,8 @@ class SiteKnowledgeService:
             ),
             "evidence_gate": evidence_gate,
             "rerank": rerank,
+            "result_granularity": result_granularity,
+            "result_grouping": result_grouping,
             "results": results,
             "write_posture": "suggestion_only",
             "direct_wordpress_write": False,
@@ -848,11 +859,26 @@ class SiteKnowledgeService:
         results: list[dict[str, object]],
         evidence_policy: dict[str, object],
         max_results: int,
-    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+        result_granularity: str,
+    ) -> tuple[list[dict[str, object]], dict[str, object], dict[str, object]]:
         filtered = _apply_evidence_policy(results, evidence_policy)
         ranked = _rank_search_results_for_query(query, filtered)
         reranked, rerank = self._maybe_rerank_results(query=query, results=ranked)
-        return reranked[:max_results], rerank
+        candidate_count = len(reranked)
+        collapsed_count = 0
+        if result_granularity == "document":
+            reranked, collapsed_count = _collapse_search_results_by_document(reranked)
+        returned = reranked[:max_results]
+        return returned, rerank, {
+            "strategy": (
+                "best_ranked_chunk_per_document"
+                if result_granularity == "document"
+                else "ranked_chunks"
+            ),
+            "candidate_count": candidate_count,
+            "returned_count": len(returned),
+            "duplicate_chunks_collapsed": collapsed_count,
+        }
 
     def _maybe_rerank_results(
         self,
@@ -1447,6 +1473,55 @@ def _lexical_bonus(query: str, chunk_text: str, title: str) -> float:
     return min(0.2, matches / max(1, len(query_terms)) * 0.2)
 
 
+def _normalize_result_granularity(value: Any) -> str:
+    normalized = str(value or "chunk").strip()
+    return normalized if normalized in ALLOWED_RESULT_GRANULARITIES else "chunk"
+
+
+def _collapse_search_results_by_document(
+    results: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], int]:
+    documents: list[dict[str, object]] = []
+    document_indexes: dict[str, int] = {}
+    matched_chunk_keys: dict[str, set[tuple[str, int, int]]] = {}
+
+    for result in results:
+        source_type = str(result.get("source_type") or result.get("post_type") or "post")
+        post_id = _coerce_int(result.get("post_id"), default=0)
+        source_id = _coerce_int(result.get("source_id"), default=post_id)
+        document_id = source_id if source_type == "comment" else post_id
+        document_key = f"{source_type}:{document_id}"
+        chunk_index = _coerce_int(result.get("chunk_index"), default=0)
+        chunk_ref = {
+            "source_type": source_type,
+            "source_id": source_id,
+            "chunk_index": chunk_index,
+            "score": _coerce_float(result.get("score"), default=0.0),
+        }
+        chunk_key = (source_type, source_id, chunk_index)
+
+        if document_key not in document_indexes:
+            document = dict(result)
+            document["document_key"] = document_key
+            document["matched_chunks"] = [chunk_ref]
+            document["matched_chunk_count"] = 1
+            document_indexes[document_key] = len(documents)
+            matched_chunk_keys[document_key] = {chunk_key}
+            documents.append(document)
+            continue
+
+        if chunk_key in matched_chunk_keys[document_key]:
+            continue
+        matched_chunk_keys[document_key].add(chunk_key)
+        document = documents[document_indexes[document_key]]
+        matched_chunks = document.get("matched_chunks")
+        if isinstance(matched_chunks, list):
+            matched_chunks.append(chunk_ref)
+            document["matched_chunk_count"] = len(matched_chunks)
+
+    return documents, max(0, len(results) - len(documents))
+
+
 def _query_match_info(query: str, chunk_text: str) -> dict[str, object]:
     normalized_query = " ".join(str(query or "").split())
     text = str(chunk_text or "")
@@ -1582,6 +1657,7 @@ def _serialize_vector_hit(
         source_type=hit.source_type,
         source_id=hit.source_id,
         parent_post_id=hit.parent_post_id,
+        chunk_index=hit.chunk_index,
         title=hit.title,
         url=hit.url,
         chunk_text=hit.chunk_text,
@@ -1597,6 +1673,7 @@ def _serialize_search_result(
     source_type: str,
     source_id: int,
     parent_post_id: int,
+    chunk_index: int,
     title: str,
     url: str,
     chunk_text: str,
@@ -1610,6 +1687,7 @@ def _serialize_search_result(
         "source_type": source_type,
         "source_id": source_id,
         "parent_post_id": parent_post_id,
+        "chunk_index": chunk_index,
         "title": title,
         "url": url,
         "chunk": chunk_text[:1200],
