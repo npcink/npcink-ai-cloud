@@ -5682,6 +5682,11 @@ class RuntimeService:
             )
         if "existing_terms_only" in constraints:
             fragments.append("Choose only from the supplied existing taxonomy candidates.")
+        if task == "content_classification" and self._has_wordpress_ai_available_terms(prompt):
+            fragments.append(
+                "The scene input includes <available-terms>. Choose only exact term names "
+                "from that list and set is_new=false for every suggestion."
+            )
         if system_instruction:
             fragments.append(system_instruction)
         if prompt:
@@ -6212,6 +6217,16 @@ class RuntimeService:
                 ]
             }
         return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+    def _has_wordpress_ai_available_terms(self, source_text: str) -> bool:
+        match = re.search(
+            r"<available-terms>\s*(.*?)\s*</available-terms>",
+            source_text,
+            flags=re.I | re.S,
+        )
+        if match is None:
+            return False
+        return any(item.strip() for item in re.split(r"[,，]", match.group(1)))
 
     def _parse_wordpress_ai_classification_json(
         self,
