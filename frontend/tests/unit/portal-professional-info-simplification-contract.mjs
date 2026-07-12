@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const root = process.cwd();
 const billingSource = readFileSync(resolve(root, 'src/app/portal/billing/page.tsx'), 'utf8');
 const usageSource = readFileSync(resolve(root, 'src/app/portal/usage/page.tsx'), 'utf8');
-const usageDetailSource = readFileSync(resolve(root, 'src/components/portal/PortalUsageAdvancedDetails.tsx'), 'utf8');
+const creditTrendSource = readFileSync(resolve(root, 'src/components/portal/PortalCreditTrendPanel.tsx'), 'utf8');
 const aiInsightsPagePath = resolve(root, 'src/app/portal/ai-insights/page.tsx');
 const monitoringSource = readFileSync(resolve(root, 'src/app/portal/monitoring/page.tsx'), 'utf8');
 const siteServiceStatusSource = readFileSync(resolve(root, 'src/components/portal/PortalSiteServiceStatus.tsx'), 'utf8');
@@ -28,28 +28,28 @@ assert.doesNotMatch(
   'Portal package page must not expose package record IDs on the customer surface'
 );
 
-const usageDetailIndex = usageSource.indexOf('<PortalUsageAdvancedDetails');
-const usageBeforeDetail = usageSource.slice(0, usageDetailIndex);
 assert.doesNotMatch(
-  usageBeforeDetail,
+  usageSource,
   /usage\.tokens_month|common\.cost|remaining_tokens_test_label|remaining_cost_test_label/,
-  'Portal usage summary must not expose token or cost counters before the detail disclosure'
+  'Portal usage must not expose token or cost counters'
 );
 assert.match(
-  usageBeforeDetail,
-  /overview_title[\s\S]*primary_trend_title[\s\S]*ledger_toggle[\s\S]*credit_ledger_title/,
-  'Portal usage should lead with current-period totals and trend before optional point records'
+  usageSource,
+  /overview_title[\s\S]*view_tabs_label[\s\S]*PortalCreditTrendPanel[\s\S]*credit_ledger_title/,
+  'Portal usage should lead with current-period totals and task tabs before their panels'
 );
+assert.match(
+  creditTrendSource,
+  /primary_trend_title[\s\S]*trend_empty_title/,
+  'Portal usage trend must remain customer-facing and range based'
+);
+assert.match(creditTrendSource, /trend_window_1h[\s\S]*trend_window_30d/);
 assert.doesNotMatch(
-  `${usageSource}\n${usageDetailSource}`,
+  usageSource,
   /Model tokens|Other provider calls|Vector articles|Vector chunks|Provider cost breakdown|Input tokens|Output tokens|usage\.tokens_month|ai-credit-ledger-v2|Rate version/,
-  'Portal usage detail must use customer-facing point, budget, and knowledge labels instead of technical metering labels'
+  'Portal usage must not expose technical metering labels'
 );
-assert.match(
-  usageDetailSource,
-  /package_service_uses_label[\s\S]*breakdown_tokens[\s\S]*package_budget_label/,
-  'Portal usage detail should keep service uses, points, and budget as the visible usage vocabulary'
-);
+assert.doesNotMatch(usageSource, /PortalUsageAdvancedDetails|view_tab_details|usage-detail/);
 
 assert.equal(
   existsSync(aiInsightsPagePath),

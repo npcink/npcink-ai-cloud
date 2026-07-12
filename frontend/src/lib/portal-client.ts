@@ -1689,6 +1689,28 @@ export interface PortalCreditLedgerPayload {
   items: PortalCreditLedgerEntry[];
 }
 
+export type PortalCreditTrendWindow = '1h' | '24h' | '7d' | '30d';
+
+export interface PortalCreditTrendPoint {
+  start_at: string;
+  end_at: string;
+  credits: number;
+  entry_count: number;
+}
+
+export interface PortalCreditTrendPayload {
+  contract_version: 'portal-credit-trend-v1';
+  account_id: string;
+  site_id: string;
+  window: PortalCreditTrendWindow;
+  bucket_seconds: number;
+  start_at: string;
+  end_at: string;
+  total_credits: number;
+  entry_count: number;
+  points: PortalCreditTrendPoint[];
+}
+
 export interface PortalAuditBundle {
   summary: PortalAuditSummary;
   events: PortalAuditEvent[];
@@ -2171,6 +2193,14 @@ export class PortalClient {
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request('GET', `/account/credit-ledger${query}`, undefined, { requireAuth: true });
+  }
+
+  async getAccountCreditTrend(
+    options: { window: PortalCreditTrendWindow; siteId?: string }
+  ): Promise<PortalEnvelope<PortalCreditTrendPayload>> {
+    const params = new URLSearchParams({ window: options.window });
+    if (options.siteId) params.set('site_id', options.siteId);
+    return this.request('GET', `/account/credit-trend?${params.toString()}`, undefined, { requireAuth: true });
   }
 
   async listCreditPacks(siteId: string): Promise<PortalEnvelope<PortalCreditPackCatalogPayload>> {

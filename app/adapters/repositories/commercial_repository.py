@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -2318,11 +2318,59 @@ class CommercialRepository:
             statement = statement.limit(limit)
         return list(self.session.scalars(statement))
 
+    def summarize_credit_consumption_buckets(
+        self,
+        *,
+        account_id: str,
+        buckets: list[tuple[datetime, datetime]],
+        site_ids: list[str] | None = None,
+    ) -> dict[int, dict[str, float | int]]:
+        if not buckets:
+            return {}
+        bucket_expression = case(
+            *[
+                (
+                    and_(
+                        CreditLedgerEntry.created_at >= start_at,
+                        CreditLedgerEntry.created_at < end_at,
+                    ),
+                    index,
+                )
+                for index, (start_at, end_at) in enumerate(buckets)
+            ],
+            else_=None,
+        ).label("bucket_index")
+        statement = (
+            select(
+                bucket_expression,
+                func.sum(-CreditLedgerEntry.credit_delta).label("consumed_credits"),
+                func.count(CreditLedgerEntry.ledger_entry_id).label("entry_count"),
+            )
+            .where(
+                CreditLedgerEntry.account_id == account_id,
+                CreditLedgerEntry.event_type == CREDIT_LEDGER_EVENT_CONSUME,
+                CreditLedgerEntry.credit_delta < 0,
+                CreditLedgerEntry.created_at >= buckets[0][0],
+                CreditLedgerEntry.created_at < buckets[-1][1],
+            )
+            .group_by(bucket_expression)
+        )
+        if site_ids is not None:
+            if not site_ids:
+                return {}
+            statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
+        return {
+            int(bucket_index): {
+                "credits": round(float(consumed_credits or 0.0), 6),
+                "entry_count": int(entry_count or 0),
+            }
+            for bucket_index, consumed_credits, entry_count in self.session.execute(statement)
+            if bucket_index is not None
+        }
+
     def get_paid_credit_grant_by_order(self, payment_order_id: str) -> PaidCreditGrant | None:
         return self.session.scalar(
-            select(PaidCreditGrant).where(
-                PaidCreditGrant.payment_order_id == payment_order_id
-            )
+            select(PaidCreditGrant).where(PaidCreditGrant.payment_order_id == payment_order_id)
         )
 
     def upsert_paid_credit_grant(

@@ -31,6 +31,7 @@ from app.core.models import (
 from app.core.security import build_secret_hash, verify_secret_hash
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import (
+    CommercialNotFoundError,
     CommercialPermissionError,
     CommercialValidationError,
 )
@@ -143,6 +144,76 @@ def _portal_email_change_code_metadata(value: object) -> dict[str, object]:
 
 
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
+    def get_portal_account_credit_trend(
+        self,
+        account_id: str,
+        *,
+        window: str = "24h",
+        site_id: str | None = None,
+    ) -> dict[str, object]:
+        normalized_window = str(window or "24h").strip().lower()
+        window_config = {
+            "1h": (timedelta(hours=1), timedelta(minutes=5)),
+            "24h": (timedelta(hours=24), timedelta(hours=1)),
+            "7d": (timedelta(days=7), timedelta(days=1)),
+            "30d": (timedelta(days=30), timedelta(days=1)),
+        }.get(normalized_window)
+        if window_config is None:
+            raise CommercialValidationError(
+                "service.portal_credit_trend_window_invalid",
+                "credit trend window must be one of 1h, 24h, 7d, or 30d",
+            )
+        duration, bucket_size = window_config
+        end_at = self.now_factory()
+        start_at = end_at - duration
+        bucket_count = max(1, int(duration / bucket_size))
+        buckets = [
+            (
+                start_at + bucket_size * index,
+                start_at + bucket_size * (index + 1),
+            )
+            for index in range(bucket_count)
+        ]
+        normalized_site_id = str(site_id or "").strip()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            if repository.get_account(account_id) is None:
+                raise CommercialNotFoundError(
+                    "service.account_not_found",
+                    f"account '{account_id}' was not found",
+                )
+            summaries = repository.summarize_credit_consumption_buckets(
+                account_id=account_id,
+                buckets=buckets,
+                site_ids=[normalized_site_id] if normalized_site_id else None,
+            )
+        points = [
+            {
+                "start_at": self._serialize_datetime(bucket_start),
+                "end_at": self._serialize_datetime(bucket_end),
+                "credits": float(summaries.get(index, {}).get("credits", 0.0)),
+                "entry_count": int(summaries.get(index, {}).get("entry_count", 0)),
+            }
+            for index, (bucket_start, bucket_end) in enumerate(buckets)
+        ]
+        total_credits = 0.0
+        entry_count = 0
+        for summary in summaries.values():
+            total_credits += float(summary.get("credits", 0.0))
+            entry_count += int(summary.get("entry_count", 0))
+        return {
+            "contract_version": "portal-credit-trend-v1",
+            "account_id": account_id,
+            "site_id": normalized_site_id,
+            "window": normalized_window,
+            "bucket_seconds": int(bucket_size.total_seconds()),
+            "start_at": self._serialize_datetime(start_at),
+            "end_at": self._serialize_datetime(end_at),
+            "total_credits": round(total_credits, 6),
+            "entry_count": entry_count,
+            "points": points,
+        }
+
     def issue_portal_oauth_state(
         self,
         *,

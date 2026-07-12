@@ -98,7 +98,7 @@ function buildPortalSession(selectedSiteId: string) {
 
 async function installPortalMocks(
   page: Page,
-  options: { paymentReturnFlow?: boolean } = {}
+  options: { paymentReturnFlow?: boolean; emptyCreditTrend?: boolean } = {}
 ) {
   let selectedSiteId = 'site_attention';
   const canceledPaymentOrderIds = new Set<string>();
@@ -302,6 +302,43 @@ async function installPortalMocks(
           ],
         },
         generated_at: '2026-04-07T10:00:00Z',
+      });
+      return;
+    }
+
+    if (pathname === '/account/credit-trend') {
+      const trendWindow = url.searchParams.get('window') || '24h';
+      const pointCount = trendWindow === '1h' ? 12 : trendWindow === '24h' ? 24 : trendWindow === '7d' ? 7 : 30;
+      const bucketSeconds = trendWindow === '1h' ? 300 : trendWindow === '24h' ? 3600 : 86400;
+      const endAt = new Date('2026-04-07T10:00:00Z').getTime();
+      const points = Array.from({ length: pointCount }, (_, index) => {
+        const pointEnd = endAt - (pointCount - index - 1) * bucketSeconds * 1000;
+        const pointStart = pointEnd - bucketSeconds * 1000;
+        const credits = options.emptyCreditTrend
+          ? 0
+          : index === pointCount - 1
+            ? 18
+            : index === pointCount - 2
+              ? 6
+              : 0;
+        return {
+          start_at: new Date(pointStart).toISOString(),
+          end_at: new Date(pointEnd).toISOString(),
+          credits,
+          entry_count: credits > 0 ? 1 : 0,
+        };
+      });
+      await fulfillJson(route, {
+        contract_version: 'portal-credit-trend-v1',
+        account_id: 'acct_portal',
+        site_id: url.searchParams.get('site_id') || '',
+        window: trendWindow,
+        bucket_seconds: bucketSeconds,
+        start_at: points[0]?.start_at || '',
+        end_at: points.at(-1)?.end_at || '',
+        total_credits: points.reduce((total, point) => total + point.credits, 0),
+        entry_count: points.reduce((total, point) => total + point.entry_count, 0),
+        points,
       });
       return;
     }
@@ -1350,10 +1387,39 @@ test('portal workspace interaction path: account overview to site drawer and ser
   await page.goto('/portal/usage');
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
-  await page.locator('[data-portal-usage="ledger-detail"] summary').click();
+  const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
+  await expect(usageViewTabs.getByRole('tab')).toHaveCount(2);
+  await expect(usageViewTabs.getByRole('tab', { name: /Usage details|用量明细/i })).toHaveCount(0);
+  await expect(page.getByText(/^Generated At$|^生成时间$/i)).toHaveCount(0);
+  await expect(page.getByText(/Apr 1[^\n]*Apr 30|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)30日?/i).first()).toBeVisible();
+  await expect(page.getByText(/Ends .*2026.*Apr 30|截止 .*2026.*4(?:月|\/)30日?/i).first()).toBeVisible();
+  await expect(page.getByText(/Updated .*Apr 7|更新于 .*4(?:月|\/)7日?/i).first()).toBeVisible();
+  await expect(usageViewTabs.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
+  const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
+  await expect(trendPanel.getByRole('tab', { name: /24 hours|最近 24 小时/i })).toHaveAttribute('aria-selected', 'true');
+  await expect(trendPanel.locator('[data-trend-window="24h"]')).toHaveAttribute('data-trend-points', '24');
+  await expect(trendPanel.getByText(/24 points used|共使用 24 点/i)).toBeVisible();
+  for (const range of [
+    { name: /1 hour|最近 1 小时/i, value: '1h', points: '12' },
+    { name: /7 days|最近 7 天/i, value: '7d', points: '7' },
+    { name: /30 days|最近 30 天/i, value: '30d', points: '30' },
+  ]) {
+    await trendPanel.getByRole('tab', { name: range.name }).click();
+    await expect(trendPanel.locator(`[data-trend-window="${range.value}"]`)).toHaveAttribute('data-trend-points', range.points);
+  }
+  await usageViewTabs.getByRole('tab', { name: /Point records|点数记录/i }).click();
+  await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
   await expect(page.getByRole('heading', { level: 2, name: /Point record details|点数记录明细|點數記錄明細/i })).toBeVisible();
   await expect(page.getByText(/AI service usage|内容生成|AI 服务|AI 服務/i).first()).toBeVisible();
   await expect(page.locator('main').getByRole('combobox', { name: /Usage scope|用量范围/i })).toBeVisible();
+  await page.reload();
+  const reloadedRecordsTab = page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /Point records|点数记录/i });
+  await expect(reloadedRecordsTab).toHaveAttribute('aria-selected', 'true');
+  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i }).click();
+  await expect(page).toHaveURL(/\/portal\/usage$/);
+  await expect(page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
+  await page.goto('/portal/usage?view=details');
+  await expect(page).toHaveURL(/\/portal\/usage$/);
 
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
@@ -1482,6 +1548,15 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await page.keyboard.press('Escape');
 });
 
+test('portal point trend shows an explicit empty state instead of a blank chart', async ({ page }) => {
+  await installPortalMocks(page, { emptyCreditTrend: true });
+
+  await page.goto('/portal/usage');
+  const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
+  await expect(trendPanel.getByText(/No point usage in this range|该时间范围内暂无点数使用/i)).toBeVisible();
+  await expect(trendPanel.getByRole('img')).toHaveCount(0);
+});
+
 test('portal usage and workspace stay usable on mobile viewport', async ({ page }) => {
   await installPortalMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1492,6 +1567,6 @@ test('portal usage and workspace stay usable on mobile viewport', async ({ page 
 
   await page.goto('/portal/usage');
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
-  await page.locator('[data-portal-usage="ledger-detail"] summary').click();
+  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /Point records|点数记录/i }).click();
   await expect(page.getByRole('heading', { level: 2, name: /Point record details|点数记录明细|點數記錄明細/i })).toBeVisible();
 });

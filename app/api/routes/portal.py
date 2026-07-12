@@ -1921,6 +1921,44 @@ async def get_portal_account_credit_ledger(
     )
 
 
+@router.get("/account/credit-trend")
+async def get_portal_account_credit_trend(
+    request: Request,
+    window: Literal["1h", "24h", "7d", "30d"] = Query(default="24h"),  # noqa: B008
+    site_id: str = Query(default="", max_length=191),  # noqa: B008
+) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    account_id = _resolve_primary_portal_account_id(
+        request,
+        principal_id=auth.principal_id,
+    )
+    if isinstance(account_id, JSONResponse):
+        return account_id
+    try:
+        trend = _get_commercial_service(request).get_portal_account_credit_trend(
+            account_id,
+            window=window,
+            site_id=site_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return _portal_route_envelope(
+        message="portal account credit trend loaded",
+        data={
+            "principal_id": auth.principal_id,
+            "identity_type": "user",
+            "role": "user",
+            **trend,
+        },
+    )
+
+
 @router.get("/account/credit-packs")
 async def list_portal_account_credit_packs(request: Request) -> Any:
     auth = await resolve_portal_request_context(

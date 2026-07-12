@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
@@ -10,8 +10,7 @@ import {
   PortalLoadingState,
   PortalSignedOutState,
 } from '@/components/portal/PortalPageState';
-import { PortalUsageAdvancedDetails } from '@/components/portal/PortalUsageAdvancedDetails';
-import { UsageBarChart } from '@/components/ui/UsageChart';
+import { PortalCreditTrendPanel } from '@/components/portal/PortalCreditTrendPanel';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useRetry } from '@/hooks/useRetry';
 import { useSession } from '@/hooks/useSession';
@@ -19,10 +18,12 @@ import {
   portalClient,
   type Entitlements,
   type PortalCreditLedgerPayload,
+  type PortalCreditTrendPayload,
+  type PortalCreditTrendWindow,
   type PortalUsageSummaryPayload,
-  type PortalUsageWindow,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import type { Locale } from '@/lib/i18n';
 import { formatDate, formatNumber } from '@/lib/utils';
 import {
   getPortalSiteDisplayName,
@@ -35,19 +36,6 @@ import {
   PortalCard,
   PortalMetricStrip,
 } from '@/components/portal/PortalScaffold';
-
-function toChartPoint(
-  window: PortalUsageWindow | undefined,
-  label: string,
-): { date: string; requests: number; tokens: number; cost: number } | null {
-  if (!window) return null;
-  return {
-    date: label,
-    requests: Number(window.runs_total || 0),
-    tokens: Number(window.tokens_in_total || 0) + Number(window.tokens_out_total || 0),
-    cost: Number(window.cost_total || 0),
-  };
-}
 
 function formatQuotaValue(value: unknown, unlimited = false, unlimitedLabel = 'Unlimited'): string {
   if (unlimited) return unlimitedLabel;
@@ -81,8 +69,66 @@ function portalCreditBreakdownLabel(
   return labels[key] || fallback || key;
 }
 
+type PortalUsageView = 'trend' | 'records';
+const PORTAL_USAGE_VIEWS: PortalUsageView[] = ['trend', 'records'];
+
+function resolvePortalUsageView(value: string | null): PortalUsageView {
+  return value === 'records' ? value : 'trend';
+}
+
+function parseUsageDate(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatUsagePeriodRange(startValue: string, endValue: string, locale: Locale): string {
+  const start = parseUsageDate(startValue);
+  const end = parseUsageDate(endValue);
+  if (!start || !end) return '';
+  const currentYear = new Date().getFullYear();
+  const includeYear = start.getFullYear() !== end.getFullYear()
+    || start.getFullYear() !== currentYear
+    || end.getFullYear() !== currentYear;
+  const formatter = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
+    ...(includeYear ? { year: 'numeric' as const } : {}),
+    month: locale === 'en' ? 'short' : 'numeric',
+    day: 'numeric',
+  });
+  return `${formatter.format(start)} – ${formatter.format(end)}`;
+}
+
+function formatUsagePeriodEnd(value: string, locale: Locale): string {
+  const date = parseUsageDate(value);
+  if (!date) return '';
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
+    year: 'numeric',
+    month: locale === 'en' ? 'short' : 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatUsageUpdatedAt(value: string, locale: Locale): string {
+  const date = parseUsageDate(value);
+  if (!date) return '';
+  const now = new Date();
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', sameDay
+    ? { hour: '2-digit', minute: '2-digit' }
+    : {
+        ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' as const } : {}),
+        month: locale === 'en' ? 'short' : 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date);
+}
+
 function PortalUsageContent() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const [usage, setUsage] = useState<PortalUsageSummaryPayload | null>(null);
@@ -93,6 +139,14 @@ function PortalUsageContent() {
   const [creditLedgerError, setCreditLedgerError] = useState('');
   const [creditLedgerSiteId, setCreditLedgerSiteId] = useState(
     () => searchParams.get('site') || ''
+  );
+  const [creditTrendWindow, setCreditTrendWindow] = useState<PortalCreditTrendWindow>('24h');
+  const [creditTrend, setCreditTrend] = useState<PortalCreditTrendPayload | null>(null);
+  const [creditTrendLoading, setCreditTrendLoading] = useState(true);
+  const [creditTrendError, setCreditTrendError] = useState('');
+  const creditTrendRequestId = useRef(0);
+  const [activeUsageView, setActiveUsageView] = useState<PortalUsageView>(
+    () => resolvePortalUsageView(searchParams.get('view'))
   );
   const creditLedgerPageSize = 10;
 
@@ -130,6 +184,41 @@ function PortalUsageContent() {
     }
   }, [creditLedgerSiteId, t]);
 
+  const loadCreditTrend = useCallback(async () => {
+    const requestId = creditTrendRequestId.current + 1;
+    creditTrendRequestId.current = requestId;
+    setCreditTrendLoading(true);
+    setCreditTrendError('');
+    try {
+      const response = await portalClient.getAccountCreditTrend({
+        window: creditTrendWindow,
+        siteId: creditLedgerSiteId || undefined,
+      });
+      if (creditTrendRequestId.current !== requestId) return;
+      setCreditTrend(response.data);
+    } catch (err) {
+      if (creditTrendRequestId.current !== requestId) return;
+      setCreditTrendError(formatPortalErrorMessage(err, t, t('error.failed_load')));
+    } finally {
+      if (creditTrendRequestId.current === requestId) setCreditTrendLoading(false);
+    }
+  }, [creditLedgerSiteId, creditTrendWindow, t]);
+
+  useEffect(() => {
+    const requestedView = searchParams.get('view');
+    setActiveUsageView(resolvePortalUsageView(requestedView));
+    if (requestedView && requestedView !== 'records') {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete('view');
+      const query = nextParams.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `/portal/usage${query ? `?${query}` : ''}`,
+      );
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     if (!session || !isAuthenticated) {
       return;
@@ -141,30 +230,58 @@ function PortalUsageContent() {
     if (!session || !isAuthenticated) {
       return;
     }
+    if (activeUsageView !== 'records') return;
     const selectableSiteIds = new Set(getVisiblePortalSites(session.sites).map((site) => site.site_id));
     if (creditLedgerSiteId && !selectableSiteIds.has(creditLedgerSiteId)) {
       setCreditLedgerSiteId('');
       return;
     }
     void loadCreditLedgerPage(0);
-  }, [creditLedgerSiteId, isAuthenticated, loadCreditLedgerPage, session]);
+  }, [activeUsageView, creditLedgerSiteId, isAuthenticated, loadCreditLedgerPage, session]);
 
-  const toFinite = (value: unknown): number => {
-    const numeric = Number(value || 0);
-    return Number.isFinite(numeric) ? numeric : 0;
+  useEffect(() => {
+    if (!session || !isAuthenticated) return;
+    if (activeUsageView !== 'trend') return;
+    void loadCreditTrend();
+  }, [activeUsageView, isAuthenticated, loadCreditTrend, session]);
+
+  const handleUsageViewChange = (nextView: PortalUsageView) => {
+    setActiveUsageView(nextView);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextView === 'trend') nextParams.delete('view');
+    else nextParams.set('view', nextView);
+    const query = nextParams.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/portal/usage${query ? `?${query}` : ''}`,
+    );
+  };
+
+  const handleUsageViewKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentView: PortalUsageView,
+  ) => {
+    const currentIndex = PORTAL_USAGE_VIEWS.indexOf(currentView);
+    const nextIndex = event.key === 'ArrowRight'
+      ? (currentIndex + 1) % PORTAL_USAGE_VIEWS.length
+      : event.key === 'ArrowLeft'
+        ? (currentIndex - 1 + PORTAL_USAGE_VIEWS.length) % PORTAL_USAGE_VIEWS.length
+        : event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? PORTAL_USAGE_VIEWS.length - 1
+            : -1;
+    if (nextIndex < 0) return;
+    event.preventDefault();
+    const nextView = PORTAL_USAGE_VIEWS[nextIndex];
+    handleUsageViewChange(nextView);
+    requestAnimationFrame(() => document.getElementById(`portal-usage-tab-${nextView}`)?.focus());
   };
 
   const errorMessage = retryError
     ? formatPortalErrorMessage(retryError, t, t('error.failed_load'))
     : null;
-
-  const chartData = useMemo(() => {
-    const points = [
-      toChartPoint(usage?.windows?.today, t('portal.usage.window_today', {}, 'Today')),
-      toChartPoint(usage?.windows?.rolling_24h, t('portal.usage.window_rolling_24h', {}, '24h')),
-    ].filter(Boolean) as { date: string; requests: number; tokens: number; cost: number }[];
-    return points;
-  }, [usage, t]);
 
   if (sessionLoading || retryLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
@@ -191,7 +308,6 @@ function PortalUsageContent() {
     );
   }
 
-  const usageWindow = usage?.windows?.rolling_24h || usage?.windows?.today || null;
   const budgetState = entitlements?.budget_state || {};
   const overBudget = Object.values(budgetState).some((entry) => Boolean(entry?.over_limit));
   const subscription = entitlements?.subscription || null;
@@ -200,15 +316,7 @@ function PortalUsageContent() {
   const visibleSites = getVisiblePortalSites(session.sites);
   const availableCredits = Number(quotaSummary?.credit?.total_remaining ?? 0);
   const creditLedgerCount = Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0);
-  const chartTotals = chartData.reduce(
-    (totals, item) => ({
-      requests: totals.requests + toFinite(item.requests),
-      tokens: totals.tokens + toFinite(item.tokens),
-      cost: totals.cost + toFinite(item.cost),
-    }),
-    { requests: 0, tokens: 0, cost: 0 }
-  );
-  const usedCredits = Number(quotaSummary?.credit?.used ?? chartTotals.tokens ?? 0);
+  const usedCredits = Number(quotaSummary?.credit?.used ?? 0);
   const paidCredits = Number(quotaSummary?.credit?.paid_remaining ?? 0);
   const nextPaidCreditExpiry = String(quotaSummary?.credit?.paid_next_expires_at || '');
   const currentPeriodStart =
@@ -223,10 +331,13 @@ function PortalUsageContent() {
     subscription?.current_period_end ||
     session.current_subscription?.current_period_end ||
     '';
-  const currentPeriodRange =
-    currentPeriodStart && currentPeriodEnd
-      ? `${formatDate(currentPeriodStart)} - ${formatDate(currentPeriodEnd)}`
-      : '';
+  const currentPeriodRange = currentPeriodStart && currentPeriodEnd
+    ? formatUsagePeriodRange(currentPeriodStart, currentPeriodEnd, locale)
+    : '';
+  const currentPeriodEndDetail = currentPeriodEnd
+    ? formatUsagePeriodEnd(currentPeriodEnd, locale)
+    : '';
+  const updatedAt = usage?.generated_at ? formatUsageUpdatedAt(usage.generated_at, locale) : '';
   const formatCreditPoints = (value: number) =>
     t('portal.usage.credit_points_value', { count: formatNumber(Math.abs(Math.round(value))) }, '{{count}} points');
   const isCustomerServiceLedgerEntry = (entry: PortalCreditLedgerPayload['items'][number]) =>
@@ -311,6 +422,18 @@ function PortalUsageContent() {
     : quotaStatusTone(creditStatus) === 'warning'
       ? t('portal.usage.headroom_watch', {}, 'Close to limit')
       : t('portal.home.risk_level_normal', {}, 'Normal');
+  const usageHeaderDescription = t(
+    'portal.usage.summary_desc',
+    {},
+    "Review this period's account point use, records, and trends."
+  );
+  const usageHeaderInfo = updatedAt
+    ? `${usageHeaderDescription} · ${t(
+        'portal.usage.updated_at_inline',
+        { time: updatedAt },
+        'Updated {{time}}'
+      )}`
+    : usageHeaderDescription;
   const usageHeaderMetrics = [
     {
       label: t('common.status'),
@@ -320,13 +443,13 @@ function PortalUsageContent() {
     {
       label: t('portal.usage.period_label', {}, 'Period'),
       value: currentPeriodRange || t('common.not_found'),
-      detail: t('portal.usage.header_period_detail', {}, 'Current package period.'),
-      size: 'compact' as const,
-    },
-    {
-      label: t('portal.usage.context_generated'),
-      value: usage?.generated_at ? formatDate(usage.generated_at) : t('common.not_found'),
-      detail: t('portal.usage.header_updated_detail', {}, 'Latest available data.'),
+      detail: currentPeriodEndDetail
+        ? t(
+            'portal.usage.period_end_detail',
+            { time: currentPeriodEndDetail },
+            'Ends {{time}}'
+          )
+        : t('portal.usage.header_period_detail', {}, 'Current package period.'),
       size: 'compact' as const,
     },
   ];
@@ -361,14 +484,10 @@ function PortalUsageContent() {
       <PortalWorkspaceHeader
         eyebrow={t('portal.usage.summary_label', {}, 'Usage')}
         title={t('portal.nav_usage', {}, 'Usage')}
-        eyebrowInfo={t(
-          'portal.usage.summary_desc',
-          {},
-          "Review this period's account point use, records, and trends."
-        )}
+        eyebrowInfo={usageHeaderInfo}
         currentPage="usage"
         metrics={usageHeaderMetrics}
-        metricsColumnsClassName="lg:grid-cols-3"
+        metricsColumnsClassName="lg:grid-cols-2"
       />
 
       {entitlements ? (
@@ -385,32 +504,66 @@ function PortalUsageContent() {
         </PortalSection>
       ) : null}
 
-      {chartData.length > 0 ? (
-        <PortalSection className="space-y-4" data-portal-usage="primary-trend">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-              {t('portal.usage.primary_trend_title', {}, 'Point usage trend')}
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
-              {t('portal.usage.primary_trend_desc', {}, 'Review the recent direction before opening individual usage records.')}
-            </p>
-          </div>
-          <div className="min-h-40 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <UsageBarChart data={chartData} type="tokens" height={160} />
-          </div>
-        </PortalSection>
-      ) : null}
+      <PortalSection className="p-2" data-portal-usage="view-tabs">
+        <div
+          role="tablist"
+          aria-label={t('portal.usage.view_tabs_label', {}, 'Usage views')}
+          className="grid gap-1 sm:grid-cols-2"
+        >
+          {([
+            { value: 'trend', label: t('portal.usage.view_tab_trend', {}, 'Trend') },
+            { value: 'records', label: t('portal.usage.view_tab_records', {}, 'Point records') },
+          ] as Array<{ value: PortalUsageView; label: string }>).map((view) => (
+            <button
+              key={view.value}
+              id={`portal-usage-tab-${view.value}`}
+              type="button"
+              role="tab"
+              aria-selected={activeUsageView === view.value}
+              aria-controls={`portal-usage-panel-${view.value}`}
+              tabIndex={activeUsageView === view.value ? 0 : -1}
+              className={`min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+                activeUsageView === view.value
+                  ? 'bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+              }`}
+              onClick={() => handleUsageViewChange(view.value)}
+              onKeyDown={(event) => handleUsageViewKeyDown(event, view.value)}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+      </PortalSection>
 
-      <details
-        className="overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45"
+      <div
+        id="portal-usage-panel-trend"
+        role="tabpanel"
+        aria-labelledby="portal-usage-tab-trend"
+        hidden={activeUsageView !== 'trend'}
+      >
+        {activeUsageView === 'trend' ? (
+          <PortalCreditTrendPanel
+            payload={creditTrend}
+            window={creditTrendWindow}
+            isLoading={creditTrendLoading}
+            error={creditTrendError}
+            onWindowChange={setCreditTrendWindow}
+            onRetry={() => void loadCreditTrend()}
+          />
+        ) : null}
+      </div>
+
+      <PortalSection
+        id="portal-usage-panel-records"
+        role="tabpanel"
+        aria-labelledby="portal-usage-tab-records"
+        hidden={activeUsageView !== 'records'}
+        className="space-y-5"
         data-portal-usage="ledger-detail"
       >
-        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-950 hover:bg-slate-50 dark:text-white dark:hover:bg-slate-900/60">
-          {t('portal.usage.ledger_toggle', {}, 'Usage records')}
-        </summary>
-        <div className="border-t border-slate-200 p-4 dark:border-slate-800">
-      {entitlements ? (
-        <div className="space-y-5" data-portal-usage="usage-records">
+          {activeUsageView === 'records' && entitlements ? (
+            <div className="space-y-5" data-portal-usage="usage-records">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -518,18 +671,10 @@ function PortalUsageContent() {
             onOffsetChange={(nextOffset) => void loadCreditLedgerPage(nextOffset)}
             className="px-0 pb-0"
           />
-        </div>
-      ) : null}
-        </div>
-      </details>
+            </div>
+          ) : null}
+      </PortalSection>
 
-      <PortalUsageAdvancedDetails
-        t={t}
-        chartData={chartData}
-        chartTotals={chartTotals}
-        usageWindow={usageWindow}
-        hasEntitlements={Boolean(entitlements)}
-      />
     </PortalPageStack>
   );
 }
