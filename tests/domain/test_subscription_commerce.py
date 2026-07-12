@@ -206,6 +206,14 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
     assert plus_comparison["knowledge_article_limit"] == 800
     assert pro_comparison["concurrency_limit"] == 3
     assert plus_comparison["amount"] == 15.0
+    assert plus_comparison["comparison_rights"]["monthly_points"] == {
+        "state": "limited",
+        "value": 3000,
+    }
+    assert plus_comparison["comparison_rights"]["knowledge_article_limit"] == {
+        "state": "limited",
+        "value": 800,
+    }
 
     service.publish_plan_version(
         plan_id="plus",
@@ -226,6 +234,10 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
     assert refreshed_plus_comparison["plan_version_id"] == "plus_v2"
     assert refreshed_plus_comparison["monthly_points"] == 3500
     assert refreshed_plus_comparison["knowledge_article_limit"] is None
+    assert refreshed_plus_comparison["comparison_rights"]["knowledge_article_limit"] == {
+        "state": "unconfigured",
+        "value": None,
+    }
     assert refreshed_plus_comparison["amount"] == 19.0
 
     checkout = service.create_account_subscription_payment_order(

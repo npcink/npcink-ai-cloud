@@ -1430,10 +1430,23 @@ export interface PortalPlanComparisonTier {
   knowledge_article_limit: number | null;
   concurrency_limit: number | null;
   batch_item_limit: number | null;
+  comparison_rights?: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>;
   amount?: number | null;
   currency: 'CNY';
   billing_cycle?: 'monthly' | null;
   purchase_mode: 'included' | 'self_serve';
+}
+
+export type PortalPlanComparisonRightKey =
+  | 'monthly_points'
+  | 'site_limit'
+  | 'knowledge_article_limit'
+  | 'concurrency_limit'
+  | 'batch_item_limit';
+
+export interface PortalPlanComparisonRight {
+  state: 'limited' | 'unlimited' | 'not_included' | 'unconfigured';
+  value: number | null;
 }
 
 export interface PortalPlanOfferListPayload {

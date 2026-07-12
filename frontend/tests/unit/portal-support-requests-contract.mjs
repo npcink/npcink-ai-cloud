@@ -7,6 +7,7 @@ const portalNavbarPath = resolve(root, 'src/components/portal/PortalNavbar.tsx')
 const portalSupportPagePath = resolve(root, 'src/app/portal/support/page.tsx');
 const portalSupportDetailPagePath = resolve(root, 'src/app/portal/support/[requestId]/page.tsx');
 const portalBillingPagePath = resolve(root, 'src/app/portal/billing/page.tsx');
+const portalPackagePanelPath = resolve(root, 'src/components/portal/PortalPackageChangePanel.tsx');
 const portalClientPath = resolve(root, 'src/lib/portal-client.ts');
 const adminLayoutPath = resolve(root, 'src/app/admin/layout.tsx');
 const adminSupportPagePath = resolve(root, 'src/app/admin/support-requests/page.tsx');
@@ -18,6 +19,7 @@ const portalNavbarSource = readFileSync(portalNavbarPath, 'utf8');
 const portalSupportPageSource = readFileSync(portalSupportPagePath, 'utf8');
 const portalSupportDetailPageSource = readFileSync(portalSupportDetailPagePath, 'utf8');
 const portalBillingPageSource = readFileSync(portalBillingPagePath, 'utf8');
+const portalPackagePanelSource = readFileSync(portalPackagePanelPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const adminLayoutSource = readFileSync(adminLayoutPath, 'utf8');
 const adminSupportPageSource = readFileSync(adminSupportPagePath, 'utf8');
@@ -60,14 +62,14 @@ assert.match(
   'Portal support page must explain ticket status, close evaluation, and reopen expectations'
 );
 assert.match(
-  portalBillingPageSource,
+  portalPackagePanelSource,
   /\/portal\/support\?new=1&topic=billing/,
-  'Portal package page must open the ticket form for package or payment issues'
+  'Portal package dialog must keep a contextual support path for Agency requests'
 );
 assert.doesNotMatch(
   portalBillingPageSource,
-  /\/portal\/support\?new=1&topic=billing&site=|encodeURIComponent\(selectedSiteId\)/,
-  'Portal package page must open account-level billing tickets without preselecting a site'
+  /supportRequestHref|portal\.support_request_new_action/,
+  'Portal package header must not duplicate the global ticket navigation'
 );
 assert.doesNotMatch(
   portalSupportPageSource,

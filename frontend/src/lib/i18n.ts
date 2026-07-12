@@ -2999,6 +2999,10 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.billing.package_comparison_right_label': 'Right',
     'portal.billing.package_comparison_unavailable':
       'Package rights comparison is temporarily unavailable.',
+    'portal.billing.compare_not_included': 'Not included',
+    'portal.billing.compare_unconfigured': 'To confirm',
+    'portal.billing.compare_unconfigured_desc':
+      'To confirm means the published package does not currently define this right. Confirm it before purchase.',
     'portal.billing.compare_monthly_points': 'Monthly package points',
     'portal.billing.compare_site_limit': 'Connected sites',
     'portal.billing.compare_knowledge_limit': 'Knowledge articles',
@@ -8417,6 +8421,9 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.billing.package_only_differences': '仅显示差异',
     'portal.billing.package_comparison_right_label': '权益',
     'portal.billing.package_comparison_unavailable': '套餐权益对比暂时不可用。',
+    'portal.billing.compare_not_included': '不包含',
+    'portal.billing.compare_unconfigured': '待确认',
+    'portal.billing.compare_unconfigured_desc': '“待确认”表示当前已发布套餐尚未定义该项权益，购买前请先确认。',
     'portal.billing.compare_monthly_points': '每月套餐积分',
     'portal.billing.compare_site_limit': '可连接站点',
     'portal.billing.compare_knowledge_limit': '知识库文章',

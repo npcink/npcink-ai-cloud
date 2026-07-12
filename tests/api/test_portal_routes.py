@@ -3465,6 +3465,11 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert comparison_tiers[0]["monthly_points"] == 300
     assert comparison_tiers[1]["site_limit"] == 3
     assert comparison_tiers[2]["knowledge_article_limit"] == 2000
+    assert comparison_tiers[0]["comparison_rights"]["monthly_points"]["state"] == "limited"
+    assert comparison_tiers[1]["comparison_rights"]["site_limit"] == {
+        "state": "limited",
+        "value": 3,
+    }
     eligible_trial = offers_response.json()["data"]["trial"]
     assert eligible_trial["available"] is True
     assert eligible_trial["trial_days"] == 14

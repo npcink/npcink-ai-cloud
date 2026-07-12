@@ -1,7 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   PortalMetricStrip,
@@ -19,6 +18,7 @@ import {
   isPortalPaymentOrderPending,
   PortalPaymentOrderHistory,
 } from '@/components/portal/PortalPaymentOrderHistory';
+import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import { PortalTrialEligibilityPanel } from '@/components/portal/PortalTrialEligibilityPanel';
 import {
   PortalErrorState,
@@ -35,11 +35,9 @@ import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
   type Entitlements,
-  type PortalPaymentOrder,
   type PortalPlanOffer,
 } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
-import { formatPortalCurrency } from '@/lib/currency';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { formatDate, formatNumber } from '@/lib/utils';
 
@@ -154,24 +152,6 @@ function PortalBillingContent() {
   const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(true);
   const [selectedCreditPackId, setSelectedCreditPackId] = useState<string | null>(null);
   const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
-  const [paymentReturnOrderState, setPaymentReturnOrderState] = useState<PortalPaymentOrder | null>(null);
-  const [paymentReturnError, setPaymentReturnError] = useState<string | null>(null);
-  const [paymentReturnTimedOut, setPaymentReturnTimedOut] = useState(false);
-  const [paymentReturnReconciled, setPaymentReturnReconciled] = useState(false);
-
-  const loadPaymentReturnOrder = useCallback(async (orderId: string) => {
-    const normalizedOrderId = String(orderId || '').trim();
-    if (!normalizedOrderId) return null;
-    try {
-      const response = await portalClient.getAccountPaymentOrder(normalizedOrderId);
-      setPaymentReturnOrderState(response.data.order);
-      setPaymentReturnError(null);
-      return response.data.order;
-    } catch (err) {
-      setPaymentReturnError(formatPortalErrorMessage(err, t, t('error.failed_load')));
-      return null;
-    }
-  }, [t]);
 
   useEffect(() => {
     const allowedTiers = planOffers?.trial?.allowed_tiers || [];
@@ -181,53 +161,6 @@ function PortalBillingContent() {
 
   const paymentReturnProvider = String(searchParams.get('payment_return') || '').toLowerCase();
   const paymentReturnOrderId = String(searchParams.get('out_trade_no') || '').trim();
-  const shouldPollAlipayReturn = paymentReturnProvider === 'alipay' && Boolean(paymentReturnOrderId);
-  const hasAlipayReturn = shouldPollAlipayReturn || Boolean(paymentReturnOrderState);
-  const activePaymentReturnOrderId = paymentReturnOrderId || paymentReturnOrderState?.order_id || '';
-
-  useEffect(() => {
-    if (!isAuthenticated || !session?.account_id || !shouldPollAlipayReturn) return;
-    let canceled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let attempts = 0;
-    const poll = async () => {
-      const order = await loadPaymentReturnOrder(paymentReturnOrderId);
-      if (canceled) return;
-      const status = normalizePaymentText(order?.status);
-      if (status && status !== 'pending') {
-        setPaymentReturnReconciled(false);
-        window.history.replaceState(window.history.state, '', '/portal/billing');
-        await Promise.all([
-          refresh(),
-          loadBilling(),
-          loadPaymentOrders('all', 0),
-        ]);
-        if (!canceled) setPaymentReturnReconciled(true);
-        return;
-      }
-      attempts += 1;
-      if (attempts >= 20) {
-        setPaymentReturnTimedOut(true);
-        return;
-      }
-      timer = setTimeout(() => void poll(), 3000);
-    };
-    setPaymentReturnTimedOut(false);
-    void poll();
-    return () => {
-      canceled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [
-    isAuthenticated,
-    loadBilling,
-    loadPaymentOrders,
-    loadPaymentReturnOrder,
-    paymentReturnOrderId,
-    refresh,
-    session?.account_id,
-    shouldPollAlipayReturn,
-  ]);
 
   const handleStartPlanTrial = async (tierId: 'plus' | 'pro') => {
     setPackagePending(`trial:${tierId}`);
@@ -373,123 +306,6 @@ function PortalBillingContent() {
     closed: allPaymentOrders.filter((order) => !['pending', 'paid'].includes(normalizePaymentText(order.status))).length,
   };
 
-  const handleRefreshPaymentReturn = async () => {
-    setPaymentReturnTimedOut(false);
-    setPaymentReturnReconciled(false);
-    const order = await loadPaymentReturnOrder(activePaymentReturnOrderId);
-    await Promise.all([
-      refresh(),
-      loadBilling(),
-      loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset),
-    ]);
-    if (normalizePaymentText(order?.status) !== 'pending') {
-      setPaymentReturnReconciled(true);
-    }
-  };
-
-  const paymentReturnStatus = normalizePaymentText(paymentReturnOrderState?.status);
-  const paymentReturnPaid = paymentReturnStatus === 'paid';
-  const paymentReturnClosed = ['canceled', 'cancelled', 'failed', 'refunded'].includes(paymentReturnStatus);
-  const paymentReturnCredits = Number(paymentReturnOrderState?.credit_pack?.ai_credits || 0);
-  const paymentReturnQuota = entitlements?.quota_summary?.credit;
-  const paymentReturnTotalAvailableValue = paymentReturnQuota?.total_remaining;
-  const paymentReturnTotalAvailable = paymentReturnTotalAvailableValue == null
-    ? null
-    : Number(paymentReturnTotalAvailableValue);
-  const paymentReturnNextExpiry = String(paymentReturnQuota?.paid_next_expires_at || '');
-
-  const paymentReturnNotice = hasAlipayReturn ? (
-    <PortalCard
-      variant="portal"
-      data-ui="payment-return-notice"
-      role="status"
-      aria-live="polite"
-      className={paymentReturnPaid
-        ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/20'
-        : paymentReturnClosed
-          ? 'border-red-200 bg-red-50/70 dark:border-red-900/60 dark:bg-red-950/20'
-          : 'border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/20'}
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {paymentReturnPaid
-              ? t('portal.package.alipay_return_paid_title', {}, 'Payment confirmed')
-              : paymentReturnClosed
-                ? t('portal.package.alipay_return_closed_title', {}, 'Payment was not completed')
-                : t('portal.package.alipay_return_title', {}, 'Payment confirmation is pending')}
-          </p>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {paymentReturnPaid
-              ? paymentReturnCredits > 0
-                ? t(
-                    'portal.package.alipay_return_paid_credits_desc',
-                    { count: formatNumber(paymentReturnCredits) },
-                    `Payment is confirmed and ${formatNumber(paymentReturnCredits)} credits were added.`
-                  )
-                : t('portal.package.alipay_return_paid_desc', {}, 'Payment is confirmed and your package has been updated.')
-              : paymentReturnClosed
-                ? t('portal.package.alipay_return_closed_desc', {}, 'This order is closed. You can create a new order if needed.')
-                : paymentReturnTimedOut
-                  ? t('portal.package.alipay_return_timeout_desc', {}, 'Confirmation is taking longer than expected. Refresh again or contact support with the order number.')
-                  : t(
-                      'portal.package.alipay_return_desc',
-                      {},
-                      'You have returned from Alipay. Cloud is checking the verified asynchronous notification.'
-                    )}
-          </p>
-          {paymentReturnPaid && paymentReturnCredits > 0 && paymentReturnReconciled ? (
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <div data-payment-return-metric="credited" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {t('portal.package.alipay_return_credited_label', {}, 'Added this time')}
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
-                  {formatNumber(paymentReturnCredits)}
-                </p>
-              </div>
-              <div data-payment-return-metric="total-available" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {t('portal.usage.total_remaining_label', {}, 'Total available')}
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
-                  {paymentReturnTotalAvailable != null && Number.isFinite(paymentReturnTotalAvailable)
-                    ? formatNumber(paymentReturnTotalAvailable)
-                    : t('common.not_available', {}, 'Not available')}
-                </p>
-              </div>
-              <div data-payment-return-metric="next-expiry" className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-3 dark:border-emerald-900/70 dark:bg-slate-950/40">
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {t('portal.package.alipay_return_expiry_label', {}, 'Nearest paid-credit expiry')}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
-                  {paymentReturnNextExpiry
-                    ? formatDate(paymentReturnNextExpiry)
-                    : t('common.not_available', {}, 'Not available')}
-                </p>
-              </div>
-            </div>
-          ) : null}
-          {activePaymentReturnOrderId ? (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {t('portal.package.alipay_return_order', { order: activePaymentReturnOrderId }, `Order ${activePaymentReturnOrderId}`)}
-            </p>
-          ) : null}
-          {paymentReturnError ? <p className="mt-2 text-sm text-red-700 dark:text-red-300">{paymentReturnError}</p> : null}
-        </div>
-        {!paymentReturnPaid ? (
-          <button
-            type="button"
-            className="btn btn-secondary shrink-0"
-            onClick={() => void handleRefreshPaymentReturn()}
-          >
-            {t('common.refresh', {}, 'Refresh')}
-          </button>
-        ) : null}
-      </div>
-    </PortalCard>
-  ) : null;
-
   const paymentLaunchNotice = paymentLaunch ? (
     <div
       role="status"
@@ -619,9 +435,8 @@ function PortalBillingContent() {
       onCancel={(order) => void handleCancelPaymentOrder(order)}
     />
   );
-  const supportRequestHref = '/portal/support?new=1&topic=billing';
 
-  if (isLoading) {
+  if (isLoading && !entitlements && !planOffers && !creditPacks) {
     return <PortalLoadingState message={t('portal.billing.loading', {}, 'Loading package details...')} />;
   }
 
@@ -664,14 +479,19 @@ function PortalBillingContent() {
         title={t('portal.billing.customer_title', {}, 'Package')}
         description={t('portal.billing.subtitle', {}, 'Confirm the current package, included rights, and upgrade options.')}
         currentPage="billing"
-        actions={
-          <Link href={supportRequestHref} className="btn btn-secondary">
-            {t('portal.support_request_new_action', {}, 'Submit ticket')}
-          </Link>
-        }
       />
 
-      {paymentReturnNotice}
+      <PortalPaymentReturnNotice
+        t={t}
+        provider={paymentReturnProvider}
+        orderId={paymentReturnOrderId}
+        isAuthenticated={isAuthenticated}
+        accountId={session.account_id}
+        entitlements={entitlements}
+        refreshSession={refresh}
+        refreshBilling={loadBilling}
+        refreshPaymentOrders={() => loadPaymentOrders(paymentOrderStatusGroup, paymentOrderOffset)}
+      />
 
       {paymentLaunchNotice}
 

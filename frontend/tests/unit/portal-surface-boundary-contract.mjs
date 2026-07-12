@@ -7,13 +7,6 @@ const portalRoots = [
   resolve(root, 'src/app/portal'),
   resolve(root, 'src/components/portal'),
 ];
-const allowedBackofficeAdapters = new Set([
-  resolve(root, 'src/components/portal/PortalIdentifier.tsx'),
-  resolve(root, 'src/components/portal/PortalScaffold.tsx'),
-  resolve(root, 'src/components/portal/PortalStatusBadge.tsx'),
-  resolve(root, 'src/components/portal/PortalTag.tsx'),
-]);
-
 function collectSourceFiles(directory) {
   return readdirSync(directory).flatMap((entry) => {
     const path = resolve(directory, entry);
@@ -23,7 +16,6 @@ function collectSourceFiles(directory) {
 }
 
 for (const file of portalRoots.flatMap(collectSourceFiles)) {
-  if (allowedBackofficeAdapters.has(file)) continue;
   const source = readFileSync(file, 'utf8');
   assert.doesNotMatch(
     source,
@@ -45,6 +37,6 @@ for (const component of [
 ]) {
   assert.match(scaffoldSource, new RegExp(`export function ${component}`));
 }
-assert.match(scaffoldSource, /variant="portal"/);
+assert.doesNotMatch(scaffoldSource, /Backoffice/, 'Portal primitives must own their implementation');
 
 console.log('portal_surface_boundary_contract: ok');

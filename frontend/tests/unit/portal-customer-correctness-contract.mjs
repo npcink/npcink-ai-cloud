@@ -21,7 +21,11 @@ assert.match(sitesSource, /htmlFor="portal-service-site-search"[\s\S]*id="portal
 assert.match(sitesRedirectSource, /router\.replace\(`\/portal\$\{query[\s\S]*#sites`\)/);
 assert.match(sitesRedirectSource, /encodeURIComponent\(currentPath\)/);
 assert.match(homeSource, /<PortalSitesWorkspace \/>/);
-assert.match(accountSource, /getVisiblePortalSites\(session\.sites\)\.length/);
+assert.doesNotMatch(
+  accountSource,
+  /PortalMetricStrip|getVisiblePortalSites\(session\.sites\)\.length/,
+  'account header must not repeat login, QQ, and site details already shown below'
+);
 assert.doesNotMatch(homeSource, /role="button"[\s\S]{0,900}href=\{`\/portal\/sites\/\$\{site\.site_id\}`\}/);
 
 assert.match(usageSource, /portalClient\.getCreditLedger\(creditLedgerSiteId/);

@@ -1507,34 +1507,66 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         monthly_points = metadata.get("monthly_included_points")
         if monthly_points is None:
             monthly_points = budgets.get("max_ai_credits_per_period")
+        monthly_points_right = self._serialize_plan_comparison_right(
+            monthly_points,
+            configured=(
+                "monthly_included_points" in metadata
+                or "max_ai_credits_per_period" in budgets
+            ),
+        )
+        site_limit_right = self._serialize_plan_comparison_right(
+            metadata.get("site_limit"),
+            configured="site_limit" in metadata,
+        )
+        knowledge_article_limit_right = self._serialize_plan_comparison_right(
+            metadata.get("max_vector_documents"),
+            configured="max_vector_documents" in metadata,
+        )
+        concurrency_limit_right = self._serialize_plan_comparison_right(
+            concurrency.get("max_active_runs"),
+            configured="max_active_runs" in concurrency,
+        )
+        batch_item_limit_right = self._serialize_plan_comparison_right(
+            metadata.get("max_batch_items"),
+            configured="max_batch_items" in metadata,
+        )
         return {
             "tier_id": tier_id,
             "label": label,
             "plan_id": plan_version.plan_id,
             "plan_version_id": plan_version.plan_version_id,
-            "monthly_points": self._serialize_optional_comparison_limit(monthly_points),
-            "site_limit": self._serialize_optional_comparison_limit(
-                metadata.get("site_limit")
-            ),
-            "knowledge_article_limit": self._serialize_optional_comparison_limit(
-                metadata.get("max_vector_documents")
-            ),
-            "concurrency_limit": self._serialize_optional_comparison_limit(
-                concurrency.get("max_active_runs")
-            ),
-            "batch_item_limit": self._serialize_optional_comparison_limit(
-                metadata.get("max_batch_items")
-            ),
+            "monthly_points": monthly_points_right["value"],
+            "site_limit": site_limit_right["value"],
+            "knowledge_article_limit": knowledge_article_limit_right["value"],
+            "concurrency_limit": concurrency_limit_right["value"],
+            "batch_item_limit": batch_item_limit_right["value"],
+            "comparison_rights": {
+                "monthly_points": monthly_points_right,
+                "site_limit": site_limit_right,
+                "knowledge_article_limit": knowledge_article_limit_right,
+                "concurrency_limit": concurrency_limit_right,
+                "batch_item_limit": batch_item_limit_right,
+            },
             "amount": float(offer.amount) if offer is not None else None,
             "currency": offer.currency if offer is not None else plan_version.currency,
             "billing_cycle": offer.billing_cycle if offer is not None else None,
             "purchase_mode": offer.purchase_mode if offer is not None else "included",
         }
 
-    def _serialize_optional_comparison_limit(self, value: object | None) -> int | None:
-        if value is None:
-            return None
-        return self._coerce_int(value)
+    def _serialize_plan_comparison_right(
+        self,
+        value: object | None,
+        *,
+        configured: bool,
+    ) -> dict[str, object]:
+        if not configured or value is None:
+            return {"state": "unconfigured", "value": None}
+        if str(value).strip().lower() in {"unlimited", "infinite", "infinity"}:
+            return {"state": "unlimited", "value": None}
+        limit = max(0, self._coerce_int(value))
+        if limit == 0:
+            return {"state": "not_included", "value": 0}
+        return {"state": "limited", "value": limit}
 
     def _serialize_subscription_order(self, order: SubscriptionOrder | None) -> dict[str, object]:
         if order is None:

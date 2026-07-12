@@ -12,6 +12,7 @@ assert.match(
   /interface PortalPlanComparisonTier[\s\S]*monthly_points[\s\S]*site_limit[\s\S]*knowledge_article_limit[\s\S]*concurrency_limit[\s\S]*batch_item_limit/
 );
 assert.match(clientSource, /comparison_tiers\?: PortalPlanComparisonTier\[\]/);
+assert.match(clientSource, /comparison_rights\?: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>/);
 
 assert.match(billingSource, /const comparisonTiers = planOffers\?\.comparison_tiers \|\| \[\]/);
 assert.match(billingSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{comparisonTiers\}/);
@@ -21,7 +22,12 @@ assert.match(
   /compare_monthly_points[\s\S]*compare_site_limit[\s\S]*compare_knowledge_limit[\s\S]*compare_concurrency_limit[\s\S]*compare_batch_limit/
 );
 assert.match(packagePanelSource, /showOnlyDifferences[\s\S]*new Set\(comparisonTiers\.map/);
-assert.match(packagePanelSource, /formatComparisonLimit[\s\S]*value == null \? '—' : formatNumber/);
+assert.match(packagePanelSource, /formatComparisonRight[\s\S]*tier\.comparison_rights\?\.\[key\]/);
+assert.match(packagePanelSource, /data-comparison-state=\{right\.state\}/);
+assert.match(packagePanelSource, /common\.unlimited/);
+assert.match(packagePanelSource, /compare_not_included/);
+assert.match(packagePanelSource, /compare_unconfigured[\s\S]*compare_unconfigured_desc/);
+assert.doesNotMatch(packagePanelSource, /value == null \? '—'/, 'unknown rights must be explained instead of rendered as an ambiguous dash');
 assert.match(packagePanelSource, /agency_separate_title[\s\S]*request_agency_quote/);
 
 const packageChoicesStart = packagePanelSource.indexOf('const packageChoices');
@@ -43,6 +49,9 @@ for (const key of [
   'portal.billing.package_only_differences',
   'portal.billing.package_change_path',
   'portal.billing.agency_separate_title',
+  'portal.billing.compare_not_included',
+  'portal.billing.compare_unconfigured',
+  'portal.billing.compare_unconfigured_desc',
 ]) {
   assert.equal((i18nSource.match(new RegExp(`'${key.replaceAll('.', '\\.')}'`, 'g')) || []).length, 2);
 }

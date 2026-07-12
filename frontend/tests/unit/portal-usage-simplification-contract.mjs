@@ -3,8 +3,10 @@ import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
 const usagePagePath = resolve(process.cwd(), 'src/app/portal/usage/page.tsx');
+const usageDetailPath = resolve(process.cwd(), 'src/components/portal/PortalUsageAdvancedDetails.tsx');
 const i18nPath = resolve(process.cwd(), 'src/lib/i18n.ts');
 const source = readFileSync(usagePagePath, 'utf8');
+const detailSource = readFileSync(usageDetailPath, 'utf8');
 const i18nSource = readFileSync(i18nPath, 'utf8');
 const headerBeforeSummary = source.slice(
   source.indexOf('<PortalWorkspaceHeader'),
@@ -48,7 +50,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  detailSource,
   /data-portal-usage="usage-detail"/,
   'usage trends, provider cost, and entitlement detail must be grouped behind an explicit detail disclosure'
 );
@@ -68,9 +70,10 @@ const summaryIndex = source.indexOf('data-portal-usage="current-summary"');
 const trendIndex = source.indexOf('data-portal-usage="primary-trend"');
 const ledgerIndex = source.indexOf('data-portal-usage="ledger-detail"');
 const recordsIndex = source.indexOf('data-portal-usage="usage-records"');
-const detailIndex = source.indexOf('data-portal-usage="usage-detail"');
-const trendsIndex = source.indexOf("t('portal.usage.trends_title'");
-const costIndex = source.indexOf("t('portal.usage.cost_summary_title'");
+const detailIndex = source.indexOf('<PortalUsageAdvancedDetails');
+const detailMarkerIndex = detailSource.indexOf('data-portal-usage="usage-detail"');
+const trendsIndex = detailSource.indexOf("t('portal.usage.trends_title'");
+const costIndex = detailSource.indexOf("t('portal.usage.cost_summary_title'");
 
 assert.ok(summaryIndex >= 0, 'current-period summary marker must exist');
 assert.equal(source.indexOf('data-portal-usage="current-package"'), -1, 'current package card must move to package page');
@@ -78,8 +81,9 @@ assert.ok(trendIndex > summaryIndex, 'point trend must follow the current-period
 assert.ok(ledgerIndex > trendIndex, 'usage-record disclosure must follow the point trend');
 assert.ok(recordsIndex > ledgerIndex, 'usage records must be nested inside their disclosure');
 assert.ok(detailIndex > ledgerIndex, 'advanced usage details must stay after customer-readable records');
-assert.ok(trendsIndex > detailIndex, 'usage trends must be inside the detail disclosure');
-assert.ok(costIndex > detailIndex, 'provider cost summary must be inside the detail disclosure');
+assert.ok(detailMarkerIndex >= 0, 'advanced usage detail component must own the disclosure marker');
+assert.ok(trendsIndex > detailMarkerIndex, 'usage trends must be inside the detail disclosure');
+assert.ok(costIndex > detailMarkerIndex, 'provider cost summary must be inside the detail disclosure');
 assert.equal(source.indexOf("t('portal.usage.entitlement_title'"), -1, 'package entitlement detail must move to package page');
 assert.equal(source.indexOf("t('portal.usage.quota_headroom_title'"), -1, 'package quota headroom must move to package page');
 assert.doesNotMatch(
@@ -88,7 +92,7 @@ assert.doesNotMatch(
   'package purchase and payment order actions must live on the package page, not usage'
 );
 assert.match(
-  source,
+  detailSource,
   /chartTotals[\s\S]*trend_service_detail[\s\S]*trend_points_detail[\s\S]*trend_budget_detail[\s\S]*trend_empty/,
   'usage trend cards must show totals and an explicit empty state instead of blank chart panels'
 );

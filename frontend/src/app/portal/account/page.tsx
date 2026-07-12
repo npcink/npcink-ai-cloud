@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  PortalMetricStrip,
   PortalPageStack,
   PortalPrimaryPanel,
   PortalSection,
@@ -24,7 +23,6 @@ import {
   type PortalIdentityProviderStatus,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
-import { getVisiblePortalSites } from '@/lib/portal-site-display';
 import { cn, formatDate } from '@/lib/utils';
 
 type AccountActionState =
@@ -281,39 +279,6 @@ function AccountPageContent() {
           'portal.account.description',
           undefined,
           'Manage the email used for verification codes and optional quick login.'
-        )}
-        aside={(
-          <PortalStatusBadge
-            label={qqProvider?.bound ? t('portal.account.qq_bound_label', undefined, 'QQ bound') : t('portal.account.qq_unbound_label', undefined, 'QQ not bound')}
-            status={qqProvider?.bound ? 'active' : 'inactive'}
-          />
-        )}
-        summary={(
-          <PortalMetricStrip
-            columnsClassName="md:grid-cols-3"
-            items={[
-              {
-                label: t('portal.account.login_security_label', undefined, 'Sign-in'),
-                value: t('portal.account.login_security_value', undefined, 'Email code'),
-                detail: t('portal.account.login_security_detail', undefined, 'Primary login method'),
-                size: 'compact',
-              },
-              {
-                label: t('portal.account.qq_status_label', undefined, 'QQ login'),
-                value: qqProvider?.bound
-                  ? t('portal.account.bound', undefined, 'Bound')
-                  : t('portal.account.unbound', undefined, 'Not bound'),
-                detail: qqProvider?.bound
-                  ? t('portal.account.qq_status_detail_bound', undefined, 'Available for quick login')
-                  : t('portal.account.qq_status_detail_unbound', undefined, 'Optional quick login'),
-                size: 'compact',
-              },
-              {
-                label: t('portal.account.site_count_label', undefined, 'Sites'),
-                value: String(getVisiblePortalSites(session.sites).length),
-              },
-            ]}
-          />
         )}
       />
 

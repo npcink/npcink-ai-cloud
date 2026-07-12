@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type {
+  PortalPlanComparisonRightKey,
   PortalPlanComparisonTier,
   PortalPlanOffer,
 } from '@/lib/portal-client';
@@ -128,14 +129,48 @@ export function PortalPackageChangePanel({
     { key: 'concurrency_limit', label: t('portal.billing.compare_concurrency_limit', {}, 'Active runs') },
     { key: 'batch_item_limit', label: t('portal.billing.compare_batch_limit', {}, 'Batch size') },
   ] as const;
+  const comparisonRightSignature = (
+    tier: PortalPlanComparisonTier,
+    key: PortalPlanComparisonRightKey,
+  ) => {
+    const right = tier.comparison_rights?.[key];
+    if (right) return `${right.state}:${right.value ?? ''}`;
+    const legacyValue = tier[key];
+    return legacyValue == null ? 'unconfigured:' : `limited:${legacyValue}`;
+  };
   const visibleComparisonRows = showOnlyDifferences
     ? comparisonRows.filter((row) => (
-        new Set(comparisonTiers.map((tier) => tier[row.key] ?? 'unconfigured')).size > 1
+        new Set(comparisonTiers.map((tier) => comparisonRightSignature(tier, row.key))).size > 1
       ))
     : comparisonRows;
-  const formatComparisonLimit = (value: number | null) => (
-    value == null ? '—' : formatNumber(value)
-  );
+  const formatComparisonRight = (
+    tier: PortalPlanComparisonTier,
+    key: PortalPlanComparisonRightKey,
+  ) => {
+    const right = tier.comparison_rights?.[key];
+    if (!right) {
+      const legacyValue = tier[key];
+      return {
+        label: legacyValue == null
+          ? t('portal.billing.compare_unconfigured', {}, 'To confirm')
+          : formatNumber(legacyValue),
+        state: legacyValue == null ? 'unconfigured' : 'limited',
+      };
+    }
+    if (right.state === 'unlimited') {
+      return { label: t('common.unlimited', {}, 'Unlimited'), state: right.state };
+    }
+    if (right.state === 'not_included') {
+      return { label: t('portal.billing.compare_not_included', {}, 'Not included'), state: right.state };
+    }
+    if (right.state === 'unconfigured') {
+      return { label: t('portal.billing.compare_unconfigured', {}, 'To confirm'), state: right.state };
+    }
+    return { label: formatNumber(right.value || 0), state: right.state };
+  };
+  const hasUnconfiguredRights = comparisonTiers.some((tier) => (
+    Object.values(tier.comparison_rights || {}).some((right) => right.state === 'unconfigured')
+  ));
   const selectedOffer = selectedTier === 'plus' ? plusOffer : selectedTier === 'pro' ? proOffer : null;
   const selectedAmount = selectedOffer ? formatPortalCurrency(selectedOffer.amount) : '';
   const actionLabel = selectedTier === 'free'
@@ -261,22 +296,37 @@ export function PortalPackageChangePanel({
                     <th scope="row" className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-300">
                       {row.label}
                     </th>
-                    {comparisonTiers.map((tier) => (
-                      <td
-                        key={tier.tier_id}
-                        className={`px-4 py-3 text-right font-semibold ${
+                    {comparisonTiers.map((tier) => {
+                      const right = formatComparisonRight(tier, row.key);
+                      return (
+                        <td
+                          key={tier.tier_id}
+                          data-comparison-state={right.state}
+                          className={`px-4 py-3 text-right font-semibold ${
                           selectedTier === tier.tier_id
                             ? 'bg-blue-50/70 text-slate-950 dark:bg-blue-950/20 dark:text-white'
-                            : 'text-slate-700 dark:text-slate-200'
-                        }`}
-                      >
-                        {formatComparisonLimit(tier[row.key])}
-                      </td>
-                    ))}
+                            : right.state === 'unconfigured'
+                              ? 'text-amber-700 dark:text-amber-300'
+                              : 'text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          {right.label}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
+            {hasUnconfiguredRights ? (
+              <p className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                {t(
+                  'portal.billing.compare_unconfigured_desc',
+                  {},
+                  'To confirm means the published package does not currently define this right. Confirm it before purchase.'
+                )}
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="mt-3 rounded-xl border border-slate-200 px-4 py-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">

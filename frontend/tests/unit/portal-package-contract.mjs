@@ -8,6 +8,7 @@ const billingPagePath = resolve(root, 'src/app/portal/billing/page.tsx');
 const creditPackDialogPath = resolve(root, 'src/components/portal/PortalCreditPackDialog.tsx');
 const packagePanelPath = resolve(root, 'src/components/portal/PortalPackageChangePanel.tsx');
 const paymentOrderHistoryPath = resolve(root, 'src/components/portal/PortalPaymentOrderHistory.tsx');
+const paymentReturnNoticePath = resolve(root, 'src/components/portal/PortalPaymentReturnNotice.tsx');
 const paymentOrdersHookPath = resolve(root, 'src/hooks/usePortalPaymentOrders.ts');
 const portalClientPath = resolve(root, 'src/lib/portal-client.ts');
 const siteRecordPath = resolve(root, 'src/app/portal/sites/[siteId]/page.tsx');
@@ -38,6 +39,7 @@ const billingPageSource = readFileSync(billingPagePath, 'utf8');
 const creditPackDialogSource = readFileSync(creditPackDialogPath, 'utf8');
 const packagePanelSource = readFileSync(packagePanelPath, 'utf8');
 const paymentOrderHistorySource = readFileSync(paymentOrderHistoryPath, 'utf8');
+const paymentReturnNoticeSource = readFileSync(paymentReturnNoticePath, 'utf8');
 const paymentOrdersHookSource = readFileSync(paymentOrdersHookPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEntitlementUsage.tsx');
@@ -98,23 +100,23 @@ assert.equal(
   'Portal package page must render the folded payment order card once in the account package view'
 );
 assert.match(
-  billingPageSource,
-  /payment_return[\s\S]*alipay_return_title[\s\S]*handleRefreshPaymentReturn/,
+  paymentReturnNoticeSource,
+  /provider === 'alipay'[\s\S]*alipay_return_title[\s\S]*handleRefresh/,
   'Portal package page must show a read-only Alipay return notice with refresh'
 );
 assert.match(
-  billingPageSource,
+  paymentReturnNoticeSource,
   /getAccountPaymentOrder[\s\S]*setTimeout[\s\S]*alipay_return_paid_title/,
   'Portal package page must poll the canonical order and render confirmed payment state'
 );
 assert.match(
-  billingPageSource,
-  /paymentReturnReconciled[\s\S]*data-payment-return-metric="credited"[\s\S]*data-payment-return-metric="total-available"[\s\S]*data-payment-return-metric="next-expiry"/,
+  paymentReturnNoticeSource,
+  /reconciled[\s\S]*data-payment-return-metric="credited"[\s\S]*data-payment-return-metric="total-available"[\s\S]*data-payment-return-metric="next-expiry"/,
   'Confirmed credit-pack payment notice must show credited amount, total available, and expiry after reconciliation'
 );
 assert.match(
-  billingPageSource,
-  /shouldPollAlipayReturn[\s\S]*hasAlipayReturn[\s\S]*paymentReturnOrderState/,
+  paymentReturnNoticeSource,
+  /shouldPoll[\s\S]*visible[\s\S]*order/,
   'Payment success notice must remain visible after return query parameters are cleaned'
 );
 assert.match(
@@ -153,7 +155,7 @@ assert.match(
   'Portal usage bundle must use account-level payment orders so Pro checkout orders are visible without a site'
 );
 assert.doesNotMatch(
-  billingPageSource,
+  paymentReturnNoticeSource,
   /payment_return[\s\S]*(markPaid|mark_payment|paid_at|subscription_id\s*=)/,
   'Portal package page must not treat browser payment return as payment truth'
 );
