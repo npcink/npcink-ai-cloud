@@ -488,6 +488,82 @@ def test_runtime_settings_project_capability_provider_connections(
     dispose_engine(database_url)
 
 
+def test_runtime_settings_use_dedicated_allowlisted_site_knowledge_model(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.site_knowledge_embedding_provider = "deterministic"
+    service = ProviderConnectionAdminService(database_url, settings)
+    service.save_connection(
+        {
+            "connection_id": "openai_embedding",
+            "provider_id": "openai",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "OpenAI-compatible embedding",
+            "enabled": True,
+            "base_url": "https://embedding.example/v1",
+            "capability_ids": ["embedding"],
+            "runtime_profile_ids": ["embed.default"],
+            "config": {
+                "model_id": "BAAI/bge-large-en-v1.5",
+                "model_ids": ["BAAI/bge-large-en-v1.5", "BAAI/bge-m3"],
+                "site_knowledge_model_id": "BAAI/bge-m3",
+                "dimensions": 1024,
+            },
+            "credential": "embedding-secret",
+        }
+    )
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.embedding_count == 1
+    assert settings.site_knowledge_embedding_provider == "openai"
+    assert settings.site_knowledge_embedding_model == "BAAI/bge-m3"
+    assert settings.site_knowledge_embedding_dimensions == 1024
+
+    dispose_engine(database_url)
+
+
+def test_runtime_settings_reject_undeclared_site_knowledge_model(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.site_knowledge_embedding_provider = "deterministic"
+    service = ProviderConnectionAdminService(database_url, settings)
+    service.save_connection(
+        {
+            "connection_id": "openai_embedding",
+            "provider_id": "openai",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "OpenAI-compatible embedding",
+            "enabled": True,
+            "base_url": "https://embedding.example/v1",
+            "capability_ids": ["embedding"],
+            "runtime_profile_ids": ["embed.default"],
+            "config": {
+                "model_id": "BAAI/bge-large-en-v1.5",
+                "model_ids": ["BAAI/bge-large-en-v1.5"],
+                "site_knowledge_model_id": "BAAI/bge-m3",
+                "dimensions": 1024,
+            },
+            "credential": "embedding-secret",
+        }
+    )
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.embedding_count == 0
+    assert settings.site_knowledge_embedding_provider == "deterministic"
+
+    dispose_engine(database_url)
+
+
 def test_provider_connection_priority_selects_primary_capability_channel(
     tmp_path: Path,
 ) -> None:

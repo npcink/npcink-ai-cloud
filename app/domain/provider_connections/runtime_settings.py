@@ -290,10 +290,14 @@ def _apply_embedding_connection(
 ) -> bool:
     if provider_id not in {"siliconflow", "openai", "tei"}:
         return False
-    settings.site_knowledge_embedding_provider = provider_id
-    settings.site_knowledge_embedding_model = _string(
-        config.get("model_id") or config.get("model") or settings.site_knowledge_embedding_model
+    embedding_model = _site_knowledge_embedding_model(
+        config,
+        fallback=settings.site_knowledge_embedding_model,
     )
+    if not embedding_model:
+        return False
+    settings.site_knowledge_embedding_provider = provider_id
+    settings.site_knowledge_embedding_model = embedding_model
     settings.site_knowledge_embedding_dimensions = _int(
         config.get("dimensions"), settings.site_knowledge_embedding_dimensions
     )
@@ -323,6 +327,16 @@ def _apply_embedding_connection(
         if model_ids:
             settings.tei_model_ids = model_ids
     return True
+
+
+def _site_knowledge_embedding_model(config: dict[str, Any], *, fallback: object) -> str:
+    requested = _string(config.get("site_knowledge_model_id"))
+    declared_models = _string_list(config.get("model_ids"))
+    if requested:
+        if declared_models and requested not in declared_models:
+            return ""
+        return requested
+    return _string(config.get("model_id") or config.get("model") or fallback)
 
 
 def _apply_rerank_connection(

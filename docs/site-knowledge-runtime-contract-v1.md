@@ -86,6 +86,13 @@ Supported built-in vector-related provider IDs:
 - `jina` rerank provider, commonly with `jina-reranker-v3`
 - `zilliz` vector store provider
 
+An embedding provider connection may declare additive
+`config.site_knowledge_model_id` when its general default model is used by
+other capabilities. The selected model must be present in the connection's
+`model_ids` allowlist when one exists. Chinese-first sites should use
+`BAAI/bge-m3` consistently for both indexing and queries; English-only BGE
+variants are not valid defaults for Chinese Site Knowledge.
+
 The following remain environment-controlled runtime guardrails, because they
 bound workload shape rather than identify a provider secret:
 
