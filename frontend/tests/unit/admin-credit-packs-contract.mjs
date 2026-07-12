@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(
   pageSource,
-  /grid gap-4 md:grid-cols-2 2xl:grid-cols-4[\s\S]*BackofficeStackCard/,
-  'Admin credit pack page must render managed packs as a long responsive card list with four columns on wide screens'
+  /data-ui="credit-pack-directory-item"[\s\S]*id="credit-pack-inspector"[\s\S]*<Modal/,
+  'Admin credit pack page must render a read-first directory, contextual inspector, and one-pack editor'
 );
 assert.doesNotMatch(
   pageSource,

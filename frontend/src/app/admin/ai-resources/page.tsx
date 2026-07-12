@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackofficeDiagnosticNotice,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
+import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
@@ -31,6 +33,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { generateIdempotencyKey } from '@/lib/idempotency';
+import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
 
 type AIResourceView = 'connections';
@@ -1367,7 +1370,10 @@ function resolveAdminApiPayloadMessage(payload: any, fallback: string): string {
 function AiResourcesContent() {
   const { t } = useLocale();
   const toast = useToast();
+  const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const selectedConnectionId = searchParams.get('focus') || '';
   const aiText = useCallback(
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.ai_resources.${key}`, params, fallback),
     [t]
@@ -1414,6 +1420,9 @@ function AiResourcesContent() {
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [runtimeTelemetry, setRuntimeTelemetry] = useState<RuntimeTelemetrySummary | null>(null);
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
+  const resourcesRequestActiveRef = useRef(false);
+  const resourcesRequestSequenceRef = useRef(0);
+  const resourcesLoadedRef = useRef(false);
   const providerFormCapabilityIds = splitList(providerConnectionForm.capabilityIds);
   const isCapabilityProviderForm = isCapabilityProviderDescriptor(providerConnectionForm.kind, providerFormCapabilityIds);
   const providerFormCapabilityCategory = capabilityProviderDescriptorCategory(
@@ -1427,8 +1436,44 @@ function AiResourcesContent() {
   const visibleCapabilityTemplates = CAPABILITY_PROVIDER_TEMPLATES.filter(
     (template) => template.category === activeCapabilityCategory
   );
+  const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    });
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  const handleSupplierTypeFilterChange = useCallback((value: SupplierTypeFilter) => {
+    setSupplierTypeFilter(value);
+    updateWorkspaceParams({ supplier: value, focus: null, category: value === 'model' ? null : searchParams.get('category') });
+  }, [searchParams, updateWorkspaceParams]);
+
+  const handleConnectionSearchChange = useCallback((value: string) => {
+    setConnectionSearch(value);
+    updateWorkspaceParams({ q: value.trim() || null, focus: null });
+  }, [updateWorkspaceParams]);
+
+  const handleConnectionStatusFilterChange = useCallback((value: ConnectionStatusFilter) => {
+    setConnectionStatusFilter(value);
+    updateWorkspaceParams({ status: value === 'all' ? null : value, focus: null });
+  }, [updateWorkspaceParams]);
+
+  const handleCapabilityCategoryFilterChange = useCallback((value: CapabilityProviderCategoryFilter) => {
+    setCapabilityCategoryFilter(value);
+    updateWorkspaceParams({ category: value === 'all' ? null : value, focus: null });
+  }, [updateWorkspaceParams]);
+
+  const handleSelectConnection = useCallback((connectionId: string) => {
+    updateWorkspaceParams({ focus: connectionId });
+  }, [updateWorkspaceParams]);
   const loadResources = useCallback(async (options: { showLoading?: boolean } = {}) => {
-    if (options.showLoading !== false) {
+    if (resourcesRequestActiveRef.current) return;
+    resourcesRequestActiveRef.current = true;
+    const sequence = ++resourcesRequestSequenceRef.current;
+    if (options.showLoading !== false && !resourcesLoadedRef.current) {
       setLoading(true);
     }
     setError('');
@@ -1438,12 +1483,18 @@ function AiResourcesContent() {
       if (!response.ok) {
         throw new Error(resolveUiErrorMessage(payload, aiText('error_load', 'Failed to load provider management.')));
       }
+      if (sequence !== resourcesRequestSequenceRef.current) return;
       const normalized = normalizeAiResources(payload.data);
       setData(normalized);
+      resourcesLoadedRef.current = true;
     } catch (loadError) {
+      if (sequence !== resourcesRequestSequenceRef.current) return;
       setError(loadError instanceof Error ? loadError.message : aiText('error_load', 'Failed to load provider management.'));
     } finally {
-      setLoading(false);
+      if (sequence === resourcesRequestSequenceRef.current) {
+        resourcesRequestActiveRef.current = false;
+        setLoading(false);
+      }
     }
   }, [aiText]);
 
@@ -1546,10 +1597,19 @@ function AiResourcesContent() {
       setActiveView('connections');
       setSupplierTypeFilter('model');
     }
+    const requestedStatus = searchParams.get('status');
+    if (requestedStatus === 'ready' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
+      setConnectionStatusFilter(requestedStatus);
+    } else {
+      setConnectionStatusFilter('all');
+    }
+    setConnectionSearch(searchParams.get('q') || '');
     const requestedCategory = searchParams.get('category');
     if (requestedCategory === 'search' || requestedCategory === 'image' || requestedCategory === 'vector') {
       setActiveCapabilityCategory(requestedCategory);
       setCapabilityCategoryFilter(requestedCategory);
+    } else {
+      setCapabilityCategoryFilter('all');
     }
   }, [searchParams]);
 
@@ -2535,9 +2595,13 @@ function AiResourcesContent() {
     modelVisibilityRows.length,
     selectedProviderModelIds.length
   );
+  const capabilityAddDialogRef = useDialogKeyboard<HTMLDivElement>({
+    open: capabilityAddDialogOpen,
+    onClose: () => setCapabilityAddDialogOpen(false),
+  });
 
   if (loading) {
-    return <LoadingFallback />;
+    return <AdminRouteSkeleton />;
   }
 
   if (!data) {
@@ -2548,9 +2612,11 @@ function AiResourcesContent() {
           title={aiText('title', 'Suppliers')}
           description={aiText('unavailable_desc', 'Cloud runtime provider resources are unavailable.')}
         >
-          <BackofficeStackCard className="border-rose-200 bg-rose-50 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
-            {error || aiText('unavailable_message', 'Provider management is unavailable.')}
-          </BackofficeStackCard>
+          <BackofficeDiagnosticNotice
+            message={error || aiText('unavailable_message', 'Provider management is unavailable.')}
+            retryLabel={t('common.retry')}
+            onRetry={() => void loadResources()}
+          />
         </BackofficePrimaryPanel>
       </BackofficePageStack>
     );
@@ -2609,9 +2675,9 @@ function AiResourcesContent() {
           <BackofficeSectionPanel>
         <SupplierToolbar
           supplierTypeFilter={supplierTypeFilter}
-          onSupplierTypeFilterChange={setSupplierTypeFilter}
+          onSupplierTypeFilterChange={handleSupplierTypeFilterChange}
           connectionSearch={connectionSearch}
-          onConnectionSearchChange={setConnectionSearch}
+          onConnectionSearchChange={handleConnectionSearchChange}
           hasLatestOperation={Boolean(lastReceipt)}
           onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
           onAddModelSupplier={openNewProviderConnection}
@@ -3248,8 +3314,11 @@ function AiResourcesContent() {
         <ModelSupplierTable
           connections={aiSupplierConnections}
           statusFilter={connectionStatusFilter}
-          onStatusFilterChange={setConnectionStatusFilter}
+          onStatusFilterChange={handleConnectionStatusFilterChange}
+          selectedConnectionId={selectedConnectionId}
+          onSelectConnection={handleSelectConnection}
           testResults={connectionTestResults}
+          testingConnectionId={testingConnectionId}
           deletingConnectionId={deletingConnectionId}
           confirmingDeleteConnectionId={confirmingDeleteConnectionId}
           providerKindLabel={providerKindLabel}
@@ -3257,6 +3326,7 @@ function AiResourcesContent() {
           providerTestMessage={providerTestMessage}
           referenceLinksForConnection={connectionExternalLinkItems}
           onConfigure={editProviderConnection}
+          onTest={(connectionId) => void runProviderConnectionTest(connectionId)}
           onDelete={(connection) => void deleteProviderConnection(connection)}
           onRequestDelete={setConfirmingDeleteConnectionId}
           onCancelDelete={() => setConfirmingDeleteConnectionId('')}
@@ -3271,9 +3341,11 @@ function AiResourcesContent() {
               connections={activeCapabilityConnections}
               connectionsByCategory={capabilityConnectionsByCategory}
               categoryFilter={capabilityCategoryFilter}
-              onCategoryFilterChange={setCapabilityCategoryFilter}
+              onCategoryFilterChange={handleCapabilityCategoryFilterChange}
               statusFilter={connectionStatusFilter}
-              onStatusFilterChange={setConnectionStatusFilter}
+              onStatusFilterChange={handleConnectionStatusFilterChange}
+              selectedConnectionId={selectedConnectionId}
+              onSelectConnection={handleSelectConnection}
               testResults={connectionTestResults}
               channelCounts={capabilityChannelCounts}
               testingConnectionId={testingConnectionId}
@@ -3293,10 +3365,12 @@ function AiResourcesContent() {
             />
             {capabilityAddDialogOpen ? (
               <div
+                ref={capabilityAddDialogRef}
                 className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-6 backdrop-blur-sm sm:py-10"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="capability-provider-dialog-title"
+                tabIndex={-1}
               >
                 <div className="max-h-[calc(100vh-4rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
                   <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">

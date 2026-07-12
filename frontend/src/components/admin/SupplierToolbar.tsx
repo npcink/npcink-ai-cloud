@@ -26,7 +26,7 @@ export function SupplierToolbar({
   translate,
 }: SupplierToolbarProps) {
   return (
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
       <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
           {translate('field_supplier_type_filter', 'Supplier type')}
@@ -52,8 +52,8 @@ export function SupplierToolbar({
           ))}
         </div>
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
-        <label className="grid min-w-[16rem] gap-1 sm:w-[22rem]">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
+        <label className="grid w-full gap-1 sm:w-[22rem]">
           <span className="sr-only">{translate('field_search_connections', 'Search suppliers')}</span>
           <input
             className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
@@ -67,12 +67,15 @@ export function SupplierToolbar({
             {translate('action_latest_operation', 'Latest operation')}
           </button>
         ) : null}
-        <button type="button" className="btn btn-primary justify-center" onClick={onAddModelSupplier}>
-          {translate('action_add_model_supplier', 'Add model supplier')}
-        </button>
-        <button type="button" className="btn btn-secondary justify-center" onClick={onAddCapabilitySupplier}>
-          {translate('action_add_capability_supplier', 'Add capability supplier')}
-        </button>
+        {supplierTypeFilter === 'model' ? (
+          <button type="button" className="btn btn-primary justify-center" onClick={onAddModelSupplier}>
+            {translate('action_add_model_supplier', 'Add model supplier')}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-primary justify-center" onClick={onAddCapabilitySupplier}>
+            {translate('action_add_capability_supplier', 'Add capability supplier')}
+          </button>
+        )}
       </div>
     </div>
   );

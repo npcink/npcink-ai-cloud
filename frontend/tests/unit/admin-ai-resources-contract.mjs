@@ -245,7 +245,7 @@ assert.match(
 
 assert.match(
   supplierConnectionTablesSource,
-  /connectionErrorLabel\(connection\.last_error_code, translate\)/,
+  /connectionErrorLabel\((?:connection|selectedConnection)\.last_error_code, translate\)/,
   'Stored provider test failures must use readable guidance instead of rendering raw error codes'
 );
 
@@ -407,7 +407,7 @@ assert.doesNotMatch(
 
 assert.match(
   supplierConnectionTablesSource,
-  /providerTestStageLabel\(testResult\.stage\)[\s\S]*providerTestMessage\(testResult\)/,
+  /providerTestStageLabel\((?:testResult|selectedTestResult)\.stage\)[\s\S]*providerTestMessage\((?:testResult|selectedTestResult)\)/,
   'Provider test results must render through localized stage and message helpers'
 );
 
@@ -467,8 +467,8 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /useState<AbilityModelTab>\('wordpress'\)/,
-  'Ability-model routing page must default to the plugin ability defaults tab'
+  /searchParams\.get\('surface'\) === 'cloud' \? 'cloud' : 'wordpress'/,
+  'Ability-model routing page must default to the plugin ability defaults surface while keeping the surface URL-addressable'
 );
 
 assert.match(
@@ -485,14 +485,14 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /CLOUD_MEDIA_ORDER: CloudAbilityMediaTab\[\] = \['text', 'image', 'vector', 'audio', 'video'\][\s\S]*availableCloudMediaTabs\.map[\s\S]*cloud_media_tab_\$\{tab\}/,
+  /CLOUD_MEDIA_ORDER: CloudAbilityMediaTab\[\] = \['text', 'image', 'vector', 'audio', 'video'\][\s\S]*\['all', \.\.\.availableCloudMediaTabs\][\s\S]*cloud_media_tab_\$\{media\}/,
   'Cloud runtime dependencies must keep a stable media order but only render category filters that exist in current rows'
 );
 
 assert.match(
   abilityModelsSource,
   /wordpress_title[\s\S]*abilityModelRows\.map/,
-  'Plugin ability-model routing table must render unified routing profile rows'
+  'Plugin ability-model routing directory must render unified routing profile rows'
 );
 
 assert.match(
@@ -659,8 +659,8 @@ assert.match(
 
 assert.match(
   capabilitySupplierTableSource,
-  /purposeLabel\(connection\)[\s\S]*status_configured_label[\s\S]*showPriority[\s\S]*channel_priority_summary/,
-  'Capability supplier table must keep priority in the connection column instead of the supplier identity column'
+  /showPriority[\s\S]*purposeLabel\(connection\)[\s\S]*channel_priority_summary[\s\S]*status_configured_label/,
+  'Capability supplier queue must keep priority in the row summary and configured state in the inspector'
 );
 
 assert.match(
@@ -671,8 +671,8 @@ assert.match(
 
 assert.match(
   capabilitySupplierTableSource,
-  /column_provider[\s\S]*capability_category_filter[\s\S]*StatusFilter[\s\S]*column_connection[\s\S]*last_test[\s\S]*column_actions/,
-  'Capability supplier list must use provider/category-filter/status-filter/connection/test/actions columns'
+  /data-ui="capability-supplier-directory"[\s\S]*capability_category_filter[\s\S]*StatusFilter[\s\S]*data-ui="supplier-inspector"[\s\S]*column_connection[\s\S]*last_test[\s\S]*action_configure/,
+  'Capability suppliers must use a category/status-filtered queue with a contextual action inspector'
 );
 
 assert.doesNotMatch(
@@ -713,8 +713,8 @@ assert.doesNotMatch(
 
 assert.match(
   capabilitySupplierTableSource,
-  /testResults\[connection\.connection_id\][\s\S]*onTest\(connection\.connection_id\)/,
-  'Capability supplier list must expose a per-connection self-test action'
+  /testResults\[connection\.connection_id\][\s\S]*data-ui="supplier-inspector"[\s\S]*onTest\(selectedConnection\.connection_id\)/,
+  'Capability supplier inspector must expose a self-test action for the selected connection'
 );
 
 assert.match(
@@ -945,22 +945,22 @@ assert.doesNotMatch(
   'AI resources must not copy NEW API commercial marketplace or prompt/router control-plane surfaces'
 );
 
-assert.doesNotMatch(
+assert.match(
   abilityModelsSource,
   /BackofficeSummaryStrip/,
-  'Ability-model routing page must not use a separate summary strip after header metrics move into the right-side header summary'
+  'Ability-model routing page must expose compact operational counts in the shared summary strip'
+);
+
+assert.doesNotMatch(
+  abilityModelsSource,
+  /headerSummary|modelCandidateCount/,
+  'Ability-model routing page must keep candidate inventory out of the default page header'
 );
 
 assert.match(
   abilityModelsSource,
-  /headerSummary[\s\S]*badge_runtime_binding[\s\S]*headerSummary/,
-  'Ability-model routing page must keep compact ability, route, and model-candidate counts in the header aside'
-);
-
-assert.match(
-  abilityModelsSource,
-  /abilityScenarioCount[\s\S]*routeCount[\s\S]*modelCandidateCount/,
-  'Ability-model routing header summary must combine ability scenarios, route count, and model candidates instead of separate metric chips'
+  /summary_shared_routes[\s\S]*summary_ability_scenarios[\s\S]*summary_attention[\s\S]*summary_cloud_dependencies/,
+  'Ability-model routing summary must prioritize routes, scenarios, attention state, and Cloud dependencies'
 );
 
 assert.match(
@@ -1019,14 +1019,14 @@ assert.match(
 
 assert.match(
   abilityModelsSource,
-  /row\.can_configure \?[\s\S]*openCloudBindingDialog\(row\)[\s\S]*cloud_native_action_configure_model[\s\S]*cloudManagedDependencyLabel\(row\)/,
-  'Cloud-native runtime projection rows must expose configure only when supported and explain read-only dependencies as managed by their supplier settings'
+  /selectedCloudAbilityRow\.can_configure \?[\s\S]*openCloudBindingDialog\(selectedCloudAbilityRow\)[\s\S]*cloud_native_action_configure_model[\s\S]*cloudManagedDependencyLabel\(selectedCloudAbilityRow\)/,
+  'Cloud runtime dependency inspector must expose configure only when supported and explain read-only dependencies as managed by their supplier settings'
 );
 
 assert.match(
   abilityModelsSource,
-  /column_runtime_dependency[\s\S]*column_current_runtime[\s\S]*cloud_native_internal_details/,
-  'Cloud-native ability table must show operator-facing dependency/runtime columns and move internal profile ids into collapsed details'
+  /column_runtime_dependency[\s\S]*column_current_runtime[\s\S]*cloud_native_internal_config_id/,
+  'Cloud runtime dependency inspector must show operator-facing dependency, runtime, and bounded config evidence'
 );
 
 assert.match(
@@ -1043,8 +1043,8 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /column_status[\s\S]*<select[\s\S]*field_category_filter[\s\S]*filter_category_all[\s\S]*availableCloudMediaTabs\.map[\s\S]*column_ability[\s\S]*column_category[\s\S]*cloud_media_tab_\$\{row\.media\}/,
-  'Cloud runtime dependency table must keep category filtering inside the category column header'
+  /field_category_filter[\s\S]*\['all', \.\.\.availableCloudMediaTabs\][\s\S]*filter_category_all[\s\S]*cloud_media_tab_\$\{row\.media\}/,
+  'Cloud runtime dependency directory must keep its URL-backed category filter adjacent to the queue'
 );
 
 assert.doesNotMatch(
@@ -1067,8 +1067,8 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /abilityModelRows\.map[\s\S]*openAbilityModelDialog\(row\.profile\.profile_id\)[\s\S]*activeProfile[\s\S]*saveAbilityModelProfile/,
-  'Audio runtime model routes must be configurable through the same plugin ability routing dialog as other route profiles'
+  /abilityModelRows\.map[\s\S]*selectedAbilityModelRow[\s\S]*openAbilityModelDialog\(selectedAbilityModelRow\.profile\.profile_id\)[\s\S]*activeProfile[\s\S]*saveAbilityModelProfile/,
+  'All runtime model routes must be selected through the directory and configured through the same bounded routing dialog'
 );
 
 assert.doesNotMatch(
@@ -1079,14 +1079,14 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /cloud_native_badge_runtime_binding/,
-  'Cloud-native ability section must present bounded runtime binding instead of planned-only status'
+  /badge_runtime_binding/,
+  'Ability-model workspace must present bounded runtime binding instead of planned-only status'
 );
 
 assert.match(
   abilityModelsSource,
-  /cloudAbilityRows\.length === 0[\s\S]*cloud_all_empty_title[\s\S]*cloud_all_empty_desc/,
-  'Cloud-native ability table must keep a clear empty state when the backend projection has no rows'
+  /activeCloudNativeAbilityRows\.length[\s\S]*cloud_all_empty_title[\s\S]*cloud_all_empty_desc/,
+  'Cloud runtime dependency directory must keep a clear empty state when the backend projection has no matching rows'
 );
 
 assert.match(
@@ -1127,8 +1127,8 @@ assert.doesNotMatch(
 
 assert.match(
   abilityModelsSource,
-  /hidden grid-cols-\[7rem_1\.7fr_6rem_1\.45fr_1\.15fr_7rem\][\s\S]*md:grid-cols-\[7rem_1\.7fr_6rem_1\.45fr_1\.15fr_7rem\]/,
-  'Unified ability-model routing table must use a desktop grid only at md and a stacked mobile layout below md without a separate internal model-config column'
+  /xl:grid-cols-\[minmax\(0,1fr\)_22rem\][\s\S]*md:grid-cols-\[minmax\(12rem,1\.2fr\)_minmax\(10rem,1fr\)_8rem\]/,
+  'Ability-model routing workspace must use a directory and inspector at wide widths with stacked route rows below md'
 );
 
 assert.match(
@@ -1778,8 +1778,8 @@ assert.doesNotMatch(
 
 assert.match(
   supplierConnectionTablesSource,
-  /referenceLinksForConnection\(connection\)[\s\S]*ProviderReferenceLinks[\s\S]*items=\{providerLinkItems\}[\s\S]*variant="inline"/,
-  'Provider channel list must render provider reference links through the shared component without mixing them into model rows'
+  /referenceLinksForConnection\(selectedConnection\)[\s\S]*ProviderReferenceLinks[\s\S]*items=\{selectedProviderLinks\}[\s\S]*variant="inline"/,
+  'Provider inspector must render sanitized reference links without mixing them into every queue row'
 );
 
 assert.match(
@@ -1922,8 +1922,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /SupplierToolbar[\s\S]*supplierTypeFilter=\{supplierTypeFilter\}[\s\S]*onSupplierTypeFilterChange=\{setSupplierTypeFilter\}[\s\S]*onAddModelSupplier=\{openNewProviderConnection\}[\s\S]*translate=\{aiText\}/,
-  'AI resources page must render the supplier toolbar through the shared component'
+  /SupplierToolbar[\s\S]*supplierTypeFilter=\{supplierTypeFilter\}[\s\S]*onSupplierTypeFilterChange=\{handleSupplierTypeFilterChange\}[\s\S]*onAddModelSupplier=\{openNewProviderConnection\}[\s\S]*translate=\{aiText\}/,
+  'AI resources page must render the URL-aware supplier toolbar through the shared component'
 );
 
 assert.doesNotMatch(
@@ -1958,8 +1958,8 @@ assert.match(
 
 assert.match(
   supplierConnectionTablesSource,
-  /filter_all_statuses[\s\S]*column_provider[\s\S]*column_enabled_models[\s\S]*model_catalog_enabled_count_short[\s\S]*model_catalog_none_enabled_short/,
-  'Model supplier list must use explicit all-status filtering and compact enabled model counts'
+  /filter_all_statuses[\s\S]*data-ui="model-supplier-directory"[\s\S]*model_catalog_enabled_count_short[\s\S]*data-ui="supplier-inspector"[\s\S]*column_enabled_models/,
+  'Model suppliers must use explicit status filtering, compact model counts, and a contextual inspector'
 );
 
 assert.doesNotMatch(
@@ -2282,8 +2282,8 @@ assert.match(
 
 assert.match(
   capabilitySupplierTableSource,
-  /connection\.managed_by === 'cloud_provider_connections'[\s\S]*onRequestDelete\(connection\.connection_id\)[\s\S]*action_delete/,
-  'Capability supplier rows must expose delete only for DB-managed provider connections and enter inline confirmation first'
+  /selectedConnection\.managed_by === 'cloud_provider_connections'[\s\S]*onRequestDelete\(selectedConnection\.connection_id\)[\s\S]*action_delete/,
+  'Capability supplier inspector must expose delete only for DB-managed provider connections and enter inline confirmation first'
 );
 
 assert.doesNotMatch(
@@ -2294,26 +2294,26 @@ assert.doesNotMatch(
 
 assert.match(
   supplierConnectionTablesSource,
-  /confirmingDeleteConnectionId[\s\S]*isConfirmingDelete[\s\S]*action_confirm_delete[\s\S]*onDelete\(connection\)[\s\S]*action_cancel/,
-  'Provider connection delete must require an inline second confirmation with a cancel action'
+  /confirmingDeleteConnectionId[\s\S]*selectedIsConfirmingDelete[\s\S]*action_confirm_delete[\s\S]*onDelete\(selectedConnection\)[\s\S]*action_cancel/,
+  'Provider connection delete must require a contextual second confirmation with a cancel action'
 );
 
 assert.match(
   supplierConnectionTablesSource,
-  /w-44 px-4 py-3 text-center[\s\S]*column_actions[\s\S]*w-44 px-4 py-4 text-center/,
-  'Model supplier action column must center its header and row actions'
+  /data-ui="model-supplier-directory"[\s\S]*data-ui="supplier-inspector"[\s\S]*action_configure/,
+  'Model supplier actions must stay in the contextual inspector instead of a repeated action column'
 );
 
 assert.match(
   capabilitySupplierTableSource,
-  /w-52 px-4 py-3 text-center[\s\S]*column_actions[\s\S]*w-52 px-4 py-4 text-center align-middle/,
-  'Capability supplier action column must center its header and row actions'
+  /data-ui="capability-supplier-directory"[\s\S]*data-ui="supplier-inspector"[\s\S]*action_test[\s\S]*action_configure/,
+  'Capability supplier test and configuration actions must stay in the contextual inspector'
 );
 
 assert.match(
   capabilitySupplierTableSource,
-  /onConfigure\(connection\)[\s\S]*action_configure/,
-  'AI resources capability supplier rows must use the shared configure action'
+  /onConfigure\(selectedConnection\)[\s\S]*action_configure/,
+  'AI resources capability inspector must use the shared configure action'
 );
 
 assert.match(
@@ -2330,8 +2330,8 @@ assert.match(
 
 assert.match(
   supplierConnectionTablesSource,
-  /<table className="min-w-\[760px\]/,
-  'AI resources model suppliers must render as a compact table instead of wide cards or duplicated panels'
+  /data-ui="model-supplier-directory"[\s\S]*sm:grid-cols-\[minmax\(0,1fr\)_8rem_8rem\]/,
+  'AI resources model suppliers must render as a responsive queue instead of a fixed-width table or card pile'
 );
 
 assert.match(
