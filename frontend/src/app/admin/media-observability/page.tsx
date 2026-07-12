@@ -437,6 +437,7 @@ function AdminMediaObservabilityContent() {
           <input
             type="text"
             value={siteIdInput}
+            aria-label={t('admin.media_obs.site_filter_label', {}, 'Filter by site ID')}
             onChange={(event) => setSiteIdInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {

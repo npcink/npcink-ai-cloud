@@ -287,8 +287,8 @@ assert.match(
 
 assert.match(
   aiAdvisorSource,
-  /<OperationsWorkPanel data=\{data\} \/>[\s\S]*<SignalPanel branch=\{data\.ai\} \/>[\s\S]*<AdvisorEvaluationDetails>/,
-  'AI Advisor must show current diagnosis and evidence before the advanced AI evaluation details'
+  /<OperationsWorkPanel data=\{data\} \/>[\s\S]*<AdvisorEvaluationDetails>[\s\S]*<SignalPanel branch=\{data\.ai\} \/>/,
+  'AI Advisor must keep the current diagnosis visible while moving detailed evidence into advanced evaluation details'
 );
 
 assert.match(
@@ -1306,8 +1306,14 @@ assert.match(
 
 assert.match(
   pageSource,
-  /!\s*providerFormOpen && message[\s\S]*!\s*providerFormOpen && error[\s\S]*<ProviderConnectionDialog[\s\S]*message=\{message\}[\s\S]*error=\{error\}/,
-  'Provider channel dialog must render operation feedback inside the modal instead of behind the overlay'
+  /<ProviderConnectionDialog[\s\S]*message=\{message\}[\s\S]*error=\{error\}/,
+  'Provider channel dialog must keep contextual operation feedback inside the modal'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /!\s*providerFormOpen && message[\s\S]{0,500}BackofficeStackCard/,
+  'Provider channel transient success feedback must not expand the page summary behind the modal'
 );
 
 assert.match(

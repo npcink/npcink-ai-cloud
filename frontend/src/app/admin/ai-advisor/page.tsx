@@ -2004,6 +2004,7 @@ function AdminAiAdvisorContent() {
           <input
             type="text"
             value={siteIdInput}
+            aria-label={t('admin.ai_advisor.site_filter_label', {}, 'Site ID')}
             onChange={(event) => setSiteIdInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
@@ -2035,6 +2036,7 @@ function AdminAiAdvisorContent() {
             <input
               type="text"
               value={providerIdInput}
+              aria-label={t('admin.ai_advisor.provider_filter_label', {}, 'Provider ID')}
               onChange={(event) => setProviderIdInput(event.target.value)}
               placeholder="provider_id"
               className="h-8 w-40 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs text-slate-700 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
@@ -2042,6 +2044,7 @@ function AdminAiAdvisorContent() {
             <input
               type="text"
               value={modelIdInput}
+              aria-label={t('admin.ai_advisor.model_filter_label', {}, 'Model ID')}
               onChange={(event) => setModelIdInput(event.target.value)}
               placeholder="model_id"
               className="h-8 w-56 rounded-full border border-slate-200/80 bg-white/80 px-3 text-xs text-slate-700 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200"
@@ -2093,10 +2096,10 @@ function AdminAiAdvisorContent() {
       {data ? (
         <>
           <OperationsWorkPanel data={data} />
-          <SignalPanel branch={data.ai} />
-          <HistoryPanel items={historyItems} />
 
           <AdvisorEvaluationDetails>
+            <SignalPanel branch={data.ai} />
+            <HistoryPanel items={historyItems} />
             <ValueMetricsPanel valueMetrics={valueMetrics} />
             <EffectComparisonPanel data={data} />
             <AiParticipationPanel data={data} />

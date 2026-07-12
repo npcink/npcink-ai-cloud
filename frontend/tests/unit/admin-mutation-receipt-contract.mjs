@@ -7,6 +7,9 @@ const accountDetailSource = readFileSync(fromFrontendRoot('src/app/admin/account
 const portalUsersSource = readFileSync(fromFrontendRoot('src/app/admin/portal-users/page.tsx'), 'utf8');
 const subscriptionDetailSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
 const aiResourcesSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
+const supplierToolbarSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierToolbar.tsx'), 'utf8');
+const toastSource = readFileSync(fromFrontendRoot('src/components/ui/Toast.tsx'), 'utf8');
+const feedbackContractSource = readFileSync(fromFrontendRoot('../docs/cloud-admin-feedback-and-layout-contract-v1.md'), 'utf8');
 const abilityModelsSource = readFileSync(fromFrontendRoot('src/app/admin/ability-models/page.tsx'), 'utf8');
 const serviceSettingsSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
 const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
@@ -93,6 +96,42 @@ assert.match(
   aiResourcesSource,
   /setLastReceipt\(\(payload\.data\?\.receipt \|\| null\) as AdminMutationReceiptPayload \| null\)/,
   'AI resources provider writes must store backend receipts for save, delete, and test operations'
+);
+
+assert.match(
+  aiResourcesSource,
+  /useToast\(\)/,
+  'AI resources transient provider outcomes must use the global Toast surface'
+);
+
+assert.doesNotMatch(
+  aiResourcesSource,
+  /!providerFormOpen && message[\s\S]{0,400}BackofficeStackCard/,
+  'AI resources must not expand the summary panel with transient success feedback'
+);
+
+assert.match(
+  aiResourcesSource,
+  /hasLatestOperation=\{Boolean\(lastReceipt\)\}[\s\S]*onOpenLatestOperation=\{\(\) => setReceiptDetailsOpen\(true\)\}/,
+  'AI resources must expose the latest auditable receipt from the supplier toolbar'
+);
+
+assert.match(
+  supplierToolbarSource,
+  /hasLatestOperation[\s\S]*action_latest_operation/,
+  'Supplier toolbar must keep the latest operation entry compact and contextual'
+);
+
+assert.match(
+  toastSource,
+  /left-1\/2 top-16[\s\S]*-translate-x-1\/2/,
+  'Global Toast feedback must stay out of document flow in a stable top-center layer'
+);
+
+assert.match(
+  feedbackContractSource,
+  /## 4\. Feedback Taxonomy[\s\S]*### 4\.5 Auditable mutation receipt/,
+  'Cloud admin feedback contract must classify transient feedback separately from durable receipts'
 );
 
 assert.match(

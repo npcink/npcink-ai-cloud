@@ -1000,6 +1000,14 @@ function AdminOverviewContent() {
         )}
       />
 
+      <details className="rounded-2xl border border-slate-200/80 bg-white/60 dark:border-slate-800 dark:bg-slate-950/30">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-900/60">
+          {t('admin.home_extended_evidence_title', {}, 'Platform usage and extended evidence')}
+          <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+            {t('admin.home_extended_evidence_desc', {}, 'Open when the first-screen conclusion is not enough.')}
+          </span>
+        </summary>
+        <div className="space-y-5 border-t border-slate-200/80 p-4 dark:border-slate-800">
       <BackofficeSectionPanel className="space-y-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -1354,6 +1362,9 @@ function AdminOverviewContent() {
           </BackofficeStackCard>
         )}
       </BackofficeSectionPanel>
+
+        </div>
+      </details>
 
       <details className="rounded-2xl border border-dashed border-slate-200 px-5 py-4 dark:border-slate-800">
         <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">

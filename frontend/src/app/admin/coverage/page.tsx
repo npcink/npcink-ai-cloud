@@ -14,6 +14,7 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { AdminHorizontalScroll } from '@/components/admin/AdminHorizontalScroll';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
@@ -356,7 +357,10 @@ function AdminCoverageContent() {
           </div>
 
           {visibleItems.length ? (
-            <div className="overflow-x-auto">
+            <AdminHorizontalScroll
+              label={t('admin.coverage.table_region_label', {}, 'Customer service queue')}
+              hint={t('admin.table_scroll_hint', {}, 'Swipe horizontally to see more columns.')}
+            >
               <table className="min-w-[64rem] divide-y divide-slate-200/80 text-left text-sm dark:divide-slate-800 lg:w-full">
                 <thead className="bg-slate-50/80 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
                   <tr>
@@ -445,7 +449,7 @@ function AdminCoverageContent() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </AdminHorizontalScroll>
           ) : (
             <div className="px-6 py-8">
               <BackofficeStackCard className="space-y-3 text-sm text-slate-600 dark:text-slate-300">

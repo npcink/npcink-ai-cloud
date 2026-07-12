@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { localizeAdminCommercialCopy } from '@/lib/admin-commercial-copy';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
@@ -17,7 +18,10 @@ import {
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
-import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import { type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import { AdminLatestOperationButton } from '@/components/admin/AdminLatestOperationDialog';
+import { AdminHorizontalScroll } from '@/components/admin/AdminHorizontalScroll';
+import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
@@ -124,13 +128,15 @@ type SubscriptionBillingSnapshotRebuildResult = {
 function SubscriptionDetailContent() {
   const params = useParams();
   const { t } = useLocale();
+  const toast = useToast();
   const { subscriptionId } = params as { subscriptionId: string };
   const [detail, setDetail] = useState<SubscriptionDetailPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mutationNotice, setMutationNotice] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
   const [isSnapshotRefreshSaving, setIsSnapshotRefreshSaving] = useState(false);
+  const [snapshotRefreshError, setSnapshotRefreshError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDetail = async () => {
@@ -232,7 +238,7 @@ function SubscriptionDetailContent() {
   }, [detail, subscriptionId]);
 
   if (isLoading) {
-    return <LoadingFallback />;
+    return <AdminRouteSkeleton />;
   }
 
   if (error) {
@@ -310,9 +316,8 @@ function SubscriptionDetailContent() {
       : t('common.not_found', {}, 'Not found');
 
   const handleBillingSnapshotRefresh = async () => {
-    setMutationNotice(null);
     setLastReceipt(null);
-    setError(null);
+    setSnapshotRefreshError(null);
     setIsSnapshotRefreshSaving(true);
     try {
       const response = await fetch(
@@ -330,16 +335,19 @@ function SubscriptionDetailContent() {
       }
       const data = (payload?.data || {}) as SubscriptionBillingSnapshotRebuildResult;
       setLastReceipt(data.receipt || null);
-      setMutationNotice(
+      toast.success(
         t(
           'admin.subscription_detail.snapshot_refresh_notice',
           {},
           'Current-period billing snapshots were rebuilt for this subscription.'
-        )
+        ),
+        t('admin.subscription_detail.snapshot_refresh_success_title', {}, 'Billing statistics refreshed')
       );
       await reloadDetail();
     } catch (err) {
-      setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save', {}, 'Failed to save.')));
+      setSnapshotRefreshError(
+        resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save', {}, 'Failed to save.'))
+      );
     } finally {
       setIsSnapshotRefreshSaving(false);
     }
@@ -439,28 +447,6 @@ function SubscriptionDetailContent() {
               </div>
             </details>
           </div>
-          {hasSnapshotFollowUp && normalized.billingSnapshotNextAction.action ? (
-            <div className="shrink-0 space-y-2 lg:max-w-xs">
-              <button
-                type="button"
-                className="btn btn-primary w-full"
-                onClick={() => void handleBillingSnapshotRefresh()}
-                disabled={isSnapshotRefreshSaving}
-              >
-                {isSnapshotRefreshSaving
-                  ? t('admin.subscription_detail.snapshot_refresh_saving', {}, 'Refreshing statistics...')
-                  : localizedSnapshotActionLabel ||
-                    t('admin.subscription_detail.snapshot_refresh_action', {}, 'Refresh this period billing statistics')}
-              </button>
-              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                {t(
-                  'admin.subscription_detail.snapshot_refresh_boundary',
-                  {},
-                  'Rebuilds billing statistics from usage records only. It does not change the package or WordPress content.'
-                )}
-              </p>
-            </div>
-          ) : null}
         </BackofficeStackCard>
       </BackofficePrimaryPanel>
 
@@ -543,7 +529,11 @@ function SubscriptionDetailContent() {
                 </p>
               </div>
             </div>
-            <div className="mt-4 overflow-x-auto">
+            <AdminHorizontalScroll
+              className="mt-4"
+              label={t('admin.subscription_detail.usage_table_region_label', {}, 'Budget and usage')}
+              hint={t('admin.table_scroll_hint', {}, 'Swipe horizontally to see more columns.')}
+            >
               <table className="min-w-[36rem] text-left text-sm">
                 <thead className="text-xs text-slate-500 dark:text-slate-400">
                   <tr>
@@ -578,7 +568,7 @@ function SubscriptionDetailContent() {
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </AdminHorizontalScroll>
           </BackofficeStackCard>
         </BackofficeSectionPanel>
 
@@ -639,12 +629,19 @@ function SubscriptionDetailContent() {
                   </button>
                 </div>
               ) : null}
-              {mutationNotice ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300">
-                  {mutationNotice}
+              {snapshotRefreshError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300" role="alert">
+                  {snapshotRefreshError}
                 </div>
               ) : null}
-              <AdminMutationReceipt receipt={lastReceipt} />
+              <AdminLatestOperationButton
+                receipt={lastReceipt}
+                isOpen={receiptOpen}
+                onOpen={() => setReceiptOpen(true)}
+                onClose={() => setReceiptOpen(false)}
+                title={t('admin.latest_operation', {}, 'Latest operation')}
+                triggerLabel={t('admin.latest_operation', {}, 'Latest operation')}
+              />
             </BackofficeStackCard>
             <BackofficeStackCard>
               <p className="text-sm font-semibold text-slate-950 dark:text-white">

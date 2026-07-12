@@ -7,6 +7,7 @@ import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifi
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
+import { AdminHorizontalScroll } from '@/components/admin/AdminHorizontalScroll';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
   resolveCustomerPackageDisplay,
@@ -641,7 +642,10 @@ function AccountsContent() {
             {t('common.accounts')} {t('common.not_found')}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <AdminHorizontalScroll
+            label={t('admin.accounts.table_region_label', {}, 'Customer list')}
+            hint={t('admin.table_scroll_hint', {}, 'Swipe horizontally to see more columns.')}
+          >
             <table className="min-w-[58rem] divide-y divide-slate-200/80 text-left text-sm dark:divide-slate-800 lg:w-full">
               <thead className="bg-slate-50/80 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
                 <tr>
@@ -735,7 +739,7 @@ function AccountsContent() {
             })}
               </tbody>
             </table>
-          </div>
+          </AdminHorizontalScroll>
         )}
         <ListPagination
           offset={offset}

@@ -12,6 +12,7 @@ import {
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
+import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { readResponsePayload } from '@/lib/safe-response';
@@ -85,16 +86,16 @@ async function updateSupportRequest(requestId: string, status: string, adminNote
 
 export default function AdminSupportRequestsPage() {
   const { t } = useLocale();
+  const toast = useToast();
   const [items, setItems] = useState<SupportRequest[]>([]);
   const [summary, setSummary] = useState<SupportRequestListPayload['summary']>({});
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [statusFilter, setStatusFilter] = useState<SupportRequestStatus | ''>('open');
+  const [statusFilter, setStatusFilter] = useState<SupportRequestStatus | ''>('');
   const [topicFilter, setTopicFilter] = useState('');
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [pendingRequestId, setPendingRequestId] = useState('');
   const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -132,7 +133,6 @@ export default function AdminSupportRequestsPage() {
   const handleUpdate = async (item: SupportRequest) => {
     setPendingRequestId(item.request_id);
     setError('');
-    setNotice('');
     try {
       const response = await updateSupportRequest(
         item.request_id,
@@ -143,7 +143,10 @@ export default function AdminSupportRequestsPage() {
       if (!response.ok || !('data' in payload) || !payload.data?.request) {
         throw new Error(resolveUiErrorMessage('message' in payload ? payload.message : null, t('error.failed_save')));
       }
-      setNotice(t('admin.support_requests_updated_notice', {}, 'Ticket updated.'));
+      toast.success(
+        t('admin.support_requests_updated_notice', {}, 'Ticket updated.'),
+        t('admin.support_requests_updated_title', {}, 'Ticket saved')
+      );
       await loadRequests();
     } catch (err) {
       setError(resolveUiErrorMessage(err instanceof Error ? err.message : null, t('error.failed_save')));
@@ -189,11 +192,6 @@ export default function AdminSupportRequestsPage() {
         }
       />
 
-      {notice ? (
-        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
-          {notice}
-        </div>
-      ) : null}
       {error ? (
         <div className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
           {error}
@@ -220,6 +218,7 @@ export default function AdminSupportRequestsPage() {
           <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row">
             <select
               className="input lg:w-44"
+              aria-label={t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}
               value={topicFilter}
               onChange={(event) => {
                 setOffset(0);
@@ -234,6 +233,7 @@ export default function AdminSupportRequestsPage() {
             </select>
             <input
               className="input w-full lg:w-80"
+              aria-label={t('admin.support_requests_search_label', {}, 'Search tickets')}
               value={query}
               onChange={(event) => {
                 setOffset(0);
@@ -270,6 +270,7 @@ export default function AdminSupportRequestsPage() {
                 <div className="space-y-3">
                   <select
                     className="input"
+                    aria-label={t('admin.support_requests_status_edit_label', { title: item.title }, `Status for ${item.title}`)}
                     value={statusDrafts[item.request_id] || item.status}
                     onChange={(event) =>
                       setStatusDrafts((current) => ({ ...current, [item.request_id]: event.target.value }))
@@ -283,6 +284,7 @@ export default function AdminSupportRequestsPage() {
                   </select>
                   <textarea
                     className="input min-h-24"
+                    aria-label={t('admin.support_requests_note_edit_label', { title: item.title }, `Internal note for ${item.title}`)}
                     value={noteDrafts[item.request_id] || ''}
                     onChange={(event) =>
                       setNoteDrafts((current) => ({ ...current, [item.request_id]: event.target.value }))
