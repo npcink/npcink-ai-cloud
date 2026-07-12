@@ -231,7 +231,7 @@ export function BackofficeSectionPanel({ children, className, variant = 'default
     <div
       className={cn(
         variant === 'portal'
-          ? 'rounded-[1.1rem] border border-slate-200/80 bg-white/78 p-4 shadow-none dark:border-slate-800 dark:bg-slate-950/45 md:p-5'
+          ? 'rounded-[18px] border border-slate-200/80 bg-white p-4 shadow-none dark:border-slate-800 dark:bg-slate-950 md:p-5'
           : 'surface-panel rounded-[1.35rem] p-5 md:p-6',
         className
       )}
@@ -258,7 +258,7 @@ export function BackofficeMetricStrip({ items, columnsClassName, variant = 'defa
             key={item.label}
             className={cn(
               variant === 'portal'
-                ? 'rounded-xl border border-slate-200/75 bg-white/65 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30'
+                ? 'rounded-xl border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950'
                 : 'rounded-[1.1rem] border border-slate-200/80 bg-white/80 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/45'
             )}
           >
@@ -321,7 +321,7 @@ export function BackofficeStackCard({
     <div
       className={cn(
         variant === 'portal'
-          ? 'rounded-xl border border-slate-200/75 bg-slate-50/60 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/30'
+          ? 'rounded-xl border border-slate-200/75 bg-white px-4 py-3.5 shadow-none dark:border-slate-800 dark:bg-slate-950'
           : 'rounded-[1.1rem] border border-slate-200/80 bg-slate-50/75 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/45',
         className
       )}

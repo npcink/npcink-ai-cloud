@@ -7,8 +7,9 @@ const billingSource = readFileSync(resolve(root, 'src/app/portal/billing/page.ts
 const usageSource = readFileSync(resolve(root, 'src/app/portal/usage/page.tsx'), 'utf8');
 const aiInsightsPagePath = resolve(root, 'src/app/portal/ai-insights/page.tsx');
 const monitoringSource = readFileSync(resolve(root, 'src/app/portal/monitoring/page.tsx'), 'utf8');
+const siteServiceStatusSource = readFileSync(resolve(root, 'src/components/portal/PortalSiteServiceStatus.tsx'), 'utf8');
 const siteRecordSource = readFileSync(resolve(root, 'src/app/portal/sites/[siteId]/page.tsx'), 'utf8');
-const sitesSource = readFileSync(resolve(root, 'src/app/portal/sites/page.tsx'), 'utf8');
+const sitesSource = readFileSync(resolve(root, 'src/components/portal/PortalSitesWorkspace.tsx'), 'utf8');
 const portalHomeSource = readFileSync(resolve(root, 'src/app/portal/page.tsx'), 'utf8');
 const auditSource = readFileSync(resolve(root, 'src/app/portal/audit/PortalAuditClient.tsx'), 'utf8');
 const pluginMonitoringSource = readFileSync(resolve(root, 'src/components/portal/PortalPluginMonitoringPanel.tsx'), 'utf8');
@@ -35,8 +36,8 @@ assert.doesNotMatch(
 );
 assert.match(
   usageBeforeDetail,
-  /summary_label[\s\S]*credit_ledger_title[\s\S]*credit_ledger_desc/,
-  'Portal usage summary should show customer-readable point records first'
+  /overview_title[\s\S]*primary_trend_title[\s\S]*ledger_toggle[\s\S]*credit_ledger_title/,
+  'Portal usage should lead with current-period totals and trend before optional point records'
 );
 assert.doesNotMatch(
   usageSource,
@@ -56,7 +57,7 @@ assert.equal(
 );
 
 assert.doesNotMatch(
-  monitoringSource,
+  siteServiceStatusSource,
   /Plugin monitoring|Installed plugin health|Vector observability|P95|top1|MonitoringTabs|PortalPluginMonitoringPanel|PortalMediaProcessingPanel|PortalSiteKnowledgePanel|workflow_status|evidence_summary|likely_cause|next_step|DiagnosticAdvisor|diagnosticAdvisor|suggestion_only|direct_wordpress_write|automatic_repair_allowed/,
   'Portal service status must avoid plugin/vector observability and diagnostic-advisor labels in the customer page'
 );
@@ -185,8 +186,13 @@ assert.match(
 );
 assert.match(
   monitoringSource,
-  /data-portal-support-deeplink="monitoring"/,
-  'Portal monitoring must stay available only as a support deep link'
+  /router\.replace\(`\/portal\/sites\/\$\{encodeURIComponent\(selectedSite\.site_id\)\}#service-status`\)/,
+  'Portal monitoring compatibility route must open the canonical site service-status section'
+);
+assert.match(
+  siteRecordSource,
+  /<PortalSiteServiceStatus[\s\S]*overview=\{siteMonitoring\.overview\}/,
+  'Portal site record must own the customer-readable service status'
 );
 assert.match(
   auditSource,
@@ -195,8 +201,8 @@ assert.match(
 );
 
 for (const expectedCopy of [
-  "'portal.billing.customer_title': 'Package'",
-  "'portal.billing.customer_title': '套餐'",
+  "'portal.billing.customer_title': 'Package and rights'",
+  "'portal.billing.customer_title': '套餐与权益'",
   "'portal.site_record_current_label': 'Site record'",
   "'portal.site_record_current_label': '站点记录'",
   "'portal.audit.recent_desc': 'Only recent customer-readable activity is shown here.'",

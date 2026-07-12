@@ -23,7 +23,7 @@ assert.match(
 assert.match(
   source,
   /data-portal-usage="usage-records"/,
-  'portal usage page must expose usage records as the primary surface'
+  'portal usage page must expose customer-readable usage records'
 );
 assert.doesNotMatch(
   source,
@@ -41,10 +41,10 @@ assert.match(
   'portal usage header must stay at status, period, and update context'
 );
 
-assert.doesNotMatch(
+assert.match(
   source,
   /data-portal-usage="ledger-detail"/,
-  'point records must be visible by default, not hidden behind a ledger disclosure'
+  'point records must be available behind an explicit disclosure'
 );
 
 assert.match(
@@ -64,14 +64,20 @@ assert.match(
   'portal usage page must load the account-level usage bundle'
 );
 
-const summaryIndex = source.indexOf('data-portal-usage="usage-records"');
+const summaryIndex = source.indexOf('data-portal-usage="current-summary"');
+const trendIndex = source.indexOf('data-portal-usage="primary-trend"');
+const ledgerIndex = source.indexOf('data-portal-usage="ledger-detail"');
+const recordsIndex = source.indexOf('data-portal-usage="usage-records"');
 const detailIndex = source.indexOf('data-portal-usage="usage-detail"');
 const trendsIndex = source.indexOf("t('portal.usage.trends_title'");
 const costIndex = source.indexOf("t('portal.usage.cost_summary_title'");
 
-assert.ok(summaryIndex >= 0, 'usage records marker must exist');
+assert.ok(summaryIndex >= 0, 'current-period summary marker must exist');
 assert.equal(source.indexOf('data-portal-usage="current-package"'), -1, 'current package card must move to package page');
-assert.ok(detailIndex > summaryIndex, 'usage details must stay after the usage summary');
+assert.ok(trendIndex > summaryIndex, 'point trend must follow the current-period summary');
+assert.ok(ledgerIndex > trendIndex, 'usage-record disclosure must follow the point trend');
+assert.ok(recordsIndex > ledgerIndex, 'usage records must be nested inside their disclosure');
+assert.ok(detailIndex > ledgerIndex, 'advanced usage details must stay after customer-readable records');
 assert.ok(trendsIndex > detailIndex, 'usage trends must be inside the detail disclosure');
 assert.ok(costIndex > detailIndex, 'provider cost summary must be inside the detail disclosure');
 assert.equal(source.indexOf("t('portal.usage.entitlement_title'"), -1, 'package entitlement detail must move to package page');
@@ -118,6 +124,16 @@ for (const key of [
   'portal.usage.summary_desc',
   'portal.usage.header_period_detail',
   'portal.usage.header_updated_detail',
+  'portal.usage.overview_title',
+  'portal.usage.overview_desc',
+  'portal.usage.overview_available_detail',
+  'portal.usage.period_used_label',
+  'portal.usage.overview_paid_detail',
+  'portal.usage.next_expiry_label',
+  'portal.usage.overview_no_expiry_detail',
+  'portal.usage.primary_trend_title',
+  'portal.usage.primary_trend_desc',
+  'portal.usage.ledger_toggle',
   'portal.usage.detail_toggle',
   'portal.usage.trend_empty',
   'portal.usage.trend_service_detail',

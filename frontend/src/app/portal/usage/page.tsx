@@ -34,10 +34,11 @@ import {
   getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import {
-  BackofficePageStack,
-  BackofficeSectionPanel,
-  BackofficeStackCard,
-} from '@/components/backoffice/BackofficeScaffold';
+  PortalPageStack,
+  PortalSection,
+  PortalCard,
+  PortalMetricStrip,
+} from '@/components/portal/PortalScaffold';
 
 function toChartPoint(
   window: PortalUsageWindow | undefined,
@@ -212,6 +213,9 @@ function PortalUsageContent() {
     }),
     { requests: 0, tokens: 0, cost: 0 }
   );
+  const usedCredits = Number(quotaSummary?.credit?.used ?? chartTotals.tokens ?? 0);
+  const paidCredits = Number(quotaSummary?.credit?.paid_remaining ?? 0);
+  const nextPaidCreditExpiry = String(quotaSummary?.credit?.paid_next_expires_at || '');
   const currentPeriodStart =
     entitlements?.period_start_at ||
     subscription?.current_period_start_at ||
@@ -331,9 +335,34 @@ function PortalUsageContent() {
       size: 'compact' as const,
     },
   ];
+  const usageOverviewMetrics = [
+    {
+      label: t('portal.usage.total_remaining_label', {}, 'Total available'),
+      value: formatQuotaValue(availableCredits),
+      detail: t('portal.usage.overview_available_detail', {}, 'Package and paid points available now.'),
+    },
+    {
+      label: t('portal.usage.period_used_label', {}, 'Used this period'),
+      value: formatQuotaValue(usedCredits),
+      detail: t('portal.usage.trend_points_detail', {}, 'Points used by service requests in this view.'),
+    },
+    {
+      label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
+      value: formatQuotaValue(paidCredits),
+      detail: t('portal.usage.overview_paid_detail', {}, 'Purchased points that remain available.'),
+    },
+    {
+      label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
+      value: nextPaidCreditExpiry ? formatDate(nextPaidCreditExpiry) : t('common.not_available', {}, 'Not available'),
+      detail: nextPaidCreditExpiry
+        ? t('portal.usage.paid_credit_expiry_hint', { date: formatDate(nextPaidCreditExpiry) }, `The next paid credit grant expires on ${formatDate(nextPaidCreditExpiry)}.`)
+        : t('portal.usage.overview_no_expiry_detail', {}, 'No paid-credit expiry is currently recorded.'),
+      size: 'compact' as const,
+    },
+  ];
 
   return (
-    <BackofficePageStack>
+    <PortalPageStack>
       <PortalWorkspaceHeader
         eyebrow={t('portal.usage.summary_label', {}, 'Usage')}
         title={t('portal.nav_usage', {}, 'Usage')}
@@ -348,7 +377,45 @@ function PortalUsageContent() {
       />
 
       {entitlements ? (
-        <BackofficeSectionPanel className="space-y-5" variant="portal" data-portal-usage="usage-records">
+        <PortalSection className="space-y-5" data-portal-usage="current-summary">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
+              {t('portal.usage.overview_title', {}, 'This period')}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {t('portal.usage.overview_desc', {}, 'See what is available, what was used, and whether paid points are nearing expiry.')}
+            </p>
+          </div>
+          <PortalMetricStrip items={usageOverviewMetrics} columnsClassName="md:grid-cols-2 xl:grid-cols-4" />
+        </PortalSection>
+      ) : null}
+
+      {chartData.length > 0 ? (
+        <PortalSection className="space-y-4" data-portal-usage="primary-trend">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
+              {t('portal.usage.primary_trend_title', {}, 'Point usage trend')}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {t('portal.usage.primary_trend_desc', {}, 'Review the recent direction before opening individual usage records.')}
+            </p>
+          </div>
+          <div className="min-h-40 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+            <UsageBarChart data={chartData} type="tokens" height={160} />
+          </div>
+        </PortalSection>
+      ) : null}
+
+      <details
+        className="overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45"
+        data-portal-usage="ledger-detail"
+      >
+        <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-950 hover:bg-slate-50 dark:text-white dark:hover:bg-slate-900/60">
+          {t('portal.usage.ledger_toggle', {}, 'Usage records')}
+        </summary>
+        <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+      {entitlements ? (
+        <div className="space-y-5" data-portal-usage="usage-records">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -456,8 +523,10 @@ function PortalUsageContent() {
             onOffsetChange={(nextOffset) => void loadCreditLedgerPage(nextOffset)}
             className="px-0 pb-0"
           />
-        </BackofficeSectionPanel>
+        </div>
       ) : null}
+        </div>
+      </details>
 
       <details
         className="overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45"
@@ -468,7 +537,7 @@ function PortalUsageContent() {
         </summary>
         <div className="space-y-5 border-t border-slate-200 p-4 dark:border-slate-800">
           {chartData.length > 0 ? (
-            <BackofficeSectionPanel className="space-y-5" variant="portal">
+            <PortalSection className="space-y-5" variant="portal">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               {t('portal.usage.trends_label', {}, 'Usage trends')}
@@ -478,7 +547,7 @@ function PortalUsageContent() {
             </h2>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
-            <BackofficeStackCard variant="portal">
+            <PortalCard variant="portal">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
 	                {t('portal.usage.package_service_uses_label', {}, 'Service uses')}
 	              </p>
@@ -497,8 +566,8 @@ function PortalUsageContent() {
 	                  </div>
 	                )}
 	              </div>
-	            </BackofficeStackCard>
-	            <BackofficeStackCard variant="portal">
+	            </PortalCard>
+	            <PortalCard variant="portal">
 	              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
 		                {t('portal.usage.breakdown_tokens', {}, 'Point usage')}
 	              </p>
@@ -517,8 +586,8 @@ function PortalUsageContent() {
 	                  </div>
 	                )}
 	              </div>
-	            </BackofficeStackCard>
-	            <BackofficeStackCard variant="portal">
+	            </PortalCard>
+	            <PortalCard variant="portal">
 	              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
 		                {t('portal.usage.package_budget_label', {}, 'Budget')}
 	              </p>
@@ -537,13 +606,13 @@ function PortalUsageContent() {
 	                  </div>
 	                )}
 	              </div>
-	            </BackofficeStackCard>
+	            </PortalCard>
           </div>
-        </BackofficeSectionPanel>
+        </PortalSection>
       ) : null}
 
       {usageWindow ? (
-        <BackofficeSectionPanel className="space-y-5" variant="portal">
+        <PortalSection className="space-y-5" variant="portal">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
 	              {t('portal.usage.cost_summary_label', {}, 'Budget summary')}
@@ -553,7 +622,7 @@ function PortalUsageContent() {
             </h2>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
-            <BackofficeStackCard className="bg-white/70 dark:bg-slate-950/35" variant="portal">
+            <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
 	                {t('portal.usage.estimated_total_cost', {}, 'Estimated service budget')}
               </p>
@@ -563,25 +632,25 @@ function PortalUsageContent() {
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {usageWindow ? `${formatDate(usageWindow.start_at)} - ${formatDate(usageWindow.end_at)}` : t('common.not_found')}
               </p>
-            </BackofficeStackCard>
-            <BackofficeStackCard className="bg-white/70 dark:bg-slate-950/35" variant="portal">
+            </PortalCard>
+            <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
 	                {t('portal.usage.input_tokens', {}, 'Input points')}
               </p>
               <p className="mt-3 text-2xl font-semibold text-gray-950 dark:text-white">
                 {formatCompactNumber(toFinite(usageWindow.tokens_in_total))}
               </p>
-            </BackofficeStackCard>
-            <BackofficeStackCard className="bg-white/70 dark:bg-slate-950/35" variant="portal">
+            </PortalCard>
+            <PortalCard className="bg-white/70 dark:bg-slate-950/35" variant="portal">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
 	                {t('portal.usage.output_tokens', {}, 'Output points')}
               </p>
               <p className="mt-3 text-2xl font-semibold text-gray-950 dark:text-white">
                 {formatCompactNumber(toFinite(usageWindow.tokens_out_total))}
               </p>
-            </BackofficeStackCard>
+            </PortalCard>
           </div>
-        </BackofficeSectionPanel>
+        </PortalSection>
       ) : null}
 
       {!entitlements ? (
@@ -598,7 +667,7 @@ function PortalUsageContent() {
         ) : null}
         </div>
       </details>
-    </BackofficePageStack>
+    </PortalPageStack>
   );
 }
 

@@ -37,6 +37,15 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
+  /<Modal[\s\S]*data-portal-support="new-ticket-dialog"/,
+  'Portal ticket creation must open in a focused dialog instead of displacing ticket history'
+);
+assert.ok(
+  portalSupportPageSource.indexOf('portal.support_request_list_title') < portalSupportPageSource.indexOf('data-portal-support="status-rules"'),
+  'Portal ticket history must appear before status guidance'
+);
+assert.match(
+  portalSupportPageSource,
   /<ListPagination[\s\S]*offset=\{offset\}[\s\S]*total=\{total\}/,
   'Portal support history must expose all tickets through pagination'
 );
@@ -112,7 +121,7 @@ assert.match(
 );
 assert.match(
   adminSupportPageSource,
-  /fetch\(`\/api\/admin\/support-requests\?\$\{params\.toString\(\)\}`/,
+  /fetch\(`\/api\/admin\/support-requests\?\$\{(?:requestKey|params\.toString\(\))\}`/,
   'Admin support page must load the support request queue through the admin proxy'
 );
 assert.match(
@@ -122,12 +131,12 @@ assert.match(
 );
 assert.match(
   adminSupportPageSource,
-  /\/api\/admin\/support-requests\/\$\{encodeURIComponent\(requestId\)\}[\s\S]*method: 'PATCH'/,
+  /\/api\/admin\/support-requests\/\$\{encodeURIComponent\((?:item\.request_id|requestId)\)\}[\s\S]*method: 'PATCH'/,
   'Admin support page must update ticket status through the admin proxy'
 );
 assert.match(
   adminSupportPageSource,
-  /params\.set\('topic', topic\)[\s\S]*topicFilter/,
+  /params\.set\('topic', (?:appliedTopic|topic)\)[\s\S]*value=\{(?:appliedTopic|topicFilter)\}/,
   'Admin support queue must expose the backend topic filter'
 );
 assert.match(

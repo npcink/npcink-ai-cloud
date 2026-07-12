@@ -1420,10 +1420,27 @@ export interface PortalPlanOffer {
   valid_until_at?: string;
 }
 
+export interface PortalPlanComparisonTier {
+  tier_id: 'free' | 'plus' | 'pro';
+  label: string;
+  plan_id: string;
+  plan_version_id: string;
+  monthly_points: number | null;
+  site_limit: number | null;
+  knowledge_article_limit: number | null;
+  concurrency_limit: number | null;
+  batch_item_limit: number | null;
+  amount?: number | null;
+  currency: 'CNY';
+  billing_cycle?: 'monthly' | null;
+  purchase_mode: 'included' | 'self_serve';
+}
+
 export interface PortalPlanOfferListPayload {
   account_id: string;
   principal_id: string;
   items: PortalPlanOffer[];
+  comparison_tiers?: PortalPlanComparisonTier[];
   trial?: {
     available?: boolean;
     status?: string;

@@ -39,6 +39,7 @@ from app.core.models import (
     PaymentEvent,
     PaymentOrder,
     PlanOffer,
+    PlanVersion,
     SubscriptionOrder,
 )
 from app.domain.commercial.errors import (
@@ -93,9 +94,36 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             current = cast(Any, self)._select_primary_subscription(
                 repository.list_account_subscriptions(account_id)
             )
+            comparison_tiers: list[dict[str, object]] = []
+            offers_by_tier = {str(offer.tier_id): offer for offer in offers}
+            for tier_id in ("free", "plus", "pro"):
+                if tier_id == "free":
+                    plan_id, plan_version_id = cast(Any, self)._ensure_free_version_in_session(
+                        repository=repository
+                    )
+                    offer = None
+                else:
+                    offer = offers_by_tier.get(tier_id)
+                    if offer is None:
+                        continue
+                    plan_id = offer.plan_id
+                    plan_version_id = offer.plan_version_id
+                plan_version = repository.get_plan_version(plan_version_id)
+                if plan_version is None:
+                    continue
+                plan = repository.get_plan(plan_id)
+                comparison_tiers.append(
+                    self._serialize_plan_comparison_tier(
+                        tier_id=tier_id,
+                        plan_version=plan_version,
+                        label=str(getattr(plan, "name", "") or tier_id.title()),
+                        offer=offer,
+                    )
+                )
             session.commit()
             return {
                 "items": [self._serialize_plan_offer(offer) for offer in offers],
+                "comparison_tiers": comparison_tiers,
                 "trial": self._serialize_account_trial_eligibility(
                     claim=claim,
                     current=current,
@@ -1464,6 +1492,49 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             "valid_until_at": cast(Any, self)._serialize_datetime(offer.valid_until_at),
             "metadata": offer.metadata_json or {},
         }
+
+    def _serialize_plan_comparison_tier(
+        self,
+        *,
+        tier_id: str,
+        plan_version: PlanVersion,
+        label: str,
+        offer: PlanOffer | None,
+    ) -> dict[str, object]:
+        metadata = dict(plan_version.metadata_json or {})
+        budgets = dict(plan_version.budgets_json or {})
+        concurrency = dict(plan_version.concurrency_json or {})
+        monthly_points = metadata.get("monthly_included_points")
+        if monthly_points is None:
+            monthly_points = budgets.get("max_ai_credits_per_period")
+        return {
+            "tier_id": tier_id,
+            "label": label,
+            "plan_id": plan_version.plan_id,
+            "plan_version_id": plan_version.plan_version_id,
+            "monthly_points": self._serialize_optional_comparison_limit(monthly_points),
+            "site_limit": self._serialize_optional_comparison_limit(
+                metadata.get("site_limit")
+            ),
+            "knowledge_article_limit": self._serialize_optional_comparison_limit(
+                metadata.get("max_vector_documents")
+            ),
+            "concurrency_limit": self._serialize_optional_comparison_limit(
+                concurrency.get("max_active_runs")
+            ),
+            "batch_item_limit": self._serialize_optional_comparison_limit(
+                metadata.get("max_batch_items")
+            ),
+            "amount": float(offer.amount) if offer is not None else None,
+            "currency": offer.currency if offer is not None else plan_version.currency,
+            "billing_cycle": offer.billing_cycle if offer is not None else None,
+            "purchase_mode": offer.purchase_mode if offer is not None else "included",
+        }
+
+    def _serialize_optional_comparison_limit(self, value: object | None) -> int | None:
+        if value is None:
+            return None
+        return self._coerce_int(value)
 
     def _serialize_subscription_order(self, order: SubscriptionOrder | None) -> dict[str, object]:
         if order is None:
