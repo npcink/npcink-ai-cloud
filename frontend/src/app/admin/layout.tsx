@@ -222,8 +222,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         {
           href: '/admin/ai-resources',
           labelKey: 'admin.nav_ai_resources',
-          fallback: 'Providers',
+          fallback: 'Model Suppliers',
           activePrefixes: ['/admin/ai-resources', '/admin/ability-models'],
+        },
+        {
+          href: '/admin/external-services',
+          labelKey: 'admin.nav_external_services',
+          fallback: 'Search & Images',
+          activePrefixes: ['/admin/external-services'],
         },
         {
           href: '/admin/vector-settings',

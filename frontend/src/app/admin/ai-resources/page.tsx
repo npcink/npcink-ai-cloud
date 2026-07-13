@@ -15,17 +15,14 @@ import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/compon
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
-  CapabilitySupplierTable,
   ModelSupplierTable,
-  type CapabilityProviderCategory,
-  type CapabilityProviderCategoryFilter,
   type ConnectionStatusFilter,
   type ProviderConnectionTestResult,
   type ResourceStatus,
   type SupplierConnection as Connection,
 } from '@/components/admin/SupplierConnectionTables';
 import { SupplierSummaryCards } from '@/components/admin/SupplierSummaryCards';
-import { SupplierToolbar, type SupplierTypeFilter } from '@/components/admin/SupplierToolbar';
+import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { Modal } from '@/components/ui/Modal';
@@ -38,6 +35,7 @@ import { formatDate } from '@/lib/utils';
 
 type AIResourceView = 'connections';
 type SupplierCategory = 'ai' | 'capability';
+type CapabilityProviderCategory = 'search' | 'image' | 'vector';
 
 type Capability = {
   capability_id: string;
@@ -1346,10 +1344,6 @@ function AiResourcesContent() {
   );
   const [data, setData] = useState<AiResources | null>(null);
   const [activeView, setActiveView] = useState<AIResourceView>('connections');
-  const [supplierTypeFilter, setSupplierTypeFilter] = useState<SupplierTypeFilter>('model');
-  const [activeCapabilityCategory, setActiveCapabilityCategory] = useState<CapabilityProviderCategory>('search');
-  const [capabilityCategoryFilter, setCapabilityCategoryFilter] = useState<CapabilityProviderCategoryFilter>('all');
-  const [capabilityAddDialogOpen, setCapabilityAddDialogOpen] = useState(false);
   const [connectionStatusFilter, setConnectionStatusFilter] = useState<ConnectionStatusFilter>('all');
   const [connectionSearch, setConnectionSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1399,9 +1393,6 @@ function AiResourcesContent() {
     (template) => template.id === providerConnectionForm.providerId && template.kind === providerConnectionForm.kind
   );
   const shouldLockCapabilityBaseUrl = isCapabilityProviderForm && Boolean(knownCapabilityProviderTemplate);
-  const visibleCapabilityTemplates = CAPABILITY_PROVIDER_TEMPLATES.filter(
-    (template) => template.category === activeCapabilityCategory
-  );
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -1412,11 +1403,6 @@ function AiResourcesContent() {
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 
-  const handleSupplierTypeFilterChange = useCallback((value: SupplierTypeFilter) => {
-    setSupplierTypeFilter(value);
-    updateWorkspaceParams({ supplier: value, focus: null, category: value === 'model' ? null : searchParams.get('category') });
-  }, [searchParams, updateWorkspaceParams]);
-
   const handleConnectionSearchChange = useCallback((value: string) => {
     setConnectionSearch(value);
     updateWorkspaceParams({ q: value.trim() || null, focus: null });
@@ -1425,11 +1411,6 @@ function AiResourcesContent() {
   const handleConnectionStatusFilterChange = useCallback((value: ConnectionStatusFilter) => {
     setConnectionStatusFilter(value);
     updateWorkspaceParams({ status: value === 'all' ? null : value, focus: null });
-  }, [updateWorkspaceParams]);
-
-  const handleCapabilityCategoryFilterChange = useCallback((value: CapabilityProviderCategoryFilter) => {
-    setCapabilityCategoryFilter(value);
-    updateWorkspaceParams({ category: value === 'all' ? null : value, focus: null });
   }, [updateWorkspaceParams]);
 
   const handleSelectConnection = useCallback((connectionId: string) => {
@@ -1554,15 +1535,6 @@ function AiResourcesContent() {
     ) {
       setActiveView('connections');
     }
-    const requestedSupplier = searchParams.get('supplier');
-    if (requestedSupplier === 'capability') {
-      setActiveView('connections');
-      setSupplierTypeFilter('capability');
-    }
-    if (requestedSupplier === 'model') {
-      setActiveView('connections');
-      setSupplierTypeFilter('model');
-    }
     const requestedStatus = searchParams.get('status');
     if (requestedStatus === 'ready' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
       setConnectionStatusFilter(requestedStatus);
@@ -1570,13 +1542,6 @@ function AiResourcesContent() {
       setConnectionStatusFilter('all');
     }
     setConnectionSearch(searchParams.get('q') || '');
-    const requestedCategory = searchParams.get('category');
-    if (requestedCategory === 'search' || requestedCategory === 'image') {
-      setActiveCapabilityCategory(requestedCategory);
-      setCapabilityCategoryFilter(requestedCategory);
-    } else {
-      setCapabilityCategoryFilter('all');
-    }
   }, [searchParams]);
 
   async function saveProviderConnection() {
@@ -2041,59 +2006,6 @@ function AiResourcesContent() {
     });
   }
 
-  function openCapabilityProviderTemplate(template: CapabilityProviderTemplate) {
-    setConfirmingDeleteConnectionId('');
-    setActiveCapabilityCategory(template.category);
-    setCapabilityAddDialogOpen(false);
-    setProviderFormMode('create');
-    setConnectionDetailsOpen(true);
-    setProviderCatalogPreview(null);
-    setModelReferenceProviderId(defaultReferenceProviderId(template.id, 'custom'));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setCustomModelInput('');
-    setProviderConnectionForm({
-      providerPreset: 'custom',
-      connectionId: `${template.category}_${template.id}`,
-      providerId: template.id,
-      displayName: template.label,
-      kind: template.kind,
-      baseUrl: template.baseUrl,
-      sourceRole: 'execution_source',
-      capabilityIds: template.capabilityIds,
-      runtimeProfileIds: template.runtimeProfileIds,
-      modelIds: template.modelIds,
-      credential: '',
-      enabled: true,
-    });
-    setProviderFormOpen(true);
-    setMessage(
-      aiText('message_capability_provider_template_existing', '{{name}} already exists. Opening its configuration instead of creating a duplicate row.', {
-        name: template.label,
-      })
-    );
-    setError('');
-  }
-
-  function configureCapabilityConnection(connection: Connection) {
-    const category = capabilityProviderCategory(connection);
-    setActiveCapabilityCategory(category);
-    if (connection.managed_by === 'cloud_provider_connections') {
-      editProviderConnection(connection);
-      return;
-    }
-    const template = CAPABILITY_PROVIDER_TEMPLATES.find(
-      (item) => item.category === category && item.id === connection.provider_id
-    );
-    if (template) {
-      openCapabilityProviderTemplate(template);
-      return;
-    }
-    editProviderConnection(connection);
-  }
-
   const providerTestStageLabel = useCallback((stage: string): string => {
     const normalizedStage = stage.trim();
     const labels: Record<string, string> = {
@@ -2209,24 +2121,6 @@ function AiResourcesContent() {
     () => filteredConnections.filter((connection) => supplierCategory(connection) === 'ai'),
     [filteredConnections]
   );
-
-  const capabilitySupplierConnections = useMemo(
-    () => filteredConnections.filter(
-      (connection) => supplierCategory(connection) === 'capability'
-        && capabilityProviderCategory(connection) !== 'vector'
-    ),
-    [filteredConnections]
-  );
-
-  const capabilityConnectionsByCategory = useMemo(() => ({
-    search: capabilitySupplierConnections.filter((connection) => capabilityProviderCategory(connection) === 'search'),
-    image: capabilitySupplierConnections.filter((connection) => capabilityProviderCategory(connection) === 'image'),
-    vector: capabilitySupplierConnections.filter((connection) => capabilityProviderCategory(connection) === 'vector'),
-  }), [capabilitySupplierConnections]);
-
-  const activeCapabilityConnections = capabilityCategoryFilter === 'all'
-    ? capabilitySupplierConnections
-    : capabilityConnectionsByCategory[capabilityCategoryFilter];
 
   const capabilityCategoryLabel = useCallback((category: CapabilityProviderCategory): string => {
     if (category === 'search') return aiText('capability_category_search', 'Search');
@@ -2529,11 +2423,6 @@ function AiResourcesContent() {
     modelVisibilityRows.length,
     selectedProviderModelIds.length
   );
-  const capabilityAddDialogRef = useDialogKeyboard<HTMLDivElement>({
-    open: capabilityAddDialogOpen,
-    onClose: () => setCapabilityAddDialogOpen(false),
-  });
-
   if (loading) {
     return <AdminRouteSkeleton />;
   }
@@ -2543,7 +2432,7 @@ function AiResourcesContent() {
       <BackofficePageStack>
         <BackofficePrimaryPanel
           eyebrow={aiText('eyebrow', 'Runtime plane')}
-          title={aiText('title', 'Suppliers')}
+          title={aiText('title', 'Model suppliers')}
           description={aiText('unavailable_desc', 'Cloud runtime provider resources are unavailable.')}
         >
           <BackofficeDiagnosticNotice
@@ -2562,21 +2451,15 @@ function AiResourcesContent() {
   const modelSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai'
   ).length;
-  const readyCapabilitySupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'capability' && connection.status === 'ready'
-  ).length;
-  const capabilitySupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'capability'
-  ).length;
   const attentionSupplierCount = data.connections.filter(
-    (connection) => connection.status !== 'ready'
+    (connection) => supplierCategory(connection) === 'ai' && connection.status !== 'ready'
   ).length;
   return (
     <BackofficePageStack>
       <BackofficePrimaryPanel
         eyebrow={aiText('eyebrow', 'Runtime plane')}
-        title={aiText('title', 'Suppliers')}
-        description={aiText('description', 'Manage Cloud runtime provider connections, model visibility, and capability sources. Runtime diagnostics stay in the Runtime Diagnostics page.')}
+        title={aiText('title', 'Model suppliers')}
+        description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
         descriptionDisplay="hint"
         aside={(
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -2594,8 +2477,6 @@ function AiResourcesContent() {
         <SupplierSummaryCards
           readyModelSupplierCount={readyModelSupplierCount}
           modelSupplierCount={modelSupplierCount}
-          readyCapabilitySupplierCount={readyCapabilitySupplierCount}
-          capabilitySupplierCount={capabilitySupplierCount}
           attentionSupplierCount={attentionSupplierCount}
           translate={aiText}
         />
@@ -2607,25 +2488,16 @@ function AiResourcesContent() {
       {activeView === 'connections' ? (
         <>
           <BackofficeSectionPanel>
-        <div className="mb-4 flex justify-end">
-          <Link href="/admin/vector-settings" className="btn btn-secondary btn-sm">
-            {aiText('action_open_vector_settings', 'Open vector settings')}
-          </Link>
-        </div>
         <SupplierToolbar
-          supplierTypeFilter={supplierTypeFilter}
-          onSupplierTypeFilterChange={handleSupplierTypeFilterChange}
           connectionSearch={connectionSearch}
           onConnectionSearchChange={handleConnectionSearchChange}
           hasLatestOperation={Boolean(lastReceipt)}
           onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
           onAddModelSupplier={openNewProviderConnection}
-          onAddCapabilitySupplier={() => setCapabilityAddDialogOpen(true)}
           translate={aiText}
         />
 
-        {supplierTypeFilter === 'model' || providerFormOpen ? (
-          <>
+        <>
         <ProviderConnectionDialog
           open={providerFormOpen}
           title={providerDialogTitle}
@@ -3237,126 +3109,7 @@ function AiResourcesContent() {
           onCancelDelete={() => setConfirmingDeleteConnectionId('')}
           translate={aiText}
         />
-          </>
-        ) : null}
-
-        {supplierTypeFilter === 'capability' ? (
-          <div className="mt-4 space-y-4">
-            <CapabilitySupplierTable
-              connections={activeCapabilityConnections}
-              connectionsByCategory={capabilityConnectionsByCategory}
-              categoryFilter={capabilityCategoryFilter}
-              onCategoryFilterChange={handleCapabilityCategoryFilterChange}
-              statusFilter={connectionStatusFilter}
-              onStatusFilterChange={handleConnectionStatusFilterChange}
-              selectedConnectionId={selectedConnectionId}
-              onSelectConnection={handleSelectConnection}
-              testResults={connectionTestResults}
-              testingConnectionId={testingConnectionId}
-              deletingConnectionId={deletingConnectionId}
-              confirmingDeleteConnectionId={confirmingDeleteConnectionId}
-              categoryForConnection={capabilityProviderCategory}
-              categoryLabel={capabilityCategoryLabel}
-              purposeLabel={capabilityProviderPurposeLabel}
-              providerTestStageLabel={providerTestStageLabel}
-              providerTestMessage={providerTestMessage}
-              onTest={(connectionId) => void runProviderConnectionTest(connectionId)}
-              onConfigure={configureCapabilityConnection}
-              onDelete={(connection) => void deleteProviderConnection(connection)}
-              onRequestDelete={setConfirmingDeleteConnectionId}
-              onCancelDelete={() => setConfirmingDeleteConnectionId('')}
-              translate={aiText}
-            />
-            {capabilityAddDialogOpen ? (
-              <div
-                ref={capabilityAddDialogRef}
-                className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-6 backdrop-blur-sm sm:py-10"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="capability-provider-dialog-title"
-                tabIndex={-1}
-              >
-                <div className="max-h-[calc(100vh-4rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-                  <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 id="capability-provider-dialog-title" className="text-base font-semibold text-slate-950 dark:text-white">
-                          {aiText('capability_add_dialog_title', 'Choose built-in capability supplier')}
-                        </h3>
-                        <BackofficeStatusBadge label={aiText('badge_builtin_template', 'Built-in template')} status="info" />
-                      </div>
-                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        {aiText('capability_add_dialog_desc', 'Existing suppliers are not duplicated. Choosing a template opens its current configuration.')}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary justify-center"
-                      onClick={() => setCapabilityAddDialogOpen(false)}
-                    >
-                      {aiText('action_close_dialog', 'Close')}
-                    </button>
-                  </div>
-                  <div
-                    className="mt-4 flex flex-wrap gap-2"
-                    role="tablist"
-                    aria-label={aiText('capability_add_category_tabs', 'Capability supplier categories')}
-                  >
-                    {(['search', 'image'] as Array<CapabilityProviderTemplate['category']>).map((category) => (
-                      <button
-                        key={category}
-                        type="button"
-                        role="tab"
-                        aria-selected={activeCapabilityCategory === category}
-                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                          activeCapabilityCategory === category
-                            ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-700'
-                        }`}
-                        onClick={() => setActiveCapabilityCategory(category)}
-                      >
-                        {capabilityCategoryLabel(category)} · {CAPABILITY_PROVIDER_TEMPLATES.filter((template) => template.category === category).length}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <h4 className="text-sm font-semibold text-slate-950 dark:text-white">
-                        {capabilityCategoryLabel(activeCapabilityCategory)}
-                      </h4>
-                      <BackofficeStatusBadge
-                        label={aiText('capability_add_active_category_count', '{{count}} templates', {
-                          count: String(visibleCapabilityTemplates.length),
-                        })}
-                        status="info"
-                      />
-                    </div>
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {visibleCapabilityTemplates.map((template) => (
-                        <button
-                          key={template.id}
-                          type="button"
-                          className="rounded-lg border border-slate-200 p-3 text-left transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-slate-700 dark:hover:bg-slate-900/45"
-                          onClick={() => openCapabilityProviderTemplate(template)}
-                        >
-                          <div className="font-semibold text-slate-950 dark:text-white">{template.label}</div>
-                          <div className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                            {aiText(template.descriptionKey, template.descriptionFallback)}
-                          </div>
-                        </button>
-                      ))}
-                      {visibleCapabilityTemplates.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                          {aiText('capability_add_empty_category', 'No built-in templates in this category.')}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        </>
           </BackofficeSectionPanel>
         </>
       ) : null}

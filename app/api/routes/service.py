@@ -2647,7 +2647,7 @@ async def list_admin_accounts(
     package_kind: str | None = Query(default=None),
     top_plan_id: str | None = Query(default=None),
     exclude_internal: bool = Query(default=False),
-    sort: str = Query(default="created_at", pattern="^(created_at|display_name)$"),
+    sort: str = Query(default="created_at", pattern="^(created_at|display_name|risk)$"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:

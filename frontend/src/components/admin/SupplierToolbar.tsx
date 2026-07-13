@@ -1,57 +1,22 @@
-import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
-
-export type SupplierTypeFilter = 'model' | 'capability';
-
 type SupplierToolbarProps = {
-  supplierTypeFilter: SupplierTypeFilter;
-  onSupplierTypeFilterChange: (value: SupplierTypeFilter) => void;
   connectionSearch: string;
   onConnectionSearchChange: (value: string) => void;
   hasLatestOperation: boolean;
   onOpenLatestOperation: () => void;
   onAddModelSupplier: () => void;
-  onAddCapabilitySupplier: () => void;
   translate: (key: string, fallback: string) => string;
 };
 
 export function SupplierToolbar({
-  supplierTypeFilter,
-  onSupplierTypeFilterChange,
   connectionSearch,
   onConnectionSearchChange,
   hasLatestOperation,
   onOpenLatestOperation,
   onAddModelSupplier,
-  onAddCapabilitySupplier,
   translate,
 }: SupplierToolbarProps) {
   return (
-    <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-          {translate('field_supplier_type_filter', 'Supplier type')}
-        </span>
-        <div
-          className="flex flex-wrap gap-2"
-          role="tablist"
-          aria-label={translate('supplier_type_tabs_label', 'Supplier type')}
-        >
-          {([
-            ['model', translate('supplier_filter_model', 'Model suppliers')],
-            ['capability', translate('supplier_filter_capability', 'Capability suppliers')],
-          ] as Array<[SupplierTypeFilter, string]>).map(([value, label]) => (
-            <BackofficeFilterPill
-              key={value}
-              role="tab"
-              aria-selected={supplierTypeFilter === value}
-              active={supplierTypeFilter === value}
-              onClick={() => onSupplierTypeFilterChange(value)}
-            >
-              {label}
-            </BackofficeFilterPill>
-          ))}
-        </div>
-      </div>
+    <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-end">
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
         <label className="grid w-full gap-1 sm:w-[22rem]">
           <span className="sr-only">{translate('field_search_connections', 'Search suppliers')}</span>
@@ -67,15 +32,9 @@ export function SupplierToolbar({
             {translate('action_latest_operation', 'Latest operation')}
           </button>
         ) : null}
-        {supplierTypeFilter === 'model' ? (
-          <button type="button" className="btn btn-primary justify-center" onClick={onAddModelSupplier}>
-            {translate('action_add_model_supplier', 'Add model supplier')}
-          </button>
-        ) : (
-          <button type="button" className="btn btn-primary justify-center" onClick={onAddCapabilitySupplier}>
-            {translate('action_add_capability_supplier', 'Add capability supplier')}
-          </button>
-        )}
+        <button type="button" className="btn btn-primary justify-center" onClick={onAddModelSupplier}>
+          {translate('action_add_model_supplier', 'Add model supplier')}
+        </button>
       </div>
     </div>
   );

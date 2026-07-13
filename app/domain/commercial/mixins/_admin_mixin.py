@@ -1209,7 +1209,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 100,
     ) -> dict[str, object]:
         normalized_query = " ".join(str(q or "").strip().lower().split())
-        normalized_sort = sort if sort in {"created_at", "display_name"} else "created_at"
+        normalized_sort = sort if sort in {"created_at", "display_name", "risk"} else "created_at"
         normalized_offset = max(0, int(offset or 0))
 
         def account_payload_for(item: dict[str, object]) -> dict[str, object]:
@@ -1226,6 +1226,34 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 or str(account_payload.get("account_id") or "").strip()
             )
             return (display_name.lower(), str(account_payload.get("account_id") or ""))
+
+        def account_risk_sort_key(item: dict[str, object]) -> tuple[int, datetime, str, str]:
+            account_payload = account_payload_for(item)
+            account_status = str(account_payload.get("status") or "")
+            expiry_raw = item.get("nearest_expiry_at")
+            expiry = expiry_raw if isinstance(expiry_raw, datetime) else None
+            if expiry is None and isinstance(expiry_raw, str) and expiry_raw:
+                try:
+                    expiry = datetime.fromisoformat(expiry_raw.replace("Z", "+00:00"))
+                except ValueError:
+                    expiry = None
+            now = self.now_factory()
+            if expiry is not None and expiry.tzinfo is None and now.tzinfo is not None:
+                expiry = expiry.replace(tzinfo=now.tzinfo)
+            risk_rank = 3
+            if account_status == "suspended":
+                risk_rank = 0
+            elif bool(item.get("coverage_follow_up_required")):
+                risk_rank = 1
+            elif expiry is not None and expiry <= now + timedelta(days=14):
+                risk_rank = 2
+            display_name, account_id = account_display_sort_key(item)
+            return (
+                risk_rank,
+                expiry or datetime.max.replace(tzinfo=now.tzinfo),
+                display_name,
+                account_id,
+            )
 
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -1255,7 +1283,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 or package_kind
                 or top_plan_id
                 or normalized_query
-                or normalized_sort == "display_name"
+                or normalized_sort in {"display_name", "risk"}
                 or normalized_offset
                 else limit,
             )
@@ -1351,6 +1379,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ]
         if normalized_sort == "display_name":
             items = sorted(items, key=account_display_sort_key)
+        elif normalized_sort == "risk":
+            items = sorted(items, key=account_risk_sort_key)
         total = len(items)
         if normalized_offset:
             items = items[normalized_offset:]
