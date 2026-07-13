@@ -455,7 +455,7 @@ def test_runtime_settings_project_capability_provider_connections(
 
     projection = apply_provider_connection_runtime_settings(settings)
 
-    assert projection.applied_count == 4
+    assert projection.applied_count == 3
     assert settings.web_search_provider == "auto"
     assert settings.web_search_zhihu_base_url == "https://developer.zhihu.example"
     assert settings.web_search_zhihu_access_secret == "zhihu-secret"
@@ -466,8 +466,8 @@ def test_runtime_settings_project_capability_provider_connections(
     assert settings.site_knowledge_embedding_provider == "deterministic"
     assert settings.site_knowledge_rerank_provider == "jina"
     assert settings.site_knowledge_jina_api_key == "jina-secret"
-    assert settings.site_knowledge_vector_backend == "zilliz_cloud"
-    assert settings.site_knowledge_zilliz_token == "zilliz-token"
+    assert projection.vector_store_count == 0
+    assert settings.site_knowledge_vector_backend == "postgres_json"
 
     serialized = service.list_connections()
     serialized_connections = {
@@ -776,7 +776,7 @@ def test_clearing_external_service_credential_persists_disabled_runtime_state(
     dispose_engine(database_url)
 
 
-def test_disabling_vector_connections_restores_builtin_runtime_defaults(
+def test_generic_vector_connection_cannot_override_fixed_profile(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -813,8 +813,9 @@ def test_disabling_vector_connections_restores_builtin_runtime_defaults(
     service.save_connection(vector_payload)
     service.save_connection(rerank_payload)
 
-    apply_provider_connection_runtime_settings(settings)
-    assert settings.site_knowledge_vector_backend == "zilliz_cloud"
+    initial_projection = apply_provider_connection_runtime_settings(settings)
+    assert initial_projection.vector_store_count == 0
+    assert settings.site_knowledge_vector_backend == "postgres_json"
     assert settings.site_knowledge_rerank_provider == "jina"
 
     service.save_connection({**vector_payload, "enabled": False}, connection_id="vector_zilliz")

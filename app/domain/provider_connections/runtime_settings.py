@@ -17,6 +17,9 @@ from app.domain.site_knowledge.vector_profile_contract import (
     SITE_KNOWLEDGE_VECTOR_PROBE_REVISION,
     SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
     SITE_KNOWLEDGE_VECTOR_PROVIDER_ID,
+    SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+    SITE_KNOWLEDGE_VECTOR_STORE_PROBE_REVISION,
+    SITE_KNOWLEDGE_VECTOR_STORE_PROVIDER_ID,
 )
 
 
@@ -400,18 +403,34 @@ def _apply_vector_store_connection(
     credential: str,
     config: dict[str, Any],
 ) -> bool:
-    if provider_id != "zilliz":
+    if provider_id != SITE_KNOWLEDGE_VECTOR_STORE_PROVIDER_ID:
+        return False
+    if row.status != "ready":
+        return False
+    if str(config.get("site_knowledge_vector_store_profile_id") or "") != (
+        SITE_KNOWLEDGE_VECTOR_PROFILE_ID
+    ):
+        return False
+    if str(config.get("site_knowledge_vector_store_probe_revision") or "") != (
+        SITE_KNOWLEDGE_VECTOR_STORE_PROBE_REVISION
+    ):
+        return False
+    if _int(config.get("site_knowledge_vector_store_dimensions"), 0) != (
+        SITE_KNOWLEDGE_VECTOR_DIMENSIONS
+    ):
+        return False
+    if _string(config.get("site_knowledge_vector_store_metric")).upper() != (
+        SITE_KNOWLEDGE_VECTOR_METRIC
+    ):
+        return False
+    if _string(config.get("collection")) != SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION:
         return False
     settings.site_knowledge_vector_backend = "zilliz_cloud"
     settings.site_knowledge_zilliz_uri = _string(config.get("uri") or row.base_url)
     if credential:
         settings.site_knowledge_zilliz_token = credential
-    settings.site_knowledge_zilliz_database = _string(
-        config.get("database") or settings.site_knowledge_zilliz_database or ""
-    )
-    settings.site_knowledge_zilliz_collection = _string(
-        config.get("collection") or settings.site_knowledge_zilliz_collection
-    )
+    settings.site_knowledge_zilliz_database = None
+    settings.site_knowledge_zilliz_collection = SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION
     settings.site_knowledge_zilliz_timeout_seconds = _positive_float(
         config.get("timeout_seconds"), settings.site_knowledge_zilliz_timeout_seconds
     )

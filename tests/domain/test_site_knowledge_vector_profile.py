@@ -9,19 +9,30 @@ from app.adapters.providers.siliconflow import SiliconFlowProviderAdapter
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import ProviderConnection
+from app.core.secrets import encrypt_provider_connection_secret
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
 from app.domain.provider_connections.service import ProviderConnectionAdminService
+from app.domain.site_knowledge import vector_profile as vector_profile_module
+from app.domain.site_knowledge.backends import (
+    SiteKnowledgeBackendError,
+    ZillizCloudSiteKnowledgeBackend,
+)
 from app.domain.site_knowledge.vector_profile import (
     SiteKnowledgeVectorProfileAdminError,
     SiteKnowledgeVectorProfileAdminService,
 )
 from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_VECTOR_BASE_URL,
     SITE_KNOWLEDGE_VECTOR_CONNECTION_ID,
     SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
     SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+    SITE_KNOWLEDGE_VECTOR_PROBE_REVISION,
     SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+    SITE_KNOWLEDGE_VECTOR_PROVIDER_ID,
+    SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+    SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID,
 )
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -85,7 +96,11 @@ def test_fixed_vector_profile_saves_only_after_a_valid_probe(
     assert initial["profile_id"] == SITE_KNOWLEDGE_VECTOR_PROFILE_ID
     assert initial["model_id"] == SITE_KNOWLEDGE_VECTOR_MODEL_ID
     assert initial["dimensions"] == SITE_KNOWLEDGE_VECTOR_DIMENSIONS
-    assert initial["editable_fields"] == ["credential"]
+    assert initial["editable_fields"] == [
+        "credential",
+        "zilliz_endpoint",
+        "zilliz_token",
+    ]
 
     result = service.save_and_verify("siliconflow-secret")
 
@@ -210,3 +225,280 @@ def test_fixed_vector_profile_rejects_unexpected_reported_model(
 
     assert caught.value.error_code == "site_knowledge_vector_profile.model_mismatch"
     dispose_engine(database_url)
+
+
+def test_fixed_vector_store_verifies_and_persists_encrypted_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    observed: dict[str, object] = {}
+
+    def fake_backend(probe_settings: Settings) -> object:
+        observed["uri"] = probe_settings.site_knowledge_zilliz_uri
+        observed["token"] = probe_settings.site_knowledge_zilliz_token
+        observed["collection"] = probe_settings.site_knowledge_zilliz_collection
+        observed["dimensions"] = probe_settings.site_knowledge_embedding_dimensions
+        observed["metric"] = probe_settings.site_knowledge_vector_metric_type
+        return object()
+
+    monkeypatch.setattr(
+        vector_profile_module,
+        "ZillizCloudSiteKnowledgeBackend",
+        fake_backend,
+    )
+    service = SiteKnowledgeVectorProfileAdminService(database_url, settings)
+
+    result = service.save_and_verify_vector_store(
+        "https://cluster.example.zillizcloud.com/",
+        "zilliz-secret",
+    )
+
+    assert result["vector_store"]["verified"] is True
+    assert result["vector_store"]["endpoint"] == (
+        "https://cluster.example.zillizcloud.com"
+    )
+    assert result["vector_store"]["collection"] == SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION
+    assert result["vector_store_probe"]["dimensions"] == 1024
+    assert "zilliz-secret" not in str(result)
+    assert observed == {
+        "uri": "https://cluster.example.zillizcloud.com",
+        "token": "zilliz-secret",
+        "collection": SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+        "dimensions": 1024,
+        "metric": "COSINE",
+    }
+    assert settings.site_knowledge_vector_backend == "zilliz_cloud"
+    assert settings.site_knowledge_zilliz_collection == SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION
+
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID)
+        assert row is not None
+        assert row.status == "ready"
+        assert row.secret_ciphertext
+        assert row.secret_ciphertext != "zilliz-secret"
+        assert row.config_json["site_knowledge_vector_store_dimensions"] == 1024
+        assert row.config_json["site_knowledge_vector_store_metric"] == "COSINE"
+
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://cluster.example.zillizcloud.com",
+        "https://vector.example.com",
+        "https://user:pass@cluster.example.zillizcloud.com",
+        "https://cluster.example.zillizcloud.com/private",
+        "https://cluster.example.zillizcloud.com?token=secret",
+    ],
+)
+def test_fixed_vector_store_rejects_unsafe_endpoints(
+    tmp_path: Path,
+    endpoint: str,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = SiteKnowledgeVectorProfileAdminService(
+        database_url,
+        _settings(database_url),
+    )
+
+    with pytest.raises(SiteKnowledgeVectorProfileAdminError) as caught:
+        service.save_and_verify_vector_store(endpoint, "zilliz-secret")
+
+    assert caught.value.error_code == (
+        "site_knowledge_vector_profile.zilliz_endpoint_invalid"
+    )
+    with get_session(database_url) as session:
+        assert session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID) is None
+    dispose_engine(database_url)
+
+
+def test_production_profile_requires_a_verified_vector_store(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.environment = "production"
+    service = SiteKnowledgeVectorProfileAdminService(database_url, settings)
+
+    with get_session(database_url) as session:
+        session.add(
+            ProviderConnection(
+                connection_id=SITE_KNOWLEDGE_VECTOR_CONNECTION_ID,
+                provider_type=SITE_KNOWLEDGE_VECTOR_PROVIDER_ID,
+                display_name="Verified embedding",
+                enabled=True,
+                base_url=SITE_KNOWLEDGE_VECTOR_BASE_URL,
+                config_json={
+                    "site_knowledge_profile_id": SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+                    "site_knowledge_probe_revision": SITE_KNOWLEDGE_VECTOR_PROBE_REVISION,
+                    "site_knowledge_model_id": SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+                    "dimensions": SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
+                    "metric": "COSINE",
+                },
+                secret_ciphertext=encrypt_provider_connection_secret(
+                    "embedding-secret",
+                    settings=settings,
+                ),
+                status="ready",
+                source_role="execution_source",
+                metadata_json={},
+            )
+        )
+        session.add(
+            ProviderConnection(
+                connection_id=SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID,
+                provider_type="vector_store_provider",
+                display_name="Unverified Zilliz",
+                enabled=True,
+                base_url="https://cluster.example.zillizcloud.com",
+                config_json={
+                    "uri": "https://cluster.example.zillizcloud.com",
+                    "collection": SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+                },
+                secret_ciphertext=encrypt_provider_connection_secret(
+                    "zilliz-secret",
+                    settings=settings,
+                ),
+                status="ready",
+                source_role="execution_source",
+                metadata_json={},
+            )
+        )
+        session.commit()
+
+    profile = service.get_profile()
+
+    assert profile["provider"]["verified"] is True
+    assert profile["vector_store"]["configured"] is True
+    assert profile["vector_store"]["verified"] is False
+    assert profile["status"] == "vector_store_pending"
+    dispose_engine(database_url)
+
+
+def test_fixed_vector_store_fails_closed_on_incompatible_collection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    def incompatible_backend(_settings: Settings) -> object:
+        raise SiteKnowledgeBackendError(
+            "site_knowledge.zilliz_schema_incompatible",
+            "incompatible schema detail",
+        )
+
+    monkeypatch.setattr(
+        vector_profile_module,
+        "ZillizCloudSiteKnowledgeBackend",
+        incompatible_backend,
+    )
+    service = SiteKnowledgeVectorProfileAdminService(
+        database_url,
+        _settings(database_url),
+    )
+
+    with pytest.raises(SiteKnowledgeVectorProfileAdminError) as caught:
+        service.save_and_verify_vector_store(
+            "https://cluster.example.zillizcloud.com",
+            "zilliz-secret",
+        )
+
+    assert caught.value.error_code == (
+        "site_knowledge_vector_profile.zilliz_schema_incompatible"
+    )
+    assert "incompatible schema detail" not in caught.value.message
+    with get_session(database_url) as session:
+        assert session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID) is None
+    dispose_engine(database_url)
+
+
+def test_generic_vector_store_write_cannot_forge_profile_verification(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    ProviderConnectionAdminService(database_url, settings).save_connection(
+        {
+            "connection_id": SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID,
+            "provider_id": "zilliz",
+            "provider_type": "vector_store_provider",
+            "kind": "vector_store_provider",
+            "display_name": "Forged Zilliz profile",
+            "enabled": True,
+            "base_url": "https://cluster.example.zillizcloud.com",
+            "capability_ids": ["vector_store"],
+            "runtime_profile_ids": ["site-knowledge.vector-store"],
+            "config": {
+                "collection": SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+                "site_knowledge_vector_store_profile_id": SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+                "site_knowledge_vector_store_probe_revision": (
+                    "site-knowledge-vector-store-probe.v1"
+                ),
+                "site_knowledge_vector_store_dimensions": 1024,
+                "site_knowledge_vector_store_metric": "COSINE",
+            },
+            "credential": "unverified-secret",
+        }
+    )
+
+    projection = apply_provider_connection_runtime_settings(settings)
+    profile = SiteKnowledgeVectorProfileAdminService(database_url, settings).get_profile()
+
+    assert projection.vector_store_count == 0
+    assert settings.site_knowledge_vector_backend == "postgres_json"
+    assert profile["vector_store"]["verified"] is False
+    dispose_engine(database_url)
+
+
+def test_zilliz_collection_validation_rejects_wrong_metric() -> None:
+    class FakeDataType:
+        VARCHAR = "VARCHAR"
+        FLOAT_VECTOR = "FLOAT_VECTOR"
+
+    class FakeClient:
+        def describe_collection(self, _collection: str) -> dict[str, object]:
+            return {
+                "fields": [
+                    {"name": "id", "type": "VARCHAR"},
+                    {"name": "vector", "type": "FLOAT_VECTOR", "params": {"dim": 1024}},
+                    {"name": "site_id", "type": "VARCHAR"},
+                    {"name": "post_id", "type": "INT64"},
+                    {"name": "source_type", "type": "VARCHAR"},
+                    {"name": "source_id", "type": "INT64"},
+                    {"name": "parent_post_id", "type": "INT64"},
+                    {"name": "chunk_index", "type": "INT64"},
+                    {"name": "post_type", "type": "VARCHAR"},
+                    {"name": "post_status", "type": "VARCHAR"},
+                    {"name": "title", "type": "VARCHAR"},
+                    {"name": "url", "type": "VARCHAR"},
+                    {"name": "chunk_text", "type": "VARCHAR"},
+                    {"name": "content_hash", "type": "VARCHAR"},
+                    {"name": "indexed_at", "type": "VARCHAR"},
+                ]
+            }
+
+        def list_indexes(self, **_kwargs: object) -> list[str]:
+            return ["vector"]
+
+        def describe_index(self, **_kwargs: object) -> dict[str, str]:
+            return {"metric_type": "L2"}
+
+    backend = object.__new__(ZillizCloudSiteKnowledgeBackend)
+    backend.client = FakeClient()
+    backend.data_type = FakeDataType()
+    backend.collection = SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION
+    backend.dimension = 1024
+    backend.metric_type = "COSINE"
+
+    with pytest.raises(SiteKnowledgeBackendError) as caught:
+        backend._validate_collection_schema()
+
+    assert caught.value.error_code == "site_knowledge.zilliz_schema_incompatible"

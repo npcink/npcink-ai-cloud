@@ -107,9 +107,12 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
   }
   if (
     upperMethod === 'PUT' &&
-    normalized === 'site-knowledge-vector-profile'
+    (
+      normalized === 'site-knowledge-vector-profile' ||
+      normalized === 'site-knowledge-vector-profile/vector-store'
+    )
   ) {
-    return '/internal/service/admin/site-knowledge-vector-profile';
+    return `/internal/service/admin/${normalized}`;
   }
   if (
     (upperMethod === 'PATCH' || upperMethod === 'POST') &&

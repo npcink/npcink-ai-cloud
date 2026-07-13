@@ -334,6 +334,13 @@ class SiteKnowledgeVectorProfilePayload(BaseModel):
     credential: str | None = Field(default=None, max_length=500)
 
 
+class SiteKnowledgeVectorStorePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint: str | None = Field(default=None, max_length=500)
+    token: str | None = Field(default=None, max_length=1000)
+
+
 class PortalPublicServiceSettingsPayload(BaseModel):
     enabled: bool = True
     public_base_url: str = Field(max_length=500)
@@ -584,6 +591,7 @@ def _record_provider_connection_audit(
 def _record_site_knowledge_vector_profile_audit(
     request: Request,
     *,
+    event_kind: str = "site_knowledge_vector_profile.save_and_verify",
     outcome: str,
     credential_present: bool,
     result: dict[str, Any] | None = None,
@@ -593,7 +601,7 @@ def _record_site_knowledge_vector_profile_audit(
     try:
         return _get_commercial_service(request).record_service_audit_event(
             audit_context=_build_audit_context(request),
-            event_kind="site_knowledge_vector_profile.save_and_verify",
+            event_kind=event_kind,
             outcome=outcome,
             scope_kind="runtime_profile",
             scope_id=SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
@@ -602,7 +610,11 @@ def _record_site_knowledge_vector_profile_audit(
                 "credential_present": credential_present,
                 "credential_value_exposure": "none",
                 "status": str((result or {}).get("status") or ""),
-                "provider_id": str((result or {}).get("provider", {}).get("provider_id") or ""),
+                "provider_id": str(
+                    (result or {}).get("vector_store", {}).get("provider_id")
+                    or (result or {}).get("provider", {}).get("provider_id")
+                    or ""
+                ),
                 "model_id": str((result or {}).get("model_id") or ""),
                 "dimensions": int((result or {}).get("dimensions") or 0),
                 "error_code": error_code,
@@ -3992,6 +4004,67 @@ async def update_admin_site_knowledge_vector_profile(
                 outcome="succeeded",
                 effective_summary=(
                     "Site Knowledge vector profile was saved and verified with 1024 dimensions."
+                ),
+                audit_event=audit_event,
+            ),
+        ),
+        revision="m6",
+    )
+
+
+@router.put("/admin/site-knowledge-vector-profile/vector-store")
+async def update_admin_site_knowledge_vector_store(
+    request: Request,
+    payload: SiteKnowledgeVectorStorePayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    token_present = bool(str(payload.token or "").strip())
+    event_kind = "site_knowledge_vector_profile.vector_store.save_and_verify"
+    try:
+        result = SiteKnowledgeVectorProfileAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_and_verify_vector_store(payload.endpoint, payload.token)
+    except SiteKnowledgeVectorProfileAdminError as error:
+        _record_site_knowledge_vector_profile_audit(
+            request,
+            event_kind=event_kind,
+            outcome="error",
+            credential_present=token_present,
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="m6",
+            ),
+        )
+    audit_event = _record_site_knowledge_vector_profile_audit(
+        request,
+        event_kind=event_kind,
+        outcome="succeeded",
+        credential_present=token_present,
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="Site Knowledge vector store saved and verified",
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind=event_kind,
+                scope_kind="runtime_profile",
+                scope_id=SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+                outcome="succeeded",
+                effective_summary=(
+                    "Zilliz Cloud was verified for the fixed 1024-dimension COSINE profile."
                 ),
                 audit_event=audit_event,
             ),

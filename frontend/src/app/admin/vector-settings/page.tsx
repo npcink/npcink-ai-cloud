@@ -38,9 +38,15 @@ type VectorProfile = {
   vector_store: {
     provider_id: string;
     display_name: string;
+    connection_id: string;
     configured: boolean;
+    verified: boolean;
     status: string;
     settings_owner: string;
+    endpoint: string;
+    token_configured: boolean;
+    collection: string;
+    last_tested_at: string;
   };
 };
 
@@ -58,8 +64,11 @@ export default function VectorSettingsPage() {
   ), [t, zh]);
   const [profile, setProfile] = useState<VectorProfile | null>(null);
   const [credential, setCredential] = useState('');
+  const [zillizEndpoint, setZillizEndpoint] = useState('');
+  const [zillizToken, setZillizToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingVectorStore, setSavingVectorStore] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -77,7 +86,9 @@ export default function VectorSettingsPage() {
           copy('admin.vector_settings.load_error', '加载向量服务失败。', 'Failed to load the vector service.')
         ));
       }
-      setProfile(payload?.data as VectorProfile);
+      const nextProfile = payload?.data as VectorProfile;
+      setProfile(nextProfile);
+      setZillizEndpoint(nextProfile?.vector_store?.endpoint || '');
     } catch (loadError) {
       setError(loadError instanceof Error
         ? loadError.message
@@ -130,6 +141,69 @@ export default function VectorSettingsPage() {
         : copy('admin.vector_settings.save_error', '保存并验证失败。', 'Save and verification failed.'));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveAndVerifyVectorStore() {
+    if (!zillizEndpoint.trim()) {
+      setError(copy(
+        'admin.vector_settings.zilliz_endpoint_required',
+        '请填写 Zilliz Endpoint。',
+        'Enter the Zilliz endpoint.'
+      ));
+      return;
+    }
+    if (!zillizToken.trim() && !profile?.vector_store.token_configured) {
+      setError(copy(
+        'admin.vector_settings.zilliz_token_required',
+        '请填写 Zilliz Token。',
+        'Enter the Zilliz token.'
+      ));
+      return;
+    }
+    setSavingVectorStore(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch('/api/admin/site-knowledge-vector-profile/vector-store', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: zillizEndpoint.trim(),
+          token: zillizToken.trim() || null,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.status === 'error') {
+        throw new Error(resolveUiErrorMessage(
+          payload,
+          copy(
+            'admin.vector_settings.zilliz_save_error',
+            'Zilliz 保存并检测失败。',
+            'Zilliz save and verification failed.'
+          )
+        ));
+      }
+      const nextProfile = payload?.data as VectorProfile;
+      setProfile(nextProfile);
+      setZillizEndpoint(nextProfile?.vector_store?.endpoint || zillizEndpoint.trim());
+      setZillizToken('');
+      setMessage(copy(
+        'admin.vector_settings.zilliz_saved',
+        'Zilliz Cloud 已连接，固定 Collection 已通过 1024 维 COSINE 检测。',
+        'Zilliz Cloud is connected and the fixed collection passed its 1024-dimension COSINE check.'
+      ));
+    } catch (saveError) {
+      setError(saveError instanceof Error
+        ? saveError.message
+        : copy(
+          'admin.vector_settings.zilliz_save_error',
+          'Zilliz 保存并检测失败。',
+          'Zilliz save and verification failed.'
+        ));
+    } finally {
+      setSavingVectorStore(false);
     }
   }
 
@@ -310,7 +384,7 @@ export default function VectorSettingsPage() {
       </BackofficeSectionPanel>
 
       <BackofficeSectionPanel data-vector-section="vector-store">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-slate-950 dark:text-white">
               {copy('admin.vector_settings.store_title', '向量数据库', 'Vector database')}
@@ -318,17 +392,72 @@ export default function VectorSettingsPage() {
             <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
               {copy(
                 'admin.vector_settings.store_desc',
-                '生产环境固定使用 Zilliz Cloud；本地与自动化测试使用 PostgreSQL JSON。数据库连接由部署侧维护。',
-                'Production is fixed to Zilliz Cloud; local and automated tests use PostgreSQL JSON. Deployment owns the database connection.'
+                '生产环境固定使用 Zilliz Cloud。填写集群地址和 Token 后，系统会检测并初始化固定 Collection。',
+                'Production is fixed to Zilliz Cloud. Enter the cluster endpoint and token to verify and initialize the fixed collection.'
               )}
             </p>
           </div>
           <BackofficeStatusBadge
-            label={profile?.vector_store.configured
+            label={profile?.vector_store.verified
               ? copy('common.ready', '已就绪', 'Ready')
-              : copy('admin.vector_settings.deployment_managed', '部署侧管理', 'Deployment managed')}
-            status={profile?.vector_store.configured ? 'success' : 'read_only'}
+              : copy('admin.vector_settings.status_not_configured', '未配置', 'Not configured')}
+            status={profile?.vector_store.verified ? 'success' : 'inactive'}
           />
+        </div>
+        <div className="mt-4 max-w-2xl space-y-4">
+          <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+            Zilliz Endpoint
+            <input
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              className="h-11 rounded-lg border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-950"
+              value={zillizEndpoint}
+              onChange={(event) => setZillizEndpoint(event.target.value)}
+              placeholder="https://…zillizcloud.com"
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+            Zilliz Token
+            <input
+              type="password"
+              autoComplete="new-password"
+              className="h-11 rounded-lg border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-950"
+              value={zillizToken}
+              onChange={(event) => setZillizToken(event.target.value)}
+              placeholder={profile?.vector_store.token_configured
+                ? copy('admin.vector_settings.keep_zilliz_token', '留空则使用已保存 Token 重新检测', 'Leave blank to recheck the saved token')
+                : ''}
+            />
+          </label>
+          <dl className="grid gap-4 rounded-lg bg-slate-50 p-4 text-sm dark:bg-slate-900 sm:grid-cols-3">
+            <div><dt className="text-xs text-slate-500 dark:text-slate-400">Collection</dt><dd className="mt-1 font-semibold text-slate-950 dark:text-white">{profile?.vector_store.collection || 'site_knowledge_zh_v1'}</dd></div>
+            <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('admin.vector_settings.dimensions', '向量维度', 'Vector dimensions')}</dt><dd className="mt-1 font-semibold text-slate-950 dark:text-white">1024</dd></div>
+            <div><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('admin.vector_settings.metric', '距离算法', 'Metric')}</dt><dd className="mt-1 font-semibold text-slate-950 dark:text-white">COSINE</dd></div>
+          </dl>
+          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {copy(
+              'admin.vector_settings.zilliz_probe_notice',
+              'Collection 不存在时会自动创建；已存在但结构不兼容时不会修改，将直接提示错误。Token 不会回显。',
+              'A missing collection is created automatically. An incompatible existing collection is left unchanged and reported as an error. The token is never returned.'
+            )}
+          </p>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={
+                savingVectorStore ||
+                !zillizEndpoint.trim() ||
+                (!zillizToken.trim() && !profile?.vector_store.token_configured)
+              }
+              onClick={() => void saveAndVerifyVectorStore()}
+            >
+              {savingVectorStore
+                ? copy('admin.vector_settings.verifying', '检测中…', 'Checking…')
+                : copy('admin.vector_settings.save_check', '保存并检测', 'Save and check')}
+            </button>
+          </div>
         </div>
       </BackofficeSectionPanel>
 

@@ -87,9 +87,10 @@ local_test_backend: PostgreSQL JSON
 ```
 
 The profile facts are server-defined and read-only in Admin. The Admin input is
-limited to the SiliconFlow API key. Saving the key performs a live embedding
-probe before activation. The probe must return a non-empty array containing
-exactly 1024 finite numeric values. A missing, empty, non-numeric, non-finite,
+limited to the SiliconFlow API key plus the Zilliz cluster HTTPS endpoint and
+token. Saving the embedding key performs a live embedding probe before
+activation. The probe must return a non-empty array containing exactly 1024
+finite numeric values. A missing, empty, non-numeric, non-finite,
 768-dimensional, or 1536-dimensional result fails closed and does not replace
 the currently verified connection.
 
@@ -102,17 +103,31 @@ Rows are isolated by `site_id`. Embeddings are stored as JSON for the MVP and
 scored in Python with cosine similarity. This keeps the first version within
 the existing FastAPI, PostgreSQL, Redis, SQLAlchemy, Alembic, and worker stack.
 
-Production is fixed to Zilliz Cloud. Its endpoint, token, database, and
-collection remain deployment-managed runtime details rather than ordinary
-Admin choices. The WordPress side only sends bounded `publish` public content
-and executes the managed Cloud abilities.
+Production is fixed to Zilliz Cloud. Cloud Admin accepts only the cluster HTTPS
+endpoint and token. The collection is fixed to `site_knowledge_zh_v1`, its
+dimension is fixed to `1024`, its metric is fixed to `COSINE`, and no database
+selector is exposed. The WordPress side only sends bounded `publish` public
+content and executes the managed Cloud abilities.
+
+Saving the Zilliz endpoint and token constructs the production backend before
+persisting the new secret. A missing fixed collection is created with the
+canonical schema and index. An existing collection is validated for required
+fields, 1024 dimensions, and COSINE metric. An incompatible collection fails
+closed and is not modified. A failed connection or schema probe does not
+replace the currently verified vector-store connection.
 
 `GET /internal/service/admin/site-knowledge-vector-profile` returns the fixed
-profile, masked provider readiness, active backend, and deployment-owned vector
-store readiness. `PUT /internal/service/admin/site-knowledge-vector-profile`
+profile, masked provider readiness, active backend, and Admin-owned vector-store
+readiness. `PUT /internal/service/admin/site-knowledge-vector-profile`
 accepts only an optional `credential` field and performs save-and-verify. It
 does not accept caller-supplied provider, model, dimensions, metric, backend,
 collection, reranker, or embedding-space fields.
+
+`PUT /internal/service/admin/site-knowledge-vector-profile/vector-store`
+accepts only optional `endpoint` and `token` fields so an already saved token
+can be reverified. It does not accept collection, database, dimensions, metric,
+backend, or migration fields. Both secrets remain encrypted and are represented
+only as configured/readiness state in responses and audit evidence.
 
 The verified profile connection is stored as a DB-managed Provider Connection
 so the existing provider adapter, encrypted secret storage, runtime projection,
