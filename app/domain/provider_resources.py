@@ -437,9 +437,9 @@ def build_admin_ability_model_runtime_projection(
         "rows": rows,
         "media_groups": media_groups,
         "boundary": {
-            "read_only": False,
-            "runtime_binding_only": True,
-            "configurable_runtime_bindings": ["site_knowledge_embedding"],
+            "read_only": True,
+            "runtime_binding_only": False,
+            "configurable_runtime_bindings": [],
             "direct_wordpress_write": False,
             "not_a_control_plane": True,
             "does_not_own": [
@@ -463,7 +463,7 @@ def _build_ability_model_runtime_row(
     capability_id = str(feature_usage.get("capability_id") or "")
     profile_id = str(feature_usage.get("profile_id") or "")
     raw_status = str(feature_usage.get("status") or "")
-    can_configure = feature_id == "site_knowledge_embedding"
+    can_configure = False
     return {
         "ability_id": feature_id,
         "feature_id": feature_id,

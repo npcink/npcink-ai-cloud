@@ -19,6 +19,9 @@ from app.domain.catalog.service import CatalogService
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS,
+)
 from app.domain.web_search.contracts import WEB_SEARCH_ABILITY, WEB_SEARCH_CONTRACT
 from app.domain.web_search.service import WebSearchService
 
@@ -573,6 +576,8 @@ class ProviderConnectionAdminService:
             )
         config = _dict(payload.get("config"))
         config = _sanitize_config(config)
+        for key in SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS:
+            config.pop(key, None)
         capability_ids = _normalize_id_list(payload.get("capability_ids"))
         runtime_profile_ids = _normalize_id_list(payload.get("runtime_profile_ids"))
         metadata = _sanitize_config(_dict(payload.get("metadata")))

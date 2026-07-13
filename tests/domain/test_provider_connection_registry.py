@@ -455,19 +455,15 @@ def test_runtime_settings_project_capability_provider_connections(
 
     projection = apply_provider_connection_runtime_settings(settings)
 
-    assert projection.applied_count == 5
+    assert projection.applied_count == 4
     assert settings.web_search_provider == "auto"
     assert settings.web_search_zhihu_base_url == "https://developer.zhihu.example"
     assert settings.web_search_zhihu_access_secret == "zhihu-secret"
     assert settings.web_search_zhihu_hot_list_cache_ttl_seconds == 120
     assert settings.image_source_provider == "auto"
     assert settings.image_source_unsplash_access_key == "unsplash-secret"
-    assert settings.site_knowledge_embedding_provider == "tei"
-    assert settings.tei_base_url == "http://tei.example"
-    assert settings.tei_model_ids == "BAAI/bge-m3,jinaai/jina-embeddings-v3"
-    assert settings.tei_timeout_seconds == 12
-    assert settings.tei_region == "self-hosted-test"
-    assert settings.tei_context_window == 4096
+    assert projection.embedding_count == 0
+    assert settings.site_knowledge_embedding_provider == "deterministic"
     assert settings.site_knowledge_rerank_provider == "jina"
     assert settings.site_knowledge_jina_api_key == "jina-secret"
     assert settings.site_knowledge_vector_backend == "zilliz_cloud"
@@ -492,7 +488,7 @@ def test_runtime_settings_project_capability_provider_connections(
     dispose_engine(database_url)
 
 
-def test_runtime_settings_use_dedicated_allowlisted_site_knowledge_model(
+def test_runtime_settings_reject_generic_embedding_connection_without_profile_probe(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -523,8 +519,8 @@ def test_runtime_settings_use_dedicated_allowlisted_site_knowledge_model(
 
     projection = apply_provider_connection_runtime_settings(settings)
 
-    assert projection.embedding_count == 1
-    assert settings.site_knowledge_embedding_provider == "openai"
+    assert projection.embedding_count == 0
+    assert settings.site_knowledge_embedding_provider == "deterministic"
     assert settings.site_knowledge_embedding_model == "BAAI/bge-m3"
     assert settings.site_knowledge_embedding_dimensions == 1024
 

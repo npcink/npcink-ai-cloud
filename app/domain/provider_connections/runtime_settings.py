@@ -10,6 +10,14 @@ from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import ProviderConnection
 from app.core.secrets import decrypt_provider_connection_secret
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
+    SITE_KNOWLEDGE_VECTOR_METRIC,
+    SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+    SITE_KNOWLEDGE_VECTOR_PROBE_REVISION,
+    SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+    SITE_KNOWLEDGE_VECTOR_PROVIDER_ID,
+)
 
 
 @dataclass(slots=True)
@@ -316,44 +324,33 @@ def _apply_embedding_connection(
     credential: str,
     config: dict[str, Any],
 ) -> bool:
-    if provider_id not in {"siliconflow", "openai", "tei"}:
+    if provider_id != SITE_KNOWLEDGE_VECTOR_PROVIDER_ID:
+        return False
+    if row.status != "ready":
+        return False
+    if str(config.get("site_knowledge_profile_id") or "") != SITE_KNOWLEDGE_VECTOR_PROFILE_ID:
+        return False
+    if str(config.get("site_knowledge_probe_revision") or "") != (
+        SITE_KNOWLEDGE_VECTOR_PROBE_REVISION
+    ):
         return False
     embedding_model = _site_knowledge_embedding_model(
         config,
         fallback=settings.site_knowledge_embedding_model,
     )
-    if not embedding_model:
+    if embedding_model != SITE_KNOWLEDGE_VECTOR_MODEL_ID:
+        return False
+    if _int(config.get("dimensions"), 0) != SITE_KNOWLEDGE_VECTOR_DIMENSIONS:
+        return False
+    if _string(config.get("metric")).upper() != SITE_KNOWLEDGE_VECTOR_METRIC:
         return False
     settings.site_knowledge_embedding_provider = provider_id
-    settings.site_knowledge_embedding_model = embedding_model
-    settings.site_knowledge_embedding_dimensions = _int(
-        config.get("dimensions"), settings.site_knowledge_embedding_dimensions
-    )
-    if provider_id == "siliconflow":
-        settings.siliconflow_provider_enabled = True
-        settings.siliconflow_base_url = row.base_url or settings.siliconflow_base_url
-        if credential:
-            settings.siliconflow_api_key = credential
-    elif provider_id == "openai":
-        settings.openai_base_url = row.base_url or settings.openai_base_url
-        if credential:
-            settings.openai_api_key = credential
-    elif provider_id == "tei":
-        settings.tei_provider_enabled = True
-        settings.tei_base_url = row.base_url or settings.tei_base_url
-        if credential:
-            settings.tei_api_key = credential
-        settings.tei_timeout_seconds = _positive_float(
-            config.get("timeout_seconds"), settings.tei_timeout_seconds
-        )
-        settings.tei_region = _string(config.get("region") or settings.tei_region)
-        settings.tei_context_window = _int(
-            config.get("context_window"),
-            settings.tei_context_window,
-        )
-        model_ids = _string(config.get("model_ids") or config.get("model_id") or "")
-        if model_ids:
-            settings.tei_model_ids = model_ids
+    settings.site_knowledge_embedding_model = SITE_KNOWLEDGE_VECTOR_MODEL_ID
+    settings.site_knowledge_embedding_dimensions = SITE_KNOWLEDGE_VECTOR_DIMENSIONS
+    settings.siliconflow_provider_enabled = True
+    settings.siliconflow_base_url = row.base_url or settings.siliconflow_base_url
+    if credential:
+        settings.siliconflow_api_key = credential
     return True
 
 

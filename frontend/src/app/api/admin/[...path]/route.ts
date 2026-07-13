@@ -106,6 +106,12 @@ function buildAdminBackendPath(pathSegments: string[], method: string): string {
     return '/internal/service/admin/provider-connections';
   }
   if (
+    upperMethod === 'PUT' &&
+    normalized === 'site-knowledge-vector-profile'
+  ) {
+    return '/internal/service/admin/site-knowledge-vector-profile';
+  }
+  if (
     (upperMethod === 'PATCH' || upperMethod === 'POST') &&
     /^service-settings(?:\/.+)?$/.test(normalized)
   ) {

@@ -470,6 +470,7 @@ function connectionExternalLinkItems(connection: Connection): ProviderExternalLi
 
 function supplierCategory(connection: Connection): SupplierCategory {
   if (
+    connection.metadata?.managed_surface === 'site_knowledge_vector_profile' ||
     connection.kind === 'web_search_provider' ||
     connection.kind === 'image_source_provider' ||
     connection.kind === 'embedding_provider' ||
