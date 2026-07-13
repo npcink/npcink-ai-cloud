@@ -231,6 +231,7 @@ function AccountsContent() {
   });
   const mountedRef = useRef(false);
   const hasLoadedRef = useRef(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const activeRequestKeyRef = useRef('');
   const requestSequenceRef = useRef(0);
 
@@ -283,6 +284,7 @@ function AccountsContent() {
         setLoadedAt(new Date());
         setLoadedRequestKey(requestKey);
         hasLoadedRef.current = true;
+        setHasLoaded(true);
       }
     } catch (err) {
       if (mountedRef.current && requestSequenceRef.current === sequence) {
@@ -389,7 +391,7 @@ function AccountsContent() {
     }
   };
 
-  if (loadError && !hasLoadedRef.current) {
+  if (loadError && !hasLoaded) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div role="alert" className="max-w-md text-center">
@@ -402,7 +404,7 @@ function AccountsContent() {
       </div>
     );
   }
-  if (isLoading && !hasLoadedRef.current) return <LoadingFallback />;
+  if (isLoading && !hasLoaded) return <LoadingFallback />;
 
   const hasFilters = Boolean(appliedQuery || appliedStatus || appliedExpiresBefore || appliedCoverageState || appliedPackageKind || appliedTopPlanId || showInternalAccounts || sort !== 'risk');
   const isShowingRetainedResults = Boolean(loadError && loadedRequestKey && loadedRequestKey !== requestKey);

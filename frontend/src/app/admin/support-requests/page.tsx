@@ -140,6 +140,7 @@ function SupportRequestsContent() {
   const activeRequestKeyRef = useRef('');
   const requestSequenceRef = useRef(0);
   const hasLoadedRef = useRef(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const requestKey = useMemo(() => {
     const params = new URLSearchParams();
@@ -183,6 +184,7 @@ function SupportRequestsContent() {
       setLoadedAt(new Date());
       setLoadedRequestKey(requestKey);
       hasLoadedRef.current = true;
+      setHasLoaded(true);
     } catch (error) {
       if (sequence !== requestSequenceRef.current) return;
       setLoadError(resolveUiErrorMessage(error instanceof Error ? error.message : null, t('error.failed_load')));
@@ -258,7 +260,7 @@ function SupportRequestsContent() {
     }
   };
 
-  if (loadError && !hasLoadedRef.current) {
+  if (loadError && !hasLoaded) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div role="alert" className="max-w-md text-center">
@@ -269,7 +271,7 @@ function SupportRequestsContent() {
       </div>
     );
   }
-  if (isLoading && !hasLoadedRef.current) return <LoadingFallback />;
+  if (isLoading && !hasLoaded) return <LoadingFallback />;
 
   const hasFilters = Boolean(appliedStatus || appliedTopic || appliedQuery || sort !== 'risk');
   const isShowingRetainedResults = Boolean(loadError && loadedRequestKey && loadedRequestKey !== requestKey);

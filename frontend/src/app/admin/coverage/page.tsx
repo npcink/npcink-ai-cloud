@@ -263,7 +263,7 @@ function AdminCoverageContent() {
         }
       }
     }
-  }, [t]);
+  }, [setError, setIsRefreshing, setQueue, t]);
 
   useEffect(() => {
     mountedRef.current = true;

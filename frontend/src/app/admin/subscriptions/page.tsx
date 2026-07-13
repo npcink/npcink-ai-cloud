@@ -219,6 +219,7 @@ function SubscriptionsContent() {
   });
   const mountedRef = useRef(false);
   const hasLoadedRef = useRef(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const activeRequestKeyRef = useRef('');
   const requestSequenceRef = useRef(0);
 
@@ -274,6 +275,7 @@ function SubscriptionsContent() {
         setLoadedAt(new Date());
         setLoadedRequestKey(requestKey);
         hasLoadedRef.current = true;
+        setHasLoaded(true);
       }
     } catch (err) {
       if (mountedRef.current && requestSequenceRef.current === sequence) {
@@ -357,7 +359,7 @@ function SubscriptionsContent() {
     });
   };
 
-  if (error && !hasLoadedRef.current) {
+  if (error && !hasLoaded) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-md text-center" role="alert">
@@ -371,7 +373,7 @@ function SubscriptionsContent() {
     );
   }
 
-  if (isLoading && !hasLoadedRef.current) return <LoadingFallback />;
+  if (isLoading && !hasLoaded) return <LoadingFallback />;
 
   const statusFilters = ['', 'past_due', 'expired', 'trialing', 'active'];
   const hasFilters = Boolean(appliedStatus || appliedAccountId || appliedPlanId || appliedExpiresBefore || sort !== 'priority');

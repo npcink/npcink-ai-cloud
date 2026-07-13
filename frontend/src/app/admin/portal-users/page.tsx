@@ -301,6 +301,7 @@ function PortalUsersContent() {
   const activeRequestKeyRef = useRef('');
   const requestSequenceRef = useRef(0);
   const hasLoadedRef = useRef(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const requestKey = useMemo(() => buildQuery(appliedFilters, offset), [appliedFilters, offset]);
 
@@ -335,6 +336,7 @@ function PortalUsersContent() {
       setLoadedAt(new Date());
       setLoadedRequestKey(requestKey);
       hasLoadedRef.current = true;
+      setHasLoaded(true);
       setSelectedPrincipalIds((current) => {
         const nextIds = new Set((data.items || []).map((item) => item.principal_id));
         return current.filter((principalId) => nextIds.has(principalId));
@@ -543,7 +545,7 @@ function PortalUsersContent() {
     }
   };
 
-  if (error && !hasLoadedRef.current) {
+  if (error && !hasLoaded) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div role="alert" className="max-w-md text-center">
@@ -554,7 +556,7 @@ function PortalUsersContent() {
       </div>
     );
   }
-  if (loading && !hasLoadedRef.current) return <LoadingFallback />;
+  if (loading && !hasLoaded) return <LoadingFallback />;
 
   const hasFilters = Boolean(appliedFilters.q || appliedFilters.status || appliedFilters.package_alias || appliedFilters.qq_bound || sort !== 'access_risk');
   const isShowingRetainedResults = Boolean(error && loadedRequestKey && loadedRequestKey !== requestKey);

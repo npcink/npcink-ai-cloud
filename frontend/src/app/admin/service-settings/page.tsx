@@ -368,6 +368,7 @@ export default function AdminServiceSettingsPage() {
     private_key: '',
     public_key: '',
   });
+  const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
   const settingsMountedRef = useRef(false);
   const settingsRequestActiveRef = useRef(false);
@@ -449,12 +450,14 @@ export default function AdminServiceSettingsPage() {
         private_key: '',
         public_key: '',
       };
-      savedFormsRef.current = {
+      const nextSavedForms = {
         portal: nextPortalForm,
         qq: nextQqForm,
         email: nextEmailForm,
         payment: nextAlipayForm,
       };
+      savedFormsRef.current = nextSavedForms;
+      setSavedForms(nextSavedForms);
       setPortalPublicForm(nextPortalForm);
       setQqForm(nextQqForm);
       setEmailForm(nextEmailForm);
@@ -806,16 +809,15 @@ export default function AdminServiceSettingsPage() {
     alipayPrivateKey: Boolean(data?.settings.alipay_payment.secrets.private_key?.configured),
     alipayPublicKey: Boolean(data?.settings.alipay_payment.secrets.public_key?.configured),
   };
-  const activeGroupDirty = useMemo(() => {
-    const saved = savedFormsRef.current;
-    if (!saved) return false;
-    if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(saved.portal);
-    if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(saved.qq);
-    if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(saved.email);
-    return JSON.stringify(alipayForm) !== JSON.stringify(saved.payment);
-  }, [activeTab, alipayForm, emailForm, portalPublicForm, qqForm]);
+  const activeGroupDirty = (() => {
+    if (!savedForms) return false;
+    if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
+    if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
+    if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
+    return JSON.stringify(alipayForm) !== JSON.stringify(savedForms.payment);
+  })();
 
-  const activeValidationIssues = useMemo(() => {
+  const activeValidationIssues = (() => {
     const issues: string[] = [];
     if (activeTab === 'portal') {
       try {
@@ -881,20 +883,7 @@ export default function AdminServiceSettingsPage() {
       }
     }
     return issues;
-  }, [
-    activeTab,
-    alipayForm,
-    effectivePortalPublicBaseUrl,
-    emailForm,
-    portalPublicForm.public_base_url,
-    qqForm,
-    qqRedirectUri,
-    secretConfigured.alipayPrivateKey,
-    secretConfigured.alipayPublicKey,
-    secretConfigured.email,
-    secretConfigured.qq,
-    t,
-  ]);
+  })();
 
   const restoreActiveGroup = useCallback(() => {
     const saved = savedFormsRef.current;
