@@ -386,7 +386,10 @@ export default function PortalPage() {
     setInspectorError('');
   };
 
-  const restrictedCount = visibleSites.filter(portalSiteNeedsAttention).length;
+  const restrictedCount = visibleSites.filter((site) => (
+    portalSiteNeedsAttention(site)
+    || Boolean(siteSummaryCache[site.site_id]?.customer_status?.needs_attention)
+  )).length;
   const qqProvider = identityProviders.find((provider) => provider.provider === 'qq') || null;
   const hasPackageLabel = Boolean(currentPackageDisplay.display_package_label);
   const selectedSiteRecordHref = selectedSite ? `/portal/sites/${selectedSite.site_id}` : '/portal#sites';

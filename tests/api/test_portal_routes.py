@@ -25,6 +25,7 @@ from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
+    CREDIT_LEDGER_EVENT_GRANT,
     PRINCIPAL_STATUS_ACTIVE,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -4531,6 +4532,21 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "/internal/service/sites/site_portal_reads/activate",
         headers=build_internal_headers(idempotency_key="portal-reads-site-activate-001"),
     )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_reads_archived",
+            "account_id": "acct_portal_reads",
+            "name": "Archived Portal Reads Site",
+            "status": "provisioning",
+        },
+        headers=build_internal_headers(idempotency_key="portal-reads-archived-site-001"),
+    )
+    with get_session(database_url) as session:
+        archived_site = session.get(Site, "site_portal_reads_archived")
+        assert archived_site is not None
+        archived_site.status = "archived"
+        session.commit()
     _grant_account_member_access(
         client,
         site_id="site_portal_reads",
@@ -4852,6 +4868,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "bound_sites",
         "vector_documents",
     }
+    bound_sites = next(
+        item for item in quota_summary["resource_limits"] if item["key"] == "bound_sites"
+    )
+    assert bound_sites["used"] == 1.0
     vector_documents = next(
         item for item in quota_summary["resource_limits"] if item["key"] == "vector_documents"
     )
@@ -5000,6 +5020,24 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             rate_version="ai-credit-ledger-v2",
             idempotency_key="portal-credit-ledger-grouped-event-001",
         )
+        CommercialRepository(session).record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id="site_portal_reads",
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id="run-portal-ledger-1",
+            provider_call_id=None,
+            event_type=CREDIT_LEDGER_EVENT_GRANT,
+            source_type="credit_pack",
+            source_id="grant-not-a-service-event",
+            credit_delta=100,
+            quantity=100,
+            unit="credit",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="portal-credit-ledger-grant-excluded-001",
+        )
         session.commit()
 
     credit_events_response = client.get(
@@ -5010,6 +5048,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_events_data = credit_events_response.json()["data"]
     assert credit_events_data["contract_version"] == "portal-credit-events-v1"
     assert credit_events_data["pagination"]["total"] == 4
+    assert all(item["direction"] == "consumed" for item in credit_events_data["items"])
     grouped_event = next(
         item
         for item in credit_events_data["items"]
@@ -5058,6 +5097,18 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert bucket_detail_response.status_code == 200
     assert bucket_detail_response.json()["data"]["pagination"]["total"] >= 1
+
+    # Keep the remainder of this long scenario focused on the payment grant it creates below.
+    with get_session(database_url) as session:
+        excluded_grant = session.scalar(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.idempotency_key
+                == "portal-credit-ledger-grant-excluded-001"
+            )
+        )
+        assert excluded_grant is not None
+        session.delete(excluded_grant)
+        session.commit()
 
     credit_packs_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-packs",
@@ -5212,6 +5263,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert audit_response.status_code == 200
     assert audit_response.json()["data"]["site_id"] == "site_portal_reads"
+    assert audit_response.json()["data"]["generated_at"]
     assert audit_response.json()["data"]["totals"]["events"] >= 1
 
     account_audit_response = client.get(
@@ -5221,6 +5273,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_audit_response.status_code == 200
     assert account_audit_response.json()["data"]["site_id"] == ""
     assert account_audit_response.json()["data"]["account_id"] == "acct_portal_reads"
+    assert account_audit_response.json()["data"]["generated_at"]
     assert account_audit_response.json()["data"]["totals"]["events"] >= 1
 
     audit_events_response = client.get(

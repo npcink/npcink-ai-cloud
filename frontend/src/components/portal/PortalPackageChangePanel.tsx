@@ -42,6 +42,13 @@ type PackageChoice = {
 };
 
 const tierRank: Record<string, number> = { free: 0, plus: 1, pro: 2, agency: 3 };
+const requiredComparisonRights: PortalPlanComparisonRightKey[] = [
+  'monthly_points',
+  'site_limit',
+  'knowledge_article_limit',
+  'concurrency_limit',
+  'batch_item_limit',
+];
 
 export function PortalPackageChangePanel({
   t,
@@ -64,6 +71,17 @@ export function PortalPackageChangePanel({
   const comparisonByTier = new Map(
     comparisonTiers.map((tier) => [tier.tier_id, tier] as const)
   );
+  const tierRightsArePublished = (tierId: PortalPackageTier) => {
+    const tier = comparisonByTier.get(tierId);
+    if (!tier) return false;
+    const rights = tier.comparison_rights;
+    return requiredComparisonRights.every((key) => {
+      const right = rights?.[key];
+      return Boolean(right && right.state !== 'unconfigured');
+    });
+  };
+  const plusRightsArePublished = tierRightsArePublished('plus');
+  const proRightsArePublished = tierRightsArePublished('pro');
   const packageChoices: PackageChoice[] = [
     {
       tier: 'free',
@@ -78,40 +96,44 @@ export function PortalPackageChangePanel({
     {
       tier: 'plus',
       label: t('portal.package.plus_title', {}, 'Plus'),
-      description: plusOffer
+      description: plusOffer && plusRightsArePublished
         ? t(
             'portal.package.paid_offer_desc',
             { amount: formatPortalCurrency(plusOffer.amount) },
             `${formatPortalCurrency(plusOffer.amount)} for 30 days.`
           )
         : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.'),
-      selectable: Boolean(plusOffer),
+      selectable: Boolean(plusOffer && plusRightsArePublished),
       statusLabel: currentPlanId === 'plus'
         ? currentStatus === 'trialing'
           ? t('portal.package.pro_trial_active', {}, 'Trial active')
           : t('common.current', {}, 'Current')
         : !plusOffer
           ? t('portal.package.offer_unavailable', {}, 'Unavailable')
+          : !plusRightsArePublished
+            ? t('portal.billing.compare_unconfigured', {}, 'To confirm')
           : undefined,
       statusTone: currentPlanId === 'plus' ? 'ok' : 'warning',
     },
     {
       tier: 'pro',
       label: t('portal.package.pro_title', {}, 'Pro'),
-      description: proOffer
+      description: proOffer && proRightsArePublished
         ? t(
             'portal.package.paid_offer_desc',
             { amount: formatPortalCurrency(proOffer.amount) },
             `${formatPortalCurrency(proOffer.amount)} for 30 days.`
           )
         : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.'),
-      selectable: Boolean(proOffer),
+      selectable: Boolean(proOffer && proRightsArePublished),
       statusLabel: currentPlanId === 'pro'
         ? currentStatus === 'trialing'
           ? t('portal.package.pro_trial_active', {}, 'Trial active')
           : t('common.current', {}, 'Current')
         : !proOffer
           ? t('portal.package.offer_unavailable', {}, 'Unavailable')
+          : !proRightsArePublished
+            ? t('portal.billing.compare_unconfigured', {}, 'To confirm')
           : undefined,
       statusTone: currentPlanId === 'pro' ? 'ok' : 'warning',
     },
@@ -172,6 +194,9 @@ export function PortalPackageChangePanel({
     Object.values(tier.comparison_rights || {}).some((right) => right.state === 'unconfigured')
   ));
   const selectedOffer = selectedTier === 'plus' ? plusOffer : selectedTier === 'pro' ? proOffer : null;
+  const selectedTierRightsArePublished = selectedTier
+    ? tierRightsArePublished(selectedTier)
+    : false;
   const selectedAmount = selectedOffer ? formatPortalCurrency(selectedOffer.amount) : '';
   const actionLabel = selectedTier === 'free'
     ? t('portal.package.schedule_free_downgrade', {}, 'Switch to Free at period end')
@@ -192,7 +217,7 @@ export function PortalPackageChangePanel({
   const selectionDisabled = pendingAction !== null
     || !selectedChoice
     || !selectedChoice.selectable
-    || (selectedTier !== 'free' && !selectedOffer);
+    || (selectedTier !== 'free' && (!selectedOffer || !selectedTierRightsArePublished));
 
   return (
     <>

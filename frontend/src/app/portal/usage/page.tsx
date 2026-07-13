@@ -61,7 +61,10 @@ function resolvePortalUsageView(value: string | null): PortalUsageView {
 }
 
 function parseUsageDate(value: string): Date | null {
-  const date = new Date(value);
+  const normalizedValue = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}Z`;
+  const date = new Date(normalizedValue);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

@@ -475,7 +475,7 @@ function PortalBillingContent() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.workspace_label', {}, 'Portal')}
+        eyebrow={t('portal.billing.package_rights_label', {}, 'Package rights')}
         title={t('portal.billing.customer_title', {}, 'Package')}
         description={t('portal.billing.subtitle', {}, 'Confirm the current package, included rights, and upgrade options.')}
         currentPage="billing"
@@ -595,6 +595,7 @@ function PortalBillingContent() {
       <Modal
         isOpen={activeCommercialDialog === 'package'}
         onClose={() => setActiveCommercialDialog(null)}
+        closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
         description={t('portal.billing.package_dialog_desc', {}, 'Compare available packages and choose the change you want to make.')}
         size="xl"
@@ -618,6 +619,7 @@ function PortalBillingContent() {
       <Modal
         isOpen={activeCommercialDialog === 'trial'}
         onClose={() => setActiveCommercialDialog(null)}
+        closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.package.trial_dialog_title', {}, 'Trial eligibility')}
         description={t('portal.package.trial_dialog_desc', {}, 'Review this account trial status before starting or changing a trial.')}
         size="lg"

@@ -421,6 +421,13 @@ export interface PortalSiteSummaryRecord {
     tokens_limit?: number;
     features?: string[];
   };
+  customer_status?: {
+    status: string;
+    needs_attention: boolean;
+    issue_count: number;
+    generated_at?: string;
+  };
+  generated_at?: string;
 }
 
 export interface PortalUsageWindow {
@@ -1040,12 +1047,13 @@ export interface PortalAIInsightHistoryResponse {
 }
 
 export interface PortalAuditEvent {
-  event_id: string;
+  event_id: string | number;
   event_kind: string;
   outcome: string;
-  message: string;
+  message?: string;
   created_at: string;
-  metadata?: Record<string, unknown>;
+  trace_id?: string;
+  payload?: Record<string, unknown>;
 }
 
 export interface PortalAuditSummary {

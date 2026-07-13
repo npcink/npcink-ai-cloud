@@ -14,6 +14,7 @@ export interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   closeOnOverlay?: boolean;
   showCloseButton?: boolean;
+  closeLabel?: string;
   className?: string;
 }
 
@@ -35,6 +36,7 @@ export function Modal({
   size = 'md',
   closeOnOverlay = true,
   showCloseButton = true,
+  closeLabel = 'Close modal',
   className,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -181,7 +183,7 @@ export function Modal({
               <button
                 onClick={onClose}
                 className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                aria-label="Close modal"
+                aria-label={closeLabel}
               >
                 <svg
                   className="w-5 h-5"

@@ -68,6 +68,7 @@ export function PortalCreditPackDialog({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
+      closeLabel={t('common.close', {}, 'Close')}
       title={t('portal.usage.credit_packs_title', {}, 'Credit packs')}
       description={t(
         'portal.usage.credit_packs_desc',

@@ -168,7 +168,7 @@ function PortalSupportContent() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.workspace_label', {}, 'Portal')}
+        eyebrow={t('portal.support_request_list_title', {}, 'Recent tickets')}
         title={t('portal.support_requests_title', {}, 'Tickets')}
         description={t(
           'portal.support_requests_desc',
@@ -193,6 +193,7 @@ function PortalSupportContent() {
       <Modal
         isOpen={showForm}
         onClose={() => setShowForm(false)}
+        closeLabel={t('common.close', {}, 'Close')}
         size="lg"
         title={t('portal.support_request_form_title', {}, 'Submit ticket')}
         description={t(

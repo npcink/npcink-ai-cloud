@@ -96,7 +96,15 @@ function PortalSiteRecordContent() {
     created_at: summary.site?.created_at || sessionSite?.created_at || '',
   };
   const siteUrl = getPortalSiteWordPressUrl(site);
-  const siteNeedsAttention = site.status !== 'active' || !siteUrl;
+  const monitoringNeedsAttention = siteMonitoring.overview
+    ? siteMonitoring.overview.health.status !== 'ok'
+      || siteMonitoring.overview.action_required.length > 0
+      || siteMonitoring.overview.quota.top_pressure !== 'none'
+    : false;
+  const siteNeedsAttention = site.status !== 'active'
+    || !siteUrl
+    || Boolean(summary.customer_status?.needs_attention)
+    || monitoringNeedsAttention;
   const siteStatusLabel = siteNeedsAttention
     ? t('portal.home.filter_attention_only', {}, 'Needs attention')
     : t('portal.home.risk_level_normal', {}, 'Normal');
@@ -264,6 +272,7 @@ function PortalSiteRecordContent() {
       <Modal
         isOpen={showRemoveModal}
         onClose={closeRemoveModal}
+        closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         title={t('portal.remove_site_action', {}, 'Remove site')}
         description={t(

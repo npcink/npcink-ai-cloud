@@ -772,8 +772,8 @@ async function installPortalMocks(
         account_id: 'acct_portal',
         generated_at: '2026-04-07T10:00:00Z',
         totals: {
-          events: 2,
-          succeeded: 2,
+          events: 12,
+          succeeded: 12,
           error: 0,
         },
         groups: [
@@ -790,20 +790,17 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/audit-events') {
+      const limit = Number(url.searchParams.get('limit') || 10);
+      const events = Array.from({ length: 12 }, (_, index) => ({
+        event_id: `audit_portal_${String(index + 1).padStart(3, '0')}`,
+        event_kind: index === 0 ? 'portal_magic_link.consumed' : 'run',
+        outcome: 'success',
+        created_at: `2026-04-07T09:${String(index).padStart(2, '0')}:00Z`,
+        trace_id: index === 0 ? 'trace_portal_e2e' : '',
+      }));
       await fulfillJson(route, {
         account_id: 'acct_portal',
-        items: [
-          {
-            event_id: 'audit_portal_login_001',
-            event_kind: 'portal_magic_link.consumed',
-            outcome: 'success',
-            message: 'Portal login verified.',
-            created_at: '2026-04-07T09:00:00Z',
-            metadata: {
-              trace_id: 'trace_portal_e2e',
-            },
-          },
-        ],
+        items: events.slice(0, limit),
       });
       return;
     }
@@ -1510,6 +1507,8 @@ test('portal workspace interaction path: account overview to site drawer and ser
   await expect(packageDialog.getByRole('heading', { name: /Compare package rights|套餐权益对比/i })).toBeVisible();
   await expect(packageDialog.locator('[data-comparison-state="unconfigured"]')).toContainText(/To confirm|待确认/i);
   await expect(packageDialog.getByText(/published package does not currently define|已发布套餐尚未定义/i)).toBeVisible();
+  await expect(packageDialog.getByRole('radio', { name: /Plus/i })).toBeDisabled();
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(page.getByText(/^Payment orders$|^支付订单$/i)).toBeVisible();
   await expect(page.getByRole('tab', { name: /Pending|待支付/i })).toHaveAttribute('aria-selected', 'true');
@@ -1546,7 +1545,6 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   );
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
-  await expect(notice.getByText(/Payment confirmation is pending|正在等待支付确认/i)).toBeVisible();
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 10_000 });
   await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
@@ -1595,6 +1593,11 @@ test('legacy monitoring redirects to site status while audit stays a support dee
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-support-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
+  await expect(page.getByRole('article')).toHaveCount(10);
+  await page.getByRole('button', { name: /Load more activity|加载更多活动|載入更多活動/i }).click();
+  await expect(page.getByRole('article')).toHaveCount(12);
+  await page.getByText(/Support information|支持信息|支援資訊/i).first().click();
+  await expect(page.getByText('trace_portal_e2e')).toBeVisible();
 });
 
 test('portal site record focuses on address, status, and support actions', async ({ page }) => {

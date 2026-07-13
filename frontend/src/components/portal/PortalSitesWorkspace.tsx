@@ -243,6 +243,7 @@ function PortalSitesWorkspaceContent() {
       <Modal
         isOpen={addonConnectMode && showConnectModal}
         onClose={() => setShowConnectModal(false)}
+        closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.connect_site_addon_title', undefined, 'Finish WordPress connection')}
         description={t('portal.connect_site_addon_desc', undefined, 'Confirm this site connection, then return to WordPress to finish setup.')}
         size="lg"
@@ -271,6 +272,7 @@ function PortalSitesWorkspaceContent() {
       <Modal
         isOpen={Boolean(pendingRemoveSite)}
         onClose={closeRemoveSiteModal}
+        closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         title={t('portal.remove_site_action', {}, 'Remove site')}
         description={t('portal.remove_site_confirm', {}, 'Remove this site? Cloud service will stop, active keys will be revoked, and usage history will be kept.')}

@@ -998,6 +998,7 @@ def _portal_account_site_ids(account_access: dict[str, object]) -> list[str]:
         str(site.get("site_id") or "").strip()
         for site in sites
         if str(site.get("site_id") or "").strip()
+        and str(site.get("status") or "").strip().lower() != "archived"
     ]
 
 
@@ -1021,6 +1022,20 @@ def _resolve_portal_site_summary(
         return _service_error_response(error, request=request)
     subscription = _dict_value(policy.get("subscription"))
     subscription_metadata = _dict_value(subscription.get("metadata"))
+    monitoring = SiteMonitoringOverviewService(service.database_url).get_summary(
+        site_id=site_id,
+        commercial_policy=policy,
+        window_hours=24,
+    )
+    monitoring_health = _dict_value(monitoring.get("health"))
+    monitoring_quota = _dict_value(monitoring.get("quota"))
+    monitoring_actions = _object_list(monitoring.get("action_required"))
+    monitoring_status = str(monitoring_health.get("status") or "inactive")
+    needs_attention = (
+        monitoring_status != "ok"
+        or bool(monitoring_actions)
+        or str(monitoring_quota.get("top_pressure") or "none") != "none"
+    )
     return {
         "site_id": site_id,
         "account_id": str(access.get("account_id") or ""),
@@ -1040,6 +1055,12 @@ def _resolve_portal_site_summary(
             "subscription": policy.get("subscription"),
             "plan_version": policy.get("plan_version"),
             "entitlement_snapshot": policy.get("entitlement_snapshot"),
+        },
+        "customer_status": {
+            "status": monitoring_status,
+            "needs_attention": needs_attention,
+            "issue_count": len(monitoring_actions),
+            "generated_at": monitoring.get("generated_at"),
         },
         "generated_at": policy.get("generated_at"),
     }
@@ -3377,6 +3398,7 @@ async def get_portal_account_audit_summary(request: Request) -> Any:
         summary = _get_commercial_service(request).summarize_service_audit_events(
             account_id=account_id,
             site_ids=site_ids,
+            limit=200,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3469,6 +3491,7 @@ async def get_portal_site_audit_summary(request: Request, site_id: str) -> Any:
     try:
         summary = _get_commercial_service(request).summarize_service_audit_events(
             site_id=site_id,
+            limit=200,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

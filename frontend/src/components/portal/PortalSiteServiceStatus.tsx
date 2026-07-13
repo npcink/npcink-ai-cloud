@@ -24,14 +24,14 @@ type PortalSiteServiceStatusProps = {
   onRefresh: () => void;
 };
 
-function statusLabel(status: string, issueCount: number, t: TranslateFn): string {
-  if (status === 'ok' && issueCount === 0) return t('portal.home.risk_level_normal', {}, 'Normal');
+function statusLabel(status: string, issueCount: number, hasQuotaPressure: boolean, t: TranslateFn): string {
+  if (status === 'ok' && issueCount === 0 && !hasQuotaPressure) return t('portal.home.risk_level_normal', {}, 'Normal');
   if (status === 'inactive') return t('status.inactive', {}, 'Inactive');
   return t('portal.home.filter_attention_only', {}, 'Needs attention');
 }
 
-function statusTone(status: string, issueCount: number): string {
-  if (status === 'ok' && issueCount === 0) return 'active';
+function statusTone(status: string, issueCount: number, hasQuotaPressure: boolean): string {
+  if (status === 'ok' && issueCount === 0 && !hasQuotaPressure) return 'active';
   if (status === 'error') return 'error';
   return 'warning';
 }
@@ -60,7 +60,8 @@ export function PortalSiteServiceStatus({
 }: PortalSiteServiceStatusProps) {
   const issueCount = overview?.action_required.length || 0;
   const healthStatus = overview?.health.status || 'inactive';
-  const currentStatusLabel = statusLabel(healthStatus, issueCount, t);
+  const hasQuotaPressure = Boolean(overview && overview.quota.top_pressure !== 'none');
+  const currentStatusLabel = statusLabel(healthStatus, issueCount, hasQuotaPressure, t);
   const latestActivityAt = overview?.activity.last_seen_at || overview?.generated_at || '';
 
   return (
@@ -80,7 +81,7 @@ export function PortalSiteServiceStatus({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PortalStatusBadge
-            status={statusTone(healthStatus, issueCount)}
+            status={statusTone(healthStatus, issueCount, hasQuotaPressure)}
             label={overview ? currentStatusLabel : t('common.loading')}
           />
           <button type="button" className="btn btn-secondary btn-sm" onClick={onRefresh} disabled={isLoading}>
@@ -158,7 +159,7 @@ export function PortalSiteServiceStatus({
         </div>
       ) : null}
 
-      {!isLoading && !error && overview && issueCount === 0 ? (
+      {!isLoading && !error && overview && issueCount === 0 && !hasQuotaPressure ? (
         <PortalCard className="text-sm text-slate-600 dark:text-slate-300">
           {t('portal.monitoring.no_diagnostic_items', {}, 'No suggestions for this site.')}
         </PortalCard>

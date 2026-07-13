@@ -15,10 +15,7 @@ from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
-    CREDIT_LEDGER_EVENT_ADJUSTMENT,
     CREDIT_LEDGER_EVENT_CONSUME,
-    CREDIT_LEDGER_EVENT_GRANT,
-    CREDIT_LEDGER_EVENT_REFUND,
     IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE,
     IDENTITY_PROVIDER_BINDING_STATUS_REVOKED,
     PORTAL_LOGIN_CODE_STATUS_CONSUMED,
@@ -221,18 +218,12 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     )
                 query_start_at = max(period_start_at, range_start_at)
                 query_end_at = min(query_end_at, range_end_at)
-            event_types = [
-                CREDIT_LEDGER_EVENT_CONSUME,
-                CREDIT_LEDGER_EVENT_GRANT,
-                CREDIT_LEDGER_EVENT_ADJUSTMENT,
-                CREDIT_LEDGER_EVENT_REFUND,
-            ]
             group_rows, total, consumed_credits = repository.list_portal_credit_event_groups(
                 account_id=account_id,
                 subscription_id=(
                     primary_subscription.subscription_id if primary_subscription else None
                 ),
-                event_types=event_types,
+                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
                 since=query_start_at,
                 until=query_end_at,
                 site_id=normalized_site_id,
@@ -253,6 +244,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 lambda: defaultdict(float)
             )
             for entry in entries:
+                if str(getattr(entry, "event_type", "") or "") != CREDIT_LEDGER_EVENT_CONSUME:
+                    continue
                 group_id = str(
                     getattr(entry, "run_id", "") or getattr(entry, "ledger_entry_id", "")
                 )
@@ -423,12 +416,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 subscription_id=(
                     primary_subscription.subscription_id if primary_subscription else None
                 ),
-                event_types=[
-                    CREDIT_LEDGER_EVENT_CONSUME,
-                    CREDIT_LEDGER_EVENT_GRANT,
-                    CREDIT_LEDGER_EVENT_ADJUSTMENT,
-                    CREDIT_LEDGER_EVENT_REFUND,
-                ],
+                event_types=[CREDIT_LEDGER_EVENT_CONSUME],
                 since=query_start_at,
                 until=query_end_at,
                 bucket_seconds=bucket_seconds,
