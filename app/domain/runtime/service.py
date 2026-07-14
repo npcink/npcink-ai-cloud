@@ -18,7 +18,7 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
 )
 from app.adapters.providers.registry import build_provider_adapters
-from app.adapters.queue.base import RuntimeQueue, RuntimeQueueError
+from app.adapters.queue.base import RuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
@@ -105,10 +105,8 @@ from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
 from app.domain.runtime.contract_validation import RuntimeContractValidator
 from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
-    RuntimeCancelNotAllowedError,
     RuntimeErrorBase,
     RuntimeExecutionContractError,
-    RuntimeIdempotencyConflictError,
     RuntimeResultExpiredError,
     RuntimeResultNotReadyError,
     RuntimeRunNotFoundError,
@@ -135,6 +133,7 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
+from app.domain.runtime.run_lifecycle import RuntimeRunLifecycleService
 from app.domain.runtime.run_projection import RuntimeRunProjector
 from app.domain.site_knowledge.backends import SiteKnowledgeBackendError
 from app.domain.site_knowledge.contracts import (
@@ -171,6 +170,12 @@ from app.domain.web_search.contracts import (
 )
 from app.domain.web_search.service import WebSearchProviderError, WebSearchService
 from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
+
+__all__ = [
+    "RuntimeResultExpiredError",
+    "RuntimeResultNotReadyError",
+    "RuntimeService",
+]
 
 logger = get_logger(__name__)
 
@@ -230,6 +235,13 @@ class RuntimeService:
             execution_provider_ids=set(self.providers),
         )
         self.runtime_queue = runtime_queue
+        self.run_lifecycle_service = RuntimeRunLifecycleService(
+            database_url=self.database_url,
+            runtime_queue=self.runtime_queue,
+            run_projector=self.run_projector,
+            claimed_run_executor=self._execute_existing_run,
+            media_derivative_site_running_limit=(self.settings.media_derivative_site_running_limit),
+        )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
         self.contract_validator.validate_runtime_data_handling_contract(request)
@@ -357,7 +369,10 @@ class RuntimeService:
         merged_policy = self._apply_routing_snapshot(merged_policy, resolution)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
         should_enqueue = self._should_enqueue(request, merged_policy)
         selected_candidate = resolution.selected_candidate
 
@@ -385,23 +400,19 @@ class RuntimeService:
                     profile_id=resolution.profile_id,
                 )
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -470,7 +481,7 @@ class RuntimeService:
             self.commercial_service.record_run_acceptance(session=session, run=run)
 
             if should_enqueue:
-                self._publish_queue_signal(run.run_id)
+                self.run_lifecycle_service.publish_queue_signal(run.run_id)
                 session.commit()
                 return self._build_execution_response(
                     run,
@@ -508,30 +519,29 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_site_knowledge_policy(request)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
         should_enqueue = self._should_enqueue(request, merged_policy)
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -601,7 +611,7 @@ class RuntimeService:
             self.commercial_service.record_run_acceptance(session=session, run=run)
 
             if should_enqueue:
-                self._publish_queue_signal(run.run_id)
+                self.run_lifecycle_service.publish_queue_signal(run.run_id)
                 session.commit()
                 return self._build_execution_response(
                     run,
@@ -629,30 +639,29 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_cloud_batch_runtime_policy(request)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
         should_enqueue = self._should_enqueue(request, merged_policy)
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -720,7 +729,7 @@ class RuntimeService:
             self.commercial_service.record_run_acceptance(session=session, run=run)
 
             if should_enqueue:
-                self._publish_queue_signal(run.run_id)
+                self.run_lifecycle_service.publish_queue_signal(run.run_id)
                 session.commit()
                 return self._build_execution_response(
                     run,
@@ -759,7 +768,7 @@ class RuntimeService:
         source_checksum = hashlib.sha256(source_bytes).hexdigest()
         watermark_checksum = hashlib.sha256(watermark_bytes).hexdigest() if watermark_bytes else ""
         media_derivative_policy = self._build_media_derivative_policy(input_payload)
-        request_fingerprint = self._build_request_fingerprint_for_media_derivative(
+        request_fingerprint = self.run_lifecycle_service.build_media_derivative_request_fingerprint(
             site_id,
             input_payload,
             source_checksum=source_checksum,
@@ -770,13 +779,13 @@ class RuntimeService:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, site_id)
 
-            existing = repository.get_run_by_idempotency(site_id, resolved_idempotency_key)
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=site_id,
+                idempotency_key=resolved_idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
             if existing is not None:
-                if existing.request_fingerprint != request_fingerprint:
-                    raise RuntimeIdempotencyConflictError(
-                        site_id,
-                        resolved_idempotency_key,
-                    )
                 session.commit()
                 return self._build_execution_response(
                     existing,
@@ -862,7 +871,7 @@ class RuntimeService:
                 selected_instance_id="cloud-worker",
             )
             self.commercial_service.record_run_acceptance(session=session, run=run)
-            self._publish_queue_signal(run.run_id)
+            self.run_lifecycle_service.publish_queue_signal(run.run_id)
             session.commit()
             return self._build_execution_response(
                 run,
@@ -918,27 +927,6 @@ class RuntimeService:
             "pressure_reasons": pressure_reasons,
             "recommended_chunk_size": max(1, min(default_chunk_size, queue_remaining or 1)),
         }
-
-    def _build_request_fingerprint_for_media_derivative(
-        self,
-        site_id: str,
-        input_payload: dict[str, Any],
-        *,
-        source_checksum: str,
-        watermark_checksum: str = "",
-    ) -> str:
-        canonical_payload = json.dumps(
-            {
-                "site_id": site_id,
-                "execution_kind": "media_derivative",
-                "input": input_payload,
-                "source_checksum": source_checksum,
-                "watermark_checksum": watermark_checksum,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
 
     def _build_media_derivative_policy(self, input_payload: dict[str, Any]) -> dict[str, object]:
         cloud_job_payload = self._dict_or_empty(input_payload.get("cloud_job_payload"))
@@ -1104,10 +1092,9 @@ class RuntimeService:
         )
 
     def process_next_queued_run(self, *, timeout_seconds: int = 1) -> dict[str, object] | None:
-        processed = self.process_queued_runs(max_runs=1, timeout_seconds=timeout_seconds)
-        if not processed:
-            return None
-        return processed[0]
+        return self.run_lifecycle_service.process_next_queued_run(
+            timeout_seconds=timeout_seconds,
+        )
 
     def process_queued_runs(
         self,
@@ -1115,152 +1102,16 @@ class RuntimeService:
         max_runs: int = 1,
         timeout_seconds: int = 1,
     ) -> list[dict[str, object]]:
-        processed: list[dict[str, object]] = []
-        remaining_timeout = max(0, timeout_seconds)
-
-        for _ in range(max(1, max_runs)):
-            result = self._process_single_queued_run(timeout_seconds=remaining_timeout)
-            if result is None:
-                break
-            processed.append(result)
-            # Only the first dequeue should block; after that, drain any additional
-            # queued work immediately before returning control to the worker loop.
-            remaining_timeout = 0
-
-        return processed
-
-    def _process_single_queued_run(
-        self,
-        *,
-        timeout_seconds: int = 1,
-    ) -> dict[str, object] | None:
-        signaled_run_id = self._consume_queue_signal(timeout_seconds)
-
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            run: RunRecord | None = None
-            media_derivative_site_running_limit = max(
-                1,
-                int(self.settings.media_derivative_site_running_limit),
-            )
-            if signaled_run_id:
-                candidate = repository.get_run(signaled_run_id)
-                if (
-                    candidate is not None
-                    and candidate.execution_kind == "media_derivative"
-                    and repository.count_running_media_derivative_runs(candidate.site_id)
-                    >= media_derivative_site_running_limit
-                ):
-                    run = None
-                else:
-                    run = repository.claim_run_if_queued(signaled_run_id)
-
-            if run is None:
-                run = repository.claim_next_queued_run(
-                    media_derivative_site_running_limit=media_derivative_site_running_limit,
-                )
-
-            if run is None:
-                session.commit()
-                return None
-
-            self._execute_existing_run(run, repository=repository)
-            session.commit()
-            return {
-                "run_id": run.run_id,
-                "status": run.status,
-                "trace_id": run.trace_id,
-            }
+        return self.run_lifecycle_service.process_queued_runs(
+            max_runs=max_runs,
+            timeout_seconds=timeout_seconds,
+        )
 
     def get_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            run = repository.get_run(run_id)
-            if run is None or (site_id and run.site_id != site_id):
-                raise RuntimeRunNotFoundError(run_id)
-
-            provider_calls = repository.list_provider_calls(run_id)
-            failure_details = self.run_projector.build_failure_details(run, provider_calls)
-
-        return {
-            "run_id": run.run_id,
-            "canonical_run_id": run.canonical_run_id or "",
-            "site_id": run.site_id,
-            "ability_name": run.ability_name,
-            "skill_id": run.skill_id or "",
-            "workflow_id": run.workflow_id or "",
-            "contract_version": run.contract_version or "",
-            "channel": run.channel,
-            "execution_kind": run.execution_kind,
-            "execution_tier": run.execution_tier,
-            "execution_pattern": self.run_projector.public_execution_pattern(run.execution_pattern),
-            "data_classification": run.data_classification,
-            "profile_id": run.profile_id,
-            "status": run.status,
-            "idempotency_key": run.idempotency_key,
-            "trace_id": run.trace_id,
-            "provider_id": run.selected_provider_id,
-            "model_id": run.selected_model_id,
-            "instance_id": run.selected_instance_id,
-            "fallback_used": run.fallback_used,
-            "error_code": run.error_code,
-            "error_message": run.error_message,
-            "error_stage": failure_details.error_stage,
-            "retryable": failure_details.retryable,
-            "retry_exhausted": failure_details.retry_exhausted,
-            "started_at": self.run_projector.serialize_timestamp(run.started_at),
-            "finished_at": self.run_projector.serialize_timestamp(run.finished_at),
-            "provider_call_count": len(provider_calls),
-            "task_backend": self.run_projector.build_task_backend_payload(run),
-            "run_lifecycle": self.run_projector.build_run_lifecycle(run),
-        }
+        return self.run_lifecycle_service.get_run(run_id, site_id=site_id)
 
     def get_run_result(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            run = repository.get_run(run_id)
-            if run is None or (site_id and run.site_id != site_id):
-                raise RuntimeRunNotFoundError(run_id)
-            if self.run_projector.is_run_result_expired(run):
-                raise RuntimeResultExpiredError(run_id)
-            if run.result_json is None:
-                raise RuntimeResultNotReadyError(run_id, run.status)
-
-            provider_calls = repository.list_provider_calls(run_id)
-
-        result = build_analysis_result_envelope(
-            run.result_json if isinstance(run.result_json, dict) else {},
-            ability_family=run.ability_family or "text",
-            ability_name=run.ability_name or "",
-            input_payload=run.input_json if isinstance(run.input_json, dict) else {},
-        )
-        return {
-            "run_id": run.run_id,
-            "canonical_run_id": run.canonical_run_id or "",
-            "status": run.status,
-            "execution_context": self.run_projector.build_execution_context_payload(run),
-            "task_backend": self.run_projector.build_task_backend_payload(run),
-            "run_lifecycle": self.run_projector.build_run_lifecycle(run),
-            "result": result,
-            "provider_calls": [
-                {
-                    "provider_id": call.provider_id,
-                    "model_id": call.model_id,
-                    "instance_id": call.instance_id,
-                    "region": call.region,
-                    "latency_ms": call.latency_ms,
-                    "tokens_in": call.tokens_in,
-                    "tokens_out": call.tokens_out,
-                    "cost": call.cost,
-                    "retry_count": call.retry_count,
-                    "fallback_used": call.fallback_used,
-                    "error_code": call.error_code,
-                    "error_stage": get_error_taxonomy(call.error_code).error_stage,
-                    "retryable": get_error_taxonomy(call.error_code).retryable,
-                }
-                for call in provider_calls
-            ],
-        }
+        return self.run_lifecycle_service.get_run_result(run_id, site_id=site_id)
 
     def list_recent_nightly_inspection_runs(
         self,
@@ -2464,7 +2315,7 @@ class RuntimeService:
                         "runtime.repair_not_allowed",
                         "requeue_stale_queued requires a stale queued run",
                     )
-                self._publish_queue_signal(run.run_id)
+                self.run_lifecycle_service.publish_queue_signal(run.run_id)
                 outcome = {
                     "repair_action": normalized_action,
                     "state_transition": "queued->queued",
@@ -2483,7 +2334,7 @@ class RuntimeService:
                 if reason:
                     run.callback_last_error_message = reason
                 session.flush()
-                self._publish_queue_signal(run.run_id)
+                self.run_lifecycle_service.publish_queue_signal(run.run_id)
                 outcome = {
                     "repair_action": normalized_action,
                     "state_transition": f"{before.get('callback_status') or ''}->pending",
@@ -3206,28 +3057,7 @@ class RuntimeService:
         }
 
     def cancel_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            run = repository.get_run(run_id)
-            if run is None or (site_id and run.site_id != site_id):
-                raise RuntimeRunNotFoundError(run_id)
-
-            policy = run.policy_json if isinstance(run.policy_json, dict) else {}
-            if not self.run_projector.supports_public_cancel(run.execution_pattern, policy):
-                raise RuntimeCancelNotAllowedError(run_id, run.status)
-
-            if run.status == "queued":
-                repository.mark_run_canceled(run, message="run canceled before worker claim")
-            elif run.status == "running":
-                repository.request_run_cancel(run)
-            elif run.status == "canceled":
-                pass
-            else:
-                raise RuntimeCancelNotAllowedError(run_id, run.status)
-
-            session.commit()
-
-        return self.get_run(run_id, site_id=site_id)
+        return self.run_lifecycle_service.cancel_run(run_id, site_id=site_id)
 
     def dispatch_pending_callbacks(
         self,
@@ -3913,29 +3743,28 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_web_search_policy(request)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -4200,29 +4029,28 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_image_source_policy(request)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -4300,29 +4128,28 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_media_batch_plan_policy(request)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -4400,29 +4227,28 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_site_ops_analysis_policy(request)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -4504,30 +4330,29 @@ class RuntimeService:
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_image_context_evidence_policy(request, resolution)
-        request_fingerprint = self._build_request_fingerprint(request, merged_policy)
+        request_fingerprint = self.run_lifecycle_service.build_request_fingerprint(
+            request,
+            merged_policy,
+        )
         selected_candidate = resolution.selected_candidate
 
         with get_session(self.database_url) as session:
             repository = RuntimeRepository(session)
             self._require_active_site(repository, request.site_id)
 
-            if request.idempotency_key:
-                existing = repository.get_run_by_idempotency(
-                    request.site_id,
-                    request.idempotency_key,
+            existing = self.run_lifecycle_service.get_idempotent_replay(
+                repository=repository,
+                site_id=request.site_id,
+                idempotency_key=request.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if existing is not None:
+                session.commit()
+                return self._build_execution_response(
+                    existing,
+                    repository=repository,
+                    idempotent_replay=True,
                 )
-                if existing is not None:
-                    if existing.request_fingerprint != request_fingerprint:
-                        raise RuntimeIdempotencyConflictError(
-                            request.site_id,
-                            request.idempotency_key,
-                        )
-                    session.commit()
-                    return self._build_execution_response(
-                        existing,
-                        repository=repository,
-                        idempotent_replay=True,
-                    )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
@@ -5795,24 +5620,6 @@ class RuntimeService:
         }
         return policy
 
-    def _publish_queue_signal(self, run_id: str) -> None:
-        if self.runtime_queue is None:
-            return
-        try:
-            self.runtime_queue.publish(run_id)
-        except RuntimeQueueError:
-            # The worker also polls queued runs from the database; a lost wake-up signal
-            # must not turn a valid queued run into a failed request.
-            return
-
-    def _consume_queue_signal(self, timeout_seconds: int) -> str | None:
-        if self.runtime_queue is None:
-            return None
-        try:
-            return self.runtime_queue.consume(timeout_seconds)
-        except RuntimeQueueError:
-            return None
-
     def _merge_policy(
         self,
         default_policy: dict[str, object],
@@ -6094,38 +5901,7 @@ class RuntimeService:
         )
 
     def cleanup_expired_run_results(self, *, now: datetime | None = None) -> int:
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            purged = repository.purge_expired_run_results(now=now)
-            session.commit()
-            return purged
-
-    def _build_request_fingerprint(
-        self,
-        request: RuntimeRequest,
-        merged_policy: dict[str, object],
-    ) -> str:
-        canonical_payload = json.dumps(
-            {
-                "site_id": request.site_id,
-                "ability_name": request.ability_name,
-                "ability_family": request.ability_family,
-                "skill_id": request.skill_id,
-                "workflow_id": request.workflow_id,
-                "contract_version": request.contract_version,
-                "channel": request.channel,
-                "execution_kind": request.execution_kind,
-                "execution_tier": request.execution_tier,
-                "execution_pattern": request.execution_pattern,
-                "data_classification": request.data_classification,
-                "profile_id": request.profile_id,
-                "input": request.input_payload,
-                "policy": merged_policy,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+        return self.run_lifecycle_service.cleanup_expired_run_results(now=now)
 
     def _serialize_runtime_diagnostic_run(self, run: RunRecord) -> dict[str, object]:
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
