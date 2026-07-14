@@ -134,6 +134,8 @@ from app.domain.runtime.models import (
 )
 from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
+    ProviderOutputDecision,
+    ProviderOutputFinalizationError,
     RuntimeProviderExecutionService,
 )
 from app.domain.runtime.result_normalization import (
@@ -209,9 +211,6 @@ class RuntimeService:
         self.database_url = database_url
         self.settings = settings or get_settings()
         self.commercial_service = CommercialService(database_url, settings=self.settings)
-        self.provider_execution_service = RuntimeProviderExecutionService(
-            usage_recorder=self.commercial_service,
-        )
         self.result_normalization_service = RuntimeResultNormalizationService()
         self.providers = (
             providers if providers is not None else build_provider_adapters(self.settings)
@@ -245,6 +244,14 @@ class RuntimeService:
             run_projector=self.run_projector,
             claimed_run_executor=self._execute_existing_run,
             media_derivative_site_running_limit=(self.settings.media_derivative_site_running_limit),
+        )
+        self.provider_execution_service = RuntimeProviderExecutionService(
+            usage_recorder=self.commercial_service,
+            providers=self.providers,
+            run_controller=self.run_lifecycle_service,
+            input_preprocessor=self._preprocess_provider_input,
+            output_preparer=self._prepare_provider_output,
+            output_finalizer=self._finalize_provider_output,
         )
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
@@ -3184,277 +3191,111 @@ class RuntimeService:
         input_payload: dict[str, Any],
         connector_envelope: dict[str, Any] | None = None,
     ) -> None:
-        policy = run.policy_json if isinstance(run.policy_json, dict) else {}
-        input_payload = self._apply_automatic_web_search(
+        self.provider_execution_service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=candidates,
+            input_payload=input_payload,
+            finalization_context=connector_envelope,
+        )
+
+    def _preprocess_provider_input(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any],
+        policy: dict[str, object],
+    ) -> dict[str, Any]:
+        return self._apply_automatic_web_search(
             run,
             repository=repository,
             input_payload=input_payload,
             policy=policy,
         )
-        if run.status == "failed":
-            return
-        allow_fallback = bool(policy.get("allow_fallback", True))
-        max_retries = max(0, self._coerce_int(policy.get("max_retries"), default=0))
-        timeout_ms = max(1, self._coerce_int(policy.get("timeout_ms"), default=30_000))
 
-        last_error_code = "runtime.execute_failed"
-        last_error_message = "runtime execution failed"
-        last_fallback_used = False
-        last_provider_id = ""
-        last_model_id = ""
-        last_instance_id = ""
-
-        if self.run_lifecycle_service.cancel_if_requested(
-            repository=repository,
-            run=run,
-        ):
-            return
-
-        for candidate_index, candidate in enumerate(candidates):
-            fallback_used = candidate_index > 0
-
-            for retry_count in range(max_retries + 1):
-                if self.run_lifecycle_service.cancel_if_requested(
-                    repository=repository,
-                    run=run,
-                ):
-                    return
-                last_fallback_used = fallback_used
-                last_provider_id = candidate.provider_id
-                last_model_id = candidate.model_id
-                last_instance_id = candidate.instance_id
-                provider = self.providers.get(candidate.provider_id)
-                if provider is None:
-                    last_error_code = "runtime.provider_not_configured"
-                    last_error_message = (
-                        f"provider adapter is not configured for {candidate.provider_id}"
-                    )
-                    if allow_fallback and get_error_taxonomy(last_error_code).fallback_eligible:
-                        break
-
-                    self.run_lifecycle_service.fail_run(
-                        repository,
-                        run,
-                        error_code=last_error_code,
-                        error_message=last_error_message,
-                        provider_id=candidate.provider_id,
-                        model_id=candidate.model_id,
-                        instance_id=candidate.instance_id,
-                        fallback_used=fallback_used,
-                    )
-                    return
-
-                try:
-                    provider_result = provider.execute(
-                        ProviderExecutionRequest(
-                            run_id=run.run_id,
-                            site_id=run.site_id,
-                            ability_name=run.ability_name,
-                            profile_id=run.profile_id,
-                            execution_kind=run.execution_kind,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            endpoint_variant=candidate.endpoint_variant,
-                            trace_id=run.trace_id,
-                            input_payload=input_payload,
-                            policy=policy,
-                            timeout_ms=timeout_ms,
-                            price_input=candidate.price_input,
-                            price_output=candidate.price_output,
-                            retry_count=retry_count,
-                        )
-                    )
-                except ProviderExecutionError as error:
-                    self.provider_execution_service.record_provider_call(
-                        repository=repository,
-                        run=run,
-                        command=ProviderCallEvidenceCommand(
-                            provider_id=candidate.provider_id,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            region=candidate.region,
-                            latency_ms=(
-                                timeout_ms if error.error_code == "provider.timeout" else 0
-                            ),
-                            tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
-                            tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
-                            cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
-                            retry_count=retry_count,
-                            fallback_used=fallback_used,
-                            error_code=error.error_code,
-                        ),
-                    )
-                    last_error_code = error.error_code
-                    last_error_message = error.message
-
-                    error_taxonomy = get_error_taxonomy(error.error_code)
-                    should_retry = (
-                        retry_count < max_retries and error.retryable and error_taxonomy.retryable
-                    )
-                    if should_retry:
-                        continue
-
-                    should_fallback = allow_fallback and error_taxonomy.fallback_eligible
-                    if should_fallback:
-                        break
-
-                    self.run_lifecycle_service.fail_run(
-                        repository,
-                        run,
-                        error_code=last_error_code,
-                        error_message=last_error_message,
-                        provider_id=candidate.provider_id,
-                        model_id=candidate.model_id,
-                        instance_id=candidate.instance_id,
-                        fallback_used=fallback_used,
-                    )
-                    return
-
-                provider_output = provider_result.output
-                if self._is_wordpress_ai_connector_run(run):
-                    provider_output = self.wordpress_operation_runtime.normalize_provider_output(
-                        provider_output,
-                        input_payload=input_payload,
-                    )
-                    if self.wordpress_operation_runtime.is_empty_text_output(
-                        input_payload=input_payload,
-                        provider_output=provider_output,
-                    ):
-                        last_error_code = "provider.output_quality_rejected"
-                        last_error_message = (
-                            "provider returned no usable WordPress AI connector text"
-                        )
-                        self.provider_execution_service.record_provider_call(
-                            repository=repository,
-                            run=run,
-                            command=ProviderCallEvidenceCommand(
-                                provider_id=candidate.provider_id,
-                                model_id=candidate.model_id,
-                                instance_id=candidate.instance_id,
-                                region=candidate.region,
-                                latency_ms=provider_result.latency_ms,
-                                tokens_in=provider_result.tokens_in,
-                                tokens_out=provider_result.tokens_out,
-                                cost=provider_result.cost,
-                                retry_count=retry_count,
-                                fallback_used=fallback_used,
-                                error_code=last_error_code,
-                            ),
-                        )
-                        if allow_fallback:
-                            break
-                        self.run_lifecycle_service.fail_run(
-                            repository,
-                            run,
-                            error_code=last_error_code,
-                            error_message=last_error_message,
-                            provider_id=candidate.provider_id,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            fallback_used=fallback_used,
-                        )
-                        return
-
-                self.provider_execution_service.record_provider_call(
-                    repository=repository,
-                    run=run,
-                    command=ProviderCallEvidenceCommand(
-                        provider_id=candidate.provider_id,
-                        model_id=candidate.model_id,
-                        instance_id=candidate.instance_id,
-                        region=candidate.region,
-                        latency_ms=provider_result.latency_ms,
-                        tokens_in=provider_result.tokens_in,
-                        tokens_out=provider_result.tokens_out,
-                        cost=provider_result.cost,
-                        retry_count=retry_count,
-                        fallback_used=fallback_used,
-                    ),
-                )
-                if self._is_wordpress_ai_connector_image_generation_run(
-                    run,
-                    input_payload=input_payload,
-                ):
-                    try:
-                        provider_output = self._materialize_wordpress_ai_inline_image_output(
-                            provider_output,
-                        )
-                    except InlineImageMaterializationError as error:
-                        self.run_lifecycle_service.fail_run(
-                            repository,
-                            run,
-                            error_code=error.error_code,
-                            error_message=error.message,
-                            provider_id=candidate.provider_id,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            fallback_used=fallback_used,
-                        )
-                        return
-                if self._is_audio_generation_run(run):
-                    try:
-                        provider_output = self._materialize_audio_generation_output(
-                            run,
-                            repository=repository,
-                            provider_output=provider_output,
-                        )
-                    except AudioArtifactMaterializationError as error:
-                        self.run_lifecycle_service.fail_run(
-                            repository,
-                            run,
-                            error_code=error.error_code,
-                            error_message=error.message,
-                            provider_id=candidate.provider_id,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            fallback_used=fallback_used,
-                        )
-                        return
-
-                storage_mode = self._get_storage_mode(
-                    run.policy_json if isinstance(run.policy_json, dict) else {}
-                )
-                automatic_web_search = policy.get("automatic_web_search")
-                normalized_result = self.result_normalization_service.normalize(
-                    RuntimeResultNormalizationCommand(
-                        site_id=run.site_id,
-                        provider_output=provider_output,
-                        storage_mode=storage_mode,
-                        ability_family=run.ability_family or "text",
-                        ability_name=run.ability_name or "",
-                        input_payload=input_payload,
-                        connector_envelope=connector_envelope,
-                        automatic_web_search=(
-                            automatic_web_search if isinstance(automatic_web_search, dict) else None
-                        ),
-                    )
-                )
-                if normalized_result.transient_result is not None:
-                    set_transient_runtime_result(run, normalized_result.transient_result)
-                self.run_lifecycle_service.succeed_run(
-                    repository,
-                    run,
-                    result_json=normalized_result.durable_result,
-                    provider_id=candidate.provider_id,
-                    model_id=candidate.model_id,
-                    instance_id=candidate.instance_id,
-                    fallback_used=fallback_used,
-                )
-                return
-
-            if not allow_fallback:
-                break
-
-        self.run_lifecycle_service.fail_run(
-            repository,
-            run,
-            error_code=last_error_code,
-            error_message=last_error_message,
-            provider_id=last_provider_id or None,
-            model_id=last_model_id or None,
-            instance_id=last_instance_id or None,
-            fallback_used=last_fallback_used,
+    def _prepare_provider_output(
+        self,
+        run: RunRecord,
+        *,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+    ) -> ProviderOutputDecision:
+        if not self._is_wordpress_ai_connector_run(run):
+            return ProviderOutputDecision(accepted=True, output=provider_output)
+        normalized_output = self.wordpress_operation_runtime.normalize_provider_output(
+            provider_output,
+            input_payload=input_payload,
         )
+        if self.wordpress_operation_runtime.is_empty_text_output(
+            input_payload=input_payload,
+            provider_output=normalized_output,
+        ):
+            return ProviderOutputDecision(
+                accepted=False,
+                output=normalized_output,
+                error_code="provider.output_quality_rejected",
+                error_message="provider returned no usable WordPress AI connector text",
+            )
+        return ProviderOutputDecision(accepted=True, output=normalized_output)
+
+    def _finalize_provider_output(
+        self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
+        input_payload: dict[str, Any],
+        provider_output: dict[str, Any],
+        policy: dict[str, object],
+        finalization_context: object | None,
+    ) -> dict[str, Any]:
+        if self._is_wordpress_ai_connector_image_generation_run(
+            run,
+            input_payload=input_payload,
+        ):
+            try:
+                provider_output = self._materialize_wordpress_ai_inline_image_output(
+                    provider_output,
+                )
+            except InlineImageMaterializationError as error:
+                raise ProviderOutputFinalizationError(
+                    error.error_code,
+                    error.message,
+                ) from error
+        if self._is_audio_generation_run(run):
+            try:
+                provider_output = self._materialize_audio_generation_output(
+                    run,
+                    repository=repository,
+                    provider_output=provider_output,
+                )
+            except AudioArtifactMaterializationError as error:
+                raise ProviderOutputFinalizationError(
+                    error.error_code,
+                    error.message,
+                ) from error
+
+        automatic_web_search = policy.get("automatic_web_search")
+        connector_envelope = (
+            finalization_context if isinstance(finalization_context, dict) else None
+        )
+        normalized_result = self.result_normalization_service.normalize(
+            RuntimeResultNormalizationCommand(
+                site_id=run.site_id,
+                provider_output=provider_output,
+                storage_mode=self._get_storage_mode(policy),
+                ability_family=run.ability_family or "text",
+                ability_name=run.ability_name or "",
+                input_payload=input_payload,
+                connector_envelope=connector_envelope,
+                automatic_web_search=(
+                    automatic_web_search if isinstance(automatic_web_search, dict) else None
+                ),
+            )
+        )
+        if normalized_result.transient_result is not None:
+            set_transient_runtime_result(run, normalized_result.transient_result)
+        return normalized_result.durable_result
 
     def _apply_automatic_web_search(
         self,
@@ -5124,7 +4965,10 @@ class RuntimeService:
             price_output=candidate.price_output,
         )
         try:
-            provider_result = provider.execute(request)
+            provider_result = self.provider_execution_service.execute_provider(
+                provider,
+                request,
+            )
         except ProviderExecutionError as error:
             self.provider_execution_service.record_provider_call(
                 repository=repository,

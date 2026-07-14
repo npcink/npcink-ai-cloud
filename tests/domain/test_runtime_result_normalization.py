@@ -193,8 +193,10 @@ def test_result_normalization_module_and_runtime_service_keep_boundaries() -> No
     repository_root = Path(__file__).resolve().parents[2]
     module_path = repository_root / "app/domain/runtime/result_normalization.py"
     service_path = repository_root / "app/domain/runtime/service.py"
+    provider_execution_path = repository_root / "app/domain/runtime/provider_execution.py"
     module_tree = ast.parse(module_path.read_text(encoding="utf-8"))
     service_source = service_path.read_text(encoding="utf-8")
+    provider_execution_source = provider_execution_path.read_text(encoding="utf-8")
 
     imported_modules = {
         node.module or "" for node in ast.walk(module_tree) if isinstance(node, ast.ImportFrom)
@@ -232,5 +234,6 @@ def test_result_normalization_module_and_runtime_service_keep_boundaries() -> No
     assert "self.wordpress_operation_runtime.normalize_provider_output(" in service_source
     assert "self._materialize_wordpress_ai_inline_image_output(" in service_source
     assert "self._materialize_audio_generation_output(" in service_source
-    assert "provider.execute(" in service_source
+    assert "provider.execute(" not in service_source
+    assert "provider.execute(" in provider_execution_source
     assert "def _execute_candidate_chain(" in service_source
