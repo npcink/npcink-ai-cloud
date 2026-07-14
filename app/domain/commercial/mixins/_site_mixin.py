@@ -18,6 +18,7 @@ from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+    PLATFORM_KIND_WORDPRESS,
     PORTAL_OAUTH_STATE_STATUS_CONSUMED,
     PORTAL_OAUTH_STATE_STATUS_EXPIRED,
     PORTAL_OAUTH_STATE_STATUS_PENDING,
@@ -56,7 +57,7 @@ from app.domain.commercial.errors import (
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_USER,
     USER_ROLE_USER,
-    _extract_site_wordpress_url,
+    _extract_site_url,
     _normalize_portal_site_url,
     _slugify_portal_site_segment,
     normalize_user_role,
@@ -238,6 +239,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         account_id: str,
         name: str,
         status: str = SITE_STATUS_PROVISIONING,
+        site_url: str | None = None,
         metadata_json: dict[str, object] | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
@@ -276,6 +278,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 account_id=account_id,
                 name=name or site_id,
                 status=status,
+                site_url=site_url,
+                platform_kind=PLATFORM_KIND_WORDPRESS,
                 metadata_json=metadata_json,
                 provisioned_at=now,
             )
@@ -299,13 +303,13 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         principal_id: str,
-        wordpress_url: str,
+        site_url: str,
         site_name: str = "",
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         normalized_account_id = str(account_id or "").strip()
         normalized_principal_id = str(principal_id or "").strip()
-        canonical_wordpress_url, site_source = _normalize_portal_site_url(wordpress_url)
+        canonical_site_url, site_source = _normalize_portal_site_url(site_url)
         site_slug = _slugify_portal_site_segment(site_source)
         if not normalized_account_id:
             raise CommercialPermissionError(
@@ -325,7 +329,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         normalized_site_id = f"site_{site_slug}"
         resolved_site_name = (
             str(site_name or "").strip()
-            or urlsplit(canonical_wordpress_url).hostname
+            or urlsplit(canonical_site_url).hostname
             or normalized_site_id
         )
         now = self.now_factory()
@@ -387,9 +391,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 account_id=normalized_account_id,
                 name=resolved_site_name,
                 status=SITE_STATUS_PROVISIONING,
+                site_url=canonical_site_url,
+                platform_kind=PLATFORM_KIND_WORDPRESS,
                 metadata_json={
                     "source": "portal_self_serve",
-                    "wordpress_url": canonical_wordpress_url,
                     "created_via": "portal_connect_site",
                 },
                 provisioned_at=now,
@@ -408,7 +413,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "principal_id": normalized_principal_id,
                 "identity_type": IDENTITY_TYPE_USER,
                 "role": USER_ROLE_USER,
-                "wordpress_url": canonical_wordpress_url,
+                "site_url": canonical_site_url,
+                "platform_kind": PLATFORM_KIND_WORDPRESS,
                 "site": self._serialize_site(site),
                 "subscription": service._serialize_subscription(subscription),
                 "commercial_onboarding": {
@@ -888,7 +894,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         principal_id: str,
-        wordpress_url: str,
+        site_url: str,
         site_name: str,
         return_url: str,
         addon_state: str,
@@ -903,8 +909,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "service.wordpress_addon_state_required",
                 "wordpress addon state is required",
             )
-        canonical_wordpress_url, site_source = _normalize_portal_site_url(wordpress_url)
-        if _addon_host_key(safe_return_url) != _addon_host_key(canonical_wordpress_url):
+        canonical_site_url, site_source = _normalize_portal_site_url(site_url)
+        if _addon_host_key(safe_return_url) != _addon_host_key(canonical_site_url):
             raise CommercialValidationError(
                 "service.wordpress_addon_return_host_mismatch",
                 "wordpress addon return_url must use the WordPress site host",
@@ -929,7 +935,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         normalized_site_id = f"site_{site_slug}"
         resolved_site_name = (
             str(site_name or "").strip()
-            or urlsplit(canonical_wordpress_url).hostname
+            or urlsplit(canonical_site_url).hostname
             or normalized_site_id
         )
         now = self.now_factory()
@@ -989,9 +995,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     account_id=normalized_account_id,
                     name=resolved_site_name,
                     status=SITE_STATUS_PROVISIONING,
+                    site_url=canonical_site_url,
+                    platform_kind=PLATFORM_KIND_WORDPRESS,
                     metadata_json={
                         "source": "portal_self_serve",
-                        "wordpress_url": canonical_wordpress_url,
                         "created_via": "wordpress_addon_connection",
                     },
                     provisioned_at=now,
@@ -1020,6 +1027,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         "service.portal_site_not_connectable",
                         f"site '{normalized_site_id}' is not available for addon connection",
                     )
+                site.site_url = canonical_site_url
+                site.platform_kind = PLATFORM_KIND_WORDPRESS
                 if str(site.status or "") == SITE_STATUS_ARCHIVED:
                     metadata = dict(site.metadata_json or {})
                     lifecycle = metadata.get("portal_lifecycle")
@@ -1056,7 +1065,6 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 label="WordPress addon connection",
                 metadata_json={
                     "source": "wordpress_addon_connection",
-                    "wordpress_url": canonical_wordpress_url,
                     "credential_owner": "system",
                     "user_visible": False,
                 },
@@ -1132,6 +1140,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
 
             connection_payload = {
                 "site_id": site.site_id,
+                "site_url": site.site_url,
+                "platform_kind": site.platform_kind,
                 "key_id": api_key.key_id,
                 "site_created": site_created,
                 "revoked_key_ids": revoked_key_ids,
@@ -1670,8 +1680,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     expires_at = expires_at.replace(tzinfo=UTC)
                 if expires_at <= expiring_threshold:
                     expiring_soon += 1
-            metadata = site.metadata_json or {}
-            wordpress_url = str(metadata.get("wordpress_url") or metadata.get("url") or "").strip()
+            site_url = _extract_site_url(site)
             checks = [
                 self._build_diagnostic_check(
                     "site_status",
@@ -1686,9 +1695,9 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "从 WordPress 插件重新连接站点，系统会自动生成新的连接凭证。",
                 ),
                 self._build_diagnostic_check(
-                    "wordpress_url",
-                    bool(wordpress_url),
-                    "WordPress URL 已配置" if wordpress_url else "WordPress URL 未配置",
+                    "site_url",
+                    bool(site_url),
+                    "WordPress URL 已配置" if site_url else "WordPress URL 未配置",
                     "在站点记录中确认站点 URL，方便排查绑定关系。",
                 ),
                 self._build_diagnostic_check(
@@ -1705,7 +1714,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "generated_at": self._serialize_datetime(self.now_factory()),
                 "site": self._serialize_site(site),
                 "site_status": site.status,
-                "wordpress_url": wordpress_url,
+                "site_url": site_url,
+                "platform_kind": str(site.platform_kind or PLATFORM_KIND_WORDPRESS),
                 "active_key_count": len(active_keys),
                 "latest_key_used_at": self._serialize_datetime(latest_key_usage),
                 "latest_auth_failure_at": self._serialize_datetime(
@@ -1729,7 +1739,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             "account_id": site.account_id or "",
             "name": site.name,
             "status": site.status,
-            "wordpress_url": _extract_site_wordpress_url(site),
+            "site_url": _extract_site_url(site),
+            "platform_kind": str(site.platform_kind or PLATFORM_KIND_WORDPRESS),
             "metadata": site.metadata_json or {},
             "provisioned_at": self._serialize_datetime(site.provisioned_at),
             "activated_at": self._serialize_datetime(site.activated_at),

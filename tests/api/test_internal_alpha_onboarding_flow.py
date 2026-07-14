@@ -187,7 +187,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_user_site_key_usage_audit(
             "account_id": "acct_alpha_flow",
             "name": "Alpha WordPress Site",
             "status": "provisioning",
-            "wordpress_url": "https://alpha.example.test",
+            "site_url": "https://alpha.example.test",
         },
         idempotency_key="alpha-site-001",
     )

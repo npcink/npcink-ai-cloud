@@ -6,7 +6,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
 import {
-  getPortalSiteWordPressUrl,
+  getPortalSiteUrl,
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
@@ -323,7 +323,7 @@ export default function PortalPage() {
   const selectedSite =
     visibleSites.find((s) => s.site_id === session.site_id) || visibleSites[0] || null;
   const currentSubscription = session.current_subscription;
-  const selectedSiteWordPressUrl = selectedSite ? getPortalSiteWordPressUrl(selectedSite) : '';
+  const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
     planVersionId: currentSubscription?.plan_version_id,
@@ -396,7 +396,7 @@ export default function PortalPage() {
   const isSelectedSiteConnected =
     Boolean(selectedSite) &&
     selectedSite?.status === 'active' &&
-    Boolean(selectedSiteWordPressUrl) &&
+    Boolean(selectedSiteUrl) &&
     currentSiteActiveKeyCount !== null &&
     currentSiteActiveKeyCount > 0;
   const setupChecklistItems = [

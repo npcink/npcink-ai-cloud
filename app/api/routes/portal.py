@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode
 import httpx
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.adapters.notifications.base import PortalEmailDeliveryError
 from app.adapters.notifications.smtp import build_portal_email_sender
@@ -38,6 +38,7 @@ from app.api.routes.service import (
     _get_commercial_service,
     _service_error_response,
 )
+from app.core.models import PLATFORM_KIND_WORDPRESS
 from app.domain.advisor.service import InternalAIAdvisorService
 from app.domain.agent_workflow_metadata import (
     MEDIA_DERIVATIVE_WORKFLOW_ID,
@@ -85,15 +86,19 @@ class PortalSessionSitePayload(BaseModel):
 
 
 class PortalCreateSitePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     account_id: str = ""
     site_name: str = ""
-    wordpress_url: str = ""
+    site_url: str = Field(default="", max_length=2048)
 
 
 class PortalAddonConnectionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     account_id: str = ""
     site_name: str = ""
-    wordpress_url: str = ""
+    site_url: str = Field(default="", max_length=2048)
     return_url: str = ""
     state: str = ""
 
@@ -125,8 +130,10 @@ class PortalEmailChangeVerifyPayload(BaseModel):
 
 
 class PortalRegistrationCodeRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: str = ""
-    site_url: str = ""
+    site_url: str = Field(default="", max_length=2048)
     site_name: str = ""
     use_case: str = ""
     locale: str = ""
@@ -1419,7 +1426,7 @@ async def request_portal_registration_code(
     try:
         issued = _get_commercial_service(request).issue_portal_registration_code(
             email=email,
-            wordpress_url=site_url,
+            site_url=site_url,
             site_name=payload.site_name,
             use_case=payload.use_case,
             ttl_seconds=ttl_seconds,
@@ -1435,7 +1442,7 @@ async def request_portal_registration_code(
                 expires_in_seconds=ttl_seconds,
                 project_name=services.settings.project_name,
                 site_name=str(issued.get("site_name") or ""),
-                wordpress_url=str(issued.get("wordpress_url") or ""),
+                site_url=str(issued.get("site_url") or ""),
                 locale=locale,
             )
         except PortalEmailDeliveryError as error:
@@ -1455,7 +1462,8 @@ async def request_portal_registration_code(
             "site": {
                 "site_id": str(issued.get("site_id") or ""),
                 "site_name": str(issued.get("site_name") or ""),
-                "wordpress_url": str(issued.get("wordpress_url") or ""),
+                "site_url": str(issued.get("site_url") or ""),
+                "platform_kind": PLATFORM_KIND_WORDPRESS,
             },
         },
     )
@@ -2550,7 +2558,7 @@ async def create_portal_site(
         result = service.provision_portal_site(
             account_id=payload.account_id,
             principal_id=auth.principal_id,
-            wordpress_url=payload.wordpress_url,
+            site_url=payload.site_url,
             site_name=payload.site_name,
             audit_context=audit_context,
         )
@@ -2588,7 +2596,7 @@ async def create_portal_addon_connection(
         result = service.create_wordpress_addon_connection(
             account_id=payload.account_id,
             principal_id=auth.principal_id,
-            wordpress_url=payload.wordpress_url,
+            site_url=payload.site_url,
             site_name=payload.site_name,
             return_url=payload.return_url,
             addon_state=payload.state,

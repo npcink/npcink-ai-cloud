@@ -270,7 +270,7 @@ test('addon binding survives login and returns the complete payload to WordPress
   await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-state-001/);
   expect(calls.addonConnectionPayload()).toEqual({
     account_id: 'acct_portal_login_e2e',
-    wordpress_url: 'https://demo.example.com',
+    site_url: 'https://demo.example.com',
     site_name: 'Demo Site',
     return_url: returnUrl,
     state: 'addon-state-001',

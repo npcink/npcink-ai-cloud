@@ -79,7 +79,8 @@ export interface Site {
   status: 'active' | 'suspended' | 'inactive' | 'provisioning' | 'archived';
   created_at: string;
   plan_name?: string;
-  wordpress_url?: string;
+  site_url: string;
+  platform_kind: 'wordpress';
   metadata?: Record<string, unknown>;
 }
 
@@ -200,19 +201,21 @@ export interface PortalQqStartResponse {
 export interface CreateSiteRequest {
   account_id: string;
   site_name?: string;
-  wordpress_url: string;
+  site_url: string;
 }
 
 export interface CreateAddonConnectionRequest {
   account_id: string;
   site_name?: string;
-  wordpress_url: string;
+  site_url: string;
   return_url: string;
   state: string;
 }
 
 export interface AddonConnectionResult {
   site_id: string;
+  site_url: string;
+  platform_kind: 'wordpress';
   key_id: string;
   site_created: boolean;
   redirect_url: string;
@@ -1290,6 +1293,8 @@ export interface ProvisionedSiteRecord {
   account_id: string;
   name: string;
   status: 'active' | 'suspended' | 'inactive' | 'provisioning';
+  site_url: string;
+  platform_kind: 'wordpress';
   metadata?: Record<string, unknown>;
   provisioned_at?: string;
   activated_at?: string;
@@ -1303,7 +1308,8 @@ export interface PortalProvisionedSite {
   account_id: string;
   site_admin_ref: string;
   role: string;
-  wordpress_url: string;
+  site_url: string;
+  platform_kind: 'wordpress';
   site: ProvisionedSiteRecord;
   current_subscription?: {
     subscription_id?: string;
@@ -1820,7 +1826,8 @@ export interface PortalSiteDiagnostics {
   site_id: string;
   generated_at: string;
   site_status?: string;
-  wordpress_url?: string;
+  site_url: string;
+  platform_kind: 'wordpress';
   active_key_count?: number;
   latest_key_used_at?: string;
   latest_auth_failure_at?: string;
@@ -2004,7 +2011,8 @@ export class PortalClient {
     site?: {
       site_id: string;
       site_name: string;
-      wordpress_url: string;
+      site_url: string;
+      platform_kind: 'wordpress';
     };
   }>> {
     return this.request('POST', '/register/code/request', payload);

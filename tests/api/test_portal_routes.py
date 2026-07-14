@@ -237,7 +237,7 @@ class FakePortalEmailSender(PortalEmailSender):
         expires_in_seconds: int,
         project_name: str,
         site_name: str = "",
-        wordpress_url: str = "",
+        site_url: str = "",
         locale: str = "zh-CN",
     ) -> None:
         self.messages.append(
@@ -249,7 +249,7 @@ class FakePortalEmailSender(PortalEmailSender):
                 "expires_in_seconds": expires_in_seconds,
                 "project_name": project_name,
                 "site_name": site_name,
-                "wordpress_url": wordpress_url,
+                "site_url": site_url,
                 "locale": locale,
             }
         )
@@ -1133,7 +1133,7 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         "/portal/v1/addon-connections",
         json={
             "account_id": registration["account_id"],
-            "wordpress_url": "https://primary.example.com",
+            "site_url": "https://primary.example.com",
             "site_name": "Primary Site",
             "return_url": return_url,
             "state": "addon-state-001",
@@ -1143,6 +1143,8 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert create_response.status_code == 200, create_response.text
     create_data = create_response.json()["data"]
     assert create_data["site_id"] == "site_primary-example-com"
+    assert create_data["site_url"] == "https://primary.example.com"
+    assert create_data["platform_kind"] == "wordpress"
     assert create_data["site_created"] is False
     assert create_data["redirect_url"].startswith(
         "https://primary.example.com/wp-admin/admin-post.php?"
@@ -1179,6 +1181,10 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
         assert site.status == "active"
+        assert site.site_url == "https://primary.example.com"
+        assert site.platform_kind == "wordpress"
+        assert "site_url" not in (site.metadata_json or {})
+        assert "url" not in (site.metadata_json or {})
 
     audit_response = client.get(
         "/internal/service/audit-events?site_id=site_primary-example-com&limit=20",
@@ -1212,7 +1218,7 @@ def test_portal_addon_connection_accepts_loopback_alias_and_rejects_other_host(
     )
     payload = {
         "account_id": registration["account_id"],
-        "wordpress_url": "http://localhost:8080",
+        "site_url": "http://localhost:8080",
         "site_name": "Loopback Site",
         "return_url": (
             "http://127.0.0.1:8080/wp-admin/admin-post.php"
@@ -1277,7 +1283,7 @@ def test_portal_addon_connection_allows_new_site_after_inactive_site_releases_ca
         "/portal/v1/addon-connections",
         json={
             "account_id": registration["account_id"],
-            "wordpress_url": "https://secondary.example.com",
+            "site_url": "https://secondary.example.com",
             "site_name": "Secondary Site",
             "return_url": return_url,
             "state": "addon-state-capacity",
@@ -1324,6 +1330,7 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
         site.status = "inactive"
+        site.site_url = ""
         session.commit()
     old_key_response = client.post(
         "/internal/service/sites/site_primary-example-com/keys",
@@ -1345,7 +1352,7 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
         "/portal/v1/addon-connections",
         json={
             "account_id": registration["account_id"],
-            "wordpress_url": "https://primary.example.com",
+            "site_url": "https://primary.example.com",
             "site_name": "Primary Site",
             "return_url": return_url,
             "state": "addon-state-reactivate",
@@ -1362,6 +1369,8 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
         assert site.status == "active"
+        assert site.site_url == "https://primary.example.com"
+        assert site.platform_kind == "wordpress"
         old_key = session.get(SiteApiKey, "key_addon_reconnect_old")
         assert old_key is not None
         assert old_key.status == "revoked"
@@ -1419,7 +1428,7 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
         "/portal/v1/addon-connections",
         json={
             "account_id": registration["account_id"],
-            "wordpress_url": "https://primary.example.com",
+            "site_url": "https://primary.example.com",
             "site_name": "Primary Site",
             "return_url": return_url,
             "state": "addon-state-archived-reactivate",
@@ -2071,7 +2080,7 @@ def test_portal_site_diagnostics_is_scoped_and_available(tmp_path: Path) -> None
             "account_id": "acct_portal_diag_read",
             "name": "Portal Diagnostics Read Site",
             "status": "active",
-            "metadata": {"wordpress_url": "https://diag-read.example.test"},
+            "site_url": "https://diag-read.example.test",
         },
         headers=build_internal_headers(idempotency_key="portal-diag-read-site-001"),
     )
@@ -2107,14 +2116,14 @@ def test_portal_site_diagnostics_is_scoped_and_available(tmp_path: Path) -> None
     assert data["identity_type"] == "user"
     assert data["role"] == "user"
     assert data["site_status"] == "active"
-    assert data["wordpress_url"] == "https://diag-read.example.test"
+    assert data["site_url"] == "https://diag-read.example.test"
     assert data["active_key_count"] == 1
     assert data["key_summary"]["active"] == 1
     assert data["recent_failures"] == []
     assert {item["code"] for item in data["checks"]} == {
         "site_status",
         "active_key",
-        "wordpress_url",
+        "site_url",
         "recent_failures",
     }
     assert all(item["ok"] for item in data["checks"])
@@ -3369,8 +3378,36 @@ def test_portal_registration_code_request_uses_registration_sender(
     assert fake_sender.messages[0]["kind"] == "registration_code"
     assert fake_sender.messages[0]["recipient_email"] == "registration-mail@example.com"
     assert fake_sender.messages[0]["site_name"] == "Registration Demo Site"
-    assert fake_sender.messages[0]["wordpress_url"] == "https://registration.example.com"
+    assert fake_sender.messages[0]["site_url"] == "https://registration.example.com"
 
+    dispose_engine(database_url)
+
+
+def test_portal_site_payloads_fail_closed_on_superseded_url_field(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    superseded_field = "wordpress" + "_url"
+
+    responses = [
+        client.post(
+            "/portal/v1/register/code/request",
+            json={"email": "legacy@example.com", superseded_field: "https://legacy.test"},
+        ),
+        client.post(
+            "/portal/v1/sites",
+            json={"account_id": "acct_legacy", superseded_field: "https://legacy.test"},
+        ),
+        client.post(
+            "/portal/v1/addon-connections",
+            json={
+                "account_id": "acct_legacy",
+                superseded_field: "https://legacy.test",
+                "return_url": "https://legacy.test/wp-admin/admin-post.php",
+                "state": "legacy-state",
+            },
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [422, 422, 422]
     dispose_engine(database_url)
 
 
@@ -3420,7 +3457,8 @@ def test_portal_self_registration_opens_free_account_and_session(
     assert request_data["expires_in_seconds"] == 300
     assert request_data["code"] != ""
     assert request_data["site"]["site_id"] == ""
-    assert request_data["site"]["wordpress_url"] == ""
+    assert request_data["site"]["site_url"] == ""
+    assert request_data["site"]["platform_kind"] == "wordpress"
 
     registration_data = _verify_portal_registration_code(
         client,

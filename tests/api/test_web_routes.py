@@ -119,7 +119,7 @@ class FakePortalEmailSender(PortalEmailSender):
         expires_in_seconds: int,
         project_name: str,
         site_name: str = "",
-        wordpress_url: str = "",
+        site_url: str = "",
         locale: str = "zh-CN",
     ) -> None:
         self.messages.append(
@@ -131,7 +131,7 @@ class FakePortalEmailSender(PortalEmailSender):
                 "expires_in_seconds": expires_in_seconds,
                 "project_name": project_name,
                 "site_name": site_name,
-                "wordpress_url": wordpress_url,
+                "site_url": site_url,
                 "locale": locale,
             }
         )

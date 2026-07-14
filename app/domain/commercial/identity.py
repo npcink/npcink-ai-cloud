@@ -123,10 +123,8 @@ def _normalize_portal_site_url(value: str) -> tuple[str, str]:
     )
 
 
-def _extract_site_wordpress_url(site: Site) -> str:
-    metadata = site.metadata_json if isinstance(site.metadata_json, dict) else {}
-    raw_value = metadata.get("wordpress_url", "")
-    return str(raw_value).strip() if raw_value is not None else ""
+def _extract_site_url(site: Site) -> str:
+    return str(site.site_url or "").strip()
 
 
 def assert_platform_admin_role_allowed(

@@ -32,6 +32,7 @@ SITE_STATUS_ACTIVE = "active"
 SITE_STATUS_INACTIVE = "inactive"
 SITE_STATUS_SUSPENDED = "suspended"
 SITE_STATUS_ARCHIVED = "archived"
+PLATFORM_KIND_WORDPRESS = "wordpress"
 
 SITE_API_KEY_STATUS_ACTIVE = "active"
 SITE_API_KEY_STATUS_REVOKED = "revoked"
@@ -366,6 +367,13 @@ class Site(Base):
     status: Mapped[str] = mapped_column(
         String(32),
         default=SITE_STATUS_ACTIVE,
+        index=True,
+    )
+    site_url: Mapped[str] = mapped_column(String(2048), default="", server_default="")
+    platform_kind: Mapped[str] = mapped_column(
+        String(32),
+        default=PLATFORM_KIND_WORDPRESS,
+        server_default=PLATFORM_KIND_WORDPRESS,
         index=True,
     )
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)

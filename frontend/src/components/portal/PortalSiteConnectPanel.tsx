@@ -13,7 +13,7 @@ interface PortalSiteConnectPanelProps {
   onSiteCreated?: (siteId: string) => void;
   mode?: string;
   onClose?: () => void;
-  initialWordPressUrl?: string;
+  initialSiteUrl?: string;
   initialSiteName?: string;
   addonReturnUrl?: string;
   addonState?: string;
@@ -24,20 +24,20 @@ export function PortalSiteConnectPanel({
   onCreated,
   onSiteCreated,
   onClose,
-  initialWordPressUrl = '',
+  initialSiteUrl = '',
   initialSiteName = '',
   addonReturnUrl = '',
   addonState = '',
 }: PortalSiteConnectPanelProps) {
   const { t } = useLocale();
-  const [wordpressUrl, setWordpressUrl] = useState(initialWordPressUrl);
+  const [siteUrl, setSiteUrl] = useState(initialSiteUrl);
   const [siteName, setSiteName] = useState(initialSiteName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const isAddonConnection = Boolean(addonReturnUrl && addonState);
   const addonSiteLabel =
     siteName.trim() ||
-    wordpressUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') ||
+    siteUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') ||
     t('portal.connect_site_new_site', undefined, 'New site');
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -48,7 +48,7 @@ export function PortalSiteConnectPanel({
       if (isAddonConnection) {
         const response = await portalClient.createAddonConnection({
           account_id: accountId,
-          wordpress_url: wordpressUrl,
+          site_url: siteUrl,
           site_name: siteName,
           return_url: addonReturnUrl,
           state: addonState,
@@ -59,7 +59,7 @@ export function PortalSiteConnectPanel({
 
       const response = await portalClient.createSite({
         account_id: accountId,
-        wordpress_url: wordpressUrl,
+        site_url: siteUrl,
         site_name: siteName,
       });
       const siteId = response.data.site?.site_id || '';
@@ -113,7 +113,7 @@ export function PortalSiteConnectPanel({
             {addonSiteLabel}
           </p>
           <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-            {wordpressUrl.trim() || t('portal.site_url_missing_short', undefined, 'Site URL not configured')}
+            {siteUrl.trim() || t('portal.site_url_missing_short', undefined, 'Site URL not configured')}
           </p>
         </div>
       ) : null}
@@ -126,8 +126,8 @@ export function PortalSiteConnectPanel({
             <input
               type="url"
               required
-              value={wordpressUrl}
-              onChange={(event) => setWordpressUrl(event.target.value)}
+              value={siteUrl}
+              onChange={(event) => setSiteUrl(event.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
               placeholder="https://example.com"
             />

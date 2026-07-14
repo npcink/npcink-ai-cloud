@@ -13,7 +13,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
   getPortalSiteDisplayName,
-  getPortalSiteWordPressUrl,
+  getPortalSiteUrl,
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
@@ -55,7 +55,7 @@ function PortalSitesWorkspaceContent({ siteSummaries = {} }: PortalSitesWorkspac
     || session?.accounts?.some((account) => account.allowed_actions?.includes('remove_sites'))
   );
   const addonConnectMode = searchParams.get('connect') === 'wordpress-addon';
-  const addonWordPressUrl = searchParams.get('site_url') || '';
+  const addonSiteUrl = searchParams.get('site_url') || '';
   const addonSiteName = searchParams.get('site_name') || '';
   const addonReturnUrl = searchParams.get('return_url') || '';
   const addonState = searchParams.get('state') || '';
@@ -64,7 +64,7 @@ function PortalSitesWorkspaceContent({ siteSummaries = {} }: PortalSitesWorkspac
     const query = searchQuery.trim().toLowerCase();
     return visibleSites.filter((site) => {
       if (!query) return true;
-      const siteUrl = getPortalSiteWordPressUrl(site);
+      const siteUrl = getPortalSiteUrl(site);
       return getPortalSiteDisplayName(site).toLowerCase().includes(query)
         || siteUrl.toLowerCase().includes(query);
     });
@@ -223,7 +223,7 @@ function PortalSitesWorkspaceContent({ siteSummaries = {} }: PortalSitesWorkspac
                     />
                   </div>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    {getPortalSiteWordPressUrl(site)
+                    {getPortalSiteUrl(site)
                       || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
                   </p>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -269,7 +269,7 @@ function PortalSitesWorkspaceContent({ siteSummaries = {} }: PortalSitesWorkspac
             onSiteCreated={() => void handleSiteCreated()}
             mode="modal"
             onClose={() => setShowConnectModal(false)}
-            initialWordPressUrl={addonWordPressUrl}
+            initialSiteUrl={addonSiteUrl}
             initialSiteName={addonSiteName}
             addonReturnUrl={addonReturnUrl}
             addonState={addonState}
@@ -307,7 +307,7 @@ function PortalSitesWorkspaceContent({ siteSummaries = {} }: PortalSitesWorkspac
           </p>
           {pendingRemoveSite ? (
             <p className="break-words">
-              {getPortalSiteWordPressUrl(pendingRemoveSite)
+              {getPortalSiteUrl(pendingRemoveSite)
                 || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
             </p>
           ) : null}
