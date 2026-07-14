@@ -51,15 +51,12 @@ from app.domain.audio_generation.artifacts import (
 )
 from app.domain.audio_generation.contracts import (
     AUDIO_GENERATION_ABILITIES,
-    AudioGenerationContractViolation,
-    validate_audio_generation_runtime_contract,
 )
 from app.domain.cloud_batch_runtime.contracts import (
     CLOUD_BATCH_RUNTIME_ABILITIES,
     CLOUD_BATCH_RUNTIME_EXECUTION_KIND,
     CLOUD_BATCH_RUNTIME_PROFILE_ID,
     CloudBatchRuntimeContractViolation,
-    validate_cloud_batch_runtime_contract,
 )
 from app.domain.cloud_batch_runtime.service import CloudBatchRuntimeService
 from app.domain.commercial.credits import (
@@ -70,28 +67,19 @@ from app.domain.commercial.credits import (
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
-    CONNECTOR_RUNTIME_CHANNEL,
-    ConnectorRuntimeContractViolation,
     build_connector_result_envelope,
-    validate_connector_runtime_envelope,
-    validate_connector_site_binding,
 )
 from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_ABILITIES,
     IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
     ImageContextEvidenceContractViolation,
-    validate_image_context_evidence_runtime_contract,
 )
 from app.domain.image_context_evidence.service import (
     ImageContextEvidenceProviderError,
     ImageContextEvidenceService,
 )
-from app.domain.image_generation.contracts import (
-    IMAGE_GENERATION_ABILITIES,
-    ImageGenerationContractViolation,
-    validate_image_generation_runtime_contract,
-)
+from app.domain.image_generation.contracts import IMAGE_GENERATION_ABILITIES
 from app.domain.image_generation.inline_images import (
     InlineImageMaterializationConfig,
     InlineImageMaterializationError,
@@ -101,14 +89,12 @@ from app.domain.image_sources.contracts import (
     IMAGE_SOURCE_ABILITIES,
     IMAGE_SOURCE_PROFILE_ID,
     ImageSourceContractViolation,
-    validate_image_source_runtime_contract,
 )
 from app.domain.image_sources.service import ImageSourceProviderError, ImageSourceService
 from app.domain.media_batch_plans.contracts import (
     MEDIA_BATCH_PLAN_ABILITIES,
     MEDIA_BATCH_PLAN_PROFILE_ID,
     MediaBatchPlanContractViolation,
-    validate_media_batch_plan_runtime_contract,
 )
 from app.domain.media_batch_plans.service import MediaBatchPlanService
 from app.domain.routing.errors import RoutingError
@@ -116,7 +102,7 @@ from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
 from app.domain.runtime.analysis_result import build_analysis_result_envelope
 from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
-from app.domain.runtime.data_guard import find_runtime_data_guard_finding
+from app.domain.runtime.contract_validation import RuntimeContractValidator
 from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
     RuntimeCancelNotAllowedError,
@@ -132,7 +118,6 @@ from app.domain.runtime.errors import (
 from app.domain.runtime.models import (
     ABUSE_GUARD_ATTENTION_RATIO,
     ABUSE_GUARD_CRITICAL_RATIO,
-    FORBIDDEN_HOSTED_RUNTIME_DATA_CLASSIFICATIONS,
     RUNTIME_BACKLOG_QUEUED_AGING_AFTER_SECONDS,
     RUNTIME_BACKLOG_RUNNING_AGING_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS,
@@ -142,13 +127,9 @@ from app.domain.runtime.models import (
     RUNTIME_DIAGNOSTIC_CANCEL_STUCK_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-    RUNTIME_MAX_RETENTION_TTL,
-    RUNTIME_MAX_RETRY_MAX,
-    RUNTIME_MAX_TIMEOUT_SECONDS,
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
     RUNTIME_STORAGE_MODE_NO_STORE,
     RUNTIME_STORAGE_MODE_RESULT_ONLY,
-    SENSITIVE_RUNTIME_DATA_CLASSIFICATIONS,
     RuntimeExecutionResponse,
     RuntimeRequest,
     normalize_runtime_request_policy,
@@ -163,7 +144,6 @@ from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_STATUS_ABILITY,
     SITE_KNOWLEDGE_SYNC_ABILITY,
     SiteKnowledgeContractViolation,
-    validate_site_knowledge_runtime_contract,
 )
 from app.domain.site_knowledge.metrics import (
     record_site_knowledge_failure_metric,
@@ -176,7 +156,6 @@ from app.domain.site_ops_analysis.contracts import (
     SITE_OPS_ANALYSIS_PROFILE_ID,
     SITE_OPS_ANALYSIS_RESULT_CONTRACT,
     SiteOpsAnalysisContractViolation,
-    validate_site_ops_analysis_runtime_contract,
 )
 from app.domain.site_ops_analysis.service import SiteOpsAnalysisService
 from app.domain.web_search.auto_policy import (
@@ -189,14 +168,8 @@ from app.domain.web_search.contracts import (
     WEB_SEARCH_ABILITY,
     WEB_SEARCH_CONTRACT,
     WebSearchContractViolation,
-    validate_web_search_runtime_contract,
 )
 from app.domain.web_search.service import WebSearchProviderError, WebSearchService
-from app.domain.wordpress_ai_connector.contracts import (
-    WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS,
-    WordPressOperationContractViolation,
-    validate_wordpress_operation_contract,
-)
 from app.domain.wordpress_ai_connector.runtime import WordPressOperationRuntime
 
 logger = get_logger(__name__)
@@ -248,6 +221,9 @@ class RuntimeService:
             run_projector=self.run_projector,
             recovery_audit_callback=self._record_callback_dispatch_recovery,
         )
+        self.contract_validator = RuntimeContractValidator(
+            callback_target_resolver=self.callback_delivery_service,
+        )
         self.routing_service = RoutingService(
             database_url,
             settings=self.settings,
@@ -256,14 +232,16 @@ class RuntimeService:
         self.runtime_queue = runtime_queue
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
-        self._validate_runtime_data_handling_contract(request)
+        self.contract_validator.validate_runtime_data_handling_contract(request)
         connector_envelope: dict[str, Any] | None = None
         if self._is_audio_generation_request(request):
-            self._validate_audio_generation_contract(request)
+            self.contract_validator.validate_audio_generation_contract(request)
         if self._is_image_generation_request(request):
-            self._validate_image_generation_contract(request)
+            self.contract_validator.validate_image_generation_contract(request)
         if self._is_wordpress_ai_connector_request(request):
-            connector_envelope = self._validate_wordpress_ai_connector_contract(request)
+            connector_envelope = self.contract_validator.validate_connector_runtime_contract(
+                request
+            )
             request.input_payload = connector_envelope
 
         resolution = self.routing_service.resolve(
@@ -275,7 +253,7 @@ class RuntimeService:
             repository = RuntimeRepository(session)
             site = self._require_active_site(repository, request.site_id)
             if connector_envelope is not None:
-                self._validate_connector_runtime_site_binding(
+                self.contract_validator.validate_connector_runtime_site_binding(
                     connector_envelope,
                     site=site,
                 )
@@ -295,7 +273,7 @@ class RuntimeService:
                 request=request,
                 commercial_decision=commercial_decision,
             )
-            execution_contract = self._build_execution_contract(
+            execution_contract = self.contract_validator.build_execution_contract(
                 request=request,
                 resolution=resolution,
                 site=site,
@@ -303,7 +281,7 @@ class RuntimeService:
             session.commit()
 
         merged_policy = self._merge_policy(resolution.default_policy, request.policy)
-        merged_policy = self._apply_execution_contract(
+        merged_policy = self.contract_validator.apply_execution_contract(
             merged_policy,
             execution_contract=execution_contract,
         )
@@ -344,7 +322,7 @@ class RuntimeService:
         }
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
-        self._validate_runtime_data_handling_contract(request)
+        self.contract_validator.validate_runtime_data_handling_contract(request)
         connector_envelope: dict[str, Any] | None = None
         if self._is_cloud_batch_runtime_request(request):
             return self._execute_cloud_batch_runtime_request(request)
@@ -361,11 +339,13 @@ class RuntimeService:
         if self._is_web_search_request(request):
             return self._execute_web_search_request(request)
         if self._is_audio_generation_request(request):
-            self._validate_audio_generation_contract(request)
+            self.contract_validator.validate_audio_generation_contract(request)
         if self._is_image_generation_request(request):
-            self._validate_image_generation_contract(request)
+            self.contract_validator.validate_image_generation_contract(request)
         if self._is_wordpress_ai_connector_request(request):
-            connector_envelope = self._validate_wordpress_ai_connector_contract(request)
+            connector_envelope = self.contract_validator.validate_connector_runtime_contract(
+                request
+            )
             request.input_payload = connector_envelope
 
         resolution = self.routing_service.resolve(
@@ -385,16 +365,16 @@ class RuntimeService:
             repository = RuntimeRepository(session)
             site = self._require_active_site(repository, request.site_id)
             if connector_envelope is not None:
-                self._validate_connector_runtime_site_binding(
+                self.contract_validator.validate_connector_runtime_site_binding(
                     connector_envelope,
                     site=site,
                 )
-            execution_contract = self._build_execution_contract(
+            execution_contract = self.contract_validator.build_execution_contract(
                 request=request,
                 resolution=resolution,
                 site=site,
             )
-            merged_policy = self._apply_execution_contract(
+            merged_policy = self.contract_validator.apply_execution_contract(
                 merged_policy,
                 execution_contract=execution_contract,
             )
@@ -524,7 +504,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_site_knowledge_contract(request)
+        self.contract_validator.validate_site_knowledge_contract(request)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_site_knowledge_policy(request)
@@ -645,7 +625,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_cloud_batch_runtime_contract(request)
+        self.contract_validator.validate_cloud_batch_runtime_contract(request)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_cloud_batch_runtime_policy(request)
@@ -1213,9 +1193,7 @@ class RuntimeService:
             "channel": run.channel,
             "execution_kind": run.execution_kind,
             "execution_tier": run.execution_tier,
-            "execution_pattern": self.run_projector.public_execution_pattern(
-                run.execution_pattern
-            ),
+            "execution_pattern": self.run_projector.public_execution_pattern(run.execution_pattern),
             "data_classification": run.data_classification,
             "profile_id": run.profile_id,
             "status": run.status,
@@ -2602,35 +2580,6 @@ class RuntimeService:
                 "stale-running signals",
             )
 
-    def _validate_runtime_data_handling_contract(self, request: RuntimeRequest) -> None:
-        data_classification = str(request.data_classification or "").strip().lower()
-        storage_mode = str(request.storage_mode or RUNTIME_STORAGE_MODE_RESULT_ONLY).strip()
-        finding = find_runtime_data_guard_finding(request.input_payload)
-        if finding is not None and finding.kind == "secret":
-            raise RuntimeExecutionContractError(
-                "runtime.secret_input_detected",
-                f"runtime input contains secret-like data at '{finding.path}'",
-            )
-        if finding is not None and finding.kind == "pii" and data_classification != "pii":
-            raise RuntimeExecutionContractError(
-                "runtime.pii_classification_required",
-                "runtime input appears to contain personal data and must use "
-                "data_classification=pii",
-            )
-        if (
-            data_classification in SENSITIVE_RUNTIME_DATA_CLASSIFICATIONS
-            and storage_mode != RUNTIME_STORAGE_MODE_NO_STORE
-        ):
-            raise RuntimeExecutionContractError(
-                "runtime.sensitive_data_requires_no_store",
-                "pii and secret runtime requests must use storage_mode=no_store",
-            )
-        if data_classification in FORBIDDEN_HOSTED_RUNTIME_DATA_CLASSIFICATIONS:
-            raise RuntimeExecutionContractError(
-                "runtime.secret_data_forbidden",
-                "secret-classified data is excluded from hosted runtime execution",
-            )
-
     def run_bounded_auto_repairs(
         self,
         *,
@@ -3342,14 +3291,14 @@ class RuntimeService:
         connector_envelope: dict[str, Any] | None = None
         if self._is_wordpress_ai_connector_run(run):
             try:
-                connector_envelope = self._normalize_wordpress_ai_connector_envelope(
+                connector_envelope = self.contract_validator.normalize_connector_runtime_envelope(
                     ability_name=str(run.ability_name or ""),
                     contract_version=str(run.contract_version or ""),
                     channel=str(run.channel or ""),
                     input_payload=input_payload,
                 )
                 site = self._require_active_site(repository, run.site_id)
-                self._validate_connector_runtime_site_binding(
+                self.contract_validator.validate_connector_runtime_site_binding(
                     connector_envelope,
                     site=site,
                 )
@@ -3606,9 +3555,7 @@ class RuntimeService:
                         return
 
                 automatic_web_search = policy.get("automatic_web_search")
-                if connector_envelope is not None and isinstance(
-                    automatic_web_search, dict
-                ):
+                if connector_envelope is not None and isinstance(automatic_web_search, dict):
                     provider_output = dict(provider_output)
                     provider_output["automatic_web_search"] = automatic_web_search
 
@@ -3640,9 +3587,7 @@ class RuntimeService:
                     )
                 if storage_mode == RUNTIME_STORAGE_MODE_NO_STORE:
                     _set_transient_result_json(run, response_output)
-                if connector_envelope is None and isinstance(
-                    automatic_web_search, dict
-                ):
+                if connector_envelope is None and isinstance(automatic_web_search, dict):
                     prepared_result = dict(prepared_result)
                     prepared_result["automatic_web_search"] = automatic_web_search
                 wrapped_result = build_analysis_result_envelope(
@@ -3964,7 +3909,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_web_search_contract(request)
+        self.contract_validator.validate_web_search_contract(request)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_web_search_policy(request)
@@ -4251,7 +4196,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_image_source_contract(request)
+        self.contract_validator.validate_image_source_contract(request)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_image_source_policy(request)
@@ -4351,7 +4296,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_media_batch_plan_contract(request)
+        self.contract_validator.validate_media_batch_plan_contract(request)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_media_batch_plan_policy(request)
@@ -4451,7 +4396,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_site_ops_analysis_contract(request)
+        self.contract_validator.validate_site_ops_analysis_contract(request)
         trace_id = request.trace_id or uuid4().hex
         run_id = f"run_{uuid4().hex}"
         merged_policy = self._build_site_ops_analysis_policy(request)
@@ -4551,7 +4496,7 @@ class RuntimeService:
         self,
         request: RuntimeRequest,
     ) -> RuntimeExecutionResponse:
-        self._validate_image_context_evidence_contract(request)
+        self.contract_validator.validate_image_context_evidence_contract(request)
         resolution = self.routing_service.resolve(
             profile_id=request.profile_id,
             execution_kind="vision",
@@ -5673,9 +5618,7 @@ class RuntimeService:
                 provider_error=provider_error,
             )
 
-        provider_input = self.wordpress_operation_runtime.build_provider_input(
-            connector_envelope
-        )
+        provider_input = self.wordpress_operation_runtime.build_provider_input(connector_envelope)
         return self.wordpress_operation_runtime.apply_site_knowledge_reference(
             site_id=run.site_id,
             run_id=run.run_id,
@@ -5684,32 +5627,6 @@ class RuntimeService:
             provider_input=provider_input,
             embedding_usage_callback=record_embedding_usage,
         )
-
-
-    def _validate_site_knowledge_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_site_knowledge_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except SiteKnowledgeContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
 
     def _build_site_knowledge_policy(self, request: RuntimeRequest) -> dict[str, object]:
         policy = self._apply_runtime_controls(dict(request.policy), request)
@@ -5739,41 +5656,6 @@ class RuntimeService:
             ),
         }
         return policy
-
-    def _validate_cloud_batch_runtime_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_cloud_batch_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except CloudBatchRuntimeContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in CLOUD_BATCH_RUNTIME_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "cloud_batch_runtime.unknown_ability",
-                "cloud batch runtime ability_name is not supported",
-            )
-        if request.execution_pattern not in {"inline", "whole_run_offload"}:
-            raise RuntimeExecutionContractError(
-                "cloud_batch_runtime.execution_pattern_invalid",
-                "cloud batch runtime supports inline or whole_run_offload execution",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
 
     def _build_cloud_batch_runtime_policy(self, request: RuntimeRequest) -> dict[str, object]:
         policy = self._apply_runtime_controls(dict(request.policy), request)
@@ -5807,216 +5689,6 @@ class RuntimeService:
             ),
         }
         return policy
-
-    def _validate_image_source_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_image_source_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except ImageSourceContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in IMAGE_SOURCE_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "image_source.unknown_ability",
-                "image source ability_name is not supported",
-            )
-        if request.execution_pattern not in {"inline", "step_offload"}:
-            raise RuntimeExecutionContractError(
-                "image_source.inline_required",
-                "image source currently supports inline-compatible execution only",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-
-    def _validate_audio_generation_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_audio_generation_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except AudioGenerationContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in AUDIO_GENERATION_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "audio_generation.unknown_ability",
-                "audio generation ability_name is not supported",
-            )
-        if request.execution_pattern not in {"inline", "whole_run_offload"}:
-            raise RuntimeExecutionContractError(
-                "audio_generation.execution_pattern_invalid",
-                "audio generation supports inline or whole_run_offload execution",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-
-    def _validate_image_generation_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_image_generation_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except ImageGenerationContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in IMAGE_GENERATION_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "image_generation.unknown_ability",
-                "image generation ability_name is not supported",
-            )
-        if request.execution_pattern not in {"inline", "whole_run_offload"}:
-            raise RuntimeExecutionContractError(
-                "image_generation.execution_pattern_invalid",
-                "image generation supports inline or whole_run_offload execution",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-
-    def _validate_media_batch_plan_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_media_batch_plan_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except MediaBatchPlanContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in MEDIA_BATCH_PLAN_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "media_batch_plan.unknown_ability",
-                "media batch plan ability_name is not supported",
-            )
-        if request.execution_pattern != "inline":
-            raise RuntimeExecutionContractError(
-                "media_batch_plan.inline_required",
-                "media batch plan currently supports inline execution only",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-
-    def _validate_site_ops_analysis_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_site_ops_analysis_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except SiteOpsAnalysisContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in SITE_OPS_ANALYSIS_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "site_ops_analysis.unknown_ability",
-                "site ops analysis ability_name is not supported",
-            )
-        if request.execution_pattern not in {"inline", "whole_run_offload"}:
-            raise RuntimeExecutionContractError(
-                "site_ops_analysis.execution_pattern_unsupported",
-                "site ops analysis supports inline or whole_run_offload execution",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-
-    def _validate_image_context_evidence_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_image_context_evidence_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except ImageContextEvidenceContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in IMAGE_CONTEXT_EVIDENCE_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "image_context_evidence.unknown_ability",
-                "image context evidence ability_name is not supported",
-            )
-        if request.execution_pattern != "inline":
-            raise RuntimeExecutionContractError(
-                "image_context_evidence.inline_required",
-                "image context evidence currently supports inline execution only",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
 
     def _build_media_batch_plan_policy(self, request: RuntimeRequest) -> dict[str, object]:
         policy = self._apply_runtime_controls(dict(request.policy), request)
@@ -6106,114 +5778,6 @@ class RuntimeService:
         }
         return policy
 
-    def _normalize_wordpress_ai_connector_envelope(
-        self,
-        *,
-        ability_name: str,
-        contract_version: str,
-        channel: str,
-        input_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        try:
-            envelope = validate_connector_runtime_envelope(
-                ability_name=ability_name,
-                contract_version=contract_version,
-                input_payload=input_payload,
-            )
-        except ConnectorRuntimeContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        try:
-            operation_contract = validate_wordpress_operation_contract(
-                envelope["operation_contract"]
-            )
-        except WordPressOperationContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        envelope["operation_contract"] = operation_contract
-        if channel != CONNECTOR_RUNTIME_CHANNEL:
-            raise RuntimeExecutionContractError(
-                "connector_runtime.channel_invalid",
-                f"connector runtime requires channel={CONNECTOR_RUNTIME_CHANNEL}",
-            )
-        return envelope
-
-    def _validate_wordpress_ai_connector_contract(
-        self,
-        request: RuntimeRequest,
-    ) -> dict[str, Any]:
-        envelope = self._normalize_wordpress_ai_connector_envelope(
-            ability_name=request.ability_name,
-            contract_version=request.contract_version,
-            channel=request.channel,
-            input_payload=request.input_payload,
-        )
-        if request.timeout_seconds > WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "connector_runtime.timeout_exceeded",
-                "connector runtime timeout_seconds exceeds max allowed value "
-                f"{WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > 1:
-            raise RuntimeExecutionContractError(
-                "connector_runtime.retry_exceeded",
-                "connector runtime retry_max exceeds max allowed value 1",
-            )
-        if request.retention_ttl > 86400:
-            raise RuntimeExecutionContractError(
-                "connector_runtime.retention_exceeded",
-                "connector runtime retention_ttl exceeds max allowed value 86400",
-            )
-        return envelope
-
-    def _validate_connector_runtime_site_binding(
-        self,
-        envelope: dict[str, Any],
-        *,
-        site: Any,
-    ) -> None:
-        try:
-            validate_connector_site_binding(
-                envelope,
-                site_url=str(site.site_url or ""),
-                platform_kind=str(site.platform_kind or ""),
-            )
-        except ConnectorRuntimeContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-
-    def _validate_web_search_contract(self, request: RuntimeRequest) -> None:
-        try:
-            validate_web_search_runtime_contract(
-                ability_name=request.ability_name,
-                contract_version=request.contract_version,
-                input_payload=request.input_payload,
-            )
-        except WebSearchContractViolation as error:
-            raise RuntimeExecutionContractError(error.error_code, error.message) from error
-        if request.ability_name not in WEB_SEARCH_ABILITIES:
-            raise RuntimeExecutionContractError(
-                "web_search.unknown_ability",
-                "web search ability_name is not supported",
-            )
-        if request.execution_pattern != "inline":
-            raise RuntimeExecutionContractError(
-                "web_search.inline_required",
-                "web search currently supports inline execution only",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-
     def _build_web_search_policy(self, request: RuntimeRequest) -> dict[str, object]:
         policy = self._apply_runtime_controls(dict(request.policy), request)
         policy["allow_fallback"] = False
@@ -6292,81 +5856,6 @@ class RuntimeService:
             raise RuntimeSiteInactiveError(site_id, site.status)
         return site
 
-    def _build_execution_contract(
-        self,
-        *,
-        request: RuntimeRequest,
-        resolution: RoutingResolution,
-        site: Any,
-    ) -> dict[str, object]:
-        if not str(request.ability_name or "").strip():
-            raise RuntimeExecutionContractError(
-                "runtime.contract_invalid",
-                "ability_name is required for hosted runtime execution",
-            )
-        if not str(request.contract_version or "").strip():
-            raise RuntimeExecutionContractError(
-                "runtime.contract_version_required",
-                "contract_version is required for hosted runtime execution",
-            )
-        if request.profile_id != resolution.profile_id:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_profile_mismatch",
-                "profile_id does not match the resolved routing profile",
-            )
-        if request.timeout_seconds > RUNTIME_MAX_TIMEOUT_SECONDS:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_timeout_exceeded",
-                f"timeout_seconds exceeds max allowed value {RUNTIME_MAX_TIMEOUT_SECONDS}",
-            )
-        if request.retry_max > RUNTIME_MAX_RETRY_MAX:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retry_exceeded",
-                f"retry_max exceeds max allowed value {RUNTIME_MAX_RETRY_MAX}",
-            )
-        if request.retention_ttl > RUNTIME_MAX_RETENTION_TTL:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_exceeded",
-                f"retention_ttl exceeds max allowed value {RUNTIME_MAX_RETENTION_TTL}",
-            )
-        if (
-            request.storage_mode == RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL
-            and request.retention_ttl <= 0
-        ):
-            raise RuntimeExecutionContractError(
-                "runtime.contract_retention_required",
-                "full_store_with_ttl requires a positive retention_ttl",
-            )
-
-        task_backend = normalize_runtime_task_backend(request.task_backend)
-        callback_mode = str(task_backend.get("callback_mode") or "")
-        callback_target = self.callback_delivery_service.resolve_callback_target(
-            site=site,
-            request=request,
-            callback_mode=callback_mode,
-        )
-        if request.execution_pattern == "whole_run_offload" and not bool(
-            task_backend.get("enabled")
-        ):
-            raise RuntimeExecutionContractError(
-                "runtime.contract_task_backend_required",
-                "whole_run_offload requires task_backend.enabled=true",
-            )
-
-        return {
-            "ability_name": request.ability_name,
-            "contract_version": request.contract_version,
-            "profile_id": resolution.profile_id,
-            "execution_pattern": request.execution_pattern,
-            "data_classification": request.data_classification,
-            "storage_mode": request.storage_mode,
-            "timeout_seconds": max(0, request.timeout_seconds),
-            "retry_max": max(0, request.retry_max),
-            "retention_ttl": max(0, request.retention_ttl),
-            "task_backend": task_backend,
-            "callback_target": callback_target,
-        }
-
     def _enforce_batch_limits(
         self,
         *,
@@ -6424,61 +5913,6 @@ class RuntimeService:
             return "media_nightly_image_optimize"
         return ""
 
-
-    def _apply_execution_contract(
-        self,
-        merged_policy: dict[str, object],
-        *,
-        execution_contract: dict[str, object],
-    ) -> dict[str, object]:
-        policy = dict(merged_policy)
-        timeout_seconds = max(
-            0,
-            self._coerce_int(execution_contract.get("timeout_seconds"), default=0),
-        )
-        retry_max = max(0, self._coerce_int(execution_contract.get("retry_max"), default=0))
-        retention_ttl = max(
-            0,
-            self._coerce_int(execution_contract.get("retention_ttl"), default=0),
-        )
-        task_backend = execution_contract.get("task_backend")
-        callback_target = execution_contract.get("callback_target")
-        callback_target = callback_target if isinstance(callback_target, dict) else {}
-
-        if timeout_seconds > 0:
-            policy["timeout_seconds"] = timeout_seconds
-            policy["timeout_ms"] = timeout_seconds * 1000
-        if retry_max > 0 or execution_contract.get("retry_max") == 0:
-            policy["retry_max"] = retry_max
-            policy["max_retries"] = retry_max
-        if retention_ttl > 0:
-            policy["retention_ttl"] = retention_ttl
-        if isinstance(task_backend, dict) and task_backend:
-            policy["task_backend"] = task_backend
-        policy["storage_mode"] = str(
-            execution_contract.get("storage_mode") or RUNTIME_STORAGE_MODE_RESULT_ONLY
-        )
-        policy["execution_contract"] = {
-            "ability_name": str(execution_contract.get("ability_name") or ""),
-            "contract_version": str(execution_contract.get("contract_version") or ""),
-            "profile_id": str(execution_contract.get("profile_id") or ""),
-            "execution_pattern": str(execution_contract.get("execution_pattern") or ""),
-            "data_classification": str(execution_contract.get("data_classification") or ""),
-            "storage_mode": str(execution_contract.get("storage_mode") or ""),
-            "timeout_seconds": timeout_seconds,
-            "retry_max": retry_max,
-            "retention_ttl": retention_ttl,
-            "task_backend": task_backend if isinstance(task_backend, dict) else {},
-        }
-        if callback_target:
-            policy["runtime_callback"] = callback_target
-            policy.pop("callback_url", None)
-        else:
-            policy.pop("runtime_callback", None)
-            policy.pop("callback_url", None)
-        return policy
-
-
     def _apply_routing_snapshot(
         self,
         merged_policy: dict[str, object],
@@ -6530,7 +5964,7 @@ class RuntimeService:
                 policy["task_backend"] = task_backend
                 continue
             policy[key] = value
-        policy = self._enforce_policy_within_execution_contract(policy)
+        policy = self.contract_validator.enforce_policy_within_execution_contract(policy)
         policy["commercial_policy"] = {
             "decision_code": str(commercial_decision.get("decision_code") or ""),
             "policy_actions": commercial_decision.get("policy_actions")
@@ -6538,82 +5972,6 @@ class RuntimeService:
             else [],
             "runtime_policy_overrides": overrides,
         }
-        return policy
-
-    def _enforce_policy_within_execution_contract(
-        self,
-        policy: dict[str, object],
-    ) -> dict[str, object]:
-        execution_contract = policy.get("execution_contract")
-        execution_contract = execution_contract if isinstance(execution_contract, dict) else {}
-        if not execution_contract:
-            return policy
-
-        timeout_seconds = max(0, self._coerce_int(policy.get("timeout_seconds"), default=0))
-        contract_timeout_seconds = max(
-            0,
-            self._coerce_int(execution_contract.get("timeout_seconds"), default=0),
-        )
-        if contract_timeout_seconds > 0 and timeout_seconds > contract_timeout_seconds:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_override_out_of_range",
-                "commercial override may not increase timeout_seconds beyond the "
-                "execution contract",
-            )
-
-        retry_max = max(0, self._coerce_int(policy.get("retry_max"), default=0))
-        contract_retry_max = max(
-            0,
-            self._coerce_int(execution_contract.get("retry_max"), default=0),
-        )
-        if retry_max > contract_retry_max:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_override_out_of_range",
-                "commercial override may not increase retry_max beyond the execution contract",
-            )
-
-        retention_ttl = max(0, self._coerce_int(policy.get("retention_ttl"), default=0))
-        contract_retention_ttl = max(
-            0,
-            self._coerce_int(execution_contract.get("retention_ttl"), default=0),
-        )
-        if contract_retention_ttl > 0 and retention_ttl > contract_retention_ttl:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_override_out_of_range",
-                "commercial override may not increase retention_ttl beyond the execution contract",
-            )
-
-        contract_task_backend = execution_contract.get("task_backend")
-        contract_task_backend = (
-            contract_task_backend if isinstance(contract_task_backend, dict) else {}
-        )
-        task_backend = policy.get("task_backend")
-        task_backend = task_backend if isinstance(task_backend, dict) else {}
-
-        if bool(task_backend.get("enabled")) and not bool(contract_task_backend.get("enabled")):
-            raise RuntimeExecutionContractError(
-                "runtime.contract_override_out_of_range",
-                "commercial override may not enable task_backend when the execution "
-                "contract disabled it",
-            )
-        if not bool(task_backend.get("enabled")):
-            return policy
-        contract_mode = str(contract_task_backend.get("mode") or "")
-        override_mode = str(task_backend.get("mode") or "")
-        if contract_mode and override_mode and override_mode != contract_mode:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_override_out_of_range",
-                "commercial override may not replace task_backend.mode outside the "
-                "execution contract",
-            )
-        contract_callback_mode = str(contract_task_backend.get("callback_mode") or "")
-        override_callback_mode = str(task_backend.get("callback_mode") or "")
-        if contract_callback_mode and override_callback_mode not in {"", contract_callback_mode}:
-            raise RuntimeExecutionContractError(
-                "runtime.contract_override_out_of_range",
-                "commercial override may not widen task_backend.callback_mode beyond "
-                "the execution contract",
-            )
         return policy
 
     def _serialize_routing_candidate(self, candidate: RoutingCandidate) -> dict[str, object]:
@@ -6742,7 +6100,6 @@ class RuntimeService:
             session.commit()
             return purged
 
-
     def _build_request_fingerprint(
         self,
         request: RuntimeRequest,
@@ -6780,9 +6137,7 @@ class RuntimeService:
             "ability_name": run.ability_name,
             "ability_family": run.ability_family,
             "profile_id": run.profile_id,
-            "execution_pattern": self.run_projector.public_execution_pattern(
-                run.execution_pattern
-            ),
+            "execution_pattern": self.run_projector.public_execution_pattern(run.execution_pattern),
             "callback_requested": self.run_projector.has_callback_target(policy),
             "callback_status": run.callback_status,
             "callback_attempt_count": max(0, int(run.callback_attempt_count or 0)),
@@ -7202,7 +6557,6 @@ class RuntimeService:
             "created_at": self.run_projector.serialize_timestamp(event.created_at),
         }
 
-
     def _record_callback_dispatch_recovery(
         self,
         run: RunRecord,
@@ -7262,7 +6616,6 @@ class RuntimeService:
                 run.callback_last_error_code or RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE,
             )
 
-
     def _prepare_input_for_storage(
         self,
         input_payload: dict[str, Any],
@@ -7294,7 +6647,6 @@ class RuntimeService:
                 "status": "omitted",
             }
         return result_json if isinstance(result_json, dict) else {}
-
 
     def _cancel_requested_before_attempt(
         self,
