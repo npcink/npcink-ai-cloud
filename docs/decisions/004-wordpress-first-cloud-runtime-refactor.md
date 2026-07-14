@@ -5,7 +5,7 @@
 Accepted.
 
 Stable markers: `WORDPRESS_FIRST`, `PLATFORM_CHANNEL_ORTHOGONAL`,
-`NO_FULL_REWRITE`, `NO_COMPATIBILITY_LAYER`,
+`LOCAL_CONTROL_PLANE`, `NO_FULL_REWRITE`, `NO_COMPATIBILITY_LAYER`,
 `ONE_ACTIVE_CONTRACT_VERSION`.
 
 ## Date
@@ -55,10 +55,10 @@ audit, and final WordPress writes.
 4. Keep `principals.principal_id` as the stable Cloud user identity. Keep
    account, membership, site, and local WordPress user references as separate
    dimensions.
-5. Keep Cloud limited to hosted execution, provider routing, usage and
-   entitlement evidence, health and diagnostics, temporary artifacts, and
-   bounded read-only runtime evidence. All local governance and final writes
-   remain in WordPress/Core.
+5. Enforce **`LOCAL_CONTROL_PLANE`**. Keep Cloud limited to hosted execution,
+   provider routing, usage and entitlement evidence, health and diagnostics,
+   temporary artifacts, and bounded read-only runtime evidence. All local
+   governance and final writes remain in WordPress/Core.
 6. Hosted-first is not cloud-only. Preserve explicit local, offline, and
    privacy-sensitive execution seams. `run_records` is Cloud hosted durable run
    truth only and does not replace WordPress/Core local canonical run, proposal,

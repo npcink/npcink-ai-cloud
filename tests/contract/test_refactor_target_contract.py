@@ -102,6 +102,7 @@ def test_wordpress_first_adr_freezes_the_refactor_decisions() -> None:
     for marker in (
         "WORDPRESS_FIRST",
         "PLATFORM_CHANNEL_ORTHOGONAL",
+        "LOCAL_CONTROL_PLANE",
         "NO_COMPATIBILITY_LAYER",
         "ONE_ACTIVE_CONTRACT_VERSION",
         "NO_FULL_REWRITE",
