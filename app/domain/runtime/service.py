@@ -45,7 +45,6 @@ from app.core.security import (
     REPLAY_SCOPE_PUBLIC_POST_SITE,
 )
 from app.domain.audio_generation.artifacts import (
-    AudioArtifactMaterializationConfig,
     AudioArtifactMaterializationError,
     materialize_audio_generation_candidates,
 )
@@ -80,7 +79,6 @@ from app.domain.image_context_evidence.service import (
 )
 from app.domain.image_generation.contracts import IMAGE_GENERATION_ABILITIES
 from app.domain.image_generation.inline_images import (
-    InlineImageMaterializationConfig,
     InlineImageMaterializationError,
     materialize_inline_image_candidates_from_urls,
 )
@@ -100,6 +98,10 @@ from app.domain.routing.errors import RoutingError
 from app.domain.routing.models import RoutingCandidate, RoutingResolution
 from app.domain.routing.service import RoutingService
 from app.domain.runtime.analysis_result import build_analysis_result_envelope
+from app.domain.runtime.artifact_coordination import (
+    RuntimeArtifactCoordinationConfig,
+    RuntimeArtifactCoordinationService,
+)
 from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
 from app.domain.runtime.contract_validation import RuntimeContractValidator
 from app.domain.runtime.errors import (
@@ -244,6 +246,19 @@ class RuntimeService:
             run_projector=self.run_projector,
             claimed_run_executor=self._execute_existing_run,
             media_derivative_site_running_limit=(self.settings.media_derivative_site_running_limit),
+        )
+        self.artifact_coordination_service = RuntimeArtifactCoordinationService(
+            config=RuntimeArtifactCoordinationConfig(
+                audio_artifact_ttl_minutes=(self.settings.audio_generation_artifact_ttl_minutes),
+                audio_artifact_max_bytes=self.settings.audio_generation_artifact_max_bytes,
+                audio_artifact_download_timeout_seconds=(
+                    self.settings.audio_generation_artifact_download_timeout_seconds
+                ),
+            ),
+            run_controller=self.run_lifecycle_service,
+            execution_input_loader=self._get_execution_input_payload,
+            audio_candidate_materializer=materialize_audio_generation_candidates,
+            inline_image_candidate_materializer=(materialize_inline_image_candidates_from_urls),
         )
         self.provider_execution_service = RuntimeProviderExecutionService(
             usage_recorder=self.commercial_service,
@@ -984,137 +999,9 @@ class RuntimeService:
         *,
         repository: RuntimeRepository,
     ) -> None:
-        import base64
-
-        from app.domain.media_derivatives.artifacts import (
-            build_artifact_result_json,
-            create_artifact,
-        )
-        from app.domain.media_derivatives.contracts import ARTIFACT_DEFAULT_TTL_MINUTES
-        from app.domain.media_derivatives.errors import (
-            MediaDerivativeAnimatedSourceUnavailableError,
-            MediaDerivativeFormatUnavailableError,
-            MediaDerivativeProcessingFailedError,
-            MediaDerivativeSourceDecodeFailedError,
-            MediaDerivativeSourceTooLargeError,
-        )
-        from app.domain.media_derivatives.metrics import record_media_derivative_job_metric
-        from app.domain.media_derivatives.processor import process_media_derivative
-
-        media_input = self._get_execution_input_payload(run)
-        cloud_job_payload = media_input.get("cloud_job_payload", {})
-        source_media_type = cloud_job_payload.get("source_media_type", "image")
-        target_format = cloud_job_payload.get("target_format", "webp")
-        max_width = int(cloud_job_payload.get("max_width", 1200))
-        quality = int(cloud_job_payload.get("quality", 82))
-        crop_options = cloud_job_payload.get("crop")
-        crop_options = crop_options if isinstance(crop_options, dict) else None
-        watermark_options = cloud_job_payload.get("watermark")
-        watermark_options = watermark_options if isinstance(watermark_options, dict) else None
-        ttl_minutes = int(media_input.get("ttl_minutes", ARTIFACT_DEFAULT_TTL_MINUTES))
-
-        source_b64 = media_input.get("_source_bytes_b64", "")
-        source_bytes = base64.b64decode(source_b64) if source_b64 else b""
-        watermark_b64 = media_input.get("_watermark_bytes_b64", "")
-        watermark_bytes = base64.b64decode(watermark_b64) if watermark_b64 else None
-        processing_started_at = datetime.now(UTC)
-        watermark_applied = bool(watermark_bytes) or bool(
-            watermark_options and watermark_options.get("type") == "text"
-        )
-
-        if not source_bytes:
-            self.run_lifecycle_service.fail_run(
-                repository,
-                run,
-                error_code="media_derivative.source_decode_failed",
-                error_message="no source bytes found in media derivative run",
-            )
-            run.result_json = {
-                "status": "failed",
-                "error_code": "media_derivative.source_decode_failed",
-                "error_message": "no source bytes found in media derivative run",
-            }
-            record_media_derivative_job_metric(
-                session=repository.session,
-                run=run,
-                target_format=target_format,
-                source_media_type=source_media_type,
-                source_bytes=0,
-                processing_started_at=processing_started_at,
-                error_code="media_derivative.source_decode_failed",
-                watermark_applied=watermark_applied,
-            )
-            return
-
-        try:
-            result = process_media_derivative(
-                source_bytes=source_bytes,
-                source_media_type=source_media_type,
-                target_format=target_format,
-                max_width=max_width,
-                quality=quality,
-                crop_options=crop_options,
-                watermark_bytes=watermark_bytes,
-                watermark_options=watermark_options,
-            )
-        except (
-            MediaDerivativeSourceDecodeFailedError,
-            MediaDerivativeSourceTooLargeError,
-            MediaDerivativeAnimatedSourceUnavailableError,
-            MediaDerivativeFormatUnavailableError,
-            MediaDerivativeProcessingFailedError,
-        ) as error:
-            self.run_lifecycle_service.fail_run(
-                repository,
-                run,
-                error_code=error.error_code,
-                error_message=error.message,
-            )
-            run.result_json = {
-                "status": "failed",
-                "error_code": error.error_code,
-                "error_message": error.message,
-            }
-            record_media_derivative_job_metric(
-                session=repository.session,
-                run=run,
-                target_format=target_format,
-                source_media_type=source_media_type,
-                source_bytes=len(source_bytes),
-                processing_started_at=processing_started_at,
-                error_code=error.error_code,
-                watermark_applied=watermark_applied,
-            )
-            return
-
-        artifact = create_artifact(
-            session=repository.session,
-            run_id=run.run_id,
-            site_id=run.site_id,
-            result=result,
-            source_media_type=source_media_type,
-            ttl_minutes=ttl_minutes,
-        )
-        result_json = build_artifact_result_json(artifact)
-        self.run_lifecycle_service.succeed_run(
-            repository,
+        self.artifact_coordination_service.execute_media_derivative_run(
             run,
-            result_json=result_json,
-            provider_id="media_derivative",
-            model_id="pillow",
-            instance_id="cloud-worker",
-            fallback_used=False,
-        )
-        record_media_derivative_job_metric(
-            session=repository.session,
-            run=run,
-            target_format=target_format,
-            source_media_type=source_media_type,
-            source_bytes=len(source_bytes),
-            processing_started_at=processing_started_at,
-            result=result,
-            artifact=artifact,
-            watermark_applied=watermark_applied,
+            repository=repository,
         )
 
     def process_next_queued_run(self, *, timeout_seconds: int = 1) -> dict[str, object] | None:
@@ -5242,27 +5129,18 @@ class RuntimeService:
         repository: RuntimeRepository,
         provider_output: dict[str, Any],
     ) -> dict[str, Any]:
-        return materialize_audio_generation_candidates(
-            session=repository.session,
+        return self.artifact_coordination_service.materialize_audio_generation_output(
             run=run,
-            result_json=provider_output,
-            config=AudioArtifactMaterializationConfig(
-                ttl_minutes=max(1, int(self.settings.audio_generation_artifact_ttl_minutes)),
-                max_bytes=max(1, int(self.settings.audio_generation_artifact_max_bytes)),
-                timeout_seconds=max(
-                    0.001,
-                    float(self.settings.audio_generation_artifact_download_timeout_seconds),
-                ),
-            ),
+            repository=repository,
+            provider_output=provider_output,
         )
 
     def _materialize_wordpress_ai_inline_image_output(
         self,
         provider_output: dict[str, Any],
     ) -> dict[str, Any]:
-        return materialize_inline_image_candidates_from_urls(
+        return self.artifact_coordination_service.materialize_inline_image_output(
             provider_output,
-            config=InlineImageMaterializationConfig(),
         )
 
     def _is_media_batch_plan_run(self, run: RunRecord) -> bool:

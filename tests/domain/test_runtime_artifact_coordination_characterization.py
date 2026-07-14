@@ -339,7 +339,7 @@ def test_wordpress_inline_image_url_materialization_success_and_failure(
     assert error.value.message == "provider image URL must use HTTPS"
 
 
-def test_runtime_facade_retains_all_run_04_artifact_coordination_entrypoints() -> None:
+def test_runtime_facade_retains_run_04_entrypoints_with_extracted_delegation() -> None:
     repository_root = Path(__file__).resolve().parents[2]
     service_path = repository_root / "app/domain/runtime/service.py"
     source = service_path.read_text(encoding="utf-8")
@@ -356,10 +356,14 @@ def test_runtime_facade_retains_all_run_04_artifact_coordination_entrypoints() -
     }
     expected_calls = {
         "enqueue_media_derivative_run": "run_lifecycle_service.create_durable_run",
-        "_execute_media_derivative_run": "create_artifact",
-        "_materialize_audio_generation_output": "materialize_audio_generation_candidates",
+        "_execute_media_derivative_run": (
+            "artifact_coordination_service.execute_media_derivative_run"
+        ),
+        "_materialize_audio_generation_output": (
+            "artifact_coordination_service.materialize_audio_generation_output"
+        ),
         "_materialize_wordpress_ai_inline_image_output": (
-            "materialize_inline_image_candidates_from_urls"
+            "artifact_coordination_service.materialize_inline_image_output"
         ),
     }
 
@@ -367,3 +371,5 @@ def test_runtime_facade_retains_all_run_04_artifact_coordination_entrypoints() -
     for method_name, expected_call in expected_calls.items():
         assert source.count(f"def {method_name}(") == 1
         assert expected_call in ast.unparse(methods[method_name])
+    for method_name in expected_calls.keys() - {"enqueue_media_derivative_run"}:
+        assert len(methods[method_name].body) == 1
