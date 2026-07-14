@@ -6,12 +6,14 @@ import { useParams, useRouter } from 'next/navigation';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { PortalPageStack, PortalSection, PortalCard } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
+import { PortalSiteKnowledgePanel } from '@/components/portal/PortalSiteKnowledgePanel';
 import { PortalSiteServiceStatus } from '@/components/portal/PortalSiteServiceStatus';
 import { PortalWorkspaceHeader } from '@/components/portal/PortalWorkspaceHeader';
 import { PortalErrorState, PortalLoadingState, PortalSignedOutState } from '@/components/portal/PortalPageState';
 import { Modal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalSiteMonitoring } from '@/hooks/usePortalSiteMonitoring';
+import { usePortalSiteKnowledge } from '@/hooks/usePortalSiteKnowledge';
 import { useSession } from '@/hooks/useSession';
 import { portalClient, type PortalSiteSummaryRecord, type Site } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
@@ -33,6 +35,7 @@ function PortalSiteRecordContent() {
   const [removeError, setRemoveError] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
   const siteMonitoring = usePortalSiteMonitoring(siteId, t);
+  const siteKnowledge = usePortalSiteKnowledge(siteId, t);
 
   useEffect(() => {
     if (!isAuthenticated || !siteId) return;
@@ -96,7 +99,15 @@ function PortalSiteRecordContent() {
     created_at: summary.site?.created_at || sessionSite?.created_at || '',
   };
   const siteUrl = getPortalSiteWordPressUrl(site);
-  const siteNeedsAttention = site.status !== 'active' || !siteUrl;
+  const monitoringNeedsAttention = siteMonitoring.overview
+    ? siteMonitoring.overview.health.status !== 'ok'
+      || siteMonitoring.overview.action_required.length > 0
+      || siteMonitoring.overview.quota.top_pressure !== 'none'
+    : false;
+  const siteNeedsAttention = site.status !== 'active'
+    || !siteUrl
+    || Boolean(summary.customer_status?.needs_attention)
+    || monitoringNeedsAttention;
   const siteStatusLabel = siteNeedsAttention
     ? t('portal.home.filter_attention_only', {}, 'Needs attention')
     : t('portal.home.risk_level_normal', {}, 'Normal');
@@ -261,9 +272,17 @@ function PortalSiteRecordContent() {
         onRefresh={siteMonitoring.refresh}
       />
 
+      <PortalSiteKnowledgePanel
+        summary={siteKnowledge.summary}
+        isLoading={siteKnowledge.isLoading}
+        error={siteKnowledge.error}
+        onRetry={siteKnowledge.refresh}
+      />
+
       <Modal
         isOpen={showRemoveModal}
         onClose={closeRemoveModal}
+        closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         title={t('portal.remove_site_action', {}, 'Remove site')}
         description={t(

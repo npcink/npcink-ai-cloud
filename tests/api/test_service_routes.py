@@ -23,6 +23,7 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
 )
 from app.adapters.providers.minimax import MiniMaxProviderAdapter
+from app.adapters.providers.siliconflow import SiliconFlowProviderAdapter
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.main import create_app
@@ -68,6 +69,15 @@ from app.domain.hosted_model_defaults import (
 )
 from app.domain.provider_connections.service import ProviderConnectionAdminService
 from app.domain.runtime.service import RuntimeService
+from app.domain.site_knowledge import vector_profile as vector_profile_module
+from app.domain.site_knowledge.vector_profile import SiteKnowledgeVectorProfileAdminService
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_VECTOR_CONNECTION_ID,
+    SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
+    SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+    SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+    SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID,
+)
 from app.domain.web_search.service import (
     TavilyWebSearchProvider,
     WebSearchExecutionResult,
@@ -433,6 +443,15 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["plan_id"] == "free"
     assert items[0]["qq_bound"] is False
     assert items[0]["site_id"] == "site_admin-portal-user-example-com"
+
+    principal_lookup_response = client.get(
+        f"/internal/service/admin/portal-users?q={principal_id}",
+        headers=build_internal_headers(),
+    )
+    assert principal_lookup_response.status_code == 200, principal_lookup_response.text
+    principal_lookup_items = principal_lookup_response.json()["data"]["items"]
+    assert len(principal_lookup_items) == 1
+    assert principal_lookup_items[0]["principal_id"] == principal_id
 
     empty_page_response = client.get(
         "/internal/service/admin/portal-users?q=admin-portal-user&offset=1&limit=1",
@@ -1285,9 +1304,9 @@ def test_admin_ability_model_runtime_projection_is_bounded_and_feature_backed(
     assert data["surface"] == "admin_ability_model_runtime_projection"
     assert data["projection_version"] == "admin-ability-model-runtime-projection.v1"
     assert data["source_surface"] == "admin_ai_resources"
-    assert data["boundary"]["read_only"] is False
-    assert data["boundary"]["runtime_binding_only"] is True
-    assert data["boundary"]["configurable_runtime_bindings"] == ["site_knowledge_embedding"]
+    assert data["boundary"]["read_only"] is True
+    assert data["boundary"]["runtime_binding_only"] is False
+    assert data["boundary"]["configurable_runtime_bindings"] == []
     assert data["boundary"]["direct_wordpress_write"] is False
     assert data["boundary"]["not_a_control_plane"] is True
     assert "plugin_specific_overrides" in data["boundary"]["does_not_own"]
@@ -1307,9 +1326,9 @@ def test_admin_ability_model_runtime_projection_is_bounded_and_feature_backed(
     }.isdisjoint(rows)
     assert rows["site_knowledge_embedding"]["media"] == "vector"
     assert rows["site_knowledge_embedding"]["model_kind"] == "embedding_model"
-    assert rows["site_knowledge_embedding"]["can_configure"] is True
-    assert rows["site_knowledge_embedding"]["action"] == "configure_runtime_model"
-    assert rows["site_knowledge_embedding"]["boundary"]["runtime_binding_only"] is True
+    assert rows["site_knowledge_embedding"]["can_configure"] is False
+    assert rows["site_knowledge_embedding"]["action"] == "runtime_managed"
+    assert rows["site_knowledge_embedding"]["boundary"]["runtime_binding_only"] is False
     assert rows["evidence_preflight"]["model_kind"] == "search_text_model"
 
     media_groups = {item["media"]: item for item in data["media_groups"]}
@@ -1329,51 +1348,10 @@ def test_admin_ability_model_runtime_projection_is_bounded_and_feature_backed(
     assert unauthorized.status_code == 401
 
 
-class FixedSiliconFlowEmbeddingProvider:
-    provider_id = "siliconflow"
-    display_name = "SiliconFlow"
-    adapter_type = "siliconflow"
-
-    def fetch_catalog(self) -> ProviderCatalogSnapshot:
-        return ProviderCatalogSnapshot(
-            provider_id=self.provider_id,
-            display_name=self.display_name,
-            adapter_type=self.adapter_type,
-            models=[
-                CatalogModelSeed(
-                    model_id="siliconflow/BAAI/bge-m3",
-                    family="bge",
-                    feature="embedding",
-                    status="available",
-                    context_window=8192,
-                    price_input=0.0,
-                    price_output=0.0,
-                    raw_json={"dimensions": 1024},
-                    instances=[
-                        CatalogInstanceSeed(
-                            instance_id="siliconflow-bge-m3-embed",
-                            endpoint_variant="embeddings",
-                            region="global",
-                            capability_tags=["embedding", "site-knowledge"],
-                            is_default=True,
-                            weight=100,
-                        )
-                    ],
-                )
-            ],
-        )
-
-    def execute(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
-        raise ProviderExecutionError("provider.not_executed", "not used by this test")
-
-
-def test_admin_ability_model_runtime_binding_updates_site_knowledge_embedding(
+def test_admin_ability_model_runtime_binding_is_profile_managed(
     tmp_path: Path,
 ) -> None:
-    database_url, client = _build_client(
-        tmp_path,
-        providers={"siliconflow": FixedSiliconFlowEmbeddingProvider()},
-    )
+    database_url, client = _build_client(tmp_path)
     services = client.app.state.services
     with get_session(database_url) as session:
         session.add(
@@ -1410,29 +1388,215 @@ def test_admin_ability_model_runtime_binding_updates_site_knowledge_embedding(
         },
     )
 
-    assert response.status_code == 200, response.text
+    assert response.status_code == 409, response.text
     data = response.json()["data"]
-    row = {item["ability_id"]: item for item in data["rows"]}["site_knowledge_embedding"]
-    assert row["media"] == "vector"
-    assert row["can_configure"] is True
-    assert row["provider_id"] == "siliconflow"
-    assert row["model_id"] == "siliconflow/BAAI/bge-m3"
-    assert data["boundary"]["runtime_binding_only"] is True
-    assert data["boundary"]["direct_wordpress_write"] is False
-    assert data["receipt"]["event_kind"] == "ability_model_runtime_binding.update"
+    assert response.json()["error_code"] == "ability_model_runtime_binding.profile_managed"
+    assert data["ability_id"] == "site_knowledge_embedding"
+    assert data["settings_href"] == "/admin/vector-settings"
 
     with get_session(database_url) as session:
         connection = session.get(ProviderConnection, "model_siliconflow")
         assert connection is not None
         config = connection.config_json or {}
         assert config["provider_id"] == "siliconflow"
-        assert config["model_id"] == "siliconflow/BAAI/bge-m3"
+        assert config["model_id"] == "siliconflow/Qwen/Qwen3-8B"
         assert "embedding" in config["capability_ids"]
         assert "embed.default" in config["runtime_profile_ids"]
-        assert config["dimensions"] == 1024
+        assert "dimensions" not in config
 
     serialized = json.dumps(data)
     assert "configured-in-test" not in serialized
+
+
+def test_admin_site_knowledge_vector_profile_verifies_before_saving(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    monkeypatch.setattr(
+        SiliconFlowProviderAdapter,
+        "execute",
+        lambda _adapter, _request: ProviderExecutionResult(
+            output={
+                "embedding": [0.01] * SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
+                "model_id": SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+            },
+            latency_ms=19,
+            tokens_in=8,
+            tokens_out=0,
+            cost=0.0,
+        ),
+    )
+
+    initial = client.get(
+        "/internal/service/admin/site-knowledge-vector-profile",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["data"]["status"] == "not_configured"
+
+    forged = client.put(
+        "/internal/service/admin/site-knowledge-vector-profile",
+        headers=build_internal_headers(idempotency_key="site-knowledge-vector-profile-forged"),
+        json={
+            "credential": "siliconflow-secret",
+            "model_id": "text-embedding-3-small",
+            "dimensions": 1536,
+        },
+    )
+    assert forged.status_code == 422, forged.text
+    with get_session(database_url) as session:
+        assert session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_CONNECTION_ID) is None
+
+    response = client.put(
+        "/internal/service/admin/site-knowledge-vector-profile",
+        headers=build_internal_headers(idempotency_key="site-knowledge-vector-profile-save"),
+        json={"credential": "siliconflow-secret"},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "ready"
+    assert data["model_id"] == SITE_KNOWLEDGE_VECTOR_MODEL_ID
+    assert data["dimensions"] == SITE_KNOWLEDGE_VECTOR_DIMENSIONS
+    assert data["provider"]["verified"] is True
+    assert data["receipt"]["event_kind"] == (
+        "site_knowledge_vector_profile.save_and_verify"
+    )
+    assert "siliconflow-secret" not in json.dumps(data)
+
+    with get_session(database_url) as session:
+        connection = session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_CONNECTION_ID)
+        assert connection is not None
+        assert connection.status == "ready"
+        assert connection.secret_ciphertext != "siliconflow-secret"
+        audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind
+                == "site_knowledge_vector_profile.save_and_verify"
+            )
+        )
+        assert audit is not None
+        assert "siliconflow-secret" not in json.dumps(audit.payload_json)
+
+
+def test_admin_site_knowledge_vector_store_verifies_before_saving(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    monkeypatch.setattr(
+        vector_profile_module,
+        "ZillizCloudSiteKnowledgeBackend",
+        lambda _settings: object(),
+    )
+
+    forged = client.put(
+        "/internal/service/admin/site-knowledge-vector-profile/vector-store",
+        headers=build_internal_headers(idempotency_key="site-knowledge-vector-store-forged"),
+        json={
+            "endpoint": "https://cluster.example.zillizcloud.com",
+            "token": "zilliz-secret",
+            "collection": "caller_owned_collection",
+        },
+    )
+    assert forged.status_code == 422, forged.text
+    with get_session(database_url) as session:
+        assert session.get(ProviderConnection, SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID) is None
+
+    response = client.put(
+        "/internal/service/admin/site-knowledge-vector-profile/vector-store",
+        headers=build_internal_headers(idempotency_key="site-knowledge-vector-store-save"),
+        json={
+            "endpoint": "https://cluster.example.zillizcloud.com/",
+            "token": "zilliz-secret",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["vector_store"]["verified"] is True
+    assert data["vector_store"]["collection"] == SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION
+    assert data["vector_store"]["endpoint"] == (
+        "https://cluster.example.zillizcloud.com"
+    )
+    assert data["receipt"]["event_kind"] == (
+        "site_knowledge_vector_profile.vector_store.save_and_verify"
+    )
+    assert "zilliz-secret" not in json.dumps(data)
+
+    with get_session(database_url) as session:
+        connection = session.get(
+            ProviderConnection,
+            SITE_KNOWLEDGE_VECTOR_STORE_CONNECTION_ID,
+        )
+        assert connection is not None
+        assert connection.status == "ready"
+        assert connection.secret_ciphertext != "zilliz-secret"
+        audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind
+                == "site_knowledge_vector_profile.vector_store.save_and_verify"
+            )
+        )
+        assert audit is not None
+        assert "zilliz-secret" not in json.dumps(audit.payload_json)
+
+
+def test_admin_site_knowledge_vector_rebuild_uses_fixed_server_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    result = {
+        "status": "ready",
+        "profile_id": "site-knowledge.zh.v1",
+        "model_id": SITE_KNOWLEDGE_VECTOR_MODEL_ID,
+        "dimensions": SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
+        "vector_store": {"provider_id": "zilliz"},
+        "validation": {
+            "index": {"status": "ready", "indexed_chunk_count": 1},
+            "retrieval": {"status": "pending"},
+        },
+    }
+    monkeypatch.setattr(
+        SiteKnowledgeVectorProfileAdminService,
+        "rebuild_index",
+        lambda _service: result,
+    )
+
+    forged = client.post(
+        "/internal/service/admin/site-knowledge-vector-profile/index-rebuilds",
+        headers=build_internal_headers(idempotency_key="site-knowledge-index-forged"),
+        json={
+            "confirmation": "rebuild_site_knowledge_index",
+            "dimensions": 1536,
+            "collection": "caller_owned_collection",
+        },
+    )
+    assert forged.status_code == 422, forged.text
+
+    response = client.post(
+        "/internal/service/admin/site-knowledge-vector-profile/index-rebuilds",
+        headers=build_internal_headers(idempotency_key="site-knowledge-index-rebuild"),
+        json={"confirmation": "rebuild_site_knowledge_index"},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["validation"]["index"]["status"] == "ready"
+    assert data["receipt"]["event_kind"] == (
+        "site_knowledge_vector_profile.index.rebuild"
+    )
+    with get_session(database_url) as session:
+        audit = session.scalar(
+            select(ServiceAuditEvent).where(
+                ServiceAuditEvent.event_kind
+                == "site_knowledge_vector_profile.index.rebuild"
+            )
+        )
+        assert audit is not None
+        assert audit.payload_json["direct_wordpress_write"] is False
 
 
 def test_admin_provider_connections_store_encrypted_credentials_and_project_to_ai_resources(

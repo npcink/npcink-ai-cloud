@@ -63,6 +63,22 @@ function normalizePaymentText(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
 }
 
+function formatBillingPeriodRange(startValue: string, endValue: string, locale: string): string {
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+  const currentYear = new Date().getFullYear();
+  const includeYear = start.getFullYear() !== end.getFullYear()
+    || start.getFullYear() !== currentYear
+    || end.getFullYear() !== currentYear;
+  const formatter = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
+    ...(includeYear ? { year: 'numeric' as const } : {}),
+    month: locale === 'en' ? 'short' : 'numeric',
+    day: 'numeric',
+  });
+  return `${formatter.format(start)} – ${formatter.format(end)}`;
+}
+
 function resolvePackageStatusDetail(
   quotaSummary: QuotaSummary | null,
   packageLabel: string,
@@ -106,7 +122,7 @@ function resolvePackageStatusDetail(
 
 function PortalBillingContent() {
   const searchParams = useSearchParams();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const { session, isLoading: sessionLoading, isAuthenticated, refresh } = useSession();
   const {
     entitlements,
@@ -461,8 +477,15 @@ function PortalBillingContent() {
     '';
   const currentPeriodLabel =
     currentPeriodStart && currentPeriodEnd
-      ? `${formatDate(currentPeriodStart)} - ${formatDate(currentPeriodEnd)}`
+      ? formatBillingPeriodRange(currentPeriodStart, currentPeriodEnd, locale)
       : t('portal.home.package_pending_label', {}, 'To confirm');
+  const currentPeriodEndDetail = currentPeriodEnd
+    ? t(
+        'portal.billing.period_end_detail',
+        { time: formatDate(currentPeriodEnd) },
+        `Ends ${formatDate(currentPeriodEnd)}`
+      )
+    : '';
   const packageStatus =
     String(quotaSummary?.status || '') === 'limited'
       ? 'warning'
@@ -475,7 +498,7 @@ function PortalBillingContent() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.workspace_label', {}, 'Portal')}
+        eyebrow={t('portal.billing.package_rights_label', {}, 'Package rights')}
         title={t('portal.billing.customer_title', {}, 'Package')}
         description={t('portal.billing.subtitle', {}, 'Confirm the current package, included rights, and upgrade options.')}
         currentPage="billing"
@@ -516,6 +539,7 @@ function PortalBillingContent() {
           {
             label: t('portal.usage.period_label', {}, 'Period'),
             value: currentPeriodLabel,
+            detail: currentPeriodEndDetail,
             size: 'compact',
           },
         ]}
@@ -526,7 +550,6 @@ function PortalBillingContent() {
       <PortalCard variant="portal" className="bg-white dark:bg-slate-950">
         <PortalEntitlementUsage
           quotaSummary={quotaSummary}
-          periodLabel={currentPeriodLabel}
           t={t}
         />
       </PortalCard>
@@ -595,6 +618,7 @@ function PortalBillingContent() {
       <Modal
         isOpen={activeCommercialDialog === 'package'}
         onClose={() => setActiveCommercialDialog(null)}
+        closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.billing.package_dialog_title', {}, 'Choose a package')}
         description={t('portal.billing.package_dialog_desc', {}, 'Compare available packages and choose the change you want to make.')}
         size="xl"
@@ -618,6 +642,7 @@ function PortalBillingContent() {
       <Modal
         isOpen={activeCommercialDialog === 'trial'}
         onClose={() => setActiveCommercialDialog(null)}
+        closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.package.trial_dialog_title', {}, 'Trial eligibility')}
         description={t('portal.package.trial_dialog_desc', {}, 'Review this account trial status before starting or changing a trial.')}
         size="lg"

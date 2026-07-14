@@ -438,6 +438,7 @@ function AccountPageContent() {
       <Modal
         isOpen={showEmailChange}
         onClose={() => setShowEmailChange(false)}
+        closeLabel={t('common.close', {}, 'Close')}
         title={t('portal.account.contact_change_title', undefined, 'Change email')}
         description={t(
           'portal.account.contact_change_desc',

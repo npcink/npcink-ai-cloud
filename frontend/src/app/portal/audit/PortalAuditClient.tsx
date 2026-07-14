@@ -46,8 +46,7 @@ function isSuccessfulAuditOutcome(outcome: string): boolean {
 }
 
 function getAuditTraceId(event: PortalAuditEvent): string {
-  const traceId = event.metadata?.trace_id;
-  return typeof traceId === 'string' ? traceId : '';
+  return typeof event.trace_id === 'string' ? event.trace_id : '';
 }
 
 export function PortalAuditClient() {
@@ -56,26 +55,48 @@ export function PortalAuditClient() {
   const [auditEvents, setAuditEvents] = useState<PortalAuditEvent[]>([]);
   const [auditSummary, setAuditSummary] = useState<PortalAuditSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
-  const recentEvents = useMemo(() => auditEvents.slice(0, 10), [auditEvents]);
+  const [visibleLimit, setVisibleLimit] = useState(10);
+  const recentEvents = useMemo(() => auditEvents, [auditEvents]);
   const attentionEventCount = useMemo(() => {
     return recentEvents.filter((event) => !isSuccessfulAuditOutcome(event.outcome)).length;
   }, [recentEvents]);
 
-  const loadActivity = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const loadActivity = useCallback(async (limit: number, loadingMore = false) => {
+    if (loadingMore) {
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+    }
+    if (loadingMore) {
+      setLoadMoreError(null);
+    } else {
+      setError(null);
+    }
     try {
-      const bundle = await portalClient.getAuditBundle({ limit: 10 });
+      const bundle = await portalClient.getAuditBundle({ limit });
       setAuditSummary(bundle.summary);
       setAuditEvents(bundle.events);
     } catch (err) {
-      setError(
-        formatPortalErrorMessage(err, t, t('audit.load_error', {}, 'Failed to load audit data'))
+      const message = formatPortalErrorMessage(
+        err,
+        t,
+        t('audit.load_error', {}, 'Failed to load audit data')
       );
+      if (loadingMore) {
+        setLoadMoreError(message);
+      } else {
+        setError(message);
+      }
     } finally {
-      setIsLoading(false);
+      if (loadingMore) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   }, [t]);
 
@@ -84,7 +105,7 @@ export function PortalAuditClient() {
       setIsLoading(false);
       return;
     }
-    void loadActivity();
+    void loadActivity(10);
   }, [isAuthenticated, loadActivity, session]);
 
   const translateOutcome = (outcome: string) => {
@@ -102,7 +123,25 @@ export function PortalAuditClient() {
     if (key) {
       return t(key);
     }
-    return t('portal.audit.generic_activity', {}, 'Service activity');
+    if (eventKind.startsWith('support_request.')) {
+      return t('portal.support.nav_label', {}, 'Support request');
+    }
+    if (eventKind.startsWith('payment.') || eventKind.startsWith('payment_') || eventKind.startsWith('refund.')) {
+      return t('portal.billing.payment_activity_label', {}, 'Payment activity');
+    }
+    if (eventKind.startsWith('subscription.')) {
+      return t('portal.package.current_plan', {}, 'Package activity');
+    }
+    if (eventKind.startsWith('site_key.') || eventKind.startsWith('api_key.')) {
+      return t('portal.audit.connection_key_activity', {}, 'Connection key activity');
+    }
+    if (eventKind.startsWith('site.') || eventKind.startsWith('wordpress_addon_connection.')) {
+      return t('portal.audit.site_connection_activity', {}, 'Site connection activity');
+    }
+    if (eventKind === 'run' || eventKind === 'provider_call' || eventKind.startsWith('abilities.')) {
+      return t('portal.audit.ai_service_activity', {}, 'AI service activity');
+    }
+    return t('portal.audit.generic_activity', {}, 'Account activity');
   };
 
   if (sessionLoading || isLoading) {
@@ -125,7 +164,7 @@ export function PortalAuditClient() {
         title={t('common.error')}
         description={error}
         retryLabel={t('common.retry')}
-        onRetry={() => void loadActivity()}
+        onRetry={() => void loadActivity(visibleLimit)}
       />
     );
   }
@@ -133,7 +172,7 @@ export function PortalAuditClient() {
   return (
     <PortalPageStack data-portal-support-deeplink="audit">
       <PortalWorkspaceHeader
-        eyebrow={t('portal.workspace_label', {}, 'Portal')}
+        eyebrow={t('portal.audit.records_title', {}, 'Activity records')}
         title={t('portal.audit.nav_label', {}, 'Recent activity')}
         eyebrowInfo={t('portal.audit.customer_desc', {}, 'Review recent sign-in and service activity visible to this account.')}
         currentPage="audit"
@@ -156,7 +195,7 @@ export function PortalAuditClient() {
         ]}
         metricsColumnsClassName="xl:grid-cols-4"
         secondaryActions={
-          <button type="button" className="btn btn-secondary" onClick={() => void loadActivity()}>
+          <button type="button" className="btn btn-secondary" onClick={() => void loadActivity(visibleLimit)}>
             {t('common.refresh', {}, 'Refresh')}
           </button>
         }
@@ -200,7 +239,7 @@ export function PortalAuditClient() {
                       <div className="mt-2 grid gap-2 sm:grid-cols-2">
                         <div>
                           <span className="block font-medium text-gray-600 dark:text-gray-300">Event ID</span>
-                          <PortalIdentifier value={event.event_id} full />
+                          <PortalIdentifier value={String(event.event_id)} full />
                         </div>
                         {getAuditTraceId(event) ? (
                           <div>
@@ -223,6 +262,29 @@ export function PortalAuditClient() {
             ))}
           </div>
         )}
+        {recentEvents.length > 0
+        && recentEvents.length < Number(auditSummary?.totals?.events || 0)
+        && (visibleLimit < 200 || isLoadingMore || Boolean(loadMoreError)) ? (
+          <div className="border-t border-gray-200 px-6 py-4 text-center dark:border-gray-800">
+            {loadMoreError ? (
+              <p className="mb-3 text-sm text-red-700 dark:text-red-300">{loadMoreError}</p>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={isLoadingMore}
+              onClick={() => {
+                const nextLimit = Math.min(200, visibleLimit + 20);
+                setVisibleLimit(nextLimit);
+                void loadActivity(nextLimit, true);
+              }}
+            >
+              {isLoadingMore
+                ? t('common.loading', {}, 'Loading...')
+                : t('portal.audit.load_more', {}, 'Load more activity')}
+            </button>
+          </div>
+        ) : null}
       </PortalSection>
     </PortalPageStack>
   );

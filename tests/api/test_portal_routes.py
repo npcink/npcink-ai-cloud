@@ -25,6 +25,7 @@ from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
+    CREDIT_LEDGER_EVENT_GRANT,
     PRINCIPAL_STATUS_ACTIVE,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -2399,6 +2400,73 @@ def test_portal_auth_login_code_request_and_verify_with_jwt(tmp_path: Path) -> N
         assert identity.last_login_at is not None
 
 
+def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    email = "multi-account-principal@example.com"
+    principal_ids: list[str] = []
+
+    for suffix in ("alpha", "beta"):
+        account_id = f"acct_multi_principal_{suffix}"
+        account_response = client.post(
+            "/internal/service/accounts",
+            json={"account_id": account_id, "name": f"Multi Principal {suffix}"},
+            headers=build_internal_headers(
+                idempotency_key=f"multi-principal-account-{suffix}"
+            ),
+        )
+        assert account_response.status_code == 200, account_response.text
+        membership_response = client.post(
+            f"/internal/service/accounts/{account_id}/members",
+            json={"email": email},
+            headers=build_internal_headers(
+                idempotency_key=f"multi-principal-membership-{suffix}"
+            ),
+        )
+        assert membership_response.status_code == 200, membership_response.text
+        principal_ids.append(str(membership_response.json()["data"]["principal_id"]))
+
+    assert len(set(principal_ids)) == 1
+    principal_id = principal_ids[0]
+    login_code = _request_portal_login_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    login_data = _verify_portal_login_code(
+        client,
+        email=email,
+        code=str(login_code["code"]),
+    )
+    assert login_data["principal_id"] == principal_id
+
+    session_response = client.get("/portal/v1/session")
+    assert session_response.status_code == 200, session_response.text
+    assert {
+        item["account_id"] for item in session_response.json()["data"]["accounts"]
+    } == {"acct_multi_principal_alpha", "acct_multi_principal_beta"}
+
+    with get_session(database_url) as session:
+        principals = list(session.scalars(select(Principal).where(Principal.email == email)))
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership).where(
+                    AccountUserMembership.principal_id == principal_id
+                )
+            )
+        )
+        assert len(principals) == 1
+        assert principals[0].principal_id == principal_id
+        assert {membership.account_id for membership in memberships} == {
+            "acct_multi_principal_alpha",
+            "acct_multi_principal_beta",
+        }
+
+    dispose_engine(database_url)
+
+
 def test_portal_account_email_change_verifies_new_email_before_switching(
     tmp_path: Path,
 ) -> None:
@@ -2466,6 +2534,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
             select(Principal).where(Principal.email == "old-email@example.com")
         )
         assert identity is not None
+        original_principal_id = identity.principal_id
 
     verify_response = client.post(
         "/portal/v1/account/email-change/verify",
@@ -2478,6 +2547,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
     assert verify_data["email"] == "new-email@example.com"
     assert verify_data["old_email"] == "old-email@example.com"
     assert verify_data["new_email"] == "new-email@example.com"
+    assert verify_data["principal_id"] == original_principal_id
     assert fake_sender.messages[-1]["kind"] == "email_changed_notice"
     assert fake_sender.messages[-1]["recipient_email"] == "old-email@example.com"
 
@@ -2490,6 +2560,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
             select(Principal).where(Principal.email == "new-email@example.com")
         )
         assert identity is not None
+        assert identity.principal_id == original_principal_id
         audit_event = session.scalar(
             select(ServiceAuditEvent)
             .where(ServiceAuditEvent.event_kind == "principal.email_change")
@@ -2633,11 +2704,12 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         email="portal-qq@example.com",
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    _verify_portal_login_code(
+    login_data = _verify_portal_login_code(
         client,
         email="portal-qq@example.com",
         code=str(request_data["code"]),
     )
+    principal_id = str(login_data["principal_id"])
     initial_provider_response = client.get("/portal/v1/auth/identity-providers")
     assert initial_provider_response.status_code == 200, initial_provider_response.text
     initial_provider_data = initial_provider_response.json()["data"]["providers"][0]
@@ -2656,6 +2728,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         json={"code": "bind-code", "state": start_data["state"]},
     )
     assert bind_response.status_code == 200, bind_response.text
+    assert bind_response.json()["data"]["binding"]["principal_id"] == principal_id
     assert bind_response.json()["data"]["binding"]["identity_type"] == "user"
     assert bind_response.json()["data"]["binding"]["role"] == "user"
     bound_provider_response = client.get("/portal/v1/auth/identity-providers")
@@ -2668,6 +2741,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
     with get_session(database_url) as session:
         binding = session.scalar(select(IdentityProviderBinding))
         assert binding is not None
+        assert binding.principal_id == principal_id
         assert binding.provider == "qq"
         assert binding.external_subject_hash != "qq-openid-001"
         assert binding.unionid_hash != "qq-union-001"
@@ -3062,11 +3136,12 @@ def test_portal_qq_unbind_revokes_current_session(
         email="portal-qq-unbind@example.com",
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    _verify_portal_login_code(
+    login_data = _verify_portal_login_code(
         client,
         email="portal-qq-unbind@example.com",
         code=str(request_data["code"]),
     )
+    principal_id = str(login_data["principal_id"])
     start_response = client.get("/portal/v1/auth/qq/start")
     assert start_response.status_code == 200
     bind_response = client.post(
@@ -3078,6 +3153,15 @@ def test_portal_qq_unbind_revokes_current_session(
     unbind_response = client.post("/portal/v1/auth/qq/unbind", json={"provider": "qq"})
     assert unbind_response.status_code == 200
     assert unbind_response.json()["data"]["revoked"] == 1
+    assert unbind_response.json()["data"]["principal_id"] == principal_id
+
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        binding = session.scalar(select(IdentityProviderBinding))
+        assert identity is not None
+        assert identity.principal_id == principal_id
+        assert binding is not None
+        assert binding.principal_id == principal_id
 
     session_response = client.get("/portal/v1/session")
     assert session_response.status_code == 401
@@ -3346,6 +3430,8 @@ def test_portal_self_registration_opens_free_account_and_session(
 
     assert registration_data["status"] == "registered"
     assert str(registration_data["principal_id"]).startswith("prn_")
+    assert len(str(registration_data["principal_id"])) == 36
+    assert int(str(registration_data["principal_id"])[4:], 16) >= 0
     assert str(registration_data["account_id"]).startswith("acct_")
     assert registration_data["site_id"] == ""
     assert registration_data["site"] is None
@@ -4531,6 +4617,21 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "/internal/service/sites/site_portal_reads/activate",
         headers=build_internal_headers(idempotency_key="portal-reads-site-activate-001"),
     )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_reads_archived",
+            "account_id": "acct_portal_reads",
+            "name": "Archived Portal Reads Site",
+            "status": "provisioning",
+        },
+        headers=build_internal_headers(idempotency_key="portal-reads-archived-site-001"),
+    )
+    with get_session(database_url) as session:
+        archived_site = session.get(Site, "site_portal_reads_archived")
+        assert archived_site is not None
+        archived_site.status = "archived"
+        session.commit()
     _grant_account_member_access(
         client,
         site_id="site_portal_reads",
@@ -4852,6 +4953,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "bound_sites",
         "vector_documents",
     }
+    bound_sites = next(
+        item for item in quota_summary["resource_limits"] if item["key"] == "bound_sites"
+    )
+    assert bound_sites["used"] == 1.0
     vector_documents = next(
         item for item in quota_summary["resource_limits"] if item["key"] == "vector_documents"
     )
@@ -4867,6 +4972,12 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_entitlements_data["account_id"] == "acct_portal_reads"
     assert account_entitlements_data["quota_summary"]["credit"]["key"] == "ai_credits"
     assert account_entitlements_data["quota_summary"]["credit"]["limit"] == 2000.0
+    assert (
+        account_entitlements_data["quota_summary"]["credit_ledger_summary"][
+            "consumed_credits"
+        ]
+        == 5.0
+    )
 
     credit_ledger_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-ledger?limit=10",
@@ -4961,6 +5072,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         assert trend_response.status_code == 200
         trend_data = trend_response.json()["data"]
         assert trend_data["contract_version"] == "portal-credit-trend-v1"
+        assert trend_data["generated_at"] == trend_data["end_at"]
         assert trend_data["window"] == trend_window
         assert len(trend_data["points"]) == expectation["points"]
         assert trend_data["total_credits"] == expectation["credits"]
@@ -5000,6 +5112,24 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             rate_version="ai-credit-ledger-v2",
             idempotency_key="portal-credit-ledger-grouped-event-001",
         )
+        CommercialRepository(session).record_credit_ledger_entry(
+            account_id="acct_portal_reads",
+            site_id="site_portal_reads",
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id="run-portal-ledger-1",
+            provider_call_id=None,
+            event_type=CREDIT_LEDGER_EVENT_GRANT,
+            source_type="credit_pack",
+            source_id="grant-not-a-service-event",
+            credit_delta=100,
+            quantity=100,
+            unit="credit",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="portal-credit-ledger-grant-excluded-001",
+        )
         session.commit()
 
     credit_events_response = client.get(
@@ -5010,6 +5140,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_events_data = credit_events_response.json()["data"]
     assert credit_events_data["contract_version"] == "portal-credit-events-v1"
     assert credit_events_data["pagination"]["total"] == 4
+    assert all(item["direction"] == "consumed" for item in credit_events_data["items"])
     grouped_event = next(
         item
         for item in credit_events_data["items"]
@@ -5042,6 +5173,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert bucket_data["bucket"] == "30m"
     assert bucket_data["bucket_seconds"] == 1800
     assert bucket_data["pagination"]["total"] >= 1
+    assert all(item["start_at"] < item["end_at"] for item in bucket_data["items"])
     latest_bucket = bucket_data["items"][0]
     assert latest_bucket["event_count"] >= 1
     assert latest_bucket["consumed_credits"] >= 1
@@ -5058,6 +5190,30 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert bucket_detail_response.status_code == 200
     assert bucket_detail_response.json()["data"]["pagination"]["total"] >= 1
+
+    recent_bucket_response = client.get(
+        "/portal/v1/account/credit-event-buckets",
+        params={"bucket": "30m", "window": "7d"},
+        headers=build_portal_headers(principal_id="principal:portal-reads@example.com"),
+    )
+    assert recent_bucket_response.status_code == 200
+    recent_bucket_data = recent_bucket_response.json()["data"]
+    assert recent_bucket_data["summary"]["consumed_credits"] == (
+        bucket_data["summary"]["consumed_credits"] + 2.0
+    )
+    assert all(item["start_at"] < item["end_at"] for item in recent_bucket_data["items"])
+
+    # Keep the remainder of this long scenario focused on the payment grant it creates below.
+    with get_session(database_url) as session:
+        excluded_grant = session.scalar(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.idempotency_key
+                == "portal-credit-ledger-grant-excluded-001"
+            )
+        )
+        assert excluded_grant is not None
+        session.delete(excluded_grant)
+        session.commit()
 
     credit_packs_response = client.get(
         "/portal/v1/sites/site_portal_reads/credit-packs",
@@ -5212,6 +5368,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert audit_response.status_code == 200
     assert audit_response.json()["data"]["site_id"] == "site_portal_reads"
+    assert audit_response.json()["data"]["generated_at"]
     assert audit_response.json()["data"]["totals"]["events"] >= 1
 
     account_audit_response = client.get(
@@ -5221,6 +5378,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_audit_response.status_code == 200
     assert account_audit_response.json()["data"]["site_id"] == ""
     assert account_audit_response.json()["data"]["account_id"] == "acct_portal_reads"
+    assert account_audit_response.json()["data"]["generated_at"]
     assert account_audit_response.json()["data"]["totals"]["events"] >= 1
 
     audit_events_response = client.get(

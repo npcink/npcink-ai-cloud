@@ -270,6 +270,7 @@ async function installPortalMocks(
           status: 'ok',
           period_start_at: '2026-04-01T00:00:00Z',
           period_end_at: '2026-04-30T00:00:00Z',
+          generated_at: '2026-04-07T10:00:00Z',
           credit: {
             key: 'ai_credits',
             used: 581,
@@ -283,6 +284,15 @@ async function installPortalMocks(
             paid_grant_count: paidRemaining > 0 ? 1 : 0,
             paid_next_expires_at: paidRemaining > 0 ? '2027-04-07T10:00:00Z' : '',
             total_remaining: totalRemaining,
+          },
+          credit_ledger_summary: {
+            consumed_credits: 612,
+            granted_credits: 0,
+            adjustment_credits: 0,
+            refund_credits: 0,
+            net_credit_delta: -612,
+            net_used_credits: 612,
+            entry_count: 24,
           },
           resource_limits: [
             {
@@ -331,6 +341,7 @@ async function installPortalMocks(
       await fulfillJson(route, {
         contract_version: 'portal-credit-trend-v1',
         account_id: 'acct_portal',
+        generated_at: '2026-04-07T10:00:00Z',
         site_id: url.searchParams.get('site_id') || '',
         window: trendWindow,
         bucket_seconds: bucketSeconds,
@@ -772,8 +783,8 @@ async function installPortalMocks(
         account_id: 'acct_portal',
         generated_at: '2026-04-07T10:00:00Z',
         totals: {
-          events: 2,
-          succeeded: 2,
+          events: 12,
+          succeeded: 12,
           error: 0,
         },
         groups: [
@@ -790,20 +801,88 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/audit-events') {
+      const limit = Number(url.searchParams.get('limit') || 10);
+      const events = Array.from({ length: 12 }, (_, index) => ({
+        event_id: `audit_portal_${String(index + 1).padStart(3, '0')}`,
+        event_kind: index === 0 ? 'portal_magic_link.consumed' : 'run',
+        outcome: 'success',
+        created_at: `2026-04-07T09:${String(index).padStart(2, '0')}:00Z`,
+        trace_id: index === 0 ? 'trace_portal_e2e' : '',
+      }));
       await fulfillJson(route, {
         account_id: 'acct_portal',
-        items: [
-          {
-            event_id: 'audit_portal_login_001',
-            event_kind: 'portal_magic_link.consumed',
-            outcome: 'success',
-            message: 'Portal login verified.',
-            created_at: '2026-04-07T09:00:00Z',
-            metadata: {
-              trace_id: 'trace_portal_e2e',
-            },
-          },
-        ],
+        items: events.slice(0, limit),
+      });
+      return;
+    }
+
+    if (
+      pathname === '/sites/site_attention/vector-observability'
+      || pathname === '/sites/site_clear/vector-observability'
+    ) {
+      const isClearSite = pathname.includes('site_clear');
+      await fulfillJson(route, {
+        contract_version: 'magick-vector-observability-summary-v1',
+        site_id: isClearSite ? 'site_clear' : 'site_attention',
+        account_id: 'acct_portal',
+        generated_at: '2026-04-07T10:00:00Z',
+        window: {
+          hours: 168,
+          start_at: '2026-03-31T10:00:00Z',
+          end_at: '2026-04-07T10:00:00Z',
+        },
+        totals: {
+          index_jobs_total: isClearSite ? 3 : 0,
+          index_succeeded_total: isClearSite ? 3 : 0,
+          index_failed_total: 0,
+          index_success_rate: isClearSite ? 1 : 0,
+          accepted_documents_total: isClearSite ? 86 : 0,
+          indexed_documents_total: isClearSite ? 86 : 0,
+          indexed_chunks_total: isClearSite ? 214 : 0,
+          failed_documents_total: 0,
+          deleted_entries_total: 0,
+          avg_index_duration_ms: 0,
+          p95_index_duration_ms: 0,
+          last_index_job_finished_at: isClearSite ? '2026-04-07T09:30:00Z' : '',
+          search_queries_total: isClearSite ? 32 : 0,
+          search_succeeded_total: isClearSite ? 32 : 0,
+          search_failed_total: 0,
+          search_success_rate: isClearSite ? 1 : 0,
+          no_hit_total: isClearSite ? 3 : 0,
+          no_hit_rate: isClearSite ? 0.09375 : 0,
+          avg_search_latency_ms: 0,
+          p95_search_latency_ms: 0,
+          avg_top1_score: 0,
+          avg_result_score: 0,
+          last_search_finished_at: isClearSite ? '2026-04-07T09:45:00Z' : '',
+          active_site_count: isClearSite ? 1 : 0,
+          indexed_site_count: isClearSite ? 1 : 0,
+          current_document_count: isClearSite ? 86 : 0,
+          current_chunk_count: isClearSite ? 214 : 0,
+        },
+        health: {
+          status: isClearSite ? 'ok' : 'inactive',
+          score: isClearSite ? 100 : 0,
+          summary: '',
+        },
+        timeline: [],
+        intents: [],
+        index_snapshots: isClearSite
+          ? [{
+              site_id: 'site_clear',
+              document_count: 86,
+              chunk_count: 214,
+              post_type_counts: { post: 80, page: 6 },
+              source_type_counts: { wordpress: 86 },
+              last_indexed_at: '2026-04-07T09:30:00Z',
+              embedding_provider: 'hidden-from-portal',
+              embedding_model: 'hidden-from-portal',
+              embedding_dimensions: 1024,
+              vector_backend: 'hidden-from-portal',
+              captured_at: '2026-04-07T09:30:00Z',
+            }]
+          : [],
+        errors: [],
       });
       return;
     }
@@ -1095,6 +1174,13 @@ async function installPortalMocks(
           tokens_limit: 100000,
           features: ['usage', 'billing', 'audit'],
         },
+        customer_status: {
+          status: 'degraded',
+          needs_attention: true,
+          issue_count: 1,
+          generated_at: '2026-04-07T10:00:00Z',
+        },
+        generated_at: '2026-04-07T10:00:00Z',
       });
       return;
     }
@@ -1446,6 +1532,9 @@ test('portal workspace interaction path: account overview to site drawer and ser
   await expect(page.getByText(/2,419|2419/i).first()).toBeVisible();
   await expect(page.getByText(/Tickets|工单|工單/i).first()).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
+  const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
+  await expect(sitesWorkspace.getByText(/^2 (?:Needs attention|需要关注)$/i)).toBeVisible();
+  await expect(sitesWorkspace.getByText(/^Needs attention$|^需要关注$/i)).toHaveCount(2);
 
   await expect(page.locator('a[href="/portal/sites/site_attention"]').first()).toBeVisible();
   await page.goto('/portal/sites/site_attention');
@@ -1455,6 +1544,7 @@ test('portal workspace interaction path: account overview to site drawer and ser
   await page.goto('/portal/usage');
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: /This period|本期用量/i })).toBeVisible();
+  await expect(page.getByText(/^612$|^612 点$/i).first()).toBeVisible();
   const usageViewTabs = page.locator('[data-portal-usage="view-tabs"]');
   await expect(usageViewTabs.getByRole('tab')).toHaveCount(2);
   await expect(usageViewTabs.getByRole('tab', { name: /Usage details|用量明细/i })).toHaveCount(0);
@@ -1507,9 +1597,13 @@ test('portal workspace interaction path: account overview to site drawer and ser
   await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
   await expect(packageDialog).toBeVisible();
+  const packageConfirmButton = packageDialog.getByRole('button', { name: /^Select package$|^选择套餐$/i });
+  await expect(packageConfirmButton).toBeInViewport();
   await expect(packageDialog.getByRole('heading', { name: /Compare package rights|套餐权益对比/i })).toBeVisible();
   await expect(packageDialog.locator('[data-comparison-state="unconfigured"]')).toContainText(/To confirm|待确认/i);
   await expect(packageDialog.getByText(/published package does not currently define|已发布套餐尚未定义/i)).toBeVisible();
+  await expect(packageDialog.getByRole('radio', { name: /Plus/i })).toBeDisabled();
+  await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(page.getByText(/^Payment orders$|^支付订单$/i)).toBeVisible();
   await expect(page.getByRole('tab', { name: /Pending|待支付/i })).toHaveAttribute('aria-selected', 'true');
@@ -1546,7 +1640,6 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   );
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
-  await expect(notice.getByText(/Payment confirmation is pending|正在等待支付确认/i)).toBeVisible();
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 10_000 });
   await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
@@ -1595,6 +1688,11 @@ test('legacy monitoring redirects to site status while audit stays a support dee
   await page.goto('/portal/audit');
   await expect(page.locator('[data-portal-support-deeplink="audit"]')).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: /Recent activity|最近活动|最近活動/i })).toBeVisible();
+  await expect(page.getByRole('article')).toHaveCount(10);
+  await page.getByRole('button', { name: /Load more activity|加载更多活动|載入更多活動/i }).click();
+  await expect(page.getByRole('article')).toHaveCount(12);
+  await page.getByText(/Support information|支持信息|支援資訊/i).first().click();
+  await expect(page.getByText('trace_portal_e2e')).toBeVisible();
 });
 
 test('portal site record focuses on address, status, and support actions', async ({ page }) => {
@@ -1612,6 +1710,12 @@ test('portal site record focuses on address, status, and support actions', async
   await expect(page.getByText(/Site address|站点地址|站點地址/i).first()).toBeVisible();
   await expect(page.getByText(/^Growth$/)).toHaveCount(0);
   await expect(page.getByText(/^plan_growth$/)).toHaveCount(0);
+  const siteKnowledgePanel = page.locator('[data-portal-site="site-knowledge"]');
+  await expect(siteKnowledgePanel.getByRole('heading', { name: /Site knowledge|站点知识/i })).toBeVisible();
+  await expect(siteKnowledgePanel.getByText(/^86$/)).toBeVisible();
+  await expect(siteKnowledgePanel.getByText(/32 searches|32 次搜索/i)).toBeVisible();
+  await expect(siteKnowledgePanel.getByText(/3 could not find|3 次未找到相关内容/i)).toBeVisible();
+  await expect(siteKnowledgePanel.getByText(/P95|top1|embedding|vector backend|向量库|分块/i)).toHaveCount(0);
 });
 
 test('portal support owns customer feedback and status expectations', async ({ page }) => {

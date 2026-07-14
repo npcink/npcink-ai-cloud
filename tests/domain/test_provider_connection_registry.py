@@ -455,23 +455,19 @@ def test_runtime_settings_project_capability_provider_connections(
 
     projection = apply_provider_connection_runtime_settings(settings)
 
-    assert projection.applied_count == 5
+    assert projection.applied_count == 3
     assert settings.web_search_provider == "auto"
     assert settings.web_search_zhihu_base_url == "https://developer.zhihu.example"
     assert settings.web_search_zhihu_access_secret == "zhihu-secret"
     assert settings.web_search_zhihu_hot_list_cache_ttl_seconds == 120
     assert settings.image_source_provider == "auto"
     assert settings.image_source_unsplash_access_key == "unsplash-secret"
-    assert settings.site_knowledge_embedding_provider == "tei"
-    assert settings.tei_base_url == "http://tei.example"
-    assert settings.tei_model_ids == "BAAI/bge-m3,jinaai/jina-embeddings-v3"
-    assert settings.tei_timeout_seconds == 12
-    assert settings.tei_region == "self-hosted-test"
-    assert settings.tei_context_window == 4096
+    assert projection.embedding_count == 0
+    assert settings.site_knowledge_embedding_provider == "deterministic"
     assert settings.site_knowledge_rerank_provider == "jina"
     assert settings.site_knowledge_jina_api_key == "jina-secret"
-    assert settings.site_knowledge_vector_backend == "zilliz_cloud"
-    assert settings.site_knowledge_zilliz_token == "zilliz-token"
+    assert projection.vector_store_count == 0
+    assert settings.site_knowledge_vector_backend == "postgres_json"
 
     serialized = service.list_connections()
     serialized_connections = {
@@ -492,7 +488,7 @@ def test_runtime_settings_project_capability_provider_connections(
     dispose_engine(database_url)
 
 
-def test_runtime_settings_use_dedicated_allowlisted_site_knowledge_model(
+def test_runtime_settings_reject_generic_embedding_connection_without_profile_probe(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -523,8 +519,8 @@ def test_runtime_settings_use_dedicated_allowlisted_site_knowledge_model(
 
     projection = apply_provider_connection_runtime_settings(settings)
 
-    assert projection.embedding_count == 1
-    assert settings.site_knowledge_embedding_provider == "openai"
+    assert projection.embedding_count == 0
+    assert settings.site_knowledge_embedding_provider == "deterministic"
     assert settings.site_knowledge_embedding_model == "BAAI/bge-m3"
     assert settings.site_knowledge_embedding_dimensions == 1024
 
@@ -671,7 +667,116 @@ def test_image_source_connections_remain_parallel_without_priority(
     dispose_engine(database_url)
 
 
-def test_disabling_vector_connections_restores_builtin_runtime_defaults(
+def test_jina_reader_remains_independent_when_primary_search_changes(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+
+    for connection_id, provider_id, base_url, runtime_profile_ids, credential in (
+        (
+            "search_tavily",
+            "tavily",
+            "https://api.tavily.com",
+            ["web-search.managed"],
+            "tavily-key",
+        ),
+        (
+            "search_jina_reader",
+            "jina_reader",
+            "https://r.jina.ai",
+            ["web-search.reader"],
+            None,
+        ),
+        (
+            "search_bocha",
+            "bocha",
+            "https://api.bochaai.com/v1",
+            ["web-search.managed"],
+            "bocha-key",
+        ),
+    ):
+        service.save_connection(
+            {
+                "connection_id": connection_id,
+                "provider_id": provider_id,
+                "provider_type": "web_search_provider",
+                "kind": "web_search_provider",
+                "display_name": provider_id,
+                "enabled": True,
+                "base_url": base_url,
+                "capability_ids": ["web_search"],
+                "runtime_profile_ids": runtime_profile_ids,
+                "credential": credential,
+            }
+        )
+
+    connections = {
+        item["connection_id"]: item for item in service.list_connections()["connections"]
+    }
+    assert connections["search_tavily"]["enabled"] is False
+    assert connections["search_bocha"]["enabled"] is True
+    assert connections["search_jina_reader"]["enabled"] is True
+    assert connections["search_jina_reader"]["configured"] is True
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.web_search_count == 2
+    assert settings.web_search_provider == "auto"
+    assert settings.web_search_bocha_api_key == "bocha-key"
+    assert settings.web_search_jina_reader_enabled is True
+
+    dispose_engine(database_url)
+
+
+def test_clearing_external_service_credential_persists_disabled_runtime_state(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    service = ProviderConnectionAdminService(database_url, settings)
+    payload = {
+        "connection_id": "image_unsplash",
+        "provider_id": "unsplash",
+        "provider_type": "image_source_provider",
+        "kind": "image_source_provider",
+        "display_name": "Unsplash",
+        "enabled": True,
+        "base_url": "https://api.unsplash.com",
+        "capability_ids": ["image_source"],
+        "runtime_profile_ids": ["image-source.managed"],
+    }
+
+    service.save_connection({**payload, "credential": "unsplash-key"})
+    assert apply_provider_connection_runtime_settings(settings).image_source_count == 1
+    assert settings.image_source_provider == "auto"
+
+    service.save_connection(
+        {**payload, "enabled": False, "credential": ""},
+        connection_id="image_unsplash",
+    )
+
+    stored = {
+        item["connection_id"]: item for item in service.list_connections()["connections"]
+    }["image_unsplash"]
+    assert stored["enabled"] is False
+    assert stored["configured"] is False
+    assert stored["status"] == "disabled"
+
+    reloaded_settings = _settings(database_url)
+    projection = apply_provider_connection_runtime_settings(reloaded_settings)
+
+    assert projection.image_source_count == 0
+    assert reloaded_settings.image_source_provider == "disabled"
+    assert not reloaded_settings.image_source_unsplash_access_key
+
+    dispose_engine(database_url)
+
+
+def test_generic_vector_connection_cannot_override_fixed_profile(
     tmp_path: Path,
 ) -> None:
     database_url = _sqlite_url(tmp_path)
@@ -708,8 +813,9 @@ def test_disabling_vector_connections_restores_builtin_runtime_defaults(
     service.save_connection(vector_payload)
     service.save_connection(rerank_payload)
 
-    apply_provider_connection_runtime_settings(settings)
-    assert settings.site_knowledge_vector_backend == "zilliz_cloud"
+    initial_projection = apply_provider_connection_runtime_settings(settings)
+    assert initial_projection.vector_store_count == 0
+    assert settings.site_knowledge_vector_backend == "postgres_json"
     assert settings.site_knowledge_rerank_provider == "jina"
 
     service.save_connection({**vector_payload, "enabled": False}, connection_id="vector_zilliz")

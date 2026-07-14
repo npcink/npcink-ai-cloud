@@ -25,6 +25,7 @@ from app.core.models import (
     PRINCIPAL_STATUS_DISABLED,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
+    SITE_STATUS_ARCHIVED,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_PAST_DUE,
     SUBSCRIPTION_STATUS_SUSPENDED,
@@ -1741,7 +1742,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 account_id=account_id,
                 now=now,
             )
-            sites = repository.list_sites(account_id=account_id, limit=None)
+            sites = [
+                site
+                for site in repository.list_sites(account_id=account_id, limit=None)
+                if str(getattr(site, "status", "") or "") != SITE_STATUS_ARCHIVED
+            ]
             site_ids = [str(site.site_id or "") for site in sites if str(site.site_id or "")]
             subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
             if reconciled is not None:
@@ -2325,6 +2330,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "period_end_at": summary.get("period_end_at"),
             "status": portal_status,
             "credit": credit,
+            "credit_ledger_summary": (
+                summary.get("credit_ledger_summary")
+                if isinstance(summary.get("credit_ledger_summary"), dict)
+                else {}
+            ),
             "credit_policy": (
                 summary.get("credit_policy")
                 if isinstance(summary.get("credit_policy"), dict)

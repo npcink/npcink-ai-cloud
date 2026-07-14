@@ -212,7 +212,7 @@ export default function PortalSupportRequestDetailPage() {
   return (
     <PortalPageStack>
       <PortalWorkspaceHeader
-        eyebrow={t('portal.workspace_label', {}, 'Portal')}
+        eyebrow={t('portal.support_requests_title', {}, 'Tickets')}
         title={supportRequest?.title || t('portal.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
         currentPage="support"

@@ -581,6 +581,18 @@ class CommercialRepository:
             provider=provider,
             external_subject_hash=external_subject_hash,
         )
+        if binding is not None and binding.principal_id != principal_id:
+            raise ValueError("identity provider binding principal_id is immutable")
+        union_binding = (
+            self.get_identity_provider_binding_by_unionid(
+                provider=provider,
+                unionid_hash=unionid_hash,
+            )
+            if unionid_hash
+            else None
+        )
+        if union_binding is not None and union_binding.principal_id != principal_id:
+            raise ValueError("identity provider binding principal_id is immutable")
         if binding is None:
             binding = IdentityProviderBinding(
                 binding_id=binding_id,
@@ -594,7 +606,6 @@ class CommercialRepository:
             )
             self.session.add(binding)
         else:
-            binding.principal_id = principal_id
             binding.unionid_hash = unionid_hash or None
             binding.status = status
             binding.metadata_json = metadata_json
@@ -2536,7 +2547,13 @@ class CommercialRepository:
             if dialect_name == "sqlite"
             else func.extract("epoch", CreditLedgerEntry.created_at)
         )
-        bucket_index = func.cast(epoch_seconds / bucket_seconds, Integer).label("bucket_index")
+        # PostgreSQL rounds numeric-to-integer casts, which can move entries in the
+        # second half of an interval into the next bucket. Floor explicitly so the
+        # bucket always starts at or before the event timestamp on every dialect.
+        bucket_index = func.cast(
+            func.floor(epoch_seconds / bucket_seconds),
+            Integer,
+        ).label("bucket_index")
         statement = (
             select(
                 bucket_index,

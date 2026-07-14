@@ -479,6 +479,21 @@ function PortalUsersContent() {
     }
   };
 
+  const copyPrincipalId = async (principalId: string) => {
+    try {
+      await navigator.clipboard.writeText(principalId);
+      toast.success(principalId, t('common.copied', {}, 'Copied'));
+    } catch {
+      setActionError(
+        t(
+          'admin.portal_users.copy_principal_failed',
+          {},
+          'Unable to copy the user ID.'
+        )
+      );
+    }
+  };
+
   const batchDisableUsers = async () => {
     const principalIds = selectedActiveUsers.map((user) => user.principal_id);
     const reason = batchDisableReason.trim();
@@ -664,7 +679,19 @@ function PortalUsersContent() {
             <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t('admin.portal_users.inspector_eyebrow', {}, 'Inspector')}</p><h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.portal_users.inspector_title', {}, 'Current Portal user')}</h2></div>{selectedUser ? <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(portalUserRisk(selectedUser)))}>{t(`admin.portal_users.risk_${portalUserRisk(selectedUser)}`, {}, portalUserRisk(selectedUser))}</span> : null}</div>
             {selectedUser ? (
               <div className="space-y-5">
-                <div><p className="break-all text-base font-semibold text-slate-950 dark:text-white">{selectedUser.email || t('admin.portal_users.email_missing', {}, 'Email missing')}</p><div className="mt-1 text-xs text-slate-500 dark:text-slate-400"><BackofficeIdentifier value={selectedUser.principal_id} full /></div></div>
+                <div>
+                  <p className="break-all text-base font-semibold text-slate-950 dark:text-white">{selectedUser.email || t('admin.portal_users.email_missing', {}, 'Email missing')}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <BackofficeIdentifier value={selectedUser.principal_id} full />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void copyPrincipalId(selectedUser.principal_id)}
+                    >
+                      {t('common.copy', {}, 'Copy')}
+                    </button>
+                  </div>
+                </div>
                 <dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">{[[t('common.status'), selectedUser.status === 'disabled' ? t('admin.portal_users.status_disabled', {}, 'Disabled') : t('admin.portal_users.status_active', {}, 'Active')],[t('common.account', {}, 'Account'), selectedUser.account_name || t('admin.portal_users.account_unbound', {}, 'No account bound')],[t('admin.portal_users.membership_label', {}, 'Membership'), selectedUser.membership_status || t('admin.portal_users.no_membership_status', {}, 'No membership status')],[t('common.site', {}, 'Site'), selectedUser.site_name || t('admin.portal_users.site_unbound', {}, 'No site bound')],[t('common.package', {}, 'Package'), selectedUser.display_package_label || selectedUser.package_alias || t('admin.portal_users.no_coverage', {}, 'No coverage')],[t('common.subscription', {}, 'Subscription'), selectedUser.subscription_status || t('admin.portal_users.no_subscription', {}, 'No subscription')],['QQ', selectedUser.qq_bound ? t('admin.portal_users.qq_bound', {}, 'Bound') : t('admin.portal_users.qq_unbound', {}, 'Not bound')],[t('admin.portal_users.logged_in_at', {}, 'Login'), dateLabel(selectedUser.last_login_at, t)],[t('admin.portal_users.session_version_label', {}, 'Session version'), String(selectedUser.session_version)]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800"><dt>{label}</dt><dd className="max-w-48 truncate text-right font-semibold text-slate-950 dark:text-white">{value}</dd></div>)}</dl>
                 <div className="flex flex-wrap gap-2">{selectedUser.account_id ? <Link href={`/admin/accounts/${encodeURIComponent(selectedUser.account_id)}`} className="btn btn-primary btn-sm">{t('admin.portal_users.open_customer_action', {}, 'Open customer')}</Link> : null}<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadAuditDetail(selectedUser)}>{t('admin.portal_users.audit_action', {}, 'Audit')}</button>{selectedUser.site_id ? <Link href={`/admin/sites/${encodeURIComponent(selectedUser.site_id)}`} className="btn btn-secondary btn-sm">{t('admin.portal_users.open_site', {}, 'Open site')}</Link> : null}</div>
                 <details className="border-t border-slate-200/80 pt-4 text-sm dark:border-slate-800"><summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-100">{t('portal.support_information', {}, 'Support information')}</summary><div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400"><BackofficeIdentifier value={selectedUser.principal_id} full />{selectedUser.account_id ? <BackofficeIdentifier value={selectedUser.account_id} full /> : null}{selectedUser.site_id ? <BackofficeIdentifier value={selectedUser.site_id} full /> : null}{selectedUser.wordpress_url ? <p className="break-all">{selectedUser.wordpress_url}</p> : null}</div></details>

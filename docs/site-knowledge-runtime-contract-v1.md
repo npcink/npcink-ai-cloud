@@ -73,7 +73,28 @@ the maintenance needed to keep an already-entitled Site Knowledge index fresh.
 
 ## Vector Backend
 
-The default MVP backend stores one Cloud-owned read model in PostgreSQL:
+Site Knowledge now uses one Cloud-owned vector profile as its configuration
+truth:
+
+```text
+profile_id: site-knowledge.zh.v1
+provider: SiliconFlow
+model: BAAI/bge-m3
+dimensions: 1024
+metric: COSINE
+production_backend: Zilliz Cloud
+local_test_backend: PostgreSQL JSON
+```
+
+The profile facts are server-defined and read-only in Admin. The Admin input is
+limited to the SiliconFlow API key plus the Zilliz cluster HTTPS endpoint and
+token. Saving the embedding key performs a live embedding probe before
+activation. The probe must return a non-empty array containing exactly 1024
+finite numeric values. A missing, empty, non-numeric, non-finite,
+768-dimensional, or 1536-dimensional result fails closed and does not replace
+the currently verified connection.
+
+The local/test backend stores one Cloud-owned read model in PostgreSQL:
 
 - `site_knowledge_documents`
 - `site_knowledge_chunks`
@@ -82,35 +103,72 @@ Rows are isolated by `site_id`. Embeddings are stored as JSON for the MVP and
 scored in Python with cosine similarity. This keeps the first version within
 the existing FastAPI, PostgreSQL, Redis, SQLAlchemy, Alembic, and worker stack.
 
-Cloud can switch the vector index to Zilliz Cloud for validation without any
-Toolbox or WordPress-side settings. The WordPress side only sends bounded
-`publish` public content and executes the managed Cloud abilities.
+Production is fixed to Zilliz Cloud. Cloud Admin accepts only the cluster HTTPS
+endpoint and token. The collection is fixed to `site_knowledge_zh_v1`, its
+dimension is fixed to `1024`, its metric is fixed to `COSINE`, and no database
+selector is exposed. The WordPress side only sends bounded `publish` public
+content and executes the managed Cloud abilities.
 
-Cloud-managed provider settings:
+The accepted public endpoint families cover Zilliz Cloud international
+real-time endpoints under `*.zillizcloud.com`, mainland China Dedicated
+real-time endpoints under `*.vectordb.zilliz.com.cn`, and mainland China
+Free/Serverless endpoints matching `*.serverless.*.cloud.zilliz.com.cn`.
+Console, control-plane, arbitrary HTTPS, path-bearing, and query-bearing URLs
+are rejected before connection.
 
-- Embedding suppliers are DB-managed provider connections with
-  `kind=embedding_provider`.
-- Rerank suppliers are DB-managed provider connections with
-  `kind=rerank_provider`.
-- Vector store suppliers are DB-managed provider connections with
-  `kind=vector_store_provider`.
-- Provider credentials must be managed in `/admin/ai-resources`, not in
-  `.env.local` provider keys.
+Saving the Zilliz endpoint and token constructs the production backend before
+persisting the new secret. A missing fixed collection is created with the
+canonical schema and index. An existing collection is validated for required
+fields, 1024 dimensions, and COSINE metric. An incompatible collection fails
+closed and is not modified. A failed connection or schema probe does not
+replace the currently verified vector-store connection.
 
-Supported built-in vector-related provider IDs:
+`GET /internal/service/admin/site-knowledge-vector-profile` returns the fixed
+profile, masked provider readiness, active backend, and Admin-owned vector-store
+readiness. `PUT /internal/service/admin/site-knowledge-vector-profile`
+accepts only an optional `credential` field and performs save-and-verify. It
+does not accept caller-supplied provider, model, dimensions, metric, backend,
+collection, reranker, or embedding-space fields.
 
-- `siliconflow` embedding provider, commonly with `BAAI/bge-m3`
-- `openai` embedding provider
-- `tei` embedding provider
-- `jina` rerank provider, commonly with `jina-reranker-v3`
-- `zilliz` vector store provider
+`PUT /internal/service/admin/site-knowledge-vector-profile/vector-store`
+accepts only optional `endpoint` and `token` fields so an already saved token
+can be reverified. It does not accept collection, database, dimensions, metric,
+backend, or migration fields. Both secrets remain encrypted and are represented
+only as configured/readiness state in responses and audit evidence.
 
-An embedding provider connection may declare additive
-`config.site_knowledge_model_id` when its general default model is used by
-other capabilities. The selected model must be present in the connection's
-`model_ids` allowlist when one exists. Chinese-first sites should use
-`BAAI/bge-m3` consistently for both indexing and queries; English-only BGE
-variants are not valid defaults for Chinese Site Knowledge.
+The profile response also exposes an Admin-only validation projection with
+three distinct evidence levels:
+
+- `connection`: live embedding and Zilliz probes passed;
+- `index`: Cloud-owned chunks were copied to the fixed Zilliz collection and a
+  same-vector round trip returned an indexed chunk;
+- `retrieval`: a normal metered Site Knowledge search completed against
+  `zilliz_cloud` after the most recent rebuild.
+
+Connection success must not be presented as proof that content is searchable.
+When a verified vector store is first attached while PostgreSQL contains
+Cloud-owned chunks, or a supplied embedding credential changes, the index state
+becomes `reindex_required`. Other states are `empty`, `rebuilding`, `ready`,
+and `failed`. Search evidence remains `pending`, `passed`, `no_hit`, or
+`failed`.
+
+`POST /internal/service/admin/site-knowledge-vector-profile/index-rebuilds`
+accepts only the fixed confirmation literal
+`rebuild_site_knowledge_index`. Provider, model, dimensions, metric,
+collection, backend, site identifiers, and metering class are server-owned and
+cannot be supplied by the caller. The current MVP operation is synchronous and
+reuses the existing Cloud-owned PostgreSQL read model. It preflights every
+stored chunk before any Zilliz delete or upsert, rejects mixed embedding
+spaces or invalid vectors, then replaces each site's Zilliz rows in bounded
+batches. It does not call an embedding provider, consume ordinary AI credits,
+introduce another queue, or write WordPress. The operation requires internal
+auth, idempotency evidence, and a service audit event.
+
+The verified profile connection is stored as a DB-managed Provider Connection
+so the existing provider adapter, encrypted secret storage, runtime projection,
+and audit evidence continue to be reused. Generic Provider Connection writes
+cannot create or preserve the profile probe marker. Ability-model binding is
+read-only for Site Knowledge and cannot override this profile.
 
 The following remain environment-controlled runtime guardrails, because they
 bound workload shape rather than identify a provider secret:
@@ -132,19 +190,20 @@ bound workload shape rather than identify a provider secret:
 - `NPCINK_CLOUD_SITE_KNOWLEDGE_RERANK_TIMEOUT_SECONDS`: default `8`
 - `NPCINK_CLOUD_SITE_KNOWLEDGE_ZILLIZ_TIMEOUT_SECONDS`: default `10`
 
-The runtime may project DB provider connections onto legacy in-process settings
-fields while the Site Knowledge adapters are being simplified. That bridge is
-an implementation detail, not a supported env credential surface.
+The runtime may project the verified DB profile connection onto legacy
+in-process settings fields while the Site Knowledge adapters are being
+simplified. That bridge is an implementation detail, not a second model choice
+or supported env credential surface.
 
 The Zilliz adapter is intentionally behind a small backend interface. A later
 DashVector migration should add a new backend implementation and preserve the
 same runtime contracts, response shape, and WordPress write boundary.
 
-The deterministic embedding provider exists for local tests and controlled
-fallback only. The managed embedding provider paths use the existing Cloud
-provider adapter boundary, so embedding endpoint credentials remain
-Cloud-managed provider connection secrets and are not accepted from or returned
-to WordPress.
+The deterministic embedding provider exists for local tests only. Production
+Site Knowledge uses the verified fixed profile and must not silently select an
+unverified Provider Connection. Embedding endpoint credentials remain
+Cloud-managed encrypted secrets and are not accepted from or returned to
+WordPress.
 
 Managed embedding provider calls are runtime-governed provider calls. When
 Site Knowledge uses TEI, OpenAI, SiliconFlow, or another Cloud-managed
@@ -469,8 +528,8 @@ systems remain deferred.
 
 ## Real-Chain Smoke
 
-Use the local real-chain smoke after configuring Cloud-managed vector settings
-in `.env.local` or the deployment secret manager:
+Use the local real-chain smoke after the fixed embedding profile has passed its
+Admin probe and the deployment-managed Zilliz connection is ready:
 
 ```bash
 pnpm run smoke:site-knowledge
