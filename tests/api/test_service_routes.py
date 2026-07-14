@@ -443,6 +443,15 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["qq_bound"] is False
     assert items[0]["site_id"] == "site_admin-portal-user-example-com"
 
+    principal_lookup_response = client.get(
+        f"/internal/service/admin/portal-users?q={principal_id}",
+        headers=build_internal_headers(),
+    )
+    assert principal_lookup_response.status_code == 200, principal_lookup_response.text
+    principal_lookup_items = principal_lookup_response.json()["data"]["items"]
+    assert len(principal_lookup_items) == 1
+    assert principal_lookup_items[0]["principal_id"] == principal_id
+
     empty_page_response = client.get(
         "/internal/service/admin/portal-users?q=admin-portal-user&offset=1&limit=1",
         headers=build_internal_headers(),

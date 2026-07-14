@@ -12,6 +12,18 @@ const accountSource = readFileSync(accountPagePath, 'utf8');
 
 assert.match(
   clientSource,
+  /export type ProductIdentityType = 'platform_admin' \| 'user';/,
+  'frontend identity types must stay limited to platform_admin and user'
+);
+
+assert.doesNotMatch(
+  clientSource,
+  /export type ProductIdentityType = [^;]*site_admin/,
+  'legacy site_admin must not return as a product identity type'
+);
+
+assert.match(
+  clientSource,
   /getIdentityProviders\(\)/,
   'portal client must expose identity provider status'
 );

@@ -80,6 +80,18 @@ assert.match(
 
 assert.match(
   pageSource,
+  /<BackofficeIdentifier value=\{selectedUser\.principal_id\} full \/>/,
+  'portal users inspector must display the full principal ID'
+);
+
+assert.match(
+  pageSource,
+  /navigator\.clipboard\.writeText\(principalId\)/,
+  'portal users inspector must let operators copy the principal ID'
+);
+
+assert.match(
+  pageSource,
   /QQ/,
   'portal users page must display QQ binding state'
 );

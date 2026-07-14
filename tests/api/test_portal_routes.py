@@ -2400,6 +2400,73 @@ def test_portal_auth_login_code_request_and_verify_with_jwt(tmp_path: Path) -> N
         assert identity.last_login_at is not None
 
 
+def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    email = "multi-account-principal@example.com"
+    principal_ids: list[str] = []
+
+    for suffix in ("alpha", "beta"):
+        account_id = f"acct_multi_principal_{suffix}"
+        account_response = client.post(
+            "/internal/service/accounts",
+            json={"account_id": account_id, "name": f"Multi Principal {suffix}"},
+            headers=build_internal_headers(
+                idempotency_key=f"multi-principal-account-{suffix}"
+            ),
+        )
+        assert account_response.status_code == 200, account_response.text
+        membership_response = client.post(
+            f"/internal/service/accounts/{account_id}/members",
+            json={"email": email},
+            headers=build_internal_headers(
+                idempotency_key=f"multi-principal-membership-{suffix}"
+            ),
+        )
+        assert membership_response.status_code == 200, membership_response.text
+        principal_ids.append(str(membership_response.json()["data"]["principal_id"]))
+
+    assert len(set(principal_ids)) == 1
+    principal_id = principal_ids[0]
+    login_code = _request_portal_login_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    login_data = _verify_portal_login_code(
+        client,
+        email=email,
+        code=str(login_code["code"]),
+    )
+    assert login_data["principal_id"] == principal_id
+
+    session_response = client.get("/portal/v1/session")
+    assert session_response.status_code == 200, session_response.text
+    assert {
+        item["account_id"] for item in session_response.json()["data"]["accounts"]
+    } == {"acct_multi_principal_alpha", "acct_multi_principal_beta"}
+
+    with get_session(database_url) as session:
+        principals = list(session.scalars(select(Principal).where(Principal.email == email)))
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership).where(
+                    AccountUserMembership.principal_id == principal_id
+                )
+            )
+        )
+        assert len(principals) == 1
+        assert principals[0].principal_id == principal_id
+        assert {membership.account_id for membership in memberships} == {
+            "acct_multi_principal_alpha",
+            "acct_multi_principal_beta",
+        }
+
+    dispose_engine(database_url)
+
+
 def test_portal_account_email_change_verifies_new_email_before_switching(
     tmp_path: Path,
 ) -> None:
@@ -2467,6 +2534,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
             select(Principal).where(Principal.email == "old-email@example.com")
         )
         assert identity is not None
+        original_principal_id = identity.principal_id
 
     verify_response = client.post(
         "/portal/v1/account/email-change/verify",
@@ -2479,6 +2547,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
     assert verify_data["email"] == "new-email@example.com"
     assert verify_data["old_email"] == "old-email@example.com"
     assert verify_data["new_email"] == "new-email@example.com"
+    assert verify_data["principal_id"] == original_principal_id
     assert fake_sender.messages[-1]["kind"] == "email_changed_notice"
     assert fake_sender.messages[-1]["recipient_email"] == "old-email@example.com"
 
@@ -2491,6 +2560,7 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
             select(Principal).where(Principal.email == "new-email@example.com")
         )
         assert identity is not None
+        assert identity.principal_id == original_principal_id
         audit_event = session.scalar(
             select(ServiceAuditEvent)
             .where(ServiceAuditEvent.event_kind == "principal.email_change")
@@ -2634,11 +2704,12 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         email="portal-qq@example.com",
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    _verify_portal_login_code(
+    login_data = _verify_portal_login_code(
         client,
         email="portal-qq@example.com",
         code=str(request_data["code"]),
     )
+    principal_id = str(login_data["principal_id"])
     initial_provider_response = client.get("/portal/v1/auth/identity-providers")
     assert initial_provider_response.status_code == 200, initial_provider_response.text
     initial_provider_data = initial_provider_response.json()["data"]["providers"][0]
@@ -2657,6 +2728,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
         json={"code": "bind-code", "state": start_data["state"]},
     )
     assert bind_response.status_code == 200, bind_response.text
+    assert bind_response.json()["data"]["binding"]["principal_id"] == principal_id
     assert bind_response.json()["data"]["binding"]["identity_type"] == "user"
     assert bind_response.json()["data"]["binding"]["role"] == "user"
     bound_provider_response = client.get("/portal/v1/auth/identity-providers")
@@ -2669,6 +2741,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
     with get_session(database_url) as session:
         binding = session.scalar(select(IdentityProviderBinding))
         assert binding is not None
+        assert binding.principal_id == principal_id
         assert binding.provider == "qq"
         assert binding.external_subject_hash != "qq-openid-001"
         assert binding.unionid_hash != "qq-union-001"
@@ -3063,11 +3136,12 @@ def test_portal_qq_unbind_revokes_current_session(
         email="portal-qq-unbind@example.com",
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    _verify_portal_login_code(
+    login_data = _verify_portal_login_code(
         client,
         email="portal-qq-unbind@example.com",
         code=str(request_data["code"]),
     )
+    principal_id = str(login_data["principal_id"])
     start_response = client.get("/portal/v1/auth/qq/start")
     assert start_response.status_code == 200
     bind_response = client.post(
@@ -3079,6 +3153,15 @@ def test_portal_qq_unbind_revokes_current_session(
     unbind_response = client.post("/portal/v1/auth/qq/unbind", json={"provider": "qq"})
     assert unbind_response.status_code == 200
     assert unbind_response.json()["data"]["revoked"] == 1
+    assert unbind_response.json()["data"]["principal_id"] == principal_id
+
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        binding = session.scalar(select(IdentityProviderBinding))
+        assert identity is not None
+        assert identity.principal_id == principal_id
+        assert binding is not None
+        assert binding.principal_id == principal_id
 
     session_response = client.get("/portal/v1/session")
     assert session_response.status_code == 401
@@ -3347,6 +3430,8 @@ def test_portal_self_registration_opens_free_account_and_session(
 
     assert registration_data["status"] == "registered"
     assert str(registration_data["principal_id"]).startswith("prn_")
+    assert len(str(registration_data["principal_id"])) == 36
+    assert int(str(registration_data["principal_id"])[4:], 16) >= 0
     assert str(registration_data["account_id"]).startswith("acct_")
     assert registration_data["site_id"] == ""
     assert registration_data["site"] is None

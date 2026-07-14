@@ -8,7 +8,7 @@
 import { getPortalApiBaseUrl } from './env';
 import { generateIdempotencyKey } from './idempotency';
 
-export type ProductIdentityType = 'platform_admin' | 'site_admin';
+export type ProductIdentityType = 'platform_admin' | 'user';
 
 // ============================================
 // 类型定义
@@ -167,7 +167,7 @@ export interface PortalIdentityProviderBinding {
   binding_id: string;
   provider: string;
   principal_id: string;
-  identity_type: ProductIdentityType | 'user';
+  identity_type: ProductIdentityType;
   role: string;
   status: string;
   has_unionid: boolean;
