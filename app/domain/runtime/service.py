@@ -67,7 +67,6 @@ from app.domain.commercial.credits import (
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from app.domain.connector_runtime.contracts import (
     CONNECTOR_RUNTIME_ABILITIES,
-    build_connector_result_envelope,
 )
 from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_context_evidence.contracts import (
@@ -137,6 +136,12 @@ from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
     RuntimeProviderExecutionService,
 )
+from app.domain.runtime.result_normalization import (
+    RuntimeResultNormalizationCommand,
+    RuntimeResultNormalizationService,
+    get_transient_runtime_result,
+    set_transient_runtime_result,
+)
 from app.domain.runtime.run_lifecycle import (
     RuntimeRunCreationCommand,
     RuntimeRunLifecycleService,
@@ -188,18 +193,6 @@ logger = get_logger(__name__)
 
 OPERATOR_REPAIR_REASON_MIN_LENGTH = 12
 OPERATOR_REPAIR_EVIDENCE_MIN_LENGTH = 24
-_TRANSIENT_RESULT_JSON_ATTR = "_transient_result_json"
-
-
-def _set_transient_result_json(run: RunRecord, result_json: dict[str, Any]) -> None:
-    setattr(run, _TRANSIENT_RESULT_JSON_ATTR, result_json)
-
-
-def _get_transient_result_json(run: RunRecord) -> dict[str, Any] | None:
-    result_json = getattr(run, _TRANSIENT_RESULT_JSON_ATTR, None)
-    if isinstance(result_json, dict):
-        return result_json
-    return None
 
 
 class RuntimeService:
@@ -219,6 +212,7 @@ class RuntimeService:
         self.provider_execution_service = RuntimeProviderExecutionService(
             usage_recorder=self.commercial_service,
         )
+        self.result_normalization_service = RuntimeResultNormalizationService()
         self.providers = (
             providers if providers is not None else build_provider_adapters(self.settings)
         )
@@ -3417,52 +3411,30 @@ class RuntimeService:
                         )
                         return
 
-                automatic_web_search = policy.get("automatic_web_search")
-                if connector_envelope is not None and isinstance(automatic_web_search, dict):
-                    provider_output = dict(provider_output)
-                    provider_output["automatic_web_search"] = automatic_web_search
-
-                response_output = provider_output
-                if connector_envelope is not None:
-                    response_output = build_connector_result_envelope(
-                        site_id=run.site_id,
-                        connector_envelope=connector_envelope,
-                        output=provider_output,
-                    )
-
                 storage_mode = self._get_storage_mode(
                     run.policy_json if isinstance(run.policy_json, dict) else {}
                 )
-                if connector_envelope is not None:
-                    prepared_output = self._prepare_result_for_storage(
-                        provider_output,
-                        storage_mode=storage_mode,
-                    )
-                    prepared_result = build_connector_result_envelope(
+                automatic_web_search = policy.get("automatic_web_search")
+                normalized_result = self.result_normalization_service.normalize(
+                    RuntimeResultNormalizationCommand(
                         site_id=run.site_id,
-                        connector_envelope=connector_envelope,
-                        output=prepared_output,
-                    )
-                else:
-                    prepared_result = self._prepare_result_for_storage(
-                        response_output,
+                        provider_output=provider_output,
                         storage_mode=storage_mode,
+                        ability_family=run.ability_family or "text",
+                        ability_name=run.ability_name or "",
+                        input_payload=input_payload,
+                        connector_envelope=connector_envelope,
+                        automatic_web_search=(
+                            automatic_web_search if isinstance(automatic_web_search, dict) else None
+                        ),
                     )
-                if storage_mode == RUNTIME_STORAGE_MODE_NO_STORE:
-                    _set_transient_result_json(run, response_output)
-                if connector_envelope is None and isinstance(automatic_web_search, dict):
-                    prepared_result = dict(prepared_result)
-                    prepared_result["automatic_web_search"] = automatic_web_search
-                wrapped_result = build_analysis_result_envelope(
-                    prepared_result,
-                    ability_family=run.ability_family or "text",
-                    ability_name=run.ability_name or "",
-                    input_payload=input_payload,
                 )
+                if normalized_result.transient_result is not None:
+                    set_transient_runtime_result(run, normalized_result.transient_result)
                 self.run_lifecycle_service.succeed_run(
                     repository,
                     run,
-                    result_json=wrapped_result,
+                    result_json=normalized_result.durable_result,
                     provider_id=candidate.provider_id,
                     model_id=candidate.model_id,
                     instance_id=candidate.instance_id,
@@ -5918,7 +5890,7 @@ class RuntimeService:
     ) -> RuntimeExecutionResponse:
         provider_calls = repository.list_provider_calls(run.run_id)
         failure_details = self.run_projector.build_failure_details(run, provider_calls)
-        response_result = _get_transient_result_json(run)
+        response_result = get_transient_runtime_result(run)
         if not isinstance(response_result, dict):
             response_result = run.result_json or {}
         result = build_analysis_result_envelope(
@@ -6471,19 +6443,6 @@ class RuntimeService:
         if ciphertext:
             return decrypt_runtime_execution_input(ciphertext, settings=self.settings)
         return run.input_json if isinstance(run.input_json, dict) else {}
-
-    def _prepare_result_for_storage(
-        self,
-        result_json: dict[str, Any],
-        *,
-        storage_mode: str,
-    ) -> dict[str, Any]:
-        if storage_mode == RUNTIME_STORAGE_MODE_NO_STORE:
-            return {
-                "stored": False,
-                "status": "omitted",
-            }
-        return result_json if isinstance(result_json, dict) else {}
 
     def _get_storage_mode(self, policy: dict[str, object]) -> str:
         storage_mode = str(policy.get("storage_mode") or RUNTIME_STORAGE_MODE_RESULT_ONLY)
