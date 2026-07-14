@@ -133,6 +133,10 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
+from app.domain.runtime.provider_execution import (
+    ProviderCallEvidenceCommand,
+    RuntimeProviderExecutionService,
+)
 from app.domain.runtime.run_lifecycle import (
     RuntimeRunCreationCommand,
     RuntimeRunLifecycleService,
@@ -212,6 +216,9 @@ class RuntimeService:
         self.database_url = database_url
         self.settings = settings or get_settings()
         self.commercial_service = CommercialService(database_url, settings=self.settings)
+        self.provider_execution_service = RuntimeProviderExecutionService(
+            usage_recorder=self.commercial_service,
+        )
         self.providers = (
             providers if providers is not None else build_provider_adapters(self.settings)
         )
@@ -3264,24 +3271,24 @@ class RuntimeService:
                         )
                     )
                 except ProviderExecutionError as error:
-                    provider_call = repository.record_provider_call(
-                        run_id=run.run_id,
-                        provider_id=candidate.provider_id,
-                        model_id=candidate.model_id,
-                        instance_id=candidate.instance_id,
-                        region=candidate.region,
-                        latency_ms=timeout_ms if error.error_code == "provider.timeout" else 0,
-                        tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
-                        tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
-                        cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
-                        retry_count=retry_count,
-                        fallback_used=fallback_used,
-                        error_code=error.error_code,
-                    )
-                    self.commercial_service.record_provider_call_usage(
-                        session=repository.session,
+                    self.provider_execution_service.record_provider_call(
+                        repository=repository,
                         run=run,
-                        provider_call=provider_call,
+                        command=ProviderCallEvidenceCommand(
+                            provider_id=candidate.provider_id,
+                            model_id=candidate.model_id,
+                            instance_id=candidate.instance_id,
+                            region=candidate.region,
+                            latency_ms=(
+                                timeout_ms if error.error_code == "provider.timeout" else 0
+                            ),
+                            tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
+                            tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
+                            cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
+                            retry_count=retry_count,
+                            fallback_used=fallback_used,
+                            error_code=error.error_code,
+                        ),
                     )
                     last_error_code = error.error_code
                     last_error_message = error.message
@@ -3323,24 +3330,22 @@ class RuntimeService:
                         last_error_message = (
                             "provider returned no usable WordPress AI connector text"
                         )
-                        provider_call = repository.record_provider_call(
-                            run_id=run.run_id,
-                            provider_id=candidate.provider_id,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            region=candidate.region,
-                            latency_ms=provider_result.latency_ms,
-                            tokens_in=provider_result.tokens_in,
-                            tokens_out=provider_result.tokens_out,
-                            cost=provider_result.cost,
-                            retry_count=retry_count,
-                            fallback_used=fallback_used,
-                            error_code=last_error_code,
-                        )
-                        self.commercial_service.record_provider_call_usage(
-                            session=repository.session,
+                        self.provider_execution_service.record_provider_call(
+                            repository=repository,
                             run=run,
-                            provider_call=provider_call,
+                            command=ProviderCallEvidenceCommand(
+                                provider_id=candidate.provider_id,
+                                model_id=candidate.model_id,
+                                instance_id=candidate.instance_id,
+                                region=candidate.region,
+                                latency_ms=provider_result.latency_ms,
+                                tokens_in=provider_result.tokens_in,
+                                tokens_out=provider_result.tokens_out,
+                                cost=provider_result.cost,
+                                retry_count=retry_count,
+                                fallback_used=fallback_used,
+                                error_code=last_error_code,
+                            ),
                         )
                         if allow_fallback:
                             break
@@ -3356,23 +3361,21 @@ class RuntimeService:
                         )
                         return
 
-                provider_call = repository.record_provider_call(
-                    run_id=run.run_id,
-                    provider_id=candidate.provider_id,
-                    model_id=candidate.model_id,
-                    instance_id=candidate.instance_id,
-                    region=candidate.region,
-                    latency_ms=provider_result.latency_ms,
-                    tokens_in=provider_result.tokens_in,
-                    tokens_out=provider_result.tokens_out,
-                    cost=provider_result.cost,
-                    retry_count=retry_count,
-                    fallback_used=fallback_used,
-                )
-                self.commercial_service.record_provider_call_usage(
-                    session=repository.session,
+                self.provider_execution_service.record_provider_call(
+                    repository=repository,
                     run=run,
-                    provider_call=provider_call,
+                    command=ProviderCallEvidenceCommand(
+                        provider_id=candidate.provider_id,
+                        model_id=candidate.model_id,
+                        instance_id=candidate.instance_id,
+                        region=candidate.region,
+                        latency_ms=provider_result.latency_ms,
+                        tokens_in=provider_result.tokens_in,
+                        tokens_out=provider_result.tokens_out,
+                        cost=provider_result.cost,
+                        retry_count=retry_count,
+                        fallback_used=fallback_used,
+                    ),
                 )
                 if self._is_wordpress_ai_connector_image_generation_run(
                     run,
@@ -3593,24 +3596,22 @@ class RuntimeService:
         repository: RuntimeRepository,
         usage: Any,
     ) -> None:
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id=usage.provider_id,
-            model_id=usage.model_id,
-            instance_id=usage.instance_id,
-            region=usage.region,
-            latency_ms=usage.latency_ms,
-            tokens_in=0,
-            tokens_out=0,
-            cost=usage.cost,
-            retry_count=0,
-            fallback_used=False,
-            error_code=usage.error_code,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id=usage.provider_id,
+                model_id=usage.model_id,
+                instance_id=usage.instance_id,
+                region=usage.region,
+                latency_ms=usage.latency_ms,
+                tokens_in=0,
+                tokens_out=0,
+                cost=usage.cost,
+                retry_count=0,
+                fallback_used=False,
+                error_code=usage.error_code,
+            ),
         )
 
     def _record_automatic_web_search_report(
@@ -3741,36 +3742,34 @@ class RuntimeService:
         provider_result: ProviderExecutionResult | None = None,
         provider_error: ProviderExecutionError | None = None,
     ) -> None:
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id=provider_id,
-            model_id=provider_request.model_id,
-            instance_id=provider_request.instance_id,
-            region="unspecified",
-            latency_ms=provider_result.latency_ms if provider_result is not None else 0,
-            tokens_in=(
-                provider_result.tokens_in
-                if provider_result is not None
-                else max(0, int(getattr(provider_error, "tokens_in", 0) or 0))
-            ),
-            tokens_out=(
-                provider_result.tokens_out
-                if provider_result is not None
-                else max(0, int(getattr(provider_error, "tokens_out", 0) or 0))
-            ),
-            cost=(
-                provider_result.cost
-                if provider_result is not None
-                else max(0.0, float(getattr(provider_error, "cost", 0.0) or 0.0))
-            ),
-            retry_count=provider_request.retry_count,
-            fallback_used=False,
-            error_code=provider_error.error_code if provider_error is not None else None,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id=provider_id,
+                model_id=provider_request.model_id,
+                instance_id=provider_request.instance_id,
+                region="unspecified",
+                latency_ms=(provider_result.latency_ms if provider_result is not None else 0),
+                tokens_in=(
+                    provider_result.tokens_in
+                    if provider_result is not None
+                    else max(0, int(getattr(provider_error, "tokens_in", 0) or 0))
+                ),
+                tokens_out=(
+                    provider_result.tokens_out
+                    if provider_result is not None
+                    else max(0, int(getattr(provider_error, "tokens_out", 0) or 0))
+                ),
+                cost=(
+                    provider_result.cost
+                    if provider_result is not None
+                    else max(0.0, float(getattr(provider_error, "cost", 0.0) or 0.0))
+                ),
+                retry_count=provider_request.retry_count,
+                fallback_used=False,
+                error_code=provider_error.error_code if provider_error is not None else None,
+            ),
         )
 
     def _execute_web_search_request(
@@ -3915,24 +3914,22 @@ class RuntimeService:
             return
         except WebSearchProviderError as error:
             if error.usage is not None:
-                provider_call = repository.record_provider_call(
-                    run_id=run.run_id,
-                    provider_id=error.usage.provider_id,
-                    model_id=error.usage.model_id,
-                    instance_id=error.usage.instance_id,
-                    region=error.usage.region,
-                    latency_ms=error.usage.latency_ms,
-                    tokens_in=0,
-                    tokens_out=0,
-                    cost=error.usage.cost,
-                    retry_count=0,
-                    fallback_used=False,
-                    error_code=error.usage.error_code or error.error_code,
-                )
-                self.commercial_service.record_provider_call_usage(
-                    session=repository.session,
+                self.provider_execution_service.record_provider_call(
+                    repository=repository,
                     run=run,
-                    provider_call=provider_call,
+                    command=ProviderCallEvidenceCommand(
+                        provider_id=error.usage.provider_id,
+                        model_id=error.usage.model_id,
+                        instance_id=error.usage.instance_id,
+                        region=error.usage.region,
+                        latency_ms=error.usage.latency_ms,
+                        tokens_in=0,
+                        tokens_out=0,
+                        cost=error.usage.cost,
+                        retry_count=0,
+                        fallback_used=False,
+                        error_code=error.usage.error_code or error.error_code,
+                    ),
                 )
             self.run_lifecycle_service.fail_run(
                 repository,
@@ -3952,24 +3949,22 @@ class RuntimeService:
             run,
             usage_context=usage_context,
         )
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id=execution.usage.provider_id,
-            model_id=execution.usage.model_id,
-            instance_id=execution.usage.instance_id,
-            region=execution.usage.region,
-            latency_ms=execution.usage.latency_ms,
-            tokens_in=0,
-            tokens_out=0,
-            cost=execution.usage.cost,
-            retry_count=0,
-            fallback_used=False,
-            error_code=execution.usage.error_code,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id=execution.usage.provider_id,
+                model_id=execution.usage.model_id,
+                instance_id=execution.usage.instance_id,
+                region=execution.usage.region,
+                latency_ms=execution.usage.latency_ms,
+                tokens_in=0,
+                tokens_out=0,
+                cost=execution.usage.cost,
+                retry_count=0,
+                fallback_used=False,
+                error_code=execution.usage.error_code,
+            ),
             usage_context=usage_context,
         )
         self.run_lifecycle_service.succeed_run(
@@ -4669,24 +4664,22 @@ class RuntimeService:
             return
         except ImageContextEvidenceProviderError as error:
             if error.usage is not None:
-                provider_call = repository.record_provider_call(
-                    run_id=run.run_id,
-                    provider_id=error.usage.provider_id,
-                    model_id=error.usage.model_id,
-                    instance_id=error.usage.instance_id,
-                    region=error.usage.region,
-                    latency_ms=error.usage.latency_ms,
-                    tokens_in=error.usage.tokens_in,
-                    tokens_out=error.usage.tokens_out,
-                    cost=error.usage.cost,
-                    retry_count=0,
-                    fallback_used=False,
-                    error_code=error.usage.error_code or error.error_code,
-                )
-                self.commercial_service.record_provider_call_usage(
-                    session=repository.session,
+                self.provider_execution_service.record_provider_call(
+                    repository=repository,
                     run=run,
-                    provider_call=provider_call,
+                    command=ProviderCallEvidenceCommand(
+                        provider_id=error.usage.provider_id,
+                        model_id=error.usage.model_id,
+                        instance_id=error.usage.instance_id,
+                        region=error.usage.region,
+                        latency_ms=error.usage.latency_ms,
+                        tokens_in=error.usage.tokens_in,
+                        tokens_out=error.usage.tokens_out,
+                        cost=error.usage.cost,
+                        retry_count=0,
+                        fallback_used=False,
+                        error_code=error.usage.error_code or error.error_code,
+                    ),
                 )
             self.run_lifecycle_service.fail_run(
                 repository,
@@ -4700,24 +4693,22 @@ class RuntimeService:
             )
             return
 
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id=execution.usage.provider_id,
-            model_id=execution.usage.model_id,
-            instance_id=execution.usage.instance_id,
-            region=execution.usage.region,
-            latency_ms=execution.usage.latency_ms,
-            tokens_in=execution.usage.tokens_in,
-            tokens_out=execution.usage.tokens_out,
-            cost=execution.usage.cost,
-            retry_count=0,
-            fallback_used=False,
-            error_code=execution.usage.error_code,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id=execution.usage.provider_id,
+                model_id=execution.usage.model_id,
+                instance_id=execution.usage.instance_id,
+                region=execution.usage.region,
+                latency_ms=execution.usage.latency_ms,
+                tokens_in=execution.usage.tokens_in,
+                tokens_out=execution.usage.tokens_out,
+                cost=execution.usage.cost,
+                retry_count=0,
+                fallback_used=False,
+                error_code=execution.usage.error_code,
+            ),
         )
         self.run_lifecycle_service.succeed_run(
             repository,
@@ -4767,24 +4758,22 @@ class RuntimeService:
             )
         except CloudBatchRuntimeContractViolation as error:
             latency_ms = max(0, int((perf_counter() - started) * 1000))
-            provider_call = repository.record_provider_call(
-                run_id=run.run_id,
-                provider_id="cloud_batch_runtime",
-                model_id="deterministic-content-quality-v1",
-                instance_id="cloud-runtime",
-                region=self.settings.deployment_region,
-                latency_ms=latency_ms,
-                tokens_in=0,
-                tokens_out=0,
-                cost=0.0,
-                retry_count=0,
-                fallback_used=False,
-                error_code=error.error_code,
-            )
-            self.commercial_service.record_provider_call_usage(
-                session=repository.session,
+            self.provider_execution_service.record_provider_call(
+                repository=repository,
                 run=run,
-                provider_call=provider_call,
+                command=ProviderCallEvidenceCommand(
+                    provider_id="cloud_batch_runtime",
+                    model_id="deterministic-content-quality-v1",
+                    instance_id="cloud-runtime",
+                    region=self.settings.deployment_region,
+                    latency_ms=latency_ms,
+                    tokens_in=0,
+                    tokens_out=0,
+                    cost=0.0,
+                    retry_count=0,
+                    fallback_used=False,
+                    error_code=error.error_code,
+                ),
             )
             self.run_lifecycle_service.fail_run(
                 repository,
@@ -4808,23 +4797,21 @@ class RuntimeService:
             return
         latency_ms = max(0, int((perf_counter() - started) * 1000))
 
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id="cloud_batch_runtime",
-            model_id="deterministic-content-quality-v1",
-            instance_id="cloud-runtime",
-            region=self.settings.deployment_region,
-            latency_ms=latency_ms,
-            tokens_in=0,
-            tokens_out=0,
-            cost=0.0,
-            retry_count=0,
-            fallback_used=False,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id="cloud_batch_runtime",
+                model_id="deterministic-content-quality-v1",
+                instance_id="cloud-runtime",
+                region=self.settings.deployment_region,
+                latency_ms=latency_ms,
+                tokens_in=0,
+                tokens_out=0,
+                cost=0.0,
+                retry_count=0,
+                fallback_used=False,
+            ),
         )
         self.run_lifecycle_service.succeed_run(
             repository,
@@ -4907,24 +4894,22 @@ class RuntimeService:
             return
         except ImageSourceProviderError as error:
             if error.usage is not None:
-                provider_call = repository.record_provider_call(
-                    run_id=run.run_id,
-                    provider_id=error.usage.provider_id,
-                    model_id=error.usage.model_id,
-                    instance_id=error.usage.instance_id,
-                    region=error.usage.region,
-                    latency_ms=error.usage.latency_ms,
-                    tokens_in=0,
-                    tokens_out=0,
-                    cost=error.usage.cost,
-                    retry_count=0,
-                    fallback_used=False,
-                    error_code=error.usage.error_code or error.error_code,
-                )
-                self.commercial_service.record_provider_call_usage(
-                    session=repository.session,
+                self.provider_execution_service.record_provider_call(
+                    repository=repository,
                     run=run,
-                    provider_call=provider_call,
+                    command=ProviderCallEvidenceCommand(
+                        provider_id=error.usage.provider_id,
+                        model_id=error.usage.model_id,
+                        instance_id=error.usage.instance_id,
+                        region=error.usage.region,
+                        latency_ms=error.usage.latency_ms,
+                        tokens_in=0,
+                        tokens_out=0,
+                        cost=error.usage.cost,
+                        retry_count=0,
+                        fallback_used=False,
+                        error_code=error.usage.error_code or error.error_code,
+                    ),
                 )
             self.run_lifecycle_service.fail_run(
                 repository,
@@ -4938,24 +4923,22 @@ class RuntimeService:
             )
             return
 
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id=execution.usage.provider_id,
-            model_id=execution.usage.model_id,
-            instance_id=execution.usage.instance_id,
-            region=execution.usage.region,
-            latency_ms=execution.usage.latency_ms,
-            tokens_in=0,
-            tokens_out=0,
-            cost=execution.usage.cost,
-            retry_count=0,
-            fallback_used=False,
-            error_code=execution.usage.error_code,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id=execution.usage.provider_id,
+                model_id=execution.usage.model_id,
+                instance_id=execution.usage.instance_id,
+                region=execution.usage.region,
+                latency_ms=execution.usage.latency_ms,
+                tokens_in=0,
+                tokens_out=0,
+                cost=execution.usage.cost,
+                retry_count=0,
+                fallback_used=False,
+                error_code=execution.usage.error_code,
+            ),
         )
         self.run_lifecycle_service.succeed_run(
             repository,
@@ -5171,24 +5154,22 @@ class RuntimeService:
         try:
             provider_result = provider.execute(request)
         except ProviderExecutionError as error:
-            provider_call = repository.record_provider_call(
-                run_id=run.run_id,
-                provider_id=candidate.provider_id,
-                model_id=candidate.model_id,
-                instance_id=candidate.instance_id,
-                region=candidate.region,
-                latency_ms=timeout_ms if error.error_code == "provider.timeout" else 0,
-                tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
-                tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
-                cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
-                retry_count=0,
-                fallback_used=False,
-                error_code=error.error_code,
-            )
-            self.commercial_service.record_provider_call_usage(
-                session=repository.session,
+            self.provider_execution_service.record_provider_call(
+                repository=repository,
                 run=run,
-                provider_call=provider_call,
+                command=ProviderCallEvidenceCommand(
+                    provider_id=candidate.provider_id,
+                    model_id=candidate.model_id,
+                    instance_id=candidate.instance_id,
+                    region=candidate.region,
+                    latency_ms=(timeout_ms if error.error_code == "provider.timeout" else 0),
+                    tokens_in=max(0, int(getattr(error, "tokens_in", 0) or 0)),
+                    tokens_out=max(0, int(getattr(error, "tokens_out", 0) or 0)),
+                    cost=max(0.0, float(getattr(error, "cost", 0.0) or 0.0)),
+                    retry_count=0,
+                    fallback_used=False,
+                    error_code=error.error_code,
+                ),
             )
             return {
                 "status": "failed",
@@ -5200,24 +5181,22 @@ class RuntimeService:
                 "prompt_candidates": [],
             }
 
-        provider_call = repository.record_provider_call(
-            run_id=run.run_id,
-            provider_id=candidate.provider_id,
-            model_id=candidate.model_id,
-            instance_id=candidate.instance_id,
-            region=candidate.region,
-            latency_ms=provider_result.latency_ms,
-            tokens_in=provider_result.tokens_in,
-            tokens_out=provider_result.tokens_out,
-            cost=provider_result.cost,
-            retry_count=0,
-            fallback_used=False,
-            error_code=None,
-        )
-        self.commercial_service.record_provider_call_usage(
-            session=repository.session,
+        self.provider_execution_service.record_provider_call(
+            repository=repository,
             run=run,
-            provider_call=provider_call,
+            command=ProviderCallEvidenceCommand(
+                provider_id=candidate.provider_id,
+                model_id=candidate.model_id,
+                instance_id=candidate.instance_id,
+                region=candidate.region,
+                latency_ms=provider_result.latency_ms,
+                tokens_in=provider_result.tokens_in,
+                tokens_out=provider_result.tokens_out,
+                cost=provider_result.cost,
+                retry_count=0,
+                fallback_used=False,
+                error_code=None,
+            ),
         )
         prompt_candidates = self._parse_image_prompt_planner_output(
             provider_result.output.get("output_text"),

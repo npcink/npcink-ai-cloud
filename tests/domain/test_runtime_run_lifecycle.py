@@ -680,6 +680,7 @@ def test_lifecycle_dependency_boundary_and_runtime_service_facades() -> None:
     ):
         assert f"repository{forbidden_repository_transition}" not in service_source
     assert "_cancel_requested_before_attempt" not in service_source
-    assert "repository.record_provider_call(" in service_source
+    assert "repository.record_provider_call(" not in service_source
+    assert "self.provider_execution_service.record_provider_call(" in service_source
     assert "def _execute_existing_run(" in service_source
     assert "def _execute_candidate_chain(" in service_source
