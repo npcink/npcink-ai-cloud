@@ -14,6 +14,8 @@ WP_AI_CONNECTOR_VISION_EXECUTION_KIND = "vision"
 WP_AI_CONNECTOR_VISION_ABILITY_FAMILY = "vision"
 WP_AI_CONNECTOR_VISION_DATA_CLASSIFICATION = "public_reference_media"
 WP_AI_CONNECTOR_MAX_PROMPT_CHARS = 12000
+WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
+WP_AI_CONNECTOR_MAX_SYSTEM_INSTRUCTION_CHARS = WP_AI_CONNECTOR_MAX_PROMPT_CHARS
 WP_AI_CONNECTOR_MAX_TIMEOUT_SECONDS = 60
 WP_AI_CONNECTOR_MAX_IMAGE_URL_CHARS = 2048
 WP_AI_CONNECTOR_MAX_IMAGE_DATA_URL_CHARS = 900_000
@@ -48,6 +50,13 @@ WP_AI_CONNECTOR_ALLOWED_TASKS = frozenset(
         "content_summary",
         "excerpt_generation",
         "meta_description",
+        "title_generation",
+    }
+)
+WP_AI_CONNECTOR_SOURCE_TEXT_TASKS = frozenset(
+    {
+        "content_rewrite",
+        "content_summary",
         "title_generation",
     }
 )
@@ -191,24 +200,69 @@ def validate_wordpress_operation_contract(value: Any) -> dict[str, Any]:
             f"credential, or signed-header field '{forbidden_path}'",
         )
 
-    prompt = str(request.get("prompt") or "")
-    if len(prompt) > WP_AI_CONNECTOR_MAX_PROMPT_CHARS:
-        raise WordPressOperationContractViolation(
-            "wordpress_operation.prompt_too_large",
-            "WordPress operation prompt exceeds the scene runtime size limit",
-        )
+    normalized_request = dict(request)
+    if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
+        normalized_request["source_text"] = validate_source_text_request(request)
+        if "system_instruction" in request:
+            normalized_request["system_instruction"] = validate_system_instruction(
+                request
+            )
+    else:
+        prompt = str(request.get("prompt") or "")
+        if len(prompt) > WP_AI_CONNECTOR_MAX_PROMPT_CHARS:
+            raise WordPressOperationContractViolation(
+                "wordpress_operation.prompt_too_large",
+                "WordPress operation prompt exceeds the scene runtime size limit",
+            )
     validate_site_knowledge_reference(
-        request,
+        normalized_request,
         task=task,
         task_contract=task_contract if isinstance(task_contract, dict) else {},
     )
     if task == "alt_text_suggest":
-        validate_alt_text_suggest_request(request)
+        validate_alt_text_suggest_request(normalized_request)
     return {
         "contract_version": WORDPRESS_OPERATION_CONTRACT,
         "task": task,
-        "request": dict(request),
+        "request": normalized_request,
     }
+
+
+def validate_source_text_request(request: dict[str, Any]) -> str:
+    if "prompt" in request:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.prompt_forbidden",
+            "WordPress text scene tasks require source_text and do not accept prompt",
+        )
+    source_text = request.get("source_text")
+    if not isinstance(source_text, str) or not source_text.strip():
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.source_text_required",
+            "WordPress text scene tasks require source_text as a nonempty string",
+        )
+    normalized = source_text.strip()
+    if len(normalized) > WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.source_text_too_large",
+            "WordPress text scene source_text exceeds the 12000 character limit",
+        )
+    return normalized
+
+
+def validate_system_instruction(request: dict[str, Any]) -> str:
+    system_instruction = request.get("system_instruction")
+    if not isinstance(system_instruction, str):
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.system_instruction_invalid",
+            "WordPress text scene system_instruction must be a string",
+        )
+    normalized = system_instruction.strip()
+    if len(normalized) > WP_AI_CONNECTOR_MAX_SYSTEM_INSTRUCTION_CHARS:
+        raise WordPressOperationContractViolation(
+            "wordpress_operation.system_instruction_too_large",
+            "WordPress text scene system_instruction exceeds the 12000 character limit",
+        )
+    return normalized
 
 
 def find_forbidden_wordpress_operation_control_field(

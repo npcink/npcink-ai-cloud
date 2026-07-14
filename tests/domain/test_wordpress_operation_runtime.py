@@ -31,8 +31,13 @@ def _operation_payload(
     task: str = "title_generation",
     request: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    scene_text_field = (
+        "source_text"
+        if task in {"title_generation", "content_summary", "content_rewrite"}
+        else "prompt"
+    )
     scene_request: dict[str, Any] = {
-        "prompt": "为当前文章生成一个准确、简洁的标题。",
+        scene_text_field: "<content>当前文章说明云端运行时如何提供可审阅的内容建议。</content>",
         "task_contract": {
             "contract_version": "ai_task_contract.v1",
             "ability_name": "npcink/title-generation",
@@ -65,15 +70,50 @@ def _operation_payload(
     }
 
 
-def test_title_provider_input_projects_only_operation_content() -> None:
+@pytest.mark.parametrize(
+    ("task", "source_text", "expected_max_tokens"),
+    [
+        (
+            "title_generation",
+            "<content>当前文章说明云端运行时如何提供可审阅的标题建议。</content>",
+            48,
+        ),
+        (
+            "content_summary",
+            "<content>当前文章详细解释了托管运行时与本地审阅边界。</content>",
+            160,
+        ),
+        (
+            "content_rewrite",
+            "<block-content>这段文字需要改写得更加清晰。</block-content>",
+            512,
+        ),
+    ],
+)
+def test_p2_text_provider_input_projects_source_text_once(
+    task: str,
+    source_text: str,
+    expected_max_tokens: int,
+) -> None:
     runtime = _runtime()
-    provider_input = runtime.build_provider_input(_operation_payload())
+    provider_input = runtime.build_provider_input(
+        _operation_payload(
+            task=task,
+            request={
+                "source_text": source_text,
+                "system_instruction": "  Apply the local Ability instruction.  \n",
+            },
+        )
+    )
 
     serialized = json.dumps(provider_input, ensure_ascii=False)
-    assert provider_input["text"] == "为当前文章生成一个准确、简洁的标题。"
-    assert provider_input["metadata"]["task"] == "title_generation"
+    assert provider_input["text"] == source_text
+    assert provider_input["input"].count(source_text) == 1
+    assert provider_input["input"].count("Apply the local Ability instruction.") == 1
+    assert "  Apply the local Ability instruction." not in provider_input["input"]
+    assert provider_input["metadata"]["task"] == task
     assert provider_input["metadata"]["suggestion_only"] is True
-    assert provider_input["max_tokens"] == 48
+    assert provider_input["max_tokens"] == expected_max_tokens
     assert "site_alpha" not in serialized
     assert "alpha.example.test" not in serialized
     assert "object_revision" not in serialized
@@ -160,6 +200,13 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
         {"output_text": "标题建议\n1. 云端连接器\n2. 编辑器助手"},
         input_payload={"metadata": {"task": "content_summary"}, "text": summary_source},
     )
+    rewrite = runtime.normalize_provider_output(
+        {"output_text": "建议改写为：\n\n**这段文字现在更加清晰。**\n\n说明：已完成"},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "<block-content>这段文字需要改写得更加清晰。</block-content>",
+        },
+    )
     classification = runtime.normalize_provider_output(
         {
             "output_text": json.dumps(
@@ -176,6 +223,7 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
 
     assert title["output_text"] == "云端连接器重构"
     assert summary["output_text"] == summary_source
+    assert rewrite["output_text"] == "这段文字现在更加清晰。"
     assert json.loads(classification["output_text"]) == {
         "suggestions": [
             {"term": "WordPress", "confidence": 1.0, "is_new": False},

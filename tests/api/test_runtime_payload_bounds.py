@@ -37,7 +37,9 @@ def test_runtime_payload_rejects_unknown_public_top_level_field() -> None:
             ability_name="npcink-cloud/connector-runtime",
             contract_version="cloud_connector_runtime.v1",
             channel="editor",
-            input=_connector_payload_input({"prompt": "Suggest a title."}),
+            input=_connector_payload_input(
+                {"source_text": "<content>Current article content.</content>"}
+            ),
             unexpected_top_level_field=True,  # type: ignore[call-arg]
         )
 

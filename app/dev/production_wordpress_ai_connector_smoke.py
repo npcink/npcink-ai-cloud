@@ -135,12 +135,11 @@ def build_title_execute_payload(
                 "contract_version": "wordpress_operation.v1",
                 "task": "title_generation",
                 "request": {
-                    "post_title": "Production Cloud ability-model routing verification",
-                    "post_excerpt": (
-                        "Verify production Cloud WordPress AI Connector title generation "
-                        "uses the managed ability-model route."
+                    "source_text": (
+                        "<content>Production Cloud runtime verification confirms that "
+                        "WordPress title suggestions use the managed hosted route and "
+                        "remain reviewable without a Cloud-side WordPress write.</content>"
                     ),
-                    "prompt": "Suggest one concise title for this WordPress post.",
                 },
             },
         },
@@ -257,8 +256,8 @@ def build_smoke_report(
         },
         "checks": checks,
         "health": _redact_result(health_result),
-        "image_resolve": _summarize_runtime_response(image_result),
-        "title_execute": _summarize_runtime_response(title_result),
+        "image_resolve": _summarize_runtime_response(image_result, execute=False),
+        "title_execute": _summarize_runtime_response(title_result, execute=True),
         "next_steps": _next_steps(checks, execute_title=execute_title),
     }
 
@@ -332,53 +331,115 @@ def _build_title_execute_check(result: dict[str, object]) -> dict[str, object]:
     response = _dict(result.get("response"))
     data = _dict(response.get("data"))
     result_payload = _dict(data.get("result"))
+    operation = _dict(result_payload.get("operation_contract"))
     output = _dict(result_payload.get("output"))
+    provider_call_count = data.get("provider_call_count")
+    error_code = data.get("error_code")
+    error_stage = data.get("error_stage")
     ok = (
         bool(result.get("ok"))
         and response.get("status") == "ok"
         and data.get("status") == "succeeded"
+        and bool(_text(data.get("run_id")))
+        and bool(_text(data.get("trace_id")))
         and data.get("profile_id") == "wp-ai.short-text"
+        and bool(_text(data.get("provider_id")))
+        and bool(_text(data.get("model_id")))
+        and bool(_text(data.get("instance_id")))
+        and isinstance(provider_call_count, int)
+        and not isinstance(provider_call_count, bool)
+        and provider_call_count >= 1
+        and data.get("idempotent_replay") is False
+        and isinstance(error_code, str)
+        and error_code == ""
+        and isinstance(error_stage, str)
+        and error_stage == ""
         and result_payload.get("contract_version") == "cloud_connector_result.v1"
+        and result_payload.get("suggestion_only") is True
+        and operation.get("contract_version") == "wordpress_operation.v1"
+        and operation.get("task") == "title_generation"
         and bool(_text(output.get("output_text")))
     )
     return {
         "name": "wordpress_ai_title_execute",
         "ok": ok,
         "run_id": data.get("run_id"),
+        "trace_id": data.get("trace_id"),
         "profile_id": data.get("profile_id"),
         "status": data.get("status"),
+        "provider_id": data.get("provider_id"),
+        "model_id": data.get("model_id"),
+        "instance_id": data.get("instance_id"),
+        "provider_call_count": provider_call_count,
+        "idempotent_replay": data.get("idempotent_replay"),
+        "error_code": error_code,
+        "error_stage": error_stage,
+        "result_contract": result_payload.get("contract_version"),
+        "suggestion_only": result_payload.get("suggestion_only"),
+        "operation_contract_version": operation.get("contract_version"),
+        "operation_task": operation.get("task"),
         "output_text_present": bool(_text(output.get("output_text"))),
-        "error_code": response.get("error_code"),
     }
 
 
-def _summarize_runtime_response(result: dict[str, object]) -> dict[str, object]:
+def _summarize_runtime_response(
+    result: dict[str, object],
+    *,
+    execute: bool,
+) -> dict[str, object]:
     if result.get("skipped"):
         return {"skipped": True, "reason": result.get("reason")}
     response = _dict(result.get("response"))
     data = _dict(response.get("data"))
-    selected = _dict(data.get("selected_candidate"))
     result_payload = _dict(data.get("result"))
+    operation = _dict(result_payload.get("operation_contract"))
     output = _dict(result_payload.get("output"))
     policy = _dict(data.get("policy"))
-    return {
+    summary: dict[str, object] = {
         "ok": bool(result.get("ok")),
         "status_code": result.get("status_code", 0),
         "response_status": response.get("status"),
-        "error_code": response.get("error_code"),
         "message": response.get("message"),
-        "trace_id": result.get("trace_id"),
         "idempotency_key": result.get("idempotency_key"),
         "run_id": data.get("run_id"),
         "run_status": data.get("status"),
         "profile_id": data.get("profile_id"),
         "execution_kind": data.get("execution_kind"),
-        "selected_provider_id": selected.get("provider_id"),
-        "selected_model_id": selected.get("model_id") or data.get("selected_model_id"),
-        "selected_instance_id": selected.get("instance_id") or data.get("selected_instance_id"),
         "routing_intent": policy.get("routing_intent"),
+        "result_contract": result_payload.get("contract_version"),
+        "suggestion_only": result_payload.get("suggestion_only"),
+        "operation_contract_version": operation.get("contract_version"),
+        "operation_task": operation.get("task"),
         "output_text_preview": _text(output.get("output_text"))[:200],
     }
+    if execute:
+        summary.update(
+            {
+                "error_code": data.get("error_code"),
+                "error_stage": data.get("error_stage"),
+                "trace_id": data.get("trace_id"),
+                "idempotent_replay": data.get("idempotent_replay"),
+                "provider_id": data.get("provider_id"),
+                "model_id": data.get("model_id"),
+                "instance_id": data.get("instance_id"),
+                "provider_call_count": data.get("provider_call_count"),
+            }
+        )
+    else:
+        selected = _dict(data.get("selected_candidate"))
+        summary.update(
+            {
+                "error_code": response.get("error_code"),
+                "trace_id": result.get("trace_id"),
+                "provider_id": selected.get("provider_id"),
+                "model_id": selected.get("model_id"),
+                "instance_id": selected.get("instance_id"),
+                "selected_provider_id": selected.get("provider_id"),
+                "selected_model_id": selected.get("model_id"),
+                "selected_instance_id": selected.get("instance_id"),
+            }
+        )
+    return summary
 
 
 def _redact_result(result: dict[str, object]) -> dict[str, object]:

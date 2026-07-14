@@ -43,6 +43,38 @@ The current fixed WordPress operation allowlist may omit `task_contract`.
 That is a current `wordpress_operation.v1` mode, not an alias or fallback to a
 superseded connector envelope.
 
+## P2 Text Scene Input
+
+The fixed `title_generation`, `content_summary`, and `content_rewrite` tasks use
+one text scene input shape:
+
+- `request.source_text` is required, must be a string that remains nonempty
+  after trimming, and is limited to 12,000 characters after trimming;
+- `request.prompt` is forbidden for these three tasks; there is no prompt and
+  `source_text` dual-read or compatibility path;
+- `request.system_instruction` is optional; when present it must be a string,
+  is trimmed before execution, may be empty after trimming, and is limited to
+  12,000 characters after trimming. It carries the local Ability-owned
+  instruction projection separately from the source text.
+
+Contract failures use stable `wordpress_operation.*` errors:
+
+- missing, blank, or non-string `source_text`:
+  `wordpress_operation.source_text_required`;
+- source text above the limit: `wordpress_operation.source_text_too_large`;
+- any `request.prompt` field on these tasks:
+  `wordpress_operation.prompt_forbidden`;
+- non-string `system_instruction`:
+  `wordpress_operation.system_instruction_invalid`;
+- system instruction above the limit:
+  `wordpress_operation.system_instruction_too_large`.
+
+For title and summary tasks, WordPress projects the relevant current content as
+`source_text`. For a rewrite task, WordPress projects only the selected text.
+Cloud treats embedded markers such as `<content>` or `<block-content>` as opaque
+text. It validates the bound, sends the normalized source text once as the
+provider scene input, and does not parse the markers or create prompt truth.
+
 ## Ownership Boundary
 
 WordPress owns Ability discovery, permission callbacks, input/output schemas,

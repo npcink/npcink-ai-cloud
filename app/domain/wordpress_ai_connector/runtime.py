@@ -21,6 +21,7 @@ from app.domain.site_knowledge.contracts import (
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
+    WP_AI_CONNECTOR_SOURCE_TEXT_TASKS,
     resolve_site_knowledge_reference_mode,
 )
 from app.domain.wordpress_ai_connector.generation_context import (
@@ -60,8 +61,21 @@ class WordPressOperationRuntime:
         if task == "alt_text_suggest":
             return self._build_alt_text_provider_input(scene_request=scene_request)
 
-        prompt = str(scene_request.get("prompt") or "").strip()
-        system_instruction = str(scene_request.get("system_instruction") or "").strip()
+        scene_text = str(
+            scene_request.get(
+                "source_text" if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS else "prompt"
+            )
+            or ""
+        ).strip()
+        raw_system_instruction = scene_request.get("system_instruction")
+        if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
+            system_instruction = (
+                raw_system_instruction.strip()
+                if isinstance(raw_system_instruction, str)
+                else ""
+            )
+        else:
+            system_instruction = str(raw_system_instruction or "").strip()
         task_contract = self._dict_or_empty(scene_request.get("task_contract"))
         task_family = str(task_contract.get("task_family") or "").strip()
         raw_constraints = task_contract.get("constraints")
@@ -138,20 +152,20 @@ class WordPressOperationRuntime:
             )
         if "existing_terms_only" in constraints:
             fragments.append("Choose only from the supplied existing taxonomy candidates.")
-        if task == "content_classification" and self._has_available_terms(prompt):
+        if task == "content_classification" and self._has_available_terms(scene_text):
             fragments.append(
                 "The scene input includes <available-terms>. Choose only exact term names "
                 "from that list and set is_new=false for every suggestion."
             )
         if system_instruction:
             fragments.append(system_instruction)
-        if prompt:
-            fragments.append(f"Scene input:\n{prompt}")
+        if scene_text:
+            fragments.append(f"Scene input:\n{scene_text}")
         fragments.append("Do not mention this instruction. Do not explain your answer.")
 
         provider_input: dict[str, Any] = {
             "input": "\n\n".join(fragments),
-            "text": prompt,
+            "text": scene_text,
             "metadata": {
                 "source_surface": "wordpress_ai_connector",
                 "task": task,
@@ -232,8 +246,13 @@ class WordPressOperationRuntime:
                 reason="task_policy_unavailable",
             )
 
-        prompt = str(scene_request.get("prompt") or "").strip()
-        if not prompt:
+        scene_text = str(
+            scene_request.get(
+                "source_text" if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS else "prompt"
+            )
+            or ""
+        ).strip()
+        if not scene_text:
             return self._generation_context_status(
                 provider_input,
                 mode=mode,
@@ -255,7 +274,7 @@ class WordPressOperationRuntime:
                     "contract_version": SITE_KNOWLEDGE_CONTRACTS[
                         SITE_KNOWLEDGE_SEARCH_ABILITY
                     ],
-                    "query": prompt,
+                    "query": scene_text,
                     "intent": "writing_context",
                     "max_results": min(20, policy.max_source_posts * 2),
                     "filters": {
@@ -296,7 +315,7 @@ class WordPressOperationRuntime:
         try:
             post_ids = select_generation_context_post_ids(
                 policy=policy,
-                prompt=prompt,
+                prompt=scene_text,
                 results=results,
             )
             reference_metadata = SiteKnowledgeRepository(

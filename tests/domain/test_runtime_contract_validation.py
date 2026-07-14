@@ -77,7 +77,9 @@ def _connector_request(**overrides: Any) -> RuntimeRequest:
             "operation_contract": {
                 "contract_version": "wordpress_operation.v1",
                 "task": "title_generation",
-                "request": {"prompt": "Suggest a concise title."},
+                "request": {
+                    "source_text": "<content>Current WordPress article content.</content>"
+                },
             },
         },
         timeout_seconds=60,
@@ -281,7 +283,7 @@ def test_connector_validation_delegates_neutral_and_wordpress_contracts() -> Non
     assert envelope["operation_contract"] == {
         "contract_version": "wordpress_operation.v1",
         "task": "title_generation",
-        "request": {"prompt": "Suggest a concise title."},
+        "request": {"source_text": "<content>Current WordPress article content.</content>"},
     }
 
     request.channel = "openapi"

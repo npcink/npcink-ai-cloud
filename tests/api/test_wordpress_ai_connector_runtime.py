@@ -407,9 +407,10 @@ def _payload(input_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         "contract_version": "wordpress_operation.v1",
         "task": "title_generation",
         "request": {
-            "post_title": "Existing title",
-            "post_excerpt": "Public excerpt",
-            "prompt": "Suggest a concise title for this WordPress post.",
+            "source_text": (
+                "<content>Npcink Cloud Addon provides reviewable WordPress AI "
+                "suggestions through a hosted runtime.</content>"
+            ),
         },
     }
     input_payload: dict[str, Any] = {
@@ -607,7 +608,11 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
     assert "messages" not in provider_input
     assert "tools" not in provider_input
     assert "Generate exactly one concise title" in provider_input["input"]
-    assert "Suggest a concise title for this WordPress post." in provider_input["input"]
+    assert provider_input["text"] == (
+        "<content>Npcink Cloud Addon provides reviewable WordPress AI suggestions "
+        "through a hosted runtime.</content>"
+    )
+    assert provider_input["input"].count(provider_input["text"]) == 1
     assert provider_input["max_tokens"] == 48
     assert provider_input["max_output_tokens"] == 48
     assert provider_input["metadata"]["source_surface"] == "wordpress_ai_connector"
@@ -633,6 +638,137 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert run.policy_json["execution_contract"]["task_group"] == "short_text"
         assert run.policy_json["execution_contract"]["routing_intent"] == "content.short_text"
         assert run.result_json == result
+
+
+@pytest.mark.parametrize(
+    ("task", "raw_source_text", "expected_source_text", "expected_profile_id"),
+    [
+        (
+            "title_generation",
+            "  <content>Current article content for a title.</content>  ",
+            "<content>Current article content for a title.</content>",
+            WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
+        ),
+        (
+            "content_summary",
+            "<content>Current article content that needs a concise summary.</content>",
+            "<content>Current article content that needs a concise summary.</content>",
+            WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
+        ),
+        (
+            "content_rewrite",
+            "<block-content>rewrite variants selected paragraph.</block-content>",
+            "<block-content>rewrite variants selected paragraph.</block-content>",
+            WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID,
+        ),
+    ],
+)
+def test_p2_text_tasks_project_source_text_once_with_runtime_evidence(
+    tmp_path: Path,
+    task: str,
+    raw_source_text: str,
+    expected_source_text: str,
+    expected_profile_id: str,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": task,
+            "request": {
+                "source_text": raw_source_text,
+                "system_instruction": "  Apply the local Ability instruction.  \n",
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key=f"p2-source-text-{task}")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["profile_id"] == expected_profile_id
+    assert data["provider_id"] == "openai"
+    assert data["model_id"] == "gpt-wp-ai-connector-test"
+    assert data["instance_id"] == "openai-wp-ai-connector-test"
+    assert data["run_id"].startswith("run_")
+    assert data["result"]["suggestion_only"] is True
+    assert data["result"]["operation_contract"]["task"] == task
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["text"] == expected_source_text
+    assert provider_input["input"].count(expected_source_text) == 1
+    assert provider_input["input"].count("Apply the local Ability instruction.") == 1
+    assert "prompt" not in provider_input
+
+
+@pytest.mark.parametrize(
+    "task",
+    ["title_generation", "content_summary", "content_rewrite"],
+)
+@pytest.mark.parametrize(
+    ("request_payload", "expected_error"),
+    [
+        ({}, "wordpress_operation.source_text_required"),
+        ({"source_text": ""}, "wordpress_operation.source_text_required"),
+        ({"source_text": "   \n\t"}, "wordpress_operation.source_text_required"),
+        ({"source_text": 42}, "wordpress_operation.source_text_required"),
+        ({"source_text": "x" * 12001}, "wordpress_operation.source_text_too_large"),
+        (
+            {"source_text": "valid source", "prompt": "legacy prompt"},
+            "wordpress_operation.prompt_forbidden",
+        ),
+        (
+            {"source_text": "valid source", "system_instruction": 42},
+            "wordpress_operation.system_instruction_invalid",
+        ),
+        (
+            {"source_text": "valid source", "system_instruction": "x" * 12001},
+            "wordpress_operation.system_instruction_too_large",
+        ),
+    ],
+)
+def test_p2_text_source_contract_fails_closed_before_provider(
+    tmp_path: Path,
+    task: str,
+    request_payload: dict[str, object],
+    expected_error: str,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload({"task": task, "request": dict(request_payload)})
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key=f"p2-source-contract-{task}-{expected_error}",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == expected_error
+    assert provider.requests == []
+
+
+def test_p2_text_task_allows_trimmed_empty_system_instruction(tmp_path: Path) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_summary",
+            "request": {
+                "source_text": "<content>Current article content.</content>",
+                "system_instruction": "  \n\t ",
+            },
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="p2-empty-system-instruction",
+    )
+
+    assert response.status_code == 200
+    assert provider.requests[0].input_payload["text"] == (
+        "<content>Current article content.</content>"
+    )
+    assert "  \n\t " not in provider.requests[0].input_payload["input"]
 
 
 def test_connector_runtime_uses_only_normalized_envelope_values(tmp_path: Path) -> None:
@@ -818,7 +954,9 @@ def test_wordpress_operation_rejects_request_control_fields(
     field_value: object,
 ) -> None:
     _, client, provider = _build_client(tmp_path)
-    request_payload: dict[str, object] = {"prompt": "Suggest a title."}
+    request_payload: dict[str, object] = {
+        "source_text": "<content>Current WordPress article content.</content>"
+    }
     if field_name == "nested_direct_wordpress_write":
         request_payload["nested"] = {"direct_wordpress_write": field_value}
     else:
@@ -1270,7 +1408,9 @@ def test_wordpress_ai_connector_title_generation_uses_hidden_site_title_style(
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for an article about site-aware AI.",
+                "source_text": (
+                    "<content>An article about using site-aware AI in WordPress.</content>"
+                ),
                 "site_knowledge_reference": {
                     "enabled": True,
                     "mode": "site_title_style",
@@ -1322,7 +1462,7 @@ def test_wordpress_ai_connector_title_generation_silently_falls_back_when_site_k
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for this WordPress post.",
+                "source_text": "<content>Current WordPress post content.</content>",
                 "site_knowledge_reference": {
                     "enabled": True,
                     "mode": "site_title_style",
@@ -1406,11 +1546,16 @@ def test_wordpress_ai_connector_uses_task_bound_hidden_site_reference(
         "reference_metadata_for_post_ids",
         fake_reference_metadata,
     )
+    scene_field = (
+        "source_text"
+        if task in {"title_generation", "content_summary", "content_rewrite"}
+        else "prompt"
+    )
     payload = _payload(
         {
             "task": task,
             "request": {
-                "prompt": "Run the current WordPress editor task.",
+                scene_field: "Run the current WordPress editor task.",
                 "site_knowledge_reference": {"enabled": True, "mode": mode},
             },
         }
@@ -1455,13 +1600,18 @@ def test_wordpress_ai_connector_new_style_tasks_fall_back_when_retrieval_fails(
         raise RuntimeError("Site Knowledge retrieval unavailable")
 
     monkeypatch.setattr(SiteKnowledgeService, "execute", fail_site_knowledge_retrieval)
+    scene_field = (
+        "source_text"
+        if task in {"title_generation", "content_summary", "content_rewrite"}
+        else "prompt"
+    )
     response = _execute(
         client,
         _payload(
             {
                 "task": task,
                 "request": {
-                    "prompt": "Run the current WordPress editor task.",
+                    scene_field: "Run the current WordPress editor task.",
                     "site_knowledge_reference": {"enabled": True, "mode": mode},
                 },
             }
@@ -1497,7 +1647,7 @@ def test_wordpress_ai_connector_title_generation_ignores_non_list_site_knowledge
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for this WordPress post.",
+                "source_text": "<content>Current WordPress post content.</content>",
                 "site_knowledge_reference": {
                     "enabled": True,
                     "mode": "site_title_style",
@@ -1555,7 +1705,7 @@ def test_wordpress_ai_connector_site_knowledge_reference_contract_fails_closed(
         {
             "task": task,
             "request": {
-                "prompt": "Run the WordPress AI scene.",
+                "source_text": "Run the WordPress AI scene.",
                 "site_knowledge_reference": reference,
             },
         }
@@ -1716,7 +1866,9 @@ def test_wordpress_ai_connector_runtime_strips_reasoning_noise_from_title(
     payload = _payload(
         {
             "request": {
-                "prompt": ("Suggest a concise title for reasoning leakage verification."),
+                "source_text": (
+                    "<content>reasoning leakage verification content.</content>"
+                ),
             },
         }
     )
@@ -1737,7 +1889,7 @@ def test_wordpress_ai_connector_runtime_falls_back_on_reasoning_only_title(
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for a reasoning only response.",
+                "source_text": "<content>reasoning only response content.</content>",
             },
         }
     )
@@ -1770,7 +1922,7 @@ def test_wordpress_ai_connector_runtime_falls_back_on_incomplete_title_fragment(
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for a title fragment response.",
+                "source_text": "<content>title fragment response content.</content>",
             },
         }
     )
@@ -1798,7 +1950,7 @@ def test_wordpress_ai_connector_runtime_strips_title_explanation_tail(
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for a title explanation response.",
+                "source_text": "<content>title explanation response content.</content>",
             },
         }
     )
@@ -1825,7 +1977,7 @@ def test_wordpress_ai_connector_runtime_extracts_single_title_from_title_bundle(
     payload = _payload(
         {
             "request": {
-                "prompt": "Suggest a concise title for a title bundle response.",
+                "source_text": "<content>title bundle response content.</content>",
             },
         }
     )
@@ -1858,7 +2010,7 @@ def test_wordpress_ai_connector_runtime_extracts_title_from_article_shaped_outpu
     payload = _payload(
         {
             "request": {
-                "prompt": f"Suggest a title. {marker}",
+                "source_text": f"<content>{marker}</content>",
             }
         }
     )
@@ -1881,7 +2033,9 @@ def test_wordpress_ai_connector_runtime_normalizes_rewrite_variant_bundle(
         {
             "task": "content_rewrite",
             "request": {
-                "prompt": "Rewrite this paragraph for a rewrite variants response.",
+                "source_text": (
+                    "<block-content>rewrite variants response paragraph.</block-content>"
+                ),
             },
         }
     )
@@ -2028,7 +2182,10 @@ def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(
         {
             "task": "content_summary",
             "request": {
-                "prompt": "Summarize this post.",
+                "source_text": (
+                    "<content>Npcink Cloud Addon connects WordPress to a hosted runtime "
+                    "while local review retains final write authority.</content>"
+                ),
             },
         }
     )
