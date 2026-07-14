@@ -34,6 +34,19 @@ Current repository status is a strong-contraction cleanup baseline:
 - addon projection/repair surfaces are not part of this baseline; they remain
   deferred to a separate proposal with independent review
 
+## Target Refactor Contracts
+
+These documents are the accepted target contracts for the P0-P5 refactor. They
+define the intended destination and acceptance boundaries; they are not evidence
+that implementation is complete. Delivery remains WordPress-first through P5,
+and other CMS adapters are post-P5 validation work.
+
+- [docs/refactor-master-plan-v1.md](docs/refactor-master-plan-v1.md)
+- [docs/decisions/004-wordpress-first-cloud-runtime-refactor.md](docs/decisions/004-wordpress-first-cloud-runtime-refactor.md)
+- [docs/multi-platform-connector-boundary-v1.md](docs/multi-platform-connector-boundary-v1.md)
+- [docs/media-runtime-boundary-v1.md](docs/media-runtime-boundary-v1.md)
+- [docs/refactor-deletion-inventory-v1.md](docs/refactor-deletion-inventory-v1.md)
+
 Operational references:
 
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
