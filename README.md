@@ -47,6 +47,10 @@ and other CMS adapters are post-P5 validation work.
 - [docs/media-runtime-boundary-v1.md](docs/media-runtime-boundary-v1.md)
 - [docs/refactor-deletion-inventory-v1.md](docs/refactor-deletion-inventory-v1.md)
 
+Baseline evidence (not target-contract completion proof):
+
+- [docs/refactor-baseline-2026-07-14.md](docs/refactor-baseline-2026-07-14.md)
+
 Operational references:
 
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)

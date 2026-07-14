@@ -17,6 +17,16 @@ TARGET_CONTRACTS = (
     "docs/refactor-deletion-inventory-v1.md",
 )
 
+BASELINE_EVIDENCE = "docs/refactor-baseline-2026-07-14.md"
+
+BASELINE_RAW_SEARCH_COUNTS = {
+    "DEBT-P1-SITE-01": 99,
+    "DEBT-P1-CONTRACT-01": 17,
+    "DEBT-P3-BLOB-01": 20,
+    "DEBT-P3-BASE64-01": 4,
+    "DEBT-P3-TOKEN-01": 22,
+}
+
 
 def test_readme_links_all_accepted_target_contracts() -> None:
     readme = _read("README.md")
@@ -31,6 +41,34 @@ def test_readme_links_all_accepted_target_contracts() -> None:
     for path in TARGET_CONTRACTS:
         assert (ROOT / path).is_file()
         assert path in readme
+
+
+def test_readme_links_pre_refactor_baseline_evidence() -> None:
+    readme = _read("README.md")
+    target_section = readme.split("## Target Refactor Contracts", maxsplit=1)[1]
+    target_section = target_section.split("\n## ", maxsplit=1)[0]
+
+    assert (ROOT / BASELINE_EVIDENCE).is_file()
+    assert BASELINE_EVIDENCE in target_section
+    assert "Baseline evidence (not target-contract completion proof)" in target_section
+
+
+def test_pre_refactor_baseline_locks_stable_evidence_markers() -> None:
+    baseline = _read(BASELINE_EVIDENCE)
+
+    for required in (
+        "Pre-refactor local baseline; not a production benchmark",
+        "16cf860f",
+        "45 passed",
+        "50 passed",
+        "80 passed",
+        "233 passed",
+        "bounded-memory",
+    ):
+        assert required in baseline
+
+    for marker, count in BASELINE_RAW_SEARCH_COUNTS.items():
+        assert f"| `{marker}` | `{count}` |" in baseline
 
 
 def test_master_plan_freezes_the_wordpress_first_p0_p5_sequence() -> None:
