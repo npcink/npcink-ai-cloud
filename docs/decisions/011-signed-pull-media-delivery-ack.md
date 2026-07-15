@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — B4B2 implemented
+Accepted — B4B3 implemented
 
 ## Date
 
@@ -93,8 +93,10 @@ two distinct evidence points without full-body buffering.
 - The destructive `0063` migration refuses to drop a non-empty legacy table.
   A pre-GA operator must explicitly clear old rows and reset their copied-byte
   volume first; downgrade restores an empty shape, not deleted data.
-- The retained derivative download-count projection is non-canonical and
-  awaits B4B3 convergence on `MediaArtifactDelivery`.
+- B4B3 removes the derivative download-count columns and exposes
+  `magick-media-observability-summary-v2` from `MediaArtifactDelivery` joined to
+  `MediaArtifact`. The UTC started cohort reports stream completion and
+  verified client receipt separately; neither metric claims a CMS write.
 
 ## Rollback
 
@@ -115,6 +117,11 @@ prepared.
 - strict ACK validation and conflict behavior;
 - producer and lifecycle-projection credential stripping;
 - `0063` non-empty fail-closed, empty-table upgrade, and shape-only downgrade;
+- `0064` destructive legacy-column removal and default-only downgrade;
+- v2 delivery totals and operation/site/UTC-date aggregation, including
+  zero-denominator, started-cohort bounds, exact byte/checksum predicates,
+  anomalous timestamp exclusion, site-safe artifact joins, UTC cross-midnight
+  grouping, and 50-row site-breakdown truncation;
 - static absence of legacy routes, token helpers, permanent audio-asset model,
   and dead derivative download writer; and
 - exact Nginx route, rate, connection, GET-only, and no-buffering contract tests.

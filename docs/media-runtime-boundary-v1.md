@@ -1,6 +1,6 @@
 # Media Runtime Boundary v1
 
-Status: P3-B4B2 legacy delivery and permanent audio-asset surfaces removed;
+Status: P3-B4B3 unified media delivery observability implemented;
 orphan/lifecycle reconciliation and B5 remain target work.
 
 ## 1. Purpose
@@ -447,6 +447,16 @@ Metrics and redacted diagnostics must cover upload/download byte counts and
 duration, validation rejects, queue age, processing latency, success/failure,
 checksum mismatch, signed-pull admission and use, delivery acknowledgements,
 expiry and purge lag, orphan counts, deletion failures, and store capacity.
+
+P3-B4B3 makes `MediaArtifactDelivery` the only delivery-lifecycle evidence for
+the media observability summary. Summary v2 reports started, stream-completed,
+and client-receipt-acknowledged counts for the UTC `started_at` cohort, with
+completion/started and acknowledgement/completed rates. It joins
+`MediaArtifact` by artifact and site for platform-neutral operation and site
+breakdowns. Completion requires matching completed byte size/checksum;
+acknowledgement additionally requires ordered timestamps, matching received
+facts, and both verification flags. Completion and acknowledgement remain
+transfer evidence, never CMS apply/write evidence.
 
 Metrics may aggregate by site, operation, media kind, provider, and result
 status subject to authorization. They must not expose artifact bytes, raw input,

@@ -1,6 +1,6 @@
 # Cloud Media Delivery Boundary v1
 
-Status: B4B2 implemented
+Status: B4B3 implemented
 Date: 2026-07-15
 Scope: WordPress-first Cloud runtime, with a platform-neutral delivery seam
 
@@ -125,11 +125,30 @@ After that explicit reset, upgrade drops the empty table. Downgrade recreates
 only the empty B4B1-era table shape; it cannot restore deleted rows or bytes.
 Historical migrations `0046` and `0061` remain unchanged as migration evidence.
 
-The retained derivative `artifact_download_count` schema/API field is not
-canonical delivery truth and no longer receives writes from the removed route.
-B4B3 must either derive unified delivery observations from
-`MediaArtifactDelivery` or remove the projection through an explicit migration
-and UI/API contract change. B4B2 does not broaden into that observability
-refactor.
+P3-B4B3 completes the observability reset. Migration `20260715_0064` removes
+the derivative-only `artifact_download_count` and
+`artifact_last_downloaded_at` columns; downgrade restores only default `0` and
+`NULL`, never invented history. API and frontend surfaces use
+`magick-media-observability-summary-v2` with delivery started, stream completed,
+and receipt acknowledged counts plus completion and acknowledgement rates.
+
+The population is the UTC cohort whose `MediaArtifactDelivery.started_at` is
+inside the selected window and no later than the summary time. Stream completion
+requires `completed_at <= now` plus completed byte size and checksum equal to
+the delivery expectations. Receipt acknowledgement additionally requires
+`completed_at <= acked_at <= now`, both verification flags, and received byte
+size and checksum equal to the same expectations. Future or internally
+inconsistent timestamps therefore cannot inflate or invert the funnel. Zero
+denominators produce `0.0`, matching existing observability rate conventions.
+Breakdowns join each delivery to `MediaArtifact` by both artifact and site,
+then aggregate by artifact operation, site, and UTC cohort date. Portal
+summaries apply the authorized site filter before every delivery aggregate.
+Admin site breakdowns return at most 50 rows, ordered by started count then site
+ID; `by_site_truncated` explicitly reports whether more rows existed.
+
+Stream completion means Cloud emitted the exact verified byte stream. Receipt
+acknowledgement means the client reported the exact byte count and checksum.
+Neither is proof of CMS review, import, association, publication, or final
+write. B4B3 adds no write path or control-plane state.
 
 See [ADR-011](decisions/011-signed-pull-media-delivery-ack.md).

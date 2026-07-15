@@ -106,19 +106,20 @@ package script merely to name a gate.
 
 ## P3 Media Runtime Cutover
 
-Current status: MED-03 is implemented in P3-B4B2. The legacy derivative
+Current status: MED-03 is implemented through P3-B4B3. The legacy derivative
 authenticated/public-token routes and permanent audio-asset playback surface
 are deleted, while audio generation and unified signed pull remain. MED-04
-orphan/lifecycle reconciliation is still pending. The retained derivative
-`artifact_download_count` projection receives no new writes after B4B2 and is
-scheduled for immediate B4B3 convergence on `MediaArtifactDelivery`; it is not
-expanded inside this deletion batch.
+orphan/lifecycle reconciliation is still pending. B4B3 removes the dead
+derivative download-count columns and v1 API/UI field. Delivery observability
+now comes only from `MediaArtifactDelivery`, with operation/site/UTC-date
+aggregation and transfer-only semantics in summary v2.
 
 | ID | Current evidence (path + symbol) | Action | Replacement / owner | Phase | Executable proof |
 | --- | --- | --- | --- | --- | --- |
 | MED-01 | `app/core/models.py::MediaDerivativeArtifact.blob_data` and `AudioAsset.blob_data`; related migrations; artifact/audio domains and routes store or transport media bytes. | delete | `MediaArtifact` stores metadata and references bytes in `ArtifactStore`; a local volume is the first storage backend. Historical migrations remain evidence. A new destructive migration moves current schema/data with backup, rollback, and restore proof. | P3 | Model and migration tests pass. Historical migration files may retain `blob_data` definitions, but current models, schema, and runtime may not use them. `rg` proves active code/tests no longer use `blob_data` for media bytes; the new destructive migration plus restore rehearsal proves the current schema is clean and production-like evidence remains recoverable. |
 | MED-02 | `app/domain/runtime/service.py` fields `_source_bytes_b64` and `_watermark_bytes_b64`; `image_generation/inline_images.py` carries `b64_json` internally. | change | Runtime exchanges artifact IDs and streamed bytes. If a provider API requires Base64, encode only transiently inside that provider adapter; Base64 must not enter the public runtime contract, persistence, or logs. | P3 | `rg` finds no internal/public Base64 byte path outside an explicitly bounded provider-adapter edge. Focused contract tests and bounded-memory streaming tests pass. |
 | MED-03 | P3-B4B2 removed the media-derivative public-token/authenticated routes and permanent audio-asset playback token/model/router/config exceptions. | deleted | One site-bound signed pull contract and temporary-artifact lifecycle. Audio metering, provider-call evidence, run evidence, and the audio business capability remain. | P3 | Static deletion and `0063` migration contracts pass; signed-pull tests retain cross-site denial, expiry, replay, and verified-delivery coverage. |
+| MED-03B | P3-B4B3 removed `artifact_download_count`, `artifact_last_downloaded_at`, and their v1 API/UI wording. | deleted | `MediaArtifactDelivery` is the platform-neutral transfer evidence, joined to `MediaArtifact` by artifact and site for operation and site dimensions. | P3 | `0064` near-full-shape migration preservation, summary-v2 API, started-cohort bounds, exact integrity predicates, cross-site exclusion, UTC-date aggregation, bounded site breakdown, zero-rate, anomalous-state exclusion, and frontend static contracts pass. |
 | MED-04 | Derivative and audio artifacts currently have separate state and cleanup paths. | consolidate | One `MediaArtifact` lifecycle owns TTL, purge, orphan reconciliation, and consumer acknowledgement. | P3 | Cleanup tests and metrics pass, followed by a real WordPress media smoke covering acknowledgement and expiry. |
 
 ## P4 Portal/Admin Cleanup

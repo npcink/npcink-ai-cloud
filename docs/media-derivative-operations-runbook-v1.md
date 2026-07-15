@@ -138,7 +138,11 @@ Primary fields:
 - `bytes_saved_total`
 - `active_artifact_count`
 - `active_artifact_bytes`
-- `artifact_download_count`
+- `delivery_started_count`
+- `delivery_stream_completed_count`
+- `delivery_acknowledged_count`
+- `stream_completion_rate`
+- `acknowledgement_rate`
 - `watermark_job_count`
 
 Operator interpretation:
@@ -149,10 +153,16 @@ Operator interpretation:
 - High `p95_processing_duration_ms`: check source dimensions, worker CPU, and
   queue pressure.
 - High `active_artifact_bytes`: verify cleanup worker cadence and TTL bounds.
-- Low `artifact_download_count`: preview proxy or local adoption flow may not
-  be fetching the derivative.
+- Low `stream_completion_rate`: inspect interrupted, truncated, checksum-failed,
+  or unavailable artifact streams.
+- Low `acknowledgement_rate`: the connector may not be confirming verified
+  receipt after completed streams. ACK is receipt evidence only, not proof of
+  review, import, attachment, publication, or another CMS write.
 
-Portal responses are site-scoped and omit cross-site `sites` breakdown.
+The summary contract is `magick-media-observability-summary-v2`. Delivery
+evidence is grouped by artifact `operation`, site, and UTC delivery-start cohort
+date. Portal responses are site-scoped and omit cross-site job summaries; their
+delivery breakdown is constrained to the authorized site.
 
 ## Error Catalog
 

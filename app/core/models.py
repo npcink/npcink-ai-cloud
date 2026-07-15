@@ -1819,8 +1819,6 @@ class MediaDerivativeJobMetric(Base):
     warnings_count: Mapped[int] = mapped_column(Integer, default=0)
     artifact_id: Mapped[str | None] = mapped_column(String(191), index=True)
     artifact_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    artifact_download_count: Mapped[int] = mapped_column(Integer, default=0)
-    artifact_last_downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -130,13 +130,14 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b4b2_delivery_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b4b3_delivery_and_remaining_targets() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B4B2 legacy delivery and permanent audio-asset surfaces removed;",
+        "Status: P3-B4B3 unified media delivery observability implemented;",
         "B4B2 legacy-route",
         "B4B2 removes the legacy routes, token helpers",
+        "Summary v2 reports started, stream-completed",
         "P3-B3A atomically replaces that pre-GA public POST route with two resources",
         "P3-B3B1 atomically replaces provider-media image-generation results",
         "P3-B3B2 atomically replaces URL/data-URL WordPress alt-text vision input",

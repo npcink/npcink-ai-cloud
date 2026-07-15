@@ -765,7 +765,11 @@ export interface PortalMediaObservabilityTotals {
   output_bytes_total: number;
   bytes_saved_total: number;
   compression_ratio: number;
-  artifact_download_count: number;
+  delivery_started_count: number;
+  delivery_stream_completed_count: number;
+  delivery_acknowledged_count: number;
+  stream_completion_rate: number;
+  acknowledgement_rate: number;
   last_finished_at: string;
   active_site_count: number;
   active_account_count: number;
