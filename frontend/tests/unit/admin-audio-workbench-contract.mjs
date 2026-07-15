@@ -35,8 +35,14 @@ assert.match(
 
 assert.match(
   abilityModelsPageSource,
-  /inspector_tab_preview[\s\S]*audio_preview_title_panel[\s\S]*<audio className="w-full" controls/,
-  'ability-model routing dialog must render the in-dialog audio preview player'
+  /inspector_tab_preview[\s\S]*audio_preview_title_panel[\s\S]*audio_preview_metadata_only/,
+  'ability-model routing dialog must preserve the audio generation workbench with a metadata-only completion state'
+);
+
+assert.doesNotMatch(
+  abilityModelsPageSource,
+  /<audio\b|\/api\/admin\/audio-preview|b64_json/,
+  'ability-model routing dialog must not retain audio byte playback or Base64 preview fallbacks'
 );
 
 assert.doesNotMatch(
