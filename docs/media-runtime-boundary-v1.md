@@ -1,6 +1,6 @@
 # Media Runtime Boundary v1
 
-Status: P3-B1 byte-store foundation implemented; B2-B5 remain target work.
+Status: P3-B2 streamed signed ingress implemented; B3-B5 remain target work.
 
 ## 1. Purpose
 
@@ -13,8 +13,10 @@ permissions, verification, review, approval, media-library writes, object
 assignment, publication, and local audit.
 
 This document began as the P0 target contract. Section 3 records the implemented
-P3-B1 foundation; the unified routes, streamed ingest, signed pull/ack, and the
-remaining lifecycle described for B2-B5 are still target work.
+P3-B1 byte-store foundation and P3-B2 streamed ingress on the existing media
+derivative route. Unified media resources, Base64 removal from other runtime
+paths, signed pull/ack, and the remaining lifecycle described for B3-B5 are
+still target work.
 
 ## 2. Stable Markers
 
@@ -46,11 +48,54 @@ through the existing Cloud runtime foundation. It uses one metadata envelope,
 one pluggable byte store, one site-isolated delivery model, and no second
 runtime or WordPress control plane.
 
-P3-B1 now provides the metadata-only `MediaArtifact`, a local-volume
+P3-B1 provides the metadata-only `MediaArtifact`, a local-volume
 `ArtifactStore`, bounded artifact downloads, independent AudioAsset objects,
 and byte-first purge. It deliberately preserves the existing artifact routes.
-Streaming ingest, the unified media API, signed pull/ack, and broader media
-operations remain B2, B3, B4, and B5 work respectively.
+
+P3-B2 converts `POST /v1/runtime/media-derivatives` from whole-body buffering
+and one-shot multipart parsing to a bounded signed ingress:
+
+- required auth headers, nonce, idempotency key, signature syntax, and timestamp
+  freshness are checked before the body evidence loader is allowed to receive
+  a large body. A short-lived database preflight also verifies the active site,
+  active key, and required scope, then closes before body reception;
+- the loader treats `Content-Length` only as an early bound, counts actual
+  streamed bytes as authoritative, writes them to one `TemporaryFile`, and
+  computes SHA-256 during the same pass;
+- the sealed size/digest evidence is validated by the existing HMAC canonical
+  request. Parsing starts only after authentication succeeds and replays the
+  exact same sealed temporary file; the route never reads the network body a
+  second time. A new current time and a new database session revalidate the
+  timestamp, site, key, and scope after capture, so upload-time revocation wins
+  without holding a database connection during the upload;
+- JSON and the multipart `request` field are bounded to 64 KiB. Multipart is
+  bounded to one field, two files, 16 KiB of headers per part, and only
+  `request`, `source_file`, and `watermark_file`; duplicate, unknown,
+  incomplete, or type-masquerading parts fail closed;
+- each upload file remains capped at 50 MiB. Starlette's 1 MiB spool threshold
+  moves larger file parts to disk before the authenticated route materializes
+  an accepted source or watermark once for the existing B2 service seam;
+- the raw capture, published and incomplete multipart spools are closed after
+  success, auth rejection, parse/validation failure, storage failure, service
+  exception, or cancellation. Temporary-file create/write/short-write and
+  multipart spool create/read failures return a stable 503
+  ingress-unavailable result;
+- exact Nginx locations permit 52 MiB only for this route, retain the existing
+  upstream and public-runtime timeout/rate semantics, and add a dedicated
+  per-client request and two-connection limit plus an eight-connection
+  route-wide budget. Limit rejections return 429 and global body limits remain
+  unchanged. In the production Caddy-to-Nginx chain, Caddy sets `X-Real-IP`
+  from `remote_host`; Nginx accepts it only from loopback/RFC1918 proxies so
+  `$binary_remote_addr` continues to represent the real client for the
+  per-client zones. Direct-client development/domain configs do not rewrite it.
+
+This deliberately performs two disk I/O passes for multipart requests:
+network to the sealed raw spool, then raw spool to bounded multipart file
+spools. The extra pass preserves auth-before-parse error ordering, binds the
+signature to the bytes that are parsed, and keeps application memory bounded.
+It does not create a new media runtime, artifact route, CMS write path, or
+control-plane truth. Unified media API resources, Base64 removal from other
+runtime paths, signed pull/ack, and broader operations remain B3-B5 work.
 
 ## 4. End-to-End Lifecycle
 
@@ -292,9 +337,12 @@ provider URLs, storage keys, or signed pull credentials.
   S3-compatible storage, CDN/gallery behavior, permanent storage, and arbitrary
   media pipelines until measured need.
 
-This documentation batch changes no code, route, schema, or stored data. Delete
-and replacement work happens only in an implementation milestone that updates
-producers, consumers, migrations, fixtures, tests, and obsolete paths together.
+P3-B2 changes only the transport implementation of the existing signed media
+derivative POST and its exact proxy allowance. It changes no route name,
+canonical HMAC fields, runtime service, artifact model, schema, CMS ownership,
+or stored data. Delete and replacement work still happens only in an atomic
+implementation milestone that updates producers, consumers, migrations,
+fixtures, tests, and obsolete paths together.
 
 ## 13. WordPress Acceptance For P0-P5
 
@@ -305,10 +353,14 @@ producers, consumers, migrations, fixtures, tests, and obsolete paths together.
   write authority or keeping compatibility aliases.
 - **P2:** The WordPress text loop remains suggestion-only and does not gain a
   media side door around local review, approval, audit, or final write truth.
-- **P3:** The four target resources, `MediaArtifact`, local-volume
-  `ArtifactStore`, streamed transfer, typed image contracts, security controls,
-  signed pull, delivery acknowledgement, TTL, and purge are implemented and
-  covered by focused tests.
+- **P3-B1/B2:** Metadata-only `MediaArtifact`, local-volume `ArtifactStore`,
+  bounded download, byte-first purge, and the existing media derivative
+  route's streamed signed ingress are implemented and covered by focused
+  tests. The four unified resources, signed pull/ack, and remaining transfer
+  cleanup are not represented as complete.
+- **P3 target:** The four target resources, typed image contracts, security
+  controls, signed pull, delivery acknowledgement, TTL, and purge are
+  implemented and covered by focused tests.
 - **P3:** A real WordPress smoke proves upload, processing, signed pull, local
   checksum/type/decode verification, review, governed media import, and local
   audit. Cross-site access and arbitrary callback delivery fail closed.
@@ -340,8 +392,8 @@ control-plane truth.
 
 ## 15. Non-goals
 
-- Implementing the target routes, schema, store, processors, or migration in
-  this documentation batch.
+- Implementing the four target unified routes, new schema, processors, or
+  migrations in P3-B2.
 - Introducing Kafka, Celery, Temporal, RabbitMQ, a second scheduler, or another
   workflow truth.
 - Building a Cloud media library, gallery, DAM, CDN product, or permanent

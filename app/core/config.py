@@ -47,7 +47,11 @@ class Settings(BaseSettings):
     latency_probe_interval_seconds: int = Field(default=900)
     alert_provider_degradation_interval_seconds: int = Field(default=900)
     provider_health_scan_interval_seconds: int = Field(default=900)
-    media_derivative_max_body_bytes: int = Field(default=51 * 1024 * 1024)
+    media_derivative_max_body_bytes: int = Field(
+        default=51 * 1024 * 1024,
+        ge=1,
+        le=51 * 1024 * 1024,
+    )
     media_derivative_batch_default_chunk_size: int = Field(default=10)
     media_derivative_batch_max_chunk_size: int = Field(default=20)
     media_derivative_site_queued_limit: int = Field(default=100)

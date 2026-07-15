@@ -25,6 +25,7 @@ from app.core.security import (
     RUNTIME_GUARD_SURFACE_INTERNAL,
     RequestAuthContext,
     RequestAuthError,
+    RequestBodyEvidenceLoader,
     _enforce_guard_cooldown,
     _enforce_short_window_rate_limit,
     _reserve_replay_receipt,
@@ -376,6 +377,7 @@ async def authorize_public_request(
     require_idempotency: bool,
     required_scope: str | None = None,
     max_body_bytes: int | None = None,
+    body_evidence_loader: RequestBodyEvidenceLoader | None = None,
 ) -> RequestAuthContext | JSONResponse:
     services = get_cloud_services(request)
 
@@ -411,7 +413,12 @@ async def authorize_public_request(
             ),
             require_idempotency=require_idempotency,
             required_scope=required_scope,
-            max_body_bytes=max_body_bytes or PUBLIC_RUNTIME_MAX_BODY_BYTES,
+            max_body_bytes=(
+                max_body_bytes
+                if max_body_bytes is not None
+                else PUBLIC_RUNTIME_MAX_BODY_BYTES
+            ),
+            body_evidence_loader=body_evidence_loader,
         )
     except RequestAuthError as error:
         return _build_auth_error_response(

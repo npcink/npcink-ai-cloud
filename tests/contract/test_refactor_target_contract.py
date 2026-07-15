@@ -130,12 +130,14 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b1_foundation_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b2_ingress_and_remaining_targets() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B1 byte-store foundation implemented; B2-B5 remain target work.",
+        "Status: P3-B2 streamed signed ingress implemented; B3-B5 remain target work.",
         "metadata-only `MediaArtifact`",
+        "exact same sealed temporary file",
+        "two disk I/O passes",
         "TEMPORARY_MEDIA_RUNTIME",
         "STREAMED_MEDIA_BYTES",
         "NO_DATABASE_BLOB",

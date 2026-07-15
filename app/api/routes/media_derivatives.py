@@ -8,14 +8,15 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from python_multipart import FormParser
 from starlette.concurrency import run_in_threadpool
 
 from app.adapters.providers.registry import resolve_execution_provider_adapters
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
+from app.api.media_ingress import MediaIngress, MediaIngressError, receive_media_ingress
 from app.core.db import get_session
 from app.core.logging import get_logger
+from app.core.security import extract_trace_id
 from app.domain.media_artifacts import (
     ArtifactStoreError,
     build_artifact_store,
@@ -124,61 +125,16 @@ def _public_download_token_valid(artifact: Any, token: str) -> bool:
     return hmac.compare_digest(expected, actual)
 
 
-@router.post("/media-derivatives")
-async def create_media_derivative(request: Request) -> Any:
+async def _create_media_derivative_from_ingress(
+    request: Request,
+    ingress: MediaIngress,
+) -> Any:
     services = get_cloud_services(request)
     artifact_store = build_artifact_store(services.settings)
-    auth = await authorize_public_request(
-        request,
-        require_idempotency=True,
-        required_scope="runtime:execute",
-        max_body_bytes=services.settings.media_derivative_max_body_bytes,
-    )
-    if isinstance(auth, JSONResponse):
-        return auth
-
-    body = await request.body()
-    content_type = request.headers.get("content-type", "")
-
-    request_json_str: str | None = None
+    auth = ingress.auth
+    request_json_str = ingress.request_json
     source_bytes: bytes | None = None
     watermark_bytes: bytes | None = None
-
-    if "multipart/form-data" in content_type:
-        fields: dict[str, str] = {}
-        files: dict[str, bytes] = {}
-
-        def _on_field(field: Any) -> None:
-            name = (
-                field.field_name.decode()
-                if isinstance(field.field_name, bytes)
-                else field.field_name
-            )
-            fields[name] = field.value
-
-        def _on_file(file: Any) -> None:
-            name = (
-                file.field_name.decode() if isinstance(file.field_name, bytes) else file.field_name
-            )
-            file.file_object.seek(0)
-            files[name] = file.file_object.read()
-
-        boundary = None
-        for part in content_type.split(";"):
-            part = part.strip()
-            if part.startswith("boundary="):
-                boundary = part[9:].strip('"')
-                break
-
-        parser = FormParser("multipart/form-data", _on_field, _on_file, boundary=boundary)
-        parser.write(body)
-        parser.finalize()
-
-        request_json_str = fields.get("request")
-        source_bytes = files.get("source_file")
-        watermark_bytes = files.get("watermark_file")
-    else:
-        request_json_str = body.decode("utf-8")
 
     if not request_json_str:
         return _media_error_response(
@@ -219,6 +175,25 @@ async def create_media_derivative(request: Request) -> Any:
             status_code=status_code,
             error_code=error_code,
             message=error_message,
+            trace_id=auth.trace_id,
+        )
+
+    try:
+        source_bytes = await ingress.read_upload_once(
+            ingress.source_file,
+            max_bytes=MAX_UPLOAD_BYTES_IMAGE,
+            too_large_message="uploaded file exceeds the size limit",
+        )
+        watermark_bytes = await ingress.read_upload_once(
+            ingress.watermark_file,
+            max_bytes=MAX_UPLOAD_BYTES_IMAGE,
+            too_large_message="uploaded watermark file exceeds the size limit",
+        )
+    except MediaIngressError as error:
+        return _media_error_response(
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
             trace_id=auth.trace_id,
         )
 
@@ -434,6 +409,30 @@ async def create_media_derivative(request: Request) -> Any:
             revision="md1",
         ),
     )
+
+
+@router.post("/media-derivatives")
+async def create_media_derivative(request: Request) -> Any:
+    services = get_cloud_services(request)
+    try:
+        ingress = await receive_media_ingress(
+            request,
+            max_body_bytes=services.settings.media_derivative_max_body_bytes,
+        )
+    except MediaIngressError as error:
+        return _media_error_response(
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+            trace_id=extract_trace_id(request.headers.get("traceparent", "")),
+        )
+
+    if isinstance(ingress, JSONResponse):
+        return ingress
+    try:
+        return await _create_media_derivative_from_ingress(request, ingress)
+    finally:
+        await ingress.close()
 
 
 @router.get("/artifacts/{artifact_id}/download")

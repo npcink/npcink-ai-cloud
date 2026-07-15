@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -32,6 +33,8 @@ PUBLIC_RUNTIME_MAX_NONCE_LENGTH = 128
 NONCE_HEADER = "X-Npcink-Nonce"
 IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 NONCE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+HMAC_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SECRET_HASH_ALGORITHM = "pbkdf2_sha256"
 SECRET_HASH_ITERATIONS = 210_000
 SECRET_HASH_SALT = b"npcink-ai-cloud-secret-hash-v2"
@@ -57,6 +60,15 @@ class RequestAuthContext:
     idempotency_key: str
     timestamp: str
     body_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class PrehashedRequestBody:
+    sha256_hex: str
+    byte_size: int
+
+
+RequestBodyEvidenceLoader = Callable[[], Awaitable[PrehashedRequestBody]]
 
 
 class RequestAuthError(ValueError):
@@ -140,6 +152,15 @@ def normalize_signature(signature: str) -> str:
     if normalized.startswith("sha256="):
         normalized = normalized[7:]
     return normalized.lower()
+
+
+def _validate_signature_format(signature: str) -> None:
+    if not HMAC_SHA256_PATTERN.fullmatch(signature):
+        raise RequestAuthError(
+            401,
+            "auth.invalid_signature",
+            "request signature is invalid",
+        )
 
 
 def parse_request_timestamp(timestamp: str) -> datetime:
@@ -249,11 +270,34 @@ def _validate_payload_size(
     *,
     max_body_bytes: int = PUBLIC_RUNTIME_MAX_BODY_BYTES,
 ) -> None:
-    if len(body) > max_body_bytes:
+    _validate_payload_byte_size(len(body), max_body_bytes=max_body_bytes)
+
+
+def _validate_payload_byte_size(
+    byte_size: int,
+    *,
+    max_body_bytes: int = PUBLIC_RUNTIME_MAX_BODY_BYTES,
+) -> None:
+    if byte_size > max_body_bytes:
         raise RequestAuthError(
             413,
             "auth.payload_too_large",
             "request payload exceeds the accepted size limit",
+        )
+    if byte_size < 0:
+        raise RequestAuthError(
+            400,
+            "auth.invalid_body_digest",
+            "prehashed request body byte size is invalid",
+        )
+
+
+def _validate_prehashed_body_digest(body_digest: str) -> None:
+    if not SHA256_HEX_PATTERN.fullmatch(body_digest):
+        raise RequestAuthError(
+            400,
+            "auth.invalid_body_digest",
+            "prehashed request body digest is invalid",
         )
 
 
@@ -292,6 +336,25 @@ def _validate_site_and_key(
         )
 
     return api_key
+
+
+def _preflight_site_and_key(
+    *,
+    database_url: str,
+    site_id: str,
+    key_id: str,
+    required_scope: str | None,
+    now: datetime,
+) -> None:
+    with get_session(database_url) as session:
+        _validate_site_and_key(
+            site=session.get(Site, site_id),
+            api_key=session.get(SiteApiKey, key_id),
+            site_id=site_id,
+            key_id=key_id,
+            required_scope=required_scope,
+            now=now,
+        )
 
 
 def _log_auth_rejection(
@@ -607,6 +670,7 @@ async def authorize_request(
     require_idempotency: bool,
     required_scope: str | None = None,
     max_body_bytes: int = PUBLIC_RUNTIME_MAX_BODY_BYTES,
+    body_evidence_loader: RequestBodyEvidenceLoader | None = None,
 ) -> RequestAuthContext:
     site_id = ""
     key_id = ""
@@ -640,9 +704,32 @@ async def authorize_request(
         signature = normalize_signature(
             _require_header(request, "X-Npcink-Signature", "auth.signature_required")
         )
-        body = await request.body()
-        _validate_payload_size(body, max_body_bytes=max_body_bytes)
-        body_digest = build_body_digest(body)
+        _validate_signature_format(signature)
+        preflight_now = datetime.now(UTC)
+        _validate_timestamp(
+            timestamp,
+            now=preflight_now,
+            tolerance_seconds=timestamp_tolerance_seconds,
+        )
+        if body_evidence_loader is not None:
+            _preflight_site_and_key(
+                database_url=database_url,
+                site_id=site_id,
+                key_id=key_id,
+                required_scope=required_scope,
+                now=preflight_now,
+            )
+            body_evidence = await body_evidence_loader()
+            _validate_payload_byte_size(
+                body_evidence.byte_size,
+                max_body_bytes=max_body_bytes,
+            )
+            _validate_prehashed_body_digest(body_evidence.sha256_hex)
+            body_digest = body_evidence.sha256_hex
+        else:
+            body = await request.body()
+            _validate_payload_size(body, max_body_bytes=max_body_bytes)
+            body_digest = build_body_digest(body)
         canonical_request = build_canonical_request(
             method=request.method,
             path=request.url.path,

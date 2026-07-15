@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import io
 import json
+import tempfile
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
+import pytest
+import starlette.formparsers as starlette_formparsers
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from PIL import Image
 
+import app.api.media_ingress as media_ingress_module
+import app.api.routes.media_derivatives as media_derivatives_route
 from app.adapters.queue.in_memory import InMemoryRuntimeQueue
 from app.api.main import create_app
 from app.core.config import Settings
@@ -18,6 +29,7 @@ from app.core.models import (
     ProviderCallRecord,
     RunRecord,
 )
+from app.core.security import build_canonical_request, build_hmac_signature
 from app.core.services import CloudServices
 from app.domain.media_artifacts import build_artifact_store
 from app.domain.media_derivatives.contracts import BLOCKED_RESPONSE_FIELDS, MAX_UPLOAD_BYTES_IMAGE
@@ -26,7 +38,9 @@ from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_INTERNAL_AUTH_TOKEN,
     TEST_PORTAL_JWT_SECRET,
+    TEST_SECRET,
     build_auth_headers,
+    build_traceparent,
     seed_site_auth,
 )
 
@@ -129,6 +143,110 @@ def _build_multipart_body(
     body = b"\r\n".join(parts)
     content_type = f"multipart/form-data; boundary={boundary}"
     return body, content_type
+
+
+def _minimal_request_dict() -> dict[str, object]:
+    return {
+        "request_contract_version": "media_derivative_cloud_request.v1",
+        "cloud_job_payload": {
+            "job_type": "generate_optimized_media_derivative",
+            "target_format": "png",
+            "max_width": 100,
+            "quality": 80,
+            "source_media_type": "image",
+        },
+    }
+
+
+def _build_custom_multipart_body(
+    parts: list[tuple[str, bytes, str | None]],
+    *,
+    boundary: str,
+    complete: bool = True,
+) -> tuple[bytes, str]:
+    body_parts: list[bytes] = []
+    for name, value, filename in parts:
+        body_parts.append(f"--{boundary}".encode())
+        disposition = f'Content-Disposition: form-data; name="{name}"'
+        if filename is not None:
+            disposition += f'; filename="{filename}"'
+        body_parts.append(disposition.encode())
+        if filename is not None:
+            body_parts.append(b"Content-Type: application/octet-stream")
+        body_parts.extend((b"", value))
+    if complete:
+        body_parts.append(f"--{boundary}--".encode())
+    return (
+        b"\r\n".join(body_parts),
+        f"multipart/form-data; boundary={boundary}",
+    )
+
+
+def _build_auth_headers_for_digest(
+    body_digest: str,
+    *,
+    idempotency_key: str,
+    nonce: str,
+) -> dict[str, str]:
+    timestamp = str(int(datetime.now(UTC).timestamp()))
+    traceparent = build_traceparent("fedcba9876543210fedcba9876543210")
+    canonical_request = build_canonical_request(
+        method="POST",
+        path="/v1/runtime/media-derivatives",
+        query="",
+        site_id="site_alpha",
+        key_id="key_default",
+        timestamp=timestamp,
+        nonce=nonce,
+        idempotency_key=idempotency_key,
+        traceparent=traceparent,
+        body_digest=body_digest,
+    )
+    return {
+        "X-Npcink-Site-Id": "site_alpha",
+        "X-Npcink-Key-Id": "key_default",
+        "X-Npcink-Timestamp": timestamp,
+        "X-Npcink-Signature": build_hmac_signature(TEST_SECRET, canonical_request),
+        "X-Npcink-Nonce": nonce,
+        "Idempotency-Key": idempotency_key,
+        "traceparent": traceparent,
+    }
+
+
+def _track_ingress_tempfiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[object], list[object]]:
+    original_temporary_file = tempfile.TemporaryFile
+    original_spooled_file = tempfile.SpooledTemporaryFile
+    raw_files: list[object] = []
+    upload_files: list[object] = []
+
+    def tracking_temporary_file(*args: object, **kwargs: object) -> object:
+        file_object = original_temporary_file(*args, **kwargs)
+        raw_files.append(file_object)
+        return file_object
+
+    def tracking_spooled_file(*args: object, **kwargs: object) -> object:
+        file_object = original_spooled_file(*args, **kwargs)
+        upload_files.append(file_object)
+        return file_object
+
+    monkeypatch.setattr(
+        media_ingress_module.tempfile,
+        "TemporaryFile",
+        tracking_temporary_file,
+    )
+    monkeypatch.setattr(
+        starlette_formparsers,
+        "SpooledTemporaryFile",
+        tracking_spooled_file,
+    )
+    return raw_files, upload_files
+
+
+def _assert_tempfiles_closed(file_objects: list[object]) -> None:
+    assert file_objects
+    assert all(file_object.closed for file_object in file_objects)
 
 
 def _process_queued_runs(database_url: str) -> None:
@@ -1530,7 +1648,7 @@ def test_oversized_upload_returns_413(tmp_path: Path) -> None:
         )
         headers["content-type"] = content_type
         response = client.post("/v1/runtime/media-derivatives", content=body, headers=headers)
-        assert response.status_code == 413
+        assert response.status_code == 413, response.json()
         assert response.json()["error_code"] == "media_derivative.upload_too_large"
     finally:
         dispose_engine(database_url)
@@ -1636,5 +1754,824 @@ def test_endpoint_bypasses_model_routing(tmp_path: Path) -> None:
             assert run.execution_kind == "media_derivative"
             assert run.selected_provider_id == "media_derivative"
             assert run.selected_model_id == "pillow"
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.asyncio
+async def test_signed_multipart_ingress_accepts_multiple_transport_chunks(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    body, content_type = _build_multipart_body(
+        _minimal_request_dict(),
+        _make_png_bytes(30, 20),
+        boundary="boundary-multi-chunk",
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-multi-chunk",
+        nonce="nonce-multi-chunk",
+    )
+    headers["content-type"] = content_type
+
+    async def body_chunks() -> AsyncIterator[bytes]:
+        for offset in range(0, len(body), 17):
+            yield body[offset : offset + 17]
+
+    try:
+        transport = httpx.ASGITransport(app=client.app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            response = await async_client.post(
+                "/v1/runtime/media-derivatives",
+                content=body_chunks(),
+                headers=headers,
+            )
+        assert response.status_code == 200, response.json()
+        assert response.json()["data"]["status"] == "queued"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_missing_auth_header_wins_over_oversize_content_length(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"media_derivative_max_body_bytes": 64},
+    )
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=b"{}",
+            headers={
+                "content-type": "application/json",
+                "content-length": "65",
+            },
+        )
+        assert response.status_code == 401
+        assert response.json()["error_code"] == "auth.site_id_required"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_oversize_content_length_returns_stable_auth_error(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"media_derivative_max_body_bytes": 64},
+    )
+    body = b"{}"
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-content-length-over",
+        nonce="nonce-content-length-over",
+    )
+    headers.update(
+        {
+            "content-type": "application/json",
+            "content-length": "65",
+        }
+    )
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 413
+        assert response.json()["error_code"] == "auth.payload_too_large"
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_signature", [False, True])
+async def test_counted_body_limit_is_authoritative_before_signature_verification(
+    tmp_path: Path,
+    invalid_signature: bool,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"media_derivative_max_body_bytes": 64},
+    )
+    body = b"x" * 65
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key=f"idem-counted-over-{invalid_signature}",
+        nonce=f"nonce-counted-over-{invalid_signature}",
+    )
+    if invalid_signature:
+        headers["X-Npcink-Signature"] = "0" * 64
+    headers["content-type"] = "application/json"
+
+    async def body_chunks() -> AsyncIterator[bytes]:
+        yield body[:32]
+        yield body[32:]
+
+    try:
+        transport = httpx.ASGITransport(app=client.app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            response = await async_client.post(
+                "/v1/runtime/media-derivatives",
+                content=body_chunks(),
+                headers=headers,
+            )
+        assert response.status_code == 413
+        assert response.json()["error_code"] == "auth.payload_too_large"
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    ("invalid_signature", "expected_status", "expected_error"),
+    [
+        (True, 401, "auth.invalid_signature"),
+        (False, 400, "media_derivative.invalid_request"),
+    ],
+)
+def test_authentication_precedes_truncated_multipart_parse_error(
+    tmp_path: Path,
+    invalid_signature: bool,
+    expected_status: int,
+    expected_error: str,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    body, content_type = _build_custom_multipart_body(
+        [
+            ("request", json.dumps(_minimal_request_dict()).encode(), None),
+            ("source_file", b"partial-file", "partial.png"),
+        ],
+        boundary="boundary-truncated-priority",
+        complete=False,
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key=f"idem-truncated-{invalid_signature}",
+        nonce=f"nonce-truncated-{invalid_signature}",
+    )
+    if invalid_signature:
+        headers["X-Npcink-Signature"] = "0" * 64
+    headers["content-type"] = content_type
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == expected_status
+        assert response.json()["error_code"] == expected_error
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing_boundary",
+        "unknown_part",
+        "duplicate_request",
+        "duplicate_part",
+        "too_many_files",
+        "request_type_masquerade",
+        "source_type_masquerade",
+        "oversize_request_field",
+        "oversize_part_header",
+        "oversize_content_type",
+    ],
+)
+def test_multipart_shape_rejections_are_stable(tmp_path: Path, case: str) -> None:
+    database_url, client = _build_client(tmp_path)
+    request_json = json.dumps(_minimal_request_dict()).encode()
+    boundary = f"boundary-{case}"
+    parts: list[tuple[str, bytes, str | None]]
+    if case == "unknown_part":
+        parts = [
+            ("request", request_json, None),
+            ("unexpected_file", b"x", "unexpected.bin"),
+        ]
+    elif case == "duplicate_request":
+        parts = [
+            ("request", request_json, None),
+            ("request", request_json, None),
+        ]
+    elif case == "duplicate_part":
+        parts = [
+            ("request", request_json, None),
+            ("source_file", b"one", "one.bin"),
+            ("source_file", b"two", "two.bin"),
+        ]
+    elif case == "too_many_files":
+        parts = [
+            ("request", request_json, None),
+            ("source_file", b"one", "one.bin"),
+            ("watermark_file", b"two", "two.bin"),
+            ("unexpected_file", b"three", "three.bin"),
+        ]
+    elif case == "request_type_masquerade":
+        parts = [("request", request_json, "request.json")]
+    elif case == "source_type_masquerade":
+        parts = [
+            ("request", request_json, None),
+            ("source_file", b"not-a-file", None),
+        ]
+    elif case == "oversize_request_field":
+        parts = [("request", b"x" * (64 * 1024 + 1), None)]
+    elif case == "oversize_part_header":
+        parts = [("x" * (16 * 1024 + 1), b"value", None)]
+    else:
+        parts = [("request", request_json, None)]
+
+    body, content_type = _build_custom_multipart_body(parts, boundary=boundary)
+    if case == "missing_boundary":
+        content_type = "multipart/form-data"
+    elif case == "oversize_content_type":
+        content_type = f"multipart/form-data; boundary={'x' * (16 * 1024 + 1)}"
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key=f"idem-shape-{case}",
+        nonce=f"nonce-shape-{case}",
+    )
+    headers["content-type"] = content_type
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "media_derivative.invalid_request"
+    finally:
+        dispose_engine(database_url)
+
+
+def test_upload_larger_than_one_mib_is_spooled_to_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    observed: dict[str, object] = {}
+    raw_files, _ = _track_ingress_tempfiles(monkeypatch)
+
+    async def inspect_ingress(
+        _request: object,
+        ingress: media_ingress_module.MediaIngress,
+    ) -> JSONResponse:
+        assert ingress.source_file is not None
+        observed["rolled"] = getattr(ingress.source_file.file, "_rolled", False)
+        observed["file"] = ingress.source_file.file
+        return JSONResponse({"ok": True})
+
+    monkeypatch.setattr(
+        media_derivatives_route,
+        "_create_media_derivative_from_ingress",
+        inspect_ingress,
+    )
+    body, content_type = _build_multipart_body(
+        _minimal_request_dict(),
+        b"x" * (1024 * 1024 + 1),
+        boundary="boundary-spooled-disk",
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-spooled-disk",
+        nonce="nonce-spooled-disk",
+    )
+    headers["content-type"] = content_type
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert observed["rolled"] is True
+        assert observed["file"].closed is True
+        _assert_tempfiles_closed(raw_files)
+    finally:
+        dispose_engine(database_url)
+
+
+def test_auth_rejection_closes_raw_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    raw_files, _ = _track_ingress_tempfiles(monkeypatch)
+    body = json.dumps(_minimal_request_dict()).encode()
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-auth-cleanup",
+        nonce="nonce-auth-cleanup",
+    )
+    headers["X-Npcink-Signature"] = "0" * 64
+    headers["content-type"] = "application/json"
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 401
+        _assert_tempfiles_closed(raw_files)
+    finally:
+        dispose_engine(database_url)
+
+
+def test_truncated_file_parse_closes_raw_and_unpublished_upload_tempfiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    raw_files, upload_files = _track_ingress_tempfiles(monkeypatch)
+    body, content_type = _build_custom_multipart_body(
+        [
+            ("request", json.dumps(_minimal_request_dict()).encode(), None),
+            ("source_file", b"partial-file", "partial.png"),
+        ],
+        boundary="boundary-truncated-cleanup",
+        complete=False,
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-truncated-cleanup",
+        nonce="nonce-truncated-cleanup",
+    )
+    headers["content-type"] = content_type
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "media_derivative.invalid_request"
+        _assert_tempfiles_closed(raw_files)
+        _assert_tempfiles_closed(upload_files)
+    finally:
+        dispose_engine(database_url)
+
+
+def test_service_exception_closes_all_ingress_tempfiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    raw_files, upload_files = _track_ingress_tempfiles(monkeypatch)
+
+    async def raise_service_error(_request: object, _ingress: object) -> JSONResponse:
+        raise RuntimeError("synthetic service failure")
+
+    monkeypatch.setattr(
+        media_derivatives_route,
+        "_create_media_derivative_from_ingress",
+        raise_service_error,
+    )
+    body, content_type = _build_multipart_body(
+        _minimal_request_dict(),
+        b"file-bytes",
+        boundary="boundary-service-cleanup",
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-service-cleanup",
+        nonce="nonce-service-cleanup",
+    )
+    headers["content-type"] = content_type
+    error_client = TestClient(client.app, raise_server_exceptions=False)
+    try:
+        response = error_client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 500
+        _assert_tempfiles_closed(raw_files)
+        _assert_tempfiles_closed(upload_files)
+    finally:
+        error_client.close()
+        dispose_engine(database_url)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_service_closes_all_ingress_tempfiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    raw_files, upload_files = _track_ingress_tempfiles(monkeypatch)
+
+    async def cancel_service(_request: object, _ingress: object) -> JSONResponse:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        media_derivatives_route,
+        "_create_media_derivative_from_ingress",
+        cancel_service,
+    )
+    body, content_type = _build_multipart_body(
+        _minimal_request_dict(),
+        b"file-bytes",
+        boundary="boundary-cancel-cleanup",
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-cancel-cleanup",
+        nonce="nonce-cancel-cleanup",
+    )
+    headers["content-type"] = content_type
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/runtime/media-derivatives",
+        "raw_path": b"/v1/runtime/media-derivatives",
+        "query_string": b"",
+        "headers": [
+            (name.lower().encode("latin-1"), value.encode("latin-1"))
+            for name, value in headers.items()
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "app": client.app,
+    }
+    request_consumed = False
+
+    async def receive() -> dict[str, object]:
+        nonlocal request_consumed
+        if request_consumed:
+            return {"type": "http.disconnect"}
+        request_consumed = True
+        return {
+            "type": "http.request",
+            "body": body,
+            "more_body": False,
+        }
+
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await media_derivatives_route.create_media_derivative(Request(scope, receive))
+        _assert_tempfiles_closed(raw_files)
+        _assert_tempfiles_closed(upload_files)
+    finally:
+        dispose_engine(database_url)
+
+
+def test_json_body_over_sixty_four_kib_is_rejected_after_auth(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    body = b"x" * (64 * 1024 + 1)
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-json-over-64k",
+        nonce="nonce-json-over-64k",
+    )
+    headers["content-type"] = "application/json"
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "media_derivative.invalid_request"
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    ("content_length", "expected_status", "expected_error"),
+    [
+        ("-1", 400, "media_derivative.invalid_request"),
+        ("not-a-number", 400, "media_derivative.invalid_request"),
+        ("9" * 5000, 413, "auth.payload_too_large"),
+        ("0" * 5000, 400, "media_derivative.invalid_request"),
+    ],
+)
+def test_content_length_parsing_is_bounded_and_stable(
+    tmp_path: Path,
+    content_length: str,
+    expected_status: int,
+    expected_error: str,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    body = b"{}"
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key=f"idem-content-length-{expected_status}-{len(content_length)}",
+        nonce=f"nonce-content-length-{expected_status}-{len(content_length)}",
+    )
+    headers.update(
+        {
+            "content-type": "application/json",
+            "content-length": content_length,
+        }
+    )
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == expected_status
+        assert response.json()["error_code"] == expected_error
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("failure_mode", ["create", "write", "short_write"])
+def test_temporary_ingress_storage_failures_return_stable_503_and_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    original_temporary_file = tempfile.TemporaryFile
+    backing_files: list[object] = []
+
+    class FailingWriteFile:
+        def __init__(self) -> None:
+            self.backing_file = original_temporary_file("w+b")
+            backing_files.append(self.backing_file)
+
+        @property
+        def closed(self) -> bool:
+            return self.backing_file.closed
+
+        def write(self, _payload: bytes) -> int:
+            if failure_mode == "short_write":
+                return 0
+            raise OSError("synthetic ENOSPC")
+
+        def close(self) -> None:
+            self.backing_file.close()
+
+    def failing_temporary_file(*_args: object, **_kwargs: object) -> object:
+        if failure_mode == "create":
+            raise OSError("synthetic ENOSPC")
+        return FailingWriteFile()
+
+    monkeypatch.setattr(
+        media_ingress_module.tempfile,
+        "TemporaryFile",
+        failing_temporary_file,
+    )
+    body = json.dumps(_minimal_request_dict()).encode()
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key=f"idem-ingress-enospc-{failure_mode}",
+        nonce=f"nonce-ingress-enospc-{failure_mode}",
+    )
+    headers["content-type"] = "application/json"
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 503
+        assert response.json()["error_code"] == "media_derivative.ingress_unavailable"
+        assert all(file_object.closed for file_object in backing_files)
+    finally:
+        dispose_engine(database_url)
+
+
+def test_multipart_spool_creation_failure_returns_stable_503_and_closes_raw_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    raw_files, _ = _track_ingress_tempfiles(monkeypatch)
+
+    def failing_spooled_file(*_args: object, **_kwargs: object) -> object:
+        raise OSError("synthetic multipart spool ENOSPC")
+
+    monkeypatch.setattr(
+        starlette_formparsers,
+        "SpooledTemporaryFile",
+        failing_spooled_file,
+    )
+    body, content_type = _build_multipart_body(
+        _minimal_request_dict(),
+        b"file-bytes",
+        boundary="boundary-spool-enospc",
+    )
+    headers = build_auth_headers(
+        "POST",
+        "/v1/runtime/media-derivatives",
+        site_id="site_alpha",
+        body=body,
+        idempotency_key="idem-spool-enospc",
+        nonce="nonce-spool-enospc",
+    )
+    headers["content-type"] = content_type
+    try:
+        response = client.post(
+            "/v1/runtime/media-derivatives",
+            content=body,
+            headers=headers,
+        )
+        assert response.status_code == 503
+        assert response.json()["error_code"] == "media_derivative.ingress_unavailable"
+        _assert_tempfiles_closed(raw_files)
+    finally:
+        dispose_engine(database_url)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_error_does_not_skip_remaining_files_or_raw_capture() -> None:
+    class RecordingFile:
+        def __init__(self, *, fail: bool) -> None:
+            self.closed = False
+            self.fail = fail
+
+        def close(self) -> None:
+            self.closed = True
+            if self.fail:
+                raise RuntimeError("synthetic close failure")
+
+    class RecordingCapture:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    first_file = RecordingFile(fail=True)
+    second_file = RecordingFile(fail=False)
+    capture = RecordingCapture()
+    auth = media_ingress_module.RequestAuthContext(
+        site_id="site_alpha",
+        key_id="key_default",
+        trace_id="0" * 32,
+        traceparent=f"00-{'0' * 32}-{'0' * 16}-01",
+        nonce="nonce-cleanup",
+        idempotency_key="idem-cleanup",
+        timestamp="0",
+        body_digest="0" * 64,
+    )
+    ingress = media_ingress_module.MediaIngress(
+        auth=auth,
+        request_json="{}",
+        source_file=None,
+        watermark_file=None,
+        _capture=capture,  # type: ignore[arg-type]
+        _tracked_files=(first_file, second_file),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic close failure"):
+        await ingress.close()
+    assert first_file.closed is True
+    assert second_file.closed is True
+    assert capture.closed is True
+
+
+@pytest.mark.asyncio
+async def test_upload_read_oserror_returns_stable_ingress_unavailable() -> None:
+    class FailingUpload(media_ingress_module.UploadFile):
+        async def read(self, size: int = -1) -> bytes:
+            raise OSError("synthetic upload spool read failure")
+
+    auth = media_ingress_module.RequestAuthContext(
+        site_id="site_alpha",
+        key_id="key_default",
+        trace_id="0" * 32,
+        traceparent=f"00-{'0' * 32}-{'0' * 16}-01",
+        nonce="nonce-upload-read",
+        idempotency_key="idem-upload-read",
+        timestamp="0",
+        body_digest="0" * 64,
+    )
+    ingress = media_ingress_module.MediaIngress(
+        auth=auth,
+        request_json="{}",
+        source_file=None,
+        watermark_file=None,
+        _capture=object(),  # type: ignore[arg-type]
+    )
+    upload = FailingUpload(file=io.BytesIO(b"payload"), size=7)
+
+    with pytest.raises(media_ingress_module.MediaIngressError) as exc_info:
+        await ingress.read_upload_once(
+            upload,
+            max_bytes=1024,
+            too_large_message="too large",
+        )
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.error_code == "media_derivative.ingress_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_file_over_fifty_mib_is_rejected_before_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    boundary = "boundary-file-over-fifty-mib"
+    request_json = json.dumps(_minimal_request_dict()).encode()
+    prefix = b"\r\n".join(
+        [
+            f"--{boundary}".encode(),
+            b'Content-Disposition: form-data; name="request"',
+            b"",
+            request_json,
+            f"--{boundary}".encode(),
+            b'Content-Disposition: form-data; name="source_file"; filename="large.bin"',
+            b"Content-Type: application/octet-stream",
+            b"",
+        ]
+    ) + b"\r\n"
+    suffix = b"\r\n" + f"--{boundary}--".encode()
+    file_chunk = b"x" * (64 * 1024)
+    full_chunks = MAX_UPLOAD_BYTES_IMAGE // len(file_chunk)
+    trailing_file_byte = b"x"
+    digest = hashlib.sha256()
+    digest.update(prefix)
+    for _ in range(full_chunks):
+        digest.update(file_chunk)
+    digest.update(trailing_file_byte)
+    digest.update(suffix)
+    headers = _build_auth_headers_for_digest(
+        digest.hexdigest(),
+        idempotency_key="idem-file-over-fifty-mib",
+        nonce="nonce-file-over-fifty-mib",
+    )
+    headers["content-type"] = f"multipart/form-data; boundary={boundary}"
+
+    async def forbidden_upload_read(
+        _upload: object,
+        _size: int = -1,
+    ) -> bytes:
+        raise AssertionError("oversize UploadFile must be rejected before read()")
+
+    monkeypatch.setattr(
+        media_ingress_module.UploadFile,
+        "read",
+        forbidden_upload_read,
+    )
+
+    async def body_chunks() -> AsyncIterator[bytes]:
+        yield prefix
+        for _ in range(full_chunks):
+            yield file_chunk
+        yield trailing_file_byte
+        yield suffix
+
+    try:
+        transport = httpx.ASGITransport(app=client.app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            response = await async_client.post(
+                "/v1/runtime/media-derivatives",
+                content=body_chunks(),
+                headers=headers,
+            )
+        assert response.status_code == 413, response.json()
+        assert response.json()["error_code"] == "media_derivative.upload_too_large"
     finally:
         dispose_engine(database_url)
