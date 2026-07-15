@@ -147,6 +147,7 @@ def test_payloads_preserve_wordpress_ai_connector_boundary() -> None:
     image_input = image_payload["input"]
     assert isinstance(image_input, dict)
     assert image_input["task"] == "image_generation"
+    assert "response_format" not in image_input
 
 
 def test_execute_title_requires_exact_approval_before_http(tmp_path: Path) -> None:

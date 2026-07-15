@@ -13,6 +13,7 @@ import pytest
 from PIL import Image
 from sqlalchemy import select
 
+from app.adapters.providers.base import ProviderMediaCandidate
 from app.adapters.queue.in_memory import InMemoryRuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings
@@ -22,7 +23,9 @@ from app.core.models import (
     MediaDerivativeJobMetric,
     RunRecord,
 )
-from app.domain.image_generation import inline_images
+from app.domain.image_generation.materialization import (
+    ImageGenerationArtifactMaterializationError,
+)
 from app.domain.media_artifacts import ArtifactStoreError
 from app.domain.media_derivatives.artifacts import (
     cleanup_expired_artifacts,
@@ -59,6 +62,7 @@ def runtime_context(tmp_path: Path) -> Iterator[RuntimeContext]:
         environment="test",
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
+        artifact_store_root=str(tmp_path / "artifacts"),
         audio_generation_artifact_ttl_minutes=3,
     )
     yield RuntimeContext(
@@ -174,6 +178,39 @@ def _create_audio_run(repository: RuntimeRepository) -> RunRecord:
         idempotency_key="idem-audio-artifact-characterization",
         request_fingerprint="fingerprint-audio-artifact-characterization",
         trace_id="trace-audio-artifact-characterization",
+        input_json={},
+        execution_input_ciphertext=None,
+        policy_json={"storage_mode": "result_only"},
+    )
+
+
+def _create_image_generation_run(
+    repository: RuntimeRepository,
+    *,
+    run_id: str = "run_image_artifact_characterization",
+) -> RunRecord:
+    return repository.create_run(
+        run_id=run_id,
+        site_id="site_alpha",
+        account_id=None,
+        subscription_id=None,
+        plan_version_id=None,
+        ability_name="npcink-cloud/generate-image",
+        ability_family="vision",
+        skill_id="",
+        workflow_id="",
+        contract_version="image_generation_request.v1",
+        channel="openapi",
+        execution_kind="image_generation",
+        execution_tier="cloud",
+        execution_pattern="inline",
+        data_classification="internal",
+        profile_id="image.grok-imagine.default",
+        canonical_run_id=None,
+        status="running",
+        idempotency_key=f"idem-{run_id}",
+        request_fingerprint=f"fingerprint-{run_id}",
+        trace_id=f"trace-{run_id}",
         input_json={},
         execution_input_ciphertext=None,
         policy_json={"storage_mode": "result_only"},
@@ -499,49 +536,68 @@ def test_audio_materialization_correlates_short_ttl_artifact_and_output_referenc
         assert expires_at <= datetime.now(UTC) + timedelta(minutes=3, seconds=10)
 
 
-def test_wordpress_inline_image_url_materialization_success_and_failure(
+def test_image_generation_materialization_returns_only_artifact_references(
     runtime_context: RuntimeContext,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_download(
-        source_url: str,
-        *,
-        config: inline_images.InlineImageMaterializationConfig,
-    ) -> tuple[bytes, str]:
-        assert source_url == "https://provider.example.test/generated.png"
-        assert config.max_bytes > 0
-        return b"inline-image-bytes", "image/png"
-
-    monkeypatch.setattr(inline_images, "_download_image_url", fake_download)
-    result = runtime_context.service._materialize_wordpress_ai_inline_image_output(
-        {
-            "artifact_type": "image_generation_candidates",
-            "images": [
-                {
-                    "url": "https://provider.example.test/generated.png",
-                    "b64_json": "",
-                }
-            ],
-            "provider_response_format": "url",
-        }
+    image_bytes = _png_bytes(width=64, height=48)
+    candidate = ProviderMediaCandidate(
+        index=1,
+        content_bytes=image_bytes,
+        claimed_mime_type="image/png",
+        revised_prompt="A refined prompt.",
+        claimed_width=64,
+        claimed_height=48,
     )
-    assert result["provider_response_format"] == "b64_json"
-    assert result["inline_materialized_from_url"] is True
-    assert result["inline_materialized_count"] == 1
-    assert result["images"][0]["b64_json"] == base64.b64encode(b"inline-image-bytes").decode(
-        "ascii"
-    )
-
-    monkeypatch.undo()
-    with pytest.raises(inline_images.InlineImageMaterializationError) as error:
-        runtime_context.service._materialize_wordpress_ai_inline_image_output(
-            {
-                "artifact_type": "image_generation_candidates",
-                "images": [{"url": "http://provider.example.test/generated.png"}],
-            }
+    with get_session(runtime_context.database_url) as session:
+        repository = RuntimeRepository(session)
+        run = _create_image_generation_run(repository)
+        result = runtime_context.service._materialize_image_generation_output(
+            run,
+            repository=repository,
+            provider_output={"model_id": "grok-imagine", "candidate_count": 1},
+            media_candidates=(candidate,),
         )
-    assert error.value.error_code == "image_generation.inline_materialization_failed"
-    assert error.value.message == "provider image URL must use HTTPS"
+        artifact = session.execute(select(MediaArtifact)).scalar_one()
+
+        assert result["artifact_type"] == "image_generation_artifacts"
+        assert result["contract_version"] == "image_generation_result.v1"
+        assert result["operation"] == "image.generate.v1"
+        assert result["suggestion_only"] is True
+        assert result["requires_local_review"] is True
+        assert result["artifacts"] == [
+            {
+                "artifact_id": artifact.artifact_id,
+                "artifact_reference": {"artifact_id": artifact.artifact_id},
+                "download_url": f"/v1/runtime/artifacts/{artifact.artifact_id}/download",
+                "status": "available",
+                "media_kind": "image",
+                "operation": "image.generate.v1",
+                "content_type": "image/png",
+                "format": "png",
+                "width": 64,
+                "height": 48,
+                "filesize_bytes": artifact.byte_size,
+                "checksum": artifact.checksum,
+                "expires_at": result["artifacts"][0]["expires_at"],
+            }
+        ]
+        assert artifact.run_id == run.run_id
+        assert artifact.site_id == run.site_id
+        assert artifact.operation == "image.generate.v1"
+        assert artifact.storage_key not in str(result)
+
+        invalid_run = _create_image_generation_run(
+            repository,
+            run_id="run_image_artifact_invalid",
+        )
+        with pytest.raises(ImageGenerationArtifactMaterializationError) as error:
+            runtime_context.service._materialize_image_generation_output(
+                invalid_run,
+                repository=repository,
+                provider_output={"candidate_count": 1},
+                media_candidates=(ProviderMediaCandidate(index=1, content_bytes=b"not-an-image"),),
+            )
+        assert error.value.error_code == "image_generation.artifact_materialization_failed"
 
 
 def test_runtime_facade_retains_run_04_entrypoints_with_extracted_delegation() -> None:
@@ -568,8 +624,8 @@ def test_runtime_facade_retains_run_04_entrypoints_with_extracted_delegation() -
         "_materialize_audio_generation_output": (
             "artifact_coordination_service.materialize_audio_generation_output"
         ),
-        "_materialize_wordpress_ai_inline_image_output": (
-            "artifact_coordination_service.materialize_inline_image_output"
+        "_materialize_image_generation_output": (
+            "artifact_coordination_service.materialize_image_generation_output"
         ),
     }
 

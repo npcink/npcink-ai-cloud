@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.adapters.providers.base import ProviderMediaCandidate
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
@@ -23,7 +24,7 @@ from app.core.models import (
     Site,
 )
 from app.domain.audio_generation.artifacts import AudioArtifactMaterializationConfig
-from app.domain.image_generation.inline_images import InlineImageMaterializationConfig
+from app.domain.image_generation.materialization import ImageGenerationMaterializationConfig
 from app.domain.media_artifacts import LocalVolumeArtifactStore
 from app.domain.media_derivatives.errors import MediaDerivativeSourceDecodeFailedError
 from app.domain.media_derivatives.processor import MediaDerivativeResult
@@ -817,7 +818,7 @@ def test_execute_media_derivative_domain_failure_preserves_result_and_metric(
         assert metric.artifact_id is None
 
 
-def test_audio_and_inline_image_wrappers_delegate_with_frozen_config(
+def test_audio_and_image_generation_wrappers_delegate_with_frozen_config(
     database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -838,13 +839,21 @@ def test_audio_and_inline_image_wrappers_delegate_with_frozen_config(
         captured["artifact_store"] = artifact_store
         return {"audio": "materialized"}
 
-    def fake_inline_materialization(
-        result_json: dict[str, Any],
+    def fake_image_materialization(
         *,
-        config: InlineImageMaterializationConfig,
+        session: Any,
+        artifact_store: Any,
+        run: RunRecord,
+        media_candidates: Any,
+        provider_output: dict[str, Any],
+        config: ImageGenerationMaterializationConfig,
     ) -> dict[str, Any]:
-        captured["inline_input"] = result_json
-        captured["inline_config"] = config
+        captured["image_session"] = session
+        captured["image_store"] = artifact_store
+        captured["image_run"] = run
+        captured["image_candidates"] = media_candidates
+        captured["image_input"] = provider_output
+        captured["image_config"] = config
         return {"image": "materialized"}
 
     monkeypatch.setattr(
@@ -854,15 +863,17 @@ def test_audio_and_inline_image_wrappers_delegate_with_frozen_config(
     )
     monkeypatch.setattr(
         artifact_coordination,
-        "materialize_inline_image_candidates_from_urls",
-        fake_inline_materialization,
+        "materialize_image_generation_candidates",
+        fake_image_materialization,
     )
     config = RuntimeArtifactCoordinationConfig(
         audio_artifact_ttl_minutes=9,
         audio_artifact_max_bytes=1234,
         audio_artifact_download_timeout_seconds=2.5,
-        inline_image_max_bytes=5678,
-        inline_image_timeout_seconds=3.5,
+        image_generation_artifact_ttl_minutes=7,
+        image_generation_max_image_bytes=5678,
+        image_generation_max_run_bytes=6789,
+        image_generation_download_timeout_seconds=3.5,
     )
     service = _service(database_url=database_url, config=config)
 
@@ -870,14 +881,22 @@ def test_audio_and_inline_image_wrappers_delegate_with_frozen_config(
         repository = RuntimeRepository(session)
         run = _create_run(repository, run_id="run_artifact_wrappers")
         audio_input = {"artifact_type": "audio_generation_candidates"}
-        inline_input = {"artifact_type": "image_generation_candidates"}
+        image_input = {"artifact_type": "image_generation_candidates"}
+        image_candidates = (
+            ProviderMediaCandidate(index=1, content_bytes=b"image"),
+        )
 
         assert service.materialize_audio_generation_output(
             run,
             repository=repository,
             provider_output=audio_input,
         ) == {"audio": "materialized"}
-        assert service.materialize_inline_image_output(inline_input) == {"image": "materialized"}
+        assert service.materialize_image_generation_output(
+            run,
+            repository=repository,
+            provider_output=image_input,
+            media_candidates=image_candidates,
+        ) == {"image": "materialized"}
         assert captured["audio_session"] is session
         assert captured["audio_run"] is run
         assert captured["audio_input"] is audio_input
@@ -886,9 +905,15 @@ def test_audio_and_inline_image_wrappers_delegate_with_frozen_config(
             max_bytes=1234,
             timeout_seconds=2.5,
         )
-        assert captured["inline_input"] is inline_input
-        assert captured["inline_config"] == InlineImageMaterializationConfig(
-            max_bytes=5678,
+        assert captured["image_session"] is session
+        assert captured["image_store"] is captured["artifact_store"]
+        assert captured["image_run"] is run
+        assert captured["image_candidates"] is image_candidates
+        assert captured["image_input"] is image_input
+        assert captured["image_config"] == ImageGenerationMaterializationConfig(
+            ttl_minutes=7,
+            max_image_bytes=5678,
+            max_run_bytes=6789,
             timeout_seconds=3.5,
         )
 
@@ -932,8 +957,8 @@ def test_artifact_coordination_module_and_runtime_facade_keep_boundaries() -> No
         "create_artifact(",
         "record_media_derivative_job_metric(",
         "materialize_audio_generation_candidates(",
-        "materialize_inline_image_candidates_from_urls(",
+        "materialize_image_generation_candidates(",
     )
     assert not {call for call in forbidden_service_calls if call in service_source}
-    assert "except InlineImageMaterializationError as error:" in service_source
+    assert "except ImageGenerationArtifactMaterializationError as error:" in service_source
     assert "except AudioArtifactMaterializationError as error:" in service_source

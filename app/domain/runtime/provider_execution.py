@@ -7,10 +7,12 @@ from typing import Any, Protocol
 from sqlalchemy.orm import Session
 
 from app.adapters.providers.base import (
+    IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE,
     ProviderAdapter,
     ProviderExecutionError,
     ProviderExecutionRequest,
     ProviderExecutionResult,
+    ProviderMediaCandidate,
 )
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.error_taxonomy import get_error_taxonomy
@@ -131,6 +133,7 @@ class ProviderOutputFinalizer(Protocol):
         repository: RuntimeRepository,
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
+        media_candidates: tuple[ProviderMediaCandidate, ...],
         policy: dict[str, object],
         finalization_context: object | None,
     ) -> dict[str, Any]: ...
@@ -290,7 +293,11 @@ class RuntimeProviderExecutionService:
                         error=error,
                     )
                     last_error_code = error.error_code
-                    last_error_message = error.message
+                    last_error_message = (
+                        IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
+                        if run.execution_kind == "image_generation"
+                        else error.message
+                    )
                     taxonomy = get_error_taxonomy(error.error_code)
                     if retry_count < max_retries and error.retryable and taxonomy.retryable:
                         continue
@@ -353,6 +360,7 @@ class RuntimeProviderExecutionService:
                         repository=repository,
                         input_payload=input_payload,
                         provider_output=decision.output,
+                        media_candidates=provider_result.media_candidates,
                         policy=policy,
                         finalization_context=finalization_context,
                     )

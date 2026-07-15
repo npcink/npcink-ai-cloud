@@ -15,6 +15,7 @@ from app.adapters.callbacks.base import RuntimeCallbackDispatcher
 from app.adapters.callbacks.http import HttpRuntimeCallbackDispatcher
 from app.adapters.providers.anthropic import AnthropicProviderAdapter
 from app.adapters.providers.base import (
+    IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE,
     ProviderAdapter,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -747,7 +748,6 @@ def test_execute_route_defaults_image_generation_to_grok_imagine(
             "prompt": "A clean product photo of a red running shoe",
             "aspect_ratio": "16:9",
             "resolution": "high",
-            "response_format": "url",
         },
         "policy": {"allow_fallback": False},
     }
@@ -773,9 +773,260 @@ def test_execute_route_defaults_image_generation_to_grok_imagine(
     assert data["model_id"] == GROK_IMAGINE_IMAGE_MODEL_ID
     assert data["execution_context"]["ability_family"] == "vision"
     assert data["execution_context"]["data_classification"] == "internal"
-    assert data["result"]["artifact_type"] == "image_generation_candidates"
-    assert data["result"]["direct_wordpress_write"] is False
-    assert data["result"]["images"][0]["mime_type"] == "image/png"
+    result = data["result"]
+    assert result["artifact_type"] == "image_generation_artifacts"
+    assert result["contract_version"] == "image_generation_result.v1"
+    assert result["operation"] == "image.generate.v1"
+    assert result["suggestion_only"] is True
+    assert result["requires_local_review"] is True
+    assert len(result["artifacts"]) == 1
+    artifact_result = result["artifacts"][0]
+    assert artifact_result["artifact_reference"] == {"artifact_id": artifact_result["artifact_id"]}
+    assert artifact_result["download_url"] == (
+        f"/v1/runtime/artifacts/{artifact_result['artifact_id']}/download"
+    )
+    assert artifact_result["status"] == "available"
+    assert artifact_result["media_kind"] == "image"
+    assert artifact_result["operation"] == "image.generate.v1"
+    assert artifact_result["content_type"] == "image/png"
+    assert artifact_result["format"] == "png"
+    assert artifact_result["width"] == 1
+    assert artifact_result["height"] == 1
+    assert artifact_result["filesize_bytes"] > 0
+    assert artifact_result["checksum"].startswith("sha256:")
+    serialized_result = json.dumps(result, sort_keys=True)
+    assert "https://" not in serialized_result
+    assert "b64_json" not in serialized_result
+    assert "provider_response_format" not in serialized_result
+    assert "storage_key" not in serialized_result
+
+    with get_session(database_url) as session:
+        persisted_run = session.get(RunRecord, data["run_id"])
+        assert persisted_run is not None
+        persisted_result = json.dumps(persisted_run.result_json, sort_keys=True)
+        assert "https://" not in persisted_result
+        assert "b64_json" not in persisted_result
+        assert "provider_response_format" not in persisted_result
+        assert "storage_key" not in persisted_result
+        artifact = session.execute(select(MediaArtifact)).scalar_one()
+        assert artifact.artifact_id == artifact_result["artifact_id"]
+        assert artifact.run_id == data["run_id"]
+        assert artifact.site_id == "site_alpha"
+        assert artifact.media_kind == "image"
+        assert artifact.operation == "image.generate.v1"
+        assert artifact.status == "available"
+        assert artifact.content_type == "image/png"
+        assert artifact.format == "png"
+        assert artifact.width == 1
+        assert artifact.height == 1
+        assert artifact.byte_size == artifact_result["filesize_bytes"]
+        assert artifact.checksum == artifact_result["checksum"]
+
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_error_code"),
+    [
+        (400, "provider.invalid_request"),
+        (500, "provider.upstream_error"),
+    ],
+)
+def test_image_generation_provider_errors_never_publish_upstream_bodies(
+    tmp_path: Path,
+    allow_example_callback_dns: None,
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    expected_error_code: str,
+) -> None:
+    leaked_url = "https://images.provider.test/generated.png?sig=upstream-secret"
+    leaked_base64 = "c2Vuc2l0aXZlLWltYWdlLWJ5dGVz"
+    leaked_prompt = "UPSTREAM-PRIVATE-PROMPT-ECHO"
+    provider = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                status_code,
+                json={
+                    "error": {
+                        "message": (
+                            f"{leaked_prompt} {leaked_url} b64_json={leaked_base64}"
+                        )
+                    }
+                },
+            )
+        ),
+    )
+    sample_catalog = OpenAIProviderAdapter().fetch_catalog()
+    monkeypatch.setattr(provider, "fetch_catalog", lambda: sample_catalog)
+
+    callback_requests: list[dict[str, object]] = []
+
+    def callback_handler(request: httpx.Request) -> httpx.Response:
+        callback_requests.append(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(204)
+
+    callback_dispatcher = HttpRuntimeCallbackDispatcher(
+        transport=httpx.MockTransport(callback_handler),
+    )
+    database_url, client = _build_client(
+        tmp_path,
+        providers={"openai": provider},
+        callback_dispatcher=callback_dispatcher,
+    )
+    seed_site_auth(
+        database_url,
+        site_id="site_alpha",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+        site_metadata=_runtime_callback_metadata(
+            "https://example.com/runtime",
+            callback_id=f"image-generation-error-{status_code}",
+        ),
+    )
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-cloud/generate-image",
+        "canonical_run_id": f"wp_image_error_{status_code}",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "task_backend": {
+            "enabled": True,
+            "mode": "polling",
+            "callback_mode": "polling_preferred",
+        },
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "A private product concept",
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    idempotency_key = f"idem-image-provider-error-{status_code}"
+    response = client.post(
+        "/v1/runtime/execute",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/runtime/execute",
+                site_id="site_alpha",
+                idempotency_key=idempotency_key,
+                nonce=f"nonce-image-provider-error-{status_code}",
+                trace_id=f"imageprovidererror{status_code:03d}00000000000",
+                body=body,
+            )
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert data["error_code"] == expected_error_code
+    assert data["error_message"] == IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
+    run_id = str(data["run_id"])
+
+    with get_session(database_url) as session:
+        persisted_run = session.get(RunRecord, run_id)
+        assert persisted_run is not None
+        assert persisted_run.error_code == expected_error_code
+        assert (
+            persisted_run.error_message == IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
+        )
+
+    run_response = client.get(
+        f"/v1/runs/{run_id}",
+        headers=build_auth_headers(
+            "GET",
+            f"/v1/runs/{run_id}",
+            site_id="site_alpha",
+            trace_id=f"imageerrorrun{status_code:03d}0000000000000",
+        ),
+    )
+    result_response = client.get(
+        f"/v1/runs/{run_id}/result",
+        headers=build_auth_headers(
+            "GET",
+            f"/v1/runs/{run_id}/result",
+            site_id="site_alpha",
+            trace_id=f"imageerrorresult{status_code:03d}000000000",
+        ),
+    )
+
+    worker = RuntimeService(
+        database_url,
+        settings=_runtime_service_settings(database_url),
+        callback_dispatcher=callback_dispatcher,
+        callback_max_attempts=1,
+        callback_retry_backoff_seconds=0,
+    )
+    dispatched = worker.dispatch_pending_callbacks(max_callbacks=1)
+    assert dispatched[0]["callback_status"] == "delivered"
+    assert len(callback_requests) == 1
+
+    externally_visible = json.dumps(
+        {
+            "execute": response.json(),
+            "run": run_response.json(),
+            "result": result_response.json(),
+            "callback": callback_requests[0],
+        },
+        sort_keys=True,
+    )
+    for secret in (leaked_url, leaked_base64, leaked_prompt, "b64_json"):
+        assert secret not in externally_visible
+
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize("route", ["/v1/runtime/resolve", "/v1/runtime/execute"])
+def test_image_generation_rejects_no_store_before_routing(
+    tmp_path: Path,
+    route: str,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    payload = {
+        "site_id": "site_alpha",
+        "ability_name": "npcink-cloud/generate-image",
+        "contract_version": "image_generation_request.v1",
+        "channel": "openapi",
+        "execution_tier": "cloud",
+        "execution_pattern": "inline",
+        "storage_mode": "no_store",
+        "input": {
+            "contract_version": "image_generation_request.v1",
+            "prompt": "A clean product photo of a red running shoe",
+            "n": 1,
+        },
+        "policy": {"allow_fallback": False},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    route_suffix = route.rsplit("/", maxsplit=1)[-1]
+    trace_id = (
+        "1234567890abcdef1234567890abcd05"
+        if route_suffix == "resolve"
+        else "1234567890abcdef1234567890abcd06"
+    )
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            route,
+            site_id="site_alpha",
+            idempotency_key=f"idem-image-generation-no-store-{route_suffix}",
+            nonce=f"nonce-image-generation-no-store-{route_suffix}",
+            trace_id=trace_id,
+            body=body,
+        )
+    )
+
+    response = client.post(route, content=body, headers=headers)
+
+    assert response.status_code == 400, response.text
+    assert response.json()["error_code"] == "image_generation.artifact_storage_required"
+    with get_session(database_url) as session:
+        assert session.execute(select(RunRecord)).scalars().all() == []
+        assert session.execute(select(MediaArtifact)).scalars().all() == []
 
     dispose_engine(database_url)
 

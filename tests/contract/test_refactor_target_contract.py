@@ -130,12 +130,13 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b3a_resources_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b3b1_resources_and_remaining_targets() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B3A upload and image-job resources implemented; B3B-B5 remain target work.",
+        "Status: P3-B3B1 image-generation artifact results implemented; B3B2 and B4-B5",
         "P3-B3A atomically replaces that pre-GA public POST route with two resources",
+        "P3-B3B1 atomically replaces provider-media image-generation results",
         "metadata-only `MediaArtifact`",
         "exact same sealed temporary file",
         "two disk I/O passes",
@@ -146,12 +147,30 @@ def test_media_contract_tracks_p3_b3a_resources_and_remaining_targets() -> None:
         "LOCAL_MEDIA_WRITE",
         "POST /v1/runtime/media/uploads",
         "POST /v1/runtime/media/jobs",
+        "`image_generation_result.v1` contains artifact references",
+        "image.generate.v1",
         "GET /v1/runtime/media/artifacts/{artifact_id}/download",
         "POST /v1/runtime/media/artifacts/{artifact_id}/delivery-ack",
         "## 7. ArtifactStore Boundary",
         "delivery acknowledgement is never proof of local application",
     ):
         assert required in media
+
+
+def test_image_generation_artifact_adr_freezes_provider_and_cms_boundaries() -> None:
+    adr = _read("docs/decisions/008-artifact-only-image-generation-results.md")
+
+    for required in (
+        "ProviderMediaCandidate",
+        "image_output_hosts",
+        "image.generate.v1",
+        "suggestion_only=true",
+        "requires_local_review=true",
+        "storage_mode=no_store",
+        "process crash or genuinely uncertain",
+        "continues to own download verification",
+    ):
+        assert required in adr
 
 
 def test_deletion_inventory_freezes_items_and_phase_exit_proof() -> None:

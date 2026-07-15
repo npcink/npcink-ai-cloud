@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 
 from app.adapters.providers.base import (
@@ -14,11 +16,12 @@ from app.adapters.providers.base import (
     ProviderCatalogSnapshot,
     ProviderExecutionRequest,
     ProviderExecutionResult,
+    ProviderMediaCandidate,
 )
 from app.api.main import create_app
 from app.core.config import Settings
 from app.core.db import get_session, init_schema
-from app.core.models import ProviderConnection, RunRecord, Site
+from app.core.models import MediaArtifact, ProviderConnection, RunRecord, Site
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
 from app.domain.runtime.service import RuntimeService
@@ -46,6 +49,13 @@ from tests.conftest import (
 
 CONNECTOR_SITE_URL = "https://alpha.example.test"
 CONNECTOR_VERSION = "1.0.0-test"
+
+
+def _generated_png_bytes(*, width: int = 64, height: int = 48) -> bytes:
+    image = Image.new("RGB", (width, height), color="blue")
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def test_wordpress_ai_connector_text_profiles_prefer_gpt55_with_fallbacks() -> None:
@@ -289,20 +299,22 @@ class WordPressAIConnectorTextProvider:
         if request.execution_kind == "image_generation":
             return ProviderExecutionResult(
                 output={
-                    "artifact_type": "image_generation_candidates",
-                    "contract_version": "image_generation_result.v1",
                     "model_id": request.model_id,
-                    "images": [
-                        {
-                            "index": 1,
-                            "url": "https://example.invalid/wp-ai-generated.png",
-                            "b64_json": "",
-                            "mime_type": "image/png",
-                        }
-                    ],
-                    "provider_response_format": "url",
-                    "direct_wordpress_write": False,
+                    "candidate_count": 1,
+                    "usage": {},
                 },
+                media_candidates=(
+                    ProviderMediaCandidate(
+                        index=1,
+                        content_bytes=_generated_png_bytes(),
+                        source_url=None,
+                        image_output_hosts=(),
+                        claimed_mime_type="image/png",
+                        revised_prompt="A clean WordPress editor workspace illustration.",
+                        claimed_width=64,
+                        claimed_height=48,
+                    ),
+                ),
                 latency_ms=25,
                 tokens_in=14,
                 tokens_out=0,
@@ -388,6 +400,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
         environment="test",
         database_url=database_url,
         redis_url="redis://localhost:6379/0",
+        artifact_store_root=str(tmp_path / "artifacts"),
         admin_session_secret=TEST_ADMIN_SESSION_SECRET,
         portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
     )
@@ -453,7 +466,6 @@ def _image_payload(input_overrides: dict[str, Any] | None = None) -> dict[str, A
         "task": "image_generation",
         "prompt": "A clean media-library illustration of a WordPress editor workspace.",
         "n": 1,
-        "response_format": "url",
         "aspect_ratio": "16:9",
         "resolution": "medium",
     }
@@ -2206,32 +2218,12 @@ def test_wordpress_ai_connector_runtime_normalizes_summary_text_scene(
 
 def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.domain.runtime import service as runtime_service
-
-    def materialize_provider_url(result_json: dict[str, Any], **_: object) -> dict[str, Any]:
-        next_result = dict(result_json)
-        next_result["provider_response_format"] = "b64_json"
-        next_result["images"] = [
-            {
-                **dict(next_result["images"][0]),
-                "b64_json": "aW1hZ2UtYnl0ZXM=",
-            }
-        ]
-        return next_result
-
-    monkeypatch.setattr(
-        runtime_service,
-        "materialize_inline_image_candidates_from_urls",
-        materialize_provider_url,
-    )
-
     database_url, client, provider = _build_client(tmp_path)
 
     response = _execute(
         client,
-        _image_payload({"response_format": "b64_json"}),
+        _image_payload(),
         idempotency_key="wp-ai-image-generation",
     )
 
@@ -2239,17 +2231,53 @@ def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
     data = response.json()["data"]
     assert data["status"] == "succeeded"
     assert data["profile_id"] == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
-    assert data["result"]["artifact_type"] == "image_generation_candidates"
-    assert data["result"]["provider_response_format"] == "b64_json"
-    assert data["result"]["images"][0]["b64_json"] == "aW1hZ2UtYnl0ZXM="
-    assert data["result"]["direct_wordpress_write"] is False
+    result = data["result"]
+    assert result["artifact_type"] == "image_generation_artifacts"
+    assert result["contract_version"] == "image_generation_result.v1"
+    assert result["operation"] == "image.generate.v1"
+    assert result["suggestion_only"] is True
+    assert result["requires_local_review"] is True
+    assert len(result["artifacts"]) == 1
+    artifact_result = result["artifacts"][0]
+    assert artifact_result["artifact_reference"] == {"artifact_id": artifact_result["artifact_id"]}
+    assert artifact_result["download_url"] == (
+        f"/v1/runtime/artifacts/{artifact_result['artifact_id']}/download"
+    )
+    assert artifact_result["status"] == "available"
+    assert artifact_result["media_kind"] == "image"
+    assert artifact_result["operation"] == "image.generate.v1"
+    assert artifact_result["content_type"] == "image/png"
+    assert artifact_result["format"] == "png"
+    assert artifact_result["width"] == 64
+    assert artifact_result["height"] == 48
+    assert artifact_result["filesize_bytes"] > 0
+    assert artifact_result["checksum"].startswith("sha256:")
+    serialized_result = json.dumps(result, sort_keys=True)
+    assert "https://" not in serialized_result
+    assert "b64_json" not in serialized_result
+    assert "provider_response_format" not in serialized_result
+    assert "storage_key" not in serialized_result
     assert provider.requests[0].execution_kind == "image_generation"
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_IMAGE_GENERATION_PROFILE_ID
     assert provider.requests[0].timeout_ms == 90000
-    assert provider.requests[0].input_payload["response_format"] == "b64_json"
+    assert "response_format" not in provider.requests[0].input_payload
+
+    replay = _execute(
+        client,
+        _image_payload(),
+        idempotency_key="wp-ai-image-generation",
+        trace_id="tracewpaiimagegenerationreplay001",
+    )
+    assert replay.status_code == 200, replay.text
+    replay_data = replay.json()["data"]
+    assert replay_data["idempotent_replay"] is True
+    assert replay_data["run_id"] == data["run_id"]
+    assert replay_data["result"] == result
+    assert len(provider.requests) == 1
 
     with get_session(database_url) as session:
         run = session.execute(select(RunRecord)).scalar_one()
+        artifact = session.execute(select(MediaArtifact)).scalar_one()
         assert run.ability_name == "npcink-cloud/generate-image"
         assert run.channel == "wordpress_ai_connector"
         assert run.execution_kind == "image_generation"
@@ -2259,6 +2287,23 @@ def test_wordpress_ai_connector_image_generation_uses_managed_image_profile(
         assert run.policy_json["routing_intent"] == "media.image_generation"
         assert run.policy_json["timeout_ms"] == 90000
         assert run.policy_json["execution_contract"]["routing_intent"] == "media.image_generation"
+        persisted_result = json.dumps(run.result_json, sort_keys=True)
+        assert "https://" not in persisted_result
+        assert "b64_json" not in persisted_result
+        assert "provider_response_format" not in persisted_result
+        assert "storage_key" not in persisted_result
+        assert artifact.artifact_id == artifact_result["artifact_id"]
+        assert artifact.run_id == run.run_id == data["run_id"]
+        assert artifact.site_id == "site_alpha"
+        assert artifact.media_kind == "image"
+        assert artifact.operation == "image.generate.v1"
+        assert artifact.status == "available"
+        assert artifact.content_type == "image/png"
+        assert artifact.format == "png"
+        assert artifact.width == 64
+        assert artifact.height == 48
+        assert artifact.byte_size == artifact_result["filesize_bytes"]
+        assert artifact.checksum == artifact_result["checksum"]
 
 
 def test_wordpress_ai_connector_runtime_rejects_timeout_above_scene_limit(

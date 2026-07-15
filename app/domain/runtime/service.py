@@ -15,6 +15,7 @@ from app.adapters.providers.base import (
     ProviderExecutionError,
     ProviderExecutionRequest,
     ProviderExecutionResult,
+    ProviderMediaCandidate,
 )
 from app.adapters.providers.registry import build_provider_adapters
 from app.adapters.queue.base import RuntimeQueue
@@ -77,9 +78,8 @@ from app.domain.image_context_evidence.service import (
     ImageContextEvidenceService,
 )
 from app.domain.image_generation.contracts import IMAGE_GENERATION_ABILITIES
-from app.domain.image_generation.inline_images import (
-    InlineImageMaterializationError,
-    materialize_inline_image_candidates_from_urls,
+from app.domain.image_generation.materialization import (
+    ImageGenerationArtifactMaterializationError,
 )
 from app.domain.image_sources.contracts import (
     IMAGE_SOURCE_ABILITIES,
@@ -286,7 +286,6 @@ class RuntimeService:
             run_controller=self.run_lifecycle_service,
             execution_input_loader=self._get_execution_input_payload,
             audio_candidate_materializer=materialize_audio_generation_candidates,
-            inline_image_candidate_materializer=(materialize_inline_image_candidates_from_urls),
         )
         self.provider_execution_service = RuntimeProviderExecutionService(
             usage_recorder=self.commercial_service,
@@ -299,6 +298,7 @@ class RuntimeService:
 
     def resolve(self, request: RuntimeRequest) -> dict[str, object]:
         self.contract_validator.validate_runtime_data_handling_contract(request)
+        self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
         if self._is_audio_generation_request(request):
             self.contract_validator.validate_audio_generation_contract(request)
@@ -389,6 +389,7 @@ class RuntimeService:
 
     def execute(self, request: RuntimeRequest) -> RuntimeExecutionResponse:
         self.contract_validator.validate_runtime_data_handling_contract(request)
+        self._validate_image_generation_artifact_storage(request)
         connector_envelope: dict[str, Any] | None = None
         if self._is_cloud_batch_runtime_request(request):
             return self._execute_cloud_batch_runtime_request(request)
@@ -3073,18 +3074,19 @@ class RuntimeService:
         repository: RuntimeRepository,
         input_payload: dict[str, Any],
         provider_output: dict[str, Any],
+        media_candidates: tuple[ProviderMediaCandidate, ...],
         policy: dict[str, object],
         finalization_context: object | None,
     ) -> dict[str, Any]:
-        if self._is_wordpress_ai_connector_image_generation_run(
-            run,
-            input_payload=input_payload,
-        ):
+        if self._is_image_generation_run(run):
             try:
-                provider_output = self._materialize_wordpress_ai_inline_image_output(
-                    provider_output,
+                provider_output = self._materialize_image_generation_output(
+                    run,
+                    repository=repository,
+                    provider_output=provider_output,
+                    media_candidates=media_candidates,
                 )
-            except InlineImageMaterializationError as error:
+            except ImageGenerationArtifactMaterializationError as error:
                 raise ProviderOutputFinalizationError(
                     error.error_code,
                     error.message,
@@ -5017,6 +5019,17 @@ class RuntimeService:
     def _is_image_generation_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in IMAGE_GENERATION_ABILITIES
 
+    def _validate_image_generation_artifact_storage(self, request: RuntimeRequest) -> None:
+        if (
+            self._is_image_generation_request(request)
+            and str(request.storage_mode or RUNTIME_STORAGE_MODE_RESULT_ONLY).strip()
+            == RUNTIME_STORAGE_MODE_NO_STORE
+        ):
+            raise RuntimeExecutionContractError(
+                "image_generation.artifact_storage_required",
+                "image generation requires result_only or full_store_with_ttl storage",
+            )
+
     def _is_audio_generation_request(self, request: RuntimeRequest) -> bool:
         return request.ability_name in AUDIO_GENERATION_ABILITIES
 
@@ -5075,12 +5088,19 @@ class RuntimeService:
             provider_output=provider_output,
         )
 
-    def _materialize_wordpress_ai_inline_image_output(
+    def _materialize_image_generation_output(
         self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
         provider_output: dict[str, Any],
+        media_candidates: tuple[ProviderMediaCandidate, ...],
     ) -> dict[str, Any]:
-        return self.artifact_coordination_service.materialize_inline_image_output(
-            provider_output,
+        return self.artifact_coordination_service.materialize_image_generation_output(
+            run=run,
+            repository=repository,
+            provider_output=provider_output,
+            media_candidates=media_candidates,
         )
 
     def _is_media_batch_plan_run(self, run: RunRecord) -> bool:
@@ -5100,21 +5120,6 @@ class RuntimeService:
 
     def _is_wordpress_ai_connector_run(self, run: RunRecord) -> bool:
         return str(run.ability_name or "") in CONNECTOR_RUNTIME_ABILITIES
-
-    def _is_wordpress_ai_connector_image_generation_run(
-        self,
-        run: RunRecord,
-        *,
-        input_payload: dict[str, Any],
-    ) -> bool:
-        return (
-            self._is_image_generation_run(run)
-            and str(run.channel or "") == "wordpress_ai_connector"
-            and str(input_payload.get("source_surface") or "") == "wordpress_ai_connector"
-            and str(input_payload.get("connector_id") or "") == "npcink-cloud"
-            and str(input_payload.get("task") or "") == "image_generation"
-            and str(input_payload.get("response_format") or "") == "b64_json"
-        )
 
     def _prepare_wordpress_operation_execution_input(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, BinaryIO, Protocol
@@ -19,11 +20,16 @@ from app.domain.audio_generation.artifacts import (
     AudioArtifactMaterializationConfig,
     materialize_audio_generation_candidates,
 )
-from app.domain.image_generation.inline_images import (
-    INLINE_IMAGE_DEFAULT_MAX_BYTES,
-    INLINE_IMAGE_DEFAULT_TIMEOUT_SECONDS,
-    InlineImageMaterializationConfig,
-    materialize_inline_image_candidates_from_urls,
+from app.domain.image_generation.materialization import (
+    IMAGE_GENERATION_DEFAULT_MAX_RUN_BYTES,
+    IMAGE_GENERATION_DEFAULT_TTL_MINUTES,
+    ImageGenerationMaterializationConfig,
+    ProviderMediaCandidateLike,
+    materialize_image_generation_candidates,
+)
+from app.domain.image_generation.provider_fetch import (
+    PROVIDER_IMAGE_DEFAULT_MAX_BYTES,
+    PROVIDER_IMAGE_DEFAULT_TIMEOUT_SECONDS,
 )
 from app.domain.media_artifacts import (
     ArtifactStorageMetadata,
@@ -68,8 +74,12 @@ class RuntimeArtifactCoordinationConfig:
     audio_artifact_ttl_minutes: int = AUDIO_ARTIFACT_DEFAULT_TTL_MINUTES
     audio_artifact_max_bytes: int = AUDIO_ARTIFACT_DEFAULT_MAX_BYTES
     audio_artifact_download_timeout_seconds: float = AUDIO_ARTIFACT_DEFAULT_TIMEOUT_SECONDS
-    inline_image_max_bytes: int = INLINE_IMAGE_DEFAULT_MAX_BYTES
-    inline_image_timeout_seconds: float = INLINE_IMAGE_DEFAULT_TIMEOUT_SECONDS
+    image_generation_artifact_ttl_minutes: int = IMAGE_GENERATION_DEFAULT_TTL_MINUTES
+    image_generation_max_image_bytes: int = PROVIDER_IMAGE_DEFAULT_MAX_BYTES
+    image_generation_max_run_bytes: int = IMAGE_GENERATION_DEFAULT_MAX_RUN_BYTES
+    image_generation_download_timeout_seconds: float = (
+        PROVIDER_IMAGE_DEFAULT_TIMEOUT_SECONDS
+    )
     media_derivative_batch_default_chunk_size: int = 10
     media_derivative_batch_max_chunk_size: int = 20
     media_derivative_site_queued_limit: int = 100
@@ -146,12 +156,16 @@ class AudioCandidateMaterializer(Protocol):
     ) -> dict[str, Any]: ...
 
 
-class InlineImageCandidateMaterializer(Protocol):
+class ImageGenerationCandidateMaterializer(Protocol):
     def __call__(
         self,
-        result_json: dict[str, Any],
         *,
-        config: InlineImageMaterializationConfig,
+        session: Session,
+        artifact_store: ArtifactStore,
+        run: RunRecord,
+        media_candidates: Sequence[ProviderMediaCandidateLike],
+        provider_output: dict[str, Any],
+        config: ImageGenerationMaterializationConfig,
     ) -> dict[str, Any]: ...
 
 
@@ -236,7 +250,9 @@ class RuntimeArtifactCoordinationService:
         run_controller: RuntimeArtifactRunController,
         execution_input_loader: RuntimeExecutionInputLoader,
         audio_candidate_materializer: AudioCandidateMaterializer | None = None,
-        inline_image_candidate_materializer: InlineImageCandidateMaterializer | None = None,
+        image_generation_candidate_materializer: (
+            ImageGenerationCandidateMaterializer | None
+        ) = None,
     ) -> None:
         self.config = config
         self.dependencies = dependencies
@@ -245,8 +261,9 @@ class RuntimeArtifactCoordinationService:
         self.audio_candidate_materializer = (
             audio_candidate_materializer or materialize_audio_generation_candidates
         )
-        self.inline_image_candidate_materializer = (
-            inline_image_candidate_materializer or materialize_inline_image_candidates_from_urls
+        self.image_generation_candidate_materializer = (
+            image_generation_candidate_materializer
+            or materialize_image_generation_candidates
         )
 
     def create_media_upload(
@@ -980,14 +997,36 @@ class RuntimeArtifactCoordinationService:
             artifact_store=self.dependencies.artifact_store,
         )
 
-    def materialize_inline_image_output(
+    def materialize_image_generation_output(
         self,
+        run: RunRecord,
+        *,
+        repository: RuntimeRepository,
         provider_output: dict[str, Any],
+        media_candidates: Sequence[ProviderMediaCandidateLike],
     ) -> dict[str, Any]:
-        return self.inline_image_candidate_materializer(
-            provider_output,
-            config=InlineImageMaterializationConfig(
-                max_bytes=max(1, int(self.config.inline_image_max_bytes)),
-                timeout_seconds=max(0.001, float(self.config.inline_image_timeout_seconds)),
+        return self.image_generation_candidate_materializer(
+            session=repository.session,
+            artifact_store=self.dependencies.artifact_store,
+            run=run,
+            media_candidates=media_candidates,
+            provider_output=provider_output,
+            config=ImageGenerationMaterializationConfig(
+                ttl_minutes=max(
+                    1,
+                    int(self.config.image_generation_artifact_ttl_minutes),
+                ),
+                max_image_bytes=max(
+                    1,
+                    int(self.config.image_generation_max_image_bytes),
+                ),
+                max_run_bytes=max(
+                    1,
+                    int(self.config.image_generation_max_run_bytes),
+                ),
+                timeout_seconds=max(
+                    0.001,
+                    float(self.config.image_generation_download_timeout_seconds),
+                ),
             ),
         )

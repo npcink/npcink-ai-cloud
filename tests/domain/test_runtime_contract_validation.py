@@ -583,7 +583,7 @@ def test_runtime_contract_validator_has_no_execution_or_truth_ownership_imports(
             "app.core.models",
             "app.domain.commercial.service",
             "app.domain.audio_generation.artifacts",
-            "app.domain.image_generation.inline_images",
+            "app.domain.image_generation.materialization",
         }
     )
     assert not any(module.startswith("app.adapters.repositories") for module in imported_modules)

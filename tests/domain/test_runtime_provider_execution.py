@@ -10,10 +10,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.adapters.providers.base import (
+    IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE,
     ProviderCatalogSnapshot,
     ProviderExecutionError,
     ProviderExecutionRequest,
     ProviderExecutionResult,
+    ProviderMediaCandidate,
 )
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.db import dispose_engine, get_session, init_schema
@@ -130,6 +132,7 @@ def create_run(
     *,
     run_id: str,
     policy: dict[str, Any] | None = None,
+    execution_kind: str = "text",
 ) -> RunRecord:
     return repository.create_run(
         run_id=run_id,
@@ -143,7 +146,7 @@ def create_run(
         workflow_id="",
         contract_version="v1",
         channel="openapi",
-        execution_kind="text",
+        execution_kind=execution_kind,
         execution_tier="cloud",
         execution_pattern="inline",
         data_classification="internal",
@@ -283,9 +286,10 @@ def execution_service(
     controller: RecordingRunController,
     output_preparer: Any = None,
     output_finalizer: Any = None,
+    usage_recorder: RecordingUsageRecorder | None = None,
 ) -> RuntimeProviderExecutionService:
     return RuntimeProviderExecutionService(
-        usage_recorder=RecordingUsageRecorder(),
+        usage_recorder=usage_recorder or RecordingUsageRecorder(),
         providers=providers,
         run_controller=controller,
         input_preprocessor=lambda run, **kwargs: kwargs["input_payload"],
@@ -378,6 +382,44 @@ def test_candidate_engine_stops_on_nonfallbackable_error(database_url: str) -> N
         assert run.error_code == "provider.invalid_request"
 
 
+def test_candidate_engine_canonicalizes_image_provider_errors_before_persistence(
+    database_url: str,
+) -> None:
+    leaked_message = (
+        "UPSTREAM-PRIVATE-PROMPT-ECHO "
+        "https://images.provider.test/generated.png?sig=secret "
+        "b64_json=c2Vuc2l0aXZlLWltYWdl"
+    )
+    primary = SequenceProvider(
+        "primary",
+        [ProviderExecutionError("provider.upstream_error", leaked_message, retryable=False)],
+    )
+    service = execution_service(
+        providers={"primary": primary},
+        controller=RecordingRunController(),
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_image_provider_error",
+            execution_kind="image_generation",
+            policy={"allow_fallback": False},
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "model-primary", "instance-primary")],
+            input_payload={"prompt": "A private product concept"},
+        )
+
+        assert run.status == "failed"
+        assert run.error_code == "provider.upstream_error"
+        assert run.error_message == IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
+        assert leaked_message not in (run.error_message or "")
+
+
 def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
     primary = SequenceProvider("primary", [provider_success("reject")])
     fallback = SequenceProvider("fallback", [provider_success("accept")])
@@ -427,29 +469,65 @@ def test_candidate_engine_rejected_output_falls_back(database_url: str) -> None:
 def test_finalization_failure_follows_success_evidence_and_cancel_stops_attempts(
     database_url: str,
 ) -> None:
-    provider = SequenceProvider("primary", [provider_success("materialize")])
+    media_candidate = ProviderMediaCandidate(
+        index=1,
+        content_bytes=b"generated-image-bytes",
+        source_url=None,
+        image_output_hosts=(),
+        claimed_mime_type="image/png",
+        revised_prompt="A refined image prompt.",
+        claimed_width=64,
+        claimed_height=48,
+    )
+    provider = SequenceProvider(
+        "primary",
+        [
+            ProviderExecutionResult(
+                output={"artifact_type": "image_generation_candidates"},
+                media_candidates=(media_candidate,),
+                latency_ms=25,
+                tokens_in=4,
+                tokens_out=0,
+                cost=0.2,
+            )
+        ],
+    )
+    fallback_provider = SequenceProvider("fallback", [provider_success("must not run")])
+    received_candidates: list[tuple[ProviderMediaCandidate, ...]] = []
+    usage_recorder = RecordingUsageRecorder()
 
     def fail_finalization(run: RunRecord, **kwargs: Any) -> dict[str, Any]:
+        received_candidates.append(kwargs["media_candidates"])
         raise ProviderOutputFinalizationError("artifact.materialization_failed", "failed")
 
     with get_session(database_url) as session:
         repository = RuntimeRepository(session)
         run = create_run(repository, run_id="run_finalization_failure")
+        run.policy_json = {"allow_fallback": True}
         service = execution_service(
-            providers={"primary": provider},
+            providers={"primary": provider, "fallback": fallback_provider},
             controller=RecordingRunController(),
             output_finalizer=fail_finalization,
+            usage_recorder=usage_recorder,
         )
         service.execute_candidate_chain(
             repository=repository,
             run=run,
-            candidates=[Candidate("primary", "model", "instance")],
+            candidates=[
+                Candidate("primary", "model", "instance"),
+                Candidate("fallback", "fallback-model", "fallback-instance"),
+            ],
             input_payload={},
         )
         assert run.status == "failed"
         assert run.error_code == "artifact.materialization_failed"
-        assert len(repository.list_provider_calls(run.run_id)) == 1
-        assert repository.list_provider_calls(run.run_id)[0].error_code is None
+        assert received_candidates == [(media_candidate,)]
+        assert fallback_provider.attempts == []
+        provider_calls = repository.list_provider_calls(run.run_id)
+        assert len(provider_calls) == 1
+        assert provider_calls[0].error_code is None
+        assert len(usage_recorder.calls) == 1
+        assert usage_recorder.calls[0]["provider_call"] is provider_calls[0]
 
         canceled_provider = SequenceProvider("cancel", [provider_success("unused")])
         canceled_run = create_run(repository, run_id="run_canceled")

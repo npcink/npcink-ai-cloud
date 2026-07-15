@@ -166,7 +166,6 @@ def build_image_resolve_payload() -> dict[str, object]:
             "task": "image_generation",
             "prompt": "A clean media-library illustration of a WordPress editor workspace.",
             "n": 1,
-            "response_format": "url",
             "aspect_ratio": "16:9",
             "resolution": "medium",
         },

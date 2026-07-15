@@ -232,7 +232,7 @@ def test_result_normalization_module_and_runtime_service_keep_boundaries() -> No
     assert "def _get_transient_result_json(" not in service_source
     assert "self.result_normalization_service.normalize(" in service_source
     assert "self.wordpress_operation_runtime.normalize_provider_output(" in service_source
-    assert "self._materialize_wordpress_ai_inline_image_output(" in service_source
+    assert "self._materialize_image_generation_output(" in service_source
     assert "self._materialize_audio_generation_output(" in service_source
     assert "provider.execute(" not in service_source
     assert "provider.execute(" in provider_execution_source
