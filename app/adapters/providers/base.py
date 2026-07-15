@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from app.core.error_taxonomy import get_error_taxonomy
 
 IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE = "image generation provider request failed"
+VISION_PROVIDER_ERROR_MESSAGE = "vision provider request failed"
 
 
 @dataclass(slots=True)
@@ -53,7 +54,7 @@ class ProviderExecutionRequest:
     instance_id: str
     endpoint_variant: str
     trace_id: str
-    input_payload: dict[str, Any]
+    input_payload: dict[str, Any] = field(repr=False)
     policy: dict[str, Any]
     timeout_ms: int
     price_input: float | None = None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,8 @@ from app.core.db import get_session, init_schema
 from app.core.models import MediaArtifact, ProviderConnection, RunRecord, Site
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
+from app.domain.media_artifacts.input_loading import VISION_IMAGE_MAX_BYTES
+from app.domain.media_artifacts.store import LocalVolumeArtifactStore
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
@@ -49,6 +52,8 @@ from tests.conftest import (
 
 CONNECTOR_SITE_URL = "https://alpha.example.test"
 CONNECTOR_VERSION = "1.0.0-test"
+ALT_TEXT_SOURCE_ARTIFACT_ID = "art_0123456789abcdef0123456789abcdef"
+ALT_TEXT_PROVIDER_ECHO_MARKER = "c2Vuc2l0aXZlLXByb3ZpZGVyLWVjaG8="
 
 
 def _generated_png_bytes(*, width: int = 64, height: int = 48) -> bytes:
@@ -56,6 +61,41 @@ def _generated_png_bytes(*, width: int = 64, height: int = 48) -> bytes:
     output = io.BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
+
+
+def _seed_alt_text_artifact(
+    tmp_path: Path,
+    database_url: str,
+    *,
+    artifact_id: str = ALT_TEXT_SOURCE_ARTIFACT_ID,
+    site_id: str = "site_alpha",
+    **overrides: Any,
+) -> None:
+    store = LocalVolumeArtifactStore(tmp_path / "artifacts")
+    stored = store.put(
+        io.BytesIO(_generated_png_bytes()),
+        max_bytes=VISION_IMAGE_MAX_BYTES,
+    )
+    values: dict[str, Any] = {
+        "artifact_id": artifact_id,
+        "run_id": f"run_upload_{artifact_id}",
+        "site_id": site_id,
+        "media_kind": "image",
+        "operation": "image.upload.v1",
+        "content_type": "image/png",
+        "byte_size": stored.byte_size,
+        "storage_key": stored.storage_key,
+        "status": "available",
+        "format": "png",
+        "width": 64,
+        "height": 48,
+        "checksum": stored.checksum,
+        "expires_at": datetime.now(UTC) + timedelta(minutes=30),
+    }
+    values.update(overrides)
+    with get_session(database_url) as session:
+        session.add(MediaArtifact(**values))
+        session.commit()
 
 
 def test_wordpress_ai_connector_text_profiles_prefer_gpt55_with_fallbacks() -> None:
@@ -286,6 +326,49 @@ class WordPressAIConnectorTextProvider:
                     "AI editing scenes without exposing chat or direct writes. ### Details"
                 )
         if request.execution_kind == "vision":
+            if "provider inline echo" in source_text:
+                return ProviderExecutionResult(
+                    output={
+                        "output_text": (
+                            "data:image/png;base64," + ALT_TEXT_PROVIDER_ECHO_MARKER
+                        ),
+                        "model_id": request.model_id,
+                        "messages": [
+                            {
+                                "role": "assistant",
+                                "content": ALT_TEXT_PROVIDER_ECHO_MARKER,
+                            }
+                        ],
+                        "usage": {
+                            "nested": {"private_echo": ALT_TEXT_PROVIDER_ECHO_MARKER}
+                        },
+                    },
+                    latency_ms=18,
+                    tokens_in=42,
+                    tokens_out=7,
+                    cost=0.0,
+                )
+            if "provider nested echo" in source_text:
+                return ProviderExecutionResult(
+                    output={
+                        "output_text": "Blue ceramic mug on a white table",
+                        "model_id": "gpt-vision-test",
+                        "messages": [
+                            {
+                                "role": "assistant",
+                                "content": ALT_TEXT_PROVIDER_ECHO_MARKER,
+                            }
+                        ],
+                        "output": {"raw_echo": ALT_TEXT_PROVIDER_ECHO_MARKER},
+                        "usage": {
+                            "nested": {"private_echo": ALT_TEXT_PROVIDER_ECHO_MARKER}
+                        },
+                    },
+                    latency_ms=18,
+                    tokens_in=42,
+                    tokens_out=7,
+                    cost=0.0,
+                )
             return ProviderExecutionResult(
                 output={
                     "output_text": "Blue ceramic mug on a white table",
@@ -349,7 +432,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient, WordPressAIConnector
     seed_site_auth(
         database_url,
         site_id="site_alpha",
-        scopes=["runtime:execute", "runtime:read"],
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
     )
     provider = WordPressAIConnectorTextProvider()
     CatalogService(database_url, providers={"openai": provider}).refresh_catalog()
@@ -492,8 +575,7 @@ def _alt_text_payload(input_overrides: dict[str, Any] | None = None) -> dict[str
         "task": "alt_text_suggest",
         "request": {
             "prompt": "Generate accessible alt text for this media item.",
-            "image_url": "https://example.test/uploads/blue-mug.jpg",
-            "mime_type": "image/jpeg",
+            "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
             "filename": "blue-mug.jpg",
             "title": "Blue mug",
             "existing_alt": "",
@@ -522,7 +604,7 @@ def _alt_text_payload(input_overrides: dict[str, Any] | None = None) -> dict[str
         "profile_id": "text.balanced",
         "execution_pattern": "inline",
         "storage_mode": "result_only",
-        "data_classification": "public_reference_media",
+        "data_classification": "internal",
         "timeout_seconds": 60,
         "retry_max": 0,
         "retention_ttl": 86400,
@@ -552,6 +634,28 @@ def _execute(
         )
     )
     return client.post("/v1/runtime/execute", content=body, headers=headers)
+
+
+def _resolve(
+    client: TestClient,
+    payload: dict[str, Any],
+    *,
+    idempotency_key: str,
+) -> Any:
+    body = json.dumps(payload).encode("utf-8")
+    headers = merge_json_headers(
+        build_auth_headers(
+            "POST",
+            "/v1/runtime/resolve",
+            body=body,
+            site_id="site_alpha",
+            key_id=TEST_KEY_ID,
+            secret=TEST_SECRET,
+            idempotency_key=idempotency_key,
+            trace_id="tracewpairesolve0000000000000001",
+        )
+    )
+    return client.post("/v1/runtime/resolve", content=body, headers=headers)
 
 
 def _get_result(
@@ -1738,6 +1842,7 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
     tmp_path: Path,
 ) -> None:
     database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url)
 
     response = _execute(client, _alt_text_payload(), idempotency_key="wp-ai-alt-text")
 
@@ -1745,8 +1850,9 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
     data = response.json()["data"]
     assert data["status"] == "succeeded"
     assert data["result"]["output"]["output_text"] == "Blue ceramic mug on a white table"
+    assert set(data["result"]["output"]) == {"output_text"}
     assert data["execution_context"]["ability_family"] == "vision"
-    assert data["execution_context"]["data_classification"] == "public_reference_media"
+    assert data["execution_context"]["data_classification"] == "internal"
     assert provider.requests[0].execution_kind == "vision"
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID
     provider_input = provider.requests[0].input_payload
@@ -1755,12 +1861,13 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
     assert provider_input["max_output_tokens"] == 48
     assert provider_input["temperature"] == 0.0
     responses_content = provider_input["input"][0]["content"]
-    expected_image_part = {
-        "type": "input_image",
-        "image_url": "https://example.test/uploads/blue-mug.jpg",
-    }
-    assert expected_image_part in responses_content
+    image_part = responses_content[-1]
+    assert image_part["type"] == "input_image"
+    assert image_part["image_url"].startswith("data:image/png;base64,")
     assert "messages" in provider_input
+    public_json = json.dumps(data, ensure_ascii=False)
+    assert "data:image/" not in public_json
+    assert repr(provider.requests[0]).find("data:image/") == -1
 
     with get_session(database_url) as session:
         run = session.execute(select(RunRecord)).scalar_one()
@@ -1773,30 +1880,127 @@ def test_wordpress_ai_connector_runtime_executes_alt_text_as_vision(
         assert run.policy_json["routing_intent"] == "media.alt_text_vision"
         assert run.policy_json["execution_contract"]["task_group"] == "alt_text_vision"
         assert run.policy_json["execution_contract"]["routing_intent"] == "media.alt_text_vision"
+        durable_json = json.dumps(
+            {
+                "input": run.input_json,
+                "result": run.result_json,
+            },
+            ensure_ascii=False,
+        )
+        assert "data:image/" not in durable_json
+        assert run.execution_input_ciphertext is None
 
 
-def test_wordpress_ai_connector_runtime_accepts_bounded_alt_text_data_url(
+def test_alt_text_provider_success_inline_echo_is_never_persisted(
     tmp_path: Path,
 ) -> None:
-    _, client, provider = _build_client(tmp_path)
-    data_url = "data:image/png;base64,aW1hZ2UtYnl0ZXM="
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url)
     payload = _alt_text_payload(
         {
             "request": {
-                "prompt": "Generate alt text.",
-                "image_url": data_url,
-                "mime_type": "image/png",
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "provider inline echo",
                 "filename": "blue-mug.png",
             }
         }
     )
 
-    response = _execute(client, payload, idempotency_key="wp-ai-alt-text-data-url")
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-alt-text-provider-inline-echo",
+    )
 
     assert response.status_code == 200
-    provider_input = provider.requests[0].input_payload
-    responses_content = provider_input["input"][0]["content"]
-    assert {"type": "input_image", "image_url": data_url} in responses_content
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert data["result"] == {}
+    assert data["error_code"] == "provider.output_quality_rejected"
+    assert ALT_TEXT_PROVIDER_ECHO_MARKER not in json.dumps(data, ensure_ascii=False)
+    assert len(provider.requests) == 1
+    with get_session(database_url) as session:
+        run = session.execute(select(RunRecord)).scalar_one()
+        assert run.status == "failed"
+        assert not run.result_json
+        assert ALT_TEXT_PROVIDER_ECHO_MARKER not in json.dumps(
+            {
+                "input": run.input_json,
+                "result": run.result_json,
+                "error": run.error_message,
+            },
+            ensure_ascii=False,
+        )
+
+
+def test_alt_text_provider_nested_success_echo_is_projected_to_text_only(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url)
+    payload = _alt_text_payload(
+        {
+            "request": {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "provider nested echo",
+                "filename": "blue-mug.png",
+            }
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-alt-text-provider-nested-echo",
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["result"]["output"] == {
+        "output_text": "Blue ceramic mug on a white table"
+    }
+    assert ALT_TEXT_PROVIDER_ECHO_MARKER not in json.dumps(data, ensure_ascii=False)
+    assert len(provider.requests) == 1
+    with get_session(database_url) as session:
+        run = session.execute(select(RunRecord)).scalar_one()
+        assert run.status == "succeeded"
+        assert run.result_json == data["result"]
+        assert ALT_TEXT_PROVIDER_ECHO_MARKER not in json.dumps(
+            run.result_json,
+            ensure_ascii=False,
+        )
+
+
+def test_wordpress_ai_connector_runtime_replays_before_artifact_expiry_revalidation(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url)
+    payload = _alt_text_payload()
+
+    first = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-alt-text-expiry-replay",
+    )
+    assert first.status_code == 200
+    with get_session(database_url) as session:
+        artifact = session.get(MediaArtifact, ALT_TEXT_SOURCE_ARTIFACT_ID)
+        assert artifact is not None
+        artifact.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+    replay = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-alt-text-expiry-replay",
+        trace_id="tracewpaialtreplay000000000000002",
+    )
+
+    assert replay.status_code == 200
+    assert replay.json()["data"]["idempotent_replay"] is True
+    assert len(provider.requests) == 1
 
 
 @pytest.mark.parametrize(
@@ -1804,51 +2008,133 @@ def test_wordpress_ai_connector_runtime_accepts_bounded_alt_text_data_url(
     [
         (
             {"request": {"prompt": "Generate alt text."}},
-            "wordpress_operation.alt_text_image_required",
-        ),
-        (
-            {"request": {"prompt": "Generate alt text.", "image_url": "notaurl"}},
-            "wordpress_operation.alt_text_image_url_invalid",
+            "wordpress_operation.alt_text_source_artifact_required",
         ),
         (
             {
                 "request": {
                     "prompt": "Generate alt text.",
-                    "image_url": "https://example.test/file.svg",
-                    "mime_type": "image/svg+xml",
+                    "source_artifact_id": "art_" + ("a" * 192),
                 }
             },
-            "wordpress_operation.alt_text_mime_type_not_allowed",
+            "wordpress_operation.alt_text_source_artifact_required",
+        ),
+        (
+            {
+                "request": {
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                    "prompt": "Generate alt text.",
+                    "Image_URL": "https://example.test/file.jpg",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                    "prompt": "Generate alt text.",
+                    "Mime-Type": "image/png",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                    "prompt": "Generate alt text.",
+                    "Storage-Key": "obj_private",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                    "prompt": "Generate alt text.",
+                    "Raw-Bytes": "private",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                    "prompt": {
+                        "nested": "DaTa : ImAgE / PnG ; BaSe64 , cHJpdmF0ZQ=="
+                    },
+                }
+            },
+            "wordpress_operation.alt_text_inline_media_forbidden",
         ),
         (
             {
                 "request": {
                     "prompt": "Generate alt text.",
                     "image_url": "https://example.test/file.jpg",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "thumbnail_url": "https://example.test/file.jpg",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "image_url": "data:image/png;base64,aW1hZ2U=",
+                }
+            },
+            "wordpress_operation.alt_text_inline_media_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                    "mime_type": "image/png",
+                }
+            },
+            "wordpress_operation.alt_text_request_fields_forbidden",
+        ),
+        (
+            {
+                "request": {
+                    "prompt": "Generate alt text.",
                     "image_base64": "abc",
                 }
             },
-            "wordpress_operation.chat_or_secret_field_forbidden",
+            "wordpress_operation.alt_text_request_fields_forbidden",
         ),
         (
             {
                 "request": {
                     "prompt": "Generate alt text.",
-                    "image_url": "https://example.test/file.jpg",
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
                     "update_attachment_metadata": True,
                 }
             },
-            "wordpress_operation.chat_or_secret_field_forbidden",
+            "wordpress_operation.alt_text_request_fields_forbidden",
         ),
         (
             {
                 "request": {
                     "prompt": "Generate alt text.",
-                    "image_url": "https://example.test/file.jpg",
+                    "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
                     "messages": [{"role": "user", "content": "chat"}],
                 }
             },
-            "wordpress_operation.chat_or_secret_field_forbidden",
+            "wordpress_operation.alt_text_request_fields_forbidden",
         ),
     ],
 )
@@ -1857,7 +2143,7 @@ def test_wordpress_ai_connector_alt_text_contract_fails_closed(
     request_overrides: dict[str, Any],
     expected_error: str,
 ) -> None:
-    _, client, provider = _build_client(tmp_path)
+    database_url, client, provider = _build_client(tmp_path)
     payload = _alt_text_payload(request_overrides)
 
     response = _execute(
@@ -1869,6 +2155,416 @@ def test_wordpress_ai_connector_alt_text_contract_fails_closed(
     assert response.status_code == 400
     assert response.json()["error_code"] == expected_error
     assert provider.requests == []
+    with get_session(database_url) as session:
+        assert session.scalars(select(RunRecord)).all() == []
+
+
+@pytest.mark.parametrize(
+    ("case", "scene_request", "expected_error"),
+    [
+        (
+            "source-artifact-type",
+            {
+                "source_artifact_id": 123,
+                "prompt": "Generate alt text.",
+            },
+            "wordpress_operation.alt_text_source_artifact_required",
+        ),
+        (
+            "prompt-missing",
+            {"source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID},
+            "wordpress_operation.alt_text_prompt_invalid",
+        ),
+        (
+            "prompt-empty",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "   ",
+            },
+            "wordpress_operation.alt_text_prompt_invalid",
+        ),
+        (
+            "prompt-container",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": [],
+            },
+            "wordpress_operation.alt_text_prompt_invalid",
+        ),
+        (
+            "prompt-number",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": 42,
+            },
+            "wordpress_operation.alt_text_prompt_invalid",
+        ),
+        (
+            "prompt-bool",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": True,
+            },
+            "wordpress_operation.alt_text_prompt_invalid",
+        ),
+        (
+            "prompt-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": ("word " * 101).strip(),
+            },
+            "wordpress_operation.alt_text_prompt_too_large",
+        ),
+        (
+            "filename-type",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "filename": [],
+            },
+            "wordpress_operation.alt_text_request_value_invalid",
+        ),
+        (
+            "filename-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "filename": ("x " * 81).strip(),
+            },
+            "wordpress_operation.alt_text_request_value_too_large",
+        ),
+        (
+            "title-type",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "title": 7,
+            },
+            "wordpress_operation.alt_text_request_value_invalid",
+        ),
+        (
+            "title-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "title": ("x " * 81).strip(),
+            },
+            "wordpress_operation.alt_text_request_value_too_large",
+        ),
+        (
+            "existing-alt-type",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "existing_alt": False,
+            },
+            "wordpress_operation.alt_text_request_value_invalid",
+        ),
+        (
+            "existing-alt-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "existing_alt": ("x " * 121).strip(),
+            },
+            "wordpress_operation.alt_text_request_value_too_large",
+        ),
+        (
+            "existing-caption-type",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "existing_caption": {},
+            },
+            "wordpress_operation.alt_text_request_value_invalid",
+        ),
+        (
+            "existing-caption-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "existing_caption": ("x " * 121).strip(),
+            },
+            "wordpress_operation.alt_text_request_value_too_large",
+        ),
+        (
+            "locale-type",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "locale": 123,
+            },
+            "wordpress_operation.alt_text_request_value_invalid",
+        ),
+        (
+            "locale-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "locale": ("x " * 17).strip(),
+            },
+            "wordpress_operation.alt_text_request_value_too_large",
+        ),
+        (
+            "max-tokens-string",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "max_tokens": "48",
+            },
+            "wordpress_operation.alt_text_max_tokens_invalid",
+        ),
+        (
+            "max-tokens-float",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "max_tokens": 48.0,
+            },
+            "wordpress_operation.alt_text_max_tokens_invalid",
+        ),
+        (
+            "max-tokens-bool",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "max_tokens": True,
+            },
+            "wordpress_operation.alt_text_max_tokens_invalid",
+        ),
+        (
+            "max-tokens-zero",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "max_tokens": 0,
+            },
+            "wordpress_operation.alt_text_max_tokens_invalid",
+        ),
+        (
+            "max-tokens-too-large",
+            {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": "Generate alt text.",
+                "max_tokens": 97,
+            },
+            "wordpress_operation.alt_text_max_tokens_invalid",
+        ),
+    ],
+)
+def test_alt_text_request_value_contract_rejects_before_run_admission(
+    tmp_path: Path,
+    case: str,
+    scene_request: dict[str, Any],
+    expected_error: str,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+
+    response = _execute(
+        client,
+        _alt_text_payload({"request": scene_request}),
+        idempotency_key=f"wp-ai-alt-text-value-invalid-{case}",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == expected_error
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        assert session.scalars(select(RunRecord)).all() == []
+
+
+def test_queued_alt_text_nested_alias_value_fails_before_encryption_or_provider(
+    tmp_path: Path,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    payload = _alt_text_payload(
+        {
+            "request": {
+                "source_artifact_id": ALT_TEXT_SOURCE_ARTIFACT_ID,
+                "prompt": {
+                    "nested": {
+                        "Image_URL": "https://example.test/private-media.png"
+                    }
+                },
+            }
+        }
+    )
+    payload["execution_pattern"] = "whole_run_offload"
+    payload["task_backend"] = {
+        "enabled": True,
+        "mode": "queue",
+        "callback_mode": "polling_preferred",
+        "polling_interval_sec": 1,
+    }
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-alt-text-queued-nested-alias-invalid",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == (
+        "wordpress_operation.alt_text_prompt_invalid"
+    )
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        assert session.scalars(select(RunRecord)).all() == []
+
+
+def test_alt_text_resolve_admits_metadata_without_reading_storage(tmp_path: Path) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(
+        tmp_path,
+        database_url,
+        storage_key="obj_00000000000000000000000000000000",
+    )
+
+    response = _resolve(
+        client,
+        _alt_text_payload(),
+        idempotency_key="wp-ai-alt-text-resolve-metadata-only",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["execution_kind"] == "vision"
+    assert provider.requests == []
+
+
+@pytest.mark.parametrize(
+    ("case", "overrides", "expected_error"),
+    [
+        (
+            "cross-site",
+            {"site_id": "site_beta"},
+            "wordpress_operation.alt_text_source_artifact_not_found",
+        ),
+        (
+            "expired",
+            {"expires_at": datetime.now(UTC) - timedelta(seconds=1)},
+            "wordpress_operation.alt_text_source_artifact_expired",
+        ),
+        (
+            "wrong-type",
+            {"media_kind": "audio"},
+            "wordpress_operation.alt_text_artifact_type_not_allowed",
+        ),
+        (
+            "wrong-mime",
+            {"content_type": "image/gif", "format": "gif"},
+            "wordpress_operation.alt_text_artifact_type_not_allowed",
+        ),
+        (
+            "oversize",
+            {"byte_size": VISION_IMAGE_MAX_BYTES + 1},
+            "wordpress_operation.alt_text_source_artifact_too_large",
+        ),
+        (
+            "missing-storage",
+            {"storage_key": "obj_00000000000000000000000000000000"},
+            "wordpress_operation.alt_text_source_artifact_unavailable",
+        ),
+        (
+            "corrupt-storage",
+            {"checksum": "sha256:" + ("0" * 64)},
+            "wordpress_operation.alt_text_source_artifact_unavailable",
+        ),
+    ],
+)
+def test_new_alt_text_execution_fails_closed_before_provider(
+    tmp_path: Path,
+    case: str,
+    overrides: dict[str, Any],
+    expected_error: str,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url, **overrides)
+
+    response = _execute(
+        client,
+        _alt_text_payload(),
+        idempotency_key=f"wp-ai-alt-text-artifact-{case}",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == expected_error
+    assert provider.requests == []
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_error"),
+    [
+        (
+            "expired",
+            "wordpress_operation.alt_text_source_artifact_expired",
+        ),
+        (
+            "corrupt",
+            "wordpress_operation.alt_text_source_artifact_unavailable",
+        ),
+    ],
+)
+def test_queued_alt_text_worker_revalidates_artifact_before_provider(
+    tmp_path: Path,
+    failure: str,
+    expected_error: str,
+) -> None:
+    database_url, client, provider = _build_client(tmp_path)
+    _seed_alt_text_artifact(tmp_path, database_url)
+    payload = _alt_text_payload()
+    payload["execution_pattern"] = "whole_run_offload"
+    payload["task_backend"] = {
+        "enabled": True,
+        "mode": "queue",
+        "callback_mode": "polling_preferred",
+        "polling_interval_sec": 1,
+    }
+
+    queued = _execute(
+        client,
+        payload,
+        idempotency_key=f"wp-ai-alt-text-queued-revalidation-{failure}",
+    )
+    assert queued.status_code == 200
+    run_id = queued.json()["data"]["run_id"]
+    assert queued.json()["data"]["status"] == "queued"
+    with get_session(database_url) as session:
+        artifact = session.get(MediaArtifact, ALT_TEXT_SOURCE_ARTIFACT_ID)
+        assert artifact is not None
+        if failure == "expired":
+            artifact.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        else:
+            artifact.checksum = "sha256:" + ("0" * 64)
+        session.commit()
+
+    worker = RuntimeService(
+        database_url,
+        settings=Settings(
+            _env_file=None,
+            environment="test",
+            database_url=database_url,
+            redis_url="redis://localhost:6379/0",
+            artifact_store_root=str(tmp_path / "artifacts"),
+            admin_session_secret=TEST_ADMIN_SESSION_SECRET,
+            portal_jwt_secret=TEST_PORTAL_JWT_SECRET,
+        ),
+        providers={"openai": provider},
+    )
+    processed = worker.process_queued_runs(max_runs=1, timeout_seconds=0)
+
+    assert processed == [
+        {
+            "run_id": run_id,
+            "status": "failed",
+            "trace_id": queued.json()["data"]["trace_id"],
+        }
+    ]
+    assert provider.requests == []
+    with get_session(database_url) as session:
+        run = session.get(RunRecord, run_id)
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_code == expected_error
 
 
 def test_wordpress_ai_connector_runtime_strips_reasoning_noise_from_title(

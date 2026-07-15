@@ -14,6 +14,7 @@ import httpx
 
 from app.adapters.providers.base import (
     IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE,
+    VISION_PROVIDER_ERROR_MESSAGE,
     CatalogInstanceSeed,
     CatalogModelSeed,
     ProviderCatalogSnapshot,
@@ -398,7 +399,11 @@ class OpenAIProviderAdapter:
             error_message = (
                 IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
                 if result_request.endpoint_variant == "image_generations"
-                else self._extract_http_error_message(error.response)
+                else (
+                    VISION_PROVIDER_ERROR_MESSAGE
+                    if result_request.execution_kind == "vision"
+                    else self._extract_http_error_message(error.response)
+                )
             )
             raise ProviderExecutionError(
                 error_code,

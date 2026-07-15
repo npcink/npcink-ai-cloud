@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.providers.base import (
     IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE,
+    VISION_PROVIDER_ERROR_MESSAGE,
     ProviderAdapter,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -296,7 +297,11 @@ class RuntimeProviderExecutionService:
                     last_error_message = (
                         IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
                         if run.execution_kind == "image_generation"
-                        else error.message
+                        else (
+                            VISION_PROVIDER_ERROR_MESSAGE
+                            if run.execution_kind == "vision"
+                            else error.message
+                        )
                     )
                     taxonomy = get_error_taxonomy(error.error_code)
                     if retry_count < max_retries and error.retryable and taxonomy.retryable:

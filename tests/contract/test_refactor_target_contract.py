@@ -130,13 +130,14 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b3b1_resources_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b3b2_resources_and_remaining_targets() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B3B1 image-generation artifact results implemented; B3B2 and B4-B5",
+        "Status: P3-B3B2 artifact-referenced vision input implemented; B4-B5 remain",
         "P3-B3A atomically replaces that pre-GA public POST route with two resources",
         "P3-B3B1 atomically replaces provider-media image-generation results",
+        "P3-B3B2 atomically replaces URL/data-URL WordPress alt-text vision input",
         "metadata-only `MediaArtifact`",
         "exact same sealed temporary file",
         "two disk I/O passes",
@@ -169,6 +170,27 @@ def test_image_generation_artifact_adr_freezes_provider_and_cms_boundaries() -> 
         "storage_mode=no_store",
         "process crash or genuinely uncertain",
         "continues to own download verification",
+    ):
+        assert required in adr
+
+
+def test_alt_text_artifact_input_adr_freezes_provider_and_cms_boundaries() -> None:
+    adr = _read("docs/decisions/009-artifact-referenced-alt-text-vision-input.md")
+
+    for required in (
+        "`source_artifact_id`",
+        "accepts only the canonical fields",
+        "non-Boolean integer from 1 through 96",
+        "fail before run creation",
+        "recursively rejects",
+        "Idempotent execute replay is checked before current source admission",
+        "Immediately before a real provider execution",
+        "transient data URL",
+        "must not enter `run_records.input_json`",
+        "canonical message at",
+        "strict text-only projection",
+        "nested successful-response",
+        "WordPress owns",
     ):
         assert required in adr
 
@@ -214,14 +236,16 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
         assert required in ai_task
 
     for required in (
-        "Status: Cloud runtime implemented; addon real-attachment advertisement and",
-        "smoke pending.",
+        "Status: Cloud artifact-referenced runtime implemented; addon upload handoff,",
+        "real-attachment advertisement, and smoke pending.",
         "`npcink-cloud/connector-runtime`",
         "`cloud_connector_runtime.v1`",
         "`wordpress_operation.v1`",
         "`wp-ai.alt-text-vision`",
         "`cloud_connector_result.v1`",
-        "bounded image data URL",
+        "`source_artifact_id`",
+        "There is no compatibility request shape.",
+        "private provider-preparation edge",
         "must not be cited as cross-repository or production closeout",
     ):
         assert required in alt_text

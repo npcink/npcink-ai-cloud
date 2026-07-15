@@ -1,7 +1,7 @@
 # Media Runtime Boundary v1
 
-Status: P3-B3B1 image-generation artifact results implemented; B3B2 and B4-B5
-remain target work.
+Status: P3-B3B2 artifact-referenced vision input implemented; B4-B5 remain
+target work.
 
 ## 1. Purpose
 
@@ -15,9 +15,9 @@ assignment, publication, and local audit.
 
 This document began as the P0 target contract. Section 3 records the implemented
 P3-B1 byte-store foundation, P3-B2 streamed ingress, P3-B3A upload/image-job
-resource split, and P3-B3B1 image-generation artifact convergence. Artifact-
-referenced vision input, signed pull/ack, and the remaining lifecycle described
-for B3B2 and B4-B5 are still target work.
+resource split, P3-B3B1 image-generation artifact convergence, and P3-B3B2
+artifact-referenced vision input. Signed pull/ack and the remaining lifecycle
+described for B4-B5 are still target work.
 
 ## 2. Stable Markers
 
@@ -168,10 +168,36 @@ artifact-only results:
   `suggestion_only=true`, and `requires_local_review=true`. Provider URL,
   Base64, raw response, `storage_key`, and WordPress write fields are absent.
 
+P3-B3B2 atomically replaces URL/data-URL WordPress alt-text vision input with
+one required `source_artifact_id`:
+
+- resolve and new execute metadata admission require a same-site, available,
+  unpurged, unexpired JPEG, PNG, or WebP artifact within the 8 MiB vision
+  budget; cross-site IDs are indistinguishable from missing IDs;
+- execute checks idempotent replay before current artifact admission, so a
+  completed result remains replayable after the source expires;
+- sync and queued provider execution revalidate the artifact and perform a
+  bounded size/checksum-verified store read immediately before provider
+  preparation;
+- only the private provider edge constructs a transient data URL. Public and
+  durable contracts use an exact canonical field allowlist and recursively
+  reject URL, caller MIME, data URL, raw Base64, bytes, storage keys, field
+  aliases, and case/whitespace variants. Allowed values use a strict bounded
+  scalar schema rather than string or integer coercion, so nested transports
+  fail before run creation and queue encryption. Provider request
+  representations and canonical vision errors prevent the transient source
+  from leaking through ordinary diagnostics;
+- successful provider output is projected to bounded `output_text` only. Raw
+  and nested provider fields are discarded, and output text containing inline
+  media transport fails closed instead of entering result or callback truth;
+- the default data classification is `internal`, and the result remains a text
+  suggestion. WordPress still owns attachment choice, review, metadata write,
+  and local audit.
+
 The existing authenticated download is an interim delivery path, not evidence
-of B4 signed pull or acknowledgement. Artifact-referenced vision input,
-signed pull/ack, orphan reconciliation, audio transport convergence, and
-broader media kinds remain later work. Historical run-result metadata is a
+of B4 signed pull or acknowledgement. Signed pull/ack, orphan reconciliation,
+audio transport convergence, and broader media kinds remain later work.
+Historical run-result metadata is a
 creation-time snapshot; B4 must project current `expired`/`purged` artifact
 state instead of continuing to display the original `available` value after
 TTL cleanup. The download route already rejects expired artifacts.
@@ -445,6 +471,10 @@ the audio-specific delivery special case remain B3B/B4 work.
   and typed parameters only; the former combined POST and its Base64 queue
   fields are deleted. Signed pull/ack and remaining transfer convergence are
   not represented as complete.
+- **P3-B3B1/B2:** Image-generation output and WordPress alt-text vision input
+  converge on artifact references. Provider URL/data-URL transport is private,
+  transient, and absent from public and durable contracts. Addon upload handoff
+  and real WordPress evidence remain P5 work.
 - **P3 target:** The four target resources, typed image contracts, security
   controls, signed pull, delivery acknowledgement, TTL, and purge are
   implemented and covered by focused tests.

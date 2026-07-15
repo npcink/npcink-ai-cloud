@@ -88,6 +88,12 @@ from app.domain.image_sources.contracts import (
 )
 from app.domain.image_sources.service import ImageSourceProviderError, ImageSourceService
 from app.domain.media_artifacts import ArtifactStore, build_artifact_store
+from app.domain.media_artifacts.input_loading import (
+    ArtifactInputError,
+    LoadedArtifactInput,
+    admit_artifact_input,
+    load_artifact_input,
+)
 from app.domain.media_batch_plans.contracts import (
     MEDIA_BATCH_PLAN_ABILITIES,
     MEDIA_BATCH_PLAN_PROFILE_ID,
@@ -323,6 +329,11 @@ class RuntimeService:
                     connector_envelope,
                     site=site,
                 )
+                self._admit_wordpress_operation_artifact_input(
+                    repository,
+                    site_id=request.site_id,
+                    connector_envelope=connector_envelope,
+                )
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
                 site_id=request.site_id,
@@ -467,6 +478,13 @@ class RuntimeService:
                     existing,
                     repository=repository,
                     idempotent_replay=True,
+                )
+
+            if connector_envelope is not None:
+                self._admit_wordpress_operation_artifact_input(
+                    repository,
+                    site_id=request.site_id,
+                    connector_envelope=connector_envelope,
                 )
 
             commercial_decision = self.commercial_service.authorize_runtime_request(
@@ -2988,6 +3006,11 @@ class RuntimeService:
                     connector_envelope,
                     site=site,
                 )
+                input_payload = self._prepare_wordpress_operation_execution_input(
+                    run,
+                    repository=repository,
+                    connector_envelope=connector_envelope,
+                )
             except RuntimeErrorBase as error:
                 self.run_lifecycle_service.fail_run(
                     repository,
@@ -2996,11 +3019,6 @@ class RuntimeService:
                     error_message=error.message,
                 )
                 return
-            input_payload = self._prepare_wordpress_operation_execution_input(
-                run,
-                repository=repository,
-                connector_envelope=connector_envelope,
-            )
 
         self._execute_candidate_chain(
             run,
@@ -5143,7 +5161,15 @@ class RuntimeService:
                 provider_error=provider_error,
             )
 
-        provider_input = self.wordpress_operation_runtime.build_provider_input(connector_envelope)
+        source_artifact = self._load_wordpress_operation_artifact_input(
+            repository,
+            site_id=run.site_id,
+            connector_envelope=connector_envelope,
+        )
+        provider_input = self.wordpress_operation_runtime.build_provider_input(
+            connector_envelope,
+            source_artifact=source_artifact,
+        )
         return self.wordpress_operation_runtime.apply_site_knowledge_reference(
             site_id=run.site_id,
             run_id=run.run_id,
@@ -5152,6 +5178,55 @@ class RuntimeService:
             provider_input=provider_input,
             embedding_usage_callback=record_embedding_usage,
         )
+
+    def _admit_wordpress_operation_artifact_input(
+        self,
+        repository: RuntimeRepository,
+        *,
+        site_id: str,
+        connector_envelope: dict[str, Any],
+    ) -> None:
+        artifact_id = self.wordpress_operation_runtime.source_artifact_id(
+            connector_envelope
+        )
+        if not artifact_id:
+            return
+        try:
+            admit_artifact_input(
+                repository.session,
+                site_id=site_id,
+                artifact_id=artifact_id,
+            )
+        except ArtifactInputError as error:
+            raise RuntimeExecutionContractError(
+                error.error_code,
+                error.message,
+            ) from error
+
+    def _load_wordpress_operation_artifact_input(
+        self,
+        repository: RuntimeRepository,
+        *,
+        site_id: str,
+        connector_envelope: dict[str, Any],
+    ) -> LoadedArtifactInput | None:
+        artifact_id = self.wordpress_operation_runtime.source_artifact_id(
+            connector_envelope
+        )
+        if not artifact_id:
+            return None
+        try:
+            return load_artifact_input(
+                repository.session,
+                self.artifact_store,
+                site_id=site_id,
+                artifact_id=artifact_id,
+            )
+        except ArtifactInputError as error:
+            raise RuntimeExecutionContractError(
+                error.error_code,
+                error.message,
+            ) from error
 
     def _build_site_knowledge_policy(self, request: RuntimeRequest) -> dict[str, object]:
         policy = self._apply_runtime_controls(dict(request.policy), request)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.providers.base import (
     IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE,
+    VISION_PROVIDER_ERROR_MESSAGE,
     ProviderCatalogSnapshot,
     ProviderExecutionError,
     ProviderExecutionRequest,
@@ -417,6 +418,40 @@ def test_candidate_engine_canonicalizes_image_provider_errors_before_persistence
         assert run.status == "failed"
         assert run.error_code == "provider.upstream_error"
         assert run.error_message == IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
+        assert leaked_message not in (run.error_message or "")
+
+
+def test_candidate_engine_canonicalizes_vision_provider_errors_before_persistence(
+    database_url: str,
+) -> None:
+    leaked_message = "data:image/png;base64,c2Vuc2l0aXZlLWltYWdl private prompt"
+    primary = SequenceProvider(
+        "primary",
+        [ProviderExecutionError("provider.upstream_error", leaked_message, retryable=False)],
+    )
+    service = execution_service(
+        providers={"primary": primary},
+        controller=RecordingRunController(),
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_vision_provider_error",
+            execution_kind="vision",
+            policy={"allow_fallback": False},
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "model-primary", "instance-primary")],
+            input_payload={"source_artifact_id": "artifact_private"},
+        )
+
+        assert run.status == "failed"
+        assert run.error_code == "provider.upstream_error"
+        assert run.error_message == VISION_PROVIDER_ERROR_MESSAGE
         assert leaked_message not in (run.error_message or "")
 
 

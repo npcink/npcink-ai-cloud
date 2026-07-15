@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 from collections.abc import Callable
@@ -14,6 +15,7 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
 )
 from app.core.config import Settings
+from app.domain.media_artifacts.input_loading import LoadedArtifactInput
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_CONTRACTS,
     SITE_KNOWLEDGE_SEARCH_ABILITY,
@@ -22,6 +24,7 @@ from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
     WP_AI_CONNECTOR_SOURCE_TEXT_TASKS,
+    contains_inline_media_transport,
     resolve_site_knowledge_reference_mode,
 )
 from app.domain.wordpress_ai_connector.generation_context import (
@@ -53,13 +56,30 @@ class WordPressOperationRuntime:
         self.settings = settings
         self.providers = providers
 
-    def build_provider_input(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+    def source_artifact_id(self, input_payload: dict[str, Any]) -> str:
+        operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
+        if str(operation_contract.get("task") or "").strip() != "alt_text_suggest":
+            return ""
+        scene_request = self._dict_or_empty(operation_contract.get("request"))
+        return str(scene_request.get("source_artifact_id") or "").strip()
+
+    def build_provider_input(
+        self,
+        input_payload: dict[str, Any],
+        *,
+        source_artifact: LoadedArtifactInput | None = None,
+    ) -> dict[str, Any]:
         operation_contract = self._dict_or_empty(input_payload.get("operation_contract"))
         scene_request = operation_contract.get("request")
         scene_request = scene_request if isinstance(scene_request, dict) else {}
         task = str(operation_contract.get("task") or "").strip()
         if task == "alt_text_suggest":
-            return self._build_alt_text_provider_input(scene_request=scene_request)
+            if source_artifact is None:
+                raise ValueError("alt text provider input requires loaded source artifact")
+            return self._build_alt_text_provider_input(
+                scene_request=scene_request,
+                source_artifact=source_artifact,
+            )
 
         scene_text = str(
             scene_request.get(
@@ -383,6 +403,10 @@ class WordPressOperationRuntime:
             if isinstance(item, str) and str(item).strip()
         }
         output_text = self._extract_provider_output_text(output)
+        if task == "alt_text_suggest":
+            return self._normalize_alt_text_provider_output(
+                output_text=output_text,
+            )
         if not output_text:
             return output
 
@@ -437,6 +461,23 @@ class WordPressOperationRuntime:
         normalized["output_text"] = normalized_text
         normalized["messages"] = [{"role": "assistant", "content": normalized_text}]
         return normalized
+
+    def _normalize_alt_text_provider_output(
+        self,
+        *,
+        output_text: str,
+    ) -> dict[str, Any]:
+        if not output_text or contains_inline_media_transport(output_text):
+            return {}
+        normalized_text = self._normalize_plain_text_output(
+            output_text,
+            limit=240,
+            strip_explanation=True,
+            task="alt_text_suggest",
+        )
+        if not normalized_text or contains_inline_media_transport(normalized_text):
+            return {}
+        return {"output_text": normalized_text}
 
     def is_empty_text_output(
         self,
@@ -552,20 +593,27 @@ class WordPressOperationRuntime:
         self,
         *,
         scene_request: dict[str, Any],
+        source_artifact: LoadedArtifactInput,
     ) -> dict[str, Any]:
-        prompt = str(scene_request.get("prompt") or "").strip()
-        image_url = str(scene_request.get("image_url") or "").strip()
-        thumbnail_url = str(scene_request.get("thumbnail_url") or "").strip()
-        selected_image_url = image_url or thumbnail_url
+        prompt = cast(str, scene_request["prompt"])
+        encoded_image = base64.b64encode(source_artifact.content_bytes).decode("ascii")
+        provider_image_url = (
+            f"data:{source_artifact.content_type};base64,{encoded_image}"
+        )
         context = {
             "task": "alt_text_suggest",
-            "locale": str(scene_request.get("locale") or "").strip()[:32],
-            "title": str(scene_request.get("title") or "").strip()[:160],
-            "filename": str(scene_request.get("filename") or "").strip()[:160],
-            "mime_type": str(scene_request.get("mime_type") or "").strip()[:80],
-            "existing_alt": str(scene_request.get("existing_alt") or "").strip()[:240],
-            "existing_caption": str(scene_request.get("existing_caption") or "").strip()[:240],
-            "prompt": prompt[:500],
+            **{
+                field_name: cast(str, scene_request[field_name])
+                for field_name in (
+                    "locale",
+                    "title",
+                    "filename",
+                    "existing_alt",
+                    "existing_caption",
+                )
+                if field_name in scene_request
+            },
+            "prompt": prompt,
             "write_posture": "suggestion_only",
         }
         instruction = (
@@ -581,18 +629,15 @@ class WordPressOperationRuntime:
         responses_content = [
             {"type": "input_text", "text": instruction},
             {"type": "input_text", "text": context_text},
-            {"type": "input_image", "image_url": selected_image_url},
+            {"type": "input_image", "image_url": provider_image_url},
         ]
         chat_content = [
             {"type": "text", "text": instruction},
             {"type": "text", "text": context_text},
-            {"type": "image_url", "image_url": {"url": selected_image_url}},
+            {"type": "image_url", "image_url": {"url": provider_image_url}},
         ]
 
-        max_tokens = self._coerce_int(scene_request.get("max_tokens"), default=48)
-        if max_tokens <= 0:
-            max_tokens = 48
-        max_tokens = min(max_tokens, 96)
+        max_tokens = cast(int, scene_request.get("max_tokens", 48))
         return {
             "input": [{"role": "user", "content": responses_content}],
             "messages": [{"role": "user", "content": chat_content}],

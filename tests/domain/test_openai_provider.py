@@ -265,6 +265,32 @@ def _build_request(
     )
 
 
+def test_provider_execution_request_repr_hides_input_payload() -> None:
+    request = _build_request(
+        execution_kind="vision",
+        endpoint_variant="responses",
+        model_id="gpt-4.1",
+        input_payload={
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "image_url": "data:image/png;base64,c2Vuc2l0aXZlLWltYWdl",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    serialized = repr(request)
+
+    assert "input_payload" not in serialized
+    assert "c2Vuc2l0aXZlLWltYWdl" not in serialized
+
+
 def test_openai_adapter_executes_chat_completions_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/chat/completions")
@@ -863,6 +889,64 @@ def test_openai_adapter_never_exposes_image_generation_error_bodies(
     assert "images.provider.test" not in serialized_error
     assert "b64_json" not in serialized_error
     assert "private prompt" not in serialized_error
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_error_code", "expected_retryable"),
+    [
+        (400, "provider.invalid_request", False),
+        (500, "provider.upstream_error", True),
+    ],
+)
+def test_openai_adapter_never_exposes_vision_error_bodies(
+    status_code: int,
+    expected_error_code: str,
+    expected_retryable: bool,
+) -> None:
+    leaked_marker = "c2Vuc2l0aXZlLWltYWdl"
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                status_code,
+                json={
+                    "error": {
+                        "message": (
+                            "private image echoed as "
+                            f"data:image/png;base64,{leaked_marker}"
+                        )
+                    }
+                },
+            )
+        ),
+    )
+
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(
+            _build_request(
+                execution_kind="vision",
+                endpoint_variant="responses",
+                model_id="gpt-4.1",
+                input_payload={
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/png;base64,{leaked_marker}",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        )
+
+    assert error.value.error_code == expected_error_code
+    assert error.value.message == openai_provider.VISION_PROVIDER_ERROR_MESSAGE
+    assert error.value.retryable is expected_retryable
+    assert leaked_marker not in repr(error.value.args)
 
 
 def test_openai_adapter_strictly_decodes_provider_base64_without_serializing_it() -> None:
