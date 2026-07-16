@@ -144,6 +144,11 @@ default-off.
 P4 begins with a surface inventory. The candidates below are rules, not a claim
 that any specific page has already been audited or approved for deletion.
 
+The accepted path-by-path classification and owner map are recorded in
+`docs/p4-portal-admin-surface-inventory-2026-07-16.md`. ADR-016 fixes the
+fail-closed account-membership, Admin browser proxy, and customer credential
+decisions used by the implementation.
+
 | ID | Current evidence (path + symbol) | Action | Replacement / owner | Phase | Executable proof |
 | --- | --- | --- | --- | --- | --- |
 | PORT-01 | Current review candidates are `app/api/routes/portal.py`, commercial Portal/Admin mixins, and `frontend/src/app/portal`; no specific page deletion is pre-approved here. | review, then delete | Delete only duplicated implementation truth or write controls. Retain read-only run, usage, entitlement, health, diagnostic, and media-expiry/purge evidence. WordPress remains the CMS apply owner. | P4 | Complete a surface inventory, contract tests, and screenshot/browser smoke. Proof shows Cloud exposes no CMS apply control. |
