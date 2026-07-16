@@ -21,6 +21,23 @@ MEDIA_ARTIFACT_PROJECTION_MAX_IDS = 100
 _AUDIO_GENERATION_ARTIFACT_TYPE = "audio_generation_candidates"
 _IMAGE_GENERATION_ARTIFACT_TYPE = "image_generation_artifacts"
 
+_MEDIA_DERIVATIVE_PUBLIC_ARTIFACT_FIELDS = frozenset(
+    {
+        "artifact_id",
+        "artifact_reference",
+        "expires_at",
+        "suggested_filename",
+        "filename_basis",
+        "mime_type",
+        "format",
+        "width",
+        "height",
+        "filesize_bytes",
+        "checksum",
+        "processing_warnings",
+    }
+)
+
 _PRIVATE_ARTIFACT_FIELDS = frozenset(
     {
         "storage_key",
@@ -52,11 +69,13 @@ def project_media_artifact_lifecycle(
     run_id: str,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Overlay current MediaArtifact lifecycle state onto known result envelopes.
+    """Project safe current state for known media result envelopes.
 
     The durable run result remains a creation-time snapshot. This projection is
     deliberately limited to the platform-owned media envelopes below and never
-    recursively scans arbitrary result JSON.
+    recursively scans arbitrary result JSON. Media derivative artifacts are the
+    exception to lifecycle overlays: WordPress consumes their immutable exact12
+    descriptor, while signed pull and ACK resources enforce live availability.
     """
 
     if not _is_known_artifact_envelope(result):
@@ -64,6 +83,15 @@ def project_media_artifact_lifecycle(
 
     projected = deepcopy(result)
     _strip_known_delivery_credentials(projected)
+
+    # The derivative result artifact is an exact immutable descriptor consumed
+    # by WordPress. Current availability is enforced by the signed pull and ACK
+    # resources; adding lifecycle fields here would break the public Cloud12
+    # contract and create a second, contradictory descriptor shape.
+    if _is_media_derivative_envelope(projected):
+        _freeze_media_derivative_artifact(projected)
+        return projected
+
     references = _known_artifact_references(projected)
 
     artifact_ids = _bounded_unique_artifact_ids(references)
@@ -88,6 +116,22 @@ def project_media_artifact_lifecycle(
         _project_current_lifecycle(reference, artifact=artifact, now=current_time)
 
     return projected
+
+
+def _is_media_derivative_envelope(result: dict[str, Any]) -> bool:
+    return (
+        str(result.get("artifact_type") or "") == MEDIA_DERIVATIVE_ARTIFACT_TYPE
+        and str(result.get("contract_version") or "") == MEDIA_DERIVATIVE_RESULT_CONTRACT
+    )
+
+
+def _freeze_media_derivative_artifact(result: dict[str, Any]) -> None:
+    artifact = result.get("artifact")
+    if not isinstance(artifact, dict):
+        return
+    for field in tuple(artifact):
+        if field not in _MEDIA_DERIVATIVE_PUBLIC_ARTIFACT_FIELDS:
+            artifact.pop(field, None)
 
 
 def _is_known_artifact_envelope(result: dict[str, Any]) -> bool:

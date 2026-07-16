@@ -31,6 +31,11 @@ ALLOWED_CROP_POSITIONS = frozenset(
     }
 )
 MAX_UPLOAD_BYTES_IMAGE = 50 * 1024 * 1024
+# Temporary derivative outputs must remain consumable by every current local
+# connector. This is a platform-neutral delivery-envelope limit, not a
+# WordPress storage limit; larger source uploads may still be accepted when the
+# requested transform produces a bounded result.
+MAX_DELIVERABLE_ARTIFACT_BYTES = 25 * 1024 * 1024
 # A 16,777,216-pixel RGBA decode occupies 64 MiB before Pillow creates any
 # crop, resize, watermark, or encoder buffers. Keep both the total area and a
 # per-axis ceiling frozen so compressed images cannot force an unbounded decode

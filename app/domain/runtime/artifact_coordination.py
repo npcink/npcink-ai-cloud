@@ -53,6 +53,7 @@ from app.domain.media_derivatives.errors import (
     MediaDerivativeAnimatedSourceUnavailableError,
     MediaDerivativeErrorBase,
     MediaDerivativeFormatUnavailableError,
+    MediaDerivativeOutputTooLargeError,
     MediaDerivativeProcessingFailedError,
     MediaDerivativeSourceDecodeFailedError,
     MediaDerivativeSourceTooLargeError,
@@ -834,6 +835,7 @@ class RuntimeArtifactCoordinationService:
             MediaDerivativeSourceTooLargeError,
             MediaDerivativeAnimatedSourceUnavailableError,
             MediaDerivativeFormatUnavailableError,
+            MediaDerivativeOutputTooLargeError,
             MediaDerivativeProcessingFailedError,
         ) as error:
             self.run_controller.fail_run(

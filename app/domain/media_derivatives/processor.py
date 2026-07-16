@@ -9,6 +9,7 @@ from typing import Any
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from app.domain.media_derivatives.contracts import (
+    MAX_DELIVERABLE_ARTIFACT_BYTES,
     MAX_IMAGE_DIMENSION,
     MAX_PIXEL_COUNT,
     MIME_TYPE_BY_FORMAT,
@@ -17,6 +18,7 @@ from app.domain.media_derivatives.contracts import (
 from app.domain.media_derivatives.errors import (
     MediaDerivativeAnimatedSourceUnavailableError,
     MediaDerivativeFormatUnavailableError,
+    MediaDerivativeOutputTooLargeError,
     MediaDerivativeProcessingFailedError,
     MediaDerivativeSourceDecodeFailedError,
     MediaDerivativeSourceTooLargeError,
@@ -448,6 +450,8 @@ def process_media_derivative(
             warnings=warnings,
             watermark_applied=watermark_applied,
         )
+        if len(output_bytes) > MAX_DELIVERABLE_ARTIFACT_BYTES:
+            raise MediaDerivativeOutputTooLargeError()
         result_width = img.width
         result_height = img.height
 
@@ -467,6 +471,7 @@ def process_media_derivative(
     except (
         MediaDerivativeSourceDecodeFailedError,
         MediaDerivativeFormatUnavailableError,
+        MediaDerivativeOutputTooLargeError,
         MediaDerivativeSourceTooLargeError,
         MediaDerivativeAnimatedSourceUnavailableError,
     ):

@@ -35,6 +35,7 @@ from app.domain.media_artifacts import delivery as delivery_module
 from app.domain.media_artifacts.delivery import (
     MEDIA_ARTIFACT_MIN_PULL_WINDOW_SECONDS,
     MediaArtifactDeliveryWindowUnavailableError,
+    MediaArtifactExpiredError,
     iter_verified_delivery_chunks,
     prepare_media_artifact_delivery,
 )
@@ -1255,7 +1256,7 @@ def test_signed_pull_maps_insufficient_delivery_window_to_stable_public_error(
 
 
 def test_signed_pull_and_ack_record_verified_transfer_evidence(tmp_path: Path) -> None:
-    database_url, _, _, client = _client(tmp_path)
+    database_url, settings, _, client = _client(tmp_path)
     payload = _png()
     checksum = f"sha256:{hashlib.sha256(payload).hexdigest()}"
     try:
@@ -1274,8 +1275,10 @@ def test_signed_pull_and_ack_record_verified_transfer_evidence(tmp_path: Path) -
         assert "token" not in download.headers["content-disposition"]
         delivery_id = download.headers["x-npcink-delivery-id"]
         with get_session(database_url) as session:
+            artifact = session.get(MediaArtifact, artifact_id)
             delivery = session.get(MediaArtifactDelivery, delivery_id)
-            assert delivery is not None
+            assert artifact is not None and delivery is not None
+            original_artifact_expiry = artifact.expires_at
             assert delivery.completed_at is not None
             assert delivery.completed_byte_size == len(payload)
             assert delivery.completed_checksum == checksum
@@ -1338,7 +1341,35 @@ def test_signed_pull_and_ack_record_verified_transfer_evidence(tmp_path: Path) -
             assert delivery.acked_at is not None
             assert delivery.retention_expires_at_before is not None
             assert delivery.retention_expires_at_after is not None
-            assert artifact.expires_at == delivery.retention_expires_at_after
+            assert artifact.expires_at == original_artifact_expiry
+            assert delivery.retention_expires_at_before == original_artifact_expiry
+            assert delivery.retention_expires_at_after == original_artifact_expiry
+            acknowledged_at = delivery.acked_at
+
+        six_minutes_after_ack = acknowledged_at + timedelta(minutes=6)
+        assert original_artifact_expiry > six_minutes_after_ack + timedelta(minutes=5)
+        with get_session(database_url) as session:
+            prepared_after_review = prepare_media_artifact_delivery(
+                session=session,
+                artifact_store=build_artifact_store(settings),
+                artifact_id=artifact_id,
+                site_id="site_alpha",
+                trace_id="delivery-after-review-delay",
+                now=six_minutes_after_ack,
+            )
+            prepared_after_review.stream.close()
+            session.rollback()
+        with get_session(database_url) as session:
+            with pytest.raises(MediaArtifactExpiredError):
+                prepare_media_artifact_delivery(
+                    session=session,
+                    artifact_store=build_artifact_store(settings),
+                    artifact_id=artifact_id,
+                    site_id="site_alpha",
+                    trace_id="delivery-at-original-expiry",
+                    now=original_artifact_expiry,
+                )
+            session.rollback()
 
         replay_body, replay_headers = _ack_headers(
             artifact_id,
@@ -2882,6 +2913,23 @@ def test_job_results_exclude_wordpress_write_fields_and_provider_calls(tmp_path:
         headers = build_auth_headers("GET", result_path, site_id="site_alpha")
         result = client.get(result_path, headers=headers)
         assert result.status_code == 200, result.json()
+        artifact = result.json()["data"]["result"]["artifact"]
+        assert set(artifact) == {
+            "artifact_id",
+            "artifact_reference",
+            "expires_at",
+            "suggested_filename",
+            "filename_basis",
+            "mime_type",
+            "format",
+            "width",
+            "height",
+            "filesize_bytes",
+            "checksum",
+            "processing_warnings",
+        }
+        assert "status" not in artifact
+        assert "purged_at" not in artifact
         serialized = json.dumps({"job": job.json(), "result": result.json()})
         for field in BLOCKED_RESPONSE_FIELDS:
             assert field not in serialized

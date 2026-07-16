@@ -19,7 +19,6 @@ from app.domain.media_artifacts.store import ArtifactStore, ArtifactStoreError
 
 MEDIA_ARTIFACT_DELIVERY_ACK_CONTRACT = "media_artifact_delivery_ack.v1"
 MEDIA_ARTIFACT_ACK_DEADLINE_SECONDS = 15 * 60
-MEDIA_ARTIFACT_ACK_RETENTION_SECONDS = 5 * 60
 MEDIA_ARTIFACT_MIN_PULL_WINDOW_SECONDS = 5 * 60
 
 
@@ -622,13 +621,12 @@ def acknowledge_media_artifact_delivery(
             "media artifact delivery acknowledgement does not match delivered bytes"
         )
     retention_before = _as_utc(artifact.expires_at)
-    retention_after = min(
-        retention_before,
-        current_time + timedelta(seconds=MEDIA_ARTIFACT_ACK_RETENTION_SECONDS),
-    )
+    # ACK proves one verified transfer; it does not make the immutable result
+    # descriptor stale or prevent a later reviewed WordPress adoption. The
+    # artifact remains available until its original bounded expiry.
+    retention_after = retention_before
     try:
         with session.begin_nested():
-            artifact.expires_at = retention_after
             delivery.acked_at = current_time
             delivery.ack_idempotency_key = idempotency_key
             delivery.ack_request_fingerprint = fingerprint

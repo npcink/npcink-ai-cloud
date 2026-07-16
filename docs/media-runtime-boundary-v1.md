@@ -1,8 +1,9 @@
 # Media Runtime Boundary v1
 
-Status: P3-B4C3 isolated PostgreSQL 16 multi-connection and named-volume proof
-completed; persistent orphan cleanup remains production/default-off. P3-B4D
-WordPress local import and B5 remain target work.
+Status: P3-B4D complete with real WordPress and Cloud evidence (2026-07-16).
+P3-B4C3 isolated PostgreSQL 16 multi-connection and named-volume proof is
+complete, persistent orphan cleanup remains production/default-off, and B5
+remains target work.
 
 ## 1. Purpose
 
@@ -23,8 +24,18 @@ unified delivery observability, P3-B4C1a publication compensation,
 P3-B4C1b fenced TTL purge/delivery coordination, P3-B4C2a read-only inventory
 reconciliation/publication fencing, P3-B4C2b persistent default-off orphan
 cleanup, and the P3-B4C3 isolated PostgreSQL 16 multi-connection/named-volume
-proof. Production cleanup remains disabled; the remaining WordPress delivery
-closeout described for B4D-B5 is still target work.
+proof. P3-B4D is complete: the fail-closed smoke passed against the real local
+WordPress chain and the live development Cloud on 2026-07-16. The accepted run
+was `run_ea365c8ef6fb4b1dbe721338208d9aee`, with derivative artifact
+`art_9ea7725f20914e819ba17d7d2ecc60ff` and explicit receive delivery
+`mdl_ae8fc3d7e06c49fc90d1872314323e50`. Production cleanup remains disabled and
+the B5 closeout remains pending.
+
+Toolbox remains the real WordPress operator entry for media derivatives. The
+B4D smoke intentionally bypasses presentation code and calls only the stable
+Addon PHP transport seams plus Adapter generic read and Core proposal paths so
+it can freeze the cross-layer contract. It does not recreate an Adapter-owned
+media run, result, preview, or proposal-payload facade.
 
 ## 2. Stable Markers
 
@@ -32,6 +43,9 @@ closeout described for B4D-B5 is still target work.
   a media library.
 - `STREAMED_MEDIA_BYTES`: uploads, provider fetches, and downloads use bounded
   streaming rather than whole-object buffering.
+- `DELIVERABLE_ARTIFACT_LIMIT`: source uploads may be larger, but every
+  temporary derivative must be at most 25 MiB so the current connector contract
+  can consume it; oversized encoder output fails before artifact publication.
 - `NO_DATABASE_BLOB`: relational runtime truth stores artifact metadata only.
 - `SIGNED_PULL`: a site obtains its result through a short-lived, site-bound
   signed pull; Cloud does not push bytes to a caller-supplied URL.
@@ -223,7 +237,8 @@ responses, idempotent replay, and delayed callbacks without rewriting that
 snapshot. P3-B4B1 adds nonce-protected same-site HMAC pull, dedicated
 `public_pull_*` replay/rate/rejection scopes, exact metadata preflight,
 non-buffered verified streaming, independent `MediaArtifactDelivery` evidence,
-and strict idempotent transfer ACK that may shorten but never extend retention.
+and strict idempotent transfer ACK that records receipt without changing the
+artifact's original bounded expiry.
 Known media projections remove historical URL/token/Base64 fields without
 rewriting durable results. P3-B4B2 removes the legacy routes, token helpers,
 permanent audio-asset surface, and active table. P3-B4C1b implements fenced TTL
@@ -265,7 +280,8 @@ ingest -> validate -> queue -> process -> artifact -> signed pull
    rechecks permissions and local object state, presents review, and performs
    any approved local media write.
 8. **Delivery ack/purge:** WordPress may acknowledge completed transfer. The
-   acknowledgement may shorten retention before idempotent purge.
+   acknowledgement records receipt without changing the original bounded TTL;
+   idempotent purge still follows that expiry.
 
 A delivery acknowledgement means only that delivery completed. It never means
 that WordPress reviewed, approved, imported, attached, assigned, or published
@@ -287,7 +303,7 @@ Resource status is:
     artifact without response buffering;
 - `POST /v1/runtime/media/artifacts/{artifact_id}/delivery-ack`
   - **implemented in P3-B4B1**; records verified transfer acknowledgement only
-    and may shorten, but never extend, the artifact TTL.
+    without changing the artifact TTL.
 
 The logical resource relationships are:
 
@@ -439,8 +455,9 @@ of those operations and never infers them from a successful runtime job.
 
 `delivery-ack` is site-scoped and idempotent. WordPress may send it after a
 verified transfer has completed. The acknowledgement records delivery evidence
-and may shorten `expires_at`; it grants no write permission and carries no
-claim that the artifact was reviewed or applied.
+without changing `expires_at`; it grants no write permission and carries no
+claim that the artifact was reviewed or applied. This preserves the immutable
+result descriptor for a later reviewed local adoption within the original TTL.
 
 ## 11. Retention, Purge, And Observability
 
@@ -555,8 +572,12 @@ P3-B4C3 separately proves PostgreSQL major 16, migration head `20260716_0066`, d
 simultaneously live connections, active-pass and candidate-claim contention,
 stale-finalizer fencing, cross-container publication locking, and two complete
 safety-window passes on one isolated project-owned named volume. This proof is
-not production enablement; P3-B4D WordPress local import remains explicit
-future work.
+not production enablement. P3-B4D is complete: its real smoke verified the
+exact npcink WordPress root/home/plugin sources, upload-to-job artifact chain,
+signed-pull delivery and transfer-only ACK evidence, Core proposal/audit truth,
+local byte/checksum/decode/metadata/reference proof, HTTP delivery and page
+visibility, explicit restore, and fixture cleanup. This evidence does not
+enable production cleanup.
 
 Metrics and redacted diagnostics must cover upload/download byte counts and
 duration, validation rejects, queue age, processing latency, success/failure,
@@ -624,7 +645,10 @@ capability.
   transient, and absent from public and durable contracts. Addon upload handoff
   and real WordPress evidence remain P5 work.
 - **P3-B4A/B4B1/B4B2/B4C1/B4C2a/B4C2b/B4C3:** Current lifecycle is projected
-  at exact public envelopes; signed pull, verified stream completion,
+  at public media envelopes except `media_derivative_result.v1`, whose artifact
+  remains the immutable exact 12-field WordPress descriptor. Signed pull and
+  ACK enforce its live availability without adding `status` or `purged_at` to
+  that descriptor. Signed pull, verified stream completion,
   independent delivery evidence, credential stripping, and strict transfer ACK
   are implemented.
   Legacy delivery routes and the permanent audio-asset playback surface are
@@ -633,6 +657,12 @@ capability.
   inventory reconciliation, and persistent default-off two-pass orphan cleanup
   are implemented. The isolated PostgreSQL 16 multi-connection/named-volume
   proof is complete without enabling production cleanup.
+- **P3-B4D:** Complete on 2026-07-16. The fail-closed smoke passed against the
+  npcink local site and live development Cloud with artifact-only
+  `media_derivative_result.v1`, Addon upload/job/signed-pull/ACK evidence, Core
+  proposal/audit, exact local adopt/reference/HTTP/restore facts, and complete
+  WordPress fixture cleanup. This is acceptance evidence, not production
+  cleanup authorization.
 - **P3 target:** The four target resources, typed image contracts, security
   controls, signed pull, delivery acknowledgement, TTL, and purge are
   implemented and covered by focused tests.

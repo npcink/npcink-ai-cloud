@@ -108,6 +108,15 @@ class MediaDerivativeSourceTooLargeError(MediaDerivativeErrorBase):
         )
 
 
+class MediaDerivativeOutputTooLargeError(MediaDerivativeErrorBase):
+    def __init__(self) -> None:
+        super().__init__(
+            413,
+            "media_derivative.output_too_large",
+            "generated derivative exceeds the deliverable artifact size limit",
+        )
+
+
 class MediaDerivativeAnimatedSourceUnavailableError(MediaDerivativeErrorBase):
     def __init__(self) -> None:
         super().__init__(

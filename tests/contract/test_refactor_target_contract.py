@@ -130,18 +130,19 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b4c3_proof_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b4d_real_completion_and_remaining_b5_work() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B4C3 isolated PostgreSQL 16 multi-connection and named-volume proof",
+        "Status: P3-B4D complete with real WordPress and Cloud evidence (2026-07-16).",
         "P3-B4C1a routes all",
         "full eligibility `UPDATE` compare-and-set",
         "media_artifact.delivery_window_unavailable",
         "P3-B4C2a instead uses a bounded artifact-store inventory versus",
         "P3-B4C2b persistent",
         "P3-B4C3 separately proves PostgreSQL major 16",
-        "P3-B4D WordPress local import",
+        "P3-B4D is complete",
+        "Complete on 2026-07-16.",
         "Session-local in-memory no-delete quarantine",
         "automatic cleanup remains configuration-disabled by default",
         "B4B2 legacy-route",
@@ -282,7 +283,9 @@ def test_deletion_inventory_freezes_items_and_phase_exit_proof() -> None:
     assert "## Phase Exit Proof" in inventory
     assert "P3-B4C3 completes the isolated PostgreSQL 16 multi-connection" in inventory
     assert "production default-off" in inventory
-    assert "B4D real WordPress local-import smoke remains required" in inventory
+    assert "B4D completed on 2026-07-16" in inventory
+    assert "real WordPress smoke evidence pending" not in inventory
+    assert "P3-B4D completes" in inventory
     assert "C3 PostgreSQL real-concurrency/PG16 migration validation" not in inventory
 
 

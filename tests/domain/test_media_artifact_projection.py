@@ -361,7 +361,24 @@ def test_public_result_outlets_project_without_mutating_snapshot(database_url: s
     snapshot = {
         "artifact_type": MEDIA_DERIVATIVE_ARTIFACT_TYPE,
         "contract_version": MEDIA_DERIVATIVE_RESULT_CONTRACT,
-        "artifact": {"artifact_id": "art_outlets", "status": "available"},
+        "artifact": {
+            "artifact_id": "art_outlets",
+            "artifact_reference": {"artifact_id": "art_outlets"},
+            "expires_at": FUTURE.isoformat(),
+            "suggested_filename": "media-derivative-png-aabbccdd.png",
+            "filename_basis": {
+                "owner": "wordpress_write_ability_final",
+                "strategy": "format_checksum",
+                "final_sanitize_unique_required": True,
+            },
+            "mime_type": "image/png",
+            "format": "png",
+            "width": 1,
+            "height": 1,
+            "filesize_bytes": 3,
+            "checksum": f"sha256:{'a' * 64}",
+            "processing_warnings": [],
+        },
     }
     with get_session(database_url) as session:
         run = session.get(RunRecord, "run_main")
@@ -377,9 +394,24 @@ def test_public_result_outlets_project_without_mutating_snapshot(database_url: s
         claimed_run_executor=lambda run, repository: None,
         media_derivative_site_running_limit=1,
     )
-    assert lifecycle.get_run_result("run_main", site_id="site_alpha")["result"]["artifact"][
-        "status"
-    ] == "expired"
+    lifecycle_artifact = lifecycle.get_run_result("run_main", site_id="site_alpha")[
+        "result"
+    ]["artifact"]
+    assert set(lifecycle_artifact) == {
+        "artifact_id",
+        "artifact_reference",
+        "expires_at",
+        "suggested_filename",
+        "filename_basis",
+        "mime_type",
+        "format",
+        "width",
+        "height",
+        "filesize_bytes",
+        "checksum",
+        "processing_warnings",
+    }
+    assert lifecycle_artifact == snapshot["artifact"]
 
     runtime = object.__new__(RuntimeService)
     runtime.run_projector = RuntimeRunProjector()
@@ -400,9 +432,9 @@ def test_public_result_outlets_project_without_mutating_snapshot(database_url: s
             idempotent_replay=True,
         )
 
-    assert initial.result["artifact"]["status"] == "expired"
+    assert initial.result["artifact"] == snapshot["artifact"]
     assert replay.idempotent_replay is True
-    assert replay.result["artifact"]["status"] == "expired"
+    assert replay.result["artifact"] == snapshot["artifact"]
     with get_session(database_url) as session:
         run = session.get(RunRecord, "run_main")
         assert run is not None

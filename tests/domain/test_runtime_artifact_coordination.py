@@ -28,7 +28,10 @@ from app.domain.audio_generation.artifacts import AudioArtifactMaterializationCo
 from app.domain.image_generation.materialization import ImageGenerationMaterializationConfig
 from app.domain.media_artifacts import LocalVolumeArtifactStore
 from app.domain.media_derivatives.artifacts import ValidatedImageUpload
-from app.domain.media_derivatives.errors import MediaDerivativeSourceDecodeFailedError
+from app.domain.media_derivatives.errors import (
+    MediaDerivativeOutputTooLargeError,
+    MediaDerivativeSourceDecodeFailedError,
+)
 from app.domain.media_derivatives.processor import MediaDerivativeResult
 from app.domain.runtime import artifact_coordination
 from app.domain.runtime.artifact_coordination import (
@@ -846,17 +849,36 @@ def test_execute_media_derivative_success_records_artifact_metric_and_terminal_e
         assert metric.output_bytes == len(b"processed-image-bytes")
 
 
+@pytest.mark.parametrize(
+    ("error", "expected_code", "expected_message"),
+    [
+        (
+            MediaDerivativeSourceDecodeFailedError(),
+            "media_derivative.source_decode_failed",
+            "source image could not be decoded",
+        ),
+        (
+            MediaDerivativeOutputTooLargeError(),
+            "media_derivative.output_too_large",
+            "generated derivative exceeds the deliverable artifact size limit",
+        ),
+    ],
+)
 def test_execute_media_derivative_domain_failure_preserves_result_and_metric(
     database_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    expected_code: str,
+    expected_message: str,
 ) -> None:
     source_bytes = b"bad-image"
 
     def fail_process(**kwargs: Any) -> MediaDerivativeResult:
-        raise MediaDerivativeSourceDecodeFailedError()
+        raise error
 
     monkeypatch.setattr(artifact_coordination, "process_media_derivative", fail_process)
-    source_artifact_id = "art_worker_failure_source"
+    suffix = expected_code.rsplit(".", 1)[-1]
+    source_artifact_id = f"art_worker_failure_{suffix}"
     service = _service(
         database_url=database_url,
         input_payload={
@@ -873,7 +895,7 @@ def test_execute_media_derivative_domain_failure_preserves_result_and_metric(
 
     with get_session(database_url) as session:
         repository = RuntimeRepository(session)
-        run = _create_run(repository, run_id="run_artifact_failure")
+        run = _create_run(repository, run_id=f"run_artifact_failure_{suffix}")
         _seed_artifact(
             database_url=database_url,
             session=session,
@@ -886,11 +908,11 @@ def test_execute_media_derivative_domain_failure_preserves_result_and_metric(
             select(MediaDerivativeJobMetric).where(MediaDerivativeJobMetric.run_id == run.run_id)
         )
         assert run.status == "failed"
-        assert run.error_code == "media_derivative.source_decode_failed"
+        assert run.error_code == expected_code
         assert run.result_json == {
             "status": "failed",
-            "error_code": "media_derivative.source_decode_failed",
-            "error_message": "source image could not be decoded",
+            "error_code": expected_code,
+            "error_message": expected_message,
         }
         assert metric is not None
         assert metric.status == "failed"
