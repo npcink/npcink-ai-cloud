@@ -129,7 +129,7 @@ function PortalSiteRecordContent() {
     try {
       await portalClient.removeSite(site.site_id);
       await refresh();
-      router.push('/portal/sites');
+      router.push('/portal#sites');
     } catch (err) {
       setRemoveError(
         formatPortalErrorMessage(
