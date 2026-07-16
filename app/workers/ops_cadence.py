@@ -139,33 +139,28 @@ def _run_artifact_cleanup(settings: Settings) -> dict[str, object]:
 
 def _run_artifact_inventory_reconciliation(settings: Settings) -> dict[str, object]:
     from app.domain.media_artifacts import build_artifact_store
-    from app.domain.media_artifacts.reconciliation import (
-        MediaArtifactReconciliationError,
-        MediaArtifactReconciliationService,
+    from app.domain.media_artifacts.orphan_reconciliation import (
+        MediaArtifactOrphanReconciliationError,
+        MediaArtifactOrphanReconciliationService,
     )
 
     try:
-        result = MediaArtifactReconciliationService(
+        result = MediaArtifactOrphanReconciliationService(
             settings.database_url,
             artifact_store=build_artifact_store(settings),
-        ).inspect_inventory(
+        ).reconcile(
             safety_window_seconds=settings.artifact_reconciliation_safety_window_seconds,
             page_size=settings.artifact_reconciliation_page_size,
+            pass_lease_seconds=settings.artifact_reconciliation_lease_seconds,
+            cleanup_enabled=settings.artifact_orphan_cleanup_enabled,
+            cleanup_batch_size=settings.artifact_orphan_cleanup_batch_size,
+            claim_lease_seconds=settings.artifact_orphan_claim_lease_seconds,
+            retry_base_seconds=settings.artifact_orphan_retry_base_seconds,
+            retry_max_seconds=settings.artifact_orphan_retry_max_seconds,
         )
     except Exception:
-        raise MediaArtifactReconciliationError() from None
-    evidence: dict[str, object] = {
-        "store_examined": result.store_examined,
-        "referenced_present": result.referenced_present,
-        "orphan_observed": result.orphan_observed,
-        "orphan_deferred": result.orphan_deferred,
-        "orphan_eligible": result.orphan_eligible,
-        "db_available_examined": result.db_available_examined,
-        "referenced_missing": result.referenced_missing,
-        "deletion_enabled": result.deletion_enabled,
-        "publication_fence_supported": result.publication_fence_supported,
-    }
-    return evidence
+        raise MediaArtifactOrphanReconciliationError() from None
+    return dict(result.as_dict())
 
 
 def _run_payment_order_expiration(settings: Settings) -> dict[str, object]:

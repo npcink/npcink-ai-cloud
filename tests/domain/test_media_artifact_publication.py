@@ -9,6 +9,7 @@ from typing import BinaryIO
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -377,10 +378,26 @@ def test_real_local_volume_fence_releases_after_delete_base_exception(
 
     failure = FatalDelete("fatal local delete")
 
-    class FatalLocalVolumeStore(LocalVolumeArtifactStore):
-        def delete(self, storage_key: str) -> None:
+    class FatalPublicationSession:
+        def __init__(self, inner: object) -> None:
+            self.inner = inner
+
+        def validate(self) -> None:
+            self.inner.validate()  # type: ignore[attr-defined]
+
+        def put(self, *args: object, **kwargs: object) -> ArtifactStorageMetadata:
+            return self.inner.put(*args, **kwargs)  # type: ignore[attr-defined,no-any-return]
+
+        def delete_published(self, storage_key: str) -> None:
             del storage_key
             raise failure
+
+        def release(self) -> None:
+            self.inner.release()  # type: ignore[attr-defined]
+
+    class FatalLocalVolumeStore(LocalVolumeArtifactStore):
+        def open_publication_session(self) -> FatalPublicationSession:
+            return FatalPublicationSession(super().open_publication_session())
 
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
     root = tmp_path / "fatal-delete-artifacts"
@@ -395,6 +412,80 @@ def test_real_local_volume_fence_releases_after_delete_base_exception(
         assert caught.value is failure
         assert uncertain_artifact_storage_keys(session) == (stored.storage_key,)
         assert _exclusive_is_available(root) is True
+    engine.dispose()
+
+
+def test_root_replacement_after_put_blocks_commit_and_rolls_back_on_pinned_root(
+    tmp_path: Path,
+) -> None:
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+    _Base.metadata.create_all(engine)
+    root = tmp_path / "configured-artifacts"
+    pinned_root = tmp_path / "pinned-artifacts"
+    replacement_store = LocalVolumeArtifactStore(root)
+    store = LocalVolumeArtifactStore(root)
+    with Session(engine) as session:
+        stored = _publish(session, store)  # type: ignore[arg-type]
+        session.add(_UniquePublicationRow(id=101))
+        root.rename(pinned_root)
+        replacement = replacement_store.open_publication_session()
+        replacement.release()
+
+        with pytest.raises(ArtifactStoreError, match="validation failed"):
+            session.commit()
+
+        pinned_path = (
+            pinned_root
+            / stored.storage_key[4:6]
+            / stored.storage_key[6:8]
+            / stored.storage_key
+        )
+        assert pinned_path.is_file()
+        session.rollback()
+
+        assert pinned_path.exists() is False
+        assert uncertain_artifact_storage_keys(session) == ()
+        assert _exclusive_is_available(pinned_root) is True
+
+    with Session(engine) as verification:
+        assert verification.get(_UniquePublicationRow, 101) is None
+    engine.dispose()
+
+
+def test_root_replacement_after_commit_before_release_is_quarantined(
+    tmp_path: Path,
+) -> None:
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+    _Base.metadata.create_all(engine)
+    root = tmp_path / "configured-artifacts"
+    pinned_root = tmp_path / "committed-pinned-artifacts"
+    store = LocalVolumeArtifactStore(root)
+    replacement_store = LocalVolumeArtifactStore(root)
+    with Session(engine) as session:
+        stored = _publish(session, store)  # type: ignore[arg-type]
+        session.add(_UniquePublicationRow(id=102))
+
+        def replace_root_after_commit(_session: Session) -> None:
+            root.rename(pinned_root)
+            replacement = replacement_store.open_publication_session()
+            replacement.release()
+
+        event.listen(session, "after_commit", replace_root_after_commit, once=True)
+        session.commit()
+
+        assert uncertain_artifact_storage_keys(session) == (stored.storage_key,)
+        pinned_path = (
+            pinned_root
+            / stored.storage_key[4:6]
+            / stored.storage_key[6:8]
+            / stored.storage_key
+        )
+        assert pinned_path.is_file()
+        assert replacement_store.contains(stored.storage_key) is False
+        assert _exclusive_is_available(pinned_root) is True
+
+    with Session(engine) as verification:
+        assert verification.get(_UniquePublicationRow, 102) is not None
     engine.dispose()
 
 

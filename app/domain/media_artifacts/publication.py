@@ -13,6 +13,8 @@ from sqlalchemy.orm.session import SessionTransaction
 from app.domain.media_artifacts.store import (
     ArtifactPublicationFenceStore,
     ArtifactPublicationGuard,
+    ArtifactPublicationSession,
+    ArtifactSessionStore,
     ArtifactStorageMetadata,
     ArtifactStore,
     ArtifactStoreError,
@@ -49,6 +51,7 @@ class _TrackedPublication:
     storage_key: str
     cleanup_error_factory: PublicationCleanupErrorFactory
     publication_guard: ArtifactPublicationGuard | None = None
+    publication_session: ArtifactPublicationSession | None = None
 
 
 def publish_and_track_artifact(
@@ -71,9 +74,16 @@ def publish_and_track_artifact(
     """
 
     _ensure_session_transaction(session)
-    publication_guard = _acquire_publication_guard(store)
+    publication_session, publication_guard = _open_publication_context(store)
     try:
-        stored = store.put(stream, max_bytes=max_bytes, metadata=metadata)
+        if publication_session is not None:
+            stored = publication_session.put(
+                stream,
+                max_bytes=max_bytes,
+                metadata=metadata,
+            )
+        else:
+            stored = store.put(stream, max_bytes=max_bytes, metadata=metadata)
     except ArtifactStorePublicationUncertainError as error:
         track_artifact_publication(
             session,
@@ -81,10 +91,11 @@ def publish_and_track_artifact(
             storage_key=error.storage_metadata.storage_key,
             cleanup_error_factory=cleanup_error_factory,
             publication_guard=publication_guard,
+            publication_session=publication_session,
         )
         raise
     except BaseException:
-        _release_publication_guard(publication_guard)
+        _release_publication_context(publication_session, publication_guard)
         raise
     track_artifact_publication(
         session,
@@ -92,6 +103,7 @@ def publish_and_track_artifact(
         storage_key=stored.storage_key,
         cleanup_error_factory=cleanup_error_factory,
         publication_guard=publication_guard,
+        publication_session=publication_session,
     )
     return stored
 
@@ -105,6 +117,7 @@ def track_artifact_publication(
         artifact_publication_cleanup_error
     ),
     publication_guard: ArtifactPublicationGuard | None = None,
+    publication_session: ArtifactPublicationSession | None = None,
 ) -> None:
     """Delete a newly published object if the owning DB transaction rolls back.
 
@@ -118,6 +131,7 @@ def track_artifact_publication(
         storage_key=storage_key,
         cleanup_error_factory=cleanup_error_factory,
         publication_guard=publication_guard,
+        publication_session=publication_session,
     )
     handed_off = False
     try:
@@ -127,14 +141,36 @@ def track_artifact_publication(
             _install_session_listeners(session)
             session.info[_LISTENERS_KEY] = True
         if _contains_publication(tracker, publication):
-            _release_publication_guard(publication_guard)
+            _release_publication_context(publication_session, publication_guard)
             return
         tracker.append(publication)
         handed_off = True
     except BaseException:
         if not handed_off:
-            _release_publication_guard(publication_guard)
+            _release_publication_context(publication_session, publication_guard)
         raise
+
+
+def delete_tracked_artifact_publication(
+    session: Session,
+    *,
+    store: ArtifactStore,
+    storage_key: str,
+) -> bool:
+    """Delete one active publication through its fixed publication context."""
+
+    publication = next(
+        (
+            item
+            for item in _tracker(session)
+            if item.store is store and item.storage_key == storage_key
+        ),
+        None,
+    )
+    if publication is None:
+        return False
+    _delete_publication(publication)
+    return True
 
 
 def forget_artifact_publications(
@@ -187,7 +223,7 @@ def _forget_publications(
     forgotten = tuple(publications)
     if not forgotten:
         return
-    _release_publication_guards(forgotten)
+    _release_publication_contexts(forgotten)
     session.info[_TRACKER_KEY] = [
         item for item in _tracker(session) if not _contains_publication(forgotten, item)
     ]
@@ -207,7 +243,7 @@ def _quarantine_publications(
     )
     if not moving:
         return ()
-    _release_publication_guards(moving)
+    _release_publication_contexts(moving)
     uncertain = list(_quarantined_publications(session))
     for publication in moving:
         if not _contains_publication(uncertain, publication):
@@ -253,20 +289,39 @@ def _contains_publication(
     )
 
 
-def _acquire_publication_guard(store: ArtifactStore) -> ArtifactPublicationGuard | None:
+def _open_publication_context(
+    store: ArtifactStore,
+) -> tuple[ArtifactPublicationSession | None, ArtifactPublicationGuard | None]:
+    if isinstance(store, ArtifactSessionStore):
+        return store.open_publication_session(), None
     if not isinstance(store, ArtifactPublicationFenceStore):
-        return None
-    return store.acquire_publication_guard()
+        return None, None
+    return None, store.acquire_publication_guard()
 
 
-def _release_publication_guard(guard: ArtifactPublicationGuard | None) -> None:
-    if guard is not None:
+def _release_publication_context(
+    publication_session: ArtifactPublicationSession | None,
+    guard: ArtifactPublicationGuard | None,
+) -> None:
+    if publication_session is not None:
+        publication_session.release()
+    elif guard is not None:
         guard.release()
 
 
-def _release_publication_guards(publications: Iterable[_TrackedPublication]) -> None:
+def _release_publication_contexts(publications: Iterable[_TrackedPublication]) -> None:
     for publication in publications:
-        _release_publication_guard(publication.publication_guard)
+        _release_publication_context(
+            publication.publication_session,
+            publication.publication_guard,
+        )
+
+
+def _delete_publication(publication: _TrackedPublication) -> None:
+    if publication.publication_session is not None:
+        publication.publication_session.delete_published(publication.storage_key)
+        return
+    publication.store.delete(publication.storage_key)
 
 
 def _ensure_session_transaction(session: Session) -> None:
@@ -287,6 +342,11 @@ def _install_session_listeners(session: Session) -> None:
 def _before_commit(session: Session) -> None:
     if session.in_nested_transaction() or not _tracker(session):
         return
+    # Publication may have completed long before the database transaction is
+    # ready to commit. Revalidate the configured root, fence inode, and store
+    # generation at the last reversible boundary so a root A -> B replacement
+    # cannot commit a row that points only to the pinned, now-unreachable A.
+    _validate_publication_contexts(tuple(_tracker(session)), strict=True)
     session.info[_OUTCOME_KEY] = "commit_requested"
     _remove_connection_commit_listener(session)
     connection = session.connection()
@@ -335,7 +395,21 @@ def _after_transaction_end(
             return
         outcome = str(session.info.pop(_OUTCOME_KEY, ""))
         if outcome == "committed":
-            _forget_publications(session, publications=publications)
+            invalid = _validate_publication_contexts(publications, strict=False)
+            if invalid:
+                valid = tuple(
+                    item
+                    for item in publications
+                    if not _contains_publication(invalid, item)
+                )
+                _forget_publications(session, publications=valid)
+                _quarantine_publications(session, publications=invalid)
+                _LOGGER.critical(
+                    "artifact publication context changed after database commit",
+                    extra={"artifact_count": len(invalid)},
+                )
+            else:
+                _forget_publications(session, publications=publications)
             return
         if outcome == "commit_started":
             # The DBAPI commit call began but SQLAlchemy never observed a definitive
@@ -351,11 +425,21 @@ def _after_transaction_end(
             )
             return
 
+        # A definitive non-commit still cleans through the pinned publication
+        # root. This best-effort check is diagnostic only: a configured-root
+        # replacement must not redirect or suppress rollback of the object on A.
+        invalid = _validate_publication_contexts(publications, strict=False)
+        if invalid:
+            _LOGGER.warning(
+                "artifact publication context changed before rollback cleanup",
+                extra={"artifact_count": len(invalid)},
+            )
+
         failed: list[_TrackedPublication] = []
         deleted: list[_TrackedPublication] = []
         for index, publication in enumerate(publications):
             try:
-                publication.store.delete(publication.storage_key)
+                _delete_publication(publication)
                 deleted.append(publication)
             except Exception:
                 failed.append(publication)
@@ -381,6 +465,25 @@ def _after_transaction_end(
         # no-delete quarantine before the original exception escapes.
         _quarantine_publications(session, publications=tuple(_tracker(session)))
         raise
+
+
+def _validate_publication_contexts(
+    publications: Iterable[_TrackedPublication],
+    *,
+    strict: bool,
+) -> tuple[_TrackedPublication, ...]:
+    invalid: list[_TrackedPublication] = []
+    for publication in publications:
+        publication_session = publication.publication_session
+        if publication_session is None:
+            continue
+        try:
+            publication_session.validate()
+        except BaseException:
+            if strict:
+                raise
+            invalid.append(publication)
+    return tuple(invalid)
 
 
 def _remove_connection_commit_listener(session: Session) -> None:

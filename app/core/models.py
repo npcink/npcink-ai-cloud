@@ -1762,6 +1762,154 @@ class MediaArtifact(Base):
     )
 
 
+class MediaArtifactReconciliationPass(Base):
+    __tablename__ = "media_artifact_reconciliation_passes"
+    __table_args__ = (
+        UniqueConstraint(
+            "active_slot",
+            name="uq_media_artifact_reconciliation_passes_active_slot",
+        ),
+        UniqueConstraint(
+            "head_slot",
+            name="uq_media_artifact_reconciliation_passes_head_slot",
+        ),
+        CheckConstraint(
+            "state IN ('running', 'completed', 'abandoned')",
+            name="ck_media_artifact_reconciliation_passes_state",
+        ),
+        CheckConstraint(
+            "active_slot IS NULL OR active_slot = 'active'",
+            name="ck_media_artifact_reconciliation_passes_active_slot_value",
+        ),
+        CheckConstraint(
+            "head_slot IS NULL OR head_slot = 'head'",
+            name="ck_media_artifact_reconciliation_passes_head_slot_value",
+        ),
+        CheckConstraint(
+            "((scan_claim_id IS NULL AND lease_expires_at IS NULL) OR "
+            "(scan_claim_id IS NOT NULL AND lease_expires_at IS NOT NULL))",
+            name="ck_media_artifact_reconciliation_passes_claim_pair",
+        ),
+        CheckConstraint(
+            "((state = 'running' AND active_slot = 'active' AND head_slot IS NULL "
+            "AND scan_claim_id IS NOT NULL AND lease_expires_at IS NOT NULL "
+            "AND completed_at IS NULL) OR "
+            "(state = 'completed' AND active_slot IS NULL AND scan_claim_id IS NULL "
+            "AND lease_expires_at IS NULL AND completed_at IS NOT NULL) OR "
+            "(state = 'abandoned' AND active_slot IS NULL AND head_slot IS NULL "
+            "AND scan_claim_id IS NULL AND lease_expires_at IS NULL "
+            "AND completed_at IS NULL))",
+            name="ck_media_artifact_reconciliation_passes_lifecycle",
+        ),
+        Index(
+            "ix_media_artifact_recon_passes_previous_id",
+            "previous_completed_pass_id",
+        ),
+    )
+
+    pass_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16), index=True)
+    active_slot: Mapped[str | None] = mapped_column(String(16))
+    head_slot: Mapped[str | None] = mapped_column(String(16))
+    scan_claim_id: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    previous_completed_pass_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "media_artifact_reconciliation_passes.pass_id",
+            name="fk_media_artifact_reconciliation_passes_previous",
+        ),
+    )
+    store_generation: Mapped[str] = mapped_column(String(64), index=True)
+    next_cursor: Mapped[str | None] = mapped_column(String(191))
+    last_storage_key: Mapped[str | None] = mapped_column(String(191))
+    store_examined: Mapped[int] = mapped_column(Integer, default=0)
+    referenced_present: Mapped[int] = mapped_column(Integer, default=0)
+    orphan_observed: Mapped[int] = mapped_column(Integer, default=0)
+    orphan_deferred: Mapped[int] = mapped_column(Integer, default=0)
+    orphan_eligible: Mapped[int] = mapped_column(Integer, default=0)
+    db_available_examined: Mapped[int] = mapped_column(Integer, default=0)
+    referenced_missing: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    cutoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+
+
+class MediaArtifactOrphanCandidate(Base):
+    __tablename__ = "media_artifact_orphan_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('observed', 'eligible', 'claimed', 'retry_wait', "
+            "'deleted', 'invalidated')",
+            name="ck_media_artifact_orphan_candidates_state",
+        ),
+        CheckConstraint(
+            "((claim_id IS NULL AND claim_expires_at IS NULL) OR "
+            "(claim_id IS NOT NULL AND claim_expires_at IS NOT NULL))",
+            name="ck_media_artifact_orphan_candidates_claim_pair",
+        ),
+        CheckConstraint(
+            "((state = 'claimed' AND claim_id IS NOT NULL AND claim_expires_at IS NOT NULL) "
+            "OR (state <> 'claimed' AND claim_id IS NULL AND claim_expires_at IS NULL))",
+            name="ck_media_artifact_orphan_candidates_claim_state",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_media_artifact_orphan_candidates_attempt_count",
+        ),
+        CheckConstraint(
+            "((state = 'retry_wait' AND retry_at IS NOT NULL "
+            "AND last_error_code IS NOT NULL) OR "
+            "(state <> 'retry_wait' AND retry_at IS NULL "
+            "AND last_error_code IS NULL))",
+            name="ck_media_artifact_orphan_candidates_retry_state",
+        ),
+        CheckConstraint(
+            "((state IN ('deleted', 'invalidated') AND resolved_at IS NOT NULL) OR "
+            "(state NOT IN ('deleted', 'invalidated') AND resolved_at IS NULL))",
+            name="ck_media_artifact_orphan_candidates_resolution",
+        ),
+        Index(
+            "ix_media_artifact_orphan_candidates_cleanup",
+            "state",
+            "retry_at",
+            "claim_expires_at",
+        ),
+    )
+
+    storage_key: Mapped[str] = mapped_column(String(191), primary_key=True)
+    object_version: Mapped[str] = mapped_column(String(64))
+    store_generation: Mapped[str] = mapped_column(String(64), index=True)
+    first_pass_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "media_artifact_reconciliation_passes.pass_id",
+            name="fk_media_artifact_orphan_candidates_first_pass",
+        ),
+        index=True,
+    )
+    last_pass_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "media_artifact_reconciliation_passes.pass_id",
+            name="fk_media_artifact_orphan_candidates_last_pass",
+        ),
+        index=True,
+    )
+    state: Mapped[str] = mapped_column(String(16), index=True)
+    claim_id: Mapped[str | None] = mapped_column(String(64))
+    claim_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class MediaArtifactDelivery(Base):
     __tablename__ = "media_artifact_deliveries"
     __table_args__ = (

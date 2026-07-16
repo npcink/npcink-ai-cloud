@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     artifact_reconciliation_interval_seconds: int = Field(default=3600, ge=60)
     artifact_reconciliation_safety_window_seconds: int = Field(default=86400, ge=3600)
     artifact_reconciliation_page_size: int = Field(default=200, ge=1, le=500)
+    artifact_reconciliation_lease_seconds: int = Field(default=300, ge=300, le=3600)
+    artifact_orphan_cleanup_enabled: bool = Field(default=False)
+    artifact_orphan_cleanup_batch_size: int = Field(default=25, ge=1, le=100)
+    artifact_orphan_claim_lease_seconds: int = Field(default=300, ge=30, le=3600)
+    artifact_orphan_retry_base_seconds: int = Field(default=30, ge=1, le=3600)
+    artifact_orphan_retry_max_seconds: int = Field(default=3600, ge=1, le=86400)
     router_performance_worker_window_hours: int = Field(default=1)
     router_performance_worker_site_limit: int = Field(default=100)
     router_diagnostics_worker_recent_minutes: int = Field(default=60)
@@ -387,6 +393,11 @@ class Settings(BaseSettings):
             raise ValueError("plugin_observability_cleanup_interval_seconds must be at least 60")
         if self.artifact_cleanup_interval_seconds < 60:
             raise ValueError("artifact_cleanup_interval_seconds must be at least 60")
+        if self.artifact_orphan_retry_max_seconds < self.artifact_orphan_retry_base_seconds:
+            raise ValueError(
+                "artifact_orphan_retry_max_seconds must not be less than "
+                "artifact_orphan_retry_base_seconds"
+            )
         if self.media_derivative_batch_default_chunk_size < 1:
             raise ValueError("media_derivative_batch_default_chunk_size must be at least 1")
         if not 1 <= self.media_derivative_batch_max_chunk_size <= 100:

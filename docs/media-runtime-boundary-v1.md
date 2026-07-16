@@ -1,7 +1,7 @@
 # Media Runtime Boundary v1
 
-Status: P3-B4C2a read-only inventory reconciliation and publication fencing
-implemented; automatic orphan deletion, PostgreSQL concurrency proof,
+Status: P3-B4C2b persistent fenced orphan cleanup implemented and default-off;
+PostgreSQL concurrency proof,
 WordPress local import, and B5 remain target work.
 
 ## 1. Purpose
@@ -20,10 +20,10 @@ resource split, P3-B3B1 image-generation artifact convergence, and P3-B3B2
 artifact-referenced vision input, P3-B4A lifecycle projection, P3-B4B1 signed
 pull/delivery ACK, P3-B4B2 legacy-route/permanent-audio-asset removal, P3-B4B3
 unified delivery observability, P3-B4C1a publication compensation,
-P3-B4C1b fenced TTL purge/delivery coordination, and P3-B4C2a read-only
-inventory reconciliation/publication fencing. Automatic orphan deletion and
-the remaining WordPress delivery closeout described for B4-B5 are still target
-work.
+P3-B4C1b fenced TTL purge/delivery coordination, P3-B4C2a read-only inventory
+reconciliation/publication fencing, and P3-B4C2b persistent default-off orphan
+cleanup. PostgreSQL concurrency proof and the remaining WordPress delivery
+closeout described for B4-B5 are still target work.
 
 ## 2. Stable Markers
 
@@ -49,9 +49,10 @@ download, permanent audio-asset model/router/configuration, and their dead
 derivative download counter writer. P3-B4C1b replaces the old in-transaction
 cleanup helper with one leased `MediaArtifact` TTL purge and coordinates purge,
 stream completion, and ACK on one artifact-first lock order. P3-B4C2a adds
-bounded, read-only store-versus-database inventory evidence and holds a shared
-local-volume publication fence through the owning transaction outcome.
-Automatic orphan deletion remains pending. Historical database blob paths,
+bounded, read-only store-versus-database inventory evidence. P3-B4C2b adds
+durable complete-pass/candidate truth, fixed-root publication sessions, and
+per-candidate fenced orphan deletion, with runtime/deployment configuration
+defaulting to disabled. Historical database blob paths,
 request/result Base64 media payloads, and audio-specific download-token shapes
 are migration history, not contracts to preserve.
 
@@ -545,10 +546,12 @@ original migration exception. A successful FK check is not commit-ready until
 strict `PRAGMA defer_foreign_keys=OFF` succeeds; a `BaseException` from that
 restore escapes unchanged, rolls back schema and version state, and permits a
 direct retry. It is not a claim of PostgreSQL production concurrency behavior.
-P3-B4C2a now provides read-only inventory reconciliation. P3-B4C2b persistent
-two-pass orphan claims/fenced deletion, P3-B4C3 PostgreSQL real-concurrency and
-PG16 migration validation, and P3-B4D WordPress local import remain explicit
-future work.
+P3-B4C2a provides read-only inventory reconciliation. P3-B4C2b adds persistent
+two-complete-pass candidate truth, per-candidate fixed-root fencing,
+all-status final recheck, conditional unlink, retry, and crash convergence;
+automatic cleanup remains configuration-disabled by default. P3-B4C3 PostgreSQL real-concurrency
+and PG16 migration validation, and P3-B4D WordPress local import remain
+explicit future work.
 
 Metrics and redacted diagnostics must cover upload/download byte counts and
 duration, validation rejects, queue age, processing latency, success/failure,
@@ -615,14 +618,14 @@ capability.
   converge on artifact references. Provider URL/data-URL transport is private,
   transient, and absent from public and durable contracts. Addon upload handoff
   and real WordPress evidence remain P5 work.
-- **P3-B4A/B4B1/B4B2/B4C1/B4C2a:** Current lifecycle is projected at exact public
+- **P3-B4A/B4B1/B4B2/B4C1/B4C2a/B4C2b:** Current lifecycle is projected at exact public
   envelopes; signed pull, verified stream completion, independent delivery
   evidence, credential stripping, and strict transfer ACK are implemented.
   Legacy delivery routes and the permanent audio-asset playback surface are
   deleted. Transaction-tracked publication, fenced TTL purge/delivery
-  coordination, shared publication fencing, and read-only two-direction
-  inventory reconciliation are implemented. Automatic orphan deletion remains
-  pending.
+  coordination, fixed-root publication fencing, read-only two-direction
+  inventory reconciliation, and persistent default-off two-pass orphan cleanup
+  are implemented.
 - **P3 target:** The four target resources, typed image contracts, security
   controls, signed pull, delivery acknowledgement, TTL, and purge are
   implemented and covered by focused tests.

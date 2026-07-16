@@ -28,6 +28,8 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
     CatalogService(database_url).refresh_catalog()
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
     settings = Settings(
         project_name="Npcink AI Cloud Test",
         environment="test",
@@ -42,7 +44,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         alert_provider_degradation_interval_seconds=60,
         provider_health_scan_interval_seconds=60,
         artifact_cleanup_interval_seconds=60,
-        artifact_store_root=str(tmp_path / "artifacts"),
+        artifact_store_root=str(artifact_root),
         artifact_reconciliation_interval_seconds=60,
     )
 
@@ -84,12 +86,25 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "orphan_observed": 0,
         "orphan_deferred": 0,
         "orphan_eligible": 0,
+        "cleanup_candidates_eligible": 0,
         "db_available_examined": 0,
         "referenced_missing": 0,
+        "pass_started": 1,
+        "pass_busy": 0,
+        "pass_completed": 1,
+        "pass_abandoned": 0,
+        "candidates_claimed": 0,
+        "candidates_deleted": 0,
+        "candidates_invalidated": 0,
+        "retry_scheduled": 0,
+        "stale_claims_reclaimed": 0,
+        "superseded_finalizations": 0,
+        "cleanup_fence_busy": 0,
         "deletion_enabled": False,
-        "publication_fence_supported": True,
+        "fixed_root_sessions_supported": True,
         "interval_seconds": 60,
     }
+    assert (artifact_root / ".artifact-store-generation").exists() is False
 
     service = CommercialService(database_url, settings=settings)
     first_events = service.list_service_audit_events(limit=20)["items"]
@@ -384,7 +399,7 @@ def test_artifact_reconciliation_error_is_independent_stable_and_redacted(
             "outcome": "error",
             "payload": {
                 "interval_seconds": 60,
-                "message": "media artifact inventory reconciliation failed",
+                "message": "media artifact orphan reconciliation failed",
                 "error_code": "ops.cadence_task_failed",
             },
         }
@@ -430,7 +445,7 @@ def test_artifact_reconciliation_store_construction_error_is_redacted(
 
     assert results[0]["payload"] == {
         "interval_seconds": 60,
-        "message": "media artifact inventory reconciliation failed",
+        "message": "media artifact orphan reconciliation failed",
         "error_code": "ops.cadence_task_failed",
     }
     observed = f"{results!r}\n{caplog.text}"

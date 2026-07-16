@@ -114,6 +114,42 @@ evidence. Expected future smoke evidence:
   `operation = 'image.transform.v1'`; bytes live in the shared ArtifactStore
   volume rather than PostgreSQL.
 
+## Orphan Cleanup Enablement Gate
+
+`NPCINK_CLOUD_ARTIFACT_ORPHAN_CLEANUP_ENABLED` defaults to `false`. This
+repository change does not authorize or record enabling it in production.
+Before changing that setting, operators must verify all of the following:
+
+1. Migration `20260716_0066_media_artifact_orphan_reconciliation` is applied
+   and its rollback path is known.
+2. P3-B4C3 has passed against PostgreSQL 16 with multiple real connections and
+   the deployed named volume; SQLite and a local temporary directory are not
+   sufficient production-concurrency evidence.
+3. The artifact root, both shard levels, `.artifact-publication.lock`,
+   `.artifact-store-bootstrap.lock`, `.artifact-store-generation`, and artifact
+   files are owned by the service account. Root/shards/files are not group- or
+   world-writable; both locks and the generation marker are private `0600`
+   regular single-link files. The bootstrap lock is used only for generation
+   initialization and is not held across a database transaction.
+4. The mounted root is stable for the process lifetime. No deployment,
+   sidecar, maintenance script, or operator replaces the mount, root, shard,
+   publication lock, bootstrap lock, or marker in place.
+5. Every process that publishes or mutates the artifact namespace uses the
+   shared publication session. `flock` is advisory and does not stop a writer
+   that ignores the protocol; the design does not defend against a malicious
+   same-UID process.
+6. Two default-off cadence observations are reviewed first. Aggregate
+   conservation holds, errors expose no key/path/token/claim, and retry/fence
+   busy counts are understood.
+7. A rollback can immediately set cleanup back to `false` without disabling
+   read-only reconciliation or TTL purge.
+
+Enable one ops worker only for the first controlled validation. Watch
+`cleanup_candidates_eligible`, `candidates_claimed`, `candidates_deleted`,
+`candidates_invalidated`, `retry_scheduled`, `stale_claims_reclaimed`,
+`superseded_finalizations`, and `cleanup_fence_busy`. These are aggregate
+runtime facts; they are not CMS apply/write evidence.
+
 ## Observability
 
 Admin route:

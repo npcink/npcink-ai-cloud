@@ -27,6 +27,7 @@ from app.domain.media_artifacts import (
     ArtifactStorePublicationUncertainError,
 )
 from app.domain.media_artifacts.publication import (
+    delete_tracked_artifact_publication,
     forget_artifact_publications,
     publish_and_track_artifact,
     quarantine_artifact_publications,
@@ -577,7 +578,12 @@ def _cleanup_failed_batch(
     failed: list[str] = []
     for stored in reversed(stored_batch):
         try:
-            artifact_store.delete(stored.storage_key)
+            if not delete_tracked_artifact_publication(
+                session,
+                store=artifact_store,
+                storage_key=stored.storage_key,
+            ):
+                raise ArtifactStoreError("artifact publication tracker is unavailable")
             deleted.append(stored.storage_key)
         except Exception:
             failed.append(stored.storage_key)

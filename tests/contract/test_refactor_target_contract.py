@@ -130,11 +130,11 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b4c2a_inventory_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b4c2b_cleanup_and_remaining_targets() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B4C2a read-only inventory reconciliation and publication fencing",
+        "Status: P3-B4C2b persistent fenced orphan cleanup implemented and default-off",
         "P3-B4C1a routes all",
         "full eligibility `UPDATE` compare-and-set",
         "media_artifact.delivery_window_unavailable",
@@ -143,7 +143,7 @@ def test_media_contract_tracks_p3_b4c2a_inventory_and_remaining_targets() -> Non
         "P3-B4C3 PostgreSQL real-concurrency",
         "P3-B4D WordPress local import",
         "Session-local in-memory no-delete quarantine",
-        "Automatic orphan deletion remains",
+        "automatic cleanup remains configuration-disabled by default",
         "B4B2 legacy-route",
         "B4B2 removes the legacy routes, token helpers",
         "Summary v2 reports started, stream-completed",
@@ -190,7 +190,7 @@ def test_media_contract_tracks_p3_b4c2a_inventory_and_remaining_targets() -> Non
         ).split()
     )
     for required in (
-        "destructive orphan cleanup remains deferred to P3-B4C2b",
+        "P3-B4C2b is subsequently implemented by ADR-015",
         "ArtifactInventoryStore",
         "ArtifactPublicationFenceStore",
         "one pass is never deletion authority",
@@ -199,6 +199,22 @@ def test_media_contract_tracks_p3_b4c2a_inventory_and_remaining_targets() -> Non
         "fd-relative conditional unlink",
     ):
         assert required in inventory_adr
+
+    cleanup_adr = " ".join(
+        _read(
+            "docs/decisions/015-persistent-fenced-media-artifact-orphan-cleanup.md"
+        ).split()
+    )
+    for required in (
+        "runtime and deployment configuration default cleanup to disabled",
+        "cleanup_candidates_eligible",
+        "one non-blocking exclusive session per candidate",
+        "any current or future `MediaArtifact.status`",
+        "deepest existing pinned directory",
+        "POSIX advisory locking",
+        "P3-B4C3 must prove PostgreSQL 16 multi-connection claims",
+    ):
+        assert required in cleanup_adr
 
 
 def test_image_generation_artifact_adr_freezes_provider_and_cms_boundaries() -> None:

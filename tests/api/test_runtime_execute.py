@@ -63,7 +63,10 @@ from app.domain.media_artifacts.publication import (
     tracked_artifact_storage_keys,
     uncertain_artifact_storage_keys,
 )
-from app.domain.media_artifacts.store import ArtifactStoreError, LocalVolumeArtifactStore
+from app.domain.media_artifacts.store import (
+    ArtifactStoreError,
+    _LocalVolumePublicationSession,
+)
 from app.domain.runtime.models import RuntimeRequest
 from app.domain.runtime.service import RuntimeService
 from app.domain.web_search.service import (
@@ -863,12 +866,17 @@ def test_inline_image_cleanup_failure_is_quarantined_before_failed_run_commit(
     )
     delete_calls: list[str] = []
 
-    def fail_delete(self: LocalVolumeArtifactStore, storage_key: str) -> None:
+    def fail_delete(
+        self: _LocalVolumePublicationSession,
+        storage_key: str,
+    ) -> None:
         del self
         delete_calls.append(storage_key)
         raise ArtifactStoreError("injected delete failure")
 
-    monkeypatch.setattr(LocalVolumeArtifactStore, "delete", fail_delete)
+    # Failed-batch cleanup must use the fixed-root publication session rather
+    # than resolving the store root again through LocalVolumeArtifactStore.delete.
+    monkeypatch.setattr(_LocalVolumePublicationSession, "delete_published", fail_delete)
     committed_publication_states: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
 
     def capture_publication_state(session: Session) -> None:

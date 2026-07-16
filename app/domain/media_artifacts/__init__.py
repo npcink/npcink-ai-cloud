@@ -1,9 +1,13 @@
 from app.domain.media_artifacts.store import (
+    ArtifactConditionalDeleteResult,
     ArtifactInventoryItem,
     ArtifactInventoryPage,
     ArtifactInventoryStore,
     ArtifactPublicationFenceStore,
     ArtifactPublicationGuard,
+    ArtifactPublicationSession,
+    ArtifactReconciliationSession,
+    ArtifactSessionStore,
     ArtifactStorageMetadata,
     ArtifactStore,
     ArtifactStoreError,
@@ -15,11 +19,15 @@ from app.domain.media_artifacts.store import (
 )
 
 __all__ = [
+    "ArtifactConditionalDeleteResult",
     "ArtifactInventoryItem",
     "ArtifactInventoryPage",
     "ArtifactInventoryStore",
     "ArtifactPublicationFenceStore",
     "ArtifactPublicationGuard",
+    "ArtifactPublicationSession",
+    "ArtifactReconciliationSession",
+    "ArtifactSessionStore",
     "ArtifactStorageMetadata",
     "ArtifactStore",
     "ArtifactStoreError",

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted — P3-B4C2a implemented; destructive orphan cleanup remains deferred
-to P3-B4C2b.
+Accepted — P3-B4C2a implemented. P3-B4C2b is subsequently implemented by
+ADR-015 without changing this read-only inspection contract.
 
 ## Date
 
