@@ -1,8 +1,8 @@
 # Media Runtime Boundary v1
 
-Status: P3-B4C2b persistent fenced orphan cleanup implemented and default-off;
-PostgreSQL concurrency proof,
-WordPress local import, and B5 remain target work.
+Status: P3-B4C3 isolated PostgreSQL 16 multi-connection and named-volume proof
+completed; persistent orphan cleanup remains production/default-off. P3-B4D
+WordPress local import and B5 remain target work.
 
 ## 1. Purpose
 
@@ -21,9 +21,10 @@ artifact-referenced vision input, P3-B4A lifecycle projection, P3-B4B1 signed
 pull/delivery ACK, P3-B4B2 legacy-route/permanent-audio-asset removal, P3-B4B3
 unified delivery observability, P3-B4C1a publication compensation,
 P3-B4C1b fenced TTL purge/delivery coordination, P3-B4C2a read-only inventory
-reconciliation/publication fencing, and P3-B4C2b persistent default-off orphan
-cleanup. PostgreSQL concurrency proof and the remaining WordPress delivery
-closeout described for B4-B5 are still target work.
+reconciliation/publication fencing, P3-B4C2b persistent default-off orphan
+cleanup, and the P3-B4C3 isolated PostgreSQL 16 multi-connection/named-volume
+proof. Production cleanup remains disabled; the remaining WordPress delivery
+closeout described for B4D-B5 is still target work.
 
 ## 2. Stable Markers
 
@@ -549,9 +550,13 @@ direct retry. It is not a claim of PostgreSQL production concurrency behavior.
 P3-B4C2a provides read-only inventory reconciliation. P3-B4C2b adds persistent
 two-complete-pass candidate truth, per-candidate fixed-root fencing,
 all-status final recheck, conditional unlink, retry, and crash convergence;
-automatic cleanup remains configuration-disabled by default. P3-B4C3 PostgreSQL real-concurrency
-and PG16 migration validation, and P3-B4D WordPress local import remain
-explicit future work.
+automatic cleanup remains configuration-disabled by default.
+P3-B4C3 separately proves PostgreSQL major 16, migration head `20260716_0066`, distinct
+simultaneously live connections, active-pass and candidate-claim contention,
+stale-finalizer fencing, cross-container publication locking, and two complete
+safety-window passes on one isolated project-owned named volume. This proof is
+not production enablement; P3-B4D WordPress local import remains explicit
+future work.
 
 Metrics and redacted diagnostics must cover upload/download byte counts and
 duration, validation rejects, queue age, processing latency, success/failure,
@@ -618,14 +623,16 @@ capability.
   converge on artifact references. Provider URL/data-URL transport is private,
   transient, and absent from public and durable contracts. Addon upload handoff
   and real WordPress evidence remain P5 work.
-- **P3-B4A/B4B1/B4B2/B4C1/B4C2a/B4C2b:** Current lifecycle is projected at exact public
-  envelopes; signed pull, verified stream completion, independent delivery
-  evidence, credential stripping, and strict transfer ACK are implemented.
+- **P3-B4A/B4B1/B4B2/B4C1/B4C2a/B4C2b/B4C3:** Current lifecycle is projected
+  at exact public envelopes; signed pull, verified stream completion,
+  independent delivery evidence, credential stripping, and strict transfer ACK
+  are implemented.
   Legacy delivery routes and the permanent audio-asset playback surface are
   deleted. Transaction-tracked publication, fenced TTL purge/delivery
   coordination, fixed-root publication fencing, read-only two-direction
   inventory reconciliation, and persistent default-off two-pass orphan cleanup
-  are implemented.
+  are implemented. The isolated PostgreSQL 16 multi-connection/named-volume
+  proof is complete without enabling production cleanup.
 - **P3 target:** The four target resources, typed image contracts, security
   controls, signed pull, delivery acknowledgement, TTL, and purge are
   implemented and covered by focused tests.

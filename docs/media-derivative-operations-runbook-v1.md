@@ -122,9 +122,14 @@ Before changing that setting, operators must verify all of the following:
 
 1. Migration `20260716_0066_media_artifact_orphan_reconciliation` is applied
    and its rollback path is known.
-2. P3-B4C3 has passed against PostgreSQL 16 with multiple real connections and
-   the deployed named volume; SQLite and a local temporary directory are not
-   sufficient production-concurrency evidence.
+2. Run `pnpm run check:artifact-orphan-isolation-proof` and require aggregate
+   `P3-B4C3 PASS`. The isolated gate proves PostgreSQL major 16, migration head
+   `20260716_0066`, two simultaneously live app-container connections,
+   PostgreSQL claim/CAS fencing, cross-container publication locking, and two
+   complete passes over a Compose-project-owned named volume with a safety
+   window of at least 3,600 seconds. SQLite and a local temporary directory are
+   not sufficient production-concurrency evidence. Passing this proof does not
+   enable production cleanup; it only satisfies this checklist item.
 3. The artifact root, both shard levels, `.artifact-publication.lock`,
    `.artifact-store-bootstrap.lock`, `.artifact-store-generation`, and artifact
    files are owned by the service account. Root/shards/files are not group- or

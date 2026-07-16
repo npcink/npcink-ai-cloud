@@ -130,17 +130,17 @@ def test_connector_contract_freezes_one_suggestion_only_runtime() -> None:
         assert required in connector
 
 
-def test_media_contract_tracks_p3_b4c2b_cleanup_and_remaining_targets() -> None:
+def test_media_contract_tracks_p3_b4c3_proof_and_remaining_targets() -> None:
     media = _read("docs/media-runtime-boundary-v1.md")
 
     for required in (
-        "Status: P3-B4C2b persistent fenced orphan cleanup implemented and default-off",
+        "Status: P3-B4C3 isolated PostgreSQL 16 multi-connection and named-volume proof",
         "P3-B4C1a routes all",
         "full eligibility `UPDATE` compare-and-set",
         "media_artifact.delivery_window_unavailable",
         "P3-B4C2a instead uses a bounded artifact-store inventory versus",
         "P3-B4C2b persistent",
-        "P3-B4C3 PostgreSQL real-concurrency",
+        "P3-B4C3 separately proves PostgreSQL major 16",
         "P3-B4D WordPress local import",
         "Session-local in-memory no-delete quarantine",
         "automatic cleanup remains configuration-disabled by default",
@@ -172,6 +172,9 @@ def test_media_contract_tracks_p3_b4c2b_cleanup_and_remaining_targets() -> None:
         assert required in media
 
     normalized_media = " ".join(media.split())
+    assert "P3-B4C3 PostgreSQL real-concurrency and PG16 migration validation" not in (
+        normalized_media
+    )
     for required in (
         "run-result reads",
         "initial, transient, and idempotent execution responses",
@@ -206,15 +209,17 @@ def test_media_contract_tracks_p3_b4c2b_cleanup_and_remaining_targets() -> None:
         ).split()
     )
     for required in (
-        "runtime and deployment configuration default cleanup to disabled",
+        "P3-B4C3 isolated PostgreSQL 16, multi-connection, and named-volume proof implemented",
+        "Runtime and deployment configuration default cleanup to disabled",
         "cleanup_candidates_eligible",
         "one non-blocking exclusive session per candidate",
         "any current or future `MediaArtifact.status`",
         "deepest existing pinned directory",
         "POSIX advisory locking",
-        "P3-B4C3 must prove PostgreSQL 16 multi-connection claims",
+        "Passing this proof does not enable production cleanup",
     ):
         assert required in cleanup_adr
+    assert "P3-B4C3 must prove PostgreSQL 16 multi-connection claims" not in cleanup_adr
 
 
 def test_image_generation_artifact_adr_freezes_provider_and_cms_boundaries() -> None:
@@ -275,6 +280,10 @@ def test_deletion_inventory_freezes_items_and_phase_exit_proof() -> None:
 
     assert "NO_COMPATIBILITY_LAYER" in inventory
     assert "## Phase Exit Proof" in inventory
+    assert "P3-B4C3 completes the isolated PostgreSQL 16 multi-connection" in inventory
+    assert "production default-off" in inventory
+    assert "B4D real WordPress local-import smoke remains required" in inventory
+    assert "C3 PostgreSQL real-concurrency/PG16 migration validation" not in inventory
 
 
 def test_active_connector_docs_match_the_p1_runtime_contract() -> None:

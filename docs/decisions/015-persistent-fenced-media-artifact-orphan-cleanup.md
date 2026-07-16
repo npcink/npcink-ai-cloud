@@ -2,8 +2,10 @@
 
 ## Status
 
-Accepted — P3-B4C2b implemented; runtime and deployment configuration default
-cleanup to disabled. This decision does not record a deployment action.
+Accepted — P3-B4C2b implemented and P3-B4C3 isolated PostgreSQL 16,
+multi-connection, and named-volume proof implemented. Runtime and deployment
+configuration default cleanup to disabled. This decision does not record a
+deployment action.
 
 ## Date
 
@@ -100,7 +102,9 @@ fixed-root/inventory capabilities stay optional seams.
   historical candidate rows into application memory.
 - Portal, Admin, public API, WordPress, CMS write ownership, media delivery,
   TTL purge, S3/CDN, and new scheduler contracts do not change.
-- PostgreSQL real-concurrency and PG16 migration proof remain P3-B4C3 work.
+- PostgreSQL real-concurrency, migration-head, and named-volume behavior are
+  covered by the dedicated P3-B4C3 isolation proof. That proof is evidence for
+  the enablement checklist; it is not a production enablement action.
 
 ## Threat Model And Enablement Boundary
 
@@ -121,12 +125,30 @@ accidental drift and ordinary races within that cooperative model. They do not
 claim protection against a hostile same-UID namespace writer deliberately
 racing the final stat and unlink.
 
-The current focused proof uses SQLite state/CAS behavior and local POSIX
-`flock`. P3-B4C3 must prove PostgreSQL 16 multi-connection claims and the real
-named-volume topology. Production automatic deletion must remain disabled
-until that proof and the operations enablement checklist are complete.
+The ordinary focused suite continues to use SQLite state/CAS behavior and local
+POSIX `flock`. P3-B4C3 adds a separate, explicit proof using PostgreSQL 16, two
+simultaneously live app-container connections, and one Compose-project-owned
+named volume. It proves active-pass exclusion; eligible, retry, and stale-claim
+CAS; stale-finalizer fencing; cross-container shared/exclusive publication
+locking; and two complete safety-window passes with default-isolated deletion.
+Passing this proof does not enable production cleanup. Production automatic
+deletion remains disabled until an operator separately completes every item in
+the operations enablement checklist.
 
 ## Verification
+
+Run the isolated proof explicitly; ordinary `check:fast` does not start it:
+
+```bash
+pnpm run check:artifact-orphan-isolation-proof
+```
+
+The gate creates a fresh random Compose project, starts PostgreSQL 16 plus two
+app containers, mounts one project-owned named volume at
+`/var/lib/npcink-ai-cloud/artifacts`, emits a bounded `PASS`/`FAIL` summary
+containing only a fixed phase and numeric Compose exit code (never keys, paths,
+tokens, claim identifiers, SQL, or exception text), and tears down only that
+project's containers and volumes.
 
 - migration upgrade/downgrade shape and named constraint proof;
 - two-pass, age-gate, missed-pass, generation, token, cursor, lease, stale
