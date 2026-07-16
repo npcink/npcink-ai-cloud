@@ -78,10 +78,12 @@ Global body limits remain unchanged.
 
 The runtime production chain is Caddy to the production Nginx proxy. Caddy
 sets `X-Real-IP` from its own connection's `remote_host`; production Nginx
-trusts that value only when the immediate proxy is loopback or RFC1918, then
-uses the recovered `$binary_remote_addr` for the per-client zones. Development
-and the standalone domain template receive clients directly and therefore do
-not enable forwarded-address rewriting.
+trusts that value only when the immediate proxy is the runtime Compose Caddy
+address `172.28.0.11`, then uses the recovered `$binary_remote_addr` for the
+per-client zones. Nginx is pinned to `172.28.0.10`, the only forwarded proxy
+address trusted by the runtime API. Development and the standalone domain
+template receive clients directly and therefore do not enable
+forwarded-address rewriting.
 
 ## Why Two Disk I/O Passes
 

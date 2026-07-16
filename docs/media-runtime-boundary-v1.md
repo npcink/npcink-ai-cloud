@@ -116,9 +116,12 @@ and one-shot multipart parsing to a bounded signed ingress:
   per-client request and two-connection limit plus an eight-connection
   route-wide budget. Limit rejections return 429 and global body limits remain
   unchanged. In the production Caddy-to-Nginx chain, Caddy sets `X-Real-IP`
-  from `remote_host`; Nginx accepts it only from loopback/RFC1918 proxies so
-  `$binary_remote_addr` continues to represent the real client for the
-  per-client zones. Direct-client development/domain configs do not rewrite it.
+  from `remote_host`; runtime Compose pins Caddy to `172.28.0.11`, and Nginx
+  accepts the header only from that exact address so `$binary_remote_addr`
+  continues to represent the real client for the per-client zones. The Nginx
+  proxy is separately pinned to `172.28.0.10`, which is the only forwarded
+  proxy address trusted by Gunicorn. Direct-client development/domain configs
+  do not rewrite client addresses.
 
 This deliberately performs two disk I/O passes for multipart requests:
 network to the sealed raw spool, then raw spool to bounded multipart file

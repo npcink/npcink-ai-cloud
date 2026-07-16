@@ -95,10 +95,7 @@ def test_media_upload_proxy_overrides_are_exact_and_bounded() -> None:
         if line.strip().startswith("set_real_ip_from ")
     }
     assert prod_real_ip_trust == {
-        "set_real_ip_from 127.0.0.1;",
-        "set_real_ip_from 10.0.0.0/8;",
-        "set_real_ip_from 172.16.0.0/12;",
-        "set_real_ip_from 192.168.0.0/16;",
+        "set_real_ip_from 172.28.0.11;",
     }
     assert "real_ip_header X-Real-IP;" in prod
     assert "real_ip_recursive on;" in prod
@@ -167,15 +164,28 @@ def test_media_pull_proxy_is_exact_get_only_streaming_and_independently_bounded(
 
 def test_production_api_trusts_the_same_pinned_network_used_by_compose() -> None:
     compose = (_cloud_root() / "docker-compose.prod.yml").read_text()
+    runtime_compose = (_cloud_root() / "docker-compose.runtime.yml").read_text()
 
-    shared_subnet = "${NPCINK_CLOUD_PROXY_SUBNET:-172.28.0.0/24}"
-    trusted_proxy_ip = "${NPCINK_CLOUD_PROXY_IP:-172.28.0.10}"
+    shared_subnet = "172.28.0.0/24"
+    trusted_proxy_ip = "172.28.0.10"
+    trusted_edge_proxy_ip = "172.28.0.11"
     assert f"--forwarded-allow-ips {trusted_proxy_ip}" in compose
     assert f"ipv4_address: {trusted_proxy_ip}" in compose
     assert f"- subnet: {shared_subnet}" in compose
     assert compose.count(shared_subnet) == 1
     assert compose.count(trusted_proxy_ip) == 2
     assert "--forwarded-allow-ips *" not in compose
+    assert f"--forwarded-allow-ips {trusted_proxy_ip}" in runtime_compose
+    assert f"ipv4_address: {trusted_proxy_ip}" in runtime_compose
+    assert f"ipv4_address: {trusted_edge_proxy_ip}" in runtime_compose
+    assert f"- subnet: {shared_subnet}" in runtime_compose
+    assert runtime_compose.count(trusted_proxy_ip) == 2
+    assert runtime_compose.count(trusted_edge_proxy_ip) == 1
+    assert runtime_compose.count(shared_subnet) == 1
+    assert "--forwarded-allow-ips *" not in runtime_compose
+    assert "set_real_ip_from 172.28.0.11;" in (
+        _cloud_root() / "deploy" / "nginx.prod.conf"
+    ).read_text()
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in (
         _cloud_root() / "deploy" / "nginx.prod.conf"
     ).read_text()
