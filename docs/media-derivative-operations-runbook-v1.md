@@ -129,6 +129,13 @@ is recorded in
 This closes P3-B5 but does not authorize production deployment or enable
 production orphan cleanup.
 
+The subsequent WordPress-first product acceptance added a real operator UI
+proof, a deterministic representative processor corpus, and a full disposable
+local staging rehearsal. The evidence and exact non-goals are recorded in
+[WordPress Media Product Acceptance 2026-07-16](wordpress-media-product-acceptance-2026-07-16.md).
+That acceptance still does not authorize production deployment, production
+orphan cleanup, another CMS adapter, or a Cloud-owned media library.
+
 ## Orphan Cleanup Enablement Gate
 
 `NPCINK_CLOUD_ARTIFACT_ORPHAN_CLEANUP_ENABLED` defaults to `false`. This
