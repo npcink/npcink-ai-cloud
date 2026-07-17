@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Request
@@ -16,6 +15,7 @@ from app.api.auth import (
     decode_portal_bearer_claims,
     decode_portal_session_cookie_claims,
     get_cloud_services,
+    normalize_portal_site_id,
     resolve_portal_remember_me_session_ttl_seconds,
     resolve_portal_session_ttl_seconds,
     validate_portal_principal_session,
@@ -32,7 +32,6 @@ COOKIE_PORTAL_SESSION_TOKEN = "npcink_portal_session_token"
 COOKIE_BEARER_TOKEN = COOKIE_PORTAL_SESSION_TOKEN
 COOKIE_SESSION_ISSUED_AT = "npcink_portal_session_issued_at"
 COOKIE_SESSION_EXPIRES_AT = "npcink_portal_session_expires_at"
-COOKIE_SITE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 def _dict_value(value: object) -> dict[str, object]:
@@ -48,8 +47,7 @@ def _object_list(value: object) -> list[object]:
 
 
 def _cookie_safe_site_id(value: str) -> str:
-    site_id = value.strip()
-    return site_id if COOKIE_SITE_ID_PATTERN.fullmatch(site_id) else ""
+    return normalize_portal_site_id(value)
 
 
 def get_commercial_service(request: Request) -> CommercialService:
@@ -71,6 +69,7 @@ def _safe_portal_error_message(error_code: str) -> str:
         "auth.portal_session_invalid": "portal session is invalid",
         "auth.portal_login_code_invalid": "portal login code is invalid",
         "auth.portal_oauth_failed": "portal OAuth request failed",
+        "portal.site_selection_required": "portal site selection is required",
     }
     return messages.get(str(error_code or ""), "portal request failed")
 
@@ -206,14 +205,12 @@ def serialize_portal_session(
 ) -> dict[str, object]:
     service = get_commercial_service(request)
     sites = service.list_portal_sites(principal_id=principal_id)
-    accounts = service.list_portal_accounts(principal_id=principal_id)
     principal_profile = service.get_portal_principal_profile(principal_id=principal_id)
-    site_items = _dict_list(sites.get("items"))
-    selected_site: dict[str, object] | None = None
-    selected_role = ""
-    selected_account_id = ""
-    current_subscription: dict[str, object] | None = None
-    resolved_site_id = site_id
+    site_items = [
+        _portal_site_projection(_dict_value(item.get("site")))
+        for item in _dict_list(sites.get("items"))
+    ]
+    selected_context: dict[str, object] | None = None
     session = session_metadata or _resolve_portal_session_metadata(
         request,
         principal_id=principal_id,
@@ -227,12 +224,9 @@ def serialize_portal_session(
         except CommercialServiceError:
             if strict_site:
                 raise
-            resolved_site_id = ""
         else:
-            selected_site = _dict_value(access.get("site")) or None
-            selected_role = str(access.get("role") or "")
-            selected_account_id = str(access.get("account_id") or "")
-            selected_status = str(_dict_value(selected_site).get("status") or "").strip()
+            selected_site = _dict_value(access.get("site"))
+            selected_status = str(selected_site.get("status") or "").strip()
             if selected_status == SITE_STATUS_ARCHIVED:
                 if strict_site:
                     raise CommercialServiceError(
@@ -240,10 +234,6 @@ def serialize_portal_session(
                         "service.portal_site_removed",
                         "removed portal sites cannot be selected as the current site",
                     )
-                selected_site = None
-                selected_role = ""
-                selected_account_id = ""
-                resolved_site_id = ""
             elif selected_status != SITE_STATUS_ACTIVE:
                 if strict_site:
                     raise CommercialServiceError(
@@ -251,44 +241,32 @@ def serialize_portal_session(
                         "service.portal_site_inactive",
                         "inactive portal sites cannot be selected as the current site",
                     )
-                selected_site = None
-                selected_role = ""
-                selected_account_id = ""
-                resolved_site_id = ""
-    account_items = _dict_list(accounts.get("items"))
-    if not selected_account_id and account_items:
-        selected_account_id = str(account_items[0].get("account_id") or "")
-        selected_role = str(account_items[0].get("role") or "")
-    if selected_account_id:
-        try:
-            account_detail = service.get_admin_account(selected_account_id)
-        except CommercialServiceError:
-            account_detail = {}
-        subscriptions = _dict_list(account_detail.get("subscriptions"))
-        if subscriptions:
-            primary_subscription = _dict_value(subscriptions[0].get("subscription"))
-            current_subscription = primary_subscription or subscriptions[0]
+            else:
+                account_id = str(access.get("account_id") or "").strip()
+                current_subscription = (
+                    service.get_portal_current_subscription(account_id=account_id)
+                    if account_id
+                    else None
+                )
+                selected_context = {
+                    "site": _portal_site_projection(selected_site),
+                    "allowed_actions": sorted(
+                        {
+                            str(action).strip()
+                            for action in _object_list(access.get("allowed_actions"))
+                            if str(action).strip()
+                        }
+                    ),
+                    "current_subscription": project_portal_subscription(
+                        _dict_value(current_subscription)
+                    )
+                    if current_subscription
+                    else None,
+                }
     return {
-        "site_id": resolved_site_id,
-        "principal_id": principal_id,
         "email": str(principal_profile.get("email") or ""),
-        "account_id": selected_account_id,
-        "identity_type": (
-            str(account_items[0].get("identity_type") or "") if account_items else ""
-        ),
-        "allowed_actions": sorted(
-            {
-                str(action).strip()
-                for item in account_items
-                for action in _object_list(item.get("allowed_actions"))
-                if str(action).strip()
-            }
-        ),
-        "role": selected_role,
-        "current_subscription": current_subscription,
-        "site": selected_site,
         "sites": site_items,
-        "accounts": account_items,
+        "selected_context": selected_context,
         "auth_mode": portal_auth_mode(request),
         "session": {
             "state": "active",
@@ -297,6 +275,38 @@ def serialize_portal_session(
             "expires_at": session.get("expires_at", ""),
             "revocable": bool(session.get("revocable")),
         },
+    }
+
+
+def _portal_site_projection(site: dict[str, object]) -> dict[str, object]:
+    return {
+        "site_id": str(site.get("site_id") or ""),
+        "name": str(site.get("name") or ""),
+        "site_url": str(site.get("site_url") or ""),
+        "platform_kind": str(site.get("platform_kind") or ""),
+        "status": str(site.get("status") or ""),
+    }
+
+
+def project_portal_subscription(subscription: dict[str, object]) -> dict[str, object]:
+    return {
+        "subscription_id": str(subscription.get("subscription_id") or ""),
+        "plan_id": str(subscription.get("plan_id") or ""),
+        "plan_version_id": str(subscription.get("plan_version_id") or ""),
+        "status": str(subscription.get("status") or ""),
+        "tier_id": str(subscription.get("tier_id") or ""),
+        "plan_kind": str(subscription.get("plan_kind") or ""),
+        "package_kind": str(subscription.get("package_kind") or ""),
+        "package_alias": str(subscription.get("package_alias") or ""),
+        "display_package_label": str(subscription.get("display_package_label") or ""),
+        "coverage_state": str(subscription.get("coverage_state") or ""),
+        "current_period_start_at": str(subscription.get("current_period_start_at") or ""),
+        "current_period_end_at": str(subscription.get("current_period_end_at") or ""),
+        "scheduled_plan_id": str(subscription.get("scheduled_plan_id") or ""),
+        "scheduled_plan_version_id": str(
+            subscription.get("scheduled_plan_version_id") or ""
+        ),
+        "scheduled_change_at": str(subscription.get("scheduled_change_at") or ""),
     }
 
 

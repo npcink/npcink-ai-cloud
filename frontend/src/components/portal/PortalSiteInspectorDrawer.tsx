@@ -8,7 +8,7 @@ import {
   getPortalSiteUrl,
 } from '@/lib/portal-site-display';
 import { translateStatusLabel } from '@/lib/status-display';
-import { cn, formatDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 type RestrictionItem = {
   tone: 'warn' | 'info';
@@ -69,16 +69,12 @@ export function PortalSiteInspectorDrawer({
     return null;
   }
 
-  const detailSite = summary?.site || site;
+  const detailSite: Site = summary?.site || site;
   const postureMetrics = [
     {
       label: t('common.status'),
       value: translateStatusLabel(detailSite.status, t),
       detail: getPortalSiteUrl(detailSite) || t('portal.site_url_missing_short', {}, 'Site URL not configured'),
-    },
-    {
-      label: t('common.connected'),
-      value: detailSite.created_at ? formatDate(detailSite.created_at) : t('common.not_found'),
     },
   ];
 

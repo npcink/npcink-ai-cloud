@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   PortalPageStack,
   PortalSection,
@@ -52,6 +52,7 @@ function getAuditTraceId(event: PortalAuditEvent): string {
 export function PortalAuditClient() {
   const { session, isLoading: sessionLoading, isAuthenticated } = useSession();
   const { t } = useLocale();
+  const contextSiteId = session?.selected_context?.site.site_id || '';
   const [auditEvents, setAuditEvents] = useState<PortalAuditEvent[]>([]);
   const [auditSummary, setAuditSummary] = useState<PortalAuditSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,12 +61,17 @@ export function PortalAuditClient() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const [visibleLimit, setVisibleLimit] = useState(10);
+  const contextSiteIdRef = useRef(contextSiteId);
+  const requestVersionRef = useRef(0);
   const recentEvents = useMemo(() => auditEvents, [auditEvents]);
   const attentionEventCount = useMemo(() => {
     return recentEvents.filter((event) => !isSuccessfulAuditOutcome(event.outcome)).length;
   }, [recentEvents]);
 
   const loadActivity = useCallback(async (limit: number, loadingMore = false) => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestVersion = ++requestVersionRef.current;
     if (loadingMore) {
       setIsLoadingMore(true);
     } else {
@@ -78,9 +84,17 @@ export function PortalAuditClient() {
     }
     try {
       const bundle = await portalClient.getAuditBundle({ limit });
+      if (
+        requestVersion !== requestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return;
       setAuditSummary(bundle.summary);
       setAuditEvents(bundle.events);
     } catch (err) {
+      if (
+        requestVersion !== requestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return;
       const message = formatPortalErrorMessage(
         err,
         t,
@@ -92,21 +106,37 @@ export function PortalAuditClient() {
         setError(message);
       }
     } finally {
+      if (
+        requestVersion !== requestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return;
       if (loadingMore) {
         setIsLoadingMore(false);
       } else {
         setIsLoading(false);
       }
     }
-  }, [t]);
+  }, [isAuthenticated, t]);
+
+  useLayoutEffect(() => {
+    contextSiteIdRef.current = contextSiteId;
+    requestVersionRef.current += 1;
+    setAuditEvents([]);
+    setAuditSummary(null);
+    setVisibleLimit(10);
+    setError(null);
+    setLoadMoreError(null);
+    setIsLoadingMore(false);
+    setIsLoading(Boolean(isAuthenticated && contextSiteId));
+  }, [contextSiteId, isAuthenticated]);
 
   useEffect(() => {
-    if (!session || !isAuthenticated) {
-      setIsLoading(false);
-      return;
-    }
+    if (!isAuthenticated || !contextSiteId) return;
     void loadActivity(10);
-  }, [isAuthenticated, loadActivity, session]);
+    return () => {
+      requestVersionRef.current += 1;
+    };
+  }, [contextSiteId, isAuthenticated, loadActivity]);
 
   const translateOutcome = (outcome: string) => {
     if (isSuccessfulAuditOutcome(outcome)) {
@@ -144,7 +174,7 @@ export function PortalAuditClient() {
     return t('portal.audit.generic_activity', {}, 'Account activity');
   };
 
-  if (sessionLoading || isLoading) {
+  if (sessionLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
   }
 
@@ -156,6 +186,32 @@ export function PortalAuditClient() {
         actionLabel={t('nav.sign_in')}
       />
     );
+  }
+
+  if (!contextSiteId) {
+    return (
+      <PortalPageStack>
+        <PortalWorkspaceHeader
+          eyebrow={t('portal.audit.records_title', {}, 'Activity records')}
+          title={t('portal.audit.nav_label', {}, 'Recent activity')}
+          currentPage="audit"
+        />
+        <PortalEmptyState
+          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
+          description={t(
+            'portal.site_selection_required_desc',
+            {},
+            'Choose a current site before viewing account activity.'
+          )}
+          actionLabel={t('portal.select_site_action', {}, 'Select site')}
+          actionHref="/portal#sites"
+        />
+      </PortalPageStack>
+    );
+  }
+
+  if (isLoading) {
+    return <PortalLoadingState message={t('common.loading')} />;
   }
 
   if (error) {

@@ -202,14 +202,53 @@ Final gates on the integrated working tree:
 - `pnpm run check:anti-drift`: passed;
 - Python Ruff and mypy: passed, 227 source files checked by mypy.
 
+## P4-E Strict Context And Commercial Boundary — 2026-07-17
+
+The Portal customer cutover is now implemented as one no-compatibility release:
+
+- the session response contains only `email`, flat public `sites`, one nullable
+  `selected_context`, `auth_mode`, and bounded session metadata;
+- account-level commercial, usage, audit, support, and addon flows derive scope
+  only from an explicitly authorized selected site. Missing or stale context
+  fails closed; no first account/site fallback remains;
+- cookie and bearer site identifiers share the same bounded 191-character
+  contract, archived sites cannot become current context, and expired trial
+  state is reconciled before projecting the current subscription;
+- support requests, messages, attachments, and feedback use customer-specific
+  serializers. Cross-ticket attachment message references fail before any
+  database or blob side effect;
+- plan offers/trials, subscription and payment orders, credits, billing
+  snapshots, reconciliation, and site removal all use explicit Portal
+  allowlist projectors. Internal account/principal identifiers, raw metadata,
+  trial claim identifiers, provider order identifiers, concurrency policy, and
+  Admin-only fields are not returned to the browser;
+- frontend account pages require selected context, clear stale state
+  atomically, and ignore late responses from a previous site context. Raw
+  commercial metadata is replaced by explicit public fields such as
+  `target_tier_id`;
+- removed session aliases, commercial fields, routes, and client types have no
+  compatibility shims.
+
+Integrated verification on the final working tree:
+
+- focused Portal API: 61 passed;
+- frontend static contracts and TypeScript type-check: passed;
+- frontend Vitest: 13 passed;
+- frontend ESLint: passed;
+- Portal Playwright workspace: 10 passed;
+- Portal Playwright login/addon: 5 passed;
+- `pnpm run check:fast`: 145 contract passed, 1 skipped; 597 domain passed,
+  3 skipped;
+- `pnpm run check:seam`: 717 API passed; perimeter 9 passed;
+- `pnpm run check:perimeter`: 9 passed;
+- `pnpm run check:anti-drift`: passed.
+- Python Ruff and mypy: passed, 227 source files checked by mypy.
+
 Still required before declaring P4 complete:
 
-- replace the customer session's routine `principal_id/account_id/role`, nested
-  account/site compatibility fields, and `site_admin_ref/member_ref` guesses
-  with one bounded projection;
-- derive multi-account commercial scope from an explicitly authorized selected
-  site/account context and fail closed when ambiguous; never select the first
-  storage result;
+- enforce the declared Portal mutation idempotency requirement at the request
+  boundary; `require_idempotency` and the current write guard do not yet provide
+  that security/replay guarantee;
 - migrate the remaining raw Admin page fetches to the shared client in bounded
   page batches;
 - replace `/admin/ability-models` with the Cloud-owned runtime-profile surface,

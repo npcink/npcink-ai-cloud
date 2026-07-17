@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { portalClient, type Entitlements, type PortalPaymentOrder } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
@@ -13,7 +13,7 @@ type PortalPaymentReturnNoticeProps = {
   provider: string;
   orderId: string;
   isAuthenticated: boolean;
-  accountId?: string;
+  contextSiteId?: string;
   entitlements: Entitlements | null;
   refreshSession: () => Promise<unknown>;
   refreshBilling: () => Promise<unknown>;
@@ -29,7 +29,7 @@ export function PortalPaymentReturnNotice({
   provider,
   orderId,
   isAuthenticated,
-  accountId,
+  contextSiteId,
   entitlements,
   refreshSession,
   refreshBilling,
@@ -40,22 +40,44 @@ export function PortalPaymentReturnNotice({
   const [timedOut, setTimedOut] = useState(false);
   const [reconciled, setReconciled] = useState(false);
   const dependenciesRef = useRef({ t, refreshSession, refreshBilling, refreshPaymentOrders });
+  const normalizedContextSiteId = String(contextSiteId || '').trim();
+  const contextSiteIdRef = useRef(normalizedContextSiteId);
+  const loadRequestVersionRef = useRef(0);
   const shouldPoll = provider === 'alipay' && Boolean(orderId);
-  const visible = shouldPoll || Boolean(order);
+  const visible = Boolean(normalizedContextSiteId) && (shouldPoll || Boolean(order));
   const activeOrderId = orderId || order?.order_id || '';
 
   useEffect(() => {
     dependenciesRef.current = { t, refreshSession, refreshBilling, refreshPaymentOrders };
   }, [refreshBilling, refreshPaymentOrders, refreshSession, t]);
 
+  useLayoutEffect(() => {
+    contextSiteIdRef.current = normalizedContextSiteId;
+    loadRequestVersionRef.current += 1;
+    setOrder(null);
+    setError(null);
+    setTimedOut(false);
+    setReconciled(false);
+  }, [normalizedContextSiteId]);
+
   const loadOrder = useCallback(async () => {
-    if (!activeOrderId) return null;
+    const requestContextSiteId = contextSiteIdRef.current;
+    if (!requestContextSiteId || !activeOrderId) return null;
+    const requestVersion = ++loadRequestVersionRef.current;
     try {
       const response = await portalClient.getAccountPaymentOrder(activeOrderId);
+      if (
+        requestVersion !== loadRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return null;
       setOrder(response.data.order);
       setError(null);
       return response.data.order;
     } catch (loadError) {
+      if (
+        requestVersion !== loadRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return null;
       const translate = dependenciesRef.current.t;
       setError(formatPortalErrorMessage(loadError, translate, translate('error.failed_load')));
       return null;
@@ -69,22 +91,24 @@ export function PortalPaymentReturnNotice({
       dependencies.refreshBilling(),
       dependencies.refreshPaymentOrders(),
     ]);
-    setReconciled(true);
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || !accountId || !shouldPoll) return;
+    if (!isAuthenticated || !normalizedContextSiteId || !shouldPoll) return;
+    const pollContextSiteId = normalizedContextSiteId;
     let canceled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempts = 0;
     const poll = async () => {
       const nextOrder = await loadOrder();
-      if (canceled) return;
+      if (canceled || pollContextSiteId !== contextSiteIdRef.current) return;
       const status = normalizePaymentText(nextOrder?.status);
       if (status && status !== 'pending') {
         setReconciled(false);
         window.history.replaceState(window.history.state, '', '/portal/billing');
         await reconcile();
+        if (canceled || pollContextSiteId !== contextSiteIdRef.current) return;
+        setReconciled(true);
         return;
       }
       attempts += 1;
@@ -100,7 +124,7 @@ export function PortalPaymentReturnNotice({
       canceled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [accountId, isAuthenticated, loadOrder, reconcile, shouldPoll]);
+  }, [isAuthenticated, loadOrder, normalizedContextSiteId, reconcile, shouldPoll]);
 
   if (!visible) return null;
 
@@ -114,10 +138,15 @@ export function PortalPaymentReturnNotice({
   const nextExpiry = String(creditQuota?.paid_next_expires_at || '');
 
   const handleRefresh = async () => {
+    const refreshContextSiteId = contextSiteIdRef.current;
+    if (!refreshContextSiteId) return;
     setTimedOut(false);
     setReconciled(false);
     const nextOrder = await loadOrder();
+    if (refreshContextSiteId !== contextSiteIdRef.current) return;
     await reconcile();
+    if (refreshContextSiteId !== contextSiteIdRef.current) return;
+    setReconciled(true);
     if (normalizePaymentText(nextOrder?.status) === 'pending') setReconciled(false);
   };
 

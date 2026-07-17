@@ -21,6 +21,7 @@ import {
 import { PortalPaymentReturnNotice } from '@/components/portal/PortalPaymentReturnNotice';
 import { PortalTrialEligibilityPanel } from '@/components/portal/PortalTrialEligibilityPanel';
 import {
+  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -124,6 +125,7 @@ function PortalBillingContent() {
   const searchParams = useSearchParams();
   const { locale, t } = useLocale();
   const { session, isLoading: sessionLoading, isAuthenticated, refresh } = useSession();
+  const contextSiteId = session?.selected_context?.site.site_id || '';
   const {
     entitlements,
     creditPacks,
@@ -132,7 +134,7 @@ function PortalBillingContent() {
     error,
     load: loadBilling,
   } = usePortalCommercialCatalog({
-    accountId: session?.account_id,
+    contextSiteId,
     isAuthenticated,
     t,
   });
@@ -150,7 +152,7 @@ function PortalBillingContent() {
     setOffset: setPaymentOrderOffset,
     setCancelConfirmOrderId,
   } = usePortalPaymentOrders({
-    accountId: session?.account_id,
+    contextSiteId,
     isAuthenticated,
     t,
   });
@@ -280,7 +282,34 @@ function PortalBillingContent() {
     );
   }
 
-  const currentSubscription = session.current_subscription || null;
+  const siteSelectionRequired = !contextSiteId
+    || [error, paymentOrderError, creditPackError, packageError].some((message) => (
+      String(message || '').includes('portal.site_selection_required')
+    ));
+  if (siteSelectionRequired) {
+    return (
+      <PortalPageStack>
+        <PortalWorkspaceHeader
+          eyebrow={t('portal.billing.package_rights_label', {}, 'Package rights')}
+          title={t('portal.billing.customer_title', {}, 'Package')}
+          description={t('portal.billing.subtitle', {}, 'Confirm the current package, included rights, and upgrade options.')}
+          currentPage="billing"
+        />
+        <PortalEmptyState
+          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
+          description={t(
+            'portal.site_selection_required_desc',
+            {},
+            'Choose a current site before viewing package, points, or payment details.'
+          )}
+          actionLabel={t('portal.select_site_action', {}, 'Select site')}
+          actionHref="/portal#sites"
+        />
+      </PortalPageStack>
+    );
+  }
+
+  const currentSubscription = session.selected_context?.current_subscription || null;
   const currentPlanId = String(currentSubscription?.plan_id || '').toLowerCase();
   const currentStatus = String(currentSubscription?.status || '').toLowerCase();
   const offersByTier = new Map(
@@ -469,11 +498,11 @@ function PortalBillingContent() {
   const quotaSummary = entitlements?.quota_summary || null;
   const currentPeriodStart =
     entitlements?.period_start_at ||
-    currentSubscription?.current_period_start ||
+    currentSubscription?.current_period_start_at ||
     '';
   const currentPeriodEnd =
     entitlements?.period_end_at ||
-    currentSubscription?.current_period_end ||
+    currentSubscription?.current_period_end_at ||
     '';
   const currentPeriodLabel =
     currentPeriodStart && currentPeriodEnd
@@ -509,7 +538,7 @@ function PortalBillingContent() {
         provider={paymentReturnProvider}
         orderId={paymentReturnOrderId}
         isAuthenticated={isAuthenticated}
-        accountId={session.account_id}
+        contextSiteId={contextSiteId}
         entitlements={entitlements}
         refreshSession={refresh}
         refreshBilling={loadBilling}

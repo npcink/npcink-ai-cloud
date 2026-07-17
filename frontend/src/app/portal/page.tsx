@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
@@ -35,14 +35,10 @@ function buildRestrictionItems({
   t,
   siteStatus,
   subscriptionStatus,
-  requestLimit,
-  tokenLimit,
 }: {
   t: (key: string, params?: Record<string, string>, fallback?: string) => string;
   siteStatus: string;
   subscriptionStatus: string;
-  requestLimit: number;
-  tokenLimit: number;
 }): RestrictionItem[] {
   return [
     siteStatus !== 'active'
@@ -67,17 +63,6 @@ function buildRestrictionItems({
           ),
         }
       : null,
-    requestLimit > 0 || tokenLimit > 0
-      ? {
-          tone: 'info',
-          label: t('portal.home.restriction_limit_label', {}, 'Package usage is limited'),
-          detail: t(
-            'portal.home.restriction_limit_desc',
-            {},
-            'Open Usage to see what is left in the current package period.'
-          ),
-        }
-      : null,
   ].filter(Boolean) as RestrictionItem[];
 }
 
@@ -85,33 +70,42 @@ export default function PortalPage() {
   const { t } = useLocale();
   const { session, isLoading, isAuthenticated } = useSession();
   const [accountEntitlements, setAccountEntitlements] = useState<Entitlements | null>(null);
+  const contextSiteId = session?.selected_context?.site.site_id || '';
+  const contextSiteIdRef = useRef(contextSiteId);
+  const accountEntitlementsRequestVersionRef = useRef(0);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setAccountEntitlements(null);
-      return;
-    }
-
-    let isCancelled = false;
+  useLayoutEffect(() => {
+    contextSiteIdRef.current = contextSiteId;
+    const requestVersion = ++accountEntitlementsRequestVersionRef.current;
+    setAccountEntitlements(null);
+    if (!isAuthenticated || !contextSiteId) return;
 
     void portalClient
       .getAccountEntitlements()
       .then((response) => {
-        if (!isCancelled) {
+        if (
+          requestVersion === accountEntitlementsRequestVersionRef.current
+          && contextSiteId === contextSiteIdRef.current
+        ) {
           setAccountEntitlements(response.data);
         }
       })
       .catch((error) => {
-        if (!isCancelled) {
+        if (
+          requestVersion === accountEntitlementsRequestVersionRef.current
+          && contextSiteId === contextSiteIdRef.current
+        ) {
           console.error('Failed to load account entitlements:', error);
           setAccountEntitlements(null);
         }
       });
 
     return () => {
-      isCancelled = true;
+      if (requestVersion === accountEntitlementsRequestVersionRef.current) {
+        accountEntitlementsRequestVersionRef.current += 1;
+      }
     };
-  }, [isAuthenticated]);
+  }, [contextSiteId, isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -139,9 +133,8 @@ export default function PortalPage() {
   }
 
   const visibleSites = getVisiblePortalSites(session.sites);
-  const selectedSite =
-    visibleSites.find((s) => s.site_id === session.site_id) || visibleSites[0] || null;
-  const currentSubscription = session.current_subscription;
+  const selectedSite = session.selected_context?.site || null;
+  const currentSubscription = session.selected_context?.current_subscription || null;
   const selectedSiteUrl = selectedSite ? getPortalSiteUrl(selectedSite) : '';
   const currentPackageDisplay = resolveCustomerPackageDisplay(t, {
     planId: currentSubscription?.plan_id,
@@ -150,15 +143,11 @@ export default function PortalPage() {
     planKind: currentSubscription?.plan_kind,
     coverageState: currentSubscription ? 'covered' : 'uncovered',
   });
-  const requestLimit = Number(session.entitlements?.requests_limit || 0);
-  const tokenLimit = Number(session.entitlements?.tokens_limit || 0);
   const restrictionItems = selectedSite
     ? buildRestrictionItems({
         t,
         siteStatus: selectedSite.status,
         subscriptionStatus: currentSubscription?.status || '',
-        requestLimit,
-        tokenLimit,
       })
     : [
         {
@@ -211,7 +200,7 @@ export default function PortalPage() {
   const remainingCredits = Number(accountEntitlements?.quota_summary?.credit?.remaining ?? 0);
   const accountQuotaStatus = String(accountEntitlements?.quota_summary?.status || '');
   const currentServiceStatusToken =
-    visibleSites.length === 0 ||
+    !selectedSite ||
     restrictedCount > 0 ||
     accountQuotaStatus === 'limited' ||
     (currentSubscription?.status && currentSubscription.status !== 'active')

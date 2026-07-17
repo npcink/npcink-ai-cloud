@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   PortalPageStack,
   PortalSection,
@@ -10,6 +10,7 @@ import {
 } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
+  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -68,6 +69,7 @@ export default function PortalSupportRequestDetailPage() {
   const requestId = String(params?.requestId || '');
   const { t } = useLocale();
   const { session, isLoading, isAuthenticated } = useSession();
+  const contextSiteId = session?.selected_context?.site.site_id || '';
   const [supportRequest, setSupportRequest] = useState<PortalSupportRequest | null>(null);
   const [messages, setMessages] = useState<PortalSupportRequestMessage[]>([]);
   const [attachments, setAttachments] = useState<PortalSupportRequestAttachment[]>([]);
@@ -83,15 +85,27 @@ export default function PortalSupportRequestDetailPage() {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const contextSiteIdRef = useRef(contextSiteId);
+  const requestIdRef = useRef(requestId);
+  const contextRequestVersionRef = useRef(0);
+  const detailRequestVersionRef = useRef(0);
 
   const loadDetail = useCallback(async () => {
-    if (!isAuthenticated || !requestId) {
-      return;
-    }
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    if (!isAuthenticated || !requestContextSiteId || !capturedRequestId) return;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    const detailRequestVersion = ++detailRequestVersionRef.current;
     setIsDetailLoading(true);
     setError('');
     try {
-      const response = await portalClient.getSupportRequest(requestId);
+      const response = await portalClient.getSupportRequest(capturedRequestId);
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || detailRequestVersion !== detailRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setSupportRequest(response.data.request);
       setMessages(response.data.messages || []);
       setAttachments(response.data.attachments || []);
@@ -102,89 +116,222 @@ export default function PortalSupportRequestDetailPage() {
         setFeedbackComment(response.data.feedback.comment || '');
       }
     } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || detailRequestVersion !== detailRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
     } finally {
-      setIsDetailLoading(false);
+      if (
+        contextRequestVersion === contextRequestVersionRef.current
+        && detailRequestVersion === detailRequestVersionRef.current
+        && requestContextSiteId === contextSiteIdRef.current
+        && capturedRequestId === requestIdRef.current
+      ) setIsDetailLoading(false);
     }
-  }, [isAuthenticated, requestId, t]);
+  }, [isAuthenticated, t]);
+
+  useLayoutEffect(() => {
+    contextSiteIdRef.current = contextSiteId;
+    requestIdRef.current = requestId;
+    contextRequestVersionRef.current += 1;
+    detailRequestVersionRef.current += 1;
+    setSupportRequest(null);
+    setMessages([]);
+    setAttachments([]);
+    setFeedback(null);
+    setReply('');
+    setAttachmentFile(null);
+    setFeedbackResolved(true);
+    setFeedbackRating(5);
+    setFeedbackComment('');
+    setIsDetailLoading(Boolean(isAuthenticated && contextSiteId && requestId));
+    setIsSubmitting(false);
+    setIsUploadingAttachment(false);
+    setIsSubmittingFeedback(false);
+    setError('');
+    setNotice('');
+  }, [contextSiteId, isAuthenticated, requestId]);
 
   useEffect(() => {
+    if (!isAuthenticated || !contextSiteId || !requestId) return;
     void loadDetail();
-  }, [loadDetail]);
+    return () => {
+      detailRequestVersionRef.current += 1;
+    };
+  }, [contextSiteId, isAuthenticated, loadDetail, requestId]);
 
   const handleReply = async () => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    if (
+      !contextSiteId
+      || !requestContextSiteId
+      || contextSiteId !== requestContextSiteId
+      || !capturedRequestId
+    ) return;
     const body = reply.trim();
     if (!body) return;
     setIsSubmitting(true);
     setError('');
     setNotice('');
     try {
-      const response = await portalClient.createSupportRequestMessage(requestId, { body });
+      const response = await portalClient.createSupportRequestMessage(capturedRequestId, { body });
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setSupportRequest(response.data.request);
       setMessages((current) => [...current, response.data.message]);
       setReply('');
       setNotice(t('portal.support_message_created', {}, 'Reply submitted.'));
     } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
-      setIsSubmitting(false);
+      if (
+        contextRequestVersion === contextRequestVersionRef.current
+        && requestContextSiteId === contextSiteIdRef.current
+        && capturedRequestId === requestIdRef.current
+      ) setIsSubmitting(false);
     }
   };
 
   const handleAttachmentUpload = async () => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    if (
+      !contextSiteId
+      || !requestContextSiteId
+      || contextSiteId !== requestContextSiteId
+      || !capturedRequestId
+    ) return;
     if (!attachmentFile) return;
     setIsUploadingAttachment(true);
     setError('');
     setNotice('');
     try {
       const contentBase64 = await readFileAsBase64(attachmentFile);
-      const response = await portalClient.createSupportRequestAttachment(requestId, {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
+      const response = await portalClient.createSupportRequestAttachment(capturedRequestId, {
         filename: attachmentFile.name,
         content_type: attachmentFile.type || 'application/octet-stream',
         content_base64: contentBase64,
       });
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setSupportRequest(response.data.request);
       setAttachments((current) => [...current, response.data.attachment]);
       setAttachmentFile(null);
       setNotice(t('portal.support_attachment_created', {}, 'Attachment uploaded.'));
     } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
-      setIsUploadingAttachment(false);
+      if (
+        contextRequestVersion === contextRequestVersionRef.current
+        && requestContextSiteId === contextSiteIdRef.current
+        && capturedRequestId === requestIdRef.current
+      ) setIsUploadingAttachment(false);
     }
   };
 
   const handleAttachmentDownload = async (attachment: PortalSupportRequestAttachment) => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    if (
+      !contextSiteId
+      || !requestContextSiteId
+      || contextSiteId !== requestContextSiteId
+      || !capturedRequestId
+    ) return;
     setError('');
     try {
-      const response = await portalClient.getSupportRequestAttachment(requestId, attachment.attachment_id);
+      const response = await portalClient.getSupportRequestAttachment(
+        capturedRequestId,
+        attachment.attachment_id
+      );
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       downloadAttachmentFile(response.data.attachment);
     } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
     }
   };
 
   const handleFeedbackSubmit = async () => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    const capturedRequestId = requestIdRef.current;
+    const contextRequestVersion = contextRequestVersionRef.current;
+    if (
+      !contextSiteId
+      || !requestContextSiteId
+      || contextSiteId !== requestContextSiteId
+      || !capturedRequestId
+    ) return;
     setIsSubmittingFeedback(true);
     setError('');
     setNotice('');
     try {
-      const response = await portalClient.submitSupportRequestFeedback(requestId, {
+      const response = await portalClient.submitSupportRequestFeedback(capturedRequestId, {
         resolved: feedbackResolved,
         rating: feedbackRating,
         comment: feedbackComment,
       });
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setSupportRequest(response.data.request);
       setFeedback(response.data.feedback);
       setNotice(t('portal.support_feedback_submitted', {}, 'Feedback submitted.'));
     } catch (err) {
+      if (
+        contextRequestVersion !== contextRequestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+        || capturedRequestId !== requestIdRef.current
+      ) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
-      setIsSubmittingFeedback(false);
+      if (
+        contextRequestVersion === contextRequestVersionRef.current
+        && requestContextSiteId === contextSiteIdRef.current
+        && capturedRequestId === requestIdRef.current
+      ) setIsSubmittingFeedback(false);
     }
   };
 
-  if (isLoading || isDetailLoading) {
+  if (isLoading) {
     return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
   }
 
@@ -196,6 +343,32 @@ export default function PortalSupportRequestDetailPage() {
         actionLabel={t('nav.sign_in')}
       />
     );
+  }
+
+  if (!contextSiteId || !session.selected_context) {
+    return (
+      <PortalPageStack>
+        <PortalWorkspaceHeader
+          eyebrow={t('portal.support_requests_title', {}, 'Tickets')}
+          title={t('portal.support_request_detail_title', {}, 'Ticket detail')}
+          currentPage="support"
+        />
+        <PortalEmptyState
+          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
+          description={t(
+            'portal.site_selection_required_desc',
+            {},
+            'Choose a current site before viewing this support ticket.'
+          )}
+          actionLabel={t('portal.select_site_action', {}, 'Select site')}
+          actionHref="/portal#sites"
+        />
+      </PortalPageStack>
+    );
+  }
+
+  if (isDetailLoading) {
+    return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
   }
 
   if (error && !supportRequest) {
@@ -216,7 +389,7 @@ export default function PortalSupportRequestDetailPage() {
         title={supportRequest?.title || t('portal.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
         currentPage="support"
-        sites={(session.sites || []).filter((site) => site.status !== 'archived')}
+        sites={[session.selected_context.site]}
         actions={
           <Link className="btn btn-secondary" href="/portal/support">
             {t('common.back', {}, 'Back')}

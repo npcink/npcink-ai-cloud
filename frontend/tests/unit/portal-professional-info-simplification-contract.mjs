@@ -148,25 +148,25 @@ assert.match(
   /portal\.sites\.connect_hint_title[\s\S]*portal\.sites\.connect_hint_desc/,
   'Portal site list should explain that new site connections start from the WordPress addon'
 );
-assert.doesNotMatch(
+assert.match(
   sitesSource,
-  /selectSite\(site\.site_id\)|home\.select_site_action|common\.current/,
-  'Portal site list must not expose current-site switching controls'
-);
-assert.doesNotMatch(
-  sitesSource,
-  /selectedSiteId|selectedSite\s*=|activeSite/,
-  'Portal site list must not derive account connection context from a current site'
+  /const handleSelectSite = async \(siteId: string\)[\s\S]*await selectSite\(siteId\)[\s\S]*portal\.select_site_action/,
+  'Portal site list must expose context switching only as an explicit customer action'
 );
 assert.match(
   sitesSource,
-  /portalAccountId[\s\S]*accountId=\{portalAccountId\}/,
-  'Portal site connection panel must use account context for addon binding'
+  /const selectedSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''/,
+  'Portal site list must read current context only from selected_context'
+);
+assert.match(
+  sitesSource,
+  /portalClient\.listAddonConnectionAccounts\(\)[\s\S]*accounts=\{addonAccounts\}/,
+  'Portal addon binding must use the dedicated eligible-account candidate projection'
 );
 assert.doesNotMatch(
-  sitesSource,
-  /visibleSites\.find\(\(site\) => site\.account_id\)|currentSiteId=\{firstVisibleSiteId\}|firstVisibleSiteId/,
-  'Portal site connection panel must not derive account context from a site record compatibility fallback'
+  `${sitesSource}\n${portalHomeSource}`,
+  /visibleSites\.find\(\(site\) => site\.account_id\)|currentSiteId=\{firstVisibleSiteId\}|firstVisibleSiteId|sites\s*\[\s*0\s*\]|accounts\s*\[\s*0\s*\]/,
+  'Portal context and addon candidates must not use site/account first-item compatibility fallbacks'
 );
 assert.doesNotMatch(
   portalHomeSource,
@@ -187,7 +187,17 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   auditSource,
   /usePortalSiteSelection|selectedSiteId|getAuditBundle\(siteId|getAuditBundle\(selectedSiteId|listAuditEvents\(siteId/,
-  'Portal recent activity must load account-level activity instead of depending on a selected site'
+  'Portal recent activity must keep using the account-level audit projection without a site query filter'
+);
+assert.match(
+  auditSource,
+  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*if \(!isAuthenticated \|\| !requestContextSiteId\) return/,
+  'Portal recent activity must require an explicit selected context before loading account activity'
+);
+assert.match(
+  auditSource,
+  /useLayoutEffect\([\s\S]*setAuditEvents\(\[\]\)[\s\S]*setAuditSummary\(null\)[\s\S]*setVisibleLimit\(10\)/,
+  'Portal recent activity must clear records and paging when context changes'
 );
 assert.match(
   auditSource,

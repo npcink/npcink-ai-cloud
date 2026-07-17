@@ -62,7 +62,6 @@ from app.domain.commercial.identity import (
     _normalize_portal_site_url,
     _slugify_portal_site_segment,
     normalize_user_role,
-    resolve_principal_allowed_actions,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.service import (
@@ -1220,7 +1219,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 str(action).strip()
                 for action in (membership.allowed_actions_json or [])
                 if str(action).strip()
-            ] or resolve_principal_allowed_actions()
+            ]
             if required_roles is not None and role not in required_roles:
                 raise CommercialPermissionError(
                     "service.portal_role_forbidden",
@@ -1252,7 +1251,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     {
                         "principal_id": principal_id,
                         "identity_type": IDENTITY_TYPE_USER,
-                        "allowed_actions": resolve_principal_allowed_actions(),
+                        "allowed_actions": [
+                            str(action).strip()
+                            for action in (membership.allowed_actions_json or [])
+                            if str(action).strip()
+                        ],
                         "role": USER_ROLE_USER,
                         "membership_status": membership.status,
                         "site": self._serialize_site(site),

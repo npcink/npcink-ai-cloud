@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
 
 from app.api.auth import (
@@ -33,6 +34,28 @@ def _test_settings(**overrides: object) -> Settings:
     }
     kwargs.update(overrides)
     return Settings(**kwargs)
+
+
+def _resign_portal_session_token(
+    settings: Settings,
+    *,
+    remove_claims: tuple[str, ...] = (),
+    claim_updates: dict[str, object] | None = None,
+) -> str:
+    token = build_portal_session_token(
+        settings,
+        principal_id="principal:mutated@example.com",
+    )
+    payload = jwt.decode(token, options={"verify_signature": False})
+    for claim_name in remove_claims:
+        payload.pop(claim_name, None)
+    payload.update(claim_updates or {})
+    assert settings.portal_jwt_secret is not None
+    return jwt.encode(
+        payload,
+        settings.portal_jwt_secret,
+        algorithm=settings.portal_jwt_algorithm,
+    )
 
 
 class TestBuildPortalSessionToken:
@@ -95,6 +118,64 @@ class TestDecodePortalBearerClaims:
         payload = decode_portal_bearer_claims(settings, token)
         assert payload["sub"] == "principal:test@example.com"
 
+    def test_decodes_valid_token_with_selected_site_id(self) -> None:
+        settings = _test_settings()
+        token = build_portal_session_token(
+            settings,
+            principal_id="principal:site@example.com",
+            site_id="site.valid:example-1",
+        )
+
+        payload = decode_portal_bearer_claims(settings, token)
+
+        assert payload["site_id"] == "site.valid:example-1"
+
+    @pytest.mark.parametrize("claim_name", ["purpose", "iat", "exp"])
+    def test_rejects_token_missing_required_claim(self, claim_name: str) -> None:
+        settings = _test_settings()
+        token = _resign_portal_session_token(
+            settings,
+            remove_claims=(claim_name,),
+        )
+
+        with pytest.raises(PortalBearerTokenError) as exc_info:
+            decode_portal_bearer_claims(settings, token)
+
+        assert exc_info.value.error_code == "auth.portal_token_invalid"
+
+    def test_rejects_token_with_wrong_purpose(self) -> None:
+        settings = _test_settings()
+        token = _resign_portal_session_token(
+            settings,
+            claim_updates={"purpose": "other_purpose"},
+        )
+
+        with pytest.raises(PortalBearerTokenError) as exc_info:
+            decode_portal_bearer_claims(settings, token)
+
+        assert exc_info.value.error_code == "auth.portal_token_invalid"
+
+    @pytest.mark.parametrize(
+        "site_id",
+        [
+            "site id with spaces",
+            "site/with/slashes",
+            "s" * 192,
+            123,
+        ],
+    )
+    def test_rejects_invalid_site_id(self, site_id: object) -> None:
+        settings = _test_settings()
+        token = _resign_portal_session_token(
+            settings,
+            claim_updates={"site_id": site_id},
+        )
+
+        with pytest.raises(PortalBearerTokenError) as exc_info:
+            decode_portal_bearer_claims(settings, token)
+
+        assert exc_info.value.error_code == "auth.portal_token_invalid"
+
     def test_rejects_expired_token(self) -> None:
         settings = _test_settings()
         expires_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -135,18 +216,12 @@ class TestDecodePortalBearerToken:
             decode_portal_bearer_token(settings, token)
         assert exc_info.value.error_code == "auth.principal_id_required"
 
-    def test_rejects_token_with_empty_sub(self) -> None:
-        import jwt as _jwt
-
-        from app.api.auth import PortalBearerTokenError
-
+    def test_rejects_token_missing_sub(self) -> None:
         settings = _test_settings()
-        now = datetime.now(UTC)
-        payload = {"purpose": "portal_session", "iat": int(now.timestamp())}
-        token = _jwt.encode(payload, settings.portal_jwt_secret, algorithm="HS256")
+        token = _resign_portal_session_token(settings, remove_claims=("sub",))
         with pytest.raises(PortalBearerTokenError) as exc_info:
             decode_portal_bearer_token(settings, token)
-        assert exc_info.value.error_code == "auth.principal_id_required"
+        assert exc_info.value.error_code == "auth.portal_token_invalid"
 
 
 class TestDecodePortalSessionCookieClaims:

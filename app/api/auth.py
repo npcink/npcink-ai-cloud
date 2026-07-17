@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -46,6 +47,7 @@ PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT = "portal_login_code_client"
 PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS = 15 * 60
 PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_EMAIL_WINDOW = 5
 PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_CLIENT_WINDOW = 10
+PORTAL_SITE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,191}$")
 
 
 @dataclass(slots=True)
@@ -60,6 +62,13 @@ class PortalBearerTokenError(ValueError):
         self.status_code = status_code
         self.error_code = error_code
         self.message = message
+
+
+def normalize_portal_site_id(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    site_id = value.strip()
+    return site_id if PORTAL_SITE_ID_PATTERN.fullmatch(site_id) else ""
 
 
 def _normalize_local_debug_origin(value: str) -> str:
@@ -196,6 +205,9 @@ def decode_portal_bearer_claims(settings: Settings, token: str) -> dict[str, Any
         "jwt": token,
         "key": settings.portal_jwt_secret,
         "algorithms": [settings.portal_jwt_algorithm],
+        "options": {
+            "require": ["sub", "purpose", "session_version", "iat", "exp"],
+        },
     }
     if settings.portal_jwt_issuer:
         decode_kwargs["issuer"] = settings.portal_jwt_issuer
@@ -217,7 +229,17 @@ def decode_portal_bearer_claims(settings: Settings, token: str) -> dict[str, Any
             "invalid portal bearer token",
         ) from error
 
-    return _jwt_payload_dict(payload)
+    claims = _jwt_payload_dict(payload)
+    if str(claims.get("purpose") or "").strip() != "portal_session":
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_token_invalid",
+            "invalid portal bearer token",
+        )
+    _extract_portal_principal_id(claims)
+    _extract_portal_session_version(claims)
+    _extract_portal_site_id(claims)
+    return claims
 
 
 def decode_portal_session_cookie_claims(settings: Settings, token: str) -> dict[str, Any]:
@@ -276,13 +298,45 @@ def _extract_portal_principal_id(payload: dict[str, Any]) -> str:
 
 def _extract_portal_session_version(payload: dict[str, Any]) -> int:
     try:
-        return int(payload.get("session_version") or 1)
+        raw_session_version = payload.get("session_version")
+        if isinstance(raw_session_version, bool) or not isinstance(
+            raw_session_version, (int, str)
+        ):
+            raise ValueError
+        session_version = int(raw_session_version)
     except (TypeError, ValueError) as error:
         raise PortalBearerTokenError(
             403,
-            "auth.portal_session_invalid",
-            "invalid portal session token",
+            "auth.portal_token_invalid",
+            "invalid portal bearer token",
         ) from error
+    if session_version < 1:
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_token_invalid",
+            "invalid portal bearer token",
+        )
+    return session_version
+
+
+def _extract_portal_site_id(payload: dict[str, Any]) -> str:
+    raw_site_id = payload.get("site_id")
+    if raw_site_id is None or raw_site_id == "":
+        return ""
+    if not isinstance(raw_site_id, str):
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_token_invalid",
+            "invalid portal bearer token",
+        )
+    site_id = normalize_portal_site_id(raw_site_id)
+    if not site_id:
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_token_invalid",
+            "invalid portal bearer token",
+        )
+    return site_id
 
 
 def validate_portal_principal_session(
@@ -644,4 +698,7 @@ def _authorize_portal_bearer_jwt_request(
             error_code=error.error_code,
             message=error.message,
         )
-    return PortalAuthContext(principal_id=principal_id)
+    return PortalAuthContext(
+        principal_id=principal_id,
+        site_id=_extract_portal_site_id(claims),
+    )

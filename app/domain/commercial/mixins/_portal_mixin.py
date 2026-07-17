@@ -124,11 +124,11 @@ def _as_utc_datetime(value: datetime) -> datetime:
 
 
 def _resolve_membership_allowed_actions(value: object) -> list[str]:
-    if isinstance(value, list):
-        actions = [str(action).strip() for action in value if str(action).strip()]
-        if actions:
-            return actions
-    return resolve_principal_allowed_actions()
+    return (
+        [str(action).strip() for action in value if str(action).strip()]
+        if isinstance(value, list)
+        else []
+    )
 
 
 def _portal_registration_code_metadata(value: object) -> dict[str, object]:
@@ -146,6 +146,26 @@ def _portal_email_change_code_metadata(value: object) -> dict[str, object]:
 
 
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
+    def get_portal_current_subscription(
+        self,
+        *,
+        account_id: str,
+    ) -> dict[str, object] | None:
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            normalized_account_id = str(account_id or "").strip()
+            reconciled = cast(Any, self)._reconcile_account_subscription_state_in_session(
+                repository=repository,
+                account_id=normalized_account_id,
+                now=self.now_factory(),
+            )
+            if reconciled is not None:
+                session.commit()
+            subscription = repository.get_runtime_subscription(normalized_account_id)
+            if subscription is None:
+                return None
+            return cast(Any, self)._serialize_subscription(subscription)
+
     def get_portal_account_credit_events(
         self,
         account_id: str,

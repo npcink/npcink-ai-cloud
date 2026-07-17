@@ -10,16 +10,10 @@ const clientSource = readFileSync(clientPath, 'utf8');
 const navbarSource = readFileSync(navbarPath, 'utf8');
 const accountSource = readFileSync(accountPagePath, 'utf8');
 
-assert.match(
-  clientSource,
-  /export type ProductIdentityType = 'platform_admin' \| 'user';/,
-  'frontend identity types must stay limited to platform_admin and user'
-);
-
 assert.doesNotMatch(
   clientSource,
-  /export type ProductIdentityType = [^;]*site_admin/,
-  'legacy site_admin must not return as a product identity type'
+  /export type ProductIdentityType\b/,
+  'the unused ProductIdentityType compatibility alias must stay removed'
 );
 
 assert.match(
@@ -66,14 +60,14 @@ assert.match(
 
 assert.match(
   accountSource,
-  /resolvePortalContactEmail/,
-  'account center must resolve a customer-readable contact instead of showing principal IDs as the account'
+  /function normalizePortalContact[\s\S]*const contactEmail = normalizePortalContact\(session\?\.email\)/,
+  'account center must derive its customer-readable contact only from the explicit session email'
 );
 
-assert.match(
+assert.doesNotMatch(
   accountSource,
-  /session\.email/,
-  'account center must prefer the explicit session email before falling back to legacy contact refs'
+  /resolvePortalContactEmail|session\?\.(?:principal_id|account_id|site_admin_ref)|session\.(?:principal_id|account_id|site_admin_ref)/,
+  'account center must not restore principal, account, or legacy contact fallbacks'
 );
 
 assert.match(

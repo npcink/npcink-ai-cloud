@@ -28,6 +28,7 @@ from app.api.portal_session import (
     clear_portal_session_cookies,
     portal_cookie_secure,
     portal_json_error,
+    project_portal_subscription,
     resolve_portal_login_session_ttl_seconds,
     resolve_portal_request_context,
     serialize_portal_session,
@@ -48,6 +49,7 @@ from app.domain.agent_workflow_metadata import (
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.identity import (
+    USER_ALLOWED_ACTION_PROVISION_SITES,
     USER_ALLOWED_ACTION_REMOVE_SITES,
     USER_ALLOWED_ACTION_VIEW_AUDIT,
     USER_ALLOWED_ACTION_VIEW_BILLING,
@@ -177,12 +179,962 @@ class PortalSupportRequestFeedbackPayload(BaseModel):
     comment: str = Field(default="", max_length=2000)
 
 
-def _object_list(value: object) -> list[object]:
+def _object_list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
-def _dict_value(value: object) -> dict[str, object]:
+def _dict_value(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _portal_site_response_data(value: object) -> dict[str, object]:
+    data = dict(_dict_value(value))
+    for field in ("account_id", "principal_id", "identity_type", "role", "allowed_actions"):
+        data.pop(field, None)
+    return data
+
+
+def _portal_identity_binding_response_data(value: object) -> dict[str, object]:
+    binding = _dict_value(value)
+    return {
+        "binding_id": str(binding.get("binding_id") or ""),
+        "provider": str(binding.get("provider") or ""),
+        "status": str(binding.get("status") or ""),
+        "has_unionid": bool(binding.get("has_unionid")),
+        "last_login_at": str(binding.get("last_login_at") or ""),
+    }
+
+
+def _portal_public_site_data(value: object) -> dict[str, object]:
+    site = _dict_value(value)
+    return {
+        "site_id": str(site.get("site_id") or ""),
+        "name": str(site.get("name") or ""),
+        "site_url": str(site.get("site_url") or ""),
+        "platform_kind": str(site.get("platform_kind") or ""),
+        "status": str(site.get("status") or ""),
+        "created_at": str(site.get("created_at") or ""),
+    }
+
+
+def _portal_public_plan_version_data(value: object) -> dict[str, object] | None:
+    plan_version = _dict_value(value)
+    if not plan_version:
+        return None
+    return {
+        "plan_version_id": str(plan_version.get("plan_version_id") or ""),
+        "plan_id": str(plan_version.get("plan_id") or ""),
+        "version_label": str(plan_version.get("version_label") or ""),
+        "status": str(plan_version.get("status") or ""),
+        "currency": str(plan_version.get("currency") or ""),
+        "entitlements": _dict_value(plan_version.get("entitlements")),
+        "budgets": _dict_value(plan_version.get("budgets")),
+    }
+
+
+def _portal_public_entitlement_snapshot_data(value: object) -> dict[str, object] | None:
+    snapshot = _dict_value(value)
+    if not snapshot:
+        return None
+    return {
+        "subscription_id": str(snapshot.get("subscription_id") or ""),
+        "plan_version_id": str(snapshot.get("plan_version_id") or ""),
+        "status": str(snapshot.get("status") or ""),
+        "entitlements": _dict_value(snapshot.get("entitlements")),
+        "budgets": _dict_value(snapshot.get("budgets")),
+        "site_limit": int(snapshot.get("site_limit") or 0),
+        "generated_at": str(snapshot.get("generated_at") or ""),
+    }
+
+
+def _portal_public_commercial_policy_data(value: object) -> dict[str, object]:
+    policy = _dict_value(value)
+    subscription = _dict_value(policy.get("subscription"))
+    return {
+        "subscription": {
+            "grace_period_days": int(subscription.get("grace_period_days") or 0),
+        }
+    }
+
+
+def _portal_public_usage_totals_data(value: object) -> dict[str, object]:
+    totals = _dict_value(value)
+    return {
+        "runs": int(totals.get("runs") or 0),
+        "requests": int(totals.get("requests") or 0),
+        "provider_calls": int(totals.get("provider_calls") or 0),
+        "tokens": int(totals.get("tokens") or 0),
+        "tokens_total": int(totals.get("tokens_total") or 0),
+        "cost": float(totals.get("cost") or 0),
+    }
+
+
+def _portal_public_subscription_grace_data(value: object) -> dict[str, object]:
+    grace = _dict_value(value)
+    return {
+        "active": bool(grace.get("active")),
+        "subscription_status": str(grace.get("subscription_status") or ""),
+        "grace_period_days": int(grace.get("grace_period_days") or 0),
+        "grace_until_at": str(grace.get("grace_until_at") or ""),
+    }
+
+
+def _portal_public_budget_state_data(value: object) -> dict[str, object]:
+    budget_state = _dict_value(value)
+    return {
+        str(key): {
+            "current_total": float(item.get("current_total") or 0),
+            "limit": float(item.get("limit") or 0),
+            "grace_requests": int(item.get("grace_requests") or 0),
+            "used_grace_requests": int(item.get("used_grace_requests") or 0),
+            "remaining_grace_requests": int(item.get("remaining_grace_requests") or 0),
+            "over_limit": bool(item.get("over_limit")),
+        }
+        for key, item in budget_state.items()
+        if isinstance(item, dict)
+    }
+
+
+def _portal_public_quota_summary_data(value: object) -> dict[str, object]:
+    summary = _dict_value(value)
+    return {
+        "generated_at": str(summary.get("generated_at") or ""),
+        "period_start_at": str(summary.get("period_start_at") or ""),
+        "period_end_at": str(summary.get("period_end_at") or ""),
+        "status": str(summary.get("status") or ""),
+        "credit": _dict_value(summary.get("credit")),
+        "credit_ledger_summary": _dict_value(summary.get("credit_ledger_summary")),
+        "credit_policy": _dict_value(summary.get("credit_policy")),
+        "resource_limits": _object_list(summary.get("resource_limits")),
+        "breakdown": _object_list(summary.get("breakdown")),
+        "credit_usage_detail": _dict_value(summary.get("credit_usage_detail")),
+    }
+
+
+def _portal_pagination_data(value: object) -> dict[str, object]:
+    pagination = _dict_value(value)
+    return {
+        "limit": int(pagination.get("limit") or 0),
+        "offset": int(pagination.get("offset") or 0),
+        "total": int(pagination.get("total") or 0),
+        "has_more": bool(pagination.get("has_more")),
+    }
+
+
+def _portal_credit_pack_data(value: object) -> dict[str, object]:
+    pack = _dict_value(value)
+    return {
+        "pack_id": str(pack.get("pack_id") or ""),
+        "label": str(pack.get("label") or ""),
+        "ai_credits": int(pack.get("ai_credits") or 0),
+        "amount": float(pack.get("amount") or 0),
+        "currency": str(pack.get("currency") or ""),
+        "validity_days": int(pack.get("validity_days") or 0),
+        "recommended_for_tiers": [
+            str(item) for item in _object_list(pack.get("recommended_for_tiers"))
+        ],
+        "active": bool(pack.get("active")),
+        "period_policy": str(pack.get("period_policy") or ""),
+        "grant_event_type": str(pack.get("grant_event_type") or ""),
+        "catalog_version": str(pack.get("catalog_version") or ""),
+    }
+
+
+def _portal_credit_pack_catalog_data(
+    value: object,
+    *,
+    site_id: str = "",
+) -> dict[str, object]:
+    catalog = _dict_value(value)
+    data: dict[str, object] = {
+        "catalog_version": str(catalog.get("catalog_version") or ""),
+        "period_policy": str(catalog.get("period_policy") or ""),
+        "expiry_policy": str(catalog.get("expiry_policy") or ""),
+        "default_validity_days": int(catalog.get("default_validity_days") or 0),
+        "grant_event_type": str(catalog.get("grant_event_type") or ""),
+        "items": [
+            _portal_credit_pack_data(item)
+            for item in _object_list(catalog.get("items"))
+        ],
+    }
+    if site_id:
+        data["site_id"] = site_id
+    return data
+
+
+def _portal_plan_offer_data(value: object) -> dict[str, object]:
+    offer = _dict_value(value)
+    return {
+        "offer_id": str(offer.get("offer_id") or ""),
+        "plan_id": str(offer.get("plan_id") or ""),
+        "plan_version_id": str(offer.get("plan_version_id") or ""),
+        "tier_id": str(offer.get("tier_id") or ""),
+        "billing_cycle": str(offer.get("billing_cycle") or ""),
+        "amount": float(offer.get("amount") or 0),
+        "currency": str(offer.get("currency") or ""),
+        "purchase_mode": str(offer.get("purchase_mode") or ""),
+        "status": str(offer.get("status") or ""),
+        "trial_enabled": bool(offer.get("trial_enabled")),
+        "trial_days": int(offer.get("trial_days") or 0),
+        "trial_credit_limit": int(offer.get("trial_credit_limit") or 0),
+        "trial_requires_approval": bool(offer.get("trial_requires_approval")),
+        "valid_from_at": str(offer.get("valid_from_at") or ""),
+        "valid_until_at": str(offer.get("valid_until_at") or ""),
+    }
+
+
+def _portal_plan_comparison_right_data(value: object) -> dict[str, object]:
+    right = _dict_value(value)
+    raw_value = right.get("value")
+    return {
+        "state": str(right.get("state") or ""),
+        "value": int(raw_value) if isinstance(raw_value, (int, float)) else None,
+    }
+
+
+def _portal_plan_comparison_tier_data(value: object) -> dict[str, object]:
+    tier = _dict_value(value)
+    rights = _dict_value(tier.get("comparison_rights"))
+    return {
+        "tier_id": str(tier.get("tier_id") or ""),
+        "label": str(tier.get("label") or ""),
+        "plan_id": str(tier.get("plan_id") or ""),
+        "plan_version_id": str(tier.get("plan_version_id") or ""),
+        "monthly_points": tier.get("monthly_points"),
+        "site_limit": tier.get("site_limit"),
+        "knowledge_article_limit": tier.get("knowledge_article_limit"),
+        "concurrency_limit": tier.get("concurrency_limit"),
+        "batch_item_limit": tier.get("batch_item_limit"),
+        "comparison_rights": {
+            key: _portal_plan_comparison_right_data(rights.get(key))
+            for key in (
+                "monthly_points",
+                "site_limit",
+                "knowledge_article_limit",
+                "concurrency_limit",
+                "batch_item_limit",
+            )
+        },
+        "amount": tier.get("amount"),
+        "currency": str(tier.get("currency") or ""),
+        "billing_cycle": tier.get("billing_cycle"),
+        "purchase_mode": str(tier.get("purchase_mode") or ""),
+    }
+
+
+def _portal_plan_offer_trial_data(value: object) -> dict[str, object]:
+    trial = _dict_value(value)
+    return {
+        "available": bool(trial.get("available")),
+        "status": str(trial.get("status") or ""),
+        "state": str(trial.get("state") or ""),
+        "reason_code": str(trial.get("reason_code") or ""),
+        "allowed_tiers": [
+            str(item) for item in _object_list(trial.get("allowed_tiers"))
+        ],
+        "tier_id": str(trial.get("tier_id") or ""),
+        "highest_tier_id": str(trial.get("highest_tier_id") or ""),
+        "trial_days": int(trial.get("trial_days") or 0),
+        "credit_limit": int(trial.get("credit_limit") or 0),
+        "trial_started_at": str(trial.get("trial_started_at") or ""),
+        "trial_ends_at": str(trial.get("trial_ends_at") or ""),
+    }
+
+
+def _portal_started_trial_data(value: object) -> dict[str, object]:
+    trial = _dict_value(value)
+    return {
+        "available": bool(trial.get("available")),
+        "status": str(trial.get("status") or ""),
+        "tier_id": str(trial.get("tier_id") or ""),
+        "trial_days": int(trial.get("trial_days") or 0),
+        "credit_limit": int(trial.get("credit_limit") or 0),
+        "trial_started_at": str(trial.get("trial_started_at") or ""),
+        "trial_ends_at": str(trial.get("trial_ends_at") or ""),
+        "monthly_price_cny": float(trial.get("monthly_price_cny") or 0),
+    }
+
+
+def _portal_plan_offer_list_data(value: object) -> dict[str, object]:
+    offers = _dict_value(value)
+    return {
+        "items": [
+            _portal_plan_offer_data(item) for item in _object_list(offers.get("items"))
+        ],
+        "comparison_tiers": [
+            _portal_plan_comparison_tier_data(item)
+            for item in _object_list(offers.get("comparison_tiers"))
+        ],
+        "trial": _portal_plan_offer_trial_data(offers.get("trial")),
+    }
+
+
+def _portal_subscription_order_data(value: object) -> dict[str, object]:
+    order = _dict_value(value)
+    return {
+        "subscription_order_id": str(order.get("subscription_order_id") or ""),
+        "offer_id": str(order.get("offer_id") or ""),
+        "payment_order_id": str(order.get("payment_order_id") or ""),
+        "source_subscription_id": str(order.get("source_subscription_id") or ""),
+        "target_plan_id": str(order.get("target_plan_id") or ""),
+        "target_plan_version_id": str(order.get("target_plan_version_id") or ""),
+        "order_kind": str(order.get("order_kind") or ""),
+        "status": str(order.get("status") or ""),
+        "list_amount": float(order.get("list_amount") or 0),
+        "credit_amount": float(order.get("credit_amount") or 0),
+        "payable_amount": float(order.get("payable_amount") or 0),
+        "currency": str(order.get("currency") or ""),
+        "effective_at": str(order.get("effective_at") or ""),
+        "period_start_at": str(order.get("period_start_at") or ""),
+        "period_end_at": str(order.get("period_end_at") or ""),
+    }
+
+
+def _portal_payment_order_data(value: object) -> dict[str, object]:
+    order = _dict_value(value)
+    metadata = _dict_value(order.get("metadata"))
+    status_detail = _dict_value(order.get("status_detail"))
+    credit_pack = order.get("credit_pack") or metadata.get("credit_pack")
+    data: dict[str, object] = {
+        "order_id": str(order.get("order_id") or ""),
+        "site_id": str(order.get("site_id") or ""),
+        "subscription_id": str(order.get("subscription_id") or ""),
+        "target_subscription_id": str(
+            order.get("target_subscription_id")
+            or metadata.get("target_subscription_id")
+            or ""
+        ),
+        "target_tier_id": str(
+            order.get("target_tier_id") or metadata.get("target_tier_id") or ""
+        ),
+        "plan_id": str(order.get("plan_id") or ""),
+        "plan_version_id": str(order.get("plan_version_id") or ""),
+        "provider": str(order.get("provider") or ""),
+        "status": str(order.get("status") or ""),
+        "amount": float(order.get("amount") or 0),
+        "currency": str(order.get("currency") or ""),
+        "subject": str(order.get("subject") or ""),
+        "checkout_url": str(order.get("checkout_url") or ""),
+        "available_actions": [
+            str(item) for item in _object_list(order.get("available_actions"))
+        ],
+        "purchase_kind": str(order.get("purchase_kind") or ""),
+        "status_detail": {
+            "code": str(status_detail.get("code") or ""),
+            "label": str(status_detail.get("label") or ""),
+            "detail": str(status_detail.get("detail") or ""),
+            "next_action": str(status_detail.get("next_action") or ""),
+            "simulated_payment": bool(status_detail.get("simulated_payment")),
+        },
+        "refund_window_end_at": str(order.get("refund_window_end_at") or ""),
+        "paid_at": str(order.get("paid_at") or ""),
+        "canceled_at": str(order.get("canceled_at") or ""),
+        "expires_at": str(order.get("expires_at") or ""),
+        "refunded_at": str(order.get("refunded_at") or ""),
+        "created_at": str(order.get("created_at") or ""),
+        "updated_at": str(order.get("updated_at") or ""),
+    }
+    if credit_pack:
+        data["credit_pack"] = _portal_credit_pack_data(credit_pack)
+    return data
+
+
+def _portal_subscription_order_payload_data(value: object) -> dict[str, object]:
+    payload = _dict_value(value)
+    return {
+        "order": _portal_payment_order_data(payload.get("order")),
+        "subscription_order": _portal_subscription_order_data(
+            payload.get("subscription_order")
+        ),
+    }
+
+
+def _portal_payment_order_payload_data(
+    value: object,
+    *,
+    site_id: str = "",
+) -> dict[str, object]:
+    payload = _dict_value(value)
+    data: dict[str, object] = {
+        "order": _portal_payment_order_data(payload.get("order")),
+    }
+    if site_id:
+        data["site_id"] = site_id
+    return data
+
+
+def _portal_payment_order_list_data(
+    value: object,
+    *,
+    site_id: str = "",
+) -> dict[str, object]:
+    payload = _dict_value(value)
+    counts = _dict_value(payload.get("counts"))
+    visibility = _dict_value(payload.get("visibility"))
+    data: dict[str, object] = {
+        "generated_at": str(payload.get("generated_at") or ""),
+        "status_group": str(payload.get("status_group") or ""),
+        "counts": {
+            key: int(counts.get(key) or 0)
+            for key in ("all", "pending", "paid", "closed")
+        },
+        "visibility": {
+            "canceled_orders_visible_days": int(
+                visibility.get("canceled_orders_visible_days") or 0
+            ),
+            "database_records_deleted": bool(
+                visibility.get("database_records_deleted")
+            ),
+        },
+        "pagination": _portal_pagination_data(payload.get("pagination")),
+        "items": [
+            _portal_payment_order_data(item)
+            for item in _object_list(payload.get("items"))
+        ],
+    }
+    if site_id:
+        data["site_id"] = site_id
+    return data
+
+
+def _portal_credit_ledger_entry_data(value: object) -> dict[str, object]:
+    entry = _dict_value(value)
+    return {
+        key: entry.get(key)
+        for key in (
+            "ledger_entry_id",
+            "site_id",
+            "event_type",
+            "source_type",
+            "category",
+            "category_label",
+            "feature_key",
+            "feature_label",
+            "feature_detail",
+            "direction",
+            "explanation",
+            "source_id",
+            "run_id",
+            "credit_delta",
+            "consumed_credits",
+            "granted_credits",
+            "net_credit_delta",
+            "quantity",
+            "unit",
+            "rate",
+            "rate_unit",
+            "rate_version",
+            "created_at",
+        )
+        if key in entry
+    }
+
+
+def _portal_credit_breakdown_item_data(value: object) -> dict[str, object]:
+    item = _dict_value(value)
+    return {
+        key: item.get(key)
+        for key in (
+            "key",
+            "label",
+            "quantity",
+            "unit",
+            "rate",
+            "rate_unit",
+            "credits",
+            "capability_group",
+        )
+    }
+
+
+def _portal_credit_summary_data(value: object) -> dict[str, object]:
+    summary = _dict_value(value)
+    category_totals = _dict_value(summary.get("category_totals"))
+    return {
+        "total_credits": float(summary.get("total_credits") or 0),
+        "consumed_credits": float(summary.get("consumed_credits") or 0),
+        "granted_credits": float(summary.get("granted_credits") or 0),
+        "adjustment_credits": float(summary.get("adjustment_credits") or 0),
+        "refund_credits": float(summary.get("refund_credits") or 0),
+        "net_credit_delta": float(summary.get("net_credit_delta") or 0),
+        "net_used_credits": float(summary.get("net_used_credits") or 0),
+        "entry_count": int(summary.get("entry_count") or 0),
+        "category_totals": {
+            str(key): {
+                "label": str(_dict_value(item).get("label") or ""),
+                "net_credit_delta": float(
+                    _dict_value(item).get("net_credit_delta") or 0
+                ),
+            }
+            for key, item in category_totals.items()
+        },
+        "breakdown": [
+            _portal_credit_breakdown_item_data(item)
+            for item in _object_list(summary.get("breakdown"))
+        ],
+    }
+
+
+def _portal_credit_usage_detail_data(value: object) -> dict[str, object]:
+    detail = _dict_value(value)
+    period = _dict_value(detail.get("period"))
+    summary = _dict_value(detail.get("summary"))
+    copy = _dict_value(detail.get("copy"))
+    paths = _dict_value(detail.get("portal_paths"))
+    return {
+        "surface": str(detail.get("surface") or ""),
+        "default_visibility": str(detail.get("default_visibility") or ""),
+        "local_addon_policy": str(detail.get("local_addon_policy") or ""),
+        "generated_at": str(detail.get("generated_at") or ""),
+        "period": {
+            "start_at": str(period.get("start_at") or ""),
+            "end_at": str(period.get("end_at") or ""),
+        },
+        "summary": {
+            "used": float(summary.get("used") or 0),
+            "limit": float(summary.get("limit") or 0),
+            "remaining": summary.get("remaining"),
+            "status": str(summary.get("status") or ""),
+            "unit": str(summary.get("unit") or ""),
+            "rate_version": str(summary.get("rate_version") or ""),
+        },
+        "breakdown": [
+            _portal_credit_breakdown_item_data(item)
+            for item in _object_list(detail.get("breakdown"))
+        ],
+        "recent_items": [
+            _portal_credit_ledger_entry_data(item)
+            for item in _object_list(detail.get("recent_items"))
+        ],
+        "copy": {
+            "title": str(copy.get("title") or ""),
+            "summary": str(copy.get("summary") or ""),
+            "addon_summary": str(copy.get("addon_summary") or ""),
+        },
+        "legend": [
+            {
+                "category": str(_dict_value(item).get("category") or ""),
+                "label": str(_dict_value(item).get("label") or ""),
+            }
+            for item in _object_list(detail.get("legend"))
+        ],
+        "portal_paths": {
+            "credit_usage": str(paths.get("credit_usage") or ""),
+            "credit_ledger": str(paths.get("credit_ledger") or ""),
+        },
+    }
+
+
+def _portal_credit_ledger_data(
+    value: object,
+    *,
+    site_id: str = "",
+) -> dict[str, object]:
+    ledger = _dict_value(value)
+    data: dict[str, object] = {
+        "generated_at": str(ledger.get("generated_at") or ""),
+        "period_start_at": str(ledger.get("period_start_at") or ""),
+        "period_end_at": str(ledger.get("period_end_at") or ""),
+        "rate_version": str(ledger.get("rate_version") or ""),
+        "pagination": _portal_pagination_data(ledger.get("pagination")),
+        "summary": _portal_credit_summary_data(ledger.get("summary")),
+        "usage_detail": _portal_credit_usage_detail_data(ledger.get("usage_detail")),
+        "items": [
+            _portal_credit_ledger_entry_data(item)
+            for item in _object_list(ledger.get("items"))
+        ],
+    }
+    if site_id:
+        data["site_id"] = site_id
+    return data
+
+
+def _portal_credit_trend_data(value: object) -> dict[str, object]:
+    trend = _dict_value(value)
+    return {
+        "contract_version": str(trend.get("contract_version") or ""),
+        "generated_at": str(trend.get("generated_at") or ""),
+        "site_id": str(trend.get("site_id") or ""),
+        "window": str(trend.get("window") or ""),
+        "bucket_seconds": int(trend.get("bucket_seconds") or 0),
+        "start_at": str(trend.get("start_at") or ""),
+        "end_at": str(trend.get("end_at") or ""),
+        "total_credits": float(trend.get("total_credits") or 0),
+        "entry_count": int(trend.get("entry_count") or 0),
+        "points": [
+            {
+                "start_at": str(_dict_value(item).get("start_at") or ""),
+                "end_at": str(_dict_value(item).get("end_at") or ""),
+                "credits": float(_dict_value(item).get("credits") or 0),
+                "entry_count": int(_dict_value(item).get("entry_count") or 0),
+            }
+            for item in _object_list(trend.get("points"))
+        ],
+    }
+
+
+def _portal_credit_events_data(value: object) -> dict[str, object]:
+    events = _dict_value(value)
+    filters = _dict_value(events.get("filters"))
+    summary = _dict_value(events.get("summary"))
+    return {
+        "contract_version": str(events.get("contract_version") or ""),
+        "generated_at": str(events.get("generated_at") or ""),
+        "period_start_at": str(events.get("period_start_at") or ""),
+        "period_end_at": str(events.get("period_end_at") or ""),
+        "filters": {
+            "window": str(filters.get("window") or ""),
+            "site_id": str(filters.get("site_id") or ""),
+            "feature": str(filters.get("feature") or ""),
+        },
+        "summary": {
+            "event_count": int(summary.get("event_count") or 0),
+            "consumed_credits": float(summary.get("consumed_credits") or 0),
+        },
+        "pagination": _portal_pagination_data(events.get("pagination")),
+        "items": [
+            {
+                key: _dict_value(item).get(key)
+                for key in (
+                    "event_id",
+                    "support_reference",
+                    "site_id",
+                    "feature_key",
+                    "feature_label",
+                    "feature_detail",
+                    "created_at",
+                    "net_credit_delta",
+                    "consumed_credits",
+                    "direction",
+                    "component_count",
+                )
+            }
+            | {
+                "components": [
+                    {
+                        "key": str(_dict_value(component).get("key") or ""),
+                        "credits": float(_dict_value(component).get("credits") or 0),
+                    }
+                    for component in _object_list(_dict_value(item).get("components"))
+                ]
+            }
+            for item in _object_list(events.get("items"))
+        ],
+    }
+
+
+def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
+    buckets = _dict_value(value)
+    filters = _dict_value(buckets.get("filters"))
+    summary = _dict_value(buckets.get("summary"))
+    return {
+        "contract_version": str(buckets.get("contract_version") or ""),
+        "generated_at": str(buckets.get("generated_at") or ""),
+        "period_start_at": str(buckets.get("period_start_at") or ""),
+        "period_end_at": str(buckets.get("period_end_at") or ""),
+        "bucket": str(buckets.get("bucket") or ""),
+        "bucket_seconds": int(buckets.get("bucket_seconds") or 0),
+        "timezone": str(buckets.get("timezone") or ""),
+        "filters": {
+            "window": str(filters.get("window") or ""),
+            "site_id": str(filters.get("site_id") or ""),
+            "feature": str(filters.get("feature") or ""),
+        },
+        "summary": {
+            "bucket_count": int(summary.get("bucket_count") or 0),
+            "consumed_credits": float(summary.get("consumed_credits") or 0),
+        },
+        "pagination": _portal_pagination_data(buckets.get("pagination")),
+        "items": [
+            {
+                key: _dict_value(item).get(key)
+                for key in (
+                    "bucket_id",
+                    "start_at",
+                    "end_at",
+                    "consumed_credits",
+                    "event_count",
+                    "site_count",
+                    "top_feature_key",
+                )
+            }
+            | {
+                "feature_totals": [
+                    {
+                        "feature_key": str(
+                            _dict_value(total).get("feature_key") or ""
+                        ),
+                        "consumed_credits": float(
+                            _dict_value(total).get("consumed_credits") or 0
+                        ),
+                        "event_count": int(
+                            _dict_value(total).get("event_count") or 0
+                        ),
+                    }
+                    for total in _object_list(
+                        _dict_value(item).get("feature_totals")
+                    )
+                ]
+            }
+            for item in _object_list(buckets.get("items"))
+        ],
+    }
+
+
+def _portal_billing_totals_data(value: object) -> dict[str, object]:
+    totals = _dict_value(value)
+    return {
+        "runs": int(totals.get("runs") or 0),
+        "provider_calls": int(totals.get("provider_calls") or 0),
+        "tokens_in": int(totals.get("tokens_in") or 0),
+        "tokens_out": int(totals.get("tokens_out") or 0),
+        "tokens_total": int(totals.get("tokens_total") or 0),
+        "cost": float(totals.get("cost") or 0),
+    }
+
+
+def _portal_billing_delta_data(value: object) -> dict[str, object]:
+    deltas = _dict_value(value)
+    return {
+        "runs": float(deltas.get("runs") or 0),
+        "provider_calls": float(deltas.get("provider_calls") or 0),
+        "tokens_total": float(deltas.get("tokens_total") or 0),
+        "cost": float(deltas.get("cost") or 0),
+    }
+
+
+def _portal_billing_snapshot_data(value: object) -> dict[str, object] | None:
+    snapshot = _dict_value(value)
+    if not snapshot:
+        return None
+    return {
+        "snapshot_id": str(snapshot.get("snapshot_id") or ""),
+        "site_id": str(snapshot.get("site_id") or ""),
+        "subscription_id": str(snapshot.get("subscription_id") or ""),
+        "plan_version_id": str(snapshot.get("plan_version_id") or ""),
+        "currency": str(snapshot.get("currency") or ""),
+        "period_start_at": str(snapshot.get("period_start_at") or ""),
+        "period_end_at": str(snapshot.get("period_end_at") or ""),
+        "totals": _portal_billing_totals_data(snapshot.get("totals")),
+        "breakdown": _dict_value(snapshot.get("breakdown")),
+        "generated_at": str(snapshot.get("generated_at") or ""),
+    }
+
+
+def _portal_billing_snapshot_list_data(
+    value: object,
+    *,
+    site_id: str,
+) -> dict[str, object]:
+    snapshots = _dict_value(value)
+    return {
+        "site_id": site_id,
+        "items": [
+            projected
+            for item in _object_list(snapshots.get("items"))
+            if (projected := _portal_billing_snapshot_data(item)) is not None
+        ],
+    }
+
+
+def _portal_billing_reconciliation_data(
+    value: object,
+    *,
+    site_id: str,
+) -> dict[str, object]:
+    payload = _dict_value(value)
+    reconciliation = _dict_value(payload.get("reconciliation"))
+    deltas = _dict_value(reconciliation.get("deltas"))
+    return {
+        "site_id": site_id,
+        "ledger_totals": _portal_billing_delta_data(payload.get("ledger_totals")),
+        "snapshot": _portal_billing_snapshot_data(payload.get("snapshot")),
+        "reconciliation": {
+            "in_sync": bool(reconciliation.get("in_sync")),
+            "deltas": _portal_billing_delta_data(deltas),
+        },
+    }
+
+
+def _portal_plan_trial_response_data(
+    value: object,
+    *,
+    session: dict[str, object],
+) -> dict[str, object]:
+    result = _dict_value(value)
+    subscription = _dict_value(result.get("subscription"))
+    return {
+        "subscription": project_portal_subscription(subscription),
+        "entitlement_snapshot": _portal_public_entitlement_snapshot_data(
+            result.get("entitlement_snapshot")
+        ),
+        "trial": _portal_started_trial_data(result.get("trial")),
+        "session": session,
+    }
+
+
+def _portal_free_downgrade_data(value: object) -> dict[str, object]:
+    result = _dict_value(value)
+    return {
+        "scheduled_tier_id": str(result.get("scheduled_tier_id") or ""),
+        "scheduled_change_at": str(result.get("scheduled_change_at") or ""),
+    }
+
+
+def _portal_remove_site_data(value: object) -> dict[str, object]:
+    result = _dict_value(value)
+    return {
+        "site": _portal_public_site_data(result.get("site")),
+        "revoked_key_ids": [
+            str(item) for item in _object_list(result.get("revoked_key_ids"))
+        ],
+    }
+
+
+def _portal_site_summary_response_data(value: object) -> dict[str, object]:
+    summary = _dict_value(value)
+    coverage = _dict_value(summary.get("coverage"))
+    subscription = _dict_value(coverage.get("subscription"))
+    public_subscription = (
+        project_portal_subscription(subscription) if subscription else {}
+    )
+    plan_version = _dict_value(coverage.get("plan_version"))
+    customer_status = _dict_value(summary.get("customer_status"))
+    return {
+        "site_id": str(summary.get("site_id") or ""),
+        "site": _portal_public_site_data(summary.get("site")),
+        "covered_by_subscription_id": str(
+            summary.get("covered_by_subscription_id") or ""
+        ),
+        "subscription_status": str(summary.get("subscription_status") or ""),
+        "package_alias": str(summary.get("package_alias") or ""),
+        "coverage": {
+            "subscription_id": str(public_subscription.get("subscription_id") or ""),
+            "status": str(public_subscription.get("status") or ""),
+            "plan_id": str(public_subscription.get("plan_id") or ""),
+            "plan_version_id": str(
+                public_subscription.get("plan_version_id")
+                or plan_version.get("plan_version_id")
+                or ""
+            ),
+            "package_alias": str(public_subscription.get("package_alias") or ""),
+            "current_period_start": str(
+                subscription.get("current_period_start")
+                or public_subscription.get("current_period_start_at")
+                or ""
+            ),
+            "current_period_end": str(
+                subscription.get("current_period_end")
+                or public_subscription.get("current_period_end_at")
+                or ""
+            ),
+            "current_period_start_at": str(
+                public_subscription.get("current_period_start_at") or ""
+            ),
+            "current_period_end_at": str(
+                public_subscription.get("current_period_end_at") or ""
+            ),
+        },
+        "entitlement_snapshot": _portal_public_entitlement_snapshot_data(
+            coverage.get("entitlement_snapshot")
+        ),
+        "customer_status": {
+            "status": str(customer_status.get("status") or ""),
+            "needs_attention": bool(customer_status.get("needs_attention")),
+            "issue_count": int(customer_status.get("issue_count") or 0),
+            "generated_at": str(customer_status.get("generated_at") or ""),
+        },
+        "generated_at": str(summary.get("generated_at") or ""),
+    }
+
+
+def _portal_site_entitlements_response_data(value: object) -> dict[str, object]:
+    entitlements = _dict_value(value)
+    subscription = _dict_value(entitlements.get("subscription"))
+    return {
+        "site_id": str(entitlements.get("site_id") or ""),
+        "site": _portal_public_site_data(entitlements.get("site")),
+        "subscription": project_portal_subscription(subscription) if subscription else None,
+        "plan_version": _portal_public_plan_version_data(entitlements.get("plan_version")),
+        "entitlement_snapshot": _portal_public_entitlement_snapshot_data(
+            entitlements.get("entitlement_snapshot")
+        ),
+        "policy": _portal_public_commercial_policy_data(entitlements.get("policy")),
+        "period_start_at": str(entitlements.get("period_start_at") or ""),
+        "period_end_at": str(entitlements.get("period_end_at") or ""),
+        "usage_totals": _portal_public_usage_totals_data(entitlements.get("usage_totals")),
+        "subscription_grace": _portal_public_subscription_grace_data(
+            entitlements.get("subscription_grace")
+        ),
+        "budget_state": _portal_public_budget_state_data(entitlements.get("budget_state")),
+        "quota_summary": _portal_public_quota_summary_data(
+            entitlements.get("quota_summary")
+        ),
+        "generated_at": str(entitlements.get("generated_at") or ""),
+    }
+
+
+def _portal_audit_group_data(value: object) -> dict[str, object]:
+    group = _dict_value(value)
+    return {
+        "event_kind": str(group.get("event_kind") or ""),
+        "outcome": str(group.get("outcome") or ""),
+        "count": int(group.get("count") or 0),
+        "first_seen_at": str(group.get("first_seen_at") or ""),
+        "last_seen_at": str(group.get("last_seen_at") or ""),
+    }
+
+
+def _portal_audit_summary_response_data(
+    value: object,
+    *,
+    site_id: str = "",
+) -> dict[str, object]:
+    summary = _dict_value(value)
+    totals = _dict_value(summary.get("totals"))
+    data: dict[str, object] = {
+        "generated_at": str(summary.get("generated_at") or ""),
+        "totals": {str(key): int(count or 0) for key, count in totals.items()},
+        "groups": [
+            _portal_audit_group_data(item) for item in _object_list(summary.get("groups"))
+        ],
+    }
+    if site_id:
+        data["site_id"] = site_id
+    return data
+
+
+def _portal_audit_event_data(value: object) -> dict[str, object]:
+    event = _dict_value(value)
+    return {
+        "event_id": int(event.get("event_id") or 0),
+        "event_kind": str(event.get("event_kind") or ""),
+        "outcome": str(event.get("outcome") or ""),
+        "trace_id": str(event.get("trace_id") or ""),
+        "created_at": str(event.get("created_at") or ""),
+    }
+
+
+def _portal_audit_events_response_data(
+    value: object,
+    *,
+    site_id: str = "",
+) -> dict[str, object]:
+    events = _dict_value(value)
+    filters = _dict_value(events.get("filters"))
+    data: dict[str, object] = {
+        "total": int(events.get("total") or 0),
+        "filters": {
+            "event_kind": str(filters.get("event_kind") or ""),
+            "outcome": str(filters.get("outcome") or ""),
+        },
+        "items": [
+            _portal_audit_event_data(item) for item in _object_list(events.get("items"))
+        ],
+    }
+    if site_id:
+        data["site_id"] = site_id
+    return data
 
 
 def _build_portal_audit_context(request: Request, principal_id: str) -> ServiceAuditContext:
@@ -588,7 +1540,7 @@ async def finish_qq_login_callback(
                         "status": "bound",
                         "provider": "qq",
                         "return_to": return_to,
-                        "binding": binding,
+                        "binding": _portal_identity_binding_response_data(binding),
                     },
                 ),
             )
@@ -613,7 +1565,8 @@ async def finish_qq_login_callback(
                 content=_portal_route_envelope(
                     message="portal QQ binding required",
                     data={
-                        **login,
+                        "status": "binding_required",
+                        "provider": str(login.get("provider") or "qq"),
                         "return_to": return_to,
                     },
                 ),
@@ -628,8 +1581,6 @@ async def finish_qq_login_callback(
             strict_site=False,
             session_metadata=build_new_portal_session_metadata(request),
         )
-        data["auth_provider"] = "qq"
-        data["return_to"] = return_to
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     except httpx.HTTPError as error:
@@ -690,14 +1641,17 @@ async def list_portal_identity_providers(request: Request) -> Any:
     return _portal_route_envelope(
         message="portal identity providers listed",
         data={
-            "principal_id": auth.principal_id,
             "providers": [
                 {
                     "provider": "qq",
                     "display_name": "QQ",
                     "configured": qq_configured,
                     "bound": qq_binding is not None,
-                    "binding": qq_binding,
+                    "binding": (
+                        _portal_identity_binding_response_data(qq_binding)
+                        if qq_binding is not None
+                        else None
+                    ),
                     "bind_start_path": (
                         "/portal/v1/auth/qq/start?intent=bind&return_to=/portal/account"
                     ),
@@ -765,7 +1719,7 @@ async def bind_portal_qq_login(
         status_code=200,
         content=_portal_route_envelope(
             message="portal QQ login bound",
-            data={"binding": binding},
+            data={"binding": _portal_identity_binding_response_data(binding)},
         ),
     )
     _clear_portal_qq_oauth_nonce_cookie(response)
@@ -796,7 +1750,10 @@ async def unbind_portal_qq_login(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal QQ login unbound",
-        data=result,
+        data={
+            "provider": str(result.get("provider") or ""),
+            "revoked": int(str(result.get("revoked") or 0)),
+        },
     )
 
 
@@ -941,50 +1898,124 @@ def _portal_ai_safety_contract() -> dict[str, bool]:
     }
 
 
-def _resolve_primary_portal_account_id(
+def _resolve_selected_portal_account_access(
     request: Request,
     *,
     principal_id: str,
-) -> str | JSONResponse:
-    account_access = _resolve_primary_portal_account_access(
-        request,
-        principal_id=principal_id,
-    )
-    if isinstance(account_access, JSONResponse):
-        return account_access
-    return str(account_access.get("account_id") or "")
-
-
-def _resolve_primary_portal_account_access(
-    request: Request,
-    *,
-    principal_id: str,
+    site_id: str,
+    required_action: str | None,
 ) -> dict[str, object] | JSONResponse:
+    normalized_site_id = str(site_id or "").strip()
+    if not normalized_site_id:
+        return portal_json_error(
+            request,
+            status_code=409,
+            error_code="portal.site_selection_required",
+            message="portal site selection is required",
+        )
+    access = _authorize_portal_site_access(
+        request,
+        site_id=normalized_site_id,
+        principal_id=principal_id,
+        required_action=required_action,
+    )
+    if isinstance(access, JSONResponse):
+        return access
+    site = _dict_value(access.get("site"))
+    site_status = str(site.get("status") or "").strip()
+    if site_status == "archived":
+        return portal_json_error(
+            request,
+            status_code=403,
+            error_code="service.portal_site_removed",
+            message="removed portal sites cannot establish account context",
+        )
+    if site_status != "active":
+        return portal_json_error(
+            request,
+            status_code=403,
+            error_code="service.portal_site_inactive",
+            message="inactive portal sites cannot establish account context",
+        )
+    if not str(access.get("account_id") or "").strip():
+        return portal_json_error(
+            request,
+            status_code=403,
+            error_code="service.portal_account_required",
+            message="portal account access is required",
+        )
+    return access
+
+
+def _portal_account_site_ids(
+    request: Request,
+    *,
+    principal_id: str,
+    account_id: str,
+) -> list[str] | JSONResponse:
     try:
-        accounts = _get_commercial_service(request).list_portal_accounts(principal_id=principal_id)
+        result = _get_commercial_service(request).list_portal_sites(principal_id=principal_id)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    for item in _object_list(accounts.get("items")):
-        account = item if isinstance(item, dict) else {}
-        account_id = str(account.get("account_id") or "").strip()
-        if account_id:
-            return account
-    return portal_json_error(
-        request,
-        status_code=403,
-        error_code="portal.account_required",
-        message="portal account access is required",
-    )
-
-
-def _portal_account_site_ids(account_access: dict[str, object]) -> list[str]:
-    sites = [site for site in _object_list(account_access.get("sites")) if isinstance(site, dict)]
+    sites = [
+        _dict_value(item.get("site"))
+        for item in _object_list(result.get("items"))
+        if isinstance(item, dict)
+    ]
     return [
         str(site.get("site_id") or "").strip()
         for site in sites
         if str(site.get("site_id") or "").strip()
+        and str(site.get("account_id") or "").strip() == account_id
         and str(site.get("status") or "").strip().lower() != "archived"
     ]
+
+
+def _validate_portal_account_site_filter(
+    request: Request,
+    *,
+    principal_id: str,
+    account_id: str,
+    site_id: str,
+    required_action: str,
+) -> str | JSONResponse:
+    normalized_site_id = str(site_id or "").strip()
+    if not normalized_site_id:
+        return ""
+    access = _authorize_portal_site_access(
+        request,
+        site_id=normalized_site_id,
+        principal_id=principal_id,
+        required_action=required_action,
+    )
+    if isinstance(access, JSONResponse):
+        return access
+    if str(access.get("account_id") or "").strip() != account_id:
+        return portal_json_error(
+            request,
+            status_code=403,
+            error_code="service.portal_site_account_mismatch",
+            message="portal site is outside the selected account context",
+        )
+    return normalized_site_id
+
+
+def _resolve_portal_support_request_for_account(
+    request: Request,
+    *,
+    principal_id: str,
+    account_id: str,
+    request_id: str,
+) -> dict[str, object] | JSONResponse:
+    try:
+        result = _get_commercial_service(request).get_portal_support_request(
+            principal_id=principal_id,
+            account_id=account_id,
+            request_id=request_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return result
 
 
 def _resolve_portal_site_summary(
@@ -1023,15 +2054,6 @@ def _resolve_portal_site_summary(
     )
     return {
         "site_id": site_id,
-        "account_id": str(access.get("account_id") or ""),
-        "principal_id": principal_id,
-        "identity_type": str(access.get("identity_type") or ""),
-        "allowed_actions": [
-            str(action)
-            for action in _object_list(access.get("allowed_actions"))
-            if str(action).strip()
-        ],
-        "role": str(access.get("role") or ""),
         "site": policy.get("site"),
         "covered_by_subscription_id": str(subscription.get("subscription_id") or ""),
         "subscription_status": str(subscription.get("status") or ""),
@@ -1483,12 +2505,7 @@ async def verify_portal_registration_code(
             strict_site=False,
             session_metadata=build_new_portal_session_metadata(request),
         )
-        data = {
-            **registration,
-            "session": session_data.get("session"),
-            "sites": session_data.get("sites") or [],
-            "accounts": session_data.get("accounts") or [],
-        }
+        data = session_data
     except CommercialServiceError as error:
         if error.error_code == "service.portal_registration_code_invalid":
             return portal_json_error(
@@ -1612,23 +2629,22 @@ async def list_portal_account_plan_offers(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         offers = _get_commercial_service(request).list_account_plan_offers(account_id=account_id)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal package offers listed",
-        data={
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            **offers,
-        },
+        data=_portal_plan_offer_list_data(offers),
     )
 
 
@@ -1650,12 +2666,15 @@ async def start_portal_account_plan_trial(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).start_account_plan_trial(
             account_id=account_id,
@@ -1673,12 +2692,7 @@ async def start_portal_account_plan_trial(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal paid package trial started",
-        data={
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            **result,
-            "session": session_data,
-        },
+        data=_portal_plan_trial_response_data(result, session=session_data),
     )
 
 
@@ -1700,12 +2714,15 @@ async def create_portal_account_subscription_order(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).create_account_subscription_payment_order(
             account_id=account_id,
@@ -1717,11 +2734,7 @@ async def create_portal_account_subscription_order(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal subscription order created",
-        data={
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            **result,
-        },
+        data=_portal_subscription_order_payload_data(result),
     )
 
 
@@ -1743,12 +2756,15 @@ async def cancel_portal_account_subscription_order(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).cancel_account_subscription_payment_order(
             account_id=account_id,
@@ -1759,11 +2775,7 @@ async def cancel_portal_account_subscription_order(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal subscription order canceled",
-        data={
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            **result,
-        },
+        data=_portal_subscription_order_payload_data(result),
     )
 
 
@@ -1782,12 +2794,15 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).schedule_account_free_downgrade(
             account_id=account_id,
@@ -1797,11 +2812,7 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal Free downgrade scheduled",
-        data={
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            **result,
-        },
+        data=_portal_free_downgrade_data(result),
     )
 
 
@@ -1814,12 +2825,15 @@ async def get_portal_account_entitlements(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         quota_summary = _get_commercial_service(request).get_portal_account_quota_summary(
             account_id
@@ -1829,23 +2843,12 @@ async def get_portal_account_entitlements(request: Request) -> Any:
     return _portal_route_envelope(
         message="portal account entitlements loaded",
         data={
-            "site_id": "",
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "allowed_actions": [],
-            "role": "user",
-            "site": {},
-            "subscription": {},
-            "plan_version": {},
-            "entitlement_snapshot": {},
-            "policy": {},
             "period_start_at": quota_summary.get("period_start_at") or "",
             "period_end_at": quota_summary.get("period_end_at") or "",
             "usage_totals": {},
             "subscription_grace": {},
             "budget_state": {},
-            "quota_summary": quota_summary,
+            "quota_summary": _portal_public_quota_summary_data(quota_summary),
             "generated_at": quota_summary.get("generated_at") or "",
         },
     )
@@ -1860,28 +2863,26 @@ async def get_portal_account_usage_summary(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_primary_portal_account_access(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_USAGE,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
-    site_ids = _portal_account_site_ids(account_access)
+    site_ids = _portal_account_site_ids(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+    )
+    if isinstance(site_ids, JSONResponse):
+        return site_ids
     result = UsageService(_get_commercial_service(request).database_url).get_usage_summary(
         site_ids=site_ids
     )
-    result["site_id"] = ""
     result["site_ids"] = site_ids
-    result["account_id"] = account_id
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(account_access.get("identity_type") or "user")
-    result["allowed_actions"] = [
-        str(action)
-        for action in _object_list(account_access.get("allowed_actions"))
-        if str(action).strip()
-    ]
-    result["role"] = str(account_access.get("role") or "user")
     return _portal_route_envelope(
         message="portal account usage summary loaded",
         data=result,
@@ -1901,12 +2902,15 @@ async def get_portal_account_credit_ledger(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         ledger = _get_commercial_service(request).get_portal_account_credit_ledger(
             account_id,
@@ -1917,14 +2921,7 @@ async def get_portal_account_credit_ledger(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account credit ledger loaded",
-        data={
-            "site_id": "",
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "role": "user",
-            **ledger,
-        },
+        data=_portal_credit_ledger_data(ledger),
     )
 
 
@@ -1941,28 +2938,35 @@ async def get_portal_account_credit_trend(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    resolved_site_id = _validate_portal_account_site_filter(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        site_id=site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+    )
+    if isinstance(resolved_site_id, JSONResponse):
+        return resolved_site_id
     try:
         trend = _get_commercial_service(request).get_portal_account_credit_trend(
             account_id,
             window=window,
-            site_id=site_id,
+            site_id=resolved_site_id,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account credit trend loaded",
-        data={
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "role": "user",
-            **trend,
-        },
+        data=_portal_credit_trend_data(trend),
     )
 
 
@@ -1984,17 +2988,29 @@ async def get_portal_account_credit_events(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    resolved_site_id = _validate_portal_account_site_filter(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        site_id=site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+    )
+    if isinstance(resolved_site_id, JSONResponse):
+        return resolved_site_id
     try:
         events = _get_commercial_service(request).get_portal_account_credit_events(
             account_id,
             window=window,
-            site_id=site_id,
+            site_id=resolved_site_id,
             feature=feature,
             range_start_at=start_at,
             range_end_at=end_at,
@@ -2005,12 +3021,7 @@ async def get_portal_account_credit_events(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account credit events loaded",
-        data={
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "role": "user",
-            **events,
-        },
+        data=_portal_credit_events_data(events),
     )
 
 
@@ -2031,18 +3042,30 @@ async def get_portal_account_credit_event_buckets(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    resolved_site_id = _validate_portal_account_site_filter(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        site_id=site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+    )
+    if isinstance(resolved_site_id, JSONResponse):
+        return resolved_site_id
     try:
         buckets = _get_commercial_service(request).get_portal_account_credit_event_buckets(
             account_id,
             bucket=bucket,
             window=window,
-            site_id=site_id,
+            site_id=resolved_site_id,
             feature=feature,
             limit=limit,
             offset=offset,
@@ -2051,12 +3074,7 @@ async def get_portal_account_credit_event_buckets(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account credit event buckets loaded",
-        data={
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "role": "user",
-            **buckets,
-        },
+        data=_portal_credit_event_buckets_data(buckets),
     )
 
 
@@ -2069,23 +3087,18 @@ async def list_portal_account_credit_packs(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
     result = _get_commercial_service(request).list_credit_packs()
     return _portal_route_envelope(
         message="portal account credit packs loaded",
-        data={
-            **result,
-            "site_id": "",
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "role": "user",
-        },
+        data=_portal_credit_pack_catalog_data(result),
     )
 
 
@@ -2107,12 +3120,15 @@ async def create_portal_account_credit_pack_order(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         order = _get_commercial_service(request).create_credit_pack_payment_order(
             account_id=account_id,
@@ -2124,14 +3140,7 @@ async def create_portal_account_credit_pack_order(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account credit pack payment order created",
-        data={
-            "site_id": "",
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "identity_type": "user",
-            "role": "user",
-            "order": order,
-        },
+        data={"order": _portal_payment_order_data(order)},
     )
 
 
@@ -2151,12 +3160,15 @@ async def list_portal_account_payment_orders(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).list_account_payment_orders(
             account_id,
@@ -2168,11 +3180,7 @@ async def list_portal_account_payment_orders(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account payment orders loaded",
-        data={
-            **result,
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-        },
+        data=_portal_payment_order_list_data(result),
     )
 
 
@@ -2185,12 +3193,15 @@ async def get_portal_account_payment_order(request: Request, order_id: str) -> A
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         order = _get_commercial_service(request).get_account_payment_order(
             account_id=account_id,
@@ -2200,11 +3211,7 @@ async def get_portal_account_payment_order(request: Request, order_id: str) -> A
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account payment order loaded",
-        data={
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "order": order,
-        },
+        data={"order": _portal_payment_order_data(order)},
     )
 
 
@@ -2226,12 +3233,15 @@ async def cancel_portal_account_payment_order(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).cancel_account_payment_order(
             account_id=account_id,
@@ -2242,11 +3252,7 @@ async def cancel_portal_account_payment_order(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account payment order canceled",
-        data={
-            **result,
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-        },
+        data=_portal_payment_order_payload_data(result),
     )
 
 
@@ -2264,12 +3270,15 @@ async def list_portal_support_requests(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).list_portal_support_requests(
             principal_id=auth.principal_id,
@@ -2280,6 +3289,8 @@ async def list_portal_support_requests(
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
+    result.pop("account_id", None)
+    result.pop("principal_id", None)
     return _portal_route_envelope(
         message="portal support requests loaded",
         data=result,
@@ -2304,17 +3315,35 @@ async def create_portal_support_request(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_id = _resolve_primary_portal_account_id(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
     )
-    if isinstance(account_id, JSONResponse):
-        return account_id
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    account_id = str(account_access.get("account_id") or "")
+    target_site_id = str(payload.site_id or auth.site_id or "").strip()
+    target_access = _authorize_portal_site_access(
+        request,
+        site_id=target_site_id,
+        principal_id=auth.principal_id,
+    )
+    if isinstance(target_access, JSONResponse):
+        return target_access
+    if str(target_access.get("account_id") or "").strip() != account_id:
+        return portal_json_error(
+            request,
+            status_code=403,
+            error_code="service.portal_site_account_mismatch",
+            message="support request site is outside the selected account context",
+        )
     try:
         result = _get_commercial_service(request).create_portal_support_request(
             principal_id=auth.principal_id,
             account_id=account_id,
-            site_id=payload.site_id,
+            site_id=target_site_id,
             topic=payload.topic,
             title=payload.title,
             description=payload.description,
@@ -2326,11 +3355,7 @@ async def create_portal_support_request(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal support request created",
-        data={
-            "request": result,
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-        },
+        data={"request": result},
     )
 
 
@@ -2343,13 +3368,22 @@ async def get_portal_support_request(request: Request, request_id: str) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    try:
-        result = _get_commercial_service(request).get_portal_support_request(
-            principal_id=auth.principal_id,
-            request_id=request_id,
-        )
-    except CommercialServiceError as error:
-        return _service_error_response(error, request=request)
+    account_access = _resolve_selected_portal_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    result = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(result, JSONResponse):
+        return result
     return _portal_route_envelope(
         message="portal support request loaded",
         data=result,
@@ -2375,6 +3409,22 @@ async def create_portal_support_request_message(
     )
     if isinstance(auth, JSONResponse):
         return auth
+    account_access = _resolve_selected_portal_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    request_access = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(request_access, JSONResponse):
+        return request_access
     try:
         result = _get_commercial_service(request).create_portal_support_request_message(
             principal_id=auth.principal_id,
@@ -2409,6 +3459,22 @@ async def create_portal_support_request_attachment(
     )
     if isinstance(auth, JSONResponse):
         return auth
+    account_access = _resolve_selected_portal_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    request_access = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(request_access, JSONResponse):
+        return request_access
     try:
         result = _get_commercial_service(request).create_portal_support_request_attachment(
             principal_id=auth.principal_id,
@@ -2440,6 +3506,22 @@ async def get_portal_support_request_attachment(
     )
     if isinstance(auth, JSONResponse):
         return auth
+    account_access = _resolve_selected_portal_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    request_access = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(request_access, JSONResponse):
+        return request_access
     try:
         result = _get_commercial_service(request).get_portal_support_request_attachment(
             principal_id=auth.principal_id,
@@ -2473,6 +3555,22 @@ async def submit_portal_support_request_feedback(
     )
     if isinstance(auth, JSONResponse):
         return auth
+    account_access = _resolve_selected_portal_account_access(
+        request,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=None,
+    )
+    if isinstance(account_access, JSONResponse):
+        return account_access
+    request_access = _resolve_portal_support_request_for_account(
+        request,
+        principal_id=auth.principal_id,
+        account_id=str(account_access.get("account_id") or ""),
+        request_id=request_id,
+    )
+    if isinstance(request_access, JSONResponse):
+        return request_access
     try:
         result = _get_commercial_service(request).submit_portal_support_request_feedback(
             principal_id=auth.principal_id,
@@ -2490,8 +3588,8 @@ async def submit_portal_support_request_feedback(
     )
 
 
-@router.get("/sites")
-async def list_portal_sites(request: Request) -> Any:
+@router.get("/addon-connection-accounts")
+async def list_portal_addon_connection_accounts(request: Request) -> Any:
     auth = await resolve_portal_request_context(
         request,
         require_idempotency=False,
@@ -2500,14 +3598,35 @@ async def list_portal_sites(request: Request) -> Any:
     if isinstance(auth, JSONResponse):
         return auth
     try:
-        result = _get_commercial_service(request).list_portal_sites(
+        result = _get_commercial_service(request).list_portal_accounts(
             principal_id=auth.principal_id,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
+    items = []
+    for raw_item in _object_list(result.get("items")):
+        item = _dict_value(raw_item)
+        allowed_actions = {
+            str(action).strip()
+            for action in _object_list(item.get("allowed_actions"))
+            if str(action).strip()
+        }
+        if (
+            str(item.get("status") or "").strip() != "active"
+            or str(item.get("membership_status") or "").strip() != "active"
+            or USER_ALLOWED_ACTION_PROVISION_SITES not in allowed_actions
+        ):
+            continue
+        items.append(
+            {
+                "account_id": str(item.get("account_id") or ""),
+                "name": str(item.get("name") or ""),
+                "site_count": int(item.get("site_count") or 0),
+            }
+        )
     return _portal_route_envelope(
-        message="portal sites loaded",
-        data=result,
+        message="portal addon connection accounts loaded",
+        data={"items": items},
     )
 
 
@@ -2602,7 +3721,7 @@ async def remove_portal_site(request: Request, site_id: str) -> Any:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal site removed",
-        data=result,
+        data=_portal_remove_site_data(result),
     )
 
 
@@ -2624,7 +3743,7 @@ async def get_portal_site_summary(request: Request, site_id: str) -> Any:
         return result
     return _portal_route_envelope(
         message="portal site summary loaded",
-        data=result,
+        data=_portal_site_summary_response_data(result),
     )
 
 
@@ -2649,16 +3768,9 @@ async def get_portal_site_usage_summary(request: Request, site_id: str) -> Any:
         site_id=site_id
     )
     result["site_id"] = site_id
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal usage summary loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2692,16 +3804,9 @@ async def get_portal_site_monitoring_overview(
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal monitoring overview loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2733,16 +3838,9 @@ async def get_portal_site_diagnostic_advisor(
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
     result["site_id"] = site_id
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal diagnostic advisor loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2769,16 +3867,9 @@ async def get_portal_site_diagnostics(
         result = _get_commercial_service(request).get_portal_site_diagnostics(site_id)
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal site diagnostics loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2809,16 +3900,9 @@ async def get_portal_site_plugin_observability(
         plugin_slug=plugin_slug.strip(),
     )
     result["site_id"] = site_id
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal plugin observability loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2857,16 +3941,9 @@ async def get_portal_site_media_observability(
     result.pop("sites", None)
     result["workflow_metadata"] = get_workflow_metadata(MEDIA_DERIVATIVE_WORKFLOW_ID)
     result["site_id"] = site_id
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal media observability loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2898,16 +3975,9 @@ async def get_portal_site_vector_observability(
     )
     result.pop("sites", None)
     result["site_id"] = site_id
-    result["account_id"] = str(access.get("account_id") or "")
-    result["principal_id"] = auth.principal_id
-    result["identity_type"] = str(access.get("identity_type") or "")
-    result["allowed_actions"] = [
-        str(action) for action in _object_list(access.get("allowed_actions")) if str(action).strip()
-    ]
-    result["role"] = str(access.get("role") or "")
     return _portal_route_envelope(
         message="portal vector observability loaded",
-        data=result,
+        data=_portal_site_response_data(result),
     )
 
 
@@ -2938,20 +4008,18 @@ async def list_portal_site_ai_insight_history(
     )
     return _portal_route_envelope(
         message="portal ai insight history loaded",
-        data={
-            "portal_ai_insight_version": "portal-ai-insight-v1",
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "role": str(access.get("role") or ""),
-            "items": [
-                _portal_ai_history_item(item)
-                for item in _object_list(history.get("items"))
-                if isinstance(item, dict)
-            ],
-            "safety": _portal_ai_safety_contract(),
-        },
+        data=_portal_site_response_data(
+            {
+                "portal_ai_insight_version": "portal-ai-insight-v1",
+                "site_id": site_id,
+                "items": [
+                    _portal_ai_history_item(item)
+                    for item in _object_list(history.get("items"))
+                    if isinstance(item, dict)
+                ],
+                "safety": _portal_ai_safety_contract(),
+            }
+        ),
     )
 
 
@@ -3002,16 +4070,14 @@ async def analyze_portal_site_ai_insight(
         )
     return _portal_route_envelope(
         message="portal ai insight analyzed",
-        data={
-            "portal_ai_insight_version": "portal-ai-insight-v1",
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "role": str(access.get("role") or ""),
-            "analysis": _portal_ai_summary(summary),
-            "safety": _portal_ai_safety_contract(),
-        },
+        data=_portal_site_response_data(
+            {
+                "portal_ai_insight_version": "portal-ai-insight-v1",
+                "site_id": site_id,
+                "analysis": _portal_ai_summary(summary),
+                "safety": _portal_ai_safety_contract(),
+            }
+        ),
     )
 
 
@@ -3042,30 +4108,23 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal entitlements loaded",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(access.get("role") or ""),
-            "site": policy.get("site"),
-            "subscription": policy.get("subscription"),
-            "plan_version": policy.get("plan_version"),
-            "entitlement_snapshot": policy.get("entitlement_snapshot"),
-            "policy": policy.get("policy"),
-            "period_start_at": policy.get("period_start_at"),
-            "period_end_at": policy.get("period_end_at"),
-            "usage_totals": policy.get("usage_totals"),
-            "subscription_grace": policy.get("subscription_grace"),
-            "budget_state": policy.get("budget_state"),
-            "quota_summary": quota_summary,
-            "generated_at": policy.get("generated_at"),
-        },
+        data=_portal_site_entitlements_response_data(
+            {
+                "site_id": site_id,
+                "site": policy.get("site"),
+                "subscription": policy.get("subscription"),
+                "plan_version": policy.get("plan_version"),
+                "entitlement_snapshot": policy.get("entitlement_snapshot"),
+                "policy": policy.get("policy"),
+                "period_start_at": policy.get("period_start_at"),
+                "period_end_at": policy.get("period_end_at"),
+                "usage_totals": policy.get("usage_totals"),
+                "subscription_grace": policy.get("subscription_grace"),
+                "budget_state": policy.get("budget_state"),
+                "quota_summary": quota_summary,
+                "generated_at": policy.get("generated_at"),
+            }
+        ),
     )
 
 
@@ -3102,19 +4161,7 @@ async def get_portal_site_credit_ledger(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal credit ledger loaded",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(access.get("role") or ""),
-            **ledger,
-        },
+        data=_portal_credit_ledger_data(ledger, site_id=site_id),
     )
 
 
@@ -3138,14 +4185,7 @@ async def list_portal_site_credit_packs(request: Request, site_id: str) -> Any:
     result = _get_commercial_service(request).list_credit_packs()
     return _portal_route_envelope(
         message="portal credit packs loaded",
-        data={
-            **result,
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "role": str(access.get("role") or ""),
-        },
+        data=_portal_credit_pack_catalog_data(result, site_id=site_id),
     )
 
 
@@ -3186,14 +4226,7 @@ async def list_portal_site_payment_orders(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal payment orders loaded",
-        data={
-            **result,
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "role": str(access.get("role") or ""),
-        },
+        data=_portal_payment_order_list_data(result, site_id=site_id),
     )
 
 
@@ -3236,14 +4269,7 @@ async def create_portal_site_credit_pack_order(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal credit pack payment order created",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "role": str(access.get("role") or ""),
-            "order": order,
-        },
+        data={"site_id": site_id, "order": _portal_payment_order_data(order)},
     )
 
 
@@ -3256,14 +4282,22 @@ async def get_portal_account_audit_summary(request: Request) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_primary_portal_account_access(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
-    site_ids = _portal_account_site_ids(account_access)
+    site_ids = _portal_account_site_ids(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+    )
+    if isinstance(site_ids, JSONResponse):
+        return site_ids
     try:
         summary = _get_commercial_service(request).summarize_service_audit_events(
             account_id=account_id,
@@ -3274,19 +4308,7 @@ async def get_portal_account_audit_summary(request: Request) -> Any:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account audit summary loaded",
-        data={
-            "site_id": "",
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "identity_type": str(account_access.get("identity_type") or "user"),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(account_access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(account_access.get("role") or "user"),
-            **summary,
-        },
+        data=_portal_audit_summary_response_data(summary),
     )
 
 
@@ -3304,14 +4326,22 @@ async def list_portal_account_audit_events(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_primary_portal_account_access(
+    account_access = _resolve_selected_portal_account_access(
         request,
         principal_id=auth.principal_id,
+        site_id=auth.site_id,
+        required_action=USER_ALLOWED_ACTION_VIEW_AUDIT,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
-    site_ids = _portal_account_site_ids(account_access)
+    site_ids = _portal_account_site_ids(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+    )
+    if isinstance(site_ids, JSONResponse):
+        return site_ids
     try:
         events = _get_commercial_service(request).list_service_audit_events(
             account_id=account_id,
@@ -3324,19 +4354,7 @@ async def list_portal_account_audit_events(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal account audit events loaded",
-        data={
-            "site_id": "",
-            "account_id": account_id,
-            "principal_id": auth.principal_id,
-            "identity_type": str(account_access.get("identity_type") or "user"),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(account_access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(account_access.get("role") or "user"),
-            **events,
-        },
+        data=_portal_audit_events_response_data(events),
     )
 
 
@@ -3366,19 +4384,7 @@ async def get_portal_site_audit_summary(request: Request, site_id: str) -> Any:
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal audit summary loaded",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(access.get("role") or ""),
-            **summary,
-        },
+        data=_portal_audit_summary_response_data(summary, site_id=site_id),
     )
 
 
@@ -3416,19 +4422,7 @@ async def list_portal_site_audit_events(
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal audit events loaded",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(access.get("role") or ""),
-            **events,
-        },
+        data=_portal_audit_events_response_data(events, site_id=site_id),
     )
 
 
@@ -3454,19 +4448,7 @@ async def list_portal_site_billing_snapshots(request: Request, site_id: str) -> 
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal billing snapshots loaded",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "allowed_actions": [
-                str(action)
-                for action in _object_list(access.get("allowed_actions"))
-                if str(action).strip()
-            ],
-            "role": str(access.get("role") or ""),
-            **snapshots,
-        },
+        data=_portal_billing_snapshot_list_data(snapshots, site_id=site_id),
     )
 
 
@@ -3492,12 +4474,5 @@ async def get_portal_site_billing_reconciliation(request: Request, site_id: str)
         return _service_error_response(error, request=request)
     return _portal_route_envelope(
         message="portal billing reconciliation loaded",
-        data={
-            "site_id": site_id,
-            "account_id": str(access.get("account_id") or ""),
-            "principal_id": auth.principal_id,
-            "identity_type": str(access.get("identity_type") or ""),
-            "role": str(access.get("role") or ""),
-            **reconciliation,
-        },
+        data=_portal_billing_reconciliation_data(reconciliation, site_id=site_id),
     )

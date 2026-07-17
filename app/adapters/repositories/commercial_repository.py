@@ -165,6 +165,12 @@ class CommercialRepository:
         self.session.flush()
         return message
 
+    def get_support_request_message(
+        self,
+        message_id: str,
+    ) -> SupportRequestMessage | None:
+        return self.session.get(SupportRequestMessage, message_id)
+
     def list_support_request_messages(
         self,
         *,

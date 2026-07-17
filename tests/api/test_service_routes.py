@@ -424,7 +424,11 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
         email=email,
         code=str(request_data["code"]),
     )
-    principal_id = str(registration_data["principal_id"])
+    assert registration_data["email"] == email
+    with get_session(database_url) as session:
+        principal = session.scalar(select(Principal).where(Principal.email == email))
+        assert principal is not None
+        principal_id = principal.principal_id
 
     list_response = client.get(
         "/internal/service/admin/portal-users?q=admin-portal-user",
@@ -447,6 +451,7 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["plan_id"] == "free"
     assert items[0]["qq_bound"] is False
     assert items[0]["site_id"] == "site_admin-portal-user-example-com"
+    site_id = str(items[0]["site_id"])
 
     principal_lookup_response = client.get(
         f"/internal/service/admin/portal-users?q={principal_id}",
@@ -486,7 +491,7 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert revoked_session_response.json()["error_code"] == "auth.portal_session_revoked"
 
     revoked_site_response = client.get(
-        f"/portal/v1/sites/{registration_data['site_id']}/summary"
+        f"/portal/v1/sites/{site_id}/summary"
     )
     assert revoked_site_response.status_code == 401
     assert revoked_site_response.json()["error_code"] == "auth.portal_session_revoked"
@@ -562,7 +567,11 @@ def test_admin_portal_users_batch_disable_processes_each_principal(
             email=email,
             code=str(request_data["code"]),
         )
-        principal_ids.append(str(registration_data["principal_id"]))
+        assert registration_data["email"] == email
+        with get_session(database_url) as session:
+            principal = session.scalar(select(Principal).where(Principal.email == email))
+            assert principal is not None
+            principal_ids.append(principal.principal_id)
 
     missing_principal_id = "prn_missing_batch_disable"
     blank_reason_response = client.post(

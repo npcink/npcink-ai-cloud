@@ -57,7 +57,7 @@ function resolvePaymentOrderTitle(order: PortalPaymentOrder, t: TranslateFn): st
     return t(`portal.usage.credit_pack_${packKey}`, {}, rawTitle || order.order_id);
   }
   if (normalizePaymentText(order.purchase_kind).includes('subscription')) {
-    const tier = String(order.metadata?.target_tier_id || '').trim();
+    const tier = String(order.target_tier_id || '').trim();
     const tierLabel = tier ? `${tier.charAt(0).toUpperCase()}${tier.slice(1)}` : '';
     return tierLabel
       ? t(

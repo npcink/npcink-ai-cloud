@@ -4,7 +4,6 @@ import os
 import socket
 from datetime import UTC, datetime
 
-import jwt
 import pytest
 from sqlalchemy import select
 
@@ -43,6 +42,7 @@ os.environ["NPCINK_CLOUD_SITE_KNOWLEDGE_EMBEDDING_PROVIDER"] = "deterministic"
 os.environ["NPCINK_CLOUD_SITE_KNOWLEDGE_VECTOR_BACKEND"] = "postgres_json"
 os.environ["NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
 
+from app.api.auth import build_portal_session_token
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
@@ -398,6 +398,7 @@ def build_portal_headers(
     secret: str = TEST_PORTAL_JWT_SECRET,
     issuer: str | None = None,
     audience: str | None = None,
+    site_id: str = "",
     expires_at: datetime | None = None,
     idempotency_key: str = "",
     trace_id: str = "00112233445566778899aabbccddeeff",
@@ -408,6 +409,7 @@ def build_portal_headers(
         secret=secret,
         issuer=issuer,
         audience=audience,
+        site_id=site_id,
         expires_at=expires_at,
         idempotency_key=idempotency_key,
         trace_id=trace_id,
@@ -424,21 +426,25 @@ def build_portal_bearer_headers(
     secret: str = TEST_PORTAL_JWT_SECRET,
     issuer: str | None = None,
     audience: str | None = None,
+    site_id: str = "",
     expires_at: datetime | None = None,
     idempotency_key: str = "",
     trace_id: str = "00112233445566778899aabbccddeeff",
 ) -> dict[str, str]:
-    payload: dict[str, object] = {
-        "sub": principal_id,
-        "session_version": int(session_version or 1),
-    }
-    if issuer:
-        payload["iss"] = issuer
-    if audience:
-        payload["aud"] = audience
-    if expires_at is not None:
-        payload["exp"] = expires_at
-    token = jwt.encode(payload, secret, algorithm="HS256")
+    token = build_portal_session_token(
+        Settings(
+            _env_file=None,
+            environment="test",
+            portal_jwt_secret=secret,
+            portal_jwt_algorithm="HS256",
+            portal_jwt_issuer=issuer,
+            portal_jwt_audience=audience,
+        ),
+        principal_id=principal_id,
+        session_version=session_version,
+        site_id=site_id,
+        expires_at=expires_at,
+    )
     headers = {
         "Authorization": f"Bearer {token}",
         "traceparent": build_traceparent(trace_id),

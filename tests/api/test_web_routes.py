@@ -349,7 +349,8 @@ def test_web_admin_and_portal_sessions_do_not_substitute_for_each_other(tmp_path
         },
     )
     assert verify_response.status_code == 200, verify_response.text
-    assert verify_response.json()["data"]["identity_type"] == "user"
+    assert verify_response.json()["data"]["email"] == "identity-boundary@example.com"
+    assert "identity_type" not in verify_response.json()["data"]
     assert portal_client.get("/admin/session").status_code == 401
 
     admin_client = TestClient(portal_client.app)
@@ -551,8 +552,10 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
     )
     assert registration_response.status_code == 200, registration_response.text
     registration_data = registration_response.json()["data"]
-    account_id = str(registration_data["account_id"])
-    site_id = str(registration_data["site_id"])
+    site_id = str(registration_data["selected_context"]["site"]["site_id"])
+    addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
+    assert addon_accounts_response.status_code == 200
+    account_id = str(addon_accounts_response.json()["data"]["items"][0]["account_id"])
     assert client.post("/portal/v1/logout").status_code == 200
 
     login_request_response = client.post(
@@ -569,7 +572,8 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
         json={"email": "web@example.com", "code": str(fake_sender.messages[-1]["code"])},
     )
     assert login_verify_response.status_code == 200
-    assert login_verify_response.json()["data"]["principal_id"].startswith("prn_")
+    assert login_verify_response.json()["data"]["email"] == "web@example.com"
+    assert login_verify_response.json()["data"]["selected_context"] is None
 
     addon_state = "web-addon-state"
     connection_response = client.post(
