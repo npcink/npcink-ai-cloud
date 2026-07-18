@@ -424,6 +424,29 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "provider_text",
+    [
+        "审核说明中使用建议改写为：作为标签示例。正文必须保持完整。",
+        "建议改写为一种更可靠的审阅流程，并保留全部操作要求。",
+    ],
+)
+def test_content_rewrite_preserves_non_wrapper_suggestion_phrases(
+    provider_text: str,
+) -> None:
+    runtime = _runtime()
+
+    result = runtime.normalize_provider_output(
+        {"output_text": provider_text},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "<block-content>原始正文需要完整保留语义。</block-content>",
+        },
+    )
+
+    assert result["output_text"] == provider_text
+
+
 def test_content_rewrite_output_preserves_long_selection_within_source_limit() -> None:
     runtime = _runtime()
     source_text = "<block-content>" + ("原始选中文本需要清晰改写。" * 120) + "</block-content>"

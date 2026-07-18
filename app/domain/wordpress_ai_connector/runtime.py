@@ -854,7 +854,8 @@ class WordPressOperationRuntime:
                 return self._truncate_text(alternative_candidate, limit=limit)
             text = self._strip_markdown(output_text)
             text = re.sub(
-                r"^(?:rewrite|rewritten|rephrased|改写(?:结果|版本)?)\s*[:：]\s*",
+                r"^(?:rewrite|rewritten|rephrased|改写(?:结果|版本)?|"
+                r"建议改写(?:为|成))\s*[:：]\s*",
                 "",
                 text,
                 flags=re.I,
