@@ -40,6 +40,9 @@ from app.domain.media_artifacts.store import LocalVolumeArtifactStore
 from app.domain.runtime.service import RuntimeService
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
+from app.domain.wordpress_ai_connector.contracts import (
+    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
+)
 from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_ALT_TEXT_VISION_PROFILE_ID,
     WP_AI_CONNECTOR_AUDIO_GENERATION_PROFILE_ID,
@@ -64,6 +67,13 @@ CONNECTOR_SITE_URL = "https://alpha.example.test"
 CONNECTOR_VERSION = "1.0.0-test"
 ALT_TEXT_SOURCE_ARTIFACT_ID = "art_0123456789abcdef0123456789abcdef"
 ALT_TEXT_PROVIDER_ECHO_MARKER = "c2Vuc2l0aXZlLXByb3ZpZGVyLWVjaG8="
+LONG_REWRITE_SOURCE_TEXT = (
+    "<block-content>"
+    + ("原始选中文本需要通过托管运行时完整改写并返回本地审阅。" * 80)
+    + " long rewrite output"
+    + "</block-content>"
+)
+LONG_REWRITE_OUTPUT_TEXT = "改写后的长选区保持完整、清晰且继续由 WordPress 本地审阅。" * 80
 
 
 def _generated_png_bytes(*, width: int = 64, height: int = 48) -> bytes:
@@ -315,6 +325,8 @@ class WordPressAIConnectorTextProvider:
                 "**这个插件非常实用，能够帮助站长高效完成大量内容相关工作。**\n\n"
                 "如果你愿意，我还可以继续帮你调整风格。"
             )
+        elif task == "content_rewrite" and "long rewrite output" in source_text:
+            output_text = LONG_REWRITE_OUTPUT_TEXT
         elif task == "content_summary":
             output_text = (
                 "### **1. Fast editing support**\n"
@@ -2747,6 +2759,38 @@ def test_wordpress_ai_connector_runtime_normalizes_rewrite_variant_bundle(
     result_text = response.json()["data"]["result"]["output"]["output_text"]
     assert result_text == "这个插件非常实用，能够帮助站长高效完成大量内容相关工作。"
     assert "如果你愿意" not in result_text
+
+
+def test_wordpress_ai_connector_runtime_preserves_long_rewrite_result_contract(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    assert 320 < len(LONG_REWRITE_SOURCE_TEXT) < WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+    assert 320 < len(LONG_REWRITE_OUTPUT_TEXT) < WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+    payload = _payload(
+        {
+            "task": "content_rewrite",
+            "request": {"source_text": LONG_REWRITE_SOURCE_TEXT},
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-connector-long-rewrite")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "succeeded"
+    assert data["profile_id"] == WP_AI_CONNECTOR_EDITORIAL_PROFILE_ID
+    result = data["result"]
+    assert result["contract_version"] == "cloud_connector_result.v1"
+    assert result["suggestion_only"] is True
+    assert result["operation_contract"] == {
+        "contract_version": "wordpress_operation.v1",
+        "task": "content_rewrite",
+    }
+    assert result["output"]["output_text"] == LONG_REWRITE_OUTPUT_TEXT
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["text"] == LONG_REWRITE_SOURCE_TEXT
+    assert provider_input["input"].count(LONG_REWRITE_SOURCE_TEXT) == 1
 
 
 def test_wordpress_ai_connector_runtime_projects_classification_json_scene(

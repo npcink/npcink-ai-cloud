@@ -25,6 +25,7 @@ from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
     WORDPRESS_OPERATION_CONTRACT,
+    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
     WP_AI_CONNECTOR_SOURCE_TEXT_TASKS,
     contains_inline_media_transport,
     resolve_site_knowledge_reference_mode,
@@ -434,7 +435,7 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit={
-                    "content_rewrite": 320,
+                    "content_rewrite": WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
                     "title_generation": 80,
                     "excerpt_generation": 180,
                     "content_summary": 220,

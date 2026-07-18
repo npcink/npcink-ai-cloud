@@ -12,6 +12,7 @@ from app.core.config import Settings
 from app.domain.media_artifacts.input_loading import LoadedArtifactInput
 from app.domain.runtime.errors import RuntimeExecutionContractError
 from app.domain.wordpress_ai_connector.contracts import (
+    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
     WordPressOperationContractViolation,
     validate_wordpress_operation_contract,
 )
@@ -421,6 +422,40 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
             {"term": "Cloud Runtime", "confidence": 0.4, "is_new": True},
         ]
     }
+
+
+def test_content_rewrite_output_preserves_long_selection_within_source_limit() -> None:
+    runtime = _runtime()
+    source_text = "<block-content>" + ("原始选中文本需要清晰改写。" * 120) + "</block-content>"
+    rewritten_text = "改写后的长选区保持完整、清晰且可供本地审阅。" * 80
+
+    assert 320 < len(rewritten_text) < WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+
+    result = runtime.normalize_provider_output(
+        {"output_text": rewritten_text},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": source_text,
+        },
+    )
+
+    assert result["output_text"] == rewritten_text
+
+
+def test_content_rewrite_output_remains_bounded_by_source_text_contract() -> None:
+    runtime = _runtime()
+    rewritten_text = "边界内的改写句子呀。" * 1_300
+
+    result = runtime.normalize_provider_output(
+        {"output_text": rewritten_text},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "<block-content>原始选中文本。</block-content>",
+        },
+    )
+
+    assert len(result["output_text"]) == WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+    assert result["output_text"] == rewritten_text[:WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS]
 
 
 def test_empty_text_output_judgement_is_task_bounded() -> None:
