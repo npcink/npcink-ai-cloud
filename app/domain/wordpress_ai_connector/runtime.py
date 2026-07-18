@@ -909,7 +909,8 @@ class WordPressOperationRuntime:
         match = re.fullmatch(
             r"(?P<first>.+?[.!?])\s+OR\s+"
             r"(?P<second>.+?[.!?])\s+"
-            r"Both\s+rephrasings\b.+",
+            r"Both(?:\s+rephrasings)?\s+preserve\s+(?:the\s+)?"
+            r"(?:core|original|intended)\s+meaning\b.+",
             text,
             flags=re.I | re.S,
         )

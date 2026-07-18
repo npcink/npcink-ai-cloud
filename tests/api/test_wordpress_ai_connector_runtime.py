@@ -325,6 +325,12 @@ class WordPressAIConnectorTextProvider:
                 "**这个插件非常实用，能够帮助站长高效完成大量内容相关工作。**\n\n"
                 "如果你愿意，我还可以继续帮你调整风格。"
             )
+        elif task == "content_rewrite" and "rewrite alternatives concise" in source_text:
+            output_text = (
+                "The selected whole paragraph block is identified clearly. OR "
+                "This is the chosen whole paragraph block. Both preserve the core "
+                "meaning while explaining the alternatives."
+            )
         elif task == "content_rewrite" and "rewrite alternatives" in source_text:
             output_text = (
                 "The selected whole paragraph block is identified clearly. OR "
@@ -340,6 +346,11 @@ class WordPressAIConnectorTextProvider:
             output_text = (
                 "The editor keeps the reviewed paragraph intact. This rewrite also "
                 "preserves the second operational requirement."
+            )
+        elif task == "content_rewrite" and "rewrite legitimate both preserve review" in source_text:
+            output_text = (
+                "Use the local execution path. OR use the hosted runtime path. "
+                "Both preserve review before applying changes."
             )
         elif task == "content_rewrite" and "rewrite legitimate bullet list" in source_text:
             output_text = (
@@ -2820,6 +2831,35 @@ def test_wordpress_ai_connector_runtime_extracts_one_rewrite_from_alternative_ex
     assert "Both rephrasings" not in result_text
 
 
+def test_wordpress_ai_connector_runtime_extracts_one_rewrite_from_concise_alternative_explanation(
+    tmp_path: Path,
+) -> None:
+    _, client, _ = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "content_rewrite",
+            "request": {
+                "source_text": (
+                    "<block-content>rewrite alternatives concise response paragraph."
+                    "</block-content>"
+                ),
+            },
+        }
+    )
+
+    response = _execute(
+        client,
+        payload,
+        idempotency_key="wp-ai-connector-rewrite-alternative-concise-explanation",
+    )
+
+    assert response.status_code == 200
+    result_text = response.json()["data"]["result"]["output"]["output_text"]
+    assert result_text == "The selected whole paragraph block is identified clearly."
+    assert " OR " not in result_text
+    assert "Both preserve" not in result_text
+
+
 @pytest.mark.parametrize(
     ("marker", "expected"),
     [
@@ -2832,6 +2872,11 @@ def test_wordpress_ai_connector_runtime_extracts_one_rewrite_from_alternative_ex
             "rewrite legitimate this rewrite",
             "The editor keeps the reviewed paragraph intact. This rewrite also "
             "preserves the second operational requirement.",
+        ),
+        (
+            "rewrite legitimate both preserve review",
+            "Use the local execution path. OR use the hosted runtime path. "
+            "Both preserve review before applying changes.",
         ),
         (
             "rewrite legitimate bullet list",
