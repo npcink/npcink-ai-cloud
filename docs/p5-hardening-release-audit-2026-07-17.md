@@ -260,7 +260,7 @@ later engineering batches changed the current branch status:
 | --- | --- | --- |
 | P5-B1 connector cutover | engineering complete | [P5-B1 Hosted Profile Contract Cutover](p5-b1-hosted-profile-contract-cutover-2026-07-17.md) |
 | P5-B2 security blockers | engineering complete | [P5-B2 Security Hardening Closeout](p5-b2-security-hardening-2026-07-17.md) and [ADR-019](decisions/019-dedicated-runtime-data-encryption-domain.md) |
-| P5-B3 WordPress text acceptance | pending | current exact-package title, summary, and selected-text review/apply evidence remains required |
+| P5-B3 WordPress text acceptance | engineering complete | [P5-B3 WordPress Text Acceptance Closeout](p5-b3-wordpress-ai-text-acceptance-2026-07-18.md): exact revisions and packages passed Fresh data-path, browser review/apply, deterministic offline, provider/run-metadata, package, six-repository matrix, and cleanup evidence; summary/rewrite equality remains an explicit provider-quality limitation, and this is not production or Core-audit approval |
 | P5-B4 load/soak | pending | deterministic concurrent runtime, queue burst, query, worker, memory, and soak evidence remains required |
 | P5-B5 release closure | pending | exact bundle, media/text replay, restore, complete security follow-ups, central matrix, release-policy proof, and final audit remain required |
 
@@ -271,3 +271,8 @@ encryption domain with an offline transactional cutover. This is engineering
 evidence only. No production cutover, production approval, penetration test,
 complete image CVE scan, or live-credential validation has occurred, and global
 P5 remains incomplete.
+
+P5-B3 closes only the current WordPress text contract/UI/write-loop acceptance
+on its recorded revisions and package hashes. Its provider-quality limitation
+is retained rather than rerun away; P5-B4 load/soak and P5-B5 release closure
+remain pending, so global P5 is still incomplete.
