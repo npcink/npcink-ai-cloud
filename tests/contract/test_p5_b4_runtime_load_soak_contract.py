@@ -7,6 +7,7 @@ import json
 import re
 import stat
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from urllib.parse import urlsplit
@@ -242,6 +243,104 @@ def test_exact_set_queue_and_achieved_rate_gates(harness: ModuleType) -> None:
     assert harness._queue_gate(64, 64, 64, 500) is False
     assert harness._achieved_rate_passed(7.6, 8.0) is True
     assert harness._achieved_rate_passed(7.59, 8.0) is False
+
+
+def test_queue_timing_evidence_is_complete_bounded_and_aggregate_only(
+    harness: ModuleType,
+) -> None:
+    submitted_at = datetime(2026, 7, 19, tzinfo=UTC)
+    runs = [
+        SimpleNamespace(
+            run_id=f"hidden-run-{index:03d}",
+            started_at=submitted_at,
+            processing_started_at=submitted_at + timedelta(seconds=1 + index / 10),
+        )
+        for index in range(harness.FORMAL_QUEUE_BURST)
+    ]
+
+    evidence = harness._queue_timing_evidence(
+        runs,
+        expected_count=harness.FORMAL_QUEUE_BURST,
+        cohort_size=harness.DEFAULT_WORKER_BATCH_SIZE,
+    )
+
+    assert evidence["expected_sample_count"] == 64
+    assert evidence["sample_count"] == 64
+    assert evidence["processing_started_sample_count"] == 64
+    assert evidence["missing_processing_started_count"] == 0
+    assert evidence["timing_sample_count"] == 64
+    assert evidence["complete"] is True
+    assert evidence["wait_seconds"] == {
+        "sample_count": 64,
+        "p50": 4.15,
+        "p90": 6.67,
+        "p95": 6.985,
+        "p99": 7.237,
+        "max": 7.3,
+    }
+    assert evidence["first_claim_lag_seconds"] == 1.0
+    assert evidence["submission_span_seconds"] == 0.0
+    assert evidence["processing_start_span_seconds"] == 6.3
+    assert evidence["adjacent_claim_gap_seconds"] == {
+        "sample_count": 63,
+        "p50": 0.1,
+        "p90": 0.1,
+        "p95": 0.1,
+        "p99": 0.1,
+        "max": 0.1,
+    }
+    assert evidence["cohort_size"] == 8
+    assert evidence["expected_cohort_count"] == 8
+    assert evidence["cohort_count"] == 8
+    cohorts = evidence["cohorts"]
+    assert len(cohorts) == 8
+    assert all(cohort["sample_count"] == 8 for cohort in cohorts)
+    assert all(cohort["complete"] is True for cohort in cohorts)
+    assert cohorts[0]["wait_seconds"]["p50"] == 1.35
+    assert cohorts[-1]["wait_seconds"]["max"] == 7.3
+
+    serialized = json.dumps(evidence, sort_keys=True)
+    assert "hidden-run-" not in serialized
+    assert harness._redaction_violations(evidence) == []
+
+
+def test_queue_timing_evidence_and_gate_fail_closed_without_processing_start(
+    harness: ModuleType,
+) -> None:
+    submitted_at = datetime(2026, 7, 19, tzinfo=UTC)
+    runs = [
+        SimpleNamespace(
+            run_id=f"hidden-run-{index:03d}",
+            started_at=submitted_at,
+            processing_started_at=(
+                None
+                if index == 7
+                else submitted_at + timedelta(seconds=1 + index / 10)
+            ),
+        )
+        for index in range(harness.FORMAL_QUEUE_BURST)
+    ]
+
+    evidence = harness._queue_timing_evidence(
+        runs,
+        expected_count=harness.FORMAL_QUEUE_BURST,
+        cohort_size=harness.DEFAULT_WORKER_BATCH_SIZE,
+    )
+
+    assert evidence["sample_count"] == 64
+    assert evidence["processing_started_sample_count"] == 63
+    assert evidence["missing_processing_started_count"] == 1
+    assert evidence["timing_sample_count"] == 63
+    assert evidence["wait_seconds"]["sample_count"] == 63
+    assert evidence["complete"] is False
+    assert evidence["cohorts"][0]["complete"] is False
+    source = _source(HARNESS)
+    assert 'int(queue_timing["sample_count"]) == shape.queue_burst' in source
+    assert 'and bool(queue_timing["complete"])' in source
+    assert (
+        'float(integrity["queue_wait_p95_seconds"]) <= DEFAULT_WORKER_POLL_SECONDS * 2'
+        in source
+    )
 
 
 def test_diagnostics_are_bounded_redacted_and_require_run_identifier(

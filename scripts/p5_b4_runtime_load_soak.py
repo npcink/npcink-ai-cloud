@@ -1241,6 +1241,130 @@ def _percentile(values: list[float], quantile: float) -> float:
     return float(ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower))
 
 
+def _timing_distribution(values: list[float]) -> dict[str, int | float]:
+    return {
+        "sample_count": len(values),
+        "p50": round(_percentile(values, 0.50), 4),
+        "p90": round(_percentile(values, 0.90), 4),
+        "p95": round(_percentile(values, 0.95), 4),
+        "p99": round(_percentile(values, 0.99), 4),
+        "max": round(max(values, default=0.0), 4),
+    }
+
+
+def _queue_timing_evidence(
+    queue_runs: list[object],
+    *,
+    expected_count: int,
+    cohort_size: int,
+) -> dict[str, object]:
+    def epoch_seconds(value: object) -> float | None:
+        if not isinstance(value, datetime):
+            return None
+        try:
+            return value.timestamp()
+        except (OSError, OverflowError, ValueError):
+            return None
+
+    prepared = [
+        (
+            epoch_seconds(getattr(run, "started_at", None)),
+            epoch_seconds(getattr(run, "processing_started_at", None)),
+            str(getattr(run, "run_id", "") or ""),
+            index,
+        )
+        for index, run in enumerate(queue_runs)
+    ]
+    prepared.sort(
+        key=lambda row: (
+            row[0] is None,
+            row[0] if row[0] is not None else 0.0,
+            row[2],
+            row[3],
+        )
+    )
+
+    def aggregate(
+        rows: list[tuple[float | None, float | None, str, int]],
+        *,
+        required_count: int,
+    ) -> dict[str, object]:
+        submissions = [row[0] for row in rows if row[0] is not None]
+        claims = sorted(row[1] for row in rows if row[1] is not None)
+        waits = [
+            max(0.0, claim - submission)
+            for submission, claim, _run_reference, _index in rows
+            if submission is not None and claim is not None
+        ]
+        adjacent_claim_gaps = [
+            max(0.0, current - previous)
+            for previous, current in zip(claims, claims[1:], strict=False)
+        ]
+        missing_started_at_count = len(rows) - len(submissions)
+        missing_processing_started_count = len(rows) - len(claims)
+        timing_sample_count = len(waits)
+        complete = (
+            required_count > 0
+            and len(rows) == required_count
+            and missing_started_at_count == 0
+            and missing_processing_started_count == 0
+            and timing_sample_count == required_count
+        )
+        return {
+            "sample_count": len(rows),
+            "processing_started_sample_count": len(claims),
+            "missing_started_at_count": missing_started_at_count,
+            "missing_processing_started_count": missing_processing_started_count,
+            "timing_sample_count": timing_sample_count,
+            "complete": complete,
+            "wait_seconds": _timing_distribution(waits),
+            "first_claim_lag_seconds": round(
+                max(0.0, min(claims) - min(submissions))
+                if claims and submissions
+                else 0.0,
+                4,
+            ),
+            "submission_span_seconds": round(
+                max(submissions) - min(submissions) if submissions else 0.0,
+                4,
+            ),
+            "processing_start_span_seconds": round(
+                max(claims) - min(claims) if claims else 0.0,
+                4,
+            ),
+            "adjacent_claim_gap_seconds": _timing_distribution(adjacent_claim_gaps),
+        }
+
+    valid_cohort_shape = (
+        expected_count > 0 and cohort_size > 0 and expected_count % cohort_size == 0
+    )
+    cohorts = []
+    if cohort_size > 0:
+        for offset in range(0, len(prepared), cohort_size):
+            cohort = aggregate(
+                prepared[offset : offset + cohort_size],
+                required_count=cohort_size,
+            )
+            cohorts.append({"cohort_index": len(cohorts) + 1, **cohort})
+    overall = aggregate(prepared, required_count=expected_count)
+    expected_cohort_count = expected_count // cohort_size if valid_cohort_shape else 0
+    complete = (
+        bool(overall["complete"])
+        and valid_cohort_shape
+        and len(cohorts) == expected_cohort_count
+        and all(bool(cohort["complete"]) for cohort in cohorts)
+    )
+    return {
+        "expected_sample_count": expected_count,
+        **overall,
+        "complete": complete,
+        "cohort_size": cohort_size,
+        "expected_cohort_count": expected_cohort_count,
+        "cohort_count": len(cohorts),
+        "cohorts": cohorts,
+    }
+
+
 def _exact_identifier_set(observed: list[str], stored: set[str]) -> bool:
     return len(observed) == len(set(observed)) and set(observed) == stored
 
@@ -1345,6 +1469,8 @@ def _integrity(
     settings: Settings,
     observations: list[Observation],
     queue_ids: set[str],
+    *,
+    expected_queue_count: int,
 ) -> tuple[dict[str, object], dict[str, int], dict[str, float]]:
     with get_session(settings.database_url) as session:
         runs = list(session.scalars(select(RunRecord)))
@@ -1459,11 +1585,12 @@ def _integrity(
     )
     provider_set_exact = set(invocations) == expected_invocation_hashes
     queue_runs = [run for run in runs if run.run_id in queue_ids]
-    queue_waits = [
-        max(0.0, (run.processing_started_at - run.started_at).total_seconds())
-        for run in queue_runs
-        if run.processing_started_at is not None
-    ]
+    queue_timing = _queue_timing_evidence(
+        queue_runs,
+        expected_count=expected_queue_count,
+        cohort_size=DEFAULT_WORKER_BATCH_SIZE,
+    )
+    queue_wait = cast(dict[str, object], queue_timing["wait_seconds"])
     integrity = {
         "observed_records": len(observed_ids),
         "database_records": len(runs),
@@ -1486,7 +1613,8 @@ def _integrity(
         "provider_max_concurrency": provider_max_active,
         "provider_barrier_timeouts": provider_barrier_timeouts,
         "artifact_records": artifact_count,
-        "queue_wait_p95_seconds": round(_percentile(queue_waits, 0.95), 4),
+        "queue_timing_evidence": queue_timing,
+        "queue_wait_p95_seconds": queue_wait["p95"],
     }
     return (
         integrity,
@@ -1890,7 +2018,12 @@ async def _run_record(args: argparse.Namespace) -> tuple[dict[str, object], bool
         observations.extend(soak)
         unexpected_5xx += sum(item.http_status >= 500 for item in soak)
 
-    integrity, invocations, durations = _integrity(settings, observations, queue_ids)
+    integrity, invocations, durations = _integrity(
+        settings,
+        observations,
+        queue_ids,
+        expected_queue_count=shape.queue_burst,
+    )
     latency = _latency_summary(soak, invocations, durations)
     resources = _resource_evidence(
         args.resource_file,
@@ -1925,6 +2058,7 @@ async def _run_record(args: argparse.Namespace) -> tuple[dict[str, object], bool
         queue_completed,
         queued_result[0],
     )
+    queue_timing = cast(dict[str, object], integrity["queue_timing_evidence"])
     checks = {
         "unexpected_5xx_zero": unexpected_5xx == 0,
         "accepted_rate": accepted_rate >= THRESHOLDS["accepted_rate_min"],
@@ -1935,6 +2069,10 @@ async def _run_record(args: argparse.Namespace) -> tuple[dict[str, object], bool
             latency["all_accepted_samples_have_persistent_provider_evidence"]
         ),
         "queue_requested_accepted_completed_exact": queue_exact,
+        "queue_timing_evidence_complete": (
+            int(queue_timing["sample_count"]) == shape.queue_burst
+            and bool(queue_timing["complete"])
+        ),
         "queue_wait": float(integrity["queue_wait_p95_seconds"]) <= DEFAULT_WORKER_POLL_SECONDS * 2,
         "identifier_set_exact": bool(integrity["observed_identifier_set_exact"]),
         "observation_diagnostics_complete": bool(
@@ -2012,6 +2150,7 @@ async def _run_record(args: argparse.Namespace) -> tuple[dict[str, object], bool
             "accepted": len(queue_ids),
             "completed": queue_completed,
             "wait_p95_seconds": integrity["queue_wait_p95_seconds"],
+            "timing_evidence": queue_timing,
             "result_read_succeeded": queued_result[0] == 200,
         },
         "latency": latency,
