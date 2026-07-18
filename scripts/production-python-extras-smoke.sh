@@ -29,45 +29,57 @@ docker_build() {
 }
 
 verify_default_image() {
-	docker run --rm "${DEFAULT_TAG}" python - <<'PY'
+	docker run --rm -i "${DEFAULT_TAG}" python - <<'PY'
 from __future__ import annotations
 
 import importlib.util
 import json
 
 import app.api.main  # noqa: F401
+from PIL import __version__ as pillow_version
 
 has_pymilvus = importlib.util.find_spec("pymilvus") is not None
+pillow_major, pillow_minor, *_ = (int(part) for part in pillow_version.split(".")[:2])
+pillow_version_supported = (pillow_major, pillow_minor) >= (12, 3) and pillow_major < 13
 summary = {
     "image_role": "default_production_python",
     "app_import_ok": True,
+    "pillow_version": pillow_version,
+    "pillow_version_supported": pillow_version_supported,
+    "expected_pillow_version": ">=12.3,<13",
     "pymilvus_installed": has_pymilvus,
     "expected_package_extras": "",
 }
 print(json.dumps(summary, indent=2, sort_keys=True))
-if has_pymilvus:
+if has_pymilvus or not pillow_version_supported:
     raise SystemExit(1)
 PY
 }
 
 verify_zilliz_image() {
-	docker run --rm "${ZILLIZ_TAG}" python - <<'PY'
+	docker run --rm -i "${ZILLIZ_TAG}" python - <<'PY'
 from __future__ import annotations
 
 import importlib.util
 import json
 
 import app.api.main  # noqa: F401
+from PIL import __version__ as pillow_version
 
 has_pymilvus = importlib.util.find_spec("pymilvus") is not None
+pillow_major, pillow_minor, *_ = (int(part) for part in pillow_version.split(".")[:2])
+pillow_version_supported = (pillow_major, pillow_minor) >= (12, 3) and pillow_major < 13
 summary = {
     "image_role": "zilliz_production_python",
     "app_import_ok": True,
+    "pillow_version": pillow_version,
+    "pillow_version_supported": pillow_version_supported,
+    "expected_pillow_version": ">=12.3,<13",
     "pymilvus_installed": has_pymilvus,
     "expected_package_extras": "[zilliz]",
 }
 print(json.dumps(summary, indent=2, sort_keys=True))
-if not has_pymilvus:
+if not has_pymilvus or not pillow_version_supported:
     raise SystemExit(1)
 PY
 }
