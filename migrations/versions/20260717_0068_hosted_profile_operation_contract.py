@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import sqlalchemy as sa
@@ -12,114 +13,122 @@ down_revision = "20260717_0067"
 branch_labels = None
 depends_on = None
 
+_LEGACY_MANAGED_SURFACE = "wordpress_ai_connector"
 _MANAGED_SURFACE = "hosted_runtime_profiles"
 _PLATFORM_KIND = "wordpress"
 _CONNECTOR_ID = "wordpress_ai_connector"
 _LEGACY_POLICY_KEY = "connector_contract_version"
-_LEGACY_POLICY_VERSION = "wp_ai_connector_runtime.v1"
 _OPERATION_POLICY_KEY = "operation_contract_version"
 _OPERATION_POLICY_VERSION = "wordpress_operation.v1"
+_LEGACY_ADMIN_REVISION_PREFIX = "ability-model-routing-admin-"
+_ADMIN_REVISION_PREFIX = "runtime-profiles-admin-"
 _POLICY_COLUMNS = (
     ("routing_profiles", "default_policy_json"),
     ("routing_bindings", "selection_policy_json"),
 )
 
 
-def _is_managed_wordpress_connector_policy(policy: dict[str, Any]) -> bool:
-    return bool(
-        policy.get("managed_surface") == _MANAGED_SURFACE
-        and policy.get("platform_kind") == _PLATFORM_KIND
-        and policy.get("connector_id") == _CONNECTOR_ID
-    )
-
-
-def _rewrite_policy(
-    value: object,
-    *,
-    source_key: str,
-    source_version: str,
-    target_key: str,
-    target_version: str,
-) -> dict[str, Any] | None:
+def _upgrade_policy(value: object) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
-    if not _is_managed_wordpress_connector_policy(value):
-        return None
-    if value.get(source_key) != source_version:
+    if value.get("managed_surface") != _LEGACY_MANAGED_SURFACE:
         return None
 
     rewritten = dict(value)
-    rewritten.pop(source_key, None)
-    rewritten[target_key] = target_version
+    rewritten["managed_surface"] = _MANAGED_SURFACE
+    rewritten["platform_kind"] = _PLATFORM_KIND
+    rewritten["connector_id"] = _CONNECTOR_ID
+    rewritten.pop(_LEGACY_POLICY_KEY, None)
+    rewritten[_OPERATION_POLICY_KEY] = _OPERATION_POLICY_VERSION
     return rewritten
+
+
+def _downgrade_policy(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    if (
+        value.get("managed_surface") != _MANAGED_SURFACE
+        or value.get("platform_kind") != _PLATFORM_KIND
+        or value.get("connector_id") != _CONNECTOR_ID
+        or value.get(_OPERATION_POLICY_KEY) != _OPERATION_POLICY_VERSION
+    ):
+        return None
+
+    rewritten = dict(value)
+    rewritten["managed_surface"] = _LEGACY_MANAGED_SURFACE
+    rewritten.pop("platform_kind", None)
+    rewritten.pop("connector_id", None)
+    rewritten.pop(_LEGACY_POLICY_KEY, None)
+    rewritten.pop(_OPERATION_POLICY_KEY, None)
+    return rewritten
+
+
+def _replace_revision_prefix(value: object, *, source: str, target: str) -> object:
+    if not isinstance(value, str) or not value.startswith(source):
+        return value
+    return f"{target}{value.removeprefix(source)}"
+
+
+def _upgrade_revision(value: object) -> object:
+    return _replace_revision_prefix(
+        value,
+        source=_LEGACY_ADMIN_REVISION_PREFIX,
+        target=_ADMIN_REVISION_PREFIX,
+    )
+
+
+def _downgrade_revision(value: object) -> object:
+    return _replace_revision_prefix(
+        value,
+        source=_ADMIN_REVISION_PREFIX,
+        target=_LEGACY_ADMIN_REVISION_PREFIX,
+    )
 
 
 def _rewrite_policy_column(
     table_name: str,
     column_name: str,
-    *,
-    source_key: str,
-    source_version: str,
-    target_key: str,
-    target_version: str,
+    transform: Callable[[object], dict[str, Any] | None],
+    revision_transform: Callable[[object], object],
 ) -> None:
     bind = op.get_bind()
     table = sa.Table(table_name, sa.MetaData(), autoload_with=bind)
     policy_column = table.c[column_name]
-    rows = (
-        bind.execute(sa.select(table.c.profile_id, policy_column).with_for_update())
-        .mappings()
-        .all()
-    )
+    selected_columns = [table.c.profile_id, policy_column]
+    if table_name == "routing_bindings":
+        selected_columns.append(table.c.revision)
+    rows = bind.execute(sa.select(*selected_columns).with_for_update()).mappings().all()
 
     for row in rows:
-        rewritten = _rewrite_policy(
-            row[column_name],
-            source_key=source_key,
-            source_version=source_version,
-            target_key=target_key,
-            target_version=target_version,
-        )
+        rewritten = transform(row[column_name])
         if rewritten is None:
             continue
+        values: dict[str, object] = {column_name: rewritten}
+        if table_name == "routing_bindings":
+            values["revision"] = revision_transform(row["revision"])
         bind.execute(
             sa.update(table)
             .where(table.c.profile_id == row["profile_id"])
-            .values({column_name: rewritten})
+            .values(values)
         )
 
 
 def _rewrite_persisted_policies(
-    *,
-    source_key: str,
-    source_version: str,
-    target_key: str,
-    target_version: str,
+    transform: Callable[[object], dict[str, Any] | None],
+    revision_transform: Callable[[object], object],
 ) -> None:
     for table_name, column_name in _POLICY_COLUMNS:
         _rewrite_policy_column(
             table_name,
             column_name,
-            source_key=source_key,
-            source_version=source_version,
-            target_key=target_key,
-            target_version=target_version,
+            transform,
+            revision_transform,
         )
 
 
 def upgrade() -> None:
-    _rewrite_persisted_policies(
-        source_key=_LEGACY_POLICY_KEY,
-        source_version=_LEGACY_POLICY_VERSION,
-        target_key=_OPERATION_POLICY_KEY,
-        target_version=_OPERATION_POLICY_VERSION,
-    )
+    _rewrite_persisted_policies(_upgrade_policy, _upgrade_revision)
 
 
 def downgrade() -> None:
-    _rewrite_persisted_policies(
-        source_key=_OPERATION_POLICY_KEY,
-        source_version=_OPERATION_POLICY_VERSION,
-        target_key=_LEGACY_POLICY_KEY,
-        target_version=_LEGACY_POLICY_VERSION,
-    )
+    _rewrite_persisted_policies(_downgrade_policy, _downgrade_revision)

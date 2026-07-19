@@ -9,16 +9,26 @@ import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
+from app.core.db import dispose_engine, get_engine, get_session, init_schema
+from app.core.models import RoutingBinding, RoutingProfile
+from app.domain.catalog.service import CatalogService
+
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = (
     ROOT
     / "migrations/versions/20260717_0068_hosted_profile_operation_contract.py"
 )
 
+LEGACY_MANAGED_SURFACE = "wordpress_ai_connector"
+MANAGED_SURFACE = "hosted_runtime_profiles"
+PLATFORM_KIND = "wordpress"
+CONNECTOR_ID = "wordpress_ai_connector"
 LEGACY_POLICY_KEY = "connector_contract_" + "version"
 LEGACY_POLICY_VERSION = "wp_ai_connector_" + "runtime.v1"
 OPERATION_POLICY_KEY = "operation_contract_version"
 OPERATION_POLICY_VERSION = "wordpress_operation.v1"
+LEGACY_ADMIN_REVISION_PREFIX = "ability-model-routing-admin-"
+ADMIN_REVISION_PREFIX = "runtime-profiles-admin-"
 
 
 def _load() -> ModuleType:
@@ -32,20 +42,47 @@ def _load() -> ModuleType:
     return module
 
 
-def _managed_policy(*, note: str, legacy: bool = True) -> dict[str, object]:
-    policy: dict[str, object] = {
-        "managed_surface": "hosted_runtime_profiles",
-        "platform_kind": "wordpress",
-        "connector_id": "wordpress_ai_connector",
+def _master_admin_profile_policy(*, note: str) -> dict[str, object]:
+    return {
+        "allow_fallback": True,
+        "max_retries": 1,
+        "timeout_ms": 12_000,
+        "managed_surface": LEGACY_MANAGED_SURFACE,
         "task_group": "short_text",
+        "routing_intent": "content.short_text",
+        "tasks": ["excerpt_generation", "meta_description", "title_generation"],
         "operator_note": note,
-        "nested": {"preserved": True},
     }
-    if legacy:
-        policy[LEGACY_POLICY_KEY] = LEGACY_POLICY_VERSION
-    else:
-        policy[OPERATION_POLICY_KEY] = OPERATION_POLICY_VERSION
-    return policy
+
+
+def _master_admin_binding_policy(*, note: str) -> dict[str, object]:
+    return {
+        "strategy": "ordered",
+        "managed_surface": LEGACY_MANAGED_SURFACE,
+        "task_group": "short_text",
+        "routing_intent": "content.short_text",
+        "operator_note": note,
+    }
+
+
+def _master_catalog_profile_policy() -> dict[str, object]:
+    return {
+        "allow_fallback": True,
+        "max_retries": 0,
+        "timeout_ms": 45_000,
+        "managed_surface": LEGACY_MANAGED_SURFACE,
+        "task_group": "editorial_text",
+        "tasks": ["comment_reply_suggest", "content_rewrite", "content_summary"],
+    }
+
+
+def _master_catalog_binding_policy() -> dict[str, object]:
+    return {
+        "strategy": "ordered",
+        "ordered_tiers": ["free-gpt55", "hosted-free", "balanced"],
+        "managed_surface": LEGACY_MANAGED_SURFACE,
+        "task_group": "editorial_text",
+    }
 
 
 def _create_schema(engine: sa.Engine) -> dict[str, sa.Table]:
@@ -91,11 +128,13 @@ def _create_schema(engine: sa.Engine) -> dict[str, sa.Table]:
 def _seed_rows(connection: sa.Connection, tables: dict[str, sa.Table]) -> None:
     profiles = tables["profiles"]
     bindings = tables["bindings"]
-    target_policy = _managed_policy(note="operator canary")
-    non_target_policy = _managed_policy(note="wrong platform")
-    non_target_policy["platform_kind"] = "ghost"
-    wrong_version_policy = _managed_policy(note="unknown legacy version")
-    wrong_version_policy[LEGACY_POLICY_KEY] = "unknown.v2"
+    non_target_policy = {
+        "managed_surface": MANAGED_SURFACE,
+        "platform_kind": "ghost",
+        "connector_id": "ghost_connector",
+        OPERATION_POLICY_KEY: "ghost_operation.v1",
+        "operator_note": "unrelated platform",
+    }
 
     connection.execute(
         profiles.insert(),
@@ -103,19 +142,21 @@ def _seed_rows(connection: sa.Connection, tables: dict[str, sa.Table]) -> None:
             {
                 "profile_id": "wp-ai.short-text",
                 "execution_kind": "text",
-                "default_policy_json": target_policy,
+                "default_policy_json": _master_admin_profile_policy(
+                    note="operator canary"
+                ),
                 "updated_at": "2026-07-17T10:00:00Z",
+            },
+            {
+                "profile_id": "wp-ai.editorial",
+                "execution_kind": "text",
+                "default_policy_json": _master_catalog_profile_policy(),
+                "updated_at": "2026-07-17T10:01:00Z",
             },
             {
                 "profile_id": "ghost.short-text",
                 "execution_kind": "text",
                 "default_policy_json": non_target_policy,
-                "updated_at": "2026-07-17T10:01:00Z",
-            },
-            {
-                "profile_id": "wp-ai.unknown-version",
-                "execution_kind": "text",
-                "default_policy_json": wrong_version_policy,
                 "updated_at": "2026-07-17T10:02:00Z",
             },
             {
@@ -132,22 +173,24 @@ def _seed_rows(connection: sa.Connection, tables: dict[str, sa.Table]) -> None:
             {
                 "profile_id": "wp-ai.short-text",
                 "candidate_instance_ids": ["instance-primary", "instance-fallback"],
-                "selection_policy_json": target_policy,
-                "revision": "runtime-profiles-admin-preserved",
+                "selection_policy_json": _master_admin_binding_policy(
+                    note="operator canary"
+                ),
+                "revision": f"{LEGACY_ADMIN_REVISION_PREFIX}1721210400",
                 "updated_at": "2026-07-17T10:00:00Z",
+            },
+            {
+                "profile_id": "wp-ai.editorial",
+                "candidate_instance_ids": ["instance-editorial"],
+                "selection_policy_json": _master_catalog_binding_policy(),
+                "revision": "catalog-20260717T100100Z",
+                "updated_at": "2026-07-17T10:01:00Z",
             },
             {
                 "profile_id": "ghost.short-text",
                 "candidate_instance_ids": ["ghost-instance"],
                 "selection_policy_json": non_target_policy,
-                "revision": "runtime-profiles-admin-ghost",
-                "updated_at": "2026-07-17T10:01:00Z",
-            },
-            {
-                "profile_id": "wp-ai.unknown-version",
-                "candidate_instance_ids": [],
-                "selection_policy_json": wrong_version_policy,
-                "revision": "runtime-profiles-admin-unknown",
+                "revision": "ghost-admin-preserved",
                 "updated_at": "2026-07-17T10:02:00Z",
             },
             {
@@ -184,7 +227,16 @@ def _rows_by_id(
     }
 
 
-def test_0068_sqlite_upgrade_is_precise_idempotent_and_preserves_both_tables() -> None:
+def _assert_upgraded_policy(policy: object) -> None:
+    assert isinstance(policy, dict)
+    assert policy["managed_surface"] == MANAGED_SURFACE
+    assert policy["platform_kind"] == PLATFORM_KIND
+    assert policy["connector_id"] == CONNECTOR_ID
+    assert policy[OPERATION_POLICY_KEY] == OPERATION_POLICY_VERSION
+    assert LEGACY_POLICY_KEY not in policy
+
+
+def test_0068_sqlite_upgrade_migrates_real_master_shapes_idempotently() -> None:
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
     tables = _create_schema(engine)
     migration = _load()
@@ -205,35 +257,32 @@ def test_0068_sqlite_upgrade_is_precise_idempotent_and_preserves_both_tables() -
         assert upgraded_profiles == _rows_by_id(connection, tables["profiles"], "profile_id")
         assert upgraded_bindings == _rows_by_id(connection, tables["bindings"], "profile_id")
 
-        profile_policy = upgraded_profiles["wp-ai.short-text"]["default_policy_json"]
-        binding_policy = upgraded_bindings["wp-ai.short-text"]["selection_policy_json"]
-        assert isinstance(profile_policy, dict)
-        assert isinstance(binding_policy, dict)
-        for policy in (profile_policy, binding_policy):
-            assert LEGACY_POLICY_KEY not in policy
-            assert policy[OPERATION_POLICY_KEY] == OPERATION_POLICY_VERSION
-            assert policy["operator_note"] == "operator canary"
-            assert policy["nested"] == {"preserved": True}
+        for profile_id in ("wp-ai.short-text", "wp-ai.editorial"):
+            _assert_upgraded_policy(
+                upgraded_profiles[profile_id]["default_policy_json"]
+            )
+            _assert_upgraded_policy(
+                upgraded_bindings[profile_id]["selection_policy_json"]
+            )
 
-        for field in ("profile_id", "execution_kind", "updated_at"):
-            assert upgraded_profiles["wp-ai.short-text"][field] == before_profiles[
-                "wp-ai.short-text"
-            ][field]
-        for field in (
-            "profile_id",
-            "candidate_instance_ids",
-            "revision",
-            "updated_at",
-        ):
-            assert upgraded_bindings["wp-ai.short-text"][field] == before_bindings[
-                "wp-ai.short-text"
-            ][field]
+        short_text_policy = upgraded_profiles["wp-ai.short-text"][
+            "default_policy_json"
+        ]
+        assert isinstance(short_text_policy, dict)
+        assert short_text_policy["operator_note"] == "operator canary"
+        assert short_text_policy["timeout_ms"] == 12_000
+        assert upgraded_bindings["wp-ai.short-text"]["candidate_instance_ids"] == [
+            "instance-primary",
+            "instance-fallback",
+        ]
+        assert upgraded_bindings["wp-ai.short-text"]["revision"] == (
+            f"{ADMIN_REVISION_PREFIX}1721210400"
+        )
+        assert upgraded_bindings["wp-ai.editorial"]["revision"] == (
+            before_bindings["wp-ai.editorial"]["revision"]
+        )
 
-        for profile_id in (
-            "ghost.short-text",
-            "wp-ai.unknown-version",
-            "wp-ai.null-policy",
-        ):
+        for profile_id in ("ghost.short-text", "wp-ai.null-policy"):
             assert upgraded_profiles[profile_id] == before_profiles[profile_id]
             assert upgraded_bindings[profile_id] == before_bindings[profile_id]
 
@@ -243,20 +292,27 @@ def test_0068_sqlite_upgrade_is_precise_idempotent_and_preserves_both_tables() -
     engine.dispose()
 
 
-def test_0068_sqlite_downgrade_only_reverses_matching_managed_rows() -> None:
+def test_0068_sqlite_downgrade_restores_real_master_shapes_idempotently() -> None:
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
     tables = _create_schema(engine)
     migration = _load()
 
     with engine.begin() as connection:
         _seed_rows(connection, tables)
+        before_profiles = _rows_by_id(connection, tables["profiles"], "profile_id")
+        before_bindings = _rows_by_id(connection, tables["bindings"], "profile_id")
         migration.op = Operations(MigrationContext.configure(connection))
         migration.upgrade()
 
         profiles = tables["profiles"]
         bindings = tables["bindings"]
-        non_target_new = _managed_policy(note="new but not WordPress", legacy=False)
-        non_target_new["connector_id"] = "other_connector"
+        non_target_new = {
+            "managed_surface": MANAGED_SURFACE,
+            "platform_kind": "wordpress",
+            "connector_id": "other_connector",
+            OPERATION_POLICY_KEY: OPERATION_POLICY_VERSION,
+            "operator_note": "new but unrelated connector",
+        }
         connection.execute(
             profiles.insert().values(
                 profile_id="other.new-contract",
@@ -270,7 +326,7 @@ def test_0068_sqlite_downgrade_only_reverses_matching_managed_rows() -> None:
                 profile_id="other.new-contract",
                 candidate_instance_ids=["other-instance"],
                 selection_policy_json=non_target_new,
-                revision="other-new-contract",
+                revision="runtime-profiles-admin-other",
                 updated_at="2026-07-17T10:04:00Z",
             )
         )
@@ -288,20 +344,68 @@ def test_0068_sqlite_downgrade_only_reverses_matching_managed_rows() -> None:
 
         assert downgraded_profiles == _rows_by_id(connection, profiles, "profile_id")
         assert downgraded_bindings == _rows_by_id(connection, bindings, "profile_id")
-        for policy in (
-            downgraded_profiles["wp-ai.short-text"]["default_policy_json"],
-            downgraded_bindings["wp-ai.short-text"]["selection_policy_json"],
-        ):
-            assert isinstance(policy, dict)
-            assert OPERATION_POLICY_KEY not in policy
-            assert policy[LEGACY_POLICY_KEY] == LEGACY_POLICY_VERSION
-            assert policy["operator_note"] == "operator canary"
-            assert policy["nested"] == {"preserved": True}
+        for profile_id in ("wp-ai.short-text", "wp-ai.editorial"):
+            assert downgraded_profiles[profile_id] == before_profiles[profile_id]
+            assert downgraded_bindings[profile_id] == before_bindings[profile_id]
 
         assert downgraded_profiles["other.new-contract"] == non_target_before
         assert downgraded_bindings["other.new-contract"] == non_target_binding_before
 
     engine.dispose()
+
+
+def test_0068_upgrade_preserves_master_admin_state_through_catalog_refresh(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / '0068-refresh.sqlite3'}"
+    init_schema(database_url)
+    migration = _load()
+
+    with get_session(database_url) as session:
+        session.add(
+            RoutingProfile(
+                profile_id="wp-ai.short-text",
+                execution_kind="text",
+                default_policy_json=_master_admin_profile_policy(
+                    note="operator canary"
+                ),
+            )
+        )
+        session.add(
+            RoutingBinding(
+                profile_id="wp-ai.short-text",
+                candidate_instance_ids=["instance-primary", "instance-fallback"],
+                selection_policy_json=_master_admin_binding_policy(
+                    note="operator canary"
+                ),
+                revision=f"{LEGACY_ADMIN_REVISION_PREFIX}1721210400",
+            )
+        )
+        session.commit()
+
+    with get_engine(database_url).begin() as connection:
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+
+    CatalogService(database_url, providers={}).refresh_catalog()
+
+    with get_session(database_url) as session:
+        profile = session.get(RoutingProfile, "wp-ai.short-text")
+        binding = session.get(RoutingBinding, "wp-ai.short-text")
+        assert profile is not None
+        assert binding is not None
+        _assert_upgraded_policy(profile.default_policy_json)
+        _assert_upgraded_policy(binding.selection_policy_json)
+        assert profile.default_policy_json["timeout_ms"] == 12_000
+        assert profile.default_policy_json["operator_note"] == "operator canary"
+        assert binding.candidate_instance_ids == [
+            "instance-primary",
+            "instance-fallback",
+        ]
+        assert binding.selection_policy_json["operator_note"] == "operator canary"
+        assert binding.revision == f"{ADMIN_REVISION_PREFIX}1721210400"
+
+    dispose_engine(database_url)
 
 
 def test_0068_upgrade_rolls_back_both_tables_when_the_second_rewrite_fails(
