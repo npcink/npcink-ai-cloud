@@ -9,7 +9,7 @@ else
 fi
 . "${ROOT_DIR}/deploy/common.sh"
 
-ENV_PATH=".env.deploy"
+ENV_PATH=""
 SHARED_ENV_PATH=""
 BASE_URL="${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}"
 RESTART_SERVICES="proxy,api,worker,callback-worker,ops-worker"
@@ -188,6 +188,29 @@ fi
 ENV_FILE="$(resolve_env_path "${ENV_PATH}")"
 SHARED_FILE="$(resolve_env_path "${SHARED_ENV_PATH}")"
 
+if [ -z "${ENV_PATH}" ]; then
+	ENV_FILE="$(npcink_ai_cloud_resolve_env_file "${ROOT_DIR}")"
+fi
+if [ -z "${ENV_FILE}" ] || [ ! -f "${ENV_FILE}" ]; then
+	echo "[fail] The active release env file is missing; refusing to create one inside the release payload." >&2
+	exit 1
+fi
+RELEASE_STATE_ENV="$(npcink_ai_cloud_release_state_env_file "${ROOT_DIR}" 2>/dev/null || true)"
+if [ -n "${RELEASE_STATE_ENV}" ] && [ "${ENV_FILE}" != "${RELEASE_STATE_ENV}" ]; then
+	echo "[fail] Managed releases must update their external per-release env file: ${RELEASE_STATE_ENV}" >&2
+	exit 1
+fi
+if [ -n "${RELEASE_STATE_ENV}" ]; then
+	[ "$(stat -c '%a' "$(dirname "${RELEASE_STATE_ENV}")")" = "700" ] || {
+		echo "[fail] Release state directory mode must be 700." >&2
+		exit 1
+	}
+	[ "$(stat -c '%a' "${ENV_FILE}")" = "600" ] || {
+		echo "[fail] Release env file mode must be 600." >&2
+		exit 1
+	}
+fi
+
 SET_LINES=()
 TOUCH_KEYS=()
 if [ "${#SET_ENTRIES[@]}" -gt 0 ]; then
@@ -245,7 +268,8 @@ if [ "${RESTART_AFTER_UPDATE}" -eq 1 ]; then
 	IFS=','
 	read -r -a restart_service_array <<< "${RESTART_SERVICES}"
 	IFS="${OLD_IFS}"
-	npcink_ai_cloud_compose "${ROOT_DIR}" up -d "${restart_service_array[@]}"
+	npcink_ai_cloud_compose "${ROOT_DIR}" up -d --pull never --no-build \
+		--force-recreate "${restart_service_array[@]}"
 
 	case ",${RESTART_SERVICES}," in
 		*,api,*)

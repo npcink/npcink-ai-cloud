@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings
+
+
+def test_portal_jwt_algorithm_is_fixed_and_not_configurable() -> None:
+    env_example = (Path(__file__).resolve().parents[2] / ".env.example").read_text()
+
+    assert "portal_jwt_algorithm" not in Settings.model_fields
+    assert "NPCINK_CLOUD_PORTAL_JWT_ALGORITHM" not in env_example
 
 
 @pytest.mark.parametrize("max_body_bytes", [0, 51 * 1024 * 1024 + 1])
@@ -76,6 +85,45 @@ def test_settings_accept_hardened_production_auth_settings() -> None:
     assert settings.environment == "production"
     assert settings.admin_session_secret == "npcink-cloud-ops-session-secret-prod-32b"
     assert settings.admin_bootstrap_token == "npcink-cloud-admin-bootstrap-prod-token"
+    assert settings.portal_jwt_issuer == "npcink-ai-cloud"
+    assert settings.portal_jwt_audience == "npcink-ai-cloud-portal"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {"portal_jwt_issuer": ""},
+            "portal_jwt_issuer must not be blank",
+        ),
+        (
+            {"portal_jwt_audience": "   "},
+            "portal_jwt_audience must not be blank",
+        ),
+    ],
+)
+def test_settings_reject_blank_portal_token_identity(
+    overrides: dict[str, str],
+    message: str,
+) -> None:
+    payload = {
+        "environment": "production",
+        "database_url": "sqlite+pysqlite:///:memory:",
+        "redis_url": "redis://localhost:6379/0",
+        "internal_auth_token": "npcink-cloud-internal-prod-token-32b",
+        "admin_bootstrap_token": "npcink-cloud-admin-bootstrap-prod-token",
+        "admin_session_secret": "npcink-cloud-ops-session-secret-prod-32b",
+        "service_settings_secret": "npcink-cloud-service-settings-prod-32b",
+        "portal_jwt_secret": "npcink-cloud-portal-jwt-secret-prod-32b",
+        "browser_origin_allowlist": "https://cloud.example.com",
+        "trusted_host_allowlist": "cloud.example.com",
+    }
+    payload.update(overrides)
+
+    with pytest.raises(ValidationError) as error:
+        Settings(**payload)
+
+    assert message in str(error.value)
 
 
 def test_settings_reject_dev_fallback_flag_outside_dev_and_test() -> None:

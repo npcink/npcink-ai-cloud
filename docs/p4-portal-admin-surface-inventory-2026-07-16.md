@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted inventory for P4 implementation and acceptance.
+Accepted inventory and completed P4 closeout record. `P4-E01`, `P4-E02`, and
+`P4-E03` are satisfied by the inventory, executable gates, and screenshot-backed
+read-only browser smoke recorded below.
 
 This record satisfies `P4-E01` in
 `docs/refactor-deletion-inventory-v1.md`. It classifies the current customer
@@ -68,9 +70,9 @@ override this inventory or the current boundary contracts.
 | Customers: accounts, account/site detail, Portal users, support | Cloud identity/commercial/support | keep | These are platform operations. Full stable `principal_id` is allowed for Admin support and audit. |
 | Commercial: coverage, subscriptions, plans, credit packs | Cloud commercial truth | keep | Cloud owns service packages, entitlement and billing operations. |
 | Runtime: provider/model resources, external services, vector settings | Cloud runtime configuration | keep | Provider secrets remain write-only and getters expose configuration status, never secret material. |
-| `/admin/ability-models` | Cloud hosted runtime profile binding mixed with WordPress-oriented copy | replace later in P4 | Rename/reframe as runtime profiles. Retain Cloud execution profile binding; remove local ability/workflow/prompt/preset implications. |
-| `POST /admin/ability-models/runtime-binding` | Constant 409 historical stub | delete later in P4 | It has no behavior and must be removed with the runtime-profile UI cutover. |
-| Audio preview inside ability-model workspace | Provider diagnostic experiment | move or delete later | If retained, place under provider diagnostics; it is not ability truth. |
+| `/admin/runtime-profiles` | Platform-tagged Cloud hosted runtime candidate-chain configuration | keep | Directly replaces the deleted `/admin/ability-models` mixed surface. It does not own local ability/workflow/prompt/preset/adoption truth. |
+| Retired `/admin/ability-models/*` API and page routes | Mixed projection plus constant 409 historical stub | delete in P4-F | No aliases or redirects. Site Knowledge embedding stays in Vector Settings. |
+| Audio preview formerly inside ability-model workspace | Provider diagnostic experiment | delete in P4-F | Audio runtime remains; a future diagnostic UI requires its own bounded contract. |
 | Diagnostics: troubleshooting, plugin/media/vector observability, agent feedback | Cloud runtime evidence | keep | Read/diagnostic ownership is correct. |
 | Operations advisor | Cloud diagnostic summaries | keep advanced, simplify later | It cannot mutate provider, package, routing, WordPress, or approval state. |
 | Service settings | Cloud Portal/email/payment configuration | keep | Platform-admin-only Cloud configuration. Secrets remain write-only. |
@@ -132,8 +134,9 @@ Required proof:
    and idempotency contract.
 5. **P4-E Portal performance and identity projection:** remove home N+1,
    dormant client methods, aliases, and multi-account first-item fallbacks.
-6. **P4-F Admin runtime-profile and page-client contraction:** reframe the
-   ability-model surface and migrate Admin page batches to the shared client.
+6. **P4-F Admin runtime-profile and page-client contraction:** replace the
+   mixed ability-model surface with one platform-tagged hosted runtime-profile
+   workspace, then migrate other Admin page batches to the shared client.
 
 ## Gates
 
@@ -202,18 +205,172 @@ Final gates on the integrated working tree:
 - `pnpm run check:anti-drift`: passed;
 - Python Ruff and mypy: passed, 227 source files checked by mypy.
 
-Still required before declaring P4 complete:
+## P4-E Strict Context And Commercial Boundary — 2026-07-17
 
-- replace the customer session's routine `principal_id/account_id/role`, nested
-  account/site compatibility fields, and `site_admin_ref/member_ref` guesses
-  with one bounded projection;
-- derive multi-account commercial scope from an explicitly authorized selected
-  site/account context and fail closed when ambiguous; never select the first
-  storage result;
-- migrate the remaining raw Admin page fetches to the shared client in bounded
-  page batches;
-- replace `/admin/ability-models` with the Cloud-owned runtime-profile surface,
-  delete the constant-409 binding stub, and move or delete audio preview;
-- simplify the Admin overview and operations advisor hot paths;
-- complete `P4-E03` read-only retained-surface screenshot evidence after those
-  remaining UI contracts land.
+The Portal customer cutover is now implemented as one no-compatibility release:
+
+- the session response contains only `email`, flat public `sites`, one nullable
+  `selected_context`, `auth_mode`, and bounded session metadata;
+- account-level commercial, usage, audit, support, and addon flows derive scope
+  only from an explicitly authorized selected site. Missing or stale context
+  fails closed; no first account/site fallback remains;
+- cookie and bearer site identifiers share the same bounded 191-character
+  contract, archived sites cannot become current context, and expired trial
+  state is reconciled before projecting the current subscription;
+- support requests, messages, attachments, and feedback use customer-specific
+  serializers. Cross-ticket attachment message references fail before any
+  database or blob side effect;
+- plan offers/trials, subscription and payment orders, credits, billing
+  snapshots, reconciliation, and site removal all use explicit Portal
+  allowlist projectors. Internal account/principal identifiers, raw metadata,
+  trial claim identifiers, provider order identifiers, concurrency policy, and
+  Admin-only fields are not returned to the browser;
+- frontend account pages require selected context, clear stale state
+  atomically, and ignore late responses from a previous site context. Raw
+  commercial metadata is replaced by explicit public fields such as
+  `target_tier_id`;
+- removed session aliases, commercial fields, routes, and client types have no
+  compatibility shims.
+
+Integrated verification on the final working tree:
+
+- focused Portal API: 61 passed;
+- frontend static contracts and TypeScript type-check: passed;
+- frontend Vitest: 13 passed;
+- frontend ESLint: passed;
+- Portal Playwright workspace: 10 passed;
+- Portal Playwright login/addon: 5 passed;
+- `pnpm run check:fast`: 145 contract passed, 1 skipped; 597 domain passed,
+  3 skipped;
+- `pnpm run check:seam`: 717 API passed; perimeter 9 passed;
+- `pnpm run check:perimeter`: 9 passed;
+- `pnpm run check:anti-drift`: passed.
+- Python Ruff and mypy: passed, 227 source files checked by mypy.
+
+## P4-E Durable Portal Mutation Idempotency — 2026-07-17
+
+The declared Portal write contract is now enforced without a compatibility
+path:
+
+- all 15 routes that declare `require_idempotency=True` atomically claim a
+  durable receipt scoped by canonical `principal_id` and caller key before the
+  business mutation runs;
+- request fingerprints bind method, path, query, normalized JSON body, and the
+  authenticated selected-site context. Same-key conflicts and concurrent
+  requests fail closed;
+- exact completed responses are replayed only after current account, site,
+  action, or support-request authorization is checked again;
+- response bytes are encrypted at rest before the receipt is completed. This
+  protects customer-authored response projections and the addon connection's
+  short-lived one-time delivery URL;
+- a processing receipt whose lease expires is deliberately not reclaimed or
+  automatically deleted. Because the business transaction and receipt
+  completion are separate transactions, it returns
+  `portal.idempotency_indeterminate` for operator reconciliation instead of
+  risking a duplicate side effect;
+- non-participating Portal writes remain streaming pass-through and are not
+  truncated by the receipt response bound;
+- the shared frontend transport generates one bounded safe key for every write,
+  preserves explicit retry keys byte-for-byte, rejects invalid or empty
+  explicit keys before `fetch`, and never projects session tokens into keys.
+
+Focused acceptance on the integrated tree: 77 Portal/idempotency/migration API
+tests and 33 frontend transport tests passed. Independent review found no
+remaining P0-P2 issue after the response-encryption, pass-through, and
+indeterminate-state fixes. ADR-017 records the guarantee and its honest crash
+boundary.
+
+Final gates on the durable-idempotency batch:
+
+- `pnpm run check:fast`: 146 contract passed, 1 skipped; 597 domain passed,
+  3 skipped;
+- `pnpm run check:seam`: 732 API passed; perimeter 9 passed;
+- `pnpm run check:perimeter`: 9 passed;
+- `pnpm run check:anti-drift`: passed;
+- Python Ruff and mypy: passed, 229 source files checked by mypy;
+- frontend static contracts, TypeScript, full ESLint, and Vitest: passed;
+- migration `0067` completed a real PostgreSQL upgrade/downgrade/upgrade
+  round trip with the expected encrypted-response column and constraints.
+
+## P4-F Hosted Runtime Profile Boundary — 2026-07-17
+
+The Admin runtime configuration surface now uses a direct, no-compatibility
+cutover:
+
+- `/admin/runtime-profiles` is the only hosted profile workspace;
+- `GET|PUT /internal/service/admin/runtime-profiles` is the only service
+  contract, explicitly tagged for `wordpress` and
+  `wordpress_ai_connector`;
+- the old ability-model page, projection, plugin-routing endpoints, and
+  constant-conflict runtime-binding endpoint are deleted rather than aliased;
+- Site Knowledge embedding remains under Vector Settings;
+- audio generation remains a runtime execution kind, while the unrelated page
+  preview experiment is deleted;
+- the page uses the shared strict API client and returns an auditable receipt
+  for the complete profile update;
+- local abilities, workflows, prompts, profile adoption, approvals, and final
+  WordPress writes remain outside Cloud ownership.
+
+ADR-018 and `docs/cloud-hosted-runtime-profiles-v1.md` are the active decision
+and boundary contracts.
+
+Final integrated evidence:
+
+- `pnpm run check:fast`: contract 146 passed / 1 skipped; domain 602 passed /
+  3 skipped;
+- `pnpm run check:seam`: API 746 passed; perimeter 9 passed;
+- `pnpm run check:anti-drift`: Cloud anti-drift and provider-env retirement
+  passed;
+- `pnpm run lint`: Ruff passed and mypy found no issues in 229 source files;
+- frontend static contracts, TypeScript, targeted ESLint, and the combined
+  Admin Runtime Profiles/operator Playwright suite passed (15 tests);
+- two independent review rounds closed the initial 3 P1 / 2 P2 findings and
+  the follow-up readiness P2; the final review reported no P0-P2 findings.
+
+## P4-G Admin Client And Hot-Path Closeout — 2026-07-17
+
+The final Admin contraction is implemented without a compatibility path:
+
+- all Admin client pages, the protected layout/login flow, and the shared audit
+  summary panel now use the strict shared `ApiClient`; audited raw `fetch()`
+  calls on those surfaces dropped from 74 to zero;
+- a static contract recursively inventories Admin `page.tsx`/`layout.tsx`
+  surfaces and fails if a raw browser fetch is reintroduced;
+- `/admin/overview` no longer loads current/previous unbounded usage events,
+  credit-ledger entries, or Site Knowledge index detail. The obsolete
+  platform-credit response and helpers are deleted; bounded account and
+  commercial detail remain on their dedicated owner pages;
+- Operations Advisor initial navigation now requests only the diagnostic
+  preview instead of preview plus value and history. History/value reads occur
+  only when the operator expands AI evaluation details. Request keys and
+  sequences deduplicate development effects, reject stale results, and let a
+  post-review refresh supersede an older in-flight detail read;
+- Provider connection test failures now expose a canonical top-level error code
+  while retaining bounded result detail and the operator audit receipt. The UI
+  preserves that receipt on both successful and failed tests;
+- Playwright mocks use the same canonical envelope as production. Error-path
+  assertions check the structured backend message instead of relying on a
+  permissive partial envelope.
+
+`P4-E03` browser tests attach screenshots for Portal service home, selected-site
+health, usage, package/entitlement, Admin overview, provider runtime, runtime
+diagnostics, media observability, and the read-only Advisor. These tests exercise
+readable Cloud run, usage, entitlement, provider, health, diagnostic, and media
+evidence without exposing CMS apply, local registry, prompt/preset, approval, or
+WordPress write controls.
+
+Integrated verification on the final working tree:
+
+- frontend ESLint, TypeScript type-check, all static contracts, and 33 Vitest
+  tests: passed;
+- Admin Playwright integration: 60 passed; Portal and screenshot-backed
+  retained-surface batch: 33 passed;
+- `pnpm run check:fast`: 146 contract passed, 1 skipped; 602 domain passed,
+  3 skipped;
+- `pnpm run check:seam`: 746 API passed; perimeter 9 passed;
+- `pnpm run check:anti-drift`: passed;
+- Python Ruff and mypy: passed, with 229 source files checked by mypy;
+- independent five-axis review: no remaining P0-P3 issue.
+
+No WordPress plugin, CMS connector, provider infrastructure, production deploy,
+or local approval/write ownership changed in this batch.

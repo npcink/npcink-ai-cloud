@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -30,7 +30,6 @@ import { formatPortalErrorMessage } from '@/lib/portal-error';
 import {
   getPortalSiteDisplayName,
   getPortalSiteSecondaryLabel,
-  getVisiblePortalSites,
 } from '@/lib/portal-site-display';
 import { formatDate } from '@/lib/utils';
 
@@ -50,6 +49,8 @@ function PortalSupportContent() {
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const { session, isLoading, isAuthenticated } = useSession();
+  const selectedContextSite = session?.selected_context?.site || null;
+  const contextSiteId = selectedContextSite?.site_id || '';
   const initialTopic = String(searchParams?.get('topic') || 'general').toLowerCase();
   const initialSiteId = searchParams?.get('site') || '';
   const shouldOpenForm = searchParams?.get('new') === '1';
@@ -67,18 +68,14 @@ function PortalSupportContent() {
   );
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [siteId, setSiteId] = useState(initialSiteId);
-
-  useEffect(() => {
-    if (shouldOpenForm) {
-      setShowForm(true);
-    }
-  }, [shouldOpenForm]);
+  const [siteId, setSiteId] = useState('');
+  const contextSiteIdRef = useRef(contextSiteId);
+  const requestVersionRef = useRef(0);
 
   const loadRequests = useCallback(async () => {
-    if (!isAuthenticated) {
-      return;
-    }
+    const requestContextSiteId = contextSiteIdRef.current;
+    if (!isAuthenticated || !requestContextSiteId) return;
+    const requestVersion = ++requestVersionRef.current;
     setIsListLoading(true);
     setError('');
     try {
@@ -87,23 +84,62 @@ function PortalSupportContent() {
         limit: PAGE_SIZE,
         offset,
       });
+      if (
+        requestVersion !== requestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return;
       setItems(response.data.items || []);
       setTotal(Number(response.data.pagination?.total || 0));
     } catch (err) {
+      if (
+        requestVersion !== requestVersionRef.current
+        || requestContextSiteId !== contextSiteIdRef.current
+      ) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
     } finally {
-      setIsListLoading(false);
+      if (
+        requestVersion === requestVersionRef.current
+        && requestContextSiteId === contextSiteIdRef.current
+      ) setIsListLoading(false);
     }
   }, [isAuthenticated, offset, statusFilter, t]);
 
-  useEffect(() => {
-    void loadRequests();
-  }, [loadRequests]);
+  useLayoutEffect(() => {
+    const previousContextSiteId = contextSiteIdRef.current;
+    contextSiteIdRef.current = contextSiteId;
+    requestVersionRef.current += 1;
+    setItems([]);
+    setTotal(0);
+    setOffset(0);
+    setStatusFilter('');
+    setError('');
+    setNotice('');
+    setIsListLoading(Boolean(isAuthenticated && contextSiteId));
+    setIsSubmitting(false);
+    setShowForm(Boolean(
+      contextSiteId
+      && shouldOpenForm
+      && (!previousContextSiteId || previousContextSiteId === contextSiteId)
+    ));
+    setTopic(
+      SUPPORT_TOPICS.includes(initialTopic as (typeof SUPPORT_TOPICS)[number])
+        ? initialTopic
+        : 'general'
+    );
+    setTitle('');
+    setDescription('');
+    setSiteId(initialSiteId === contextSiteId ? contextSiteId : '');
+  }, [contextSiteId, initialSiteId, initialTopic, isAuthenticated, shouldOpenForm]);
 
-  const visibleSites = useMemo(
-    () => getVisiblePortalSites(session?.sites),
-    [session?.sites]
-  );
+  useEffect(() => {
+    if (!isAuthenticated || !contextSiteId) return;
+    void loadRequests();
+    return () => {
+      requestVersionRef.current += 1;
+    };
+  }, [contextSiteId, isAuthenticated, loadRequests]);
+
+  const visibleSites = selectedContextSite ? [selectedContextSite] : [];
   const supportStatusRules = [
     {
       key: 'open',
@@ -137,7 +173,31 @@ function PortalSupportContent() {
     );
   }
 
+  if (!contextSiteId || !selectedContextSite) {
+    return (
+      <PortalPageStack>
+        <PortalWorkspaceHeader
+          eyebrow={t('portal.support_request_list_title', {}, 'Recent tickets')}
+          title={t('portal.support_requests_title', {}, 'Tickets')}
+          currentPage="support"
+        />
+        <PortalEmptyState
+          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
+          description={t(
+            'portal.site_selection_required_desc',
+            {},
+            'Choose a current site before viewing or creating support tickets.'
+          )}
+          actionLabel={t('portal.select_site_action', {}, 'Select site')}
+          actionHref="/portal#sites"
+        />
+      </PortalPageStack>
+    );
+  }
+
   const handleSubmit = async () => {
+    const requestContextSiteId = contextSiteIdRef.current;
+    if (!isAuthenticated || !requestContextSiteId) return;
     setIsSubmitting(true);
     setError('');
     setNotice('');
@@ -146,12 +206,13 @@ function PortalSupportContent() {
         topic,
         title,
         description,
-        site_id: siteId,
+        site_id: siteId === requestContextSiteId ? requestContextSiteId : '',
         source_path: '/portal/support',
         context: {
           source: 'portal_support_tab',
         },
       });
+      if (requestContextSiteId !== contextSiteIdRef.current) return;
       setItems((current) => [response.data.request, ...current]);
       setTotal((current) => current + 1);
       setNotice(t('portal.support_request_created', {}, 'Ticket submitted.'));
@@ -159,9 +220,10 @@ function PortalSupportContent() {
       setDescription('');
       setShowForm(false);
     } catch (err) {
+      if (requestContextSiteId !== contextSiteIdRef.current) return;
       setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
-      setIsSubmitting(false);
+      if (requestContextSiteId === contextSiteIdRef.current) setIsSubmitting(false);
     }
   };
 
@@ -225,7 +287,7 @@ function PortalSupportContent() {
                 <option value="">{t('portal.support_request_no_site', {}, 'Account-level issue')}</option>
                 {visibleSites.map((site) => (
                   <option key={site.site_id} value={site.site_id}>
-                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)}, {formatDate(site.created_at)})
+                    {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
                   </option>
                 ))}
               </select>

@@ -46,13 +46,21 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/004-wordpress-first-cloud-runtime-refactor.md](docs/decisions/004-wordpress-first-cloud-runtime-refactor.md)
 - [docs/multi-platform-connector-boundary-v1.md](docs/multi-platform-connector-boundary-v1.md)
 - [docs/media-runtime-boundary-v1.md](docs/media-runtime-boundary-v1.md)
+- [docs/cloud-hosted-runtime-profiles-v1.md](docs/cloud-hosted-runtime-profiles-v1.md)
 - [docs/refactor-deletion-inventory-v1.md](docs/refactor-deletion-inventory-v1.md)
 - [docs/p4-portal-admin-surface-inventory-2026-07-16.md](docs/p4-portal-admin-surface-inventory-2026-07-16.md)
 - [docs/decisions/016-fail-closed-portal-admin-service-boundaries.md](docs/decisions/016-fail-closed-portal-admin-service-boundaries.md)
+- [docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md](docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md)
+- [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
+- [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
 
-Baseline evidence (not target-contract completion proof):
+Evidence records (not target-contract completion proof):
 
 - [docs/refactor-baseline-2026-07-14.md](docs/refactor-baseline-2026-07-14.md)
+- [docs/p5-hardening-release-audit-2026-07-17.md](docs/p5-hardening-release-audit-2026-07-17.md)
+- [docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md](docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md)
+- [docs/p5-b2-security-hardening-2026-07-17.md](docs/p5-b2-security-hardening-2026-07-17.md)
+- [docs/p5-b4-runtime-load-soak-closeout-2026-07-19.md](docs/p5-b4-runtime-load-soak-closeout-2026-07-19.md)
 
 Operational references:
 
@@ -167,10 +175,11 @@ health, and cloud service entitlements, but they must not duplicate plugin
 admin surfaces such as abilities, workflows, MCP, OpenClaw, or other
 feature-control pages.
 
-Model operations admin surfaces (provider connections, model intelligence,
-recognition review, and platform model ops console) have been removed.
-`catalog/platform-models` is retained only as runtime metadata, not as a
-platform model operations console.
+Broad model-intelligence, recognition-review, and platform model-operations
+consoles have been removed. Bounded provider-connection operations and hosted
+runtime-profile configuration remain available to platform admins as Cloud
+runtime configuration. `catalog/platform-models` is retained only as runtime
+metadata, not as a platform model-operations console.
 
 ## Identity Contract
 
@@ -445,6 +454,13 @@ docker compose -f docker-compose.prod.yml config >/dev/null
 docker build -t npcink-cloud-prod-check -f Dockerfile .
 ```
 
+For Python dependency changes, also run the blocking locked default and Zilliz
+audit:
+
+```bash
+pnpm run check:python-dependency-audit
+```
+
 ## Approved Feature Base
 
 The next Cloud feature branch should start from the verified standalone Cloud
@@ -492,6 +508,13 @@ pnpm run dev
 `pnpm run dev` starts the local core stack only: `postgres`, `redis`, `api`,
 `frontend`, and `proxy`.
 
+The development Compose wrapper loads `.env` and then `.env.local` for variable
+interpolation, so local values win. Backend services still receive their
+declared env files. The frontend receives only its explicit allowlist, including
+the internal token required by the server-side Admin BFF; Admin, Portal,
+database, provider, service-setting, and runtime-data encryption secrets are
+not injected into it.
+
 Use the worker profiles only when the current task needs them:
 
 ```bash
@@ -508,10 +531,10 @@ Cloud stack after Docker Desktop or the Docker daemon starts again, as long as
 the containers were not intentionally stopped with `docker compose stop` or
 removed with `docker compose down`.
 
-The dev stack services covered by this policy are `postgres`, `redis`, `api`,
+The dev and production restart policy covers `postgres`, `redis`, `api`,
 `frontend`, `proxy`, `worker`, `callback-worker`, and `ops-worker`. The
-production compose file applies the same policy to those services plus
-`otel-collector` and `jaeger`.
+production bundle does not start a second TLS edge, trace collector, or trace
+store.
 
 After changing restart policy or after finding stale exited containers, recreate
 the stack once so existing containers pick up the compose policy:
@@ -543,11 +566,11 @@ and `migrations`, excludes `app/workers/*`, and sets
 `--timeout-graceful-shutdown 5` so a stale in-process background task cannot
 hold reload forever.
 
-If an admin page such as `/admin/ability-models` keeps showing a loading state
+If an admin page such as `/admin/runtime-profiles` keeps showing a loading state
 but has no visible error, first separate auth and API latency:
 
 ```bash
-curl -i http://127.0.0.1:8010/admin/ability-models
+curl -i http://127.0.0.1:8010/admin/runtime-profiles
 docker compose -f docker-compose.dev.yml logs --tail=120 api
 docker compose -f docker-compose.dev.yml logs --tail=120 frontend
 ```
@@ -566,10 +589,9 @@ not treat this as a Cloud runtime routing bug unless the API has restarted and
 the specific endpoint still returns an application error.
 
 Worker-only edits should not reload the API. If `frontend` logs show
-`/api/admin/ability-models/runtime-projection`,
-`/api/admin/ai-resources`, and `/api/admin/wordpress-ai-routing` all taking
-tens of seconds after a worker file edit, confirm the compose command still
-contains `--reload-exclude app/workers/*` and recreate the dev API container:
+`/api/admin/runtime-profiles` taking tens of seconds after a worker file edit,
+confirm the compose command still contains `--reload-exclude app/workers/*`
+and recreate the dev API container:
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d api
@@ -627,6 +649,8 @@ config now fails fast when these are missing:
 - `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` is recommended for new production
   deploys so service-setting credentials are not tied to the admin session
   secret.
+- `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET`
+- `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID`
 - `NPCINK_CLOUD_PORTAL_JWT_SECRET`
 - `NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST`
 - `NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST`
@@ -639,6 +663,12 @@ Secret values saved through `/admin/service-settings` are encrypted with
 before this setting are still readable through the previous runtime secret
 chain, and re-saving the email configuration migrates the SMTP password onto
 the dedicated service-settings secret.
+
+The runtime-data secret and key ID are not ordinary configuration-only rotation
+values. Changing them requires the stopped-writer inventory, backup,
+re-encryption, verification, and matched rollback procedure in
+[`deploy/OPS_PLAYBOOK.md`](deploy/OPS_PLAYBOOK.md). Normal runtime has no old-key
+or raw-ciphertext fallback.
 
 If a development deploy still has Portal public URL, QQ login, or SMTP values
 in `.env`, import the current `NPCINK_CLOUD_*` values once before removing
@@ -1162,9 +1192,10 @@ Catalog query extras:
 
 Deploy perimeter:
 
-- `docker-compose.prod.yml` now ships a bundled perimeter proxy; only the proxy
-  publishes the public port and the raw `api` container is no longer mapped to
-  the host.
+- production uses `trusted external Edge -> bundled NGINX -> Gunicorn`; the
+  operator-owned Edge terminates public TLS and owns public `80/443`.
+- the bundled NGINX publishes only the loopback deployment port. Neither the
+  exact release bundle nor the raw `api` container publishes public `80/443`.
 - Keep `/internal/*` behind allowlist or private ingress; the bundled proxy only
   forwards those paths for loopback/private callers and does not expose them as
   public routes.
@@ -1172,9 +1203,12 @@ Deploy perimeter:
   `/internal/*`; only `GET /health/live` remains a minimal public liveness
   probe.
 - Keep `/docs` and `/redoc` disabled in production.
-- The bundled proxy adds only the minimum perimeter split and basic rate
-  limiting. TLS termination, source restriction, IP allowlist, WAF, and stronger
-  edge controls still depend on deployment.
+- The bundled proxy owns the Cloud route, media-transfer, rate, connection,
+  timeout, and sanitized-log policy. TLS termination, source restriction, IP
+  allowlist, WAF, and stronger edge controls belong to the external Edge.
+- The external Edge must replace incoming client-controlled forwarded headers.
+  NGINX trusts real-client headers only from the pinned Compose gateway, and
+  Gunicorn trusts forwarded headers only from the pinned NGINX address.
 - `remote-smoke.sh` also verifies `/docs`, `/redoc`, and internal POST fail
   closed without `X-Npcink-Internal-Token`.
 
@@ -1321,6 +1355,10 @@ export NPCINK_CLOUD_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 export NPCINK_CLOUD_PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ```
 
+`deploy/bundle-images.sh` passes these optional values to BuildKit as secret
+mounts. Do not translate them into Docker `--build-arg` values; index URLs can
+contain credentials and build arguments may be retained in image provenance.
+
 With a real API key, `POST /internal/catalog/refresh` plus a valid
 `X-Npcink-Internal-Token`, and
 `python -m app.workers.catalog_refresh` fetch `/models` from the configured
@@ -1407,14 +1445,14 @@ surface:
 - whether `worker`, `callback-worker`, and `ops-worker` are alive
 - whether execution backlog or callback backlog is under pressure
 - whether provider health freshness is stale and which providers are degraded
-- whether OTLP tracing is wired to the collector endpoint
+- whether OTLP tracing is wired to the configured external exporter endpoint
 
-Production-style compose now includes a minimal `otel-collector` sidecar using
-[`deploy/otel-collector.config.yml`](deploy/otel-collector.config.yml).
-By default, `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` points at
-`http://otel-collector:4318/v1/traces` and the collector forwards to the
-default Jaeger sink at `NPCINK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT=jaeger:4317`.
-`otel-collector debug exporter` no longer counts as release-complete state.
+Production Compose does not bundle an OpenTelemetry Collector or Jaeger.
+Ordinary runtime may leave `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` and
+`NPCINK_CLOUD_OTEL_TRACE_QUERY_URL` empty. A formal release must configure both
+against operator-owned observability infrastructure and prove that a fresh
+Cloud trace is queryable. Starting a debug exporter is not release-complete
+evidence.
 
 Formal operator procedures now live in
 [`deploy/OPS_PLAYBOOK.md`](deploy/OPS_PLAYBOOK.md).
@@ -1573,8 +1611,9 @@ Notes:
   provider reachability before suspecting the local source tree.
 - `env-to-ssh-host.sh` updates the remote release `.env.deploy` in place,
   carries the same values into the shared `/opt/npcink-ai-cloud/.env.deploy`
-  file, and restarts `api,worker` by default so new provider env takes effect
-  immediately without a full redeploy.
+  file, and restarts `proxy,api,worker,callback-worker,ops-worker` by default so
+  edge, runtime, callback, and cadence configuration takes effect together
+  without a full redeploy.
 - Final off-machine deploy evidence still requires a real external host; this
   workspace currently records the active target in
   `deploy/WORKSPACE_TARGET.md`, but SSH user, base URL, and deploy env

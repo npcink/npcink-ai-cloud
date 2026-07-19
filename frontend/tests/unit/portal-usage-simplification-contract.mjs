@@ -64,13 +64,28 @@ assert.match(
 
 assert.doesNotMatch(
   source,
-  /portal-usage-site-select|<select[\s\S]*selectedSiteId|usePortalSiteSelection|getUsageBundle\(selectedSiteId/,
+  /portal-usage-site-select|portal-usage-site|creditLedgerSiteId|siteId:\s*[^\n,}]+|usePortalSiteSelection|getUsageBundle\(selectedSiteId/,
   'portal usage page must not render or depend on a site selector because usage is account-level'
 );
 assert.match(
   source,
   /portalClient\.getUsageBundle\(\)/,
   'portal usage page must load the account-level usage bundle'
+);
+assert.match(
+  source,
+  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*if \(!isAuthenticated \|\| !requestContextSiteId\) return/,
+  'account-level usage requests must fail closed until selected context exists'
+);
+assert.match(
+  source,
+  /useLayoutEffect\([\s\S]*setUsage\(null\)[\s\S]*setEntitlements\(null\)[\s\S]*setCreditEvents\(null\)[\s\S]*setCreditEventBuckets\(null\)[\s\S]*setCreditTrend\(null\)/,
+  'usage must clear account projections and subresources when selected context changes'
+);
+assert.match(
+  source,
+  /selectedContext\.current_subscription[\s\S]*currentSubscription\?\.current_period_start_at[\s\S]*currentSubscription\?\.current_period_end_at/,
+  'usage period context must come from the selected-context subscription contract'
 );
 
 const summaryIndex = source.indexOf('data-portal-usage="current-summary"');
@@ -116,8 +131,8 @@ assert.match(source, /startAt: bucket\.start_at[\s\S]*endAt: bucket\.end_at/);
 assert.match(source, /component_count[\s\S]*support_reference/);
 assert.match(
   source,
-  /getAccountCreditTrend\([\s\S]*creditTrendWindow[\s\S]*creditLedgerSiteId/,
-  'point trend must use the account credit ledger projection and follow the selected site scope'
+  /getAccountCreditTrend\(\{[\s\S]*window: creditTrendWindow,[\s\S]*\}\)/,
+  'point trend must use the account credit ledger projection without a retired site filter'
 );
 assert.match(
   creditTrendSource,

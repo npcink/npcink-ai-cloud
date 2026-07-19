@@ -19,7 +19,6 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
 import {
   portalClient,
-  type PortalSession,
   type PortalIdentityProviderStatus,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
@@ -43,25 +42,6 @@ function normalizePortalContact(value?: string): string {
   return withoutPrefix.includes('@') && !withoutPrefix.startsWith('prn_') ? withoutPrefix : '';
 }
 
-function resolvePortalContactEmail(session: PortalSession): string {
-  const memberRef = (session as PortalSession & { member_ref?: string }).member_ref;
-  const candidates = [
-    session.email,
-    session.site_admin_ref,
-    memberRef,
-    session.accounts?.[0]?.site_admin_ref,
-  ];
-
-  for (const candidate of candidates) {
-    const email = normalizePortalContact(candidate);
-    if (email) {
-      return email;
-    }
-  }
-
-  return '';
-}
-
 function AccountPageContent() {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
@@ -78,7 +58,7 @@ function AccountPageContent() {
     () => providers.find((provider) => provider.provider === 'qq') || null,
     [providers]
   );
-  const contactEmail = session ? resolvePortalContactEmail(session) : '';
+  const contactEmail = normalizePortalContact(session?.email);
   const qqStatus = searchParams?.get('qq') || '';
 
   const loadProviders = useCallback(async () => {

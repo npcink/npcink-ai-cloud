@@ -223,12 +223,12 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
     )
     assert verify_response.status_code == 200, verify_response.text
     portal_session = verify_response.json()["data"]
-    assert portal_session["principal_id"].startswith("prn_")
-    assert portal_session["identity_type"] == "user"
-    assert portal_session["role"] == "user"
-    assert portal_session["account_id"] == "acct_alpha_flow"
-    assert portal_session["site_id"] == ""
-    assert portal_session["sites"][0]["site"]["site_id"] == site_id
+    assert portal_session["email"] == "alpha@example.com"
+    assert portal_session["selected_context"] is None
+    assert portal_session["sites"][0]["site_id"] == site_id
+    assert "principal_id" not in portal_session
+    assert "account_id" not in portal_session
+    assert "accounts" not in portal_session
 
     select_response = client.post(
         "/portal/v1/session/site",
@@ -236,7 +236,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
         headers=_origin_headers(),
     )
     assert select_response.status_code == 200, select_response.text
-    assert select_response.json()["data"]["site_id"] == site_id
+    assert select_response.json()["data"]["selected_context"]["site"]["site_id"] == site_id
 
     addon_state = "alpha-addon-state-001"
     connection_response = client.post(

@@ -31,7 +31,7 @@ const workspaceKeys = [
   'admin.advanced.recent_runtime_evidence_title',
   'admin.advanced.recent_runtime_evidence_desc',
   'admin.advanced.runtime_evidence_boundary',
-  'admin.advanced.action_open_model_binding',
+  'admin.advanced.action_open_runtime_profiles',
 ];
 
 const requiredKeys = [...new Set([...troubleshootingKeys, ...workspaceKeys])].sort();
@@ -74,7 +74,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /fetch\(`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`[\s\S]*BackofficeSummaryStrip[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/,
+  /createApiClient[\s\S]*`\/api\/admin\/runtime-telemetry\?\$\{params\.toString\(\)\}`[\s\S]*BackofficeSummaryStrip[\s\S]*providerCallRunCoverageRate[\s\S]*meteredRunCoverageRate/,
   'Runtime diagnostics must derive its conclusion and core metrics from the runtime telemetry source'
 );
 

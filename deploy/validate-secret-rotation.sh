@@ -137,6 +137,17 @@ assert_json_equals() {
 	fi
 }
 
+assert_json_non_empty() {
+	local payload="$1"
+	local path="$2"
+	local message="$3"
+	local actual
+	actual="$(json_get "${payload}" "${path}")"
+	if [ -z "${actual}" ] || [ "${actual}" = "null" ] || [ "${actual}" = "[]" ] || [ "${actual}" = "{}" ] || [ "${actual}" = "__missing__" ]; then
+		fail "${message} (empty ${path})"
+	fi
+}
+
 assert_header_not_contains() {
 	local headers="$1"
 	local needle="$2"
@@ -198,7 +209,16 @@ http_request \
 	"" \
 	"X-Npcink-Internal-Token: ${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN}"
 assert_status "${HTTP_STATUS}" "200" "observability summary should succeed with the rotated internal token"
-assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_sink_otlp_endpoint" "observability summary should expose trace sink identity"
+assert_json_non_empty "${HTTP_BODY}" "data.tracing.otlp_configured" "observability summary should expose the external exporter configuration fact"
+assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_configured" "observability summary should expose the external query configuration fact"
+case "${BASE_URL}" in
+	https://*)
+		assert_json_equals "${HTTP_BODY}" "data.tracing.otlp_configured" "true" "formal HTTPS rotation smoke requires an external OTLP exporter"
+		assert_json_non_empty "${HTTP_BODY}" "data.tracing.otlp_endpoint" "formal HTTPS rotation smoke requires an external OTLP exporter endpoint"
+		assert_json_equals "${HTTP_BODY}" "data.tracing.trace_query_configured" "true" "formal HTTPS rotation smoke requires an external trace query surface"
+		assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_url" "formal HTTPS rotation smoke requires an external trace query URL"
+		;;
+esac
 
 http_request "GET" "${BASE_URL%/}/portal/login" ""
 assert_status "${HTTP_STATUS}" "200" "portal login page should load"

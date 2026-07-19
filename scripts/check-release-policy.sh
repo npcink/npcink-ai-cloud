@@ -20,9 +20,134 @@ require_marker() {
 	fi
 }
 
+reject_marker() {
+	local path="$1"
+	local marker="$2"
+	if grep -Fq -- "${marker}" "${ROOT_DIR}/${path}"; then
+		echo "[fail] Forbidden release policy marker in ${path}: ${marker}" >&2
+		exit 1
+	fi
+}
+
+require_executable() {
+	local path="$1"
+	if [ ! -x "${ROOT_DIR}/${path}" ]; then
+		echo "[fail] Required release policy script is not executable: ${path}" >&2
+		exit 1
+	fi
+}
+
+require_marker_before() {
+	local path="$1"
+	local earlier="$2"
+	local later="$3"
+	local earlier_line
+	local later_line
+	earlier_line="$(grep -n -F -m 1 -- "${earlier}" "${ROOT_DIR}/${path}" | cut -d: -f1)"
+	later_line="$(grep -n -F -m 1 -- "${later}" "${ROOT_DIR}/${path}" | cut -d: -f1)"
+	if [ -z "${earlier_line}" ] || [ -z "${later_line}" ] || [ "${earlier_line}" -ge "${later_line}" ]; then
+		echo "[fail] Release policy markers are out of order in ${path}: ${earlier} before ${later}" >&2
+		exit 1
+	fi
+}
+
+compose_service_block() {
+	local path="$1"
+	local service="$2"
+	awk -v service="${service}" '
+		$0 == "  " service ":" { in_service = 1 }
+		in_service && $0 ~ /^  [A-Za-z0-9_-]+:$/ && $0 != "  " service ":" { exit }
+		in_service { print }
+	' "${ROOT_DIR}/${path}"
+}
+
+require_service_marker() {
+	local path="$1"
+	local service="$2"
+	local marker="$3"
+	if ! compose_service_block "${path}" "${service}" | grep -Fq -- "${marker}"; then
+		echo "[fail] Missing ${service} service marker in ${path}: ${marker}" >&2
+		exit 1
+	fi
+}
+
+reject_service_marker() {
+	local path="$1"
+	local service="$2"
+	local marker="$3"
+	if compose_service_block "${path}" "${service}" | grep -Fq -- "${marker}"; then
+		echo "[fail] Forbidden ${service} service marker in ${path}: ${marker}" >&2
+		exit 1
+	fi
+}
+
+require_canonical_dependabot_config() {
+	local expected
+
+	IFS= read -r -d '' expected <<'YAML' || true
+version: 2
+# Pre-GA maintenance: keep each weekly ecosystem queue small and reviewable.
+# Docker and digest-lock updates stay in the independent image-lock scan lane.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+YAML
+	if ! cmp -s "${ROOT_DIR}/.github/dependabot.yml" <(printf '%s' "${expected}"); then
+		echo "[fail] .github/dependabot.yml does not match the canonical pre-GA policy" >&2
+		exit 1
+	fi
+}
+
 require_file "docs/cloud-production-release-policy-v1.md"
 require_file "deploy/PRODUCTION_GITHUB_DEPLOY.md"
 require_file "deploy/RELEASE_CHECKLIST.md"
+require_file "deploy/OPS_PLAYBOOK.md"
+require_file "docs/refactor-master-plan-v1.md"
+require_file "docs/p5-b8-final-engineering-closeout-2026-07-19.md"
+require_file "deploy/deploy-to-ssh-host.sh"
+require_file "deploy/remote-load-and-up.sh"
+require_file "deploy/remote-migrate.sh"
+require_file "deploy/remote-refresh-providers.sh"
+require_file "deploy/remote-operational-ready.sh"
+require_file ".env.example"
+require_file "docker-compose.dev.yml"
+require_file "docker-compose.prod.yml"
+require_file "docker-compose.runtime.yml"
+require_file "scripts/cloud-deploy-bundle-smoke-flow.sh"
+require_file "scripts/dev-compose.sh"
+require_file "scripts/dev-frontend-recover.sh"
+require_file "package.json"
+require_file "Makefile"
 require_file "AGENTS.md"
 require_file ".github/pull_request_template.md"
 require_file ".github/dependabot.yml"
@@ -35,6 +160,13 @@ require_file "site/terms/en/data-retention.html"
 require_file "site/terms/zh/terms.html"
 require_file "site/terms/zh/privacy.html"
 require_file "site/terms/zh/data-retention.html"
+
+require_canonical_dependabot_config
+
+if git -C "${ROOT_DIR}" ls-files | grep -Eq '(^|/)\.env\.deploy$'; then
+	echo "[fail] Release payload source must not track .env.deploy" >&2
+	exit 1
+fi
 
 require_marker "AGENTS.md" "AI Production Operation Rules"
 require_marker "AGENTS.md" "Production source branch is \`production\`"
@@ -53,7 +185,38 @@ require_marker "docs/cloud-production-release-policy-v1.md" "Cloud is not becomi
 require_marker "docs/cloud-production-release-policy-v1.md" "Branch divergence is expected"
 require_marker "docs/cloud-production-release-policy-v1.md" "9aca0dc0"
 require_marker "docs/cloud-production-release-policy-v1.md" "c9f3036b"
-require_marker ".github/dependabot.yml" "open-pull-requests-limit: 0"
+require_marker "docs/cloud-production-release-policy-v1.md" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
+require_marker "docs/cloud-production-release-policy-v1.md" "python -m app.dev.reencrypt_runtime_data"
+require_marker "docs/cloud-production-release-policy-v1.md" "run --rm --no-deps --env-from-file"
+require_marker "docs/cloud-production-release-policy-v1.md" "--pull never"
+require_marker "docs/cloud-production-release-policy-v1.md" 'future `rde.v1` rotations'
+require_marker "docs/cloud-production-release-policy-v1.md" "host application source"
+require_marker "docs/cloud-production-release-policy-v1.md" 'bundle excludes `.env.deploy`'
+require_marker "docs/cloud-production-release-policy-v1.md" 'release payload must never contain `.env.deploy`'
+require_marker "docs/cloud-production-release-policy-v1.md" '.release-state/<release-name>/env.deploy'
+require_marker "docs/cloud-production-release-policy-v1.md" 'old and new Compose project names must match'
+require_marker "docs/cloud-production-release-policy-v1.md" 'actual old writer container'
+require_marker "docs/cloud-production-release-policy-v1.md" '`--skip-frontend-image` additionally requires'
+require_marker "docs/cloud-production-release-policy-v1.md" 'isolate the new release environment'
+require_marker "docs/cloud-production-release-policy-v1.md" 'Once migration starts'
+require_marker "docs/cloud-production-release-policy-v1.md" 'deployment lock remains'
+require_marker "docs/cloud-production-release-policy-v1.md" 'remove the temporary rollback-image map'
+require_marker "docs/cloud-production-release-policy-v1.md" 'pass each old key ID to `inventory`'
+require_marker "docs/cloud-production-release-policy-v1.md" "Normal runtime has no legacy or dual-read path"
+require_marker "docs/cloud-production-release-policy-v1.md" "old database"
+require_marker ".github/workflows/ci.yml" "production-python-image-smoke:"
+require_marker ".github/workflows/ci.yml" "bash scripts/production-python-extras-smoke.sh"
+require_marker ".github/workflows/ci.yml" "PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT"
+require_marker ".github/workflows/ci.yml" "Python 3.14 Alpine production image smoke did not pass"
+require_marker ".github/workflows/ci.yml" "Dockerfile*|*/Dockerfile*"
+require_marker ".github/workflows/ci.yml" 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
+require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
+reject_marker ".github/workflows/ci.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
+reject_marker ".github/workflows/deploy-production.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
+require_marker "scripts/production-python-extras-smoke.sh" 'PYTHON_VERSION="3.14"'
+require_marker "scripts/production-python-extras-smoke.sh" "--import-app"
+require_marker "scripts/production-python-extras-smoke.sh" "--check-manifest"
+require_marker "scripts/check-pr-backend-gate.sh" "Dockerfile*|*/Dockerfile*"
 
 require_marker ".github/pull_request_template.md" "Focused module:"
 require_marker ".github/pull_request_template.md" "Cloud boundary impact:"
@@ -64,7 +227,157 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "docs/cloud-production-relea
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "pnpm run check:release-policy"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "/terms/en/terms.html"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "static terms fast path"
-require_marker "deploy/bundle-images.sh" "-C \"\${CLOUD_DIR}\" site"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "python -m app.dev.reencrypt_runtime_data inventory"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "run --rm --no-deps --env-from-file"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "--pull never"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "--old-key-id"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "staged release"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '/opt/npcink-ai-cloud/.release-state/<release-name>/env.deploy'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'install -d -m 0700 "${RELEASE_STATE_ROOT}" "${RELEASE_STATE_DIR}"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'install -m 600 "${ENV_SOURCE}" "${RELEASE_ENV_FILE}"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'export NPCINK_CLOUD_BACKEND_ENV_FILE="${RELEASE_ENV_FILE}"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'LEGACY_ENV_SOURCE="${REMOTE_DIR}/.env.deploy"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'one-time transition'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '`--skip-frontend-image` preserves an existing frontend only'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'inventory --old-key-id "${OLD_RUNTIME_DATA_KEY_ID}"'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "general deploy helper"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "Normal runtime has no legacy or dual-read path"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "migration begins, a"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" '`.deploy-lock` is'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'temporary rollback-image map'
+require_marker_before "deploy/PRODUCTION_GITHUB_DEPLOY.md" "install -m 600" 'docker compose --env-file "${RELEASE_ENV_FILE}"'
+require_marker "deploy/OPS_PLAYBOOK.md" "stop and fence all four writers"
+require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_runtime_data verify"
+require_marker "deploy/OPS_PLAYBOOK.md" "run --rm --no-deps --env-from-file"
+require_marker "deploy/OPS_PLAYBOOK.md" "--pull never"
+require_marker "deploy/OPS_PLAYBOOK.md" "--confirm-maintenance-window"
+require_marker "deploy/OPS_PLAYBOOK.md" "--old-root-env NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
+require_marker "deploy/OPS_PLAYBOOK.md" "--old-key-id"
+require_marker "deploy/OPS_PLAYBOOK.md" 'Keep `postgres` and `redis`'
+require_marker "deploy/OPS_PLAYBOOK.md" '.release-state/<release-name>/env.deploy'
+require_marker "deploy/OPS_PLAYBOOK.md" 'RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"'
+require_marker "deploy/OPS_PLAYBOOK.md" 'install -d -m 0700 "${RELEASE_STATE_ROOT}" "${RELEASE_STATE_DIR}"'
+require_marker "deploy/OPS_PLAYBOOK.md" 'install -m 600 "${ENV_SOURCE}" "${RELEASE_ENV_FILE}"'
+require_marker "deploy/OPS_PLAYBOOK.md" 'export NPCINK_CLOUD_BACKEND_ENV_FILE="${RELEASE_ENV_FILE}"'
+require_marker "deploy/OPS_PLAYBOOK.md" 'LEGACY_ENV_SOURCE="${REMOTE_DIR}/.env.deploy"'
+require_marker "deploy/OPS_PLAYBOOK.md" 'one-time transition'
+require_marker "deploy/OPS_PLAYBOOK.md" 'isolated process'
+require_marker "deploy/OPS_PLAYBOOK.md" 'inventory --old-key-id "${OLD_RUNTIME_DATA_KEY_ID}"'
+require_marker "deploy/OPS_PLAYBOOK.md" "general deploy helper"
+require_marker "deploy/OPS_PLAYBOOK.md" "Normal runtime has no legacy or dual-read path"
+require_marker "deploy/OPS_PLAYBOOK.md" 'Once migration begins'
+require_marker "deploy/OPS_PLAYBOOK.md" 'keep `.deploy-lock`'
+require_marker "deploy/OPS_PLAYBOOK.md" 'Remove the temporary rollback-image map'
+require_marker_before "deploy/OPS_PLAYBOOK.md" "install -m 600" 'docker compose --env-file "${RELEASE_ENV_FILE}"'
+require_marker "deploy/OPS_PLAYBOOK.md" "old application revision"
+require_marker "deploy/RELEASE_CHECKLIST.md" "new-key-only \`verify\`"
+require_marker "deploy/RELEASE_CHECKLIST.md" "bundle-backed staged release API image"
+require_marker "deploy/RELEASE_CHECKLIST.md" "--env-from-file"
+require_marker "deploy/RELEASE_CHECKLIST.md" "--pull never"
+require_marker "deploy/RELEASE_CHECKLIST.md" "first raw-ciphertext cutover omitted \`--old-key-id\`"
+require_marker "deploy/RELEASE_CHECKLIST.md" "before the first staged Compose command"
+require_marker "deploy/RELEASE_CHECKLIST.md" 'supplies old key IDs to `inventory`'
+require_marker "deploy/RELEASE_CHECKLIST.md" "normal runtime has no legacy/dual-read path"
+require_marker "deploy/RELEASE_CHECKLIST.md" '.release-state/<release-name>/env.deploy'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'same Compose project name'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'actual old-writer container-label check'
+require_marker "deploy/RELEASE_CHECKLIST.md" '`--skip-frontend-image` was selected'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'isolated process environment'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'heartbeats were newer than the recorded cutoff'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'retains `.deploy-lock`'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'removed the temporary rollback-image map'
+reject_marker "deploy/OPS_PLAYBOOK.md" "old-key compatibility path"
+reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "old-key compatibility path"
+reject_marker "docs/cloud-production-release-policy-v1.md" "compatibility reads"
+reject_marker "deploy/OPS_PLAYBOOK.md" "--old-root-env NPCINK_CLOUD_ADMIN_SESSION_SECRET"
+reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "--old-root-env NPCINK_CLOUD_ADMIN_SESSION_SECRET"
+for historical_doc in \
+	docs/refactor-master-plan-v1.md \
+	docs/p5-b8-final-engineering-closeout-2026-07-19.md; do
+	require_marker "${historical_doc}" "Integration Correction — 2026-07-20"
+	require_marker "${historical_doc}" '`0663d95f`'
+	require_marker "${historical_doc}" '`linux/arm64`'
+	require_marker "${historical_doc}" '`linux/amd64`'
+	require_marker "${historical_doc}" 'merged `master`'
+done
+require_executable "scripts/dev-compose.sh"
+require_marker "scripts/dev-compose.sh" 'for env_file in "${ROOT_DIR}/.env" "${ROOT_DIR}/.env.local"; do'
+require_marker "scripts/dev-compose.sh" 'compose_args+=(--env-file "${env_file}")'
+require_marker "package.json" '"dev": "bash scripts/dev-compose.sh up --build"'
+require_marker "package.json" '"dev:runtime": "bash scripts/dev-compose.sh --profile runtime up --build"'
+require_marker "package.json" '"dev:callback": "bash scripts/dev-compose.sh --profile runtime --profile callback up --build"'
+require_marker "package.json" '"dev:ops": "bash scripts/dev-compose.sh --profile runtime --profile callback --profile ops up --build"'
+require_marker "Makefile" "bash scripts/dev-compose.sh up --build"
+require_marker "scripts/dev-frontend-recover.sh" "COMPOSE_CMD=(bash scripts/dev-compose.sh)"
+reject_marker "scripts/dev-frontend-recover.sh" "docker compose"
+require_marker ".env.example" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET="
+require_marker ".env.example" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID="
+require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
+require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID"
+require_marker "docker-compose.prod.yml" '127.0.0.1:${NPCINK_CLOUD_PORT:-8010}:8080'
+for service in api worker callback-worker ops-worker; do
+	require_service_marker "docker-compose.prod.yml" "${service}" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
+	require_service_marker "docker-compose.prod.yml" "${service}" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID"
+	require_service_marker "docker-compose.runtime.yml" "${service}" '${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}'
+done
+for compose_file in docker-compose.dev.yml docker-compose.prod.yml docker-compose.runtime.yml; do
+	reject_service_marker "${compose_file}" "frontend" "env_file:"
+	reject_service_marker "${compose_file}" "frontend" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
+	reject_service_marker "${compose_file}" "frontend" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID"
+done
+
+require_marker "deploy/deploy-to-ssh-host.sh" 'RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'install -d -m 0700 "${RELEASE_STATE_ROOT}" "${RELEASE_STATE_DIR}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'install -m 0600 "${NEW_ENV_SOURCE}" "${RELEASE_ENV_FILE}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'export NPCINK_CLOUD_BACKEND_ENV_FILE="${RELEASE_ENV_FILE}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'Compose project rename is not supported during ordinary deployment'
+require_marker "deploy/deploy-to-ssh-host.sh" 'com.docker.compose.project'
+require_marker "deploy/deploy-to-ssh-host.sh" '--skip-frontend-image requires an existing managed release'
+require_marker "deploy/deploy-to-ssh-host.sh" 'local clean_env=(env -i'
+require_marker_before "deploy/deploy-to-ssh-host.sh" \
+	'Compose project rename is not supported during ordinary deployment' \
+	'CUTOVER_MUTATION_STARTED=1'
+
+cutover_phases=(
+	'CUTOVER_PHASE="prepare-release-images"'
+	'CUTOVER_PHASE="stop-old-application-services"'
+	'CUTOVER_PHASE="start-data-services"'
+	'CUTOVER_PHASE="migrate-with-staged-image"'
+	'CUTOVER_PHASE="activate-new-release-pointer"'
+	'CUTOVER_PHASE="start-new-api"'
+	'CUTOVER_PHASE="start-new-workers"'
+	'CUTOVER_PHASE="verify-worker-operational-readiness"'
+	'CUTOVER_PHASE="restore-frontend-and-proxy-traffic"'
+)
+for ((phase_index = 0; phase_index < ${#cutover_phases[@]} - 1; phase_index++)); do
+	require_marker_before "deploy/deploy-to-ssh-host.sh" \
+		"${cutover_phases[${phase_index}]}" \
+		"${cutover_phases[$((phase_index + 1))]}"
+done
+require_marker "deploy/deploy-to-ssh-host.sh" 'MIGRATION_STARTED=1'
+require_marker "deploy/deploy-to-ssh-host.sh" 'Never manufacture a rollback by starting the old API'
+require_marker "deploy/deploy-to-ssh-host.sh" 'Deployment lock retained for operator recovery'
+require_marker "deploy/deploy-to-ssh-host.sh" 'rm -f "${ROLLBACK_IMAGE_MAP}"'
+require_marker "deploy/deploy-to-ssh-host.sh" '--worker-cutoff "${WORKER_CUTOFF}"'
+
+require_marker "deploy/remote-load-and-up.sh" 'full|prepare-only|data-only|api-only|workers-only|traffic-only'
+require_marker "deploy/remote-load-and-up.sh" 'up -d --pull never --no-build'
+require_marker "deploy/remote-migrate.sh" 'run --rm --no-deps --pull never api'
+require_marker "deploy/remote-refresh-providers.sh" 'run --rm --no-deps --pull never -T api python -'
+require_marker "deploy/remote-operational-ready.sh" 'Cutover operational readiness requires --worker-cutoff.'
+require_marker "deploy/remote-operational-ready.sh" 'restart_count_value != 0'
+require_marker "deploy/remote-operational-ready.sh" 'observed[worker_id] <= cutoff'
+require_marker "deploy/remote-operational-ready.sh" 'Worker container changed during the stability window'
+require_marker_before "deploy/remote-operational-ready.sh" \
+	'All required worker heartbeats are newer than the cutover cutoff.' \
+	'/health/operational-ready'
+
+require_marker "deploy/bundle-images.sh" 'git -C "${CLOUD_DIR}" archive HEAD'
 require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "CURRENT_LINK=\"\${REMOTE_DIR}/current\""
 require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "assert_public_static_page \"/terms\""
 require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "Static terms deploy completed"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from urllib.parse import urlsplit
 
@@ -101,6 +102,8 @@ class Settings(BaseSettings):
     admin_bootstrap_token: str | None = Field(default=None)
     admin_session_secret: str | None = Field(default=None)
     service_settings_secret: str | None = Field(default=None)
+    runtime_data_encryption_secret: str | None = Field(default=None)
+    runtime_data_encryption_key_id: str | None = Field(default=None)
     debug_local_origin_allowlist: str = Field(default="")
     browser_origin_allowlist: str = Field(default="")
     trusted_host_allowlist: str = Field(default="")
@@ -115,17 +118,30 @@ class Settings(BaseSettings):
         validation_alias="NPCINK_CLOUD_ADMIN_BOOTSTRAP_PLATFORM_ADMIN_ROLE",
     )
     portal_jwt_secret: str | None = Field(default=None)
-    portal_jwt_algorithm: str = Field(default="HS256")
-    portal_jwt_issuer: str | None = Field(default=None)
-    portal_jwt_audience: str | None = Field(default=None)
+    portal_jwt_issuer: str | None = Field(default="npcink-ai-cloud")
+    portal_jwt_audience: str | None = Field(default="npcink-ai-cloud-portal")
     portal_session_ttl_seconds: int = Field(default=8 * 60 * 60)
     portal_remember_me_session_ttl_seconds: int = Field(default=7 * 24 * 60 * 60)
     portal_login_code_ttl_seconds: int = Field(default=10 * 60)
     portal_login_code_max_attempts: int = Field(default=5)
     portal_oauth_state_ttl_seconds: int = Field(default=10 * 60)
+    portal_idempotency_ttl_seconds: int = Field(
+        default=24 * 60 * 60,
+        ge=5 * 60,
+        le=30 * 24 * 60 * 60,
+    )
+    portal_idempotency_processing_lease_seconds: int = Field(
+        default=5 * 60,
+        ge=30,
+        le=60 * 60,
+    )
+    portal_idempotency_max_response_bytes: int = Field(
+        default=256 * 1024,
+        ge=1024,
+        le=1024 * 1024,
+    )
     otel_service_name: str = Field(default="npcink-ai-cloud")
     otel_exporter_otlp_endpoint: str | None = Field(default=None)
-    otel_trace_sink_otlp_endpoint: str | None = Field(default=None)
     otel_trace_query_url: str | None = Field(default=None)
     deployment_region: str = Field(default="unspecified")
     audit_retention_days_default: int = Field(default=90)
@@ -285,6 +301,31 @@ class Settings(BaseSettings):
             return host
         return host
 
+    @staticmethod
+    def _validate_optional_http_url(field_name: str, value: object) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        if any(character.isspace() or ord(character) < 32 for character in raw):
+            raise ValueError(f"{field_name} must not include whitespace or control characters")
+        try:
+            parsed = urlsplit(raw)
+            hostname = str(parsed.hostname or "").strip()
+            _port = parsed.port
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid HTTP(S) URL") from exc
+        if parsed.scheme.lower() not in {"http", "https"}:
+            raise ValueError(f"{field_name} must use http or https")
+        if not parsed.netloc or not hostname or any(character.isspace() for character in hostname):
+            raise ValueError(f"{field_name} must include a valid host")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError(f"{field_name} must not include userinfo")
+        if parsed.query:
+            raise ValueError(f"{field_name} must not include a query")
+        if parsed.fragment:
+            raise ValueError(f"{field_name} must not include a fragment")
+        return raw
+
     def production_like_environment(self) -> bool:
         return str(self.environment or "").strip().lower() in {"production", "prod", "staging"}
 
@@ -323,12 +364,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> Settings:
+        self.otel_exporter_otlp_endpoint = self._validate_optional_http_url(
+            "otel_exporter_otlp_endpoint",
+            self.otel_exporter_otlp_endpoint,
+        )
+        self.otel_trace_query_url = self._validate_optional_http_url(
+            "otel_trace_query_url",
+            self.otel_trace_query_url,
+        )
         production_like = self.production_like_environment()
         secret_fields = {
             "internal_auth_token": self.internal_auth_token,
             "admin_bootstrap_token": self.admin_bootstrap_token,
             "admin_session_secret": self.admin_session_secret,
             "service_settings_secret": self.service_settings_secret,
+            "runtime_data_encryption_secret": self.runtime_data_encryption_secret,
             "portal_jwt_secret": self.portal_jwt_secret,
         }
         for field_name, raw_value in secret_fields.items():
@@ -348,6 +398,19 @@ class Settings(BaseSettings):
         if production_like and not str(self.service_settings_secret or "").strip():
             raise ValueError(
                 "service_settings_secret is required outside development/test environments"
+            )
+        if production_like and not str(self.runtime_data_encryption_secret or "").strip():
+            raise ValueError(
+                "runtime_data_encryption_secret is required outside development/test environments"
+            )
+        runtime_data_key_id = str(self.runtime_data_encryption_key_id or "").strip()
+        if runtime_data_key_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", runtime_data_key_id):
+            raise ValueError(
+                "runtime_data_encryption_key_id must contain only letters, numbers, '_' or '-'"
+            )
+        if production_like and not runtime_data_key_id:
+            raise ValueError(
+                "runtime_data_encryption_key_id is required outside development/test environments"
             )
         if production_like and not str(self.internal_auth_token or "").strip():
             raise ValueError(
@@ -369,6 +432,35 @@ class Settings(BaseSettings):
             )
         if production_like and not str(self.portal_jwt_secret or "").strip():
             raise ValueError("portal_jwt_secret is required outside development/test environments")
+        if production_like and not str(self.portal_jwt_issuer or "").strip():
+            raise ValueError("portal_jwt_issuer must not be blank")
+        if production_like and not str(self.portal_jwt_audience or "").strip():
+            raise ValueError("portal_jwt_audience must not be blank")
+        if production_like:
+            configured_secret_domains = {
+                field_name: str(raw_value or "").strip()
+                for field_name, raw_value in secret_fields.items()
+                if str(raw_value or "").strip()
+            }
+            duplicate_domains = sorted(
+                (
+                    first_name,
+                    second_name,
+                )
+                for first_index, (first_name, first_value) in enumerate(
+                    configured_secret_domains.items()
+                )
+                for second_name, second_value in list(configured_secret_domains.items())[
+                    first_index + 1 :
+                ]
+                if first_value == second_value
+            )
+            if duplicate_domains:
+                first_name, second_name = duplicate_domains[0]
+                raise ValueError(
+                    f"{first_name} must differ from {second_name} outside "
+                    "development/test environments"
+                )
         if production_like and not self.explicit_browser_origins():
             raise ValueError(
                 "browser_origin_allowlist is required outside development/test environments"
@@ -379,6 +471,11 @@ class Settings(BaseSettings):
             )
         if self.portal_oauth_state_ttl_seconds < 60:
             raise ValueError("portal_oauth_state_ttl_seconds must be at least 60")
+        if self.portal_idempotency_ttl_seconds <= self.portal_idempotency_processing_lease_seconds:
+            raise ValueError(
+                "portal_idempotency_ttl_seconds must exceed "
+                "portal_idempotency_processing_lease_seconds"
+            )
         if self.ops_cadence_poll_seconds < 5:
             raise ValueError("ops_cadence_poll_seconds must be at least 5")
         if self.runtime_callback_worker_poll_seconds < 1:

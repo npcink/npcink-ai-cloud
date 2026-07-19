@@ -18,6 +18,15 @@ TARGET_CONTRACTS = (
 )
 
 BASELINE_EVIDENCE = "docs/refactor-baseline-2026-07-14.md"
+P5_AUDIT_EVIDENCE = "docs/p5-hardening-release-audit-2026-07-17.md"
+P5_B1_EVIDENCE = "docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md"
+
+SUPERSEDED_CONNECTOR_RUNTIME = "wp_ai_connector_" "runtime.v1"
+SUPERSEDED_CONNECTOR_RESULT = "wp_ai_connector_" "result.v1"
+SUPERSEDED_CONNECTOR_VALIDATOR = (
+    "validate_wordpress_ai_connector_" "runtime_contract"
+)
+SUPERSEDED_HOSTED_PROFILE_FIELD = "connector_" "contract_version"
 
 BASELINE_RAW_SEARCH_COUNTS = {
     "DEBT-P1-SITE-01": 99,
@@ -50,7 +59,107 @@ def test_readme_links_pre_refactor_baseline_evidence() -> None:
 
     assert (ROOT / BASELINE_EVIDENCE).is_file()
     assert BASELINE_EVIDENCE in target_section
-    assert "Baseline evidence (not target-contract completion proof)" in target_section
+    assert "Evidence records (not target-contract completion proof)" in target_section
+    assert P5_AUDIT_EVIDENCE in target_section
+    assert (ROOT / P5_B1_EVIDENCE).is_file()
+    assert P5_B1_EVIDENCE in target_section
+
+
+def test_p5_audit_records_open_blockers_without_claiming_completion() -> None:
+    audit = _read(P5_AUDIT_EVIDENCE)
+
+    for marker in (
+        "P5-A audit complete; global P5 release closure incomplete.",
+        "not production\napproval",
+        "P1 | incomplete",
+        "P2 | incomplete",
+        "P3 | complete for the bounded media milestone",
+        "P4 | complete",
+        "P5 | incomplete",
+        SUPERSEDED_CONNECTOR_RUNTIME,
+        "Pillow",
+        "12.3.0",
+        "pip-audit 2.10.1",
+        "PYSEC-2026-2253",
+        "admin_session_secret",
+        "service_settings_secret",
+        "explicitly outside this migration",
+        "final raw working-tree count is 37",
+        "selected-text rewrite",
+        "/Users/muze/gitee/npcink-workflow-toolbox",
+        "composer quality:matrix:run -- --fail-on-dirty",
+        "engineering acceptance candidates, not production SLOs",
+    ):
+        assert marker in audit
+
+    for forbidden in (
+        "global P5 release closure complete",
+        "Approved for production validation by operator.",
+        "/Users/muze/gitee/npcink-toolbox",
+    ):
+        assert forbidden not in audit
+
+
+def test_p5_b1_removes_superseded_hosted_profile_identity() -> None:
+    active_markers = (
+        SUPERSEDED_CONNECTOR_RUNTIME,
+        SUPERSEDED_CONNECTOR_RESULT,
+        SUPERSEDED_CONNECTOR_VALIDATOR,
+        SUPERSEDED_HOSTED_PROFILE_FIELD,
+    )
+    source_suffixes = {".py", ".pyi", ".ts", ".tsx", ".js", ".mjs"}
+
+    for directory in ("app", "tests", "frontend/src", "frontend/tests"):
+        for path in (ROOT / directory).rglob("*"):
+            if not path.is_file() or path.suffix not in source_suffixes:
+                continue
+            content = path.read_text(encoding="utf-8")
+            assert not any(marker in content for marker in active_markers), path
+
+    hosted_profiles = _read("docs/cloud-hosted-runtime-profiles-v1.md")
+    assert "`operation_contract_version`: `wordpress_operation.v1`" in hosted_profiles
+    assert SUPERSEDED_HOSTED_PROFILE_FIELD not in hosted_profiles
+
+
+def test_p5_b1_evidence_closes_only_the_connector_identity_batch() -> None:
+    evidence = _read(P5_B1_EVIDENCE)
+
+    for marker in (
+        "engineering batch complete; global P5 release closure and production\n"
+        "approval remain incomplete",
+        "operation_contract_version",
+        "wordpress_operation.v1",
+        "cloud_connector_runtime.v1",
+        "20260717_0068",
+        "297 passed",
+        "302 passed",
+        "7 passed",
+        "156 passed, 1 skipped",
+        "602 passed, 3 skipped",
+        "746 passed",
+        "PostgreSQL 16 semantic rehearsal",
+        "P1-E05",
+        "P1-E06",
+        "P5-B2",
+        "P5-B5",
+    ):
+        assert marker in evidence
+
+    assert SUPERSEDED_CONNECTOR_RUNTIME not in evidence
+    assert SUPERSEDED_HOSTED_PROFILE_FIELD not in evidence
+    for forbidden in (
+        "global P5 completion achieved",
+        "Approved for production validation by operator.",
+    ):
+        assert forbidden not in evidence
+
+
+def test_readme_describes_the_bounded_current_model_operations_surface() -> None:
+    readme = _read("README.md")
+
+    assert "Bounded provider-connection operations" in readme
+    assert "hosted\nruntime-profile configuration remain" in readme
+    assert "Model operations admin surfaces (provider connections" not in readme
 
 
 def test_pre_refactor_baseline_locks_stable_evidence_markers() -> None:
@@ -94,6 +203,51 @@ def test_master_plan_freezes_the_wordpress_first_p0_p5_sequence() -> None:
         "current API/schema/module deletion inventory",
     ):
         assert required in master
+
+    adr = _read("docs/decisions/004-wordpress-first-cloud-runtime-refactor.md")
+    for source in (master, adr):
+        normalized_source = " ".join(source.split())
+        assert "exclusive" in source
+        assert "repository/file allowlist" in source
+        assert "a shared file has one writer" in normalized_source.lower()
+        assert "One write-enabled subagent operates" not in source
+
+
+def test_deletion_inventory_reports_phase_specific_status() -> None:
+    inventory = _read("docs/refactor-deletion-inventory-v1.md")
+
+    for marker in (
+        "P1 is incomplete",
+        "P3 is complete",
+        "P4 is complete",
+        "global P5 hardening and release closure is incomplete",
+        "not standalone proof",
+    ):
+        assert marker in inventory
+
+
+def test_active_refactor_rules_use_the_current_central_matrix_repository() -> None:
+    current_matrix_root = "/Users/muze/gitee/npcink-workflow-toolbox"
+    retired_matrix_root = "/Users/muze/gitee/npcink-toolbox"
+
+    for path in (
+        "AGENTS.md",
+        "docs/refactor-master-plan-v1.md",
+        "docs/runtime-stability-performance-evidence-v1.md",
+    ):
+        source = _read(path)
+        assert current_matrix_root in source
+        assert retired_matrix_root not in source
+
+
+def test_p4_inventory_has_no_stale_remaining_work_after_closeout() -> None:
+    inventory = _read("docs/p4-portal-admin-surface-inventory-2026-07-16.md")
+
+    assert "Accepted inventory and completed P4 closeout record." in inventory
+    assert "Still required before declaring P4 complete:" not in inventory
+    assert inventory.index("## P4-F Hosted Runtime Profile Boundary") < inventory.index(
+        "## P4-G Admin Client And Hot-Path Closeout"
+    )
 
 
 def test_wordpress_first_adr_freezes_the_refactor_decisions() -> None:
@@ -346,9 +500,9 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
         assert required in smoke
 
     superseded_connector_markers = (
-        "wp_ai_connector_runtime.v1",
-        "wp_ai_connector_result.v1",
-        "validate_wordpress_ai_connector_runtime_contract",
+        SUPERSEDED_CONNECTOR_RUNTIME,
+        SUPERSEDED_CONNECTOR_RESULT,
+        SUPERSEDED_CONNECTOR_VALIDATOR,
     )
     for document in (ai_task, alt_text):
         assert not any(marker in document for marker in superseded_connector_markers)
@@ -357,7 +511,7 @@ def test_active_connector_docs_match_the_p1_runtime_contract() -> None:
     title_section = title_section.split("## Local Test Gate", maxsplit=1)[0]
     for marker in (
         "ability_name=npcink-cloud/wp-ai-connector",
-        "contract_version=wp_ai_connector_runtime.v1",
+        f"contract_version={SUPERSEDED_CONNECTOR_RUNTIME}",
         "channel=wordpress_ai_connector",
         "selected_model_id=",
         "selected_instance_id=",

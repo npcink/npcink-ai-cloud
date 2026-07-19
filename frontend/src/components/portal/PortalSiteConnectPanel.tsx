@@ -3,11 +3,13 @@
 import { useState, type FormEvent } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
 import { useLocale } from '@/contexts/LocaleContext';
-import { portalClient } from '@/lib/portal-client';
+import { portalClient, type PortalAddonConnectionAccount } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 
 interface PortalSiteConnectPanelProps {
-  accountId: string;
+  accounts: PortalAddonConnectionAccount[];
+  accountsError?: string;
+  isLoadingAccounts?: boolean;
   onClose?: () => void;
   initialSiteUrl?: string;
   initialSiteName?: string;
@@ -16,7 +18,9 @@ interface PortalSiteConnectPanelProps {
 }
 
 export function PortalSiteConnectPanel({
-  accountId,
+  accounts,
+  accountsError = '',
+  isLoadingAccounts = false,
   onClose,
   initialSiteUrl = '',
   initialSiteName = '',
@@ -24,6 +28,7 @@ export function PortalSiteConnectPanel({
   addonState = '',
 }: PortalSiteConnectPanelProps) {
   const { t } = useLocale();
+  const [selectedAccountId, setSelectedAccountId] = useState('');
   const [siteName, setSiteName] = useState(initialSiteName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -47,11 +52,21 @@ export function PortalSiteConnectPanel({
       );
       return;
     }
+    if (!accounts.some((account) => account.account_id === selectedAccountId)) {
+      setErrorMessage(
+        t(
+          'portal.connect_site_account_required_desc',
+          undefined,
+          'Select an active customer account before finishing this connection.'
+        )
+      );
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const response = await portalClient.createAddonConnection({
-        account_id: accountId,
+        account_id: selectedAccountId,
         site_url: siteUrl,
         site_name: siteName,
         return_url: addonReturnUrl,
@@ -104,6 +119,34 @@ export function PortalSiteConnectPanel({
       <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <label className="block">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+            {t('portal.connect_site_account_label', undefined, 'Customer account')}
+          </span>
+          <select
+            value={selectedAccountId}
+            onChange={(event) => {
+              setSelectedAccountId(event.target.value);
+              setErrorMessage('');
+            }}
+            className="input mt-1 w-full"
+            disabled={isLoadingAccounts || accounts.length === 0}
+            required
+          >
+            <option value="">
+              {isLoadingAccounts
+                ? t('common.loading', {}, 'Loading...')
+                : accounts.length
+                  ? t('portal.connect_site_account_placeholder', undefined, 'Select an account')
+                  : t('portal.connect_site_account_empty', undefined, 'No eligible account')}
+            </option>
+            {accounts.map((account) => (
+              <option key={account.account_id} value={account.account_id}>
+                {account.name || account.account_id} · {account.site_count} {t('common.site')}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
             {t('portal.connect_site_name_label', undefined, 'Display name')}
           </span>
           <input
@@ -114,13 +157,22 @@ export function PortalSiteConnectPanel({
             placeholder={t('portal.connect_site_name_placeholder', undefined, 'Customer Production')}
           />
         </label>
+        {accountsError ? (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+            {accountsError}
+          </p>
+        ) : null}
         {errorMessage ? (
           <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
             {errorMessage}
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSubmitting || isLoadingAccounts || !selectedAccountId}
+          >
             {isSubmitting
               ? t('common.saving')
               : t('portal.connect_site_authorize_addon', undefined, 'Finish connection')}

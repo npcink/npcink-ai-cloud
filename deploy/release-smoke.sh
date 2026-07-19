@@ -267,7 +267,16 @@ assert_json_equals "${HTTP_BODY}" "data.workers.totals.missing_total" "0" "obser
 assert_json_equals "${HTTP_BODY}" "data.cadence.totals.non_fresh_total" "0" "observability summary should not report stale cadence tasks"
 assert_json_equals "${HTTP_BODY}" "data.providers.freshness" "fresh" "provider freshness should be fresh"
 assert_json_equals "${HTTP_BODY}" "data.runtime.summary.callback.pressure_state" "healthy" "callback backlog should be healthy"
-assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_sink_otlp_endpoint" "trace sink should be configured"
+assert_json_non_empty "${HTTP_BODY}" "data.tracing.otlp_configured" "observability summary should expose the external exporter configuration fact"
+assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_configured" "observability summary should expose the external query configuration fact"
+case "${BASE_URL}" in
+	https://*)
+		assert_json_equals "${HTTP_BODY}" "data.tracing.otlp_configured" "true" "formal HTTPS release smoke requires an external OTLP exporter"
+		assert_json_non_empty "${HTTP_BODY}" "data.tracing.otlp_endpoint" "formal HTTPS release smoke requires an external OTLP exporter endpoint"
+		assert_json_equals "${HTTP_BODY}" "data.tracing.trace_query_configured" "true" "formal HTTPS release smoke requires an external trace query surface"
+		assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_url" "formal HTTPS release smoke requires an external trace query URL"
+		;;
+esac
 
 RUNTIME_IDEMPOTENCY_SUFFIX="${NPCINK_CLOUD_IDEMPOTENCY_SUFFIX:-release-smoke-$(date -u +%Y%m%d%H%M%S)}"
 NPCINK_CLOUD_INTERNAL_AUTH_TOKEN="${INTERNAL_AUTH_TOKEN}" \

@@ -16,6 +16,7 @@ from app.adapters.providers.base import (
 )
 from app.core.config import Settings
 from app.domain.media_artifacts.input_loading import LoadedArtifactInput
+from app.domain.runtime.errors import RuntimeExecutionContractError
 from app.domain.site_knowledge.contracts import (
     SITE_KNOWLEDGE_CONTRACTS,
     SITE_KNOWLEDGE_SEARCH_ABILITY,
@@ -23,6 +24,8 @@ from app.domain.site_knowledge.contracts import (
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.service import SiteKnowledgeService
 from app.domain.wordpress_ai_connector.contracts import (
+    WORDPRESS_OPERATION_CONTRACT,
+    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
     WP_AI_CONNECTOR_SOURCE_TEXT_TASKS,
     contains_inline_media_transport,
     resolve_site_knowledge_reference_mode,
@@ -90,9 +93,7 @@ class WordPressOperationRuntime:
         raw_system_instruction = scene_request.get("system_instruction")
         if task in WP_AI_CONNECTOR_SOURCE_TEXT_TASKS:
             system_instruction = (
-                raw_system_instruction.strip()
-                if isinstance(raw_system_instruction, str)
-                else ""
+                raw_system_instruction.strip() if isinstance(raw_system_instruction, str) else ""
             )
         else:
             system_instruction = str(raw_system_instruction or "").strip()
@@ -291,9 +292,7 @@ class WordPressOperationRuntime:
                 ability_name=SITE_KNOWLEDGE_SEARCH_ABILITY,
                 contract_version=SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SEARCH_ABILITY],
                 input_payload={
-                    "contract_version": SITE_KNOWLEDGE_CONTRACTS[
-                        SITE_KNOWLEDGE_SEARCH_ABILITY
-                    ],
+                    "contract_version": SITE_KNOWLEDGE_CONTRACTS[SITE_KNOWLEDGE_SEARCH_ABILITY],
                     "query": scene_text,
                     "intent": "writing_context",
                     "max_results": min(20, policy.max_source_posts * 2),
@@ -338,9 +337,9 @@ class WordPressOperationRuntime:
                 prompt=scene_text,
                 results=results,
             )
-            reference_metadata = SiteKnowledgeRepository(
-                session
-            ).reference_metadata_for_post_ids(site_id=site_id, post_ids=post_ids)
+            reference_metadata = SiteKnowledgeRepository(session).reference_metadata_for_post_ids(
+                site_id=site_id, post_ids=post_ids
+            )
             pack = build_generation_context_pack(
                 policy=policy,
                 post_ids=post_ids,
@@ -436,7 +435,7 @@ class WordPressOperationRuntime:
             normalized_text = self._normalize_plain_text_output(
                 output_text,
                 limit={
-                    "content_rewrite": 320,
+                    "content_rewrite": WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
                     "title_generation": 80,
                     "excerpt_generation": 180,
                     "content_summary": 220,
@@ -493,15 +492,19 @@ class WordPressOperationRuntime:
             for item in metadata.get("task_constraints", [])
             if isinstance(item, str) and str(item).strip()
         }
-        if task not in {
-            "alt_text_suggest",
-            "comment_reply_suggest",
-            "content_rewrite",
-            "content_summary",
-            "excerpt_generation",
-            "meta_description",
-            "title_generation",
-        } and "single_value" not in constraints:
+        if (
+            task
+            not in {
+                "alt_text_suggest",
+                "comment_reply_suggest",
+                "content_rewrite",
+                "content_summary",
+                "excerpt_generation",
+                "meta_description",
+                "title_generation",
+            }
+            and "single_value" not in constraints
+        ):
             return False
         output_text = self._extract_provider_output_text(provider_output)
         if output_text == "":
@@ -528,8 +531,22 @@ class WordPressOperationRuntime:
         default_policy: dict[str, object],
         profile_id: str,
     ) -> dict[str, object]:
-        if default_policy.get("managed_surface") != "wordpress_ai_connector":
+        if default_policy.get("managed_surface") != "hosted_runtime_profiles":
             return merged_policy
+        if (
+            default_policy.get("platform_kind") != "wordpress"
+            or default_policy.get("connector_id") != "wordpress_ai_connector"
+            or default_policy.get("operation_contract_version")
+            != WORDPRESS_OPERATION_CONTRACT
+        ):
+            raise RuntimeExecutionContractError(
+                "runtime_profiles.managed_contract_invalid",
+                (
+                    "hosted runtime profile requires platform_kind=wordpress, "
+                    "connector_id=wordpress_ai_connector, and "
+                    f"operation_contract_version={WORDPRESS_OPERATION_CONTRACT}"
+                ),
+            )
 
         policy = dict(merged_policy)
         spec = resolve_wordpress_ai_connector_profile_spec(profile_id)
@@ -540,12 +557,18 @@ class WordPressOperationRuntime:
         routing_intent = str(
             default_policy.get("routing_intent") or (spec.routing_intent if spec else "")
         )
+        platform_kind = "wordpress"
+        connector_id = "wordpress_ai_connector"
+        operation_contract_version = WORDPRESS_OPERATION_CONTRACT
         policy["timeout_ms"] = timeout_ms
         policy["timeout_seconds"] = timeout_seconds
         policy["max_retries"] = max_retries
         policy["retry_max"] = max_retries
         policy["allow_fallback"] = bool(default_policy.get("allow_fallback", True))
-        policy["managed_surface"] = "wordpress_ai_connector"
+        policy["managed_surface"] = "hosted_runtime_profiles"
+        policy["platform_kind"] = platform_kind
+        policy["connector_id"] = connector_id
+        policy["operation_contract_version"] = operation_contract_version
         if task_group:
             policy["task_group"] = task_group
         if routing_intent:
@@ -556,7 +579,10 @@ class WordPressOperationRuntime:
             execution_contract = dict(execution_contract)
             execution_contract["timeout_seconds"] = timeout_seconds
             execution_contract["retry_max"] = max_retries
-            execution_contract["managed_surface"] = "wordpress_ai_connector"
+            execution_contract["managed_surface"] = "hosted_runtime_profiles"
+            execution_contract["platform_kind"] = platform_kind
+            execution_contract["connector_id"] = connector_id
+            execution_contract["operation_contract_version"] = operation_contract_version
             if task_group:
                 execution_contract["task_group"] = task_group
             if routing_intent:
@@ -597,9 +623,7 @@ class WordPressOperationRuntime:
     ) -> dict[str, Any]:
         prompt = cast(str, scene_request["prompt"])
         encoded_image = base64.b64encode(source_artifact.content_bytes).decode("ascii")
-        provider_image_url = (
-            f"data:{source_artifact.content_type};base64,{encoded_image}"
-        )
+        provider_image_url = f"data:{source_artifact.content_type};base64,{encoded_image}"
         context = {
             "task": "alt_text_suggest",
             **{
@@ -821,9 +845,23 @@ class WordPressOperationRuntime:
 
     def _extract_task_candidate(self, output_text: str, *, task: str, limit: int) -> str:
         if task == "content_rewrite":
-            bold_candidate = self._extract_bold_candidate(output_text)
-            if bold_candidate:
-                return self._truncate_text(bold_candidate, limit=limit)
+            if self._is_boilerplate_output(output_text):
+                bold_candidate = self._extract_bold_candidate(output_text)
+                if bold_candidate:
+                    return self._truncate_text(bold_candidate, limit=limit)
+            alternative_candidate = self._extract_rewrite_alternative_candidate(output_text)
+            if alternative_candidate:
+                return self._truncate_text(alternative_candidate, limit=limit)
+            text = self._strip_markdown(output_text)
+            text = re.sub(
+                r"^(?:rewrite|rewritten|rephrased|改写(?:结果|版本)?|"
+                r"建议改写(?:为|成))\s*[:：]\s*",
+                "",
+                text,
+                flags=re.I,
+            )
+            if text and not self._is_boilerplate_output(text):
+                return self._truncate_text(text, limit=limit)
         if task == "title_generation":
             heading_candidate = self._extract_title_heading(output_text)
             if heading_candidate:
@@ -855,13 +893,34 @@ class WordPressOperationRuntime:
         return ""
 
     def _extract_bold_candidate(self, output_text: str) -> str:
-        for match in re.finditer(r"\*\*(.{4,260}?)\*\*", output_text, flags=re.S):
+        for match in re.finditer(
+            r"(?m)^\s*\*\*(.{4,260}?)\*\*\s*$",
+            output_text,
+        ):
             candidate = self._strip_markdown(match.group(1))
             if re.search(r"(?:版|version|option)\s*[:：]?$", candidate, flags=re.I):
                 continue
             if len(candidate) >= 8:
                 return candidate
         return ""
+
+    def _extract_rewrite_alternative_candidate(self, output_text: str) -> str:
+        """Extract one candidate only from a complete, high-confidence bundle."""
+        text = self._strip_markdown(output_text)
+        match = re.fullmatch(
+            r"(?P<first>.+?[.!?])\s+OR\s+"
+            r"(?P<second>.+?[.!?])\s+"
+            r"Both(?:\s+rephrasings)?\s+preserve\s+(?:the\s+)?"
+            r"(?:core|original|intended)\s+meaning\b.+",
+            text,
+            flags=re.I | re.S,
+        )
+        if match is None:
+            return ""
+        candidate = match.group("first").strip()
+        if len(candidate) < 8 or self._is_boilerplate_output(candidate):
+            return ""
+        return candidate
 
     def _extract_first_list_item(self, output_text: str) -> str:
         for line in output_text.splitlines():

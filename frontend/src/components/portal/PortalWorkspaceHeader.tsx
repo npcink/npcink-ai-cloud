@@ -9,7 +9,7 @@ import {
   getPortalSiteUrl,
   getVisiblePortalSites,
 } from '@/lib/portal-site-display';
-import { cn, formatDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 export type PortalWorkspacePage =
   | 'keys'
@@ -31,11 +31,10 @@ export type PortalWorkspaceMetric = {
 
 type PortalWorkspaceSite = {
   site_id: string;
-  site_name: string;
+  name: string;
   site_url: string;
-  platform_kind: 'wordpress';
-  metadata?: Record<string, unknown>;
-  created_at?: string;
+  platform_kind: string;
+  status: string;
 };
 
 type PortalWorkspaceHeaderProps = {
@@ -134,7 +133,7 @@ export function PortalWorkspaceHeader({
           >
             {getVisiblePortalSites(sites).map((site) => (
               <option key={site.site_id} value={site.site_id}>
-                {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)}{site.created_at ? `, ${formatDate(site.created_at)}` : ''})
+                {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})
               </option>
             ))}
           </select>

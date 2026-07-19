@@ -1,6 +1,6 @@
 import type { Site } from '@/lib/portal-client';
 
-type SiteLike = Pick<Site, 'site_id' | 'site_name' | 'site_url'> & {
+type SiteLike = Pick<Site, 'site_id' | 'name' | 'site_url'> & {
   status?: string;
 };
 
@@ -21,7 +21,7 @@ export function getPortalSiteDisplayName(site: SiteLike | null | undefined): str
     return '';
   }
 
-  const siteName = normalizeString(site.site_name);
+  const siteName = normalizeString(site.name);
   if (siteName) {
     return siteName;
   }

@@ -22,96 +22,99 @@ function buildPortalSession(selectedSiteId: string) {
   const sites = [
     {
       site_id: 'site_attention',
-      site_name: 'Attention Site',
-      account_id: 'acct_portal',
-      status: 'provisioning',
-      created_at: '2026-04-01T00:00:00Z',
-      plan_name: '',
-      site_url: 'https://attention.example.test',
+      name: 'Attention Site',
+      site_url: '',
+      platform_kind: 'wordpress',
+      status: 'active',
     },
     {
       site_id: 'site_clear',
-      site_name: 'Clear Site',
-      account_id: 'acct_portal',
-      status: 'active',
-      created_at: '2026-04-02T00:00:00Z',
-      plan_name: 'Growth',
+      name: 'Clear Site',
       site_url: 'https://clear.example.test',
+      platform_kind: 'wordpress',
+      status: 'active',
     },
   ];
 
-  const currentSite = sites.find((site) => site.site_id === selectedSiteId) || sites[0];
+  const currentSite = sites.find((site) => site.site_id === selectedSiteId);
+  if (!currentSite) {
+    throw new Error(`Unknown Portal E2E selected site: ${selectedSiteId}`);
+  }
+  const currentSubscription = currentSite.site_id === 'site_attention'
+    ? {
+        subscription_id: 'sub_growth',
+        plan_id: 'plan_growth',
+        plan_version_id: 'plan_growth_v1',
+        status: 'expired',
+        tier_id: 'pro',
+        plan_kind: 'paid',
+        package_kind: 'subscription',
+        package_alias: 'Pro',
+        display_package_label: 'Pro',
+        coverage_state: 'expired',
+        current_period_start_at: '2026-04-01T00:00:00Z',
+        current_period_end_at: '2026-04-12T00:00:00Z',
+        scheduled_plan_id: '',
+        scheduled_plan_version_id: '',
+        scheduled_change_at: '',
+      }
+    : {
+        subscription_id: 'sub_growth',
+        plan_id: 'plan_growth',
+        plan_version_id: 'plan_growth_v1',
+        status: 'active',
+        tier_id: 'pro',
+        plan_kind: 'paid',
+        package_kind: 'subscription',
+        package_alias: 'Growth',
+        display_package_label: 'Growth',
+        coverage_state: 'covered',
+        current_period_start_at: '2026-04-01T00:00:00Z',
+        current_period_end_at: '2026-04-30T00:00:00Z',
+        scheduled_plan_id: '',
+        scheduled_plan_version_id: '',
+        scheduled_change_at: '',
+      };
 
   return {
-    member_ref: 'user:portal-demo@example.com',
-    site_id: currentSite.site_id,
-    account_id: 'acct_portal',
-    identity_type: 'user',
-    role: 'user',
-    allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
-    site: {
-      site_id: currentSite.site_id,
-      account_id: currentSite.account_id,
-      name: currentSite.site_name,
-      status: currentSite.status,
-      created_at: currentSite.created_at,
-    },
+    email: 'portal-demo@example.com',
     sites,
-    accounts: [
-      {
-        account_id: 'acct_portal',
-        name: 'Portal Account',
-        status: 'active',
-        member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user',
-        role: 'user',
-        allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
-        membership_status: 'active',
-        site_count: 2,
-        sites,
-      },
-    ],
-    current_subscription:
-      currentSite.site_id === 'site_attention'
-        ? {
-            subscription_id: 'sub_growth',
-            status: 'expired',
-            plan_id: 'plan_growth',
-            plan_version_id: 'plan_growth_v1',
-            current_period_start: '2026-04-01T00:00:00Z',
-            current_period_end: '2026-04-12T00:00:00Z',
-          }
-        : {
-            subscription_id: 'sub_growth',
-            status: 'active',
-            plan_id: 'plan_growth',
-            plan_version_id: 'plan_growth_v1',
-            current_period_start: '2026-04-01T00:00:00Z',
-            current_period_end: '2026-04-30T00:00:00Z',
-          },
-    entitlements:
-      currentSite.site_id === 'site_attention'
-        ? {
-            requests_limit: 1000,
-            tokens_limit: 50000,
-            features: ['usage', 'billing'],
-          }
-        : {
-            requests_limit: 2000,
-            tokens_limit: 100000,
-            features: ['usage', 'billing', 'audit'],
-          },
+    selected_context: {
+      site: currentSite,
+      allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
+      current_subscription: currentSubscription,
+    },
+    auth_mode: 'jwt',
+    session: {
+      state: 'active',
+      transport: 'cookie',
+      issued_at: '2026-04-07T09:00:00Z',
+      expires_at: '2026-04-07T11:00:00Z',
+      revocable: true,
+    },
   };
 }
 
 async function installPortalMocks(
   page: Page,
-  options: { paymentReturnFlow?: boolean; emptyCreditTrend?: boolean } = {}
+  options: {
+    paymentReturnFlow?: boolean;
+    emptyCreditTrend?: boolean;
+    withoutSelectedContext?: boolean;
+    delayInitialEntitlements?: boolean;
+  } = {}
 ) {
   let selectedSiteId = 'site_attention';
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
+  let accountRequestCount = 0;
+  let delayedEntitlementsCompleted = false;
+  let initialEntitlementsDelayed = false;
+  let releaseInitialEntitlementsGate: (() => void) | null = null;
+  const initialEntitlementsGate = new Promise<void>((resolve) => {
+    releaseInitialEntitlementsGate = resolve;
+  });
 
   await page.context().addCookies([
     {
@@ -134,7 +137,10 @@ async function installPortalMocks(
     const pathname = url.pathname.replace(/^\/api\/portal/, '').replace(/^\/portal\/v1/, '');
 
     if (pathname === '/session') {
-      await fulfillJson(route, buildPortalSession(selectedSiteId));
+      const portalSession = buildPortalSession(selectedSiteId);
+      await fulfillJson(route, options.withoutSelectedContext
+        ? { ...portalSession, selected_context: null }
+        : portalSession);
       return;
     }
 
@@ -145,9 +151,12 @@ async function installPortalMocks(
       return;
     }
 
+    if (pathname.startsWith('/account/') || pathname.startsWith('/support-requests')) {
+      accountRequestCount += 1;
+    }
+
     if (pathname === '/auth/identity-providers') {
       await fulfillJson(route, {
-        principal_id: 'prn_8d95fab64fa7487bb31cd81c3adac4a8',
         providers: [
           {
             provider: 'qq',
@@ -165,7 +174,6 @@ async function installPortalMocks(
     if (pathname === '/account/usage-summary') {
       await fulfillJson(route, {
         site_id: '',
-        account_id: 'acct_portal',
         generated_at: '2026-04-07T10:00:00Z',
         windows: {
           today: {
@@ -196,16 +204,23 @@ async function installPortalMocks(
     }
 
     if (pathname === '/account/entitlements') {
+      const requestSiteId = selectedSiteId;
+      const shouldDelayThisResponse = Boolean(
+        options.delayInitialEntitlements
+        && !initialEntitlementsDelayed
+        && requestSiteId === 'site_attention'
+      );
+      if (shouldDelayThisResponse) {
+        initialEntitlementsDelayed = true;
+        await initialEntitlementsGate;
+      }
       const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
-      const packageRemaining = 2419;
+      const packageRemaining = options.delayInitialEntitlements
+        ? requestSiteId === 'site_attention' ? 987654 : 4242
+        : 2419;
       const totalRemaining = packageRemaining + paidRemaining;
       await fulfillJson(route, {
         site_id: '',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user',
-        role: 'user',
-        allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit'],
         site: {
           site_id: '',
           site_name: '',
@@ -321,6 +336,9 @@ async function installPortalMocks(
         },
         generated_at: '2026-04-07T10:00:00Z',
       });
+      if (shouldDelayThisResponse) {
+        delayedEntitlementsCompleted = true;
+      }
       return;
     }
 
@@ -773,7 +791,6 @@ async function installPortalMocks(
         items: [
           {
             request_id: 'ticket_portal_e2e_open',
-            account_id: 'acct_portal',
             topic: 'billing',
             status: 'open',
             title: 'Payment order status looks wrong',
@@ -788,7 +805,6 @@ async function installPortalMocks(
 
     if (pathname === '/account/audit-summary') {
       await fulfillJson(route, {
-        account_id: 'acct_portal',
         generated_at: '2026-04-07T10:00:00Z',
         totals: {
           events: 12,
@@ -818,7 +834,6 @@ async function installPortalMocks(
         trace_id: index === 0 ? 'trace_portal_e2e' : '',
       }));
       await fulfillJson(route, {
-        account_id: 'acct_portal',
         items: events.slice(0, limit),
       });
       return;
@@ -832,7 +847,6 @@ async function installPortalMocks(
       await fulfillJson(route, {
         contract_version: 'magick-vector-observability-summary-v1',
         site_id: isClearSite ? 'site_clear' : 'site_attention',
-        account_id: 'acct_portal',
         generated_at: '2026-04-07T10:00:00Z',
         window: {
           hours: 168,
@@ -898,17 +912,12 @@ async function installPortalMocks(
     if (pathname === '/sites/site_attention/summary') {
       await fulfillJson(route, {
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user',
-        role: 'user',
-        allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
         site: {
           site_id: 'site_attention',
-          site_name: 'Attention Site',
-          account_id: 'acct_portal',
-          status: 'provisioning',
-          created_at: '2026-04-01T00:00:00Z',
+          name: 'Attention Site',
+          site_url: '',
+          platform_kind: 'wordpress',
+          status: 'active',
         },
         covered_by_subscription_id: 'sub_growth',
         subscription_status: 'expired',
@@ -934,9 +943,6 @@ async function installPortalMocks(
       await fulfillJson(route, {
         contract_version: 'magick-site-monitoring-overview-v1',
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        role: 'user',
         generated_at: '2026-04-07T10:00:00Z',
         window: {
           hours: 24,
@@ -1086,9 +1092,6 @@ async function installPortalMocks(
       await fulfillJson(route, {
         contract_version: 'magick-plugin-observability-v1',
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        role: 'user',
         generated_at: '2026-04-07T10:00:00Z',
         window: {
           hours: 24,
@@ -1137,17 +1140,12 @@ async function installPortalMocks(
     if (pathname === '/sites/site_clear/summary') {
       await fulfillJson(route, {
         site_id: 'site_clear',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user',
-        role: 'user',
-        allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
         site: {
           site_id: 'site_clear',
-          site_name: 'Clear Site',
-          account_id: 'acct_portal',
+          name: 'Clear Site',
+          site_url: 'https://clear.example.test',
+          platform_kind: 'wordpress',
           status: 'active',
-          created_at: '2026-04-02T00:00:00Z',
         },
         covered_by_subscription_id: 'sub_growth',
         subscription_status: 'active',
@@ -1179,9 +1177,6 @@ async function installPortalMocks(
     if (pathname === '/sites/site_attention/billing-snapshots') {
       await fulfillJson(route, {
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        role: 'user',
         items: [
           {
             snapshot_id: 'bill_attention_current',
@@ -1206,9 +1201,6 @@ async function installPortalMocks(
     if (pathname === '/sites/site_attention/billing-snapshots/reconciliation') {
       await fulfillJson(route, {
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        role: 'user',
         snapshot: {
           snapshot_id: 'bill_attention_current',
           generated_at: '2026-04-07T10:00:00Z',
@@ -1229,9 +1221,6 @@ async function installPortalMocks(
     if (pathname === '/sites/site_clear/billing-snapshots') {
       await fulfillJson(route, {
         site_id: 'site_clear',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        role: 'user',
         items: [
           {
             snapshot_id: 'bill_clear_current',
@@ -1256,9 +1245,6 @@ async function installPortalMocks(
     if (pathname === '/sites/site_clear/billing-snapshots/reconciliation') {
       await fulfillJson(route, {
         site_id: 'site_clear',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        role: 'user',
         snapshot: {
           snapshot_id: 'bill_clear_current',
           generated_at: '2026-04-07T10:00:00Z',
@@ -1279,11 +1265,6 @@ async function installPortalMocks(
     if (pathname === '/sites/site_attention/usage-summary') {
       await fulfillJson(route, {
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user',
-        role: 'user',
-        allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
         timezone: 'Asia/Shanghai',
         generated_at: '2026-04-07T10:00:00Z',
         windows: {
@@ -1317,11 +1298,6 @@ async function installPortalMocks(
     if (pathname === '/sites/site_attention/entitlements') {
       await fulfillJson(route, {
         site_id: 'site_attention',
-        account_id: 'acct_portal',
-        member_ref: 'user:portal-demo@example.com',
-        identity_type: 'user',
-        role: 'user',
-        allowed_actions: ['view_sites', 'view_usage', 'view_billing', 'view_audit', 'provision_sites', 'remove_sites'],
         site: {
           site_id: 'site_attention',
           site_name: 'Attention Site',
@@ -1485,11 +1461,17 @@ async function installPortalMocks(
       }),
     });
   });
+
+  return {
+    accountRequestCount: () => accountRequestCount,
+    delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
+    releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
+  };
 }
 
 test('portal workspace interaction path: account overview to site detail and service pages', async ({
   page,
-}) => {
+}, testInfo) => {
   await installPortalMocks(page);
 
   await page.goto('/portal');
@@ -1519,11 +1501,19 @@ test('portal workspace interaction path: account overview to site detail and ser
   const sitesWorkspace = page.locator('[data-portal-home="sites-workspace"]');
   await expect(sitesWorkspace.getByText(/^1 (?:Needs attention|需要关注)$/i)).toBeVisible();
   await expect(sitesWorkspace.getByText(/^Needs attention$|^需要关注$/i)).toHaveCount(1);
+  await testInfo.attach('p4-e03-portal-service-home', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
 
   await expect(page.locator('a[href="/portal/sites/site_attention#service-status"]').first()).toBeVisible();
   await page.goto('/portal/sites/site_attention');
   await expect(page).toHaveURL(/\/portal\/sites\/site_attention$/);
   await expect(page.getByRole('heading', { level: 1, name: /attention site/i })).toBeVisible();
+  await testInfo.attach('p4-e03-portal-site-health', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
 
   await page.goto('/portal/usage');
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
@@ -1533,14 +1523,18 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(usageViewTabs.getByRole('tab')).toHaveCount(2);
   await expect(usageViewTabs.getByRole('tab', { name: /Usage details|用量明细/i })).toHaveCount(0);
   await expect(page.getByText(/^Generated At$|^生成时间$/i)).toHaveCount(0);
-  await expect(page.getByText(/Apr 1[^\n]*Apr 30|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)30日?/i).first()).toBeVisible();
-  await expect(page.getByText(/Ends .*2026.*Apr 30|截止 .*2026.*4(?:月|\/)30日?/i).first()).toBeVisible();
+  await expect(page.getByText(/Apr 1[^\n]*Apr 12|4(?:月|\/)1(?:日)?[^\n]*4(?:月|\/)12日?/i).first()).toBeVisible();
+  await expect(page.getByText(/Ends .*2026.*Apr 12|截止 .*2026.*4(?:月|\/)12日?/i).first()).toBeVisible();
   await expect(page.getByText(/Updated .*Apr 7|更新于 .*4(?:月|\/)7日?/i).first()).toBeVisible();
   await expect(usageViewTabs.getByRole('tab', { name: /^Trend$|^趋势$/i })).toHaveAttribute('aria-selected', 'true');
   const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
   await expect(trendPanel.getByRole('tab', { name: /24 hours|最近 24 小时/i })).toHaveAttribute('aria-selected', 'true');
   await expect(trendPanel.locator('[data-trend-window="24h"]')).toHaveAttribute('data-trend-points', '24');
   await expect(trendPanel.getByText(/24 points used|共使用 24 点/i)).toBeVisible();
+  await testInfo.attach('p4-e03-portal-usage', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
   for (const range of [
     { name: /1 hour|最近 1 小时/i, value: '1h', points: '12' },
     { name: /7 days|最近 7 天/i, value: '7d', points: '7' },
@@ -1552,7 +1546,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   await usageViewTabs.getByRole('tab', { name: /Point records|点数记录/i }).click();
   await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
   await expect(page.getByRole('heading', { level: 2, name: /^Point records$|^点数记录$/i })).toBeVisible();
-  await expect(page.locator('main').getByRole('combobox')).toHaveCount(4);
+  await expect(page.locator('main').getByRole('combobox')).toHaveCount(3);
   await expect(page.getByRole('combobox', { name: /Summary interval|汇总粒度/i })).toHaveValue('30m');
   const creditBucketRow = page.getByRole('button', { name: /18.*Content writing|18.*内容生成/i }).first();
   await expect(creditBucketRow).toBeVisible();
@@ -1577,6 +1571,10 @@ test('portal workspace interaction path: account overview to site detail and ser
 
   await page.goto('/portal/billing');
   await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
+  await testInfo.attach('p4-e03-portal-package-entitlement', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
   await expect(page.getByRole('link', { name: /Submit ticket|提交工单|提交工單/i })).toHaveCount(0);
   await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
   const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
@@ -1705,6 +1703,41 @@ test('portal point trend shows an explicit empty state instead of a blank chart'
   const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
   await expect(trendPanel.getByText(/No point usage in this range|该时间范围内暂无点数使用/i)).toBeVisible();
   await expect(trendPanel.getByRole('img')).toHaveCount(0);
+});
+
+test('account projections stay idle until a site context is selected', async ({ page }) => {
+  const calls = await installPortalMocks(page, { withoutSelectedContext: true });
+
+  for (const path of [
+    '/portal/billing',
+    '/portal/usage',
+    '/portal/audit',
+    '/portal/support',
+    '/portal/support/ticket_portal_e2e_open',
+  ]) {
+    await page.goto(path);
+    await expect(
+      page.getByText(/Select a site context|请选择站点上下文/i).first()
+    ).toBeVisible();
+  }
+
+  expect(calls.accountRequestCount()).toBe(0);
+});
+
+test('late account entitlements cannot overwrite a newly selected site context', async ({ page }) => {
+  const calls = await installPortalMocks(page, { delayInitialEntitlements: true });
+
+  await page.goto('/portal');
+  await expect(page.getByRole('heading', { level: 2, name: /my sites|站点/i })).toBeVisible();
+  await page.getByRole('button', { name: /Select site|选择站点/i }).click();
+
+  await expect(page.getByText(/^Growth$/).first()).toBeVisible();
+  await expect(page.getByText(/^4,242$|^4,242 点$/i).first()).toBeVisible();
+
+  calls.releaseInitialEntitlements();
+  await expect.poll(calls.delayedEntitlementsCompleted).toBe(true);
+  await expect(page.getByText(/987,654/)).toHaveCount(0);
+  await expect(page.getByText(/^4,242$|^4,242 点$/i).first()).toBeVisible();
 });
 
 test('portal usage and workspace stay usable on mobile viewport', async ({ page }) => {

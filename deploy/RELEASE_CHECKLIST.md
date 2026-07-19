@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-07-10
+> Updated: 2026-07-20
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -14,7 +14,9 @@ This checklist is the final gate before formally releasing Npcink AI Cloud.
 It is intentionally split into:
 
 - repo ready: repository code, scripts, and local validation are landed
-- env required: production secrets, URLs, trusted hosts/TLS, worker cadence, OTLP, and provider credentials are configured on the release host
+- env required: production secrets, URLs, trusted external Edge/TLS, worker
+  cadence, external OTLP, and provider credentials are configured on the
+  release host
 - service settings required: Portal public URL, QQ login when used, and SMTP are configured in `/admin/service-settings`
 - operator required: backup/rollback, cadence, heartbeat, trace, token rotation, and log inspection procedures are confirmed by the release operator
 - smoke required: `deploy/release-smoke.sh`, real mailbox login, and one real signed hosted runtime request pass on the release host
@@ -57,7 +59,7 @@ Current open blockers:
 | real WordPress reconnect | smoke required | release operator | one production Addon reconnect issues a fresh key and revokes the previous active key |
 | formal release smoke | smoke required | release operator | configure the required GitHub smoke secrets and run the complete `deploy/release-smoke.sh` path without a conditional skip |
 | schema drift baseline | operator required | database owner | historical `alembic check` index-name differences are resolved or recorded as reviewed |
-| OTLP sink | operator required | release operator | a fresh Cloud trace is queryable in the configured production sink |
+| external OTLP sink | operator required | release operator | exporter and query URLs are explicit and a fresh Cloud trace is queryable in the configured production sink |
 | 24-hour observation | operator required | release operator | health, workers, cadence, SMTP, callback, and runtime remain stable for 24 hours |
 | QQ login, when enabled | service settings required | release operator | real QQ login and `/open/auth/qq/callback` pass; otherwise QQ remains disabled |
 
@@ -71,6 +73,9 @@ All items in this section are `Required`.
 - [x] `NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN` is set to a separate production value
 - [x] `NPCINK_CLOUD_ADMIN_SESSION_SECRET` is set to a production value
 - [x] `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` is set to a stable, dedicated production value and is preserved across deploys and admin-session key rotation
+- [ ] `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET` is set to a stable, dedicated production value and is not reused by admin sessions, Portal JWT, internal auth, bootstrap, or service-settings encryption
+- [ ] `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID` identifies that deployed key without containing secret material
+- [ ] the runtime-data encryption secret and key ID are present for `api`, `worker`, `callback-worker`, and `ops-worker`, and are absent from `frontend`
 - [ ] Provider Connection credentials have been re-imported or re-saved with the dedicated service-settings key before runtime traffic is restored; ciphertext created by the retired admin/Portal/internal key selection is intentionally unreadable after this cutover
 - [x] retired `OPS_*` and runtime `OPENAI_COMPATIBLE_*` names are absent from `.env.deploy`
 - [x] QQ Open Platform uses only `/open/auth/qq/callback`
@@ -79,6 +84,14 @@ All items in this section are `Required`.
 - [x] at least one real hosted-runtime provider credential is configured for the release host
 - [x] `NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN` is not equal to `NPCINK_CLOUD_INTERNAL_AUTH_TOKEN`
 - [x] browser origin allowlist and trusted host settings match the public release origin
+- [ ] the exact release payload contains no `.env.deploy`; any uploaded env was
+  transferred separately through the protected incoming directory
+- [ ] the selected release env is
+  `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`, both state
+  directories are mode `0700`, and the env file is mode `0600`
+- [ ] `current` selects code only and its release basename has a matching
+  external state directory; no secret-bearing env file exists inside that
+  release payload
 
 ### 3.2 Public Base URLs
 
@@ -89,7 +102,17 @@ All items in this section are `Required`.
 - [x] `NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST=cloud.npc.ink` is the public-host
   baseline; production also includes required internal container/loopback hosts
 - [x] `/admin/service-settings` Portal public URL matches the real public portal URL
-- [x] public reverse proxy and TLS are already valid for the release host
+- [ ] operator-owned external Edge and TLS are valid for the release host
+- [ ] `deploy/bind-domain-to-ssh-host.sh --prepare-only` passed local private-key
+  permission, certificate/key, loopback-upstream, inner-health, and `nginx -t`
+  checks without switching traffic
+- [ ] the exact retired-project Caddy container IDs were recorded and stopped
+  before host NGINX activation
+- [ ] `deploy/bind-domain-to-ssh-host.sh` activation rejected any running project
+  Caddy and passed its public-HTTPS check
+- [ ] Runtime Compose sets `NPCINK_CLOUD_EXTERNAL_EDGE_READY=true`
+- [ ] `NPCINK_CLOUD_DOMAIN_NAME=cloud.npc.ink` exactly matches the HTTPS
+  `NPCINK_CLOUD_BASE_URL` host
 
 ### 3.3 Portal Login And Email Service Settings
 
@@ -119,16 +142,53 @@ All items in this section are `Required`.
   - `NPCINK_CLOUD_LATENCY_PROBE_INTERVAL_SECONDS`
   - `NPCINK_CLOUD_ALERT_PROVIDER_DEGRADATION_INTERVAL_SECONDS`
   - `NPCINK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS`
-- [x] OTLP export target is explicit for the release host:
+- [ ] previous and new env state resolve the same Compose project name, and the
+  equality check plus actual old-writer container-label check passed before any
+  image or container mutation
+- [ ] if `--skip-frontend-image` was selected, exactly one running old frontend
+  was proven before mutation; the option was not used for a first deploy
+- [ ] the observed cutover order was `prepare images -> stop old app/write
+  services -> data -> migration/refresh -> pointer -> API -> workers ->
+  release-specific worker proof -> generic operational-ready -> traffic`
+- [ ] migration and provider-refresh one-off containers used `--no-deps --pull
+  never` against the exact staged API image
+- [ ] after worker startup, exactly one `worker`, `callback-worker`, and
+  `ops-worker` container stayed running/non-restarting with zero restarts and
+  stable IDs, and all three heartbeats were newer than the recorded cutoff
+- [ ] the operator has verified that any failure after migration starts remains
+  fail-closed and never auto-starts the old application
+- [ ] a recovery with incomplete stopped-service, pointer, or failure-marker
+  evidence retains `.deploy-lock` for manual recovery
+- [ ] previous Compose recovery used an isolated process environment so new env
+  values could not override the previous release env; restored/removed image
+  tags were verified against the rollback map
+- [ ] successful deployment retained the per-release external env state and
+  removed the temporary rollback-image map and private rollback tags
+- [ ] the Cloud bundle exposes no public `80/443`; external Edge traffic reaches
+  only the loopback NGINX ingress
+- [ ] the external Edge replaces inbound `X-Real-IP`, `X-Forwarded-For`,
+  `X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Port` values
+- [ ] NGINX trusts real-client headers only from gateway `172.28.0.1`, sets
+  upstream `X-Forwarded-For` from `$remote_addr`, and Gunicorn trusts only NGINX
+  at `172.28.0.10`
+- [ ] the loader reported
+  `[ok] Retired bundle services are absent: caddy jaeger otel-collector` before
+  public health verification
+- [ ] no current release-project container remains for `caddy`, `jaeger`, or
+  `otel-collector`
+- [ ] external OTLP release evidence is explicit for the release host:
   - `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT`
-  - `NPCINK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT`
   - `NPCINK_CLOUD_OTEL_TRACE_QUERY_URL`
+- [ ] a fresh Cloud trace exported through that endpoint is queryable through
+  the configured query URL
 
 ## 4. Database Readiness
 
 All items in this section are `Required`.
 
 - [x] target database backup exists and restore path is known
+- [ ] the pre-cutover custom-format backup has a recorded checksum, restrictive permissions, and a successful restore verification against a separate database
+- [ ] the pre-cutover code revision and old runtime-data decryption key material are recoverable together with that backup
 - [x] migration state is confirmed on the release target
 - [ ] schema drift has been checked on the target host
 - [x] rollback plan for the database has been written down
@@ -248,10 +308,32 @@ All items in this section are `Required`.
 - [x] bootstrap token rotation procedure is defined
 - [x] internal service token rotation procedure is defined
 - [x] session invalidation procedure is defined
+- [ ] runtime-data encryption cutover evidence records successful `inventory`, `dry-run`, `apply`, and new-key-only `verify` runs from `python -m app.dev.reencrypt_runtime_data`
+- [ ] all four phases ran with `docker compose ... run --rm --no-deps --pull never --env-from-file` from the bundle-backed staged release API image, without requiring host application source or Python
+- [ ] before the first staged Compose command, the protected current release env
+  was copied to `${REMOTE_DIR}/.release-state/<staged-release-name>/env.deploy`;
+  state directories were verified mode `0700`, the file mode `0600`, and no env
+  was copied into the release payload or prepared by a general deploy helper
+- [ ] the untracked maintenance env was mode `0600` and contained the target encryption secret/key ID plus an explicit old-root environment value
+- [ ] the first raw-ciphertext cutover omitted `--old-key-id`; any later `rde.v1` rotation supplies old key IDs to `inventory` and positionally pairs each ID/root in `dry-run` and `apply`
+- [ ] `dry-run`/`apply` used only `--old-root-env` variable names, and `apply` recorded the explicit `--confirm-maintenance-window` acknowledgement without logging key values
+- [ ] all four writers were stopped during re-encryption and were restarted only after verification
+- [ ] the target release's external env state contains the new key while the
+  prior release's external env state remains matched to the old backup/code/key
+  recovery point
+- [ ] temporary old-key material and the maintenance env were removed after the verification and rollback-evidence window; normal runtime has no legacy/dual-read path, while the migration-only tool remains available for controlled rekey
+- [ ] the operator understands that normal deploy/secret rotation must not directly rotate `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET` or its key ID
 - [x] operator has checked `GET /internal/service/ops/cadence` and all required cadence tasks are fresh
 - [x] operator has checked `GET /internal/service/observability/summary` and worker heartbeats are fresh
+- [ ] operator has retained the exact worker cutoff and evidence that each new
+  heartbeat is newer than it; generic freshness alone is not release-generation
+  proof
 - [x] operator has checked provider health freshness and degraded-provider list
 - [ ] operator has confirmed traces are queryable in the configured sink
+- [ ] operator has retained the previous exact bundle, database recovery point,
+  and prior Edge route for the migration rollback window
+- [ ] operator understands rollback restores one matched prior bundle/Edge path
+  and must not run retired Caddy beside the new NGINX topology
 - [x] rollback command path is written down
 - [x] `deploy/OPS_PLAYBOOK.md` is the procedure source used for release
 - [ ] operator knows where to inspect:
@@ -262,7 +344,8 @@ All items in this section are `Required`.
 
 ## 8. Optional But Recommended
 
-- [ ] run `pnpm run check:e2e:deploy-bundle:smoke` before deploy
+- [ ] run `pnpm run check:e2e:deploy-bundle:smoke` before deploy; its loopback
+  plain-HTTP path is a local artifact-replay exception, not a production origin
 - [ ] run remote portal smoke for a real invited user admin after deploy
 - [ ] verify one non-empty commercial/admin page:
   - `/admin/plans`

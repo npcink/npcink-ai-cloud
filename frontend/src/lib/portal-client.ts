@@ -8,80 +8,58 @@
 import { ApiClient, type ApiEnvelope, type ApiMethod } from './api-client';
 import { getPortalApiBaseUrl } from './env';
 
-export type ProductIdentityType = 'platform_admin' | 'user';
-
 // ============================================
 // 类型定义
 // ============================================
 
 export interface PortalSession {
-  principal_id?: string;
-  email?: string;
-  site_admin_ref: string;
-  site_id: string;
-  account_id?: string;
-  identity_type?: ProductIdentityType;
-  allowed_actions?: string[];
-  role?: string;
-  accounts?: Array<{
-    account_id: string;
-    name: string;
-    status: string;
-    site_admin_ref: string;
-    role: string;
-    allowed_actions?: string[];
-    site_count: number;
-    sites: Site[];
-  }>;
-  auth_mode?: string;
+  email: string;
   sites: Site[];
-  current_subscription?: {
-    status: 'active' | 'canceled' | 'expired' | 'trialing';
-    subscription_id?: string;
-    plan_id: string;
-    plan_version_id?: string;
-    tier_id?: string;
-    plan_kind?: string;
-    package_alias?: string;
-    current_period_start: string;
-    current_period_end: string;
-    metadata?: Record<string, unknown>;
-  };
-  entitlements?: {
-    requests_limit: number;
-    tokens_limit: number;
-    features: string[];
+  selected_context: PortalSelectedContext | null;
+  auth_mode: string;
+  session: {
+    state: 'active';
+    transport: string;
+    issued_at: string;
+    expires_at: string;
+    revocable: boolean;
   };
 }
 
-export interface PortalSiteAdminSummary {
-  site_admin_ref: string;
-  email: string;
-  auth_mode: string;
-  identity_type?: ProductIdentityType;
-  allowed_actions?: string[];
-  roles: ProductIdentityType[];
-  accessible_sites_count: number;
-  selected_site_id: string;
-  grants: Array<{
-    account_id: string;
-    identity_type?: ProductIdentityType;
-    allowed_actions?: string[];
-    role: string;
-    site_count: number;
-  }>;
+export interface PortalSelectedContext {
+  site: Site;
+  allowed_actions: string[];
+  current_subscription: PortalCurrentSubscription | null;
+}
+
+export interface PortalCurrentSubscription {
+  subscription_id: string;
+  plan_id: string;
+  plan_version_id: string;
+  status: string;
+  tier_id: string;
+  plan_kind: string;
+  package_kind: string;
+  package_alias: string;
+  display_package_label: string;
+  coverage_state: string;
+  current_period_start_at: string;
+  current_period_end_at: string;
+  scheduled_plan_id: string;
+  scheduled_plan_version_id: string;
+  scheduled_change_at: string;
 }
 
 export interface Site {
   site_id: string;
-  site_name: string;
-  account_id: string;
-  status: 'active' | 'suspended' | 'inactive' | 'provisioning' | 'archived';
-  created_at: string;
-  plan_name?: string;
+  name: string;
   site_url: string;
-  platform_kind: 'wordpress';
-  metadata?: Record<string, unknown>;
+  platform_kind: string;
+  status: string;
+}
+
+export interface PortalSiteDetail extends Site {
+  created_at: string;
 }
 
 export interface PortalLoginCodeRequest {
@@ -131,23 +109,9 @@ export interface PortalRegistrationVerifyRequest {
   code: string;
 }
 
-export interface PortalRegistrationResult {
-  status: 'registered' | 'existing_user';
-  email: string;
-  principal_id: string;
-  account_id?: string;
-  site_id?: string;
-  site?: Site;
-  subscription?: PortalSession['current_subscription'];
-  next?: Record<string, string>;
-}
-
 export interface PortalIdentityProviderBinding {
   binding_id: string;
   provider: string;
-  principal_id: string;
-  identity_type: ProductIdentityType;
-  role: string;
   status: string;
   has_unionid: boolean;
   last_login_at: string;
@@ -163,7 +127,6 @@ export interface PortalIdentityProviderStatus {
 }
 
 export interface PortalIdentityProvidersResponse {
-  principal_id: string;
   providers: PortalIdentityProviderStatus[];
 }
 
@@ -184,6 +147,16 @@ export interface CreateAddonConnectionRequest {
   state: string;
 }
 
+export interface PortalAddonConnectionAccount {
+  account_id: string;
+  name: string;
+  site_count: number;
+}
+
+export interface PortalAddonConnectionAccountsPayload {
+  items: PortalAddonConnectionAccount[];
+}
+
 export interface AddonConnectionResult {
   site_id: string;
   site_url: string;
@@ -196,55 +169,7 @@ export interface AddonConnectionResult {
   expires_in_seconds: number;
 }
 
-export interface Entitlements {
-  site_id: string;
-  account_id: string;
-  site_admin_ref: string;
-  identity_type?: ProductIdentityType;
-  allowed_actions?: string[];
-  role: string;
-  site: {
-    site_id: string;
-    site_name: string;
-    status: string;
-  };
-  subscription: {
-    status: string;
-    plan_id: string;
-    plan_version_id?: string;
-    current_period_start?: string;
-    current_period_end?: string;
-    current_period_start_at?: string;
-    current_period_end_at?: string;
-  };
-  plan_version: {
-    plan_id: string;
-    plan_version_id?: string;
-    version?: number;
-    name?: string;
-    version_label?: string;
-    status?: string;
-    budgets?: {
-      max_ai_credits_per_period?: number;
-      max_runs_per_period?: number;
-      max_tokens_per_period?: number;
-      max_cost_per_period?: number;
-    };
-  };
-  entitlement_snapshot: {
-    requests_limit?: number;
-    tokens_limit?: number;
-    features?: string[];
-    budgets?: {
-      max_ai_credits_per_period?: number;
-      max_runs_per_period?: number;
-      max_tokens_per_period?: number;
-      max_cost_per_period?: number;
-    };
-    entitlements?: Record<string, string[]>;
-    policy?: Record<string, unknown>;
-  };
-  policy: Record<string, unknown>;
+export interface PortalAccountEntitlements {
   period_start_at: string;
   period_end_at: string;
   usage_totals: {
@@ -335,14 +260,44 @@ export interface Entitlements {
   generated_at: string;
 }
 
+export interface PortalSitePlanVersion {
+  plan_version_id: string;
+  plan_id: string;
+  version_label: string;
+  status: string;
+  currency: string;
+  entitlements: Record<string, unknown>;
+  budgets: Record<string, unknown>;
+}
+
+export interface PortalSiteEntitlementSnapshot {
+  subscription_id: string;
+  plan_version_id: string;
+  status: string;
+  entitlements: Record<string, unknown>;
+  budgets: Record<string, unknown>;
+  site_limit: number;
+  generated_at: string;
+}
+
+export interface PortalSiteEntitlements extends PortalAccountEntitlements {
+  site_id: string;
+  site: PortalSiteDetail;
+  subscription: PortalCurrentSubscription | null;
+  plan_version: PortalSitePlanVersion | null;
+  entitlement_snapshot: PortalSiteEntitlementSnapshot | null;
+  policy: {
+    subscription: {
+      grace_period_days: number;
+    };
+  };
+}
+
+export type Entitlements = PortalAccountEntitlements;
+
 export interface PortalSiteSummaryRecord {
   site_id: string;
-  account_id: string;
-  site_admin_ref: string;
-  identity_type?: ProductIdentityType;
-  allowed_actions?: string[];
-  role: string;
-  site: Site;
+  site: PortalSiteDetail;
   covered_by_subscription_id?: string;
   subscription_status?: string;
   package_alias?: string;
@@ -356,20 +311,8 @@ export interface PortalSiteSummaryRecord {
     current_period_end?: string;
     current_period_start_at?: string;
     current_period_end_at?: string;
-    metadata?: Record<string, unknown>;
   };
-  entitlement_snapshot?: {
-    budgets?: {
-      max_ai_credits_per_period?: number;
-      max_runs_per_period?: number;
-      max_tokens_per_period?: number;
-      max_cost_per_period?: number;
-    };
-    entitlements?: Record<string, string[]>;
-    requests_limit?: number;
-    tokens_limit?: number;
-    features?: string[];
-  };
+  entitlement_snapshot?: PortalSiteEntitlementSnapshot | null;
   customer_status?: {
     status: string;
     needs_attention: boolean;
@@ -394,9 +337,6 @@ export interface PortalUsageWindow {
 export interface PortalUsageSummaryPayload {
   site_id: string;
   site_ids?: string[];
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   timezone?: string;
   generated_at?: string;
   windows?: {
@@ -536,9 +476,6 @@ export interface PortalMonitoringOverviewComponent {
 export interface PortalMonitoringOverviewSummary {
   contract_version: string;
   site_id: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   generated_at: string;
   window: {
     hours: number;
@@ -660,19 +597,11 @@ export interface PortalDiagnosticAdvisorSummary {
   safety: PortalDiagnosticAdvisorSafety;
   generated_at: string;
   site_id?: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  identity_type?: ProductIdentityType;
-  allowed_actions?: string[];
-  role?: string;
 }
 
 export interface PortalPluginObservabilitySummary {
   contract_version: string;
   site_id: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   generated_at: string;
   window: {
     hours: number;
@@ -780,9 +709,6 @@ export interface PortalWorkflowMetadata {
 export interface PortalMediaObservabilitySummary {
   contract_version: string;
   site_id: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   generated_at: string;
   window: {
     hours: number;
@@ -875,9 +801,6 @@ export interface PortalVectorObservabilityError {
 export interface PortalVectorObservabilitySummary {
   contract_version: string;
   site_id: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   generated_at: string;
   window: {
     hours: number;
@@ -980,10 +903,6 @@ export interface PortalAIInsightSafety {
 export interface PortalAIInsightResponse {
   portal_ai_insight_version: string;
   site_id: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  identity_type?: ProductIdentityType;
-  role?: string;
   analysis: PortalAIInsightAnalysis;
   safety: PortalAIInsightSafety;
 }
@@ -991,10 +910,6 @@ export interface PortalAIInsightResponse {
 export interface PortalAIInsightHistoryResponse {
   portal_ai_insight_version: string;
   site_id: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  identity_type?: ProductIdentityType;
-  role?: string;
   items: PortalAIInsightHistoryItem[];
   safety: PortalAIInsightSafety;
 }
@@ -1003,17 +918,12 @@ export interface PortalAuditEvent {
   event_id: string | number;
   event_kind: string;
   outcome: string;
-  message?: string;
   created_at: string;
   trace_id?: string;
-  payload?: Record<string, unknown>;
 }
 
 export interface PortalAuditSummary {
   site_id?: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   generated_at?: string;
   totals?: {
     events?: number;
@@ -1031,19 +941,17 @@ export interface PortalAuditSummary {
 
 export interface PortalAuditEventList {
   site_id?: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   items: PortalAuditEvent[];
 }
 
 export interface PortalBillingSnapshot {
   snapshot_id: string;
+  site_id?: string;
+  subscription_id?: string;
+  plan_version_id?: string;
+  currency?: string;
   period_start_at: string;
   period_end_at: string;
-  generated_at: string;
-  currency?: string;
-  plan_version_id?: string;
   totals?: {
     runs: number;
     provider_calls: number;
@@ -1052,13 +960,12 @@ export interface PortalBillingSnapshot {
     tokens_total?: number;
     cost: number;
   };
+  breakdown?: Record<string, unknown>;
+  generated_at: string;
 }
 
 export interface PortalBillingReconciliation {
   site_id?: string;
-  account_id?: string;
-  site_admin_ref?: string;
-  role?: string;
   ledger_totals?: {
     cost?: number;
     provider_calls?: number;
@@ -1077,57 +984,65 @@ export interface PortalBillingReconciliation {
   };
 }
 
+function normalizePortalSiteEntitlementSnapshot(
+  raw: unknown
+): PortalSiteEntitlementSnapshot | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const snapshot = raw as Record<string, unknown>;
+  const entitlements = snapshot.entitlements;
+  const budgets = snapshot.budgets;
+  return {
+    subscription_id: String(snapshot.subscription_id || ''),
+    plan_version_id: String(snapshot.plan_version_id || ''),
+    status: String(snapshot.status || ''),
+    entitlements:
+      entitlements && typeof entitlements === 'object' && !Array.isArray(entitlements)
+        ? (entitlements as Record<string, unknown>)
+        : {},
+    budgets:
+      budgets && typeof budgets === 'object' && !Array.isArray(budgets)
+        ? (budgets as Record<string, unknown>)
+        : {},
+    site_limit: Number(snapshot.site_limit || 0),
+    generated_at: String(snapshot.generated_at || ''),
+  };
+}
+
 function normalizePortalSiteSummaryRecord(raw: unknown): PortalSiteSummaryRecord {
   const record = (raw || {}) as Record<string, unknown>;
   const nestedCoverage = ((record.coverage || {}) as Record<string, unknown>);
-  const nestedSubscription = ((nestedCoverage.subscription || {}) as Record<string, unknown>);
-  const nestedPlanVersion = ((nestedCoverage.plan_version || {}) as Record<string, unknown>);
-  const nestedEntitlementSnapshot = ((nestedCoverage.entitlement_snapshot || {}) as Record<string, unknown>);
   const nestedCustomerStatus = ((record.customer_status || {}) as Record<string, unknown>);
-  const subscriptionMetadata = ((nestedSubscription.metadata || {}) as Record<string, unknown>);
+  const nestedSite = ((record.site || {}) as Record<string, unknown>);
 
   return {
     site_id: String(record.site_id || ''),
-    account_id: String(record.account_id || ''),
-    site_admin_ref: String(record.site_admin_ref || ''),
-    identity_type: (record.identity_type as ProductIdentityType | undefined) || undefined,
-    allowed_actions: Array.isArray(record.allowed_actions)
-      ? record.allowed_actions.map((action) => String(action))
-      : undefined,
-    role: String(record.role || ''),
-    site: (record.site as Site) || {
-      site_id: '',
-      site_name: '',
-      account_id: '',
-      status: 'inactive',
-      created_at: '',
+    site: {
+      site_id: String(nestedSite.site_id || record.site_id || ''),
+      name: String(nestedSite.name || nestedSite.site_id || record.site_id || ''),
+      site_url: String(nestedSite.site_url || ''),
+      platform_kind: String(nestedSite.platform_kind || ''),
+      status: String(nestedSite.status || 'inactive'),
+      created_at: String(nestedSite.created_at || ''),
     },
     package_alias:
       String(record.package_alias || '') ||
-      String(subscriptionMetadata.package_alias || ''),
-    covered_by_subscription_id: String(record.covered_by_subscription_id || nestedSubscription.subscription_id || ''),
-    subscription_status: String(record.subscription_status || nestedSubscription.status || ''),
+      String(nestedCoverage.package_alias || ''),
+    covered_by_subscription_id: String(record.covered_by_subscription_id || nestedCoverage.subscription_id || ''),
+    subscription_status: String(record.subscription_status || nestedCoverage.status || ''),
     coverage: {
-      subscription_id: String(record.covered_by_subscription_id || nestedSubscription.subscription_id || ''),
-      status: String(record.subscription_status || nestedSubscription.status || ''),
-      plan_id: String(nestedSubscription.plan_id || ''),
-      plan_version_id: String(nestedSubscription.plan_version_id || nestedPlanVersion.plan_version_id || ''),
+      subscription_id: String(record.covered_by_subscription_id || nestedCoverage.subscription_id || ''),
+      status: String(record.subscription_status || nestedCoverage.status || ''),
+      plan_id: String(nestedCoverage.plan_id || ''),
+      plan_version_id: String(nestedCoverage.plan_version_id || ''),
       package_alias:
-        String(subscriptionMetadata.package_alias || '') ||
+        String(nestedCoverage.package_alias || '') ||
         String(record.package_alias || ''),
-      current_period_start: String(nestedSubscription.current_period_start || ''),
-      current_period_end: String(nestedSubscription.current_period_end || ''),
-      current_period_start_at: String(nestedSubscription.current_period_start_at || ''),
-      current_period_end_at: String(nestedSubscription.current_period_end_at || ''),
-      metadata:
-        typeof nestedSubscription.metadata === 'object' && nestedSubscription.metadata !== null
-          ? (nestedSubscription.metadata as Record<string, unknown>)
-          : undefined,
+      current_period_start: String(nestedCoverage.current_period_start || ''),
+      current_period_end: String(nestedCoverage.current_period_end || ''),
+      current_period_start_at: String(nestedCoverage.current_period_start_at || ''),
+      current_period_end_at: String(nestedCoverage.current_period_end_at || ''),
     },
-    entitlement_snapshot:
-      typeof nestedEntitlementSnapshot === 'object' && Object.keys(nestedEntitlementSnapshot).length > 0
-        ? (nestedEntitlementSnapshot as PortalSiteSummaryRecord['entitlement_snapshot'])
-        : (record.entitlement_snapshot as PortalSiteSummaryRecord['entitlement_snapshot']),
+    entitlement_snapshot: normalizePortalSiteEntitlementSnapshot(record.entitlement_snapshot),
     customer_status:
       Object.keys(nestedCustomerStatus).length > 0
         ? {
@@ -1143,11 +1058,11 @@ function normalizePortalSiteSummaryRecord(raw: unknown): PortalSiteSummaryRecord
 
 export interface PortalUsageBundle {
   usage: PortalUsageSummaryPayload;
-  entitlements: Entitlements;
+  entitlements: PortalAccountEntitlements;
 }
 
 export interface PortalCommercialBundle {
-  entitlements: Entitlements;
+  entitlements: PortalAccountEntitlements;
   creditPacks: PortalCreditPackCatalogPayload;
   planOffers: PortalPlanOfferListPayload;
 }
@@ -1194,7 +1109,6 @@ export interface PortalCreditPack {
 
 export interface PortalCreditPackCatalogPayload {
   site_id?: string;
-  account_id?: string;
   catalog_version?: string;
   period_policy?: string;
   expiry_policy?: string;
@@ -1203,12 +1117,14 @@ export interface PortalCreditPackCatalogPayload {
   items: PortalCreditPack[];
 }
 
-export interface PortalCreditPackPaymentOrder {
+export interface PortalPaymentOrder {
   order_id: string;
-  account_id: string;
   site_id?: string;
   subscription_id?: string;
   target_subscription_id?: string;
+  target_tier_id?: string;
+  plan_id?: string;
+  plan_version_id?: string;
   provider: string;
   status: string;
   amount: number;
@@ -1228,17 +1144,16 @@ export interface PortalCreditPackPaymentOrder {
   credit_pack?: PortalCreditPack;
   created_at?: string;
   paid_at?: string;
+  canceled_at?: string;
+  refund_window_end_at?: string;
   refunded_at?: string;
-  metadata?: Record<string, unknown>;
+  updated_at?: string;
 }
 
 export interface PortalCreditPackOrderPayload {
   site_id?: string;
-  account_id?: string;
-  order: PortalCreditPackPaymentOrder;
+  order: PortalPaymentOrder;
 }
-
-export type PortalPaymentOrder = PortalCreditPackPaymentOrder;
 
 export type PortalPaymentOrderStatusGroup = 'all' | 'pending' | 'paid' | 'closed';
 
@@ -1246,7 +1161,6 @@ export interface PortalPlanOffer {
   offer_id: string;
   plan_id: string;
   plan_version_id: string;
-  account_id?: string;
   tier_id: 'plus' | 'pro' | 'agency';
   billing_cycle: 'monthly';
   amount: number;
@@ -1291,8 +1205,6 @@ export interface PortalPlanComparisonRight {
 }
 
 export interface PortalPlanOfferListPayload {
-  account_id: string;
-  principal_id: string;
   items: PortalPlanOffer[];
   comparison_tiers?: PortalPlanComparisonTier[];
   trial?: {
@@ -1316,10 +1228,8 @@ export interface PortalPlanOfferListPayload {
 }
 
 export interface PortalPlanTrialPayload {
-  account_id: string;
-  principal_id: string;
-  subscription: NonNullable<PortalSession['current_subscription']>;
-  entitlement_snapshot?: Record<string, unknown>;
+  subscription: PortalCurrentSubscription;
+  entitlement_snapshot: PortalSiteEntitlementSnapshot | null;
   trial?: {
     available?: boolean;
     status?: string;
@@ -1352,15 +1262,12 @@ export interface PortalSubscriptionOrder {
 }
 
 export interface PortalSubscriptionOrderPayload {
-  account_id: string;
-  principal_id: string;
   order: PortalPaymentOrder;
   subscription_order: PortalSubscriptionOrder;
 }
 
 export interface PortalPaymentOrderListPayload {
   site_id?: string;
-  account_id?: string;
   generated_at?: string;
   status_group?: PortalPaymentOrderStatusGroup;
   counts?: Record<PortalPaymentOrderStatusGroup, number>;
@@ -1381,17 +1288,13 @@ export type PortalSupportRequestStatus = 'open' | 'in_progress' | 'resolved' | '
 
 export interface PortalSupportRequest {
   request_id: string;
-  account_id: string;
   site_id?: string;
-  principal_id?: string;
-  email: string;
   topic: string;
   title: string;
   description: string;
   status: PortalSupportRequestStatus;
   priority: string;
   source_path?: string;
-  admin_note?: string;
   context?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -1402,14 +1305,8 @@ export interface PortalSupportRequest {
 export interface PortalSupportRequestMessage {
   message_id: string;
   request_id: string;
-  account_id: string;
-  site_id?: string;
-  principal_id?: string;
-  email?: string;
   author_kind: 'customer' | 'operator' | 'system' | string;
-  visibility: 'public' | 'internal' | string;
   body: string;
-  metadata?: Record<string, unknown>;
   created_at?: string;
 }
 
@@ -1417,16 +1314,10 @@ export interface PortalSupportRequestAttachment {
   attachment_id: string;
   request_id: string;
   message_id?: string;
-  account_id: string;
-  site_id?: string;
-  principal_id?: string;
-  email?: string;
   uploader_kind: 'customer' | 'operator' | string;
-  visibility: 'public' | 'internal' | string;
   filename: string;
   content_type: string;
   byte_size: number;
-  metadata?: Record<string, unknown>;
   content_base64?: string;
   created_at?: string;
 }
@@ -1442,8 +1333,6 @@ export interface PortalSupportRequestFeedback {
 }
 
 export interface PortalSupportRequestListPayload {
-  account_id?: string;
-  principal_id?: string;
   items: PortalSupportRequest[];
   pagination?: {
     limit?: number;
@@ -1491,8 +1380,7 @@ export interface SubmitPortalSupportRequestFeedbackPayload {
 }
 
 export interface PortalCreditLedgerPayload {
-  site_id: string;
-  account_id: string;
+  site_id?: string;
   generated_at?: string;
   period_start_at?: string;
   period_end_at?: string;
@@ -1527,6 +1415,45 @@ export interface PortalCreditLedgerPayload {
       credits?: number;
     }>;
   };
+  usage_detail?: {
+    surface?: string;
+    default_visibility?: string;
+    local_addon_policy?: string;
+    generated_at?: string;
+    period?: {
+      start_at?: string;
+      end_at?: string;
+    };
+    summary?: {
+      used?: number;
+      limit?: number;
+      remaining?: number | null;
+      status?: string;
+      unit?: string;
+      rate_version?: string;
+    };
+    breakdown?: Array<{
+      key?: string;
+      label?: string;
+      quantity?: number;
+      unit?: string;
+      rate?: number;
+      rate_unit?: string;
+      credits?: number;
+      capability_group?: string;
+    }>;
+    recent_items?: PortalCreditLedgerEntry[];
+    copy?: {
+      title?: string;
+      summary?: string;
+      addon_summary?: string;
+    };
+    legend?: Array<{ category?: string; label?: string }>;
+    portal_paths?: {
+      credit_usage?: string;
+      credit_ledger?: string;
+    };
+  };
   items: PortalCreditLedgerEntry[];
 }
 
@@ -1541,7 +1468,6 @@ export interface PortalCreditTrendPoint {
 
 export interface PortalCreditTrendPayload {
   contract_version: 'portal-credit-trend-v1';
-  account_id: string;
   generated_at: string;
   site_id: string;
   window: PortalCreditTrendWindow;
@@ -1580,7 +1506,6 @@ export interface PortalCreditEvent {
 
 export interface PortalCreditEventsPayload {
   contract_version: 'portal-credit-events-v1';
-  account_id: string;
   generated_at: string;
   period_start_at: string;
   period_end_at: string;
@@ -1603,7 +1528,6 @@ export interface PortalCreditEventBucket {
 }
 export interface PortalCreditEventBucketsPayload {
   contract_version: 'portal-credit-event-buckets-v1';
-  account_id: string;
   generated_at: string;
   period_start_at: string;
   period_end_at: string;
@@ -1726,7 +1650,7 @@ export class PortalClient {
    * 验证注册验证码并创建 Free 账号
    * POST /portal/v1/register/verify
    */
-  async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalRegistrationResult>> {
+  async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
     return this.request('POST', '/register/verify', payload);
   }
 
@@ -1751,7 +1675,7 @@ export class PortalClient {
    * 解绑 QQ 快捷登录
    * POST /portal/v1/auth/qq/unbind
    */
-  async unbindQqLogin(): Promise<PortalEnvelope<{ provider: string; principal_id: string; revoked: number }>> {
+  async unbindQqLogin(): Promise<PortalEnvelope<{ provider: string; revoked: number }>> {
     return this.request('POST', '/auth/qq/unbind', { provider: 'qq' });
   }
 
@@ -1795,12 +1719,8 @@ export class PortalClient {
   // 站点管理
   // ========================================
 
-  /**
-   * 获取站点列表
-   * GET /portal/v1/sites
-   */
-  async listSites(): Promise<PortalEnvelope<{ items: Site[] }>> {
-    return this.request('GET', '/sites', undefined);
+  async listAddonConnectionAccounts(): Promise<PortalEnvelope<PortalAddonConnectionAccountsPayload>> {
+    return this.request('GET', '/addon-connection-accounts', undefined);
   }
 
   async createAddonConnection(payload: CreateAddonConnectionRequest): Promise<PortalEnvelope<AddonConnectionResult>> {
@@ -1946,11 +1866,11 @@ export class PortalClient {
    * 获取权益信息
    * GET /portal/v1/sites/{siteId}/entitlements
    */
-  async getEntitlements(siteId: string): Promise<PortalEnvelope<Entitlements>> {
+  async getEntitlements(siteId: string): Promise<PortalEnvelope<PortalSiteEntitlements>> {
     return this.request('GET', `/sites/${siteId}/entitlements`, undefined);
   }
 
-  async getAccountEntitlements(): Promise<PortalEnvelope<Entitlements>> {
+  async getAccountEntitlements(): Promise<PortalEnvelope<PortalAccountEntitlements>> {
     return this.request('GET', '/account/entitlements', undefined);
   }
 
@@ -2059,7 +1979,7 @@ export class PortalClient {
 
   async getAccountPaymentOrder(
     orderId: string
-  ): Promise<PortalEnvelope<{ account_id: string; order: PortalPaymentOrder }>> {
+  ): Promise<PortalEnvelope<{ order: PortalPaymentOrder }>> {
     return this.request(
       'GET',
       `/account/payment-orders/${encodeURIComponent(orderId)}`,
@@ -2069,7 +1989,7 @@ export class PortalClient {
 
   async cancelAccountPaymentOrder(
     orderId: string
-  ): Promise<PortalEnvelope<{ account_id: string; order: PortalPaymentOrder }>> {
+  ): Promise<PortalEnvelope<{ order: PortalPaymentOrder }>> {
     return this.request(
       'POST',
       `/account/payment-orders/${encodeURIComponent(orderId)}/cancellation`,
@@ -2184,7 +2104,6 @@ export class PortalClient {
   }
 
   async scheduleFreeDowngrade(): Promise<PortalEnvelope<{
-    account_id: string;
     scheduled_tier_id: 'free';
     scheduled_change_at: string;
   }>> {
@@ -2246,9 +2165,6 @@ export class PortalClient {
    */
   async listBillingSnapshots(siteId: string): Promise<PortalEnvelope<{
     site_id?: string;
-    account_id?: string;
-    site_admin_ref?: string;
-    role?: string;
     items: PortalBillingSnapshot[];
   }>> {
     return this.request('GET', `/sites/${siteId}/billing-snapshots`, undefined);

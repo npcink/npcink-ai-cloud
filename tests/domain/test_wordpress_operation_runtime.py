@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.domain.media_artifacts.input_loading import LoadedArtifactInput
+from app.domain.runtime.errors import RuntimeExecutionContractError
 from app.domain.wordpress_ai_connector.contracts import (
+    WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS,
     WordPressOperationContractViolation,
     validate_wordpress_operation_contract,
 )
@@ -269,9 +271,7 @@ def test_alt_text_contract_rejects_legacy_alias_and_unknown_fields(
             }
         )
 
-    assert error.value.error_code == (
-        "wordpress_operation.alt_text_request_fields_forbidden"
-    )
+    assert error.value.error_code == ("wordpress_operation.alt_text_request_fields_forbidden")
 
 
 @pytest.mark.parametrize(
@@ -298,9 +298,7 @@ def test_alt_text_contract_recursively_rejects_obfuscated_inline_media(
             }
         )
 
-    assert error.value.error_code == (
-        "wordpress_operation.alt_text_inline_media_forbidden"
-    )
+    assert error.value.error_code == ("wordpress_operation.alt_text_inline_media_forbidden")
 
 
 def test_alt_text_provider_output_is_strict_text_only_projection() -> None:
@@ -426,6 +424,63 @@ def test_provider_output_normalizes_title_summary_and_classification() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "provider_text",
+    [
+        "审核说明中使用建议改写为：作为标签示例。正文必须保持完整。",
+        "建议改写为一种更可靠的审阅流程，并保留全部操作要求。",
+    ],
+)
+def test_content_rewrite_preserves_non_wrapper_suggestion_phrases(
+    provider_text: str,
+) -> None:
+    runtime = _runtime()
+
+    result = runtime.normalize_provider_output(
+        {"output_text": provider_text},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "<block-content>原始正文需要完整保留语义。</block-content>",
+        },
+    )
+
+    assert result["output_text"] == provider_text
+
+
+def test_content_rewrite_output_preserves_long_selection_within_source_limit() -> None:
+    runtime = _runtime()
+    source_text = "<block-content>" + ("原始选中文本需要清晰改写。" * 120) + "</block-content>"
+    rewritten_text = "改写后的长选区保持完整、清晰且可供本地审阅。" * 80
+
+    assert 320 < len(rewritten_text) < WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+
+    result = runtime.normalize_provider_output(
+        {"output_text": rewritten_text},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": source_text,
+        },
+    )
+
+    assert result["output_text"] == rewritten_text
+
+
+def test_content_rewrite_output_remains_bounded_by_source_text_contract() -> None:
+    runtime = _runtime()
+    rewritten_text = "边界内的改写句子呀。" * 1_300
+
+    result = runtime.normalize_provider_output(
+        {"output_text": rewritten_text},
+        input_payload={
+            "metadata": {"task": "content_rewrite"},
+            "text": "<block-content>原始选中文本。</block-content>",
+        },
+    )
+
+    assert len(result["output_text"]) == WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS
+    assert result["output_text"] == rewritten_text[:WP_AI_CONNECTOR_MAX_SOURCE_TEXT_CHARS]
+
+
 def test_empty_text_output_judgement_is_task_bounded() -> None:
     runtime = _runtime()
     title_input = {"metadata": {"task": "title_generation"}}
@@ -460,7 +515,10 @@ def test_managed_policy_projects_profile_runtime_controls() -> None:
     policy = runtime.apply_managed_policy(
         merged_policy,
         default_policy={
-            "managed_surface": "wordpress_ai_connector",
+            "managed_surface": "hosted_runtime_profiles",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v1",
             "timeout_ms": 12_001,
             "max_retries": 1,
             "allow_fallback": False,
@@ -473,19 +531,75 @@ def test_managed_policy_projects_profile_runtime_controls() -> None:
     assert policy["max_retries"] == 1
     assert policy["retry_max"] == 1
     assert policy["allow_fallback"] is False
-    assert policy["managed_surface"] == "wordpress_ai_connector"
+    assert policy["managed_surface"] == "hosted_runtime_profiles"
+    assert policy["platform_kind"] == "wordpress"
+    assert policy["connector_id"] == "wordpress_ai_connector"
+    assert policy["operation_contract_version"] == "wordpress_operation.v1"
     assert policy["task_group"]
     assert policy["routing_intent"]
     execution_contract = cast(dict[str, object], policy["execution_contract"])
     assert execution_contract["retry_max"] == 1
-    assert {
-        key: value for key, value in execution_contract.items() if key != "retry_max"
-    } == {
+    assert {key: value for key, value in execution_contract.items() if key != "retry_max"} == {
         "ability_name": "connector_runtime.execute",
         "timeout_seconds": 13,
-        "managed_surface": "wordpress_ai_connector",
+        "managed_surface": "hosted_runtime_profiles",
+        "platform_kind": "wordpress",
+        "connector_id": "wordpress_ai_connector",
+        "operation_contract_version": "wordpress_operation.v1",
         "task_group": policy["task_group"],
         "routing_intent": policy["routing_intent"],
+    }
+
+
+@pytest.mark.parametrize(
+    "default_policy",
+    [
+        {
+            "managed_surface": "hosted_runtime_profiles",
+            "connector_id": "wordpress_ai_connector",
+        },
+        {
+            "managed_surface": "hosted_runtime_profiles",
+            "platform_kind": "typecho",
+            "connector_id": "wordpress_ai_connector",
+        },
+        {
+            "managed_surface": "hosted_runtime_profiles",
+            "platform_kind": "wordpress",
+        },
+        {
+            "managed_surface": "hosted_runtime_profiles",
+            "platform_kind": "wordpress",
+            "connector_id": "npcink-cloud-addon",
+        },
+        {
+            "managed_surface": "hosted_runtime_profiles",
+            "platform_kind": "wordpress",
+            "connector_id": "wordpress_ai_connector",
+            "operation_contract_version": "wordpress_operation.v2",
+        },
+    ],
+)
+def test_managed_policy_fails_closed_for_incomplete_or_wrong_platform_contract(
+    default_policy: dict[str, object],
+) -> None:
+    runtime = _runtime()
+    merged_policy: dict[str, object] = {
+        "timeout_ms": 99,
+        "execution_contract": {"ability_name": "connector_runtime.execute"},
+    }
+
+    with pytest.raises(RuntimeExecutionContractError) as error:
+        runtime.apply_managed_policy(
+            merged_policy,
+            default_policy=default_policy,
+            profile_id=WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID,
+        )
+
+    assert error.value.error_code == "runtime_profiles.managed_contract_invalid"
+    assert merged_policy == {
+        "timeout_ms": 99,
+        "execution_contract": {"ability_name": "connector_runtime.execute"},
     }
 
 

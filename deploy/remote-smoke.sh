@@ -375,7 +375,16 @@ assert_json_equals "${HTTP_BODY}" "data.workers.totals.missing_total" "0" "obser
 assert_json_equals "${HTTP_BODY}" "data.cadence.totals.non_fresh_total" "0" "observability summary should not report non-fresh cadence tasks"
 assert_json_equals "${HTTP_BODY}" "data.providers.freshness" "fresh" "provider freshness should be fresh"
 assert_json_equals "${HTTP_BODY}" "data.runtime.summary.callback.pressure_state" "healthy" "callback backlog should be healthy"
-assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_sink_otlp_endpoint" "observability summary should expose trace sink"
+assert_json_non_empty "${HTTP_BODY}" "data.tracing.otlp_configured" "observability summary should expose the external exporter configuration fact"
+assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_configured" "observability summary should expose the external query configuration fact"
+case "${BASE_URL}" in
+	https://*)
+		assert_json_equals "${HTTP_BODY}" "data.tracing.otlp_configured" "true" "formal HTTPS smoke requires an external OTLP exporter"
+		assert_json_non_empty "${HTTP_BODY}" "data.tracing.otlp_endpoint" "formal HTTPS smoke requires an external OTLP exporter endpoint"
+		assert_json_equals "${HTTP_BODY}" "data.tracing.trace_query_configured" "true" "formal HTTPS smoke requires an external trace query surface"
+		assert_json_non_empty "${HTTP_BODY}" "data.tracing.trace_query_url" "formal HTTPS smoke requires an external trace query URL"
+		;;
+esac
 
 signed_request "GET" "/v1/catalog/models" "" "" "idem-deploy-smoke-catalog-001${IDEMPOTENCY_SUFFIX_NORMALIZED}" ""
 assert_status "${HTTP_STATUS}" "200" "catalog/models should succeed"

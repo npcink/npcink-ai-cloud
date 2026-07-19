@@ -173,17 +173,19 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: frontend/Dockerfile.dev
     image: npcink-ai-cloud-frontend:dev
     restart: unless-stopped
-    command: sh -lc "node node_modules/next/dist/bin/next dev --webpack -H 0.0.0.0"
-    env_file:
-      - ./.env
-      - ./.env.local
+    command: >-
+      sh -lc "cd /app &&
+      corepack enable &&
+      pnpm install --frozen-lockfile --filter frontend... &&
+      exec node frontend/node_modules/next/dist/bin/next dev --webpack -H 0.0.0.0"
     environment:
       CLOUD_API_BASE_URL: http://api:8000
       CLOUD_PUBLIC_BASE_URL: ${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:8010}
+      NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN:-}
       NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT: ${NPCINK_CLOUD_DEV_OTEL_EXPORTER_OTLP_ENDPOINT:-}
       NODE_OPTIONS: --max-old-space-size=1536
       NEXT_TELEMETRY_DISABLED: "1"
@@ -191,9 +193,9 @@ services:
     expose:
       - "3000"
     volumes:
-      - ./frontend:/app
-      - cloud-frontend-node-modules-dev:/app/node_modules
-      - cloud-frontend-next-cache-dev:/app/.next
+      - ./frontend:/app/frontend
+      - cloud-frontend-node-modules-dev:/app/frontend/node_modules
+      - cloud-frontend-next-cache-dev:/app/frontend/.next
     depends_on:
       - api
 

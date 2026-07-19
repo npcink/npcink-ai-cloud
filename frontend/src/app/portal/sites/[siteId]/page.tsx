@@ -21,7 +21,6 @@ import {
   getPortalSiteDisplayName,
   getPortalSiteUrl,
 } from '@/lib/portal-site-display';
-import { formatDate } from '@/lib/utils';
 
 function PortalSiteRecordContent() {
   const params = useParams<{ siteId?: string }>();
@@ -38,9 +37,10 @@ function PortalSiteRecordContent() {
   const siteKnowledge = usePortalSiteKnowledge(siteId, t);
 
   useEffect(() => {
+    setSummary(null);
+    setError('');
     if (!isAuthenticated || !siteId) return;
     let alive = true;
-    setError('');
     portalClient
       .getSiteSummary(siteId)
       .then((response) => {
@@ -90,13 +90,11 @@ function PortalSiteRecordContent() {
 
   const sessionSite = session.sites.find((item) => item.site_id === siteId) || null;
   const site: Site = {
-    ...(summary.site || {}),
-    ...(sessionSite || {}),
     site_id: siteId,
-    site_name: summary.site?.site_name || sessionSite?.site_name || siteId,
-    account_id: summary.site?.account_id || sessionSite?.account_id || summary.account_id || session.account_id || '',
-    status: (summary.site?.status || sessionSite?.status || 'inactive') as Site['status'],
-    created_at: summary.site?.created_at || sessionSite?.created_at || '',
+    name: summary.site?.name || sessionSite?.name || siteId,
+    site_url: summary.site?.site_url || sessionSite?.site_url || '',
+    platform_kind: summary.site?.platform_kind || sessionSite?.platform_kind || 'wordpress',
+    status: summary.site?.status || sessionSite?.status || 'inactive',
   };
   const siteUrl = getPortalSiteUrl(site);
   const monitoringNeedsAttention = siteMonitoring.overview
@@ -111,11 +109,12 @@ function PortalSiteRecordContent() {
   const siteStatusLabel = siteNeedsAttention
     ? t('portal.home.filter_attention_only', {}, 'Needs attention')
     : t('portal.home.risk_level_normal', {}, 'Normal');
-  const canRemoveSites = Boolean(
-    session.allowed_actions?.includes('remove_sites') ||
-      session.accounts?.some((account) => account.allowed_actions?.includes('remove_sites'))
+  const canRemoveThisSite = Boolean(
+    session.selected_context?.site.site_id === siteId
+    && session.selected_context.allowed_actions.includes('remove_sites')
+    && site.status !== 'archived'
+    && site.status !== 'suspended'
   );
-  const canRemoveThisSite = canRemoveSites && site.status !== 'archived' && site.status !== 'suspended';
 
   const closeRemoveModal = () => {
     if (isRemovingSite) return;
@@ -124,6 +123,7 @@ function PortalSiteRecordContent() {
   };
 
   const handleRemoveSite = async () => {
+    if (!canRemoveThisSite) return;
     setIsRemovingSite(true);
     setRemoveError('');
     try {
@@ -165,10 +165,6 @@ function PortalSiteRecordContent() {
             label: t('portal.site_address_label', {}, 'Site address'),
             value: siteUrl ? t('portal.site_address_configured', {}, 'Configured') : t('portal.site_url_missing_short', {}, 'Site URL not configured'),
             detail: siteUrl || t('portal.site_record_address_missing_detail', {}, 'Add a site address so support can identify this site faster.'),
-          },
-          {
-            label: t('common.created_at', {}, 'Created'),
-            value: site.created_at ? formatDate(site.created_at) : t('portal.home.package_pending_label', {}, 'To confirm'),
           },
         ]}
       />

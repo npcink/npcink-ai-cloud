@@ -260,6 +260,34 @@ Exit criteria:
 
 ### P5 — Hardening, Matrix, And Release Closure
 
+Current status (2026-07-19):
+
+- P5-B4 has passed bounded engineering acceptance at revision `dff31baf`;
+  evidence: [P5-B4 runtime load/soak closeout](p5-b4-runtime-load-soak-closeout-2026-07-19.md).
+- The formal dual-worker proof completed three independent baselines with all
+  29 checks passing in each baseline. Queue p95 was `4.6318s`, `5.0296s`, and
+  `4.7298s`; transport errors and HTTP 5xx responses remained zero. The formal
+  hot-query proof and current-revision media replay also passed.
+- This is engineering evidence for the proof topology, not a production SLO or
+  production-release authorization. The proof-only dual-worker topology does
+  not change the production single-worker default.
+- P5-B6 production-topology contraction has passed engineering acceptance at
+  revision `fb58e354`; evidence:
+  [P5-B6 production topology contraction closeout](p5-b6-production-topology-contraction-closeout-2026-07-19.md).
+- P5-B6 removes bundled Caddy, Jaeger, and the OTel Collector, pins the
+  external-Edge/NGINX/Gunicorn trust chain, and closes the two independent P1
+  migration findings. It does not supply the clean-tree image scan/bundle or
+  production Edge evidence.
+- P5-B7 exact-image and bundle engineering acceptance passed at revision
+  `0663d95f`; evidence:
+  [P5-B7 exact release bundle closeout](p5-b7-exact-release-bundle-closeout-2026-07-19.md).
+  The clean `linux/arm64` bundle passed five-image scanning, archive and
+  post-load identity checks, same-bundle double replay, migration, seed,
+  health, and cleanup. Its three exact Python findings are covered only by the
+  named temporary engineering exception through `2026-08-05`.
+- P5-B8 and global P5 remain incomplete. No production promotion or deployment
+  is authorized by the P5-B4, P5-B6, or P5-B7 result.
+
 Deliverables:
 
 - remaining obsolete-code deletion and dependency/security review;
@@ -277,7 +305,8 @@ Required gates:
 - `pnpm run check:anti-drift`;
 - `pnpm run lint`;
 - all focused Cloud and WordPress suites named by P1-P4;
-- `composer quality:matrix:run` from `/Users/muze/gitee/npcink-toolbox`;
+- `composer quality:matrix:run` from
+  `/Users/muze/gitee/npcink-workflow-toolbox`;
 - exact deploy-bundle smoke and production release-policy check.
 
 Exit criteria:
@@ -301,7 +330,7 @@ and correct the seam before adding Z-BlogPHP or Ghost.
 
 Repository-local gates are necessary but do not close a milestone that changes
 Cloud/WordPress contracts. For P2, P3, and P5 closeout, run the central matrix
-from `/Users/muze/gitee/npcink-toolbox`:
+from `/Users/muze/gitee/npcink-workflow-toolbox`:
 
 ```bash
 composer quality:matrix:run
@@ -348,7 +377,9 @@ report.
 
 - The primary agent owns architecture, task envelopes, boundary decisions,
   independent acceptance, milestone reporting, and all Git operations.
-- One workspace has one write-enabled implementation subagent at a time.
+- Multiple write-enabled implementation subagents may run concurrently only
+  when each receives an exclusive repository/file allowlist. A shared file has
+  one writer, and batches that need the same file run sequentially.
 - A subagent receives exactly one module, explicit allowed and forbidden files,
   non-goals, public-contract impact, gates, and rollback path.
 - Subagents do not stage, commit, push, branch, rebase, reset, clean, or spawn
@@ -357,6 +388,8 @@ report.
   its report never substitutes for primary-agent verification.
 - The primary agent reviews the real diff and independently reruns the narrowest
   decisive tests before staging explicit files.
+- The primary agent stops concurrent work if an ownership overlap appears;
+  disjoint paths improve throughput but never weaken review or gate ownership.
 - A failed review returns to the same batch for bounded rework. A boundary error
   terminates and re-plans the batch instead of expanding it silently.
 
@@ -373,3 +406,67 @@ runtime result, real WordPress behavior, deployment smoke, or release record.
 Missing, indirect, stale, skipped, or merely plausible evidence means the item
 is incomplete. Completion cannot be inferred from a green narrow test, a
 subagent report, or absence of obvious failures.
+
+## Current Engineering Resolution — 2026-07-19
+
+This is an append-only current-status resolution. It does not rewrite the
+target contract or historical phase evidence.
+
+The P5-B8 code-owned/local engineering gate set is `passed` at Cloud
+implementation HEAD `054ae3d81e7beb43523c12581f8764e80080855b`, and the
+P0-P5 architecture is frozen. Global P5 and the overall refactor phase-exit
+remain incomplete until the operator-only P1-E05/P1-E06 evidence exists. The
+complete requirement-to-evidence audit is
+[P5-B8 Final Engineering Closeout](p5-b8-final-engineering-closeout-2026-07-19.md).
+It records the exact WordPress package set, local text and media behavior,
+performance, the last exact release payload, synthetic restore drill,
+dependency policy, final Cloud/plugin gates, strict matrix, rollback, and
+material failed-first-path caveats.
+
+The exact bundle remains bound to the last release-payload revision
+`0663d95f765a8c49154aac0536e26cbb51029094`, SHA-256
+`592d1ce23334cddf4a09db0f147d6db48aa1c696980adc24630ed333660baa17`.
+Changes through `054ae3d8` are documentation and Dependabot/release-policy
+checker contract changes only; they do not change `app/**`, `frontend/**`,
+Compose, deploy payload, or the image lock.
+
+This does not unconditionally complete the refactor's production phase-exit
+requirements. P1-E05 production title execution and P1-E06 production-like
+inventory/carry-forward/restore remain operator-only and are
+`production-only not claimed`; both block production promotion and GA. The
+three named Python 3.14.6 CVE exceptions remain engineering-only through
+`2026-08-05`. `linux/amd64`, production Edge/DNS/WAF/TLS/OTLP/secrets,
+production backup/RPO/RTO, penetration testing, live provider quality, and
+real-user value are also `production-only not claimed`. External object storage
+remains a deferred non-goal rather than a production prerequisite.
+
+The next stage is production/operator readiness plus a bounded real-provider
+WordPress editorial/media trial. Typecho suggestion-only validation may be
+considered after that evidence; Typecho, Z-BlogPHP, Ghost, and additional media
+types remain post-P5 rather than current implementation scope.
+
+## Integration Correction — 2026-07-20
+
+This append-only correction records integration work after the 2026-07-19
+resolution; it does not rewrite or upgrade the historical P5-B7/P5-B8 evidence.
+
+- The production deploy contract now uses one serialized atomic cutover:
+  prepare exact images, stop old public/write services, retain/start data
+  services, migrate and refresh through staged one-off API containers, move the
+  release pointer, start API, start and prove the new worker generation, pass
+  generic operational readiness, and only then restore traffic.
+- `.env.deploy` is never part of a release payload. Each managed release owns
+  external state at `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`
+  under `0700/0600` permissions. Old and new Compose project names must match
+  before mutation.
+- Migration-started failures are fail-closed and do not automatically start the
+  old application. Incomplete recovery evidence retains the deployment lock;
+  successful cutover retains the per-release env state and removes only the
+  temporary rollback-image map/tags.
+- The historical `0663d95f` bundle remains exact `linux/arm64` evidence for that
+  revision only. It is not current branch, `linux/amd64`, merged `master`, or
+  production artifact evidence.
+- After the integration branch is merged into `master`, the exact production
+  image set must be rebuilt for `linux/amd64`, scanned, manifested, and replayed
+  twice from that merged revision before P1-E05/P1-E06 or production promotion
+  can use it.

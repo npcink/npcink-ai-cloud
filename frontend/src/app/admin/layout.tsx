@@ -10,6 +10,7 @@ import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
+import { createApiClient } from '@/lib/api-client';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -38,6 +39,7 @@ type AdminCommandItem = AdminNavItem & {
 };
 
 const ADMIN_SIDEBAR_STORAGE_KEY = 'npcink_admin_sidebar_collapsed';
+const adminLayoutSessionClient = createApiClient({ idempotencyPrefix: 'admin_layout_session' });
 
 function adminNavInitial(label: string): string {
   const trimmed = label.trim();
@@ -76,20 +78,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
 
     let cancelled = false;
-    void fetch('/admin/session', {
-      cache: 'no-store',
-      credentials: 'include',
-    })
-      .then((response) => {
+    void adminLayoutSessionClient
+      .request('/admin/session')
+      .then(() => {
         if (cancelled) {
           return;
         }
-        if (response.ok) {
-          setAdminSessionReady(true);
-          return;
-        }
-        const returnTo = `${pathname}${window.location.search}`;
-        window.location.replace(`/admin/login?redirect=${encodeURIComponent(returnTo)}`);
+        setAdminSessionReady(true);
       })
       .catch(() => {
         if (!cancelled) {
@@ -217,13 +212,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       groupKey: 'admin.nav_group_runtime_ops',
       descKey: 'admin.nav_group_runtime_ops_desc',
       fallback: 'Runtime Plane',
-      descFallback: 'Provider readiness and Cloud runtime model binding.',
+      descFallback: 'Provider readiness, hosted runtime profiles, and diagnostics.',
       items: [
         {
           href: '/admin/ai-resources',
           labelKey: 'admin.nav_ai_resources',
           fallback: 'Model Suppliers',
-          activePrefixes: ['/admin/ai-resources', '/admin/ability-models'],
+          activePrefixes: ['/admin/ai-resources'],
         },
         {
           href: '/admin/external-services',
@@ -236,6 +231,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           labelKey: 'admin.nav_vector_settings',
           fallback: 'Vector Settings',
           activePrefixes: ['/admin/vector-settings'],
+        },
+        {
+          href: '/admin/runtime-profiles',
+          labelKey: 'admin.nav_runtime_profiles',
+          fallback: 'Runtime Profiles',
+          activePrefixes: ['/admin/runtime-profiles'],
         },
         {
           href: '/admin/troubleshooting',

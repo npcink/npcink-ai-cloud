@@ -17,30 +17,35 @@ import {
   getVisiblePortalSites,
   portalSiteNeedsAttention,
 } from '@/lib/portal-site-display';
-import { portalClient, type Site } from '@/lib/portal-client';
+import {
+  portalClient,
+  type PortalAddonConnectionAccount,
+  type Site,
+} from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
-import { formatDate } from '@/lib/utils';
 
 function PortalSitesWorkspaceContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLocale();
-  const { session, isAuthenticated, refresh } = useSession();
+  const { session, isAuthenticated, refresh, selectSite } = useSession();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [addonAccounts, setAddonAccounts] = useState<PortalAddonConnectionAccount[]>([]);
+  const [addonAccountsError, setAddonAccountsError] = useState('');
+  const [isLoadingAddonAccounts, setIsLoadingAddonAccounts] = useState(false);
+  const [selectingSiteId, setSelectingSiteId] = useState('');
+  const [siteSelectionError, setSiteSelectionError] = useState('');
   const [pendingRemoveSite, setPendingRemoveSite] = useState<Site | null>(null);
   const [removeError, setRemoveError] = useState('');
   const [removeNotice, setRemoveNotice] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
   const sites = session?.sites || [];
   const visibleSites = getVisiblePortalSites(sites);
-  const portalAccountId = session?.account_id
-    || session?.accounts?.find((account) => account.account_id)?.account_id
-    || '';
+  const selectedSiteId = session?.selected_context?.site.site_id || '';
   const canRemoveSites = Boolean(
-    session?.allowed_actions?.includes('remove_sites')
-    || session?.accounts?.some((account) => account.allowed_actions?.includes('remove_sites'))
+    session?.selected_context?.allowed_actions.includes('remove_sites')
   );
   const addonConnectMode = searchParams.get('connect') === 'wordpress-addon';
   const addonSiteUrl = searchParams.get('site_url') || '';
@@ -62,7 +67,7 @@ function PortalSitesWorkspaceContent() {
       const attentionDelta = Number(portalSiteNeedsAttention(right))
         - Number(portalSiteNeedsAttention(left));
       if (attentionDelta !== 0) return attentionDelta;
-      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+      return getPortalSiteDisplayName(left).localeCompare(getPortalSiteDisplayName(right));
     });
   }, [filteredSites]);
   const restrictedCount = visibleSites.filter((site) => portalSiteNeedsAttention(site)).length;
@@ -77,6 +82,50 @@ function PortalSitesWorkspaceContent() {
       setShowConnectModal(true);
     }
   }, [addonConnectMode, isAuthenticated]);
+
+  useEffect(() => {
+    if (!addonConnectMode || !isAuthenticated) {
+      setAddonAccounts([]);
+      setAddonAccountsError('');
+      setIsLoadingAddonAccounts(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingAddonAccounts(true);
+    setAddonAccountsError('');
+    void portalClient.listAddonConnectionAccounts()
+      .then((response) => {
+        if (!cancelled) {
+          setAddonAccounts(response.data.items);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAddonAccounts([]);
+          setAddonAccountsError(
+            formatPortalErrorMessage(
+              error,
+              t,
+              t(
+                'portal.connect_site_accounts_failed',
+                {},
+                'Failed to load available customer accounts.'
+              )
+            )
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingAddonAccounts(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [addonConnectMode, isAuthenticated, t]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -97,6 +146,25 @@ function PortalSitesWorkspaceContent() {
     setRemoveError('');
   };
 
+  const handleSelectSite = async (siteId: string) => {
+    if (!siteId || siteId === selectedSiteId || selectingSiteId) return;
+    setSelectingSiteId(siteId);
+    setSiteSelectionError('');
+    try {
+      await selectSite(siteId);
+    } catch (error) {
+      setSiteSelectionError(
+        formatPortalErrorMessage(
+          error,
+          t,
+          t('portal.site_select_failed', {}, 'Failed to select this site.')
+        )
+      );
+    } finally {
+      setSelectingSiteId('');
+    }
+  };
+
   const handleRemoveSite = async () => {
     if (!pendingRemoveSite) return;
     setIsRemovingSite(true);
@@ -106,7 +174,11 @@ function PortalSitesWorkspaceContent() {
       await portalClient.removeSite(pendingRemoveSite.site_id);
       await refresh();
       setRemoveNotice(
-        t('portal.site_remove_success', {}, 'Site removed. Active keys were revoked and history was kept.')
+        t(
+          'portal.site_remove_success',
+          {},
+          'Site removed. Active keys were revoked; Cloud retains operational evidence for support and audit, but the site is no longer available in Portal.'
+        )
       );
       setPendingRemoveSite(null);
     } catch (error) {
@@ -179,6 +251,12 @@ function PortalSitesWorkspaceContent() {
           </div>
         ) : null}
 
+        {siteSelectionError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            {siteSelectionError}
+          </div>
+        ) : null}
+
         <div className="grid gap-3">
           {sortedSites.length === 0 ? (
             <PortalEmptyState
@@ -204,20 +282,36 @@ function PortalSitesWorkspaceContent() {
                         : t('portal.home.risk_level_normal', {}, 'Normal')}
                       className="normal-case tracking-normal"
                     />
+                    {site.site_id === selectedSiteId ? (
+                      <PortalTag tone="info">
+                        {t('portal.current_site', {}, 'Current site')}
+                      </PortalTag>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                     {getPortalSiteUrl(site)
                       || t('portal.site_url_missing_short', {}, 'Site URL not configured')}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {t('site_details.connected', {}, 'Connected')} {formatDate(site.created_at)}
-                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  {site.site_id !== selectedSiteId ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleSelectSite(site.site_id)}
+                      className="btn btn-secondary btn-sm"
+                      disabled={Boolean(selectingSiteId)}
+                    >
+                      {selectingSiteId === site.site_id
+                        ? t('common.loading', {}, 'Loading...')
+                        : t('portal.select_site_action', {}, 'Select site')}
+                    </button>
+                  ) : null}
                   <Link href={`/portal/sites/${encodeURIComponent(site.site_id)}#service-status`} className="btn btn-secondary btn-sm">
                     {t('portal.site_record', {}, 'Site record')}
                   </Link>
-                  {canRemoveSites && site.status !== 'suspended' ? (
+                  {canRemoveSites
+                    && site.site_id === selectedSiteId
+                    && site.status !== 'suspended' ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -245,21 +339,16 @@ function PortalSitesWorkspaceContent() {
         size="lg"
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
       >
-        {portalAccountId ? (
-          <PortalSiteConnectPanel
-            accountId={portalAccountId}
-            onClose={() => setShowConnectModal(false)}
-            initialSiteUrl={addonSiteUrl}
-            initialSiteName={addonSiteName}
-            addonReturnUrl={addonReturnUrl}
-            addonState={addonState}
-          />
-        ) : (
-          <PortalEmptyState
-            title={t('portal.connect_site_account_required_title', {}, 'Customer account missing')}
-            description={t('portal.connect_site_account_required_desc', {}, 'Your signed-in user has no active customer account. Please create a service center account, then restart the WordPress addon connection.')}
-          />
-        )}
+        <PortalSiteConnectPanel
+          accounts={addonAccounts}
+          accountsError={addonAccountsError}
+          isLoadingAccounts={isLoadingAddonAccounts}
+          onClose={() => setShowConnectModal(false)}
+          initialSiteUrl={addonSiteUrl}
+          initialSiteName={addonSiteName}
+          addonReturnUrl={addonReturnUrl}
+          addonState={addonState}
+        />
       </Modal>
 
       <Modal
@@ -268,7 +357,11 @@ function PortalSitesWorkspaceContent() {
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         title={t('portal.remove_site_action', {}, 'Remove site')}
-        description={t('portal.remove_site_confirm', {}, 'Remove this site? Cloud service will stop, active keys will be revoked, and usage history will be kept.')}
+        description={t(
+          'portal.remove_site_confirm',
+          {},
+          'Remove this site? Cloud service will stop, active keys will be revoked, and the site will no longer be available in Portal. Cloud retains operational evidence under its retention policy.'
+        )}
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
         footer={
           <>

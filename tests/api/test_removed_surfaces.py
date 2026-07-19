@@ -54,8 +54,8 @@ def test_removed_public_control_plane_surfaces_are_absent_from_openapi(tmp_path)
     for path in paths:
         assert not path.startswith(removed_prefixes), path
 
-    assert "post" not in openapi_paths["/portal/v1/sites"]
     assert {
+        "/portal/v1/sites",
         "/portal/v1/sites/{site_id}/activate",
         "/portal/v1/sites/{site_id}/deactivate",
         "/portal/v1/sites/{site_id}/api-keys",
@@ -121,7 +121,7 @@ def test_removed_urls_return_404(tmp_path) -> None:
         ).status_code
         == 404
     )
-    assert client.post("/portal/v1/sites", json={}).status_code == 405
+    assert client.post("/portal/v1/sites", json={}).status_code == 404
     for url in (
         "/portal/v1/sites/site_alpha/activate",
         "/portal/v1/sites/site_alpha/deactivate",
@@ -146,7 +146,6 @@ def test_minimal_surfaces_remain_in_openapi(tmp_path) -> None:
         "/v1/runs/{run_id}",
         "/v1/router/recommendation",
         "/portal/v1/session",
-        "/portal/v1/sites",
         "/portal/v1/sites/{site_id}/summary",
         "/portal/v1/sites/{site_id}/usage-summary",
         "/portal/v1/sites/{site_id}/entitlements",

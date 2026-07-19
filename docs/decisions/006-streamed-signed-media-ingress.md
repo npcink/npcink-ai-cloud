@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-07-14
+- Topology supersession: the production Caddy/`172.28.0.11` paragraph below is
+  historical and is superseded by
+  [ADR-020](020-external-tls-single-bundled-nginx.md). The media route,
+  authentication, bounds, cleanup, and inner NGINX policy decisions remain
+  accepted.
 
 ## Context
 

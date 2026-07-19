@@ -12,8 +12,11 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
+import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate, formatNumber } from '@/lib/utils';
+
+const runtimeTelemetryClient = createApiClient({ idempotencyPrefix: 'runtime_telemetry' });
 
 type RuntimeTelemetryAlert = {
   code: string;
@@ -267,20 +270,15 @@ export default function AdminTroubleshootingPage() {
     setError('');
     try {
       const params = new URLSearchParams({ recent_minutes: String(windowHours * 60), limit: '25' });
-      const response = await fetch(`/api/admin/runtime-telemetry?${params.toString()}`, {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.status === 'error') {
-        throw new Error(resolveUiErrorMessage(payload, t('admin.troubleshooting.load_error', {}, 'Failed to load runtime diagnostics.')));
-      }
+      const response = await runtimeTelemetryClient.request<unknown>(
+        `/api/admin/runtime-telemetry?${params.toString()}`
+      );
       if (sequence !== requestSequenceRef.current) return;
-      setData(normalizeRuntimeTelemetry(payload?.data ?? {}));
+      setData(normalizeRuntimeTelemetry(response.data));
       hasLoadedRef.current = true;
     } catch (loadError) {
       if (sequence !== requestSequenceRef.current) return;
-      setError(loadError instanceof Error ? loadError.message : t('admin.troubleshooting.load_error', {}, 'Failed to load runtime diagnostics.'));
+      setError(resolveUiErrorMessage(loadError, t('admin.troubleshooting.load_error', {}, 'Failed to load runtime diagnostics.')));
     } finally {
       if (sequence === requestSequenceRef.current) {
         requestActiveRef.current = false;
@@ -444,7 +442,7 @@ export default function AdminTroubleshootingPage() {
           <div className="grid gap-4 md:grid-cols-2">
             {runtimeEvidenceItems.map((item) => <div key={item.titleKey}><h3 className="text-sm font-semibold text-slate-950 dark:text-white">{t(item.titleKey, {}, item.titleFallback)}</h3><p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{t(item.descKey, {}, item.descFallback)}</p></div>)}
           </div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-800"><p className="max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.advanced.runtime_evidence_boundary', {}, 'Evidence source remains Cloud runtime metadata such as run records, provider-call records, usage meter events, runtime profiles, and capability projection rows.')}</p><Link href="/admin/ability-models" className="btn btn-secondary btn-sm">{t('admin.advanced.action_open_model_binding', {}, 'Open model binding')}</Link></div>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-800"><p className="max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.advanced.runtime_evidence_boundary', {}, 'Evidence source remains Cloud runtime metadata such as run records, provider-call records, usage meter events, runtime profiles, and capability projection rows.')}</p><Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.advanced.action_open_runtime_profiles', {}, 'Open runtime profiles')}</Link></div>
         </div>
       </details>
     </BackofficePageStack>

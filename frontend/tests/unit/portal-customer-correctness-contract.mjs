@@ -32,9 +32,22 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(homeSource, /role="button"[\s\S]{0,900}href=\{`\/portal\/sites\/\$\{site\.site_id\}`\}/);
 
-assert.match(usageSource, /portalClient\.getAccountCreditEvents\([\s\S]*siteId: creditLedgerSiteId/);
+assert.match(
+  usageSource,
+  /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''/,
+  'account usage must require an explicit selected site context before loading'
+);
 assert.match(usageSource, /creditEventWindow[\s\S]*creditEventFeature/);
-assert.match(usageSource, /portal\.usage\.site_filter_label/);
+assert.doesNotMatch(
+  usageSource,
+  /creditLedgerSiteId|portal\.usage\.site_filter_label|siteId:\s*credit/,
+  'account usage must not restore the retired per-site credit filter'
+);
+assert.match(
+  usageSource,
+  /useLayoutEffect\([\s\S]*setUsage\(null\)[\s\S]*setEntitlements\(null\)[\s\S]*setCreditEventBuckets\(null\)[\s\S]*setCreditTrend\(null\)/,
+  'usage must clear account projections immediately when selected context changes'
+);
 assert.match(billingSource, /id="package-options"[\s\S]*setActiveCommercialDialog\('package'\)/);
 assert.doesNotMatch(billingSource, /href="#package-options"/);
 assert.match(auditSource, /SUCCESSFUL_AUDIT_OUTCOMES[\s\S]*succeeded[\s\S]*completed/);
