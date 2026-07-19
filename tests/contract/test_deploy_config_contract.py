@@ -2,17 +2,91 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+import yaml
 
 from app.core.config import Settings
 
 
 def _cloud_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
+    cloud_root = _cloud_root()
+    fixture_root = tmp_path / "release-policy-fixture"
+    fixture_root.mkdir(parents=True)
+
+    for name in (
+        "AGENTS.md",
+        ".env.example",
+        "docker-compose.dev.yml",
+        "docker-compose.prod.yml",
+        "docker-compose.runtime.yml",
+        "package.json",
+        "Makefile",
+        "docs",
+        "deploy",
+        "site",
+    ):
+        source = cloud_root / name
+        (fixture_root / name).symlink_to(source, target_is_directory=source.is_dir())
+
+    fixture_github = fixture_root / ".github"
+    fixture_github.mkdir()
+    (fixture_github / "pull_request_template.md").symlink_to(
+        cloud_root / ".github" / "pull_request_template.md"
+    )
+    (fixture_github / "workflows").symlink_to(
+        cloud_root / ".github" / "workflows", target_is_directory=True
+    )
+    (fixture_github / "dependabot.yml").write_text(dependabot_text)
+
+    fixture_scripts = fixture_root / "scripts"
+    fixture_scripts.mkdir()
+    shutil.copy2(
+        cloud_root / "scripts" / "check-release-policy.sh",
+        fixture_scripts / "check-release-policy.sh",
+    )
+    for name in (
+        "bundle-images.sh",
+        "check-pr-backend-gate.sh",
+        "cloud-deploy-bundle-smoke-flow.sh",
+        "dev-compose.sh",
+        "dev-frontend-recover.sh",
+        "production-python-extras-smoke.sh",
+    ):
+        (fixture_scripts / name).symlink_to(cloud_root / "scripts" / name)
+
+    return fixture_root
+
+
+def _run_release_policy_with_restricted_path(
+    fixture_root: Path, tmp_path: Path
+) -> subprocess.CompletedProcess[str]:
+    restricted_bin = tmp_path / "release-policy-bin"
+    restricted_bin.mkdir(exist_ok=True)
+    for command in ("awk", "cmp", "cut", "dirname", "grep"):
+        command_path = shutil.which(command)
+        assert command_path is not None
+        destination = restricted_bin / command
+        if not destination.exists():
+            destination.symlink_to(command_path)
+
+    assert shutil.which("uv", path=str(restricted_bin)) is None
+    return subprocess.run(
+        ["/bin/bash", str(fixture_root / "scripts" / "check-release-policy.sh")],
+        cwd=fixture_root,
+        env={"PATH": str(restricted_bin)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def _documented_env_value(text: str, key: str) -> str:
@@ -1296,7 +1370,7 @@ def test_release_gate_documents_current_cloud_blockers() -> None:
     assert '200 | 303' in release_smoke_script
 
 
-def test_lightweight_release_policy_gate_is_documented() -> None:
+def test_lightweight_release_policy_gate_is_documented(tmp_path: Path) -> None:
     cloud_root = _cloud_root()
     agents_text = (cloud_root / "AGENTS.md").read_text()
     policy_text = (cloud_root / "docs" / "cloud-production-release-policy-v1.md").read_text()
@@ -1318,8 +1392,94 @@ def test_lightweight_release_policy_gate_is_documented() -> None:
     ):
         assert marker in policy_text
 
-    assert dependabot_text.count("open-pull-requests-limit: 0") == 4
-    assert "open-pull-requests-limit: 5" not in dependabot_text
+    expected_dependabot_config = {
+        "version": 2,
+        "updates": [
+            {
+                "package-ecosystem": "github-actions",
+                "directory": "/",
+                "schedule": {
+                    "interval": "weekly",
+                    "day": "monday",
+                    "time": "09:00",
+                    "timezone": "Asia/Shanghai",
+                },
+                "open-pull-requests-limit": 2,
+                "labels": ["dependencies"],
+            },
+            {
+                "package-ecosystem": "npm",
+                "directory": "/",
+                "schedule": {
+                    "interval": "weekly",
+                    "day": "monday",
+                    "time": "09:30",
+                    "timezone": "Asia/Shanghai",
+                },
+                "open-pull-requests-limit": 2,
+                "labels": ["dependencies"],
+            },
+            {
+                "package-ecosystem": "uv",
+                "directory": "/",
+                "schedule": {
+                    "interval": "weekly",
+                    "day": "monday",
+                    "time": "10:00",
+                    "timezone": "Asia/Shanghai",
+                },
+                "open-pull-requests-limit": 2,
+                "labels": ["dependencies"],
+            },
+        ],
+    }
+
+    def assert_dependabot_config(config_text: str) -> None:
+        assert yaml.safe_load(config_text) == expected_dependabot_config
+
+    extra_job_config = dependabot_text + """
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+"""
+    adversarial_configs = (
+        "version: 2\nupdates: []\n",
+        "version: 2\n# open-pull-requests-limit: 2\nupdates: []\n",
+        extra_job_config,
+    )
+
+    assert_dependabot_config(dependabot_text)
+    for adversarial_config in adversarial_configs:
+        with pytest.raises(AssertionError):
+            assert_dependabot_config(adversarial_config)
+
+    valid_fixture = _release_policy_fixture_root(tmp_path / "valid", dependabot_text)
+    valid_result = _run_release_policy_with_restricted_path(valid_fixture, tmp_path / "valid")
+    assert valid_result.returncode == 0, valid_result.stderr
+    assert "Lightweight release policy gate passed" in valid_result.stdout
+
+    for index, adversarial_config in enumerate(adversarial_configs):
+        case_root = tmp_path / f"invalid-{index}"
+        fixture_root = _release_policy_fixture_root(case_root, adversarial_config)
+        result = _run_release_policy_with_restricted_path(fixture_root, case_root)
+        assert result.returncode != 0
+        assert "does not match the canonical pre-GA policy" in result.stderr
+
+    nul_case_root = tmp_path / "invalid-nul-tail"
+    nul_fixture = _release_policy_fixture_root(nul_case_root, dependabot_text)
+    (nul_fixture / ".github" / "dependabot.yml").write_bytes(
+        dependabot_text.encode() + b"\x00\nupdates: []\n"
+    )
+    nul_result = _run_release_policy_with_restricted_path(nul_fixture, nul_case_root)
+    assert nul_result.returncode != 0
+    assert "does not match the canonical pre-GA policy" in nul_result.stderr
 
     assert "docs/cloud-production-release-policy-v1.md" in deploy_text
     assert "pnpm run check:release-policy" in deploy_text
@@ -1330,6 +1490,9 @@ def test_lightweight_release_policy_gate_is_documented() -> None:
     assert "does not commit production secrets" in pr_template_text
     assert "check:release-policy" in package_text
     assert "Lightweight release policy gate passed" in script_text
+    assert "require_canonical_dependabot_config" in script_text
+    assert "uv run" not in script_text
+    assert "yaml.safe_load" not in script_text
     assert "/terms/en/terms.html" in script_text
     assert "deploy-static-terms-to-ssh-host.sh" in script_text
 

@@ -81,6 +81,53 @@ reject_service_marker() {
 	fi
 }
 
+require_canonical_dependabot_config() {
+	local expected
+
+	IFS= read -r -d '' expected <<'YAML' || true
+version: 2
+# Pre-GA maintenance: keep each weekly ecosystem queue small and reviewable.
+# Docker and digest-lock updates stay in the independent image-lock scan lane.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+YAML
+	if ! cmp -s "${ROOT_DIR}/.github/dependabot.yml" <(printf '%s' "${expected}"); then
+		echo "[fail] .github/dependabot.yml does not match the canonical pre-GA policy" >&2
+		exit 1
+	fi
+}
+
 require_file "docs/cloud-production-release-policy-v1.md"
 require_file "deploy/PRODUCTION_GITHUB_DEPLOY.md"
 require_file "deploy/RELEASE_CHECKLIST.md"
@@ -106,6 +153,8 @@ require_file "site/terms/en/data-retention.html"
 require_file "site/terms/zh/terms.html"
 require_file "site/terms/zh/privacy.html"
 require_file "site/terms/zh/data-retention.html"
+
+require_canonical_dependabot_config
 
 require_marker "AGENTS.md" "AI Production Operation Rules"
 require_marker "AGENTS.md" "Production source branch is \`production\`"
@@ -133,7 +182,6 @@ require_marker "docs/cloud-production-release-policy-v1.md" 'bundle excludes `.e
 require_marker "docs/cloud-production-release-policy-v1.md" 'pass each old key ID to `inventory`'
 require_marker "docs/cloud-production-release-policy-v1.md" "Normal runtime has no legacy or dual-read path"
 require_marker "docs/cloud-production-release-policy-v1.md" "old database"
-require_marker ".github/dependabot.yml" "open-pull-requests-limit: 0"
 require_marker ".github/workflows/ci.yml" "production-python-image-smoke:"
 require_marker ".github/workflows/ci.yml" "bash scripts/production-python-extras-smoke.sh"
 require_marker ".github/workflows/ci.yml" "PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT"
