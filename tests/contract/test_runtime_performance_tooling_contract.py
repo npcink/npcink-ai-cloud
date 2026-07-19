@@ -35,7 +35,11 @@ def test_production_image_packages_runtime_performance_scripts() -> None:
     dockerfile_text = (ROOT / "Dockerfile").read_text()
 
     assert "COPY scripts ./scripts" in dockerfile_text
-    assert dockerfile_text.count("COPY scripts ./scripts") == 2
+    assert dockerfile_text.count("COPY scripts ./scripts") == 1
+    assert (
+        "COPY scripts/verify-production-python-lock.py "
+        "./scripts/verify-production-python-lock.py" in dockerfile_text
+    )
 
 
 def test_package_json_exposes_runtime_perf_and_prod_extras_smoke() -> None:

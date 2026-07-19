@@ -24,6 +24,7 @@ from app.api.routes.service import router as service_router
 from app.api.routes.stats import router as stats_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.redaction import safe_exception_type
 from app.core.services import CloudServices, create_default_services
 from app.core.tracing import configure_tracing
 
@@ -56,6 +57,8 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
             span_name,
             context=context,
             kind=SpanKind.SERVER,
+            record_exception=False,
+            set_status_on_exception=False,
         ) as span:
             span.set_attribute("http.request.method", request.method)
             span.set_attribute("url.path", request.url.path)
@@ -66,7 +69,10 @@ def create_app(services: CloudServices | None = None) -> FastAPI:
             try:
                 response = await call_next(request)
             except Exception as exc:
-                span.record_exception(exc)
+                span.add_event(
+                    "exception",
+                    attributes={"exception.type": safe_exception_type(exc)},
+                )
                 span.set_status(Status(StatusCode.ERROR))
                 raise
 

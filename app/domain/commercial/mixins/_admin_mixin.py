@@ -85,6 +85,20 @@ _ADMIN_MALFORMED_ACCOUNT_RE = re.compile(
 )
 
 
+def _require_principal_session_version(principal: Any) -> int:
+    session_version = getattr(principal, "session_version", None)
+    if (
+        isinstance(session_version, bool)
+        or not isinstance(session_version, int)
+        or session_version < 1
+    ):
+        raise CommercialPermissionError(
+            "service.principal_session_invalid",
+            "platform admin principal session version is invalid",
+        )
+    return session_version
+
+
 class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
     def _serialize_platform_admin_grant(
         self,
@@ -105,7 +119,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "provider": str(getattr(identity, "provider", "") or ""),
             "external_subject": str(getattr(identity, "external_subject", "") or ""),
             "email": str(getattr(identity, "email", "") or ""),
-            "session_version": int(getattr(principal, "session_version", 1) or 1),
+            "session_version": _require_principal_session_version(principal),
+            "is_persisted": True,
             "metadata": metadata if isinstance(metadata, dict) else {},
             "created_at": self._serialize_datetime(getattr(identity, "created_at", None)),
             "updated_at": self._serialize_datetime(getattr(identity, "updated_at", None)),
@@ -188,6 +203,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                         f"platform admin '{normalized_principal_id}' was not found",
                     )
                 return {
+                    "grant_id": "",
                     "principal_id": normalized_principal_id,
                     "identity_type": IDENTITY_TYPE_PLATFORM_ADMIN,
                     "role": _canonicalize_platform_admin_role_for_write(bootstrap_role),
@@ -198,6 +214,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "provider": "internal_token",
                     "external_subject": "",
                     "email": "",
+                    "session_version": 1,
+                    "is_persisted": False,
                     "metadata": {"bootstrap": True},
                     "created_at": None,
                     "updated_at": None,

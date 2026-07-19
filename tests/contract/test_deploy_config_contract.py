@@ -510,6 +510,16 @@ def test_prod_env_files_use_canonical_admin_names_and_do_not_expose_ai_provider_
     assert "NPCINK_CLOUD_ADMIN_BOOTSTRAP_PRINCIPAL_ID" in env_example_text
     assert "NPCINK_CLOUD_ADMIN_BOOTSTRAP_PLATFORM_ADMIN_ROLE" in compose_text
     assert "NPCINK_CLOUD_ADMIN_BOOTSTRAP_PLATFORM_ADMIN_ROLE" in env_example_text
+    assert "NPCINK_CLOUD_PORTAL_JWT_ISSUER=npcink-ai-cloud" in env_example_text
+    assert "NPCINK_CLOUD_PORTAL_JWT_AUDIENCE=npcink-ai-cloud-portal" in env_example_text
+    assert (
+        "NPCINK_CLOUD_PORTAL_JWT_ISSUER: "
+        "${NPCINK_CLOUD_PORTAL_JWT_ISSUER:-npcink-ai-cloud}" in compose_text
+    )
+    assert (
+        "NPCINK_CLOUD_PORTAL_JWT_AUDIENCE: "
+        "${NPCINK_CLOUD_PORTAL_JWT_AUDIENCE:-npcink-ai-cloud-portal}" in compose_text
+    )
 
     assert "NPCINK_CLOUD_OPS_SESSION_SECRET" not in compose_text
     assert "NPCINK_CLOUD_OPS_SESSION_SECRET" not in env_example_text
@@ -612,6 +622,8 @@ def test_env_example_production_payload_validates_with_canonical_names(
     assert settings.admin_session_secret == "a" * 32
     assert settings.runtime_data_encryption_secret == "r" * 32
     assert settings.runtime_data_encryption_key_id == "runtime-data-v1"
+    assert settings.portal_jwt_issuer == "npcink-ai-cloud"
+    assert settings.portal_jwt_audience == "npcink-ai-cloud-portal"
     assert settings.ops_cadence_poll_seconds == 30
     assert settings.worker_heartbeat_interval_seconds == 60
     assert settings.provider_health_scan_interval_seconds == 900
@@ -1162,8 +1174,13 @@ def test_lightweight_release_policy_gate_is_documented() -> None:
 def test_runtime_image_prepares_writable_shared_artifact_volume() -> None:
     cloud_root = Path(__file__).resolve().parents[2]
     dockerfile = (cloud_root / "Dockerfile").read_text()
-    assert "mkdir -p /app/.runtime /var/lib/npcink-ai-cloud/artifacts" in dockerfile
-    assert "chown -R app:app /app /home/app /var/lib/npcink-ai-cloud/artifacts" in dockerfile
+    assert "mkdir -p /app/.runtime" in dockerfile
+    assert "/var/lib/npcink-ai-cloud/artifacts" in dockerfile
+    assert (
+        "chown -R app:app /app/.runtime /home/app /var/lib/npcink-ai-cloud/artifacts" in dockerfile
+    )
+    assert "chown -R app:app /app " not in dockerfile
+    assert "COPY --chown=app" not in dockerfile
     assert dockerfile.index("chown -R app:app") < dockerfile.index("USER app")
 
     for compose_name in (

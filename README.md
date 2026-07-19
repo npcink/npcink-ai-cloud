@@ -1350,6 +1350,10 @@ export NPCINK_CLOUD_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 export NPCINK_CLOUD_PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ```
 
+`deploy/bundle-images.sh` passes these optional values to BuildKit as secret
+mounts. Do not translate them into Docker `--build-arg` values; index URLs can
+contain credentials and build arguments may be retained in image provenance.
+
 With a real API key, `POST /internal/catalog/refresh` plus a valid
 `X-Npcink-Internal-Token`, and
 `python -m app.workers.catalog_refresh` fetch `/models` from the configured

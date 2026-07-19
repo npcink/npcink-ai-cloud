@@ -4,9 +4,6 @@ set -euo pipefail
 CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${CLOUD_DIR}/dist"
 IMAGE_PLATFORM="${NPCINK_CLOUD_IMAGE_PLATFORM:-}"
-PIP_INDEX_URL="${NPCINK_CLOUD_PIP_INDEX_URL:-}"
-PIP_EXTRA_INDEX_URL="${NPCINK_CLOUD_PIP_EXTRA_INDEX_URL:-}"
-PIP_TRUSTED_HOST="${NPCINK_CLOUD_PIP_TRUSTED_HOST:-}"
 SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-0}"
 REMOTE_BUNDLE_ONLY="${NPCINK_CLOUD_REMOTE_BUNDLE_ONLY:-0}"
@@ -39,15 +36,15 @@ case "${GZIP_LEVEL}" in
 		;;
 esac
 
-BUILD_ARGS=()
-if [ -n "${PIP_INDEX_URL}" ]; then
-	BUILD_ARGS+=(--build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}")
+BUILD_ARGS=(--build-arg "PACKAGE_EXTRAS=${NPCINK_CLOUD_PACKAGE_EXTRAS:-}")
+if [ -n "${NPCINK_CLOUD_PIP_INDEX_URL:-}" ]; then
+	BUILD_ARGS+=(--secret "id=pip_index_url,env=NPCINK_CLOUD_PIP_INDEX_URL")
 fi
-if [ -n "${PIP_EXTRA_INDEX_URL}" ]; then
-	BUILD_ARGS+=(--build-arg "PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}")
+if [ -n "${NPCINK_CLOUD_PIP_EXTRA_INDEX_URL:-}" ]; then
+	BUILD_ARGS+=(--secret "id=pip_extra_index_url,env=NPCINK_CLOUD_PIP_EXTRA_INDEX_URL")
 fi
-if [ -n "${PIP_TRUSTED_HOST}" ]; then
-	BUILD_ARGS+=(--build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}")
+if [ -n "${NPCINK_CLOUD_PIP_TRUSTED_HOST:-}" ]; then
+	BUILD_ARGS+=(--secret "id=pip_trusted_host,env=NPCINK_CLOUD_PIP_TRUSTED_HOST")
 fi
 
 BUILD_CACHE_ARGS=()
@@ -98,14 +95,13 @@ if [ -n "${IMAGE_PLATFORM}" ]; then
 			"${CLOUD_DIR}"
 	fi
 else
-	COMPOSE_BUILD_SERVICES=(api)
+	docker build \
+		"${BUILD_ARGS[@]}" \
+		-t npcink-ai-cloud-api:prod \
+		-f "${CLOUD_DIR}/Dockerfile" \
+		"${CLOUD_DIR}"
 	if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then
-		COMPOSE_BUILD_SERVICES+=(frontend)
-	fi
-	if [ "${#BUILD_ARGS[@]}" -gt 0 ]; then
-		docker compose -f "${CLOUD_DIR}/docker-compose.prod.yml" build "${BUILD_ARGS[@]}" "${COMPOSE_BUILD_SERVICES[@]}"
-	else
-		docker compose -f "${CLOUD_DIR}/docker-compose.prod.yml" build "${COMPOSE_BUILD_SERVICES[@]}"
+		docker compose -f "${CLOUD_DIR}/docker-compose.prod.yml" build frontend
 	fi
 	docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-worker:prod
 	docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-callback-worker:prod

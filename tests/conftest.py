@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
 from sqlalchemy import select
 
@@ -435,20 +436,25 @@ def build_portal_bearer_headers(
     idempotency_key: str = "",
     trace_id: str = "00112233445566778899aabbccddeeff",
 ) -> dict[str, str]:
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        portal_jwt_secret=secret,
+        portal_jwt_issuer=issuer,
+        portal_jwt_audience=audience,
+    )
     token = build_portal_session_token(
-        Settings(
-            _env_file=None,
-            environment="test",
-            portal_jwt_secret=secret,
-            portal_jwt_algorithm="HS256",
-            portal_jwt_issuer=issuer,
-            portal_jwt_audience=audience,
-        ),
+        settings,
         principal_id=principal_id,
         session_version=session_version,
         site_id=site_id,
-        expires_at=expires_at,
+        expires_at=(expires_at if expires_at is None or expires_at > datetime.now(UTC) else None),
     )
+    if expires_at is not None and expires_at <= datetime.now(UTC):
+        payload = jwt.decode(token, options={"verify_signature": False})
+        payload["iat"] = int((expires_at - timedelta(minutes=1)).timestamp())
+        payload["exp"] = int(expires_at.timestamp())
+        token = jwt.encode(payload, secret, algorithm="HS256")
     headers = {
         "Authorization": f"Bearer {token}",
         "traceparent": build_traceparent(trace_id),

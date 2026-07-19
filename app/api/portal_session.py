@@ -22,7 +22,7 @@ from app.api.auth import (
 )
 from app.api.envelope import build_envelope
 from app.core.db import get_session
-from app.core.models import SITE_STATUS_ACTIVE, SITE_STATUS_ARCHIVED
+from app.core.models import PRINCIPAL_STATUS_ACTIVE, SITE_STATUS_ACTIVE, SITE_STATUS_ARCHIVED
 from app.core.security import extract_trace_id
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.commercial.service import CommercialService
@@ -34,11 +34,7 @@ from app.domain.portal_idempotency import (
     claim_portal_mutation,
 )
 
-COOKIE_SITE_ID = "npcink_portal_site_id"
 COOKIE_PORTAL_SESSION_TOKEN = "npcink_portal_session_token"
-COOKIE_BEARER_TOKEN = COOKIE_PORTAL_SESSION_TOKEN
-COOKIE_SESSION_ISSUED_AT = "npcink_portal_session_issued_at"
-COOKIE_SESSION_EXPIRES_AT = "npcink_portal_session_expires_at"
 
 
 def _dict_value(value: object) -> dict[str, object]:
@@ -51,10 +47,6 @@ def _dict_list(value: object) -> list[dict[str, object]]:
 
 def _object_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
-
-
-def _cookie_safe_site_id(value: str) -> str:
-    return normalize_portal_site_id(value)
 
 
 def get_commercial_service(request: Request) -> CommercialService:
@@ -124,20 +116,6 @@ def current_portal_browser_session(
     session_required_message: str = "portal browser session is required",
 ) -> dict[str, str]:
     settings = get_cloud_services(request).settings
-    now = datetime.now(UTC)
-    issued_at = request.cookies.get(COOKIE_SESSION_ISSUED_AT, "").strip()
-    expires_at = request.cookies.get(COOKIE_SESSION_EXPIRES_AT, "").strip()
-    if expires_at:
-        try:
-            expires_at_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        except ValueError:
-            expires_at_dt = None
-        if expires_at_dt is not None and expires_at_dt <= now:
-            raise PortalBearerTokenError(
-                401,
-                "auth.portal_session_expired",
-                "portal session has expired",
-            )
     if settings.portal_jwt_secret:
         token = request.cookies.get(COOKIE_PORTAL_SESSION_TOKEN, "").strip()
         if not token:
@@ -147,31 +125,24 @@ def current_portal_browser_session(
                 session_required_message,
             )
         claims = decode_portal_session_cookie_claims(settings, token)
-        principal_id = str(claims.get("sub") or "").strip()
-        if not principal_id:
-            raise PortalBearerTokenError(
-                401,
-                session_required_error_code,
-                session_required_message,
-            )
-        token_expires_at = ""
+        principal_id = claims["sub"]
         validate_portal_principal_session(
             settings,
             principal_id=principal_id,
-            session_version=int(claims.get("session_version") or 1),
+            session_version=claims["session_version"],
         )
-        if claims.get("exp"):
-            token_expires_at = (
-                datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
-                .isoformat()
-                .replace("+00:00", "Z")
-            )
+        token_expires_at = (
+            datetime.fromtimestamp(claims["exp"], tz=UTC).isoformat().replace("+00:00", "Z")
+        )
+        token_issued_at = (
+            datetime.fromtimestamp(claims["iat"], tz=UTC).isoformat().replace("+00:00", "Z")
+        )
         return {
             "principal_id": principal_id,
-            "site_id": _cookie_safe_site_id(str(claims.get("site_id") or "")),
+            "site_id": claims.get("site_id", ""),
             "auth_mode": "jwt",
-            "issued_at": issued_at,
-            "expires_at": token_expires_at or expires_at,
+            "issued_at": token_issued_at,
+            "expires_at": token_expires_at,
         }
 
     raise PortalBearerTokenError(
@@ -194,9 +165,7 @@ def current_portal_site_session(
         session_required_error_code=session_required_error_code,
         session_required_message=session_required_message,
     )
-    site_id = _cookie_safe_site_id(str(session.get("site_id") or ""))
-    if not site_id:
-        site_id = _cookie_safe_site_id(request.cookies.get(COOKIE_SITE_ID, ""))
+    site_id = session["site_id"]
     if not site_id:
         raise PortalBearerTokenError(
             401,
@@ -364,36 +333,53 @@ def set_portal_session_cookies(
         else resolve_portal_session_ttl_seconds(settings)
     )
     secure = portal_cookie_secure(request)
-    issued_at = now.isoformat().replace("+00:00", "Z")
-    expires_at = (now + timedelta(seconds=resolved_ttl_seconds)).isoformat().replace("+00:00", "Z")
-    token_site_id = _cookie_safe_site_id(site_id)
-    response.delete_cookie(COOKIE_SITE_ID)
+    if (
+        not isinstance(principal_id, str)
+        or not principal_id.strip()
+        or principal_id != principal_id.strip()
+    ):
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "invalid portal session principal",
+        )
+    if site_id != "" and (
+        not isinstance(site_id, str) or normalize_portal_site_id(site_id) != site_id
+    ):
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "invalid portal session site",
+        )
+    if session_version is not None and (
+        isinstance(session_version, bool)
+        or not isinstance(session_version, int)
+        or session_version < 1
+    ):
+        raise PortalBearerTokenError(
+            403,
+            "auth.portal_session_invalid",
+            "invalid portal session version",
+        )
+    current_session_version = _resolve_portal_principal_session_version(
+        request,
+        principal_id=principal_id,
+    )
+    if session_version is not None and session_version != current_session_version:
+        raise PortalBearerTokenError(
+            401,
+            "auth.portal_session_revoked",
+            "portal session is no longer valid",
+        )
     response.set_cookie(
         COOKIE_PORTAL_SESSION_TOKEN,
         build_portal_session_token(
             settings,
             principal_id=principal_id,
-            site_id=token_site_id,
-            session_version=session_version
-            or _resolve_portal_principal_session_version(request, principal_id=principal_id),
+            site_id=site_id,
+            session_version=current_session_version,
             expires_at=now + timedelta(seconds=resolved_ttl_seconds),
         ),
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=resolved_ttl_seconds,
-    )
-    response.set_cookie(
-        COOKIE_SESSION_ISSUED_AT,
-        issued_at,
-        httponly=True,
-        secure=secure,
-        samesite="lax",
-        max_age=resolved_ttl_seconds,
-    )
-    response.set_cookie(
-        COOKIE_SESSION_EXPIRES_AT,
-        expires_at,
         httponly=True,
         secure=secure,
         samesite="lax",
@@ -417,16 +403,24 @@ def _resolve_portal_principal_session_version(
     with get_session(settings.database_url) as session:
         repository = CommercialRepository(session)
         identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
-        if identity is not None:
-            return int(identity.session_version or 1)
-    return 1
+        session_version = getattr(identity, "session_version", None)
+        if (
+            identity is None
+            or identity.status != PRINCIPAL_STATUS_ACTIVE
+            or isinstance(session_version, bool)
+            or not isinstance(session_version, int)
+            or session_version < 1
+        ):
+            raise PortalBearerTokenError(
+                401,
+                "auth.portal_session_revoked",
+                "portal session is no longer valid",
+            )
+        return session_version
 
 
 def clear_portal_session_cookies(response: JSONResponse | RedirectResponse) -> None:
-    response.delete_cookie(COOKIE_SITE_ID)
     response.delete_cookie(COOKIE_PORTAL_SESSION_TOKEN)
-    response.delete_cookie(COOKIE_SESSION_ISSUED_AT)
-    response.delete_cookie(COOKIE_SESSION_EXPIRES_AT)
 
 
 def _has_portal_request_headers(request: Request) -> bool:
@@ -457,20 +451,12 @@ def _resolve_portal_session_metadata(request: Request, *, principal_id: str) -> 
                 get_cloud_services(request).settings,
                 auth_header[7:].strip(),
             )
-            expires_at = ""
-            issued_at = ""
-            if claims.get("exp"):
-                expires_at = (
-                    datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                )
-            if claims.get("iat"):
-                issued_at = (
-                    datetime.fromtimestamp(int(claims["iat"]), tz=UTC)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                )
+            expires_at = (
+                datetime.fromtimestamp(claims["exp"], tz=UTC).isoformat().replace("+00:00", "Z")
+            )
+            issued_at = (
+                datetime.fromtimestamp(claims["iat"], tz=UTC).isoformat().replace("+00:00", "Z")
+            )
             return {
                 "principal_id": principal_id,
                 "issued_at": issued_at,

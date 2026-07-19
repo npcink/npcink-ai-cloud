@@ -118,9 +118,8 @@ class Settings(BaseSettings):
         validation_alias="NPCINK_CLOUD_ADMIN_BOOTSTRAP_PLATFORM_ADMIN_ROLE",
     )
     portal_jwt_secret: str | None = Field(default=None)
-    portal_jwt_algorithm: str = Field(default="HS256")
-    portal_jwt_issuer: str | None = Field(default=None)
-    portal_jwt_audience: str | None = Field(default=None)
+    portal_jwt_issuer: str | None = Field(default="npcink-ai-cloud")
+    portal_jwt_audience: str | None = Field(default="npcink-ai-cloud-portal")
     portal_session_ttl_seconds: int = Field(default=8 * 60 * 60)
     portal_remember_me_session_ttl_seconds: int = Field(default=7 * 24 * 60 * 60)
     portal_login_code_ttl_seconds: int = Field(default=10 * 60)
@@ -401,6 +400,10 @@ class Settings(BaseSettings):
             )
         if production_like and not str(self.portal_jwt_secret or "").strip():
             raise ValueError("portal_jwt_secret is required outside development/test environments")
+        if production_like and not str(self.portal_jwt_issuer or "").strip():
+            raise ValueError("portal_jwt_issuer must not be blank")
+        if production_like and not str(self.portal_jwt_audience or "").strip():
+            raise ValueError("portal_jwt_audience must not be blank")
         if production_like:
             configured_secret_domains = {
                 field_name: str(raw_value or "").strip()
