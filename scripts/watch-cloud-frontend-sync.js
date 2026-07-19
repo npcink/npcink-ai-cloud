@@ -23,10 +23,10 @@ const recreateFiles = new Set( [
 	'frontend/tsconfig.json',
 ] );
 const rebuildFiles = new Set( [
+	'.dockerignore',
 	'package.json',
 	'pnpm-lock.yaml',
 	'pnpm-workspace.yaml',
-	'frontend/.dockerignore',
 	'frontend/Dockerfile.dev',
 	'frontend/package.json',
 ] );
@@ -224,7 +224,7 @@ function createWatchTargets() {
 		path.join( cloudRoot, 'pnpm-lock.yaml' ),
 		path.join( cloudRoot, 'pnpm-workspace.yaml' ),
 		path.join( frontendRoot, '.env' ),
-		path.join( frontendRoot, '.dockerignore' ),
+		path.join( cloudRoot, '.dockerignore' ),
 		path.join( frontendRoot, 'Dockerfile.dev' ),
 		path.join( frontendRoot, 'next.config.mjs' ),
 		path.join( frontendRoot, 'package.json' ),

@@ -64,6 +64,8 @@ def test_watch_doctor_and_ci_consume_only_the_root_lock() -> None:
     )
 
     assert "path.join( cloudRoot, 'pnpm-lock.yaml' )" in watch
+    assert "path.join( cloudRoot, '.dockerignore' )" in watch
+    assert "path.join( frontendRoot, '.dockerignore' )" not in watch
     assert "path.join( frontendRoot, 'pnpm-lock.yaml' )" not in watch
     assert "'frontend/pnpm-lock.yaml'" not in watch
     assert "root frontend dependency lock is invalid" in doctor
@@ -77,3 +79,8 @@ def test_watch_doctor_and_ci_consume_only_the_root_lock() -> None:
     assert "pnpm install --frozen-lockfile --filter frontend..." in workflows
     assert "working-directory: frontend" not in workflows
     assert "npm install -g pnpm" not in workflows
+
+
+def test_frontend_has_no_nested_dead_ci_or_unused_context_ignore() -> None:
+    assert not (ROOT / "frontend/.github/workflows/ci-cd.yml").exists()
+    assert not (ROOT / "frontend/.dockerignore").exists()
