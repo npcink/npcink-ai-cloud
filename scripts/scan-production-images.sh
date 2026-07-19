@@ -104,6 +104,35 @@ case "${DOCKER_ENDPOINT}" in
 esac
 [ -S "${DOCKER_SOCKET_PATH}" ] || fail "local Docker Unix socket is unavailable"
 docker info >/dev/null 2>&1 || fail "local Docker daemon is unavailable"
+
+require_docker_platform_archive_support() {
+	local inspect_help save_help server_api api_major api_minor
+	inspect_help="$(docker image inspect --help 2>&1)" \
+		|| fail "cannot inspect Docker image-inspect capabilities"
+	save_help="$(docker image save --help 2>&1)" \
+		|| fail "cannot inspect Docker image-save capabilities"
+	case "${inspect_help}" in
+		*--platform*) ;;
+		*) fail "production image scanner requires docker image inspect --platform support" ;;
+	esac
+	case "${save_help}" in
+		*--platform*) ;;
+		*) fail "production image scanner requires docker image save --platform support" ;;
+	esac
+	server_api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" \
+		|| fail "cannot resolve Docker server API version"
+	if [[ ! "${server_api}" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+		fail "cannot parse Docker server API version: ${server_api}"
+	fi
+	api_major="${BASH_REMATCH[1]}"
+	api_minor="${BASH_REMATCH[2]}"
+	if ((api_major < 1 || (api_major == 1 && api_minor < 49))); then
+		fail "production image scanner requires Docker server API 1.49 or newer; got ${server_api}"
+	fi
+}
+
+require_docker_platform_archive_support
+
 if [ -z "${RELEASE_PLATFORM}" ]; then
 	RELEASE_PLATFORM="$(docker info --format '{{.OSType}}/{{.Architecture}}')"
 	case "${RELEASE_PLATFORM}" in
@@ -246,6 +275,7 @@ if [ "${RELEASE_SCOPE}" = "1" ]; then
 	EQUIVALENCE_PATH="${OUTPUT_DIR}/application-image-equivalence.json"
 	python3 "${ROOT_DIR}/scripts/production-image-supply.py" equivalence \
 		--lock "${LOCK_FILE}" \
+		--expected-platform "${RELEASE_PLATFORM}" \
 		--output "${EQUIVALENCE_PATH}" || fail "application worker image IDs are not equivalent"
 	EQUIVALENCE_ARGS=(--equivalence-json "${EQUIVALENCE_PATH}")
 fi
@@ -258,14 +288,16 @@ for index in "${!TARGET_KEYS[@]}"; do
 	if [ "${pull}" = "1" ]; then
 		docker pull --platform "${RELEASE_PLATFORM}" "${reference}" >/dev/null
 	fi
-	if ! image_id="$(docker image inspect "${reference}" --format '{{.Id}}')"; then
+	if ! image_id="$(docker image inspect --platform "${RELEASE_PLATFORM}" \
+		"${reference}" --format '{{.Id}}')"; then
 		fail "image is not available locally: ${reference}"
 	fi
 	case "${image_id}" in
 		sha256:????????????????????????????????????????????????????????????????) ;;
 		*) fail "Docker returned a non-sha256 image ID for ${reference}: ${image_id}" ;;
 	esac
-	actual_platform="$(docker image inspect "${image_id}" --format '{{.Os}}/{{.Architecture}}')"
+	actual_platform="$(docker image inspect --platform "${RELEASE_PLATFORM}" \
+		"${reference}" --format '{{.Os}}/{{.Architecture}}')"
 	case "${actual_platform}" in
 		linux/aarch64) actual_platform="linux/arm64" ;;
 		linux/x86_64) actual_platform="linux/amd64" ;;
@@ -277,15 +309,17 @@ for index in "${!TARGET_KEYS[@]}"; do
 	sbom_path="${OUTPUT_DIR}/${key}.sbom.cdx.json"
 	report_path="${OUTPUT_DIR}/${key}.grype.json"
 	receipt_path="${OUTPUT_DIR}/${key}.receipt.json"
-	docker image inspect "${image_id}" >"${inspect_path}"
+	docker image inspect --platform "${RELEASE_PLATFORM}" "${reference}" >"${inspect_path}"
 	if [ "${archive_reference}" != "${reference}" ]; then
-		docker image tag "${image_id}" "${archive_reference}"
+		docker image tag "${reference}" "${archive_reference}"
 	fi
-	archive_image_id="$(docker image inspect "${archive_reference}" --format '{{.Id}}')"
+	archive_image_id="$(docker image inspect --platform "${RELEASE_PLATFORM}" \
+		"${archive_reference}" --format '{{.Id}}')"
 	[ "${archive_image_id}" = "${image_id}" ] \
 		|| fail "archive reference does not resolve to the scanned daemon image for ${key}"
 	archive_path="${OUTPUT_DIR}/${key}.image.tar"
-	docker image save --output "${archive_path}" "${archive_reference}"
+	docker image save --platform "${RELEASE_PLATFORM}" \
+		--output "${archive_path}" "${archive_reference}"
 	chmod 0600 "${archive_path}"
 
 	docker run --rm \

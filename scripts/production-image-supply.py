@@ -1115,6 +1115,8 @@ def evaluate_scan(args: argparse.Namespace) -> int:
 
 
 def verify_equivalence(args: argparse.Namespace) -> int:
+    if args.expected_platform not in {"linux/amd64", "linux/arm64"}:
+        raise SupplyError("image equivalence platform must be linux/amd64 or linux/arm64")
     lock = _load_json(Path(args.lock).resolve())
     outputs = {
         record["key"]: record
@@ -1141,7 +1143,16 @@ def verify_equivalence(args: argparse.Namespace) -> int:
             ("representative_image_id", representative_reference),
         ):
             result = subprocess.run(
-                ["docker", "image", "inspect", image_reference, "--format", "{{.Id}}"],
+                [
+                    "docker",
+                    "image",
+                    "inspect",
+                    "--platform",
+                    args.expected_platform,
+                    image_reference,
+                    "--format",
+                    "{{.Id}}",
+                ],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -1755,6 +1766,9 @@ def parse_args() -> argparse.Namespace:
     equivalence = subparsers.add_parser("equivalence")
     equivalence.add_argument("--lock", default=str(DEFAULT_LOCK))
     equivalence.add_argument("--output", required=True)
+    equivalence.add_argument(
+        "--expected-platform", choices=("linux/amd64", "linux/arm64"), required=True
+    )
     return parser.parse_args()
 
 
