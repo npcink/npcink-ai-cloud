@@ -1,7 +1,7 @@
 {
   "schema_version": "npcink.production-image-lock.v1",
-  "resolved_at_utc": "2026-07-19T03:50:13Z",
-  "resolved_from_revision": "45dc5ef1e91b00c819ba74f32aec98dc5bcdad1f",
+  "resolved_at_utc": "2026-07-19T06:02:29Z",
+  "resolved_from_revision": "8a34e0c4599a590abcb2795f9ecb11a26365fb4d",
   "production_inputs": [
     {
       "key": "dockerfile_frontend",
@@ -84,9 +84,9 @@
     {
       "key": "nginx",
       "kind": "compose_external",
-      "tag": "nginx:1.30-alpine",
-      "digest": "sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46",
-      "reference": "nginx:1.30-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46",
+      "tag": "nginx:1.30-alpine-slim",
+      "digest": "sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c",
+      "reference": "nginx:1.30-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c",
       "release_reference": "npcink-ai-cloud-external-nginx:prod",
       "source_files": ["docker-compose.prod.yml", "docker-compose.runtime.yml"],
       "services": ["proxy"],

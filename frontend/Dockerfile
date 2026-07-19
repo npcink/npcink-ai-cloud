@@ -36,7 +36,37 @@ RUN cd frontend && ./node_modules/.bin/next build
 
 FROM base AS runner
 
-RUN apk add --no-cache dumb-init=1.2.5-r4
+RUN set -eux; \
+    apk add --no-cache dumb-init=1.2.5-r4; \
+    test "$(command -v node)" = /usr/local/bin/node; \
+    test ! -L /usr/local/bin/node; \
+    test "$(command -v npm)" = /usr/local/bin/npm; \
+    test "$(command -v npx)" = /usr/local/bin/npx; \
+    test "$(command -v corepack)" = /usr/local/bin/corepack; \
+    test "$(command -v yarn)" = /usr/local/bin/yarn; \
+    test "$(command -v yarnpkg)" = /usr/local/bin/yarnpkg; \
+    test "$(readlink -f /usr/local/bin/npm)" = /usr/local/lib/node_modules/npm/bin/npm-cli.js; \
+    test "$(readlink -f /usr/local/bin/npx)" = /usr/local/lib/node_modules/npm/bin/npx-cli.js; \
+    test "$(readlink -f /usr/local/bin/corepack)" = /usr/local/lib/node_modules/corepack/dist/corepack.js; \
+    test "$(readlink -f /usr/local/bin/yarn)" = /opt/yarn-v1.22.22/bin/yarn; \
+    test "$(readlink -f /usr/local/bin/yarnpkg)" = /opt/yarn-v1.22.22/bin/yarnpkg; \
+    test "$(find /usr/local/lib/node_modules -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)" = "$(printf 'corepack\nnpm')"; \
+    test "$(find /opt -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)" = yarn-v1.22.22; \
+    rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+        /usr/local/bin/yarn /usr/local/bin/yarnpkg; \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack; \
+    rm -rf /opt/yarn-v1.22.22; \
+    rmdir /usr/local/lib/node_modules; \
+    rmdir /opt; \
+    test -x /usr/local/bin/node; \
+    node -e "if (typeof fetch !== 'function') process.exit(1)"; \
+    test -z "$(command -v npm || true)"; \
+    test -z "$(command -v npx || true)"; \
+    test -z "$(command -v corepack || true)"; \
+    test -z "$(command -v yarn || true)"; \
+    test -z "$(command -v yarnpkg || true)"; \
+    test ! -e /usr/local/lib/node_modules; \
+    test ! -e /opt
 
 WORKDIR /app
 
@@ -59,7 +89,15 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+    CMD test "$(command -v node)" = /usr/local/bin/node && \
+        test ! -e /usr/local/lib/node_modules && \
+        test -z "$(command -v npm || true)" && \
+        test -z "$(command -v npx || true)" && \
+        test -z "$(command -v corepack || true)" && \
+        test -z "$(command -v yarn || true)" && \
+        test -z "$(command -v yarnpkg || true)" && \
+        test ! -e /opt && \
+        node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-ENTRYPOINT ["dumb-init", "--"]
+ENTRYPOINT ["dumb-init", "--", "/bin/sh", "-eu", "-c", "test \"$(command -v node)\" = /usr/local/bin/node; test ! -e /usr/local/lib/node_modules; test ! -e /opt; test -z \"$(command -v npm || true)\"; test -z \"$(command -v npx || true)\"; test -z \"$(command -v corepack || true)\"; test -z \"$(command -v yarn || true)\"; test -z \"$(command -v yarnpkg || true)\"; exec \"$@\"", "cloud-frontend-runtime"]
 CMD ["node", "frontend/server.js"]

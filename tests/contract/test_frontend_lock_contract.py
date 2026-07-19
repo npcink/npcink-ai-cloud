@@ -89,3 +89,64 @@ def test_watch_doctor_and_ci_consume_only_the_root_lock() -> None:
 def test_frontend_has_no_nested_dead_ci_or_unused_context_ignore() -> None:
     assert not (ROOT / "frontend/.github/workflows/ci-cd.yml").exists()
     assert not (ROOT / "frontend/.dockerignore").exists()
+
+
+def test_production_frontend_runner_has_no_unused_node_package_managers() -> None:
+    dockerfile = _read("frontend/Dockerfile")
+    runner = dockerfile.split("FROM base AS runner", maxsplit=1)[1]
+
+    # Build stages retain Corepack for the frozen pnpm install; the final runtime does not.
+    assert "corepack prepare" in dockerfile.split("FROM base AS runner", maxsplit=1)[0]
+    assert 'test "$(command -v node)" = /usr/local/bin/node' in runner
+    assert "test ! -L /usr/local/bin/node" in runner
+    assert (
+        'test "$(readlink -f /usr/local/bin/npm)" = '
+        "/usr/local/lib/node_modules/npm/bin/npm-cli.js"
+    ) in runner
+    assert (
+        'test "$(readlink -f /usr/local/bin/npx)" = '
+        "/usr/local/lib/node_modules/npm/bin/npx-cli.js"
+    ) in runner
+    assert (
+        'test "$(readlink -f /usr/local/bin/corepack)" = '
+        "/usr/local/lib/node_modules/corepack/dist/corepack.js"
+    ) in runner
+    assert (
+        'test "$(readlink -f /usr/local/bin/yarn)" = '
+        "/opt/yarn-v1.22.22/bin/yarn"
+    ) in runner
+    assert (
+        'test "$(readlink -f /usr/local/bin/yarnpkg)" = '
+        "/opt/yarn-v1.22.22/bin/yarnpkg"
+    ) in runner
+    assert (
+        "rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack"
+        in runner
+    )
+    assert "/usr/local/bin/yarn /usr/local/bin/yarnpkg" in runner
+    assert (
+        "rm -rf /usr/local/lib/node_modules/npm "
+        "/usr/local/lib/node_modules/corepack"
+    ) in runner
+    assert "rm -rf /opt/yarn-v1.22.22" in runner
+    assert "rmdir /usr/local/lib/node_modules" in runner
+    assert "rmdir /opt" in runner
+    assert "test -x /usr/local/bin/node" in runner
+    assert "node -e \"if (typeof fetch !== 'function') process.exit(1)\"" in runner
+    assert runner.count('test -z \\"$(command -v npm || true)\\"') == 1
+    assert runner.count('test -z \\"$(command -v npx || true)\\"') == 1
+    assert runner.count('test -z \\"$(command -v corepack || true)\\"') == 1
+    assert runner.count('test -z "$(command -v npm || true)"') == 2
+    assert runner.count('test -z "$(command -v npx || true)"') == 2
+    assert runner.count('test -z "$(command -v corepack || true)"') == 2
+    assert runner.count('test -z \\"$(command -v yarn || true)\\"') == 1
+    assert runner.count('test -z \\"$(command -v yarnpkg || true)\\"') == 1
+    assert runner.count('test -z "$(command -v yarn || true)"') == 2
+    assert runner.count('test -z "$(command -v yarnpkg || true)"') == 2
+    for package_manager in ("npm", "npx", "corepack", "yarn", "yarnpkg"):
+        assert f"! command -v {package_manager}" not in runner
+    assert runner.count("test ! -e /usr/local/lib/node_modules") == 3
+    assert runner.count("test ! -e /opt") == 3
+    assert 'ENTRYPOINT ["dumb-init", "--", "/bin/sh", "-eu", "-c"' in runner
+    assert 'exec \\"$@\\"' in runner
+    assert 'CMD ["node", "frontend/server.js"]' in runner
