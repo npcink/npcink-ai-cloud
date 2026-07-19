@@ -483,6 +483,153 @@ def exact_bundle_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     return source, bundle, records
 
 
+def install_real_prepare_only_loader(
+    source: Path,
+    bundle: Path,
+    records: Path,
+) -> None:
+    runtime_files = (
+        "deploy/common.sh",
+        "deploy/remote-load-and-up.sh",
+        "deploy/verify-release-bundle.sh",
+        "scripts/verify-release-bundle-manifest.py",
+    )
+    for relative in runtime_files:
+        content = (ROOT / relative).read_text(encoding="utf-8")
+        write(source / relative, content)
+        write(bundle / relative, content)
+    (bundle / "deploy/verify-release-bundle.sh").chmod(0o755)
+    subprocess.run(["git", "add", *runtime_files], cwd=source, check=True)
+
+    recreated = run_helper(
+        "create",
+        "--source-root",
+        str(source),
+        "--bundle-root",
+        str(bundle),
+        "--revision",
+        "a" * 40,
+        "--tree",
+        "b" * 40,
+        "--branch",
+        "codex/fixture",
+        "--image-platform",
+        "linux/amd64",
+        "--gzip-level",
+        "1",
+        "--frontend-included",
+        "1",
+        "--external-images-included",
+        "1",
+        "--image-lock",
+        "deploy/image-lock/production-images.json",
+        "--image-records",
+        str(records),
+    )
+    assert recreated.returncode == 0, recreated.stderr
+
+
+def install_stateful_fake_docker(fake_bin: Path) -> None:
+    docker = fake_bin / "docker"
+    docker.write_text(
+        r'''#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tarfile
+
+state_dir = Path(os.environ["FAKE_DOCKER_STATE_DIR"])
+state_dir.mkdir(parents=True, exist_ok=True)
+state_path = state_dir / "state.json"
+
+def read_state() -> dict[str, object]:
+    if not state_path.exists():
+        return {"references": {}}
+    return json.loads(state_path.read_text(encoding="utf-8"))
+
+def write_state(state: dict[str, object]) -> None:
+    state_path.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+
+args = sys.argv[1:]
+state = read_state()
+references = state["references"]
+
+if args == ["info"]:
+    raise SystemExit(73 if os.environ.get("FAKE_DOCKER_INFO_FAIL") == "1" else 0)
+
+if args[:2] == ["image", "inspect"]:
+    reference = args[-1]
+    record = references.get(reference)
+    if record is None:
+        raise SystemExit(1)
+    print(record["image_id"])
+    raise SystemExit(0)
+
+if args == ["load"]:
+    raw = sys.stdin.buffer.read()
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        manifest = json.load(archive.extractfile("manifest.json"))
+        config_name = manifest[0]["Config"]
+        config = archive.extractfile(config_name).read()
+    image_id = "sha256:" + hashlib.sha256(config).hexdigest()
+    archive_path = state_dir / f"{image_id.removeprefix('sha256:')}.tar"
+    archive_path.write_bytes(raw)
+    record = {"archive": str(archive_path), "image_id": image_id}
+    for reference in manifest[0]["RepoTags"]:
+        references[reference] = record
+    write_state(state)
+    print("Loaded image: " + manifest[0]["RepoTags"][0])
+    raise SystemExit(0)
+
+if args[:1] == ["tag"] and len(args) == 3:
+    source, target = args[1:]
+    record = references.get(source)
+    if record is None:
+        record = next(
+            (candidate for candidate in references.values() if candidate["image_id"] == source),
+            None,
+        )
+    if record is None:
+        raise SystemExit(1)
+    references[target] = record
+    write_state(state)
+    raise SystemExit(0)
+
+if args[:3] == ["image", "save", "--output"] and len(args) == 5:
+    output, reference = args[3:]
+    record = references.get(reference)
+    if record is None:
+        raise SystemExit(1)
+    shutil.copyfile(record["archive"], output)
+    raise SystemExit(0)
+
+if args[:2] == ["image", "rm"]:
+    for reference in args[2:]:
+        references.pop(reference, None)
+    write_state(state)
+    raise SystemExit(0)
+
+raise SystemExit(2)
+''',
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+
+
+def bundle_file_hashes(bundle: Path) -> dict[str, str]:
+    return {
+        path.relative_to(bundle).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(bundle.rglob("*"))
+        if path.is_file()
+    }
+
+
 def update_manifest_checksum(bundle: Path) -> None:
     manifest = bundle / "release-bundle-manifest.json"
     digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
@@ -870,6 +1017,136 @@ else:
     completed = run_helper("verify-directory", "--root", str(bundle), "--post-load", env=env)
     assert completed.returncode == 1
     assert "loaded Docker archive identity mismatch for api" in completed.stderr
+
+
+def test_real_prepare_only_loader_preserves_exact_payload_and_writes_external_state(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, bundle, records)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    install_stateful_fake_docker(fake_bin)
+    state_dir = tmp_path / "fake-docker-state"
+    rollback_map = tmp_path / "release-state" / "rollback-images.tsv"
+    env_file = tmp_path / "release-state" / "env.deploy"
+    write(
+        env_file,
+        "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=fixture-internal-token\n"
+        "NPCINK_CLOUD_COMPOSE_PROJECT_NAME=npcink-ai-cloud\n",
+    )
+    env_file.chmod(0o600)
+
+    env = os.environ.copy()
+    for key in (
+        "COMPOSE_PROJECT_NAME",
+        "NPCINK_CLOUD_BACKEND_ENV_FILE",
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_COMPOSE_FILE",
+        "NPCINK_CLOUD_EXTERNAL_EDGE_READY",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE",
+    ):
+        env.pop(key, None)
+    env.update(
+        {
+            "FAKE_DOCKER_STATE_DIR": str(state_dir),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(rollback_map),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "fixture",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    before = bundle_file_hashes(bundle)
+
+    completed = subprocess.run(
+        ["bash", str(bundle / "deploy/remote-load-and-up.sh")],
+        cwd=bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    assert "Exact release bundle verified (pre-load)" in completed.stdout
+    assert "Exact release bundle verified (post-load)" in completed.stdout
+    assert bundle_file_hashes(bundle) == before
+    assert rollback_map.is_file()
+    assert rollback_map.stat().st_mode & 0o777 == 0o600
+    rollback_records = rollback_map.read_text(encoding="utf-8").splitlines()
+    assert len(rollback_records) == 8
+    assert all(record.endswith("\t-\t-") for record in rollback_records)
+    assert not (bundle / ".env.deploy").exists()
+    assert not (bundle / "rollback-images.tsv").exists()
+
+    verified = subprocess.run(
+        [
+            "bash",
+            str(bundle / "deploy/verify-release-bundle.sh"),
+            "--post-load",
+            str(bundle),
+        ],
+        cwd=bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert verified.returncode == 0, verified.stderr
+    assert bundle_file_hashes(bundle) == before
+
+
+def test_real_prepare_only_loader_does_not_treat_docker_failure_as_missing_image(
+    exact_bundle_fixture: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    source, bundle, records = exact_bundle_fixture
+    install_real_prepare_only_loader(source, bundle, records)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    install_stateful_fake_docker(fake_bin)
+    rollback_map = tmp_path / "release-state" / "rollback-images.tsv"
+    env_file = tmp_path / "release-state" / "env.deploy"
+    write(env_file, "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=fixture-internal-token\n")
+    env_file.chmod(0o600)
+    env = os.environ.copy()
+    for key in (
+        "COMPOSE_PROJECT_NAME",
+        "NPCINK_CLOUD_BACKEND_ENV_FILE",
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_COMPOSE_FILE",
+        "NPCINK_CLOUD_EXTERNAL_EDGE_READY",
+        "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE",
+    ):
+        env.pop(key, None)
+    env.update(
+        {
+            "FAKE_DOCKER_INFO_FAIL": "1",
+            "FAKE_DOCKER_STATE_DIR": str(tmp_path / "empty-fake-docker-state"),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(rollback_map),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "fixture",
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        }
+    )
+    before = bundle_file_hashes(bundle)
+
+    completed = subprocess.run(
+        ["bash", str(bundle / "deploy/remote-load-and-up.sh")],
+        cwd=bundle,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "Docker daemon availability could not be proven" in completed.stderr
+    assert not rollback_map.exists()
+    assert bundle_file_hashes(bundle) == before
 
 
 def test_archive_preflight_rejects_path_traversal(tmp_path: Path) -> None:

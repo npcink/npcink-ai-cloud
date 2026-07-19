@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-07-19
+> Updated: 2026-07-20
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -84,6 +84,14 @@ All items in this section are `Required`.
 - [x] at least one real hosted-runtime provider credential is configured for the release host
 - [x] `NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN` is not equal to `NPCINK_CLOUD_INTERNAL_AUTH_TOKEN`
 - [x] browser origin allowlist and trusted host settings match the public release origin
+- [ ] the exact release payload contains no `.env.deploy`; any uploaded env was
+  transferred separately through the protected incoming directory
+- [ ] the selected release env is
+  `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`, both state
+  directories are mode `0700`, and the env file is mode `0600`
+- [ ] `current` selects code only and its release basename has a matching
+  external state directory; no secret-bearing env file exists inside that
+  release payload
 
 ### 3.2 Public Base URLs
 
@@ -134,6 +142,28 @@ All items in this section are `Required`.
   - `NPCINK_CLOUD_LATENCY_PROBE_INTERVAL_SECONDS`
   - `NPCINK_CLOUD_ALERT_PROVIDER_DEGRADATION_INTERVAL_SECONDS`
   - `NPCINK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS`
+- [ ] previous and new env state resolve the same Compose project name, and the
+  equality check plus actual old-writer container-label check passed before any
+  image or container mutation
+- [ ] if `--skip-frontend-image` was selected, exactly one running old frontend
+  was proven before mutation; the option was not used for a first deploy
+- [ ] the observed cutover order was `prepare images -> stop old app/write
+  services -> data -> migration/refresh -> pointer -> API -> workers ->
+  release-specific worker proof -> generic operational-ready -> traffic`
+- [ ] migration and provider-refresh one-off containers used `--no-deps --pull
+  never` against the exact staged API image
+- [ ] after worker startup, exactly one `worker`, `callback-worker`, and
+  `ops-worker` container stayed running/non-restarting with zero restarts and
+  stable IDs, and all three heartbeats were newer than the recorded cutoff
+- [ ] the operator has verified that any failure after migration starts remains
+  fail-closed and never auto-starts the old application
+- [ ] a recovery with incomplete stopped-service, pointer, or failure-marker
+  evidence retains `.deploy-lock` for manual recovery
+- [ ] previous Compose recovery used an isolated process environment so new env
+  values could not override the previous release env; restored/removed image
+  tags were verified against the rollback map
+- [ ] successful deployment retained the per-release external env state and
+  removed the temporary rollback-image map and private rollback tags
 - [ ] the Cloud bundle exposes no public `80/443`; external Edge traffic reaches
   only the loopback NGINX ingress
 - [ ] the external Edge replaces inbound `X-Real-IP`, `X-Forwarded-For`,
@@ -279,16 +309,25 @@ All items in this section are `Required`.
 - [x] internal service token rotation procedure is defined
 - [x] session invalidation procedure is defined
 - [ ] runtime-data encryption cutover evidence records successful `inventory`, `dry-run`, `apply`, and new-key-only `verify` runs from `python -m app.dev.reencrypt_runtime_data`
-- [ ] all four phases ran with `docker compose ... run --rm --no-deps --env-from-file` from the bundle-backed staged release API image, without requiring host application source or Python
-- [ ] before the first staged Compose command, `.env.deploy` was copied from the protected shared/current source, installed mode `0600`, and verified without invoking a general deploy helper that switches `current` or starts services
+- [ ] all four phases ran with `docker compose ... run --rm --no-deps --pull never --env-from-file` from the bundle-backed staged release API image, without requiring host application source or Python
+- [ ] before the first staged Compose command, the protected current release env
+  was copied to `${REMOTE_DIR}/.release-state/<staged-release-name>/env.deploy`;
+  state directories were verified mode `0700`, the file mode `0600`, and no env
+  was copied into the release payload or prepared by a general deploy helper
 - [ ] the untracked maintenance env was mode `0600` and contained the target encryption secret/key ID plus an explicit old-root environment value
 - [ ] the first raw-ciphertext cutover omitted `--old-key-id`; any later `rde.v1` rotation supplies old key IDs to `inventory` and positionally pairs each ID/root in `dry-run` and `apply`
 - [ ] `dry-run`/`apply` used only `--old-root-env` variable names, and `apply` recorded the explicit `--confirm-maintenance-window` acknowledgement without logging key values
 - [ ] all four writers were stopped during re-encryption and were restarted only after verification
+- [ ] the target release's external env state contains the new key while the
+  prior release's external env state remains matched to the old backup/code/key
+  recovery point
 - [ ] temporary old-key material and the maintenance env were removed after the verification and rollback-evidence window; normal runtime has no legacy/dual-read path, while the migration-only tool remains available for controlled rekey
 - [ ] the operator understands that normal deploy/secret rotation must not directly rotate `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET` or its key ID
 - [x] operator has checked `GET /internal/service/ops/cadence` and all required cadence tasks are fresh
 - [x] operator has checked `GET /internal/service/observability/summary` and worker heartbeats are fresh
+- [ ] operator has retained the exact worker cutoff and evidence that each new
+  heartbeat is newer than it; generic freshness alone is not release-generation
+  proof
 - [x] operator has checked provider health freshness and degraded-provider list
 - [ ] operator has confirmed traces are queryable in the configured sink
 - [ ] operator has retained the previous exact bundle, database recovery point,

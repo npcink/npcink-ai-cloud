@@ -36,7 +36,7 @@ services:
       -b 0.0.0.0:8000
       app.api.main:app
     env_file:
-      - .env.deploy
+      - ${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}
     environment:
       NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts
       NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT: ${NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -67,7 +67,7 @@ services:
     restart: unless-stopped
     command: python -m app.workers.runtime_queue
     env_file:
-      - .env.deploy
+      - ${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}
     environment:
       NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts
     depends_on:
@@ -83,7 +83,7 @@ services:
     restart: unless-stopped
     command: python -m app.workers.callback_dispatch
     env_file:
-      - .env.deploy
+      - ${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
     command: python -m app.workers.ops_cadence
     env_file:
-      - .env.deploy
+      - ${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}
     environment:
       NPCINK_CLOUD_ARTIFACT_STORE_ROOT: /var/lib/npcink-ai-cloud/artifacts
     depends_on:

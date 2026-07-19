@@ -9,7 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 npcink_ai_cloud_require_cmd docker
 
 npcink_ai_cloud_run_timed "wait for database auth" \
-	npcink_ai_cloud_compose "${ROOT_DIR}" run --rm api python -c '
+	npcink_ai_cloud_compose "${ROOT_DIR}" run --rm --no-deps --pull never api python -c '
 import os
 import sys
 import time
@@ -33,6 +33,13 @@ print(f"[fail] Database authentication did not become ready: {last_error}", file
 sys.exit(1)
 '
 npcink_ai_cloud_run_timed "alembic upgrade" \
-	npcink_ai_cloud_compose "${ROOT_DIR}" run --rm api alembic upgrade head
+	npcink_ai_cloud_compose "${ROOT_DIR}" run --rm --no-deps --pull never api alembic upgrade head
+
+if [ "${NPCINK_CLOUD_MIGRATION_ONLY:-0}" = "1" ]; then
+	echo "[ok] Migration completed without starting application workers."
+	exit 0
+fi
+
 npcink_ai_cloud_run_timed "start workers" \
-	npcink_ai_cloud_compose "${ROOT_DIR}" up -d worker callback-worker ops-worker
+	npcink_ai_cloud_compose "${ROOT_DIR}" up -d --pull never --no-build \
+	worker callback-worker ops-worker

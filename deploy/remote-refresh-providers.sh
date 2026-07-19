@@ -6,7 +6,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 npcink_ai_cloud_require_cmd docker
 
-npcink_ai_cloud_compose "${ROOT_DIR}" exec -T api python - <<'PY'
+PYTHON_COMMAND=(exec -T api python -)
+if [ "${NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF:-0}" = "1" ]; then
+	# Atomic cutover refreshes provider projections before the public API is
+	# started, so it must use the staged API image without starting dependencies.
+	PYTHON_COMMAND=(run --rm --no-deps --pull never -T api python -)
+fi
+
+npcink_ai_cloud_compose "${ROOT_DIR}" "${PYTHON_COMMAND[@]}" <<'PY'
 from __future__ import annotations
 
 import json

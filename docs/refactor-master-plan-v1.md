@@ -444,3 +444,29 @@ The next stage is production/operator readiness plus a bounded real-provider
 WordPress editorial/media trial. Typecho suggestion-only validation may be
 considered after that evidence; Typecho, Z-BlogPHP, Ghost, and additional media
 types remain post-P5 rather than current implementation scope.
+
+## Integration Correction — 2026-07-20
+
+This append-only correction records integration work after the 2026-07-19
+resolution; it does not rewrite or upgrade the historical P5-B7/P5-B8 evidence.
+
+- The production deploy contract now uses one serialized atomic cutover:
+  prepare exact images, stop old public/write services, retain/start data
+  services, migrate and refresh through staged one-off API containers, move the
+  release pointer, start API, start and prove the new worker generation, pass
+  generic operational readiness, and only then restore traffic.
+- `.env.deploy` is never part of a release payload. Each managed release owns
+  external state at `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`
+  under `0700/0600` permissions. Old and new Compose project names must match
+  before mutation.
+- Migration-started failures are fail-closed and do not automatically start the
+  old application. Incomplete recovery evidence retains the deployment lock;
+  successful cutover retains the per-release env state and removes only the
+  temporary rollback-image map/tags.
+- The historical `0663d95f` bundle remains exact `linux/arm64` evidence for that
+  revision only. It is not current branch, `linux/amd64`, merged `master`, or
+  production artifact evidence.
+- After the integration branch is merged into `master`, the exact production
+  image set must be rebuilt for `linux/amd64`, scanned, manifested, and replayed
+  twice from that merged revision before P1-E05/P1-E06 or production promotion
+  can use it.

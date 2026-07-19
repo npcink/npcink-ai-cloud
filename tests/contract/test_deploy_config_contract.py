@@ -518,7 +518,7 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
 
         runtime_block = _compose_service_block(runtime_compose, service)
         assert "env_file:" in runtime_block
-        assert "- .env.deploy" in runtime_block
+        assert "- ${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}" in runtime_block
 
         dev_block = _compose_service_block(dev_compose, service)
         assert "env_file:" in dev_block
@@ -601,10 +601,22 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
         assert "postgres" in maintenance
         assert "redis" in maintenance
 
-        assert "ENV_SOURCE=/opt/npcink-ai-cloud/.env.deploy" in maintenance
-        assert "ENV_SOURCE=/opt/npcink-ai-cloud/current/.env.deploy" in maintenance
-        assert 'install -m 600 "${ENV_SOURCE}" ./.env.deploy' in maintenance
-        assert 'stat -c \'%a\' ./.env.deploy' in maintenance
+        assert 'RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"' in maintenance
+        assert (
+            'RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${STAGED_RELEASE_NAME}"'
+            in maintenance
+        )
+        assert 'RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"' in maintenance
+        assert (
+            'ENV_SOURCE="${RELEASE_STATE_ROOT}/${CURRENT_RELEASE_NAME}/env.deploy"'
+            in maintenance
+        )
+        assert 'LEGACY_ENV_SOURCE="${REMOTE_DIR}/.env.deploy"' in maintenance
+        assert "one-time transition" in maintenance
+        assert (
+            'install -m 600 "${ENV_SOURCE}" "${RELEASE_ENV_FILE}"' in maintenance
+        )
+        assert 'stat -c \'%a\' "${RELEASE_ENV_FILE}"' in maintenance
         assert maintenance.index("install -m 600") < maintenance.index("docker compose")
         assert "deploy/deploy-to-ssh-host.sh" in maintenance
         assert "deploy/remote-load-and-up.sh" in maintenance
@@ -649,7 +661,7 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
     assert "run --rm --no-deps --env-from-file" in release_policy
     assert "future `rde.v1` rotations" in release_policy
     assert "bundle excludes `.env.deploy`" in release_policy
-    assert "before any Compose command" in release_policy
+    assert "before any Compose command" in " ".join(release_policy.split())
     assert "pass each old key ID to `inventory`" in release_policy
     assert "Normal runtime has no legacy or dual-read path" in release_policy
 
@@ -953,7 +965,8 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
     assert "/internal/service/observability/summary" in secret_rotation_script
     assert 'RESTART_SERVICES="proxy,api,worker,callback-worker,ops-worker"' in env_push_script
     assert 'RESTART_SERVICES="proxy,api,worker,callback-worker,ops-worker"' in remote_env_script
-    assert "up -d worker callback-worker ops-worker" in remote_migrate_script
+    assert "up -d --pull never --no-build" in remote_migrate_script
+    assert "worker callback-worker ops-worker" in remote_migrate_script
     assert "SSH identity file not found" in deploy_to_ssh_script
     assert "BatchMode=yes" in deploy_to_ssh_script
     assert "ConnectTimeout" in deploy_to_ssh_script
@@ -999,16 +1012,14 @@ def test_remote_deploy_keeps_env_file_private_end_to_end() -> None:
         r'''test \"\$(stat -c '%a' $(remote_shell_arg "${REMOTE_ENV_PATH}"))\" = 600'''
         in deploy_script
     )
-    assert (
-        'install -m 600 "${REMOTE_ENV_PATH}" '
-        '"${RELEASE_DIR}/${REMOTE_ENV_BASENAME}"' in deploy_script
-    )
-    assert (
-        'install -m 600 "${CURRENT_LINK}/${REMOTE_ENV_BASENAME}" '
-        '"${RELEASE_DIR}/${REMOTE_ENV_BASENAME}"' in deploy_script
-    )
-    assert 'ENV_FILE_MODE="$(stat -c \'%a\' "${NPCINK_CLOUD_ENV_FILE}")"' in deploy_script
-    assert 'if [ "${ENV_FILE_MODE}" != "600" ]; then' in deploy_script
+    assert 'RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"' in deploy_script
+    assert 'RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"' in deploy_script
+    assert 'RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"' in deploy_script
+    assert 'install -d -m 0700 "${RELEASE_STATE_ROOT}" "${RELEASE_STATE_DIR}"' in deploy_script
+    assert 'install -m 0600 "${NEW_ENV_SOURCE}" "${RELEASE_ENV_FILE}"' in deploy_script
+    assert 'export NPCINK_CLOUD_ENV_FILE="${RELEASE_ENV_FILE}"' in deploy_script
+    assert 'export NPCINK_CLOUD_BACKEND_ENV_FILE="${RELEASE_ENV_FILE}"' in deploy_script
+    assert '"${RELEASE_DIR}/${REMOTE_ENV_BASENAME}"' not in deploy_script
 
 
 def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -> None:

@@ -259,3 +259,31 @@ The next stage is not another broad refactor.
 This sequence converts remaining uncertainty into product and operator
 evidence without making the current project more complex for hypothetical
 platforms.
+
+## Integration Correction — 2026-07-20
+
+This append-only correction records later integration work. It does not alter
+the revisions, hashes, pass counts, limitations, or production claims recorded
+above.
+
+- The ordinary deploy path now keeps every `.env.deploy` outside the release
+  payload at `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`, enforces
+  `0700` state directories and a `0600` env file, and rejects an old/new Compose
+  project mismatch before mutation.
+- The cutover order is now fixed as exact-image preparation, old application and
+  writer stop, data services, staged one-off migration/provider refresh with
+  `--pull never`, atomic pointer update, API readiness, worker cutoff/container/
+  heartbeat stability, generic operational readiness, and traffic restoration.
+- After migration starts, failure remains fail-closed and never auto-starts the
+  old application. If stopped-service, restored-pointer, or failure-marker proof
+  is incomplete, the deployment lock remains for operator recovery. Success
+  retains the matched per-release env state while removing the temporary
+  rollback-image map and tags.
+- These deployment, migration, test, and documentation changes are outside the
+  historical `0663d95f` payload. That bundle remains only `linux/arm64` evidence
+  for its exact revision; it is not evidence for current source,
+  `linux/amd64`, merged `master`, or production.
+- The next artifact must be rebuilt from the final merged `master` revision for
+  `linux/amd64`, scanned with the governed release policy, manifested, and
+  replayed twice from the same bundle before production validation. Until then,
+  the production-only claims above remain withheld.
