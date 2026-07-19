@@ -84,7 +84,15 @@ APPLICATION_PLAN="$(mktemp "${DIST_DIR}/.release-application-plan.XXXXXX")"
 LOCAL_SCAN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/npcink-release-image-scan.XXXXXX")"
 
 cleanup() {
-	rm -rf "${LOCAL_STAGE}" "${SOURCE_INPUTS}" "${IMAGE_RECORDS}" "${FINAL_IMAGE_RECORDS}" "${EXTERNAL_PLAN}" "${APPLICATION_PLAN}" "${LOCAL_SCAN_DIR}"
+	local exit_status="$?"
+	trap - EXIT
+	if ! rm -rf "${LOCAL_STAGE}" "${SOURCE_INPUTS}" "${IMAGE_RECORDS}" "${FINAL_IMAGE_RECORDS}" "${EXTERNAL_PLAN}" "${APPLICATION_PLAN}" "${LOCAL_SCAN_DIR}"; then
+		echo "[warn] Failed to remove one or more release-bundle temporary paths." >&2
+		if [ "${exit_status}" -eq 0 ]; then
+			exit_status=1
+		fi
+	fi
+	exit "${exit_status}"
 }
 trap cleanup EXIT
 
@@ -169,7 +177,7 @@ ensure_image() {
 echo "[info] Building API image exactly once for ${REVISION} on ${MANIFEST_IMAGE_PLATFORM}"
 set_build_cache_args api
 docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
-	"${BUILD_CACHE_ARGS[@]}" "${BUILD_ARGS[@]}" --load \
+	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} "${BUILD_ARGS[@]}" --load \
 	-t npcink-ai-cloud-api:prod -f "${CLOUD_DIR}/Dockerfile" "${CLOUD_DIR}"
 docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-worker:prod
 docker tag npcink-ai-cloud-api:prod npcink-ai-cloud-callback-worker:prod
@@ -179,7 +187,7 @@ require_image_platform npcink-ai-cloud-api:prod
 echo "[info] Building frontend image exactly once for ${MANIFEST_IMAGE_PLATFORM}"
 set_build_cache_args frontend
 docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
-	"${BUILD_CACHE_ARGS[@]}" --load -t npcink-ai-cloud-frontend:prod \
+	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} --load -t npcink-ai-cloud-frontend:prod \
 	-f "${CLOUD_DIR}/frontend/Dockerfile" "${CLOUD_DIR}"
 require_image_platform npcink-ai-cloud-frontend:prod
 
@@ -188,7 +196,7 @@ while IFS=$'\t' read -r key reference dockerfile _archive; do
 	echo "[info] Building ${key} image exactly once for ${MANIFEST_IMAGE_PLATFORM}"
 	set_build_cache_args "${key}"
 	docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
-		"${BUILD_CACHE_ARGS[@]}" --load -t "${reference}" \
+		${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} --load -t "${reference}" \
 		-f "${CLOUD_DIR}/${dockerfile}" "${CLOUD_DIR}"
 	require_image_platform "${reference}"
 done <"${APPLICATION_PLAN}"

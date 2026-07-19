@@ -981,6 +981,10 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
     assert "external-plan" in bundle
     assert "postgres:16-alpine|" not in bundle
     assert bundle.count("Building API image exactly once") == 1
+    assert bundle.count('${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"}') == 3
+    assert 'local exit_status="$?"' in bundle
+    assert "trap - EXIT" in bundle
+    assert 'exit "${exit_status}"' in bundle
     assert "dist/worker.tar.gz" not in bundle
     assert "deploy-bundle.tgz.sha256" in bundle
     assert 'INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-1}"' in bundle
@@ -1008,6 +1012,12 @@ def test_release_scripts_enforce_pre_and_post_load_and_same_bundle_replay() -> N
 
     verify_index = smoke.index("Verifying exact bundle before extraction")
     extract_index = smoke.index("Extracting deploy bundle")
+    assert 'bash deploy/bundle-images.sh || fail "Exact deploy bundle build and scan failed"' in (
+        smoke
+    )
+    assert 'BUNDLE_REVISION="$(' in smoke
+    assert 'CURRENT_REVISION="$(git rev-parse HEAD)"' in smoke
+    assert "does not match current HEAD" in smoke
     assert verify_index < extract_index
     assert smoke.count("run_deploy_command bash deploy/remote-load-and-up.sh") == 2
     assert "same exact bundle receipt was reused" in smoke

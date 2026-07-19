@@ -74,6 +74,7 @@ require_cmd docker
 require_cmd tar
 require_cmd bash
 require_cmd python3
+require_cmd git
 
 cd "${ROOT_DIR}"
 
@@ -83,12 +84,19 @@ if [ "${NPCINK_CLOUD_DEPLOY_SMOKE_SKIP_BUILD:-0}" = "1" ]; then
 		fail "Exact deploy bundle/checksum is missing; skip-build never rebuilds implicitly"
 	ok "Reusing existing deploy bundle without rebuilding"
 else
-	bash deploy/bundle-images.sh
+	bash deploy/bundle-images.sh || fail "Exact deploy bundle build and scan failed"
 fi
 
 ok "Verifying exact bundle before extraction"
 bash deploy/verify-release-bundle.sh --archive \
 	dist/deploy-bundle.tgz dist/deploy-bundle.tgz.sha256
+BUNDLE_REVISION="$(
+	tar -xOf dist/deploy-bundle.tgz release-bundle-manifest.json |
+		python3 -c 'import json,sys; print(json.load(sys.stdin)["source"]["revision"])'
+)"
+CURRENT_REVISION="$(git rev-parse HEAD)"
+[ "${BUNDLE_REVISION}" = "${CURRENT_REVISION}" ] || \
+	fail "Exact deploy bundle revision ${BUNDLE_REVISION} does not match current HEAD ${CURRENT_REVISION}"
 BUNDLE_RECEIPT="$(cat dist/deploy-bundle.tgz.sha256)"
 
 ok "Extracting deploy bundle to ${TMP_DIR}"
