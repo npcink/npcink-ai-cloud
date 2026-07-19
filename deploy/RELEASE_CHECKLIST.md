@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-07-10
+> Updated: 2026-07-19
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -14,7 +14,9 @@ This checklist is the final gate before formally releasing Npcink AI Cloud.
 It is intentionally split into:
 
 - repo ready: repository code, scripts, and local validation are landed
-- env required: production secrets, URLs, trusted hosts/TLS, worker cadence, OTLP, and provider credentials are configured on the release host
+- env required: production secrets, URLs, trusted external Edge/TLS, worker
+  cadence, external OTLP, and provider credentials are configured on the
+  release host
 - service settings required: Portal public URL, QQ login when used, and SMTP are configured in `/admin/service-settings`
 - operator required: backup/rollback, cadence, heartbeat, trace, token rotation, and log inspection procedures are confirmed by the release operator
 - smoke required: `deploy/release-smoke.sh`, real mailbox login, and one real signed hosted runtime request pass on the release host
@@ -57,7 +59,7 @@ Current open blockers:
 | real WordPress reconnect | smoke required | release operator | one production Addon reconnect issues a fresh key and revokes the previous active key |
 | formal release smoke | smoke required | release operator | configure the required GitHub smoke secrets and run the complete `deploy/release-smoke.sh` path without a conditional skip |
 | schema drift baseline | operator required | database owner | historical `alembic check` index-name differences are resolved or recorded as reviewed |
-| OTLP sink | operator required | release operator | a fresh Cloud trace is queryable in the configured production sink |
+| external OTLP sink | operator required | release operator | exporter and query URLs are explicit and a fresh Cloud trace is queryable in the configured production sink |
 | 24-hour observation | operator required | release operator | health, workers, cadence, SMTP, callback, and runtime remain stable for 24 hours |
 | QQ login, when enabled | service settings required | release operator | real QQ login and `/open/auth/qq/callback` pass; otherwise QQ remains disabled |
 
@@ -92,7 +94,17 @@ All items in this section are `Required`.
 - [x] `NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST=cloud.npc.ink` is the public-host
   baseline; production also includes required internal container/loopback hosts
 - [x] `/admin/service-settings` Portal public URL matches the real public portal URL
-- [x] public reverse proxy and TLS are already valid for the release host
+- [ ] operator-owned external Edge and TLS are valid for the release host
+- [ ] `deploy/bind-domain-to-ssh-host.sh --prepare-only` passed local private-key
+  permission, certificate/key, loopback-upstream, inner-health, and `nginx -t`
+  checks without switching traffic
+- [ ] the exact retired-project Caddy container IDs were recorded and stopped
+  before host NGINX activation
+- [ ] `deploy/bind-domain-to-ssh-host.sh` activation rejected any running project
+  Caddy and passed its public-HTTPS check
+- [ ] Runtime Compose sets `NPCINK_CLOUD_EXTERNAL_EDGE_READY=true`
+- [ ] `NPCINK_CLOUD_DOMAIN_NAME=cloud.npc.ink` exactly matches the HTTPS
+  `NPCINK_CLOUD_BASE_URL` host
 
 ### 3.3 Portal Login And Email Service Settings
 
@@ -122,10 +134,23 @@ All items in this section are `Required`.
   - `NPCINK_CLOUD_LATENCY_PROBE_INTERVAL_SECONDS`
   - `NPCINK_CLOUD_ALERT_PROVIDER_DEGRADATION_INTERVAL_SECONDS`
   - `NPCINK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS`
-- [x] OTLP export target is explicit for the release host:
+- [ ] the Cloud bundle exposes no public `80/443`; external Edge traffic reaches
+  only the loopback NGINX ingress
+- [ ] the external Edge replaces inbound `X-Real-IP`, `X-Forwarded-For`,
+  `X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Port` values
+- [ ] NGINX trusts real-client headers only from gateway `172.28.0.1`, sets
+  upstream `X-Forwarded-For` from `$remote_addr`, and Gunicorn trusts only NGINX
+  at `172.28.0.10`
+- [ ] the loader reported
+  `[ok] Retired bundle services are absent: caddy jaeger otel-collector` before
+  public health verification
+- [ ] no current release-project container remains for `caddy`, `jaeger`, or
+  `otel-collector`
+- [ ] external OTLP release evidence is explicit for the release host:
   - `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT`
-  - `NPCINK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT`
   - `NPCINK_CLOUD_OTEL_TRACE_QUERY_URL`
+- [ ] a fresh Cloud trace exported through that endpoint is queryable through
+  the configured query URL
 
 ## 4. Database Readiness
 
@@ -266,6 +291,10 @@ All items in this section are `Required`.
 - [x] operator has checked `GET /internal/service/observability/summary` and worker heartbeats are fresh
 - [x] operator has checked provider health freshness and degraded-provider list
 - [ ] operator has confirmed traces are queryable in the configured sink
+- [ ] operator has retained the previous exact bundle, database recovery point,
+  and prior Edge route for the migration rollback window
+- [ ] operator understands rollback restores one matched prior bundle/Edge path
+  and must not run retired Caddy beside the new NGINX topology
 - [x] rollback command path is written down
 - [x] `deploy/OPS_PLAYBOOK.md` is the procedure source used for release
 - [ ] operator knows where to inspect:
@@ -276,7 +305,8 @@ All items in this section are `Required`.
 
 ## 8. Optional But Recommended
 
-- [ ] run `pnpm run check:e2e:deploy-bundle:smoke` before deploy
+- [ ] run `pnpm run check:e2e:deploy-bundle:smoke` before deploy; its loopback
+  plain-HTTP path is a local artifact-replay exception, not a production origin
 - [ ] run remote portal smoke for a real invited user admin after deploy
 - [ ] verify one non-empty commercial/admin page:
   - `/admin/plans`

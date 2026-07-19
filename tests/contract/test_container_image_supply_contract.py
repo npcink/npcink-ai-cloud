@@ -280,12 +280,17 @@ def test_production_image_lock_matches_every_dockerfile_and_deploy_compose() -> 
     assert inputs["uv_builder"]["reference"].startswith("ghcr.io/astral-sh/uv:0.11.29@sha256:")
     assert inputs["postgres_base"]["source_file"] == "Dockerfile.postgres"
     assert inputs["node_frontend"]["tag"] == "node:22-alpine"
-    assert inputs["caddy"]["source_files"] == ["docker-compose.runtime.yml"]
-    assert {
+    assert inputs["nginx"]["source_files"] == [
+        "docker-compose.prod.yml",
+        "docker-compose.runtime.yml",
+    ]
+    compose_external_keys = {
         record["key"]
         for record in lock["production_inputs"]
         if record["kind"] == "compose_external"
-    } == {"redis", "otel_collector", "jaeger", "nginx", "caddy"}
+    }
+    assert compose_external_keys == {"redis", "nginx"}
+    assert {"caddy", "otel_collector", "jaeger"}.isdisjoint(compose_external_keys)
     for record in lock["production_inputs"]:
         if record["kind"] == "compose_external":
             assert record["release_reference"].startswith("npcink-ai-cloud-external-")

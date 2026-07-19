@@ -145,10 +145,10 @@ def image_lock() -> dict[str, object]:
                 "release_reference": "npcink-ai-cloud-external-redis:prod",
             },
             {
-                "key": "caddy",
+                "key": "nginx",
                 "kind": "compose_external",
-                "reference": "caddy:2-alpine@sha256:" + "2" * 64,
-                "release_reference": "npcink-ai-cloud-external-caddy:prod",
+                "reference": "nginx:1.30-alpine-slim@sha256:" + "2" * 64,
+                "release_reference": "npcink-ai-cloud-external-nginx:prod",
             },
         ],
         "application_outputs": [
@@ -207,28 +207,28 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
         "frontend": "npcink-ai-cloud-frontend:prod",
         "postgres": "npcink-ai-cloud-postgres:prod",
         "redis": "redis:7-alpine@sha256:" + "1" * 64,
-        "caddy": "caddy:2-alpine@sha256:" + "2" * 64,
+        "nginx": "nginx:1.30-alpine-slim@sha256:" + "2" * 64,
     }
     archive_references = {
         "api": references["api"],
         "frontend": references["frontend"],
         "postgres": references["postgres"],
         "redis": "npcink-ai-cloud-external-redis:prod",
-        "caddy": "npcink-ai-cloud-external-caddy:prod",
+        "nginx": "npcink-ai-cloud-external-nginx:prod",
     }
     source_ids = {
         "api": "sha256:" + "8" * 64,
         "frontend": "sha256:" + "9" * 64,
         "postgres": "sha256:" + "a" * 64,
         "redis": "sha256:" + "b" * 64,
-        "caddy": "sha256:" + "c" * 64,
+        "nginx": "sha256:" + "c" * 64,
     }
     archive_paths = {
         "api": bundle / "dist/api.tar.gz",
         "frontend": bundle / "dist/frontend.tar.gz",
         "postgres": bundle / "dist/postgres.tar.gz",
         "redis": bundle / "dist/external-redis.tar.gz",
-        "caddy": bundle / "dist/external-caddy.tar.gz",
+        "nginx": bundle / "dist/external-nginx.tar.gz",
     }
     config_ids = {
         key: fixture_archive_config_id(path) for key, path in archive_paths.items()
@@ -282,7 +282,7 @@ def create_scan_evidence(bundle: Path, lock: dict[str, object]) -> dict[str, str
             "config_image_id": config_ids[key],
             "syft_subject_manifest_digest": "sha256:" + "d" * 64,
             "source_daemon_image_id": source_ids[key],
-            "repo_digests": [references[key]] if key in {"redis", "caddy"} else [],
+            "repo_digests": [references[key]] if key in {"redis", "nginx"} else [],
             "platform": "linux/amd64",
             "scanner_docker_context": "default",
             "policy": policy,
@@ -408,7 +408,7 @@ def exact_bundle_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         ("frontend", "dist/frontend.tar.gz", "npcink-ai-cloud-frontend:prod"),
         ("postgres", "dist/postgres.tar.gz", "npcink-ai-cloud-postgres:prod"),
         ("redis", "dist/external-redis.tar.gz", "npcink-ai-cloud-external-redis:prod"),
-        ("caddy", "dist/external-caddy.tar.gz", "npcink-ai-cloud-external-caddy:prod"),
+        ("nginx", "dist/external-nginx.tar.gz", "npcink-ai-cloud-external-nginx:prod"),
     )
     for key, relative, reference in archive_specs:
         write_fixture_docker_archive(bundle / relative, key=key, reference=reference)
@@ -436,10 +436,10 @@ def exact_bundle_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         + "npcink-ai-cloud-external-redis:prod\t"
         + f"redis:7-alpine@sha256:{'1' * 64}\t"
         + f"{image_ids['source_redis']}\t{image_ids['redis']}\t1\t1\n"
-        + "dist/external-caddy.tar.gz\texternal_caddy\t"
-        + "npcink-ai-cloud-external-caddy:prod\t"
-        + f"caddy:2-alpine@sha256:{'2' * 64}\t"
-        + f"{image_ids['source_caddy']}\t{image_ids['caddy']}\t1\t1\n",
+        + "dist/external-nginx.tar.gz\texternal_nginx\t"
+        + "npcink-ai-cloud-external-nginx:prod\t"
+        + f"nginx:1.30-alpine-slim@sha256:{'2' * 64}\t"
+        + f"{image_ids['source_nginx']}\t{image_ids['nginx']}\t1\t1\n",
         encoding="utf-8",
     )
     result = run_helper(
@@ -926,13 +926,17 @@ def test_exact_bundle_pack_outer_hash_and_archive_preflight(
     assert "outer bundle checksum mismatch" in rejected.stderr
 
 
-def test_external_plan_consumes_digest_locked_caddy_without_hardcoding(tmp_path: Path) -> None:
+def test_external_plan_consumes_only_digest_locked_runtime_inputs(tmp_path: Path) -> None:
     lock = tmp_path / "production-images.json"
     lock.write_text(json.dumps(image_lock()) + "\n", encoding="utf-8")
     output = tmp_path / "plan.tsv"
     completed = run_helper("external-plan", "--image-lock", str(lock), "--output", str(output))
     assert completed.returncode == 0, completed.stderr
-    assert "caddy\tcaddy:2-alpine@sha256:" in output.read_text(encoding="utf-8")
+    plan = output.read_text(encoding="utf-8")
+    assert "redis\tredis:7-alpine@sha256:" in plan
+    assert "nginx\tnginx:1.30-alpine-slim@sha256:" in plan
+    for retired in ("caddy", "jaeger", "otel_collector"):
+        assert retired not in plan
 
 
 def test_formal_bundle_dirty_tree_fails_before_docker(tmp_path: Path) -> None:

@@ -71,12 +71,12 @@ The production deploy job:
 7. Verifies `/health/operational-ready`.
 8. Verifies public static legal pages, including `/terms/en/terms.html`.
 
-By default the bundle contains only the app image, the optional frontend image,
-deploy scripts, compose files, and static site files. Worker, callback-worker,
-and ops-worker services reuse the app image and are tagged on the release host.
-External service images such as Postgres, Redis, nginx, OTEL Collector, and
-Jaeger are not repackaged on every deploy; the host should already have them or
-allow Docker Compose to pull them by pinned tag.
+The exact bundle contains the application outputs, the optional frontend output,
+deploy scripts, Compose files, static site files, and every locked external
+runtime image when external images are enabled. Worker, callback-worker, and
+ops-worker services reuse the app image and are tagged on the release host. The
+only locked external runtime inputs are Redis and NGINX; Caddy, Jaeger, and the
+OpenTelemetry Collector are not part of the release bundle or image lock.
 
 For offline or first-host bootstrap bundles, set:
 
@@ -157,17 +157,93 @@ to a managed secret store.
 - `callback-worker`
 - `ops-worker`
 - `proxy`
-- `caddy`
 
-It omits local/development observability sidecars. Caddy owns public `80/443`
-and proxies to the internal Docker proxy. The app proxy binds `8010` only on
-`127.0.0.1`. Public legal and policy pages under `/terms/*` are served as
-static files from the checked-in `site/` directory by the production proxy.
+The trusted request chain is `external Edge -> bundled NGINX -> Gunicorn`.
+The operator-owned Edge owns public `80/443`, certificates, TLS policy, DNS,
+and any WAF/source restrictions. The Cloud bundle publishes no public `80/443`;
+NGINX binds `8010` only on `127.0.0.1`. Runtime Compose requires all of the
+following before it is a valid production entry point:
+
+```text
+NPCINK_CLOUD_EXTERNAL_EDGE_READY=true
+NPCINK_CLOUD_BASE_URL=https://cloud.npc.ink
+NPCINK_CLOUD_DOMAIN_NAME=cloud.npc.ink
+```
+
+The base URL must use HTTPS and its host must exactly match
+`NPCINK_CLOUD_DOMAIN_NAME`.
+The external Edge must replace inbound `X-Real-IP`, `X-Forwarded-For`,
+`X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Port` values. NGINX
+trusts real-client headers only from the pinned Compose gateway `172.28.0.1`;
+Gunicorn trusts forwarded headers only from NGINX at `172.28.0.10`.
+
+Public legal and policy pages under `/terms/*` are served as static files from
+the checked-in `site/` directory by NGINX.
 The frontend does not load `.env.deploy`; it receives only its explicit runtime
 allowlist, including the server-side internal token required by the existing
 admin proxy. Runtime-data encryption, bootstrap, admin-session,
 service-settings, Portal JWT, database, and provider secrets stay in backend
 containers only.
+
+Production Compose does not run a trace collector or trace store. OTLP export
+is optional for ordinary runtime operation. Formal release requires explicit,
+operator-owned `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` and
+`NPCINK_CLOUD_OTEL_TRACE_QUERY_URL` values and evidence that a fresh Cloud trace
+is queryable.
+
+The exact-bundle smoke is the formal release workflow's plain-HTTP exception:
+it may replay the artifact through loopback NGINX without an external Edge.
+Never use that local smoke topology as a production public origin.
+
+## First Migration to the External Edge
+
+Before the first deploy of this topology:
+
+1. Retain the previous exact bundle and matched database recovery point. Keep
+   the retired Caddy container running while the host Edge is prepared.
+2. Preinstall host NGINX and `curl`, then run
+   `deploy/bind-domain-to-ssh-host.sh --prepare-only`. This installs the
+   certificate, private key, and site configuration with restrictive
+   permissions and runs `nginx -t`, but it does not start or restart host
+   NGINX. The helper rejects a non-loopback upstream, an invalid or near-expiry
+   certificate, a mismatched or locally over-permissive private key, and an
+   unhealthy inner ingress.
+3. On the deployment host, record and stop only the running Caddy container IDs
+   from the exact release Compose project:
+
+   ```bash
+   COMPOSE_PROJECT_NAME_EFFECTIVE="${NPCINK_CLOUD_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-npcink-ai-cloud}}"
+   mapfile -t RETIRED_CADDY_IDS < <(docker ps -q \
+     --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
+     --filter "label=com.docker.compose.service=caddy")
+   ((${#RETIRED_CADDY_IDS[@]} > 0))
+   printf 'retired Caddy: %s\n' "${RETIRED_CADDY_IDS[@]}"
+   docker stop "${RETIRED_CADDY_IDS[@]}"
+   ```
+
+4. Rerun `deploy/bind-domain-to-ssh-host.sh` without `--prepare-only`. The
+   activation refuses to proceed if that project's Caddy is still running,
+   starts host NGINX, and proves HTTPS through the exact host with a loopback
+   resolution. If activation fails, the helper restores the previous host
+   NGINX files and service state. Only after this succeeds may
+   `NPCINK_CLOUD_EXTERNAL_EDGE_READY=true` be set.
+5. Run the normal release loader. Confirm it reports
+   `[ok] Retired bundle services are absent: caddy jaeger otel-collector` before
+   public health verification.
+6. Verify forwarded-header replacement, HTTPS, operational readiness, signed
+   runtime execution, media upload
+   and pull behavior, and external trace export/query evidence.
+
+The loader uses orphan removal and then rejects a release project that still
+contains a `caddy`, `jaeger`, or `otel-collector` container. Do not manually
+rename a retired container to bypass this check.
+
+If activation fails before the loader runs, stop host NGINX and restart only
+the recorded `RETIRED_CADDY_IDS`. If the loader has started or removed orphans,
+stop the new project, stop host NGINX, then restore the matched previous bundle,
+database recovery point when required, and its Caddy route. Restore only one
+public ingress chain; do not start Caddy beside host NGINX or attach retired
+observability containers to the current release project.
 
 ## Promotion Flow
 

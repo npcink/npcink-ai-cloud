@@ -142,7 +142,6 @@ class Settings(BaseSettings):
     )
     otel_service_name: str = Field(default="npcink-ai-cloud")
     otel_exporter_otlp_endpoint: str | None = Field(default=None)
-    otel_trace_sink_otlp_endpoint: str | None = Field(default=None)
     otel_trace_query_url: str | None = Field(default=None)
     deployment_region: str = Field(default="unspecified")
     audit_retention_days_default: int = Field(default=90)
@@ -302,6 +301,31 @@ class Settings(BaseSettings):
             return host
         return host
 
+    @staticmethod
+    def _validate_optional_http_url(field_name: str, value: object) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        if any(character.isspace() or ord(character) < 32 for character in raw):
+            raise ValueError(f"{field_name} must not include whitespace or control characters")
+        try:
+            parsed = urlsplit(raw)
+            hostname = str(parsed.hostname or "").strip()
+            _port = parsed.port
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid HTTP(S) URL") from exc
+        if parsed.scheme.lower() not in {"http", "https"}:
+            raise ValueError(f"{field_name} must use http or https")
+        if not parsed.netloc or not hostname or any(character.isspace() for character in hostname):
+            raise ValueError(f"{field_name} must include a valid host")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError(f"{field_name} must not include userinfo")
+        if parsed.query:
+            raise ValueError(f"{field_name} must not include a query")
+        if parsed.fragment:
+            raise ValueError(f"{field_name} must not include a fragment")
+        return raw
+
     def production_like_environment(self) -> bool:
         return str(self.environment or "").strip().lower() in {"production", "prod", "staging"}
 
@@ -340,6 +364,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> Settings:
+        self.otel_exporter_otlp_endpoint = self._validate_optional_http_url(
+            "otel_exporter_otlp_endpoint",
+            self.otel_exporter_otlp_endpoint,
+        )
+        self.otel_trace_query_url = self._validate_optional_http_url(
+            "otel_trace_query_url",
+            self.otel_trace_query_url,
+        )
         production_like = self.production_like_environment()
         secret_fields = {
             "internal_auth_token": self.internal_auth_token,

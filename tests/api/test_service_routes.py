@@ -6130,8 +6130,13 @@ def test_service_routes_expose_observability_summary(tmp_path: Path) -> None:
     assert response.status_code == 200
     payload = response.json()["data"]
     assert payload["ready"]["status"] == "error"
-    assert payload["tracing"]["service_name"] == "npcink-ai-cloud"
-    assert isinstance(payload["tracing"]["trace_sink_configured"], bool)
+    assert payload["tracing"] == {
+        "service_name": "npcink-ai-cloud",
+        "otlp_endpoint": "",
+        "otlp_configured": False,
+        "trace_query_url": "",
+        "trace_query_configured": False,
+    }
     assert "feature_flags" not in payload
     assert payload["workers"]["totals"]["workers_total"] == 3
     assert any(item["worker_id"] == "runtime_queue" for item in payload["workers"]["items"])
@@ -6150,14 +6155,13 @@ def test_service_routes_expose_observability_summary(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
-def test_service_routes_observability_summary_marks_trace_sink_configured_when_present(
+def test_service_routes_observability_summary_reports_external_tracing_configuration(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(
         tmp_path,
         settings_overrides={
             "otel_exporter_otlp_endpoint": "http://host.docker.internal:4318/v1/traces",
-            "otel_trace_sink_otlp_endpoint": "host.docker.internal:4318",
             "otel_trace_query_url": "http://mini.example:16686",
         },
     )
@@ -6169,11 +6173,13 @@ def test_service_routes_observability_summary_marks_trace_sink_configured_when_p
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    assert payload["tracing"]["otlp_configured"] is True
-    assert payload["tracing"]["trace_sink_configured"] is True
-    assert payload["tracing"]["otlp_endpoint"] == "http://host.docker.internal:4318/v1/traces"
-    assert payload["tracing"]["trace_sink_otlp_endpoint"] == "host.docker.internal:4318"
-    assert payload["tracing"]["trace_sink_query_url"] == "http://mini.example:16686"
+    assert payload["tracing"] == {
+        "service_name": "npcink-ai-cloud",
+        "otlp_endpoint": "http://host.docker.internal:4318/v1/traces",
+        "otlp_configured": True,
+        "trace_query_url": "http://mini.example:16686",
+        "trace_query_configured": True,
+    }
 
     dispose_engine(database_url)
 

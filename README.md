@@ -52,6 +52,7 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/016-fail-closed-portal-admin-service-boundaries.md](docs/decisions/016-fail-closed-portal-admin-service-boundaries.md)
 - [docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md](docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md)
 - [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
+- [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
 
 Evidence records (not target-contract completion proof):
 
@@ -530,10 +531,10 @@ Cloud stack after Docker Desktop or the Docker daemon starts again, as long as
 the containers were not intentionally stopped with `docker compose stop` or
 removed with `docker compose down`.
 
-The dev stack services covered by this policy are `postgres`, `redis`, `api`,
+The dev and production restart policy covers `postgres`, `redis`, `api`,
 `frontend`, `proxy`, `worker`, `callback-worker`, and `ops-worker`. The
-production compose file applies the same policy to those services plus
-`otel-collector` and `jaeger`.
+production bundle does not start a second TLS edge, trace collector, or trace
+store.
 
 After changing restart policy or after finding stale exited containers, recreate
 the stack once so existing containers pick up the compose policy:
@@ -1191,9 +1192,10 @@ Catalog query extras:
 
 Deploy perimeter:
 
-- `docker-compose.prod.yml` now ships a bundled perimeter proxy; only the proxy
-  publishes the public port and the raw `api` container is no longer mapped to
-  the host.
+- production uses `trusted external Edge -> bundled NGINX -> Gunicorn`; the
+  operator-owned Edge terminates public TLS and owns public `80/443`.
+- the bundled NGINX publishes only the loopback deployment port. Neither the
+  exact release bundle nor the raw `api` container publishes public `80/443`.
 - Keep `/internal/*` behind allowlist or private ingress; the bundled proxy only
   forwards those paths for loopback/private callers and does not expose them as
   public routes.
@@ -1201,9 +1203,12 @@ Deploy perimeter:
   `/internal/*`; only `GET /health/live` remains a minimal public liveness
   probe.
 - Keep `/docs` and `/redoc` disabled in production.
-- The bundled proxy adds only the minimum perimeter split and basic rate
-  limiting. TLS termination, source restriction, IP allowlist, WAF, and stronger
-  edge controls still depend on deployment.
+- The bundled proxy owns the Cloud route, media-transfer, rate, connection,
+  timeout, and sanitized-log policy. TLS termination, source restriction, IP
+  allowlist, WAF, and stronger edge controls belong to the external Edge.
+- The external Edge must replace incoming client-controlled forwarded headers.
+  NGINX trusts real-client headers only from the pinned Compose gateway, and
+  Gunicorn trusts forwarded headers only from the pinned NGINX address.
 - `remote-smoke.sh` also verifies `/docs`, `/redoc`, and internal POST fail
   closed without `X-Npcink-Internal-Token`.
 
@@ -1440,14 +1445,14 @@ surface:
 - whether `worker`, `callback-worker`, and `ops-worker` are alive
 - whether execution backlog or callback backlog is under pressure
 - whether provider health freshness is stale and which providers are degraded
-- whether OTLP tracing is wired to the collector endpoint
+- whether OTLP tracing is wired to the configured external exporter endpoint
 
-Production-style compose now includes a minimal `otel-collector` sidecar using
-[`deploy/otel-collector.config.yml`](deploy/otel-collector.config.yml).
-By default, `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` points at
-`http://otel-collector:4318/v1/traces` and the collector forwards to the
-default Jaeger sink at `NPCINK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT=jaeger:4317`.
-`otel-collector debug exporter` no longer counts as release-complete state.
+Production Compose does not bundle an OpenTelemetry Collector or Jaeger.
+Ordinary runtime may leave `NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT` and
+`NPCINK_CLOUD_OTEL_TRACE_QUERY_URL` empty. A formal release must configure both
+against operator-owned observability infrastructure and prove that a fresh
+Cloud trace is queryable. Starting a debug exporter is not release-complete
+evidence.
 
 Formal operator procedures now live in
 [`deploy/OPS_PLAYBOOK.md`](deploy/OPS_PLAYBOOK.md).
@@ -1606,8 +1611,9 @@ Notes:
   provider reachability before suspecting the local source tree.
 - `env-to-ssh-host.sh` updates the remote release `.env.deploy` in place,
   carries the same values into the shared `/opt/npcink-ai-cloud/.env.deploy`
-  file, and restarts `api,worker` by default so new provider env takes effect
-  immediately without a full redeploy.
+  file, and restarts `proxy,api,worker,callback-worker,ops-worker` by default so
+  edge, runtime, callback, and cadence configuration takes effect together
+  without a full redeploy.
 - Final off-machine deploy evidence still requires a real external host; this
   workspace currently records the active target in
   `deploy/WORKSPACE_TARGET.md`, but SSH user, base URL, and deploy env

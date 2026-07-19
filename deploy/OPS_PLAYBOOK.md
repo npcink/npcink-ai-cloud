@@ -40,6 +40,9 @@ Configuration ownership:
 - local compose may use the loopback origin for development and smoke testing.
 - production must set `NPCINK_CLOUD_BASE_URL=https://cloud.npc.ink` in
   `.env.deploy` or the deploy secret store.
+- production Runtime Compose must set `NPCINK_CLOUD_EXTERNAL_EDGE_READY=true`
+  and `NPCINK_CLOUD_DOMAIN_NAME=cloud.npc.ink`. The base URL must use HTTPS and
+  its host must exactly match `NPCINK_CLOUD_DOMAIN_NAME`.
 - production must set
   `NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST=https://cloud.npc.ink` and
   `NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST=cloud.npc.ink`.
@@ -52,6 +55,57 @@ Configuration ownership:
 Loopback origins are a development convenience only. If a production frontend
 requires `http://127.0.0.1:8010` or `localhost` as a public URL, treat that as a
 release-blocking environment configuration error.
+
+### External Edge and bundled NGINX
+
+Production has one public chain:
+
+```text
+client -> operator-owned TLS Edge -> 127.0.0.1:8010 bundled NGINX -> Gunicorn
+```
+
+The external Edge owns public `80/443`, certificates, TLS policy, DNS, and any
+WAF/source restriction. It must replace client-supplied `X-Real-IP`,
+`X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, and
+`X-Forwarded-Port` values. The bundled NGINX trusts client-address evidence
+only from the Compose gateway `172.28.0.1` and sets the upstream
+`X-Forwarded-For` to `$remote_addr`; Gunicorn trusts forwarded headers only
+from NGINX at `172.28.0.10`.
+
+The exact-bundle smoke may replay the artifact through loopback NGINX over
+plain HTTP. That is a local verification exception, never a production public
+origin.
+
+For the first migration from the retired bundled edge:
+
+1. Retain the previous bundle and matched database recovery point while the old
+   Caddy route remains active.
+2. Preinstall host NGINX and `curl`, then run
+   `deploy/bind-domain-to-ssh-host.sh --prepare-only`. Require private-key
+   permission validation, certificate/key matching, loopback-upstream health,
+   and `nginx -t`; this mode must not install packages, start, or restart host
+   NGINX.
+3. Record and stop only the running Caddy container IDs selected by both
+   `com.docker.compose.project=${NPCINK_CLOUD_COMPOSE_PROJECT_NAME}` and
+   `com.docker.compose.service=caddy` labels.
+4. Rerun the binding helper without `--prepare-only`. It must reject a still
+   running project Caddy, activate host NGINX, and pass the loopback-resolved
+   public HTTPS health check before the readiness acknowledgement is set.
+5. Run the normal release loader and require its marker
+   `[ok] Retired bundle services are absent: caddy jaeger otel-collector`
+   before public health verification.
+6. Confirm no current Compose-project container is named for `caddy`, `jaeger`,
+   or `otel-collector`, then verify public HTTPS, operational readiness, signed
+   runtime, and media upload/download controls.
+
+The binding helper restores prior host NGINX files and service state when its
+activation fails. Before the loader runs, rollback is `stop host NGINX ->
+restart only the recorded Caddy IDs`. After the loader starts, rollback is
+`stop the new project -> stop host NGINX -> restore the matched prior bundle
+and database recovery point when required`. The loader uses Compose orphan
+removal and fails closed on any residual retired service. Never leave both
+Caddy and host NGINX active, and never attach retired observability containers
+to the current release project.
 
 ## Signed Runtime Smoke Semantics
 
@@ -230,7 +284,7 @@ that image and does not require Python or application source on the host.
    deploy sequence for the key change.
 8. Start `api` from that same release image and verify `/health/ready`; then
    start `worker`, `callback-worker`, and `ops-worker`; finally restore
-   `frontend`, `proxy`, and `caddy` traffic. Verify
+   `frontend`, `proxy`, and external-Edge traffic. Verify
    `/health/operational-ready`, fresh heartbeats and cadence, signed runtime
    execution/result retrieval, terminal callback delivery, Addon connection
    consumption, and idempotent Portal replay.
@@ -379,11 +433,15 @@ If real runtime smoke returns `runtime.provider_not_configured`, treat it as a r
 
 ## Trace Sink Check
 
-1. Read `data.tracing.trace_sink_otlp_endpoint` and `data.tracing.trace_sink_query_url` from `GET /internal/service/observability/summary`.
+1. Read `data.tracing.otlp_endpoint`, `data.tracing.otlp_configured`,
+   `data.tracing.trace_query_url`, and `data.tracing.trace_query_configured`
+   from `GET /internal/service/observability/summary`.
 2. Open the configured query URL or trace UI.
 3. Trigger a fresh internal request such as `GET /health/operational-ready`.
 4. Confirm a new trace for `npcink-ai-cloud` appears in the sink.
-5. If the collector is reachable but no trace lands in the sink, the release is not closed.
+5. If either URL is absent, export fails, or no fresh trace is queryable, the
+   formal release is not closed. Ordinary non-release runtime may leave both
+   values empty.
 
 ## Release Gate
 
@@ -407,6 +465,7 @@ Operators must be able to answer all of these from current data:
 - Is execution backlog separated from callback backlog?
 - Are managed cadence tasks fresh?
 - Is provider health fresh, and which provider is degraded?
-- Is OTLP tracing wired to the collector endpoint?
+- Is OTLP tracing wired to the configured external endpoint and is a fresh
+  trace queryable?
 - Has one real signed runtime request succeeded against the production provider configuration?
 - Do signed run lookup, result retrieval, stats, and usage evidence remain readable?
