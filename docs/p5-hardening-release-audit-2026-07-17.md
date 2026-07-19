@@ -354,3 +354,59 @@ only. Current exact-package WordPress text/media replay, restore rehearsal,
 all final Cloud/plugin gates, strict six-repository matrix, dependency
 follow-up, production operator evidence, and the final P0-P5 audit remain
 P5-B8 work. Global P5 and production release authorization remain incomplete.
+
+### P5-B8 Final Engineering Closeout
+
+This is an append-only current conclusion. It does not rewrite the original
+`22eff1e0f455` audit snapshot or convert its historical findings into claims
+about what was known at that time.
+
+The P5-B8 code-owned/local engineering gate set is `passed` at Cloud
+implementation HEAD `054ae3d81e7beb43523c12581f8764e80080855b`, and the
+P0-P5 architecture is frozen. Global P5 and the overall refactor phase-exit
+remain incomplete until the operator-only P1-E05/P1-E06 evidence exists. The
+authoritative requirement-to-evidence table is
+[P5-B8 Final Engineering Closeout](p5-b8-final-engineering-closeout-2026-07-19.md).
+It records the exact WordPress packages, current local text/media replay,
+performance, disposable restore drill, dependency follow-up, final Cloud and
+five-plugin gates, strict six-repository matrix, rollback, and material
+failed-first-path evidence.
+
+The exact bundle is not relabeled as a `054ae3d8` artifact. It remains bound to
+the last release-payload revision
+`0663d95f765a8c49154aac0536e26cbb51029094`, SHA-256
+`592d1ce23334cddf4a09db0f147d6db48aa1c696980adc24630ed333660baa17`.
+The intervening changes contain only documentation, Dependabot configuration,
+the release-policy checker, and its contracts; they contain no `app/**`,
+`frontend/**`, Compose, deploy payload, or image-lock change.
+
+The B8 text receipt records a real Save-and-Verify path, `6/6` Cloud runs,
+three editor endpoint POSTs, zero pre-save writes, one explicit save, revision
+delta `+1`, and cleanup. Its deterministic harness used a broad classifier that
+sent all three requests through the rewrite branch, producing one shared UI
+output hash. This is transport/UI/write-boundary evidence, not task-specific
+semantic routing, model quality, or editorial-value evidence; P5-B3 retains the
+task/profile and real-provider runtime metadata.
+
+The B8 media receipt records `32` browser assertions and the governed round
+trip through restore and cleanup. Its first plain-permalink run completed the
+product requests but failed the harness pathname-owner assertion. The final
+harness pass used a temporary index permalink and restored the original
+permalink; the failed first result remains part of the record. The strict
+matrix passed `6/6` with worktree dirty/ahead/behind `0`, while accurately
+retaining one untouched pre-existing Cloud stash dated `2026-06-29`.
+
+The local restore receipt is a synthetic representative graph, not a B8 live-
+stack snapshot. It rejected corruption and a missing artifact, matched fresh-
+restore database and artifact manifests, and removed all generated resources;
+it does not prove production carry-forward, persistent/off-host backup, or
+RPO/RTO.
+
+Production promotion and GA remain blocked. P1-E05 production title execution
+and P1-E06 production-like inventory/carry-forward/restore remain operator-only
+and `production-only not claimed`. The three named Python 3.14.6 CVE exceptions
+remain owned by `Muze`, expire `2026-08-05`, and apply only to the `linux/arm64`
+engineering bundle. `linux/amd64`, production Edge/DNS/WAF/TLS/OTLP/secrets,
+production backup/RPO/RTO, penetration testing, live-provider quality, and
+real-user value are also `production-only not claimed`. External object storage
+remains a deferred non-goal rather than a production prerequisite.

@@ -406,3 +406,41 @@ runtime result, real WordPress behavior, deployment smoke, or release record.
 Missing, indirect, stale, skipped, or merely plausible evidence means the item
 is incomplete. Completion cannot be inferred from a green narrow test, a
 subagent report, or absence of obvious failures.
+
+## Current Engineering Resolution — 2026-07-19
+
+This is an append-only current-status resolution. It does not rewrite the
+target contract or historical phase evidence.
+
+The P5-B8 code-owned/local engineering gate set is `passed` at Cloud
+implementation HEAD `054ae3d81e7beb43523c12581f8764e80080855b`, and the
+P0-P5 architecture is frozen. Global P5 and the overall refactor phase-exit
+remain incomplete until the operator-only P1-E05/P1-E06 evidence exists. The
+complete requirement-to-evidence audit is
+[P5-B8 Final Engineering Closeout](p5-b8-final-engineering-closeout-2026-07-19.md).
+It records the exact WordPress package set, local text and media behavior,
+performance, the last exact release payload, synthetic restore drill,
+dependency policy, final Cloud/plugin gates, strict matrix, rollback, and
+material failed-first-path caveats.
+
+The exact bundle remains bound to the last release-payload revision
+`0663d95f765a8c49154aac0536e26cbb51029094`, SHA-256
+`592d1ce23334cddf4a09db0f147d6db48aa1c696980adc24630ed333660baa17`.
+Changes through `054ae3d8` are documentation and Dependabot/release-policy
+checker contract changes only; they do not change `app/**`, `frontend/**`,
+Compose, deploy payload, or the image lock.
+
+This does not unconditionally complete the refactor's production phase-exit
+requirements. P1-E05 production title execution and P1-E06 production-like
+inventory/carry-forward/restore remain operator-only and are
+`production-only not claimed`; both block production promotion and GA. The
+three named Python 3.14.6 CVE exceptions remain engineering-only through
+`2026-08-05`. `linux/amd64`, production Edge/DNS/WAF/TLS/OTLP/secrets,
+production backup/RPO/RTO, penetration testing, live provider quality, and
+real-user value are also `production-only not claimed`. External object storage
+remains a deferred non-goal rather than a production prerequisite.
+
+The next stage is production/operator readiness plus a bounded real-provider
+WordPress editorial/media trial. Typecho suggestion-only validation may be
+considered after that evidence; Typecho, Z-BlogPHP, Ghost, and additional media
+types remain post-P5 rather than current implementation scope.
