@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import re
+import subprocess
 import tarfile
 from argparse import Namespace
 from datetime import UTC, datetime, timedelta
@@ -737,6 +738,30 @@ def _equivalence(lock: dict[str, object]) -> dict[str, object]:
     }
 
 
+def test_equivalence_inspects_the_selected_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supply = _supply_module()
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=f"{SHA256}\n", stderr="")
+
+    monkeypatch.setattr(supply.subprocess, "run", fake_run)
+    output = tmp_path / "equivalence.json"
+    args = Namespace(
+        lock=str(LOCK_PATH),
+        output=str(output),
+        expected_platform="linux/amd64",
+    )
+
+    assert supply.verify_equivalence(args) == 0
+    assert commands
+    assert all(command[3:5] == ["--platform", "linux/amd64"] for command in commands)
+    assert json.loads(output.read_text())["status"] == "passed"
+
+
 def test_release_scan_index_requires_complete_deploy_set_and_real_id_equivalence(
     tmp_path: Path,
 ) -> None:
@@ -832,7 +857,15 @@ def test_release_index_rejects_mixed_grype_database_identities(tmp_path: Path) -
 def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     source = (ROOT / "scripts" / "scan-production-images.sh").read_text()
 
-    assert 'image_id="$(docker image inspect "${reference}" --format \'{{.Id}}\')"' in source
+    assert "production image scanner requires Docker server API 1.49 or newer" in source
+    assert (
+        'image_id="$(docker image inspect --platform "${RELEASE_PLATFORM}" \\\n'
+        '\t\t"${reference}" --format \'{{.Id}}\')"'
+    ) in source
+    assert (
+        'docker image inspect --platform "${RELEASE_PLATFORM}" "${reference}" '
+        '>"${inspect_path}"'
+    ) in source
     assert '"docker-archive:/input/${key}.image.tar"' in source
     assert "docker image save" in source
     assert '"syft-json=/output/${key}.syft.json"' in source
@@ -845,7 +878,12 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert '"${GRYPE_IMAGE}" db update' in source
     assert "DOCKER_HOST is forbidden" in source
     assert 'docker pull --platform "${RELEASE_PLATFORM}"' in source
-    assert 'docker image tag "${image_id}" "${archive_reference}"' in source
+    assert '--expected-platform "${RELEASE_PLATFORM}"' in source
+    assert 'docker image tag "${reference}" "${archive_reference}"' in source
+    assert (
+        'docker image save --platform "${RELEASE_PLATFORM}" \\\n'
+        '\t\t--output "${archive_path}" "${archive_reference}"'
+    ) in source
     assert "npcink-ai-cloud-scan-${CUSTOM_KEYS[${custom_index}]}" in source
     assert "APPLICATIONS_ONLY=0" in source
     assert 'if image["kind"] == "compose_external"' in source
@@ -854,3 +892,17 @@ def test_scanner_binds_sbom_and_cve_report_to_exact_local_image_id() -> None:
     assert "--only-fixed" not in source
     assert "--ignore" not in source
     assert "scan output must stay outside the Git worktree" in source
+
+
+def test_formal_bundle_inspects_the_requested_platform_in_multi_platform_stores() -> None:
+    source = (ROOT / "deploy" / "bundle-images.sh").read_text()
+
+    assert "formal bundle builder requires Docker server API 1.49 or newer" in source
+    assert (
+        'docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" '
+        "--format '{{.Id}}' \"$1\""
+    ) in source
+    assert (
+        'docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" \\\n'
+        '\t\t--format \'{{.Os}}/{{.Architecture}}\' "$1"'
+    ) in source

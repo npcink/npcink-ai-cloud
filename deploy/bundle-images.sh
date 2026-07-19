@@ -60,6 +60,34 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 command -v tar >/dev/null 2>&1 || fail "tar is required"
 docker buildx version >/dev/null 2>&1 || fail "docker buildx is required"
 
+require_docker_platform_archive_support() {
+	local inspect_help save_help server_api api_major api_minor
+	inspect_help="$(docker image inspect --help 2>&1)" \
+		|| fail "cannot inspect Docker image-inspect capabilities"
+	save_help="$(docker image save --help 2>&1)" \
+		|| fail "cannot inspect Docker image-save capabilities"
+	case "${inspect_help}" in
+		*--platform*) ;;
+		*) fail "formal bundle builder requires docker image inspect --platform support" ;;
+	esac
+	case "${save_help}" in
+		*--platform*) ;;
+		*) fail "formal bundle builder requires docker image save --platform support" ;;
+	esac
+	server_api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" \
+		|| fail "cannot resolve Docker server API version"
+	if [[ ! "${server_api}" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+		fail "cannot parse Docker server API version: ${server_api}"
+	fi
+	api_major="${BASH_REMATCH[1]}"
+	api_minor="${BASH_REMATCH[2]}"
+	if ((api_major < 1 || (api_major == 1 && api_minor < 49))); then
+		fail "formal bundle builder requires Docker server API 1.49 or newer; got ${server_api}"
+	fi
+}
+
+require_docker_platform_archive_support
+
 if [ -n "${IMAGE_PLATFORM}" ]; then
 	case "${IMAGE_PLATFORM}" in
 		linux/amd64|linux/arm64) MANIFEST_IMAGE_PLATFORM="${IMAGE_PLATFORM}" ;;
@@ -151,11 +179,12 @@ set_build_cache_args() {
 }
 
 image_id() {
-	docker image inspect --format '{{.Id}}' "$1"
+	docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" --format '{{.Id}}' "$1"
 }
 
 image_platform() {
-	docker image inspect --format '{{.Os}}/{{.Architecture}}' "$1"
+	docker image inspect --platform "${MANIFEST_IMAGE_PLATFORM}" \
+		--format '{{.Os}}/{{.Architecture}}' "$1"
 }
 
 require_image_platform() {

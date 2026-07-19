@@ -26,6 +26,11 @@ the following are true:
 - package extras are production-only: empty or `[zilliz]`;
 - frontend and every locked external image are included.
 
+The formal builder must expose `docker image inspect --platform` and
+`docker image save --platform`, with Docker server API 1.49 or newer. This is
+a build/scan requirement, not a production-host requirement: the target host
+only loads the already verified single-platform archives.
+
 Only Git-tracked files from `git archive HEAD` enter the source payload. The
 manifest records the full commit/tree/branch, hashes of the Python and pnpm
 locks, production Dockerfiles (including `Dockerfile.postgres`), Compose
@@ -50,7 +55,8 @@ The scanner produces one Docker archive per scanned image and scans that exact
 archive with pinned Syft and Grype. The bundle compresses those same archive
 bytes; it does not run a second `docker save`. Receipts distinguish:
 
-- the source daemon image ID, which may be a multi-architecture index digest;
+- the daemon-reported image ID for the explicitly selected platform, which may
+  differ from the portable archive Config image ID across Docker image stores;
 - the portable Docker archive Config image ID, which is re-derived from a
   post-load `docker image save`; a target daemon's reported `.Id` is not
   assumed to equal this portable content identity;
