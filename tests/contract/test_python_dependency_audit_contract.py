@@ -91,7 +91,7 @@ def test_ci_blocks_backend_and_production_on_security_gates() -> None:
     assert "needs['secret-scan'].result == 'success'" in workflow
 
 
-def test_private_key_fixture_ignore_is_one_exact_fingerprint() -> None:
+def test_gitleaks_fixture_ignores_are_exact_reviewed_fingerprints() -> None:
     ignore_lines = [
         line.strip()
         for line in (ROOT / ".gitleaksignore").read_text().splitlines()
@@ -100,7 +100,9 @@ def test_private_key_fixture_ignore_is_one_exact_fingerprint() -> None:
 
     assert ignore_lines == [
         "86ac095d3fd9b4d8fa9bcfad902ae5ed8c699b86:"
-        "tests/domain/test_payment_gateways.py:private-key:173"
+        "tests/domain/test_payment_gateways.py:private-key:173",
+        "45dc5ef1e91b00c819ba74f32aec98dc5bcdad1f:"
+        "tests/core/test_logging_redaction.py:jwt:56",
     ]
 
 
