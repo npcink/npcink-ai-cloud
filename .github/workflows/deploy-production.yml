@@ -71,9 +71,9 @@ jobs:
         if: steps.deploy_guard.outputs.should_deploy == 'true'
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "pnpm"
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Docker Buildx
         if: steps.deploy_guard.outputs.should_deploy == 'true'
