@@ -278,8 +278,15 @@ Current status (2026-07-19):
   external-Edge/NGINX/Gunicorn trust chain, and closes the two independent P1
   migration findings. It does not supply the clean-tree image scan/bundle or
   production Edge evidence.
-- P5-B5 remains pending, global P5 remains incomplete, and no production
-  promotion or deployment is authorized by the P5-B4 or P5-B6 result.
+- P5-B7 exact-image and bundle engineering acceptance passed at revision
+  `0663d95f`; evidence:
+  [P5-B7 exact release bundle closeout](p5-b7-exact-release-bundle-closeout-2026-07-19.md).
+  The clean `linux/arm64` bundle passed five-image scanning, archive and
+  post-load identity checks, same-bundle double replay, migration, seed,
+  health, and cleanup. Its three exact Python findings are covered only by the
+  named temporary engineering exception through `2026-08-05`.
+- P5-B8 and global P5 remain incomplete. No production promotion or deployment
+  is authorized by the P5-B4, P5-B6, or P5-B7 result.
 
 Deliverables:
 

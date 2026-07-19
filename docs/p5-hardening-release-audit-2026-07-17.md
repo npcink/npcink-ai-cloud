@@ -328,3 +328,29 @@ scan/exact bundle, any governed CVE exception, WordPress text/media replay,
 restore rehearsal, clean six-repository matrix, production operator evidence,
 and final P0-P5 audit remain P5-B7/P5-B8 work. Global P5 and production release
 authorization remain incomplete.
+
+### P5-B7 Exact Release Bundle
+
+P5-B7 engineering acceptance passed at revision `0663d95f`. The complete
+artifact, scan, replay, failure-history, and limitation record is
+[P5-B7 Exact Release Bundle Closeout](p5-b7-exact-release-bundle-closeout-2026-07-19.md).
+
+The clean `linux/arm64` bundle SHA-256 is
+`592d1ce23334cddf4a09db0f147d6db48aa1c696980adc24630ed333660baa17`.
+Five exact image subjects passed the canonical scan and produced five archives
+covering eight runtime roles. The same bundle passed pre-load and post-load
+identity verification twice, fresh migration through Alembic head, seed,
+health, live smoke, and isolated cleanup without changing the existing
+development container set.
+
+The API result includes exactly three allowlisted Python 3.14.6 High findings:
+`CVE-2026-11940`, `CVE-2026-11972`, and `CVE-2026-15308`. Owner is `Muze`,
+expiry is `2026-08-05`, and scope is engineering scan/bundle rehearsal only.
+The original failed unallowlisted receipt remains failed and unchanged. This
+exception is not production or GA authorization.
+
+This closes the P5-B7 exact-image and exact-bundle engineering precondition
+only. Current exact-package WordPress text/media replay, restore rehearsal,
+all final Cloud/plugin gates, strict six-repository matrix, dependency
+follow-up, production operator evidence, and the final P0-P5 audit remain
+P5-B8 work. Global P5 and production release authorization remain incomplete.
