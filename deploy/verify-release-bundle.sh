@@ -18,7 +18,8 @@ Usage:
 
 The archive mode validates the outer checksum, tar member paths/types, schema,
 complete file set, hashes, sizes, and required archives before extraction.
-The post-load mode additionally verifies every loaded Docker image ID.
+The post-load mode additionally verifies every loaded Docker image and writes
+the bundle-bound target-daemon image map to the release's fixed private state path.
 EOF
 }
 
@@ -69,7 +70,8 @@ case "${MODE}" in
 			echo "[fail] docker is required for post-load image-ID verification" >&2
 			exit 1
 		}
-		"${RELEASE_TOOL_PYTHON}" "${HELPER}" verify-directory --root "${TARGET}" --post-load
+		"${RELEASE_TOOL_PYTHON}" "${HELPER}" verify-directory \
+			--root "${TARGET}" --post-load
 		;;
 esac
 

@@ -16,7 +16,7 @@ BASE_URL="${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}"
 INTERNAL_AUTH_TOKEN="${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN:-}"
 SITE_ID="${NPCINK_CLOUD_SITE_ID:-site_smoke}"
 KEY_ID="${NPCINK_CLOUD_KEY_ID:-key_default}"
-SECRET="${NPCINK_CLOUD_SECRET:-npcink-cloud-test-secret}"
+SECRET="${NPCINK_CLOUD_SECRET:-}"
 PROFILE_ID="${NPCINK_CLOUD_PROFILE_ID:-text.balanced}"
 ABILITY_NAME="${NPCINK_CLOUD_ABILITY_NAME:-npcink-abilities-toolkit/build-article-block-plan}"
 CHANNEL="${NPCINK_CLOUD_CHANNEL:-openapi}"
@@ -43,7 +43,7 @@ while [ "$#" -gt 0 ]; do
 			shift 2
 			;;
 		--secret)
-			echo "[fail] --secret is forbidden because process arguments are observable; use NPCINK_CLOUD_SECRET or a protected environment file." >&2
+			echo "[fail] --secret is forbidden because process arguments are observable; use NPCINK_CLOUD_SECRET from a protected process environment." >&2
 			exit 1
 			;;
 		--profile-id)
@@ -104,6 +104,9 @@ ok() {
 
 if [ -z "${INTERNAL_AUTH_TOKEN}" ]; then
 	fail "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN for internal-only perimeter checks is required"
+fi
+if [ -z "${SECRET}" ]; then
+	fail "NPCINK_CLOUD_SECRET is required for signed runtime smoke"
 fi
 
 json_read_path() {

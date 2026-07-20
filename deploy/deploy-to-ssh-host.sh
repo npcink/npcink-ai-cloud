@@ -19,7 +19,7 @@ BASE_URL="${NPCINK_CLOUD_BASE_URL:-http://127.0.0.1:${NPCINK_CLOUD_PORT:-8010}}"
 REMOTE_COMPOSE_FILE="${NPCINK_CLOUD_REMOTE_COMPOSE_FILE:-}"
 SITE_ID="${NPCINK_CLOUD_SITE_ID:-site_smoke}"
 KEY_ID="${NPCINK_CLOUD_KEY_ID:-key_default}"
-SECRET="${NPCINK_CLOUD_SECRET:-npcink-cloud-test-secret}"
+SECRET="${NPCINK_CLOUD_SECRET:-}"
 export -n SECRET 2>/dev/null || true
 SCOPES="${NPCINK_CLOUD_SCOPES:-catalog:read,runtime:resolve,runtime:execute,runtime:read,stats:read}"
 PROFILE_ID="${NPCINK_CLOUD_PROFILE_ID:-text.balanced}"
@@ -105,7 +105,7 @@ while [ "$#" -gt 0 ]; do
 			shift 2
 			;;
 		--secret)
-			echo "[fail] --secret is forbidden because process arguments are observable; --stage-only accepts only bundle/platform, SSH, managed-root, and host-Python options. Use NPCINK_CLOUD_SECRET or a protected env file for a full deployment." >&2
+			echo "[fail] --secret is forbidden because process arguments are observable; --stage-only accepts only bundle/platform, SSH, managed-root, and host-Python options. Use NPCINK_CLOUD_SECRET from a protected process environment for a full deployment." >&2
 			exit 1
 			;;
 		--scopes)
@@ -253,6 +253,13 @@ fi
 
 if [ "${STAGE_ONLY}" = "1" ] && [ "${#STAGE_ONLY_DISALLOWED_CLI[@]}" -ne 0 ]; then
 	echo "[fail] --stage-only accepts only bundle/platform, SSH, managed-root, and host-Python options; rejected: ${STAGE_ONLY_DISALLOWED_CLI[*]}" >&2
+	exit 1
+fi
+
+if [ "${STAGE_ONLY}" != "1" ] && \
+	{ [ "${SKIP_SEED}" != "1" ] || [ "${SKIP_SMOKE}" != "1" ]; } && \
+	[ -z "${SECRET}" ]; then
+	echo "[fail] NPCINK_CLOUD_SECRET is required unless both runtime seed and signed smoke are skipped." >&2
 	exit 1
 fi
 
@@ -705,10 +712,15 @@ export NPCINK_CLOUD_RELEASE_TOOL_PYTHON="${RELEASE_TOOL_PYTHON}"
 RELEASE_DIR="${REMOTE_DIR}/${RELEASE_NAME}"
 CURRENT_LINK="${REMOTE_DIR}/current"
 DEPLOY_LOCK_DIR="${REMOTE_DIR}/.deploy-lock"
+DEPLOY_LOCK_OWNER_FILE="${DEPLOY_LOCK_DIR}/one-off-owner"
+DEPLOY_LOCK_OWNER=""
+DEPLOY_LOCK_OWNER_INSTALLED=0
 FAILURE_MARKER="${REMOTE_DIR}/.cutover-failed"
 RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"
+GLOBAL_ONE_OFF_LOCK_DIR="${RELEASE_STATE_ROOT}/.release-one-off.lock"
 RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"
 RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"
+RELEASE_ENV_TMP=""
 ROLLBACK_IMAGE_MAP="${RELEASE_STATE_DIR}/rollback-images.tsv"
 ROLLBACK_TAG_SUFFIX="${RELEASE_NAME#release-}"
 REMOTE_DIR_CANONICAL="$(readlink -f "${REMOTE_DIR}")"
@@ -725,7 +737,7 @@ if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then
 	# container promised by --skip-frontend-image.
 	APPLICATION_SERVICES+=(frontend)
 fi
-APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collector)
+APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collector release-one-off)
 RECOVERY_REQUIRED_SERVICES=(proxy frontend api worker callback-worker ops-worker)
 PREVIOUS_WRITER_SERVICES=(api worker callback-worker ops-worker)
 APPLICATIONS_STOPPED=0
@@ -733,6 +745,7 @@ MIGRATION_STARTED=0
 CUTOVER_MUTATION_STARTED=0
 DEPLOY_SUCCEEDED=0
 RETAIN_DEPLOY_LOCK=0
+ONE_OFF_BUSY_BEFORE_MUTATION=0
 ROLLBACK_IMAGE_MAP_SNAPSHOT_OPEN=0
 CUTOVER_PHASE="initialize"
 
@@ -1020,8 +1033,56 @@ record_post_commit_cleanup_failure() {
 	echo "[fail] ${message}" >&2
 }
 
+install_deploy_lock_owner() {
+	DEPLOY_LOCK_OWNER="$("${RELEASE_TOOL_PYTHON}" -c 'import secrets; print(secrets.token_hex(32))')" || return 1
+	[[ "${DEPLOY_LOCK_OWNER}" =~ ^[0-9a-f]{64}$ ]] || return 1
+	if ! (umask 077; set -o noclobber; printf '%s\n' "${DEPLOY_LOCK_OWNER}" >"${DEPLOY_LOCK_OWNER_FILE}") || \
+		! chmod 0600 "${DEPLOY_LOCK_OWNER_FILE}" || \
+		[ ! -f "${DEPLOY_LOCK_OWNER_FILE}" ] || [ -L "${DEPLOY_LOCK_OWNER_FILE}" ] || \
+		[ "$(stat -c '%u' "${DEPLOY_LOCK_OWNER_FILE}")" != "0" ] || \
+		[ "$(stat -c '%a' "${DEPLOY_LOCK_OWNER_FILE}")" != "600" ]; then
+		RETAIN_DEPLOY_LOCK=1
+		return 1
+	fi
+	export NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}"
+	DEPLOY_LOCK_OWNER_INSTALLED=1
+}
+
+release_deploy_lock_owner() {
+	[ "${DEPLOY_LOCK_OWNER_INSTALLED}" = "1" ] || return 0
+	if ! rm -f -- "${DEPLOY_LOCK_OWNER_FILE}" || \
+		[ -e "${DEPLOY_LOCK_OWNER_FILE}" ] || [ -L "${DEPLOY_LOCK_OWNER_FILE}" ]; then
+		return 1
+	fi
+	unset NPCINK_CLOUD_DEPLOY_LOCK_OWNER
+	DEPLOY_LOCK_OWNER=""
+	DEPLOY_LOCK_OWNER_INSTALLED=0
+}
+
+ensure_private_release_state_directory() {
+	local directory="$1"
+	if [ ! -e "${directory}" ] && [ ! -L "${directory}" ]; then
+		if ! (umask 077; mkdir -- "${directory}"); then
+			echo "[fail] Release state directory could not be created safely: ${directory}" >&2
+			return 1
+		fi
+		chmod 0700 "${directory}" || return 1
+	fi
+	if [ ! -d "${directory}" ] || [ -L "${directory}" ] || \
+		[ "$(stat -c '%u' "${directory}" 2>/dev/null || true)" != "0" ] || \
+		[ "$(stat -c '%a' "${directory}" 2>/dev/null || true)" != "700" ]; then
+		echo "[fail] Release state directory must be root-owned, non-symlink, and mode 0700: ${directory}" >&2
+		return 1
+	fi
+}
+
 application_container_ids() {
 	local service_name="$1"
+	if [ "${service_name}" = "release-one-off" ]; then
+		docker ps -aq \
+			--filter "label=com.docker.compose.service=${service_name}"
+		return
+	fi
 	docker ps -aq \
 		--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
 		--filter "label=com.docker.compose.service=${service_name}"
@@ -1071,6 +1132,23 @@ assert_application_services_stopped() {
 		fi
 	done
 	echo "[ok] Public and write-capable application services are stopped."
+}
+
+assert_governed_one_off_absent() {
+	local container_ids=""
+	if [ -e "${GLOBAL_ONE_OFF_LOCK_DIR}" ] || [ -L "${GLOBAL_ONE_OFF_LOCK_DIR}" ]; then
+		echo "[fail] Governed release one-off lock remains present: ${GLOBAL_ONE_OFF_LOCK_DIR}" >&2
+		return 1
+	fi
+	container_ids="$(application_container_ids release-one-off 2>/dev/null)" || {
+		echo "[fail] Docker could not prove governed release one-off containers absent." >&2
+		return 1
+	}
+	if [ -n "${container_ids}" ]; then
+		echo "[fail] Governed release one-off container remains present." >&2
+		return 1
+	fi
+	echo "[ok] Governed release one-off lock and containers are absent."
 }
 
 compose_previous_release() {
@@ -1304,6 +1382,8 @@ expected_global_keys = {
     "status",
     "source_revision",
     "target_revision",
+    "runtime_legacy_rows_migrated",
+    "service_legacy_rows_migrated",
     "legacy_rows_migrated",
     "active_release",
     "activation_commit_sha256",
@@ -1316,7 +1396,9 @@ expected_global = {
     "status": "passed",
     "source_revision": "20260710_0058",
     "target_revision": "20260717_0068",
-    "legacy_rows_migrated": 18,
+    "runtime_legacy_rows_migrated": 18,
+    "service_legacy_rows_migrated": 12,
+    "legacy_rows_migrated": 30,
     "active_release": str(active_release),
 }
 expect_exact(global_receipt, expected_global, "Global P1-E06 activation receipt")
@@ -1335,6 +1417,8 @@ expected_activation_keys = {
     "status",
     "active_release",
     "database_revision",
+    "runtime_legacy_rows_migrated",
+    "service_legacy_rows_migrated",
     "legacy_rows_migrated",
     "backup_sha256",
     "off_host_receipt_sha256",
@@ -1346,7 +1430,9 @@ expected_activation = {
     "status": "committed",
     "active_release": str(active_release),
     "database_revision": "20260717_0068",
-    "legacy_rows_migrated": 18,
+    "runtime_legacy_rows_migrated": 18,
+    "service_legacy_rows_migrated": 12,
+    "legacy_rows_migrated": 30,
 }
 expect_exact(activation, expected_activation, "P1-E06 activation commit")
 expected_result_keys = {
@@ -1354,6 +1440,8 @@ expected_result_keys = {
     "status",
     "source_revision",
     "target_revision",
+    "runtime_legacy_rows_migrated",
+    "service_legacy_rows_migrated",
     "legacy_rows_migrated",
     "backup_sha256",
     "previous_release",
@@ -1378,7 +1466,9 @@ expected_result = {
     "status": "passed",
     "source_revision": "20260710_0058",
     "target_revision": "20260717_0068",
-    "legacy_rows_migrated": 18,
+    "runtime_legacy_rows_migrated": 18,
+    "service_legacy_rows_migrated": 12,
+    "legacy_rows_migrated": 30,
     "active_release": str(active_release),
     "off_host_copy_verified": True,
     "independent_postgres16_restore_verified": True,
@@ -1554,6 +1644,9 @@ prove_fail_closed_recovery() {
 	if ! assert_application_services_stopped; then
 		recovery_failed=1
 	fi
+	if ! assert_governed_one_off_absent; then
+		recovery_failed=1
+	fi
 	if ! restore_previous_current_pointer; then
 		recovery_failed=1
 	elif ! assert_previous_current_pointer; then
@@ -1578,11 +1671,22 @@ recover_failed_cutover() {
 	echo "[warn] Recovering failed production cutover at phase: ${CUTOVER_PHASE}" >&2
 	if [ "${CUTOVER_MUTATION_STARTED}" != "1" ]; then
 		if ! write_failure_marker "validation_failed_before_mutation"; then
-			write_failure_marker "recovery_incomplete" >/dev/null 2>&1 || true
 			return 1
 		fi
-		echo "[ok] Validation failed before any image/container mutation; running services were untouched." >&2
+		if [ "${ONE_OFF_BUSY_BEFORE_MUTATION}" = "1" ]; then
+			echo "[ok] Another governed one-off was already active; this deploy made no mutation and left it untouched." >&2
+		else
+			echo "[ok] Validation failed before any image/container mutation; running services were untouched." >&2
+		fi
 		return 0
+	fi
+	if ! assert_governed_one_off_absent; then
+		force_fail_closed
+		assert_application_services_stopped >/dev/null 2>&1 || true
+		write_failure_marker "recovery_incomplete" >/dev/null 2>&1 || true
+		RETAIN_DEPLOY_LOCK=1
+		echo "[fail] Governed one-off cleanup is unproved; public/write services remain stopped and the deploy lock is retained." >&2
+		return 1
 	fi
 	restore_release_image_tags || image_restore_status=$?
 	if [ "${image_restore_status}" -ne 0 ]; then
@@ -1635,15 +1739,44 @@ on_deploy_exit() {
 	local recovery_status=0
 	trap - EXIT
 	set +e
+	if [ -n "${RELEASE_ENV_TMP}" ]; then
+		if ! rm -f -- "${RELEASE_ENV_TMP}" || \
+			[ -e "${RELEASE_ENV_TMP}" ] || [ -L "${RELEASE_ENV_TMP}" ]; then
+			exit_status=1
+			recovery_status=1
+			RETAIN_DEPLOY_LOCK=1
+			echo "[fail] Temporary release env cleanup could not be proved; deploy lock retained." >&2
+		fi
+	fi
 	if [ "${exit_status}" -ne 0 ] && [ "${DEPLOY_SUCCEEDED}" != "1" ]; then
 		recover_failed_cutover || recovery_status=$?
+	fi
+	if [ "${CUTOVER_MUTATION_STARTED}" = "1" ] && \
+		! assert_governed_one_off_absent; then
+		exit_status=1
+		recovery_status=1
+		RETAIN_DEPLOY_LOCK=1
+		restore_rollback_image_map_snapshot || true
+		if [ "${DEPLOY_SUCCEEDED}" = "1" ]; then
+			write_failure_marker "post_commit_cleanup_incomplete" >/dev/null 2>&1 || true
+		else
+			write_failure_marker "recovery_incomplete" >/dev/null 2>&1 || true
+		fi
+		echo "[fail] Governed one-off absence was not proved; deployment lock retained." >&2
 	fi
 	if [ "${RETAIN_DEPLOY_LOCK}" = "1" ]; then
 		exit_status=1
 		restore_rollback_image_map_snapshot || true
 		echo "[fail] Deployment lock retained for operator recovery: ${DEPLOY_LOCK_DIR}" >&2
 	elif [ "${recovery_status}" -eq 0 ]; then
-		if ! rmdir "${DEPLOY_LOCK_DIR}" >/dev/null 2>&1 || \
+		if ! release_deploy_lock_owner; then
+			CUTOVER_PHASE="finalize-deploy-lock-owner-release"
+			RETAIN_DEPLOY_LOCK=1
+			restore_rollback_image_map_snapshot || true
+			write_failure_marker "post_commit_cleanup_incomplete" >/dev/null 2>&1 || true
+			echo "[fail] Deployment lock owner cleanup could not be proved; lock retained." >&2
+			exit_status=1
+		elif ! rmdir "${DEPLOY_LOCK_DIR}" >/dev/null 2>&1 || \
 			[ -e "${DEPLOY_LOCK_DIR}" ] || [ -L "${DEPLOY_LOCK_DIR}" ]; then
 			CUTOVER_PHASE="finalize-deploy-lock-release"
 			RETAIN_DEPLOY_LOCK=1
@@ -1668,6 +1801,10 @@ on_deploy_exit() {
 	exit "${exit_status}"
 }
 trap on_deploy_exit EXIT
+install_deploy_lock_owner || {
+	echo "[fail] Deployment lock owner proof could not be installed." >&2
+	exit 1
+}
 
 resolve_previous_release
 
@@ -1679,12 +1816,8 @@ remote_run_timed "remote extract bundle" tar xzf "${REMOTE_BUNDLE_PATH}" -C "${R
 
 . "${RELEASE_DIR}/deploy/common.sh"
 
-install -d -m 0700 "${RELEASE_STATE_ROOT}" "${RELEASE_STATE_DIR}"
-if [ "$(stat -c '%a' "${RELEASE_STATE_ROOT}")" != "700" ] || \
-	[ "$(stat -c '%a' "${RELEASE_STATE_DIR}")" != "700" ]; then
-	echo "[fail] Release state directories must have mode 700." >&2
-	exit 1
-fi
+ensure_private_release_state_directory "${RELEASE_STATE_ROOT}"
+ensure_private_release_state_directory "${RELEASE_STATE_DIR}"
 
 if [ -n "${PREVIOUS_RELEASE_DIR}" ]; then
 	PREVIOUS_ENV_FILE="$(NPCINK_CLOUD_ENV_FILE= npcink_ai_cloud_resolve_env_file "${PREVIOUS_RELEASE_DIR}")"
@@ -1707,15 +1840,59 @@ if [ -z "${NEW_ENV_SOURCE}" ]; then
 	echo "[fail] No deployment env source is available for ${RELEASE_NAME}." >&2
 	exit 1
 fi
-if [ "${NEW_ENV_SOURCE}" != "${RELEASE_ENV_FILE}" ]; then
-	install -m 0600 "${NEW_ENV_SOURCE}" "${RELEASE_ENV_FILE}"
-else
-	chmod 0600 "${RELEASE_ENV_FILE}"
-fi
-if [ "$(stat -c '%a' "${RELEASE_ENV_FILE}")" != "600" ]; then
-	echo "[fail] Per-release env file mode must be 600." >&2
+if [ ! -f "${NEW_ENV_SOURCE}" ] || [ -L "${NEW_ENV_SOURCE}" ] || \
+	[ "$(stat -c '%u' "${NEW_ENV_SOURCE}" 2>/dev/null || true)" != "0" ] || \
+	[ "$(stat -c '%a' "${NEW_ENV_SOURCE}" 2>/dev/null || true)" != "600" ]; then
+	echo "[fail] Deployment env source must be a root-owned, non-symlink mode-0600 regular file." >&2
 	exit 1
 fi
+if [ -e "${RELEASE_ENV_FILE}" ] || [ -L "${RELEASE_ENV_FILE}" ]; then
+	echo "[fail] Fresh per-release env destination already exists: ${RELEASE_ENV_FILE}" >&2
+	exit 1
+fi
+RELEASE_ENV_TMP="${RELEASE_STATE_DIR}/.env.deploy.tmp.$$"
+if [ -e "${RELEASE_ENV_TMP}" ] || [ -L "${RELEASE_ENV_TMP}" ] || \
+	! (umask 077; set -o noclobber; : >"${RELEASE_ENV_TMP}") 2>/dev/null || \
+	! install -m 0600 "${NEW_ENV_SOURCE}" "${RELEASE_ENV_TMP}" || \
+	[ ! -f "${RELEASE_ENV_TMP}" ] || [ -L "${RELEASE_ENV_TMP}" ] || \
+	[ "$(stat -c '%u' "${RELEASE_ENV_TMP}" 2>/dev/null || true)" != "0" ] || \
+	[ "$(stat -c '%a' "${RELEASE_ENV_TMP}" 2>/dev/null || true)" != "600" ]; then
+	echo "[fail] Protected per-release env staging failed." >&2
+	exit 1
+fi
+"${RELEASE_TOOL_PYTHON}" - "${RELEASE_ENV_TMP}" "${RELEASE_STATE_DIR}" <<'PY'
+import os
+import sys
+
+for path in sys.argv[1:]:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+PY
+# Both BSD and GNU mv support -n, while GNU-only -T is unavailable on the
+# macOS contract runner. The destination was proved absent while the global
+# deploy lock was held; retaining the source after mv is the no-clobber signal.
+if ! mv -n "${RELEASE_ENV_TMP}" "${RELEASE_ENV_FILE}" || \
+	[ -e "${RELEASE_ENV_TMP}" ] || [ -L "${RELEASE_ENV_TMP}" ] || \
+	[ ! -f "${RELEASE_ENV_FILE}" ] || [ -L "${RELEASE_ENV_FILE}" ] || \
+	[ "$(stat -c '%u' "${RELEASE_ENV_FILE}" 2>/dev/null || true)" != "0" ] || \
+	[ "$(stat -c '%a' "${RELEASE_ENV_FILE}" 2>/dev/null || true)" != "600" ]; then
+	echo "[fail] Per-release env publication was not atomic and private." >&2
+	exit 1
+fi
+RELEASE_ENV_TMP=""
+"${RELEASE_TOOL_PYTHON}" - "${RELEASE_STATE_DIR}" <<'PY'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
 export NPCINK_CLOUD_ENV_FILE="${RELEASE_ENV_FILE}"
 export NPCINK_CLOUD_BACKEND_ENV_FILE="${RELEASE_ENV_FILE}"
 COMPOSE_PROJECT_NAME_EFFECTIVE="$(npcink_ai_cloud_compose_project_name_from_env "${RELEASE_ENV_FILE}")"
@@ -1767,6 +1944,13 @@ fi
 assert_previous_writer_project_alignment
 assert_p1_e06_ordinary_deploy_gate
 
+CUTOVER_PHASE="prove-governed-one-off-absence-before-mutation"
+if ! remote_run_timed "assert governed one-off absent before mutation" \
+	assert_governed_one_off_absent; then
+	ONE_OFF_BUSY_BEFORE_MUTATION=1
+	exit 1
+fi
+
 cd "${RELEASE_DIR}"
 CUTOVER_PHASE="prepare-release-images"
 CUTOVER_MUTATION_STARTED=1
@@ -1791,13 +1975,11 @@ CUTOVER_PHASE="migrate-with-staged-image"
 # failed/partial migration may have made the database incompatible with it.
 MIGRATION_STARTED=1
 remote_run_timed "remote migrate" \
-	env NPCINK_CLOUD_MIGRATION_ONLY=1 \
 	bash deploy/remote-migrate.sh </dev/null
 
 if [ "${REFRESH_PROVIDERS}" = "1" ]; then
 	CUTOVER_PHASE="refresh-provider-projections-with-staged-image"
 	remote_run_timed "remote refresh providers" \
-		env NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF=1 \
 		bash deploy/remote-refresh-providers.sh </dev/null
 fi
 

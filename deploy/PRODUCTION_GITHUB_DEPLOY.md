@@ -69,15 +69,20 @@ The manually approved production deploy job:
    directories are mode `0700` and the env file is mode `0600`.
 4. Resolves both old and new Compose project names, verifies the actual old
    writer labels, and rejects drift before the first image or container mutation.
-5. Prepares exact images, stops old public/write services, and starts or retains
-   only PostgreSQL and Redis.
-6. Runs migration and provider refresh through staged one-off API containers
+5. Runs the explicit `prepare-only` phase, which loads and proves exact images,
+   writes the mode-`0600` fixed target-daemon map at
+   `${REMOTE_DIR}/.release-state/<release-name>/target-daemon-images.json`, and
+   starts no service; it then stops old public/write services.
+6. Runs the explicit `data-only` phase to create, prove, and start only
+   PostgreSQL and Redis by target-daemon image ID.
+7. Runs migration and provider refresh through staged one-off API containers
    with Runtime Compose `pull_policy: never` and exact image-ID proof.
-7. Moves `current` atomically, starts API, then starts the three workers.
-8. Proves each new worker container is stable and each heartbeat is newer than
-   the cutover cutoff, then verifies generic `/health/operational-ready`.
-9. Restores frontend/proxy traffic and verifies public static legal pages,
-   including `/terms/en/terms.html`.
+8. Moves `current` atomically, then runs `api-only` to start and verify API.
+9. Runs `workers-only`, proves each new worker container is stable, and proves
+   each heartbeat is newer than the cutover cutoff, then verifies generic
+   `/health/operational-ready`.
+10. Runs `traffic-only` to restore frontend/proxy traffic and verifies public
+    static legal pages, including `/terms/en/terms.html`.
 
 The exact bundle contains the application outputs, the optional frontend output,
 deploy scripts, Compose files, static site files, and every locked external
@@ -165,13 +170,17 @@ per-release state file:
 
 ```text
 /opt/npcink-ai-cloud/.release-state/<release-name>/env.deploy
+/opt/npcink-ai-cloud/.release-state/<release-name>/target-daemon-images.json
 ```
 
 `/opt/npcink-ai-cloud/current` selects code only. Its basename selects the
 corresponding protected state directory. Both `.release-state` and its release
-child are mode `0700`; `env.deploy` is mode `0600`. A separately uploaded env is
-staged under the protected incoming directory and installed here before Compose
-runs; it is never extracted into the release directory.
+child are owner-controlled non-symlink directories with mode `0700`;
+`env.deploy` and `target-daemon-images.json` are owner-controlled regular files
+with mode `0600`. The target-daemon map path is derived from the managed release
+basename and cannot be overridden. A separately uploaded env is staged under
+the protected incoming directory and installed here before Compose runs; it is
+never extracted into the release directory.
 
 Do not put database passwords, SMTP passwords, provider API keys, portal JWT
 secrets, or internal auth tokens in GitHub Actions unless you intentionally move
@@ -313,7 +322,7 @@ NPCINK_CLOUD_CERTIFICATE_RENEWAL_HOOK_PATH=/etc/letsencrypt/renewal-hooks/deploy
 
 Formal runtime has no defaults for these values. `generate` atomically removes
 and fsyncs any prior success before it starts live checks, so a failed rerun
-cannot leave old evidence usable. Formal `full`/`prepare-only` loading and
+cannot leave old evidence usable. The explicit `prepare-only` image phase and
 P1-E06 verify this receipt before image mutation. Regenerate it after
 certificate or hook rotation; do not edit or copy a stale receipt into place.
 
@@ -426,26 +435,34 @@ prepare images
 ```
 
 Before `prepare images`, both release env files must resolve the same Compose
-project name. Ordinary full deploy also requires an existing managed `current`
-release; it is not a host-bootstrap path. It queries the frozen previous
+project name. Ordinary production deployment also requires an existing managed
+`current` release; it is not a host-bootstrap path. It queries the frozen previous
 PostgreSQL before image loading and unconditionally rejects revision
 `20260710_0058`. The formal `Deploy Production` workflow requires the persistent
 global `p1_e06_global_activation.v1` receipt, validates the complete
 digest-bound activation/cutover evidence, and accepts only revision `0068` or a
-descendant proven by the staged bundle's Alembic graph. Full deploy defaults to
-receipt enforcement, and `deploy/workspace-target.env.sh` pins it to `1` for
-the supported production CLI path. Migration and provider
-refresh first create an inert named
-`--no-deps --rm` container, compare its `.Image` and the current tag with the
-bundle-manifest API image ID, execute the payload only after that proof, and
-remove the container. Signal cleanup and a 15-minute self-termination bound
-limit interruption residue. Docker Compose v2.27 `run` receives no `--pull` option;
-Runtime Compose also uses `pull_policy: never`. Once migration begins, a failure
-is fail-closed: old application services are not automatically started against
-the changed or partially changed schema. Recovery must prove that all
-public/write services are stopped, `current` is restored, and a restricted
-failure marker exists. If any recovery proof is incomplete, `.deploy-lock` is
-retained for an operator. A successful deploy retains
+descendant proven by the staged bundle's Alembic graph. Ordinary production
+deployment requires receipt enforcement, and `deploy/workspace-target.env.sh`
+pins it to `1` for the supported production CLI path. Migration and provider
+refresh use the profiled `release-one-off` API service, pinned to the recorded
+target-local daemon ID. Compose creates exactly one stopped candidate with
+`up --no-start --pull never --no-build --no-deps --force-recreate`. Post-load
+verification first proves the loaded
+image's portable Config image ID and platform against the exact bundle, then
+records the corresponding target-local daemon ID only in
+.release-state/<release-name>/target-daemon-images.json`. The one-off compares
+the stopped candidate's `.Image` and current tag with this recorded target-local
+ID, starts only the captured container ID, rechecks that same running identity,
+then executes the payload through `docker exec -i` and removes the container.
+One fixed private lock under the managed `.release-state` root serializes
+one-offs across releases. Signal cleanup is mandatory; incomplete container or
+protected-stdin cleanup retains that lock for operator recovery. Runtime
+Compose also uses `pull_policy: never`. Once migration begins, a
+failure is fail-closed: old application services are not automatically
+started against the changed or partially changed schema. Recovery must prove
+that all public/write services are stopped, `current` is restored, and a
+restricted failure marker exists. If any recovery proof is incomplete,
+`.deploy-lock` is retained for an operator. A successful deploy retains
 `.release-state/<release-name>/env.deploy`, removes the temporary rollback-image map,
 and removes private rollback tags.
 After the new runtime has passed activation checks, failure to clean protected
@@ -455,9 +472,37 @@ remote transaction writes `outcome=post_commit_cleanup_incomplete`, retains the
 map and lock, and never starts the previous runtime. Success is emitted only
 after cleanup and unlock are proved.
 
-Runtime configuration-only changes can normally be applied to the current
-release's external `.release-state/<release-name>/env.deploy` and followed by a
-container restart. This does not apply to either encryption pair:
+The loader has no default or aggregate phase; the orchestrator must select one
+of `prepare-only`, `data-only`, `api-only`, `workers-only`, or `traffic-only`.
+For every service-start phase it freezes all required daemon IDs from the fixed
+map, pins Compose to those IDs, and creates force-recreated stopped candidates
+with `up --no-start --pull never --no-build --no-deps --force-recreate`. It
+captures exactly one container ID per service, verifies every candidate's
+`.Image`, and re-proves the complete phase's governed tags against the map. Only
+then does it run
+`docker start` with those captured IDs; the same IDs and images must pass the
+post-start identity and running-state checks before health or readiness.
+
+If the global `.release-state/.release-one-off.lock` remains, stop automation
+and treat it as recovery evidence. Never remove the lock first. If
+`.deploy-lock` also exists, resolve that deployment's failure marker before
+touching either lock. Otherwise query all projects with
+`docker container ls -a --no-trunc --filter
+"label=com.docker.compose.service=release-one-off"`, remove only the captured
+full IDs, and repeat both the label query and exact-ID queries until absence is
+proved. Check for a root-owned private `npcink-release-proof-stdin.*` directory
+under the configured temporary root and remove it only after its container is
+absent. Only then verify the lock is a root-owned, non-symlink, empty mode-0700
+directory and remove it with `rmdir`; any ambiguous query or filesystem state
+keeps the lock and escalates to manual recovery.
+
+Runtime configuration changes are releases. Never edit the active release's
+external `.release-state/<release-name>/env.deploy` or directly restart its
+Compose services. Prepare a complete protected env file on the trusted
+workstation and apply it through `deploy/deploy-to-ssh-host.sh`, so the same
+deploy lock, exact bundle/image proof, rollback point, and readiness gates own
+the change. The ordinary governed path still does not apply to either
+encryption pair:
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /
 `NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID` or
 `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET` /
@@ -553,9 +598,12 @@ sudo "${STAGED_RELEASE}/deploy/runtime-data-encryption-cutover.sh" \
    30 ciphertexts total. Each `apply` is an independent database transaction; both applies and
    both verifies must pass. It then switches production PostgreSQL and Redis to
    the exact target image IDs and proves both are healthy plus PostgreSQL is
-   still at `0058` before migration. Production Compose v2.27 one-offs pass only
-   variable names with `run --rm --no-deps -e VARIABLE_NAME`; no CLI `--pull`,
-   secret value argument, or env-file run option is allowed. Runtime Compose
+   still at `0058` before migration. Every API one-off uses the governed
+   `release-one-off` stopped candidate: Compose creates it with `up --no-start
+   --pull never --no-build --no-deps --force-recreate`, the host proves its
+   exact image and never-started state, starts the captured ID, then passes only
+   variable names through `docker exec -i --env VARIABLE_NAME`. Secret value
+   arguments and env-file run options are forbidden. Runtime Compose
    `pull_policy: never` and exact API image-ID proof are required. Inventory and
    new-key-only `verify` receive no old-root variable; only each matching
    `dry-run` and `apply` do. The first raw-ciphertext cutover omits
@@ -600,20 +648,12 @@ and write `.cutover-failed` with
 `recovery=do_not_rollback_healthy_active_runtime`, then repair terminalization.
 
 Future `rde.v1` to `rde.v1` rotation remains a separate, manually approved
-maintenance procedure; it is not an alternate P1-E06 entry point. It keeps the
-same backup, receipt, fence, restore, and rollback gates. It supplies every old
-key ID to `inventory`, positionally pairs each `--old-key-id` with its
-`--old-root-env` in `dry-run` and `apply`, and runs Compose v2.27 with only:
-
-```text
-run --rm --no-deps
--e NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET
--e NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID
--e NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET
-```
-
-The old-root `-e` entry applies only to `dry-run` and `apply`; inventory and
-new-key-only `verify` omit it.
+maintenance procedure; it is not an alternate P1-E06 entry point. No direct
+Compose command is approved. Implement and review a dedicated orchestrator
+that reuses the deployment-owner/global-one-off handshake, exact stopped
+candidate image proof, names-only protected environment handoff, cleanup
+proof, and the same backup, receipt, fence, restore, and rollback gates.
+Inventory and new-key-only `verify` must still omit every old root.
 
 Normal runtime has no legacy or dual-read path. It accepts only active `rde.v1`
 and `sse.v1` envelopes and rejects raw Fernet. The Runtime Data tool supports

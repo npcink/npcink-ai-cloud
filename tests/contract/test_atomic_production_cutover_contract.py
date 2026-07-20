@@ -31,7 +31,7 @@ def _write(path: Path, text: str, *, executable: bool = False) -> None:
 
 
 def _stub_bundle(source: Path) -> None:
-    verifier = r'''#!/usr/bin/env bash
+    verifier = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf 'verify:%s:%s\n' "${1:-}" "${2:-}" >>"${CUTOVER_LOG}"
 [ "${1:-}" = "--pre-load" ]
@@ -39,10 +39,10 @@ printf 'verify:%s:%s\n' "${1:-}" "${2:-}" >>"${CUTOVER_LOG}"
 if [ "${FAIL_STAGE_VERIFY:-0}" = "1" ]; then
     exit 47
 fi
-'''
-    loader = r'''#!/usr/bin/env bash
+"""
+    loader = r"""#!/usr/bin/env bash
 set -euo pipefail
-printf 'load:%s\n' "${NPCINK_CLOUD_LOAD_MODE:-full}" >>"${CUTOVER_LOG}"
+printf 'load:%s\n' "${NPCINK_CLOUD_LOAD_MODE:-missing}" >>"${CUTOVER_LOG}"
 if [ "${NPCINK_CLOUD_LOAD_MODE:-}" = "prepare-only" ]; then
     if [ "${ABSENT_ROLLBACK_REFERENCE:-0}" = "1" ]; then
         printf 'npcink-ai-cloud-api:prod\t-\t-\n' \
@@ -57,24 +57,29 @@ if [ "${FAIL_AT:-}" = "${NPCINK_CLOUD_LOAD_MODE:-}" ]; then
     : >"${CUTOVER_FAILURE_TRIGGERED}"
     exit 42
 fi
-'''
-    migrate = r'''#!/usr/bin/env bash
+"""
+    migrate = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf 'migrate:%s\n' "${NPCINK_CLOUD_MIGRATION_ONLY:-0}" >>"${CUTOVER_LOG}"
 if [ "${FAIL_AT:-}" = "migrate" ]; then
     : >"${CUTOVER_FAILURE_TRIGGERED}"
     exit 43
 fi
-'''
-    refresh = r'''#!/usr/bin/env bash
+if [ "${FAIL_AT:-}" = "oneoff_cleanup" ]; then
+    mkdir -p "${ONE_OFF_LOCK_PATH}"
+    : >"${CUTOVER_FAILURE_TRIGGERED}"
+    exit 43
+fi
+"""
+    refresh = r"""#!/usr/bin/env bash
 set -euo pipefail
-printf 'refresh:%s\n' "${NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF:-0}" >>"${CUTOVER_LOG}"
+printf 'refresh:governed\n' >>"${CUTOVER_LOG}"
 if [ "${FAIL_AT:-}" = "refresh" ]; then
     : >"${CUTOVER_FAILURE_TRIGGERED}"
     exit 44
 fi
-'''
-    baseline = r'''#!/usr/bin/env bash
+"""
+    baseline = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf 'baseline\n' >>"${CUTOVER_LOG}"
 if [ "${FAIL_AT:-}" = "baseline" ]; then
@@ -84,15 +89,15 @@ fi
 if [ -n "${LOCK_SENTINEL_PATH:-}" ]; then
     : >"${LOCK_SENTINEL_PATH}"
 fi
-'''
-    operational = r'''#!/usr/bin/env bash
+"""
+    operational = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf 'operational:%s\n' "${NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL:-0}" >>"${CUTOVER_LOG}"
 if [ "${FAIL_AT:-}" = "operational" ]; then
     : >"${CUTOVER_FAILURE_TRIGGERED}"
     exit 46
 fi
-'''
+"""
 
     (source / "deploy").mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / "deploy/common.sh", source / "deploy/common.sh")
@@ -113,10 +118,7 @@ def _install_p1_e06_receipt(
     omit_restore_proof: bool = False,
 ) -> None:
     evidence_dir = (
-        remote_dir
-        / ".release-state"
-        / active_release.name
-        / "p1-e06-runtime-data-cutover"
+        remote_dir / ".release-state" / active_release.name / "p1-e06-runtime-data-cutover"
     )
     evidence_dir.mkdir(parents=True)
     (remote_dir / ".release-state").chmod(0o700)
@@ -132,7 +134,9 @@ def _install_p1_e06_receipt(
                 "status": "committed",
                 "active_release": str(active_release),
                 "database_revision": "20260717_0068",
-                "legacy_rows_migrated": 18,
+                "runtime_legacy_rows_migrated": 18,
+                "service_legacy_rows_migrated": 12,
+                "legacy_rows_migrated": 30,
                 "backup_sha256": "a" * 64,
                 "off_host_receipt_sha256": "b" * 64,
             },
@@ -146,15 +150,15 @@ def _install_p1_e06_receipt(
         "status": "passed",
         "source_revision": "20260710_0058",
         "target_revision": "20260717_0068",
-        "legacy_rows_migrated": 18,
+        "runtime_legacy_rows_migrated": 18,
+        "service_legacy_rows_migrated": 12,
+        "legacy_rows_migrated": 30,
         "backup_sha256": "a" * 64,
         "previous_release": str(remote_dir / "release-before-cutover"),
         "active_release": str(active_release),
         "off_host_receipt": str(remote_dir / "off-host-receipt.json"),
         "off_host_receipt_sha256": "b" * 64,
-        "off_host_receipt_evidence": str(
-            evidence_dir / "off-host-receipt-verified.json"
-        ),
+        "off_host_receipt_evidence": str(evidence_dir / "off-host-receipt-verified.json"),
         "off_host_copy_verified": True,
         "independent_postgres16_restore_verified": True,
         "exact_data_service_images_activated": True,
@@ -168,8 +172,7 @@ def _install_p1_e06_receipt(
     if omit_restore_proof:
         result_payload.pop("independent_postgres16_restore_verified")
     result_path.write_text(
-        json.dumps(result_payload, sort_keys=True)
-        + "\n",
+        json.dumps(result_payload, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     activation_path.chmod(0o600)
@@ -182,14 +185,14 @@ def _install_p1_e06_receipt(
                 "status": "passed",
                 "source_revision": "20260710_0058",
                 "target_revision": "20260717_0068",
-                "legacy_rows_migrated": 18,
+                "runtime_legacy_rows_migrated": 18,
+                "service_legacy_rows_migrated": 12,
+                "legacy_rows_migrated": 30,
                 "active_release": str(active_release),
                 "activation_commit_sha256": hashlib.sha256(
                     activation_path.read_bytes()
                 ).hexdigest(),
-                "cutover_result_sha256": hashlib.sha256(
-                    result_path.read_bytes()
-                ).hexdigest(),
+                "cutover_result_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -204,7 +207,7 @@ def _install_p1_e06_receipt(
 
 
 def _fake_docker(path: Path) -> None:
-    script = r'''#!/usr/bin/env bash
+    script = r"""#!/usr/bin/env bash
 set -euo pipefail
 FIXTURE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 . "${FIXTURE_ROOT}/fake-docker-config"
@@ -292,12 +295,12 @@ elif [ "${1:-}" = "ps" ] && [[ " $* " = *" -q "* ]] && \
     [ -f "${CUTOVER_FAILURE_TRIGGERED}" ]; then
     printf 'stuck-container\n'
 fi
-'''
+"""
     _write(path, script, executable=True)
 
 
 def _fake_linux_file_commands(fake_bin: Path) -> None:
-    stat = r'''#!/usr/bin/env bash
+    stat = r"""#!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" = "-c" ] && [ "${2:-}" = "%a" ]; then
     if /usr/bin/stat -c %a "$3" >/dev/null 2>&1; then
@@ -310,13 +313,13 @@ if [ "${1:-}" = "-c" ] && [ "${2:-}" = "%u" ]; then
     exit 0
 fi
 exec /usr/bin/stat "$@"
-'''
-    identity = r'''#!/usr/bin/env bash
+"""
+    identity = r"""#!/usr/bin/env bash
 set -euo pipefail
 [ "${1:-}" = "-u" ] || exit 2
 printf '0\n'
-'''
-    mv = r'''#!/usr/bin/env bash
+"""
+    mv = r"""#!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" = "-Tf" ] || [ "${1:-}" = "-fT" ]; then
     if /bin/mv -Tf "$2" "$3" 2>/dev/null; then
@@ -326,8 +329,8 @@ if [ "${1:-}" = "-Tf" ] || [ "${1:-}" = "-fT" ]; then
     exec /bin/mv -f "$2" "$3"
 fi
 exec /bin/mv "$@"
-'''
-    rm = r'''#!/usr/bin/env bash
+"""
+    rm = r"""#!/usr/bin/env bash
 set -euo pipefail
 for candidate in "$@"; do
     if [ "${FAIL_INCOMING_CLEANUP:-0}" = "1" ] && \
@@ -340,7 +343,7 @@ for candidate in "$@"; do
     fi
 done
 exec /bin/rm "$@"
-'''
+"""
     _write(fake_bin / "stat", stat, executable=True)
     _write(fake_bin / "id", identity, executable=True)
     _write(fake_bin / "mv", mv, executable=True)
@@ -377,6 +380,7 @@ def _run_remote_cutover(
     receipt_active_release_name: str = "release-previous",
     omit_p1_e06_restore_proof: bool = False,
     descendant_revision: str = "",
+    preexisting_one_off_lock: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     remote_dir = tmp_path / "remote"
     incoming = remote_dir / ".incoming" / "test-upload"
@@ -413,15 +417,15 @@ def _run_remote_cutover(
             tamper_result_after_receipt=tamper_p1_e06_result,
             omit_restore_proof=omit_p1_e06_restore_proof,
         )
+    if preexisting_one_off_lock:
+        one_off_lock = remote_dir / ".release-state" / ".release-one-off.lock"
+        one_off_lock.mkdir(parents=True, mode=0o700)
+        (remote_dir / ".release-state").chmod(0o700)
     _stub_bundle(bundle_source)
     if descendant_revision:
         _write(
-            bundle_source
-            / "migrations"
-            / "versions"
-            / f"{descendant_revision}_fixture.py",
-            f'revision: str = "{descendant_revision}"\n'
-            'down_revision: str = "20260717_0068"\n',
+            bundle_source / "migrations" / "versions" / f"{descendant_revision}_fixture.py",
+            f'revision: str = "{descendant_revision}"\ndown_revision: str = "20260717_0068"\n',
         )
     _fake_docker(fake_bin / "docker")
     _fake_linux_file_commands(fake_bin)
@@ -484,9 +488,7 @@ def _run_remote_cutover(
                     "REMOTE_COMPOSE_FILE": "",
                     "REFRESH_PROVIDERS": "1",
                     "WITH_OPERATIONAL_READY": "0",
-                    "REQUIRE_P1_E06_RECEIPT": (
-                        "1" if require_p1_e06_receipt else "0"
-                    ),
+                    "REQUIRE_P1_E06_RECEIPT": ("1" if require_p1_e06_receipt else "0"),
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -513,23 +515,16 @@ def _run_remote_cutover(
             "FAIL_OLD_COMPOSE_UP": "1" if fail_old_compose_up else "0",
             "RECOVERY_STILL_RUNNING": "1" if recovery_still_running else "0",
             "RECOVERY_DOCKER_PS_FAIL": "1" if recovery_docker_ps_fail else "0",
-            "MULTIPLE_PREVIOUS_CONTAINERS": (
-                "1" if multiple_previous_containers else "0"
-            ),
+            "MULTIPLE_PREVIOUS_CONTAINERS": ("1" if multiple_previous_containers else "0"),
             "ACTUAL_CONTAINER_PROJECT_NAME": actual_container_project_name,
             "MISSING_PREVIOUS_SERVICE": missing_previous_service,
             "ABSENT_ROLLBACK_REFERENCE": "1" if absent_rollback_reference else "0",
             "FAIL_ROLLBACK_REMOVE": "1" if fail_rollback_remove else "0",
             "FAIL_INCOMING_CLEANUP": "1" if fail_incoming_cleanup else "0",
             "INCOMING_CLEANUP_PATH": str(incoming),
-            "FAIL_ROLLBACK_MAP_REMOVE": (
-                "1" if fail_rollback_map_remove else "0"
-            ),
+            "FAIL_ROLLBACK_MAP_REMOVE": ("1" if fail_rollback_map_remove else "0"),
             "ROLLBACK_IMAGE_MAP_PATH": str(
-                remote_dir
-                / ".release-state"
-                / "release-next"
-                / "rollback-images.tsv"
+                remote_dir / ".release-state" / "release-next" / "rollback-images.tsv"
             ),
             "FAIL_STAGE_VERIFY": "1" if fail_stage_verify else "0",
             "ROLLBACK_REFERENCE_REMOVED": str(rollback_reference_removed),
@@ -539,6 +534,9 @@ def _run_remote_cutover(
                 else ""
             ),
             "DATABASE_REVISION": database_revision,
+            "ONE_OFF_LOCK_PATH": str(
+                remote_dir / ".release-state" / ".release-one-off.lock"
+            ),
         }
     )
     fake_config = {
@@ -550,18 +548,14 @@ def _run_remote_cutover(
         "FAIL_OLD_COMPOSE_UP": "1" if fail_old_compose_up else "0",
         "FAIL_ROLLBACK_REMOVE": "1" if fail_rollback_remove else "0",
         "MISSING_PREVIOUS_SERVICE": missing_previous_service,
-        "MULTIPLE_PREVIOUS_CONTAINERS": (
-            "1" if multiple_previous_containers else "0"
-        ),
+        "MULTIPLE_PREVIOUS_CONTAINERS": ("1" if multiple_previous_containers else "0"),
         "RECOVERY_DOCKER_PS_FAIL": "1" if recovery_docker_ps_fail else "0",
         "RECOVERY_STILL_RUNNING": "1" if recovery_still_running else "0",
         "ROLLBACK_REFERENCE_REMOVED": str(rollback_reference_removed),
     }
     _write(
         tmp_path / "fake-docker-config",
-        "".join(
-            f"{key}={shlex.quote(value)}\n" for key, value in fake_config.items()
-        ),
+        "".join(f"{key}={shlex.quote(value)}\n" for key, value in fake_config.items()),
     )
     completed = subprocess.run(
         ["bash", str(remote_body), *args],
@@ -586,8 +580,8 @@ def test_atomic_cutover_command_order_and_one_off_modes() -> None:
         'remote_run_timed "assert application services stopped"',
         "NPCINK_CLOUD_LOAD_MODE=data-only",
         "MIGRATION_STARTED=1",
-        "NPCINK_CLOUD_MIGRATION_ONLY=1",
-        "NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF=1",
+        'CUTOVER_PHASE="refresh-provider-projections-with-staged-image"',
+        "bash deploy/remote-refresh-providers.sh </dev/null",
         'CUTOVER_PHASE="activate-new-release-pointer"',
         'atomic_set_current "${RELEASE_DIR}"',
         "NPCINK_CLOUD_LOAD_MODE=api-only",
@@ -601,19 +595,26 @@ def test_atomic_cutover_command_order_and_one_off_modes() -> None:
     assert positions == sorted(positions)
 
     assert "prepare-only|data-only|api-only|workers-only|traffic-only" in loader
-    api_start = loader.index("compose up staged API only")
+    api_start = loader.index("create, prove, and start exact staged API")
     api_ready = loader.index("wait for staged API internal readiness")
-    workers_start = loader.index("compose up workers after API readiness")
-    traffic_start = loader.index("compose up frontend and proxy last")
+    workers_start = loader.index("create, prove, and start exact workers")
+    traffic_start = loader.index("create, prove, and start exact frontend and proxy")
     public_health = loader.index("\twait_for_public_health", traffic_start)
     assert api_start < api_ready < workers_start < traffic_start < public_health
-    assert "role-image-id" in migrate
+    assert "up -d --pull never --no-build" not in loader
+    assert 'docker start "${container_ids_to_start[@]}"' in loader
+    assert "loaded-role-daemon-id" in migrate
     assert "npcink_ai_cloud_compose_run_with_image_proof" in migrate
     assert "run --rm --no-deps --pull never" not in migrate
-    assert 'if [ "${NPCINK_CLOUD_MIGRATION_ONLY:-0}" = "1" ]' in migrate
-    assert "role-image-id" in refresh
+    assert "NPCINK_CLOUD_MIGRATION_ONLY" not in migrate
+    assert "up -d --pull never --no-build" not in migrate
+    assert "worker callback-worker ops-worker" not in migrate
+    assert "loaded-role-daemon-id" in refresh
     assert "npcink_ai_cloud_compose_run_with_image_proof" in refresh
     assert "run --rm --no-deps --pull never" not in refresh
+    assert "exec -T api" not in refresh
+    assert "NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF" not in refresh
+    assert "NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF" not in deploy
 
     gate = deploy.index("\nassert_p1_e06_ordinary_deploy_gate\n")
     first_image_mutation = deploy.index('CUTOVER_PHASE="prepare-release-images"')
@@ -622,6 +623,9 @@ def test_atomic_cutover_command_order_and_one_off_modes() -> None:
     assert 'if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then' in deploy
     assert "APPLICATION_SERVICES+=(frontend)" in deploy
     assert "APPLICATION_SERVICES+=(api worker callback-worker ops-worker" in deploy
+    assert "release-one-off)" in deploy
+    assert 'GLOBAL_ONE_OFF_LOCK_DIR="${RELEASE_STATE_ROOT}/.release-one-off.lock"' in deploy
+    assert "assert_governed_one_off_absent" in deploy
     assert 'if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then' in loader
     assert "SERVICES+=(frontend)" in loader
     assert "{{json .}}" not in deploy
@@ -629,9 +633,7 @@ def test_atomic_cutover_command_order_and_one_off_modes() -> None:
         encoding="utf-8"
     )
     assert '{{index .Config.Labels "com.docker.compose.project"}}' in deploy
-    readiness = (ROOT / "deploy/remote-operational-ready.sh").read_text(
-        encoding="utf-8"
-    )
+    readiness = (ROOT / "deploy/remote-operational-ready.sh").read_text(encoding="utf-8")
     for field in (
         "{{.State.Running}}",
         "{{.State.Restarting}}",
@@ -642,21 +644,17 @@ def test_atomic_cutover_command_order_and_one_off_modes() -> None:
 
 
 def test_formal_production_workflow_requires_p1_e06_receipt() -> None:
-    workflow = (ROOT / ".github/workflows/deploy-production.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (ROOT / ".github/workflows/deploy-production.yml").read_text(encoding="utf-8")
     assert 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT: "1"' in workflow
     deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-    workspace_target = (ROOT / "deploy/workspace-target.env.sh").read_text(
-        encoding="utf-8"
-    )
-    assert 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT:-1' in deploy
+    workspace_target = (ROOT / "deploy/workspace-target.env.sh").read_text(encoding="utf-8")
+    assert "NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT:-1" in deploy
     assert '"REQUIRE_P1_E06_RECEIPT": "REQUIRE_P1_E06_RECEIPT"' in deploy
     assert "Ordinary production deployment cannot migrate revision 0058" in deploy
     assert "Full deployment cannot disable" in deploy
     assert 'chmod 0700 "${DEPLOY_LOCK_DIR}"' in deploy
-    assert 'stat -c \'%u\' "${DEPLOY_LOCK_DIR}"' in deploy
-    assert 'stat -c \'%a\' "${DEPLOY_LOCK_DIR}"' in deploy
+    assert "stat -c '%u' \"${DEPLOY_LOCK_DIR}\"" in deploy
+    assert "stat -c '%a' \"${DEPLOY_LOCK_DIR}\"" in deploy
     assert 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT="1"' in workspace_target
 
 
@@ -759,7 +757,7 @@ def test_stage_only_rejects_env_before_ssh(tmp_path: Path) -> None:
 
 def test_internal_readiness_probe_uses_production_trusted_host(tmp_path: Path) -> None:
     capture_path = tmp_path / "request-headers.json"
-    sitecustomize = r'''
+    sitecustomize = r"""
 from __future__ import annotations
 
 import json
@@ -782,9 +780,9 @@ def urlopen(request, timeout=0):
     return Response()
 
 urllib.request.urlopen = urlopen
-'''
+"""
     _write(tmp_path / "sitecustomize.py", sitecustomize)
-    shell = r'''
+    shell = r"""
 set -euo pipefail
 . deploy/common.sh
 npcink_ai_cloud_compose() {
@@ -798,7 +796,7 @@ npcink_ai_cloud_compose() {
 }
 npcink_ai_cloud_wait_for_internal_endpoint \
     "$PWD" "/health/ready" "probe passed"
-'''
+"""
     env = os.environ.copy()
     env.update(
         {
@@ -868,7 +866,7 @@ def test_cutover_worker_proof_rejects_stale_heartbeat_or_replaced_container(
     state_dir.chmod(0o700)
     (state_dir / "env.deploy").chmod(0o600)
 
-    docker = r'''#!/usr/bin/env bash
+    docker = r"""#!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" = "compose" ] && [[ " $* " = *" ps -q "* ]]; then
     service_name="${*: -1}"
@@ -900,10 +898,10 @@ if [ "${1:-}" = "compose" ] && [[ " $* " = *" exec -T api python - "* ]]; then
 fi
 echo "unexpected docker command: $*" >&2
 exit 70
-'''
+"""
     _write(fake_bin / "docker", docker, executable=True)
 
-    sitecustomize = r'''
+    sitecustomize = r"""
 from __future__ import annotations
 
 import json
@@ -939,7 +937,7 @@ class Response:
         ).encode("utf-8")
 
 urllib.request.urlopen = lambda *_args, **_kwargs: Response()
-'''
+"""
     _write(tmp_path / "sitecustomize.py", sitecustomize)
 
     env = os.environ.copy()
@@ -985,8 +983,8 @@ def test_successful_cutover_uses_staged_commands_in_order(tmp_path: Path) -> Non
     ordered = [
         "load:prepare-only",
         "load:data-only",
-        "migrate:1",
-        "refresh:1",
+        "migrate:0",
+        "refresh:governed",
         "load:api-only",
         "load:workers-only",
         "operational:1",
@@ -1145,9 +1143,7 @@ def test_successful_activation_reports_unlock_failure_and_retains_lock(
     assert completed.returncode == 1
     assert (remote_dir / "current").resolve() == remote_dir / "release-next"
     assert (remote_dir / ".deploy-lock" / "injected-sentinel").is_file()
-    assert (
-        remote_dir / ".release-state" / "release-next" / "rollback-images.tsv"
-    ).is_file()
+    assert (remote_dir / ".release-state" / "release-next" / "rollback-images.tsv").is_file()
     marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
     assert "phase=finalize-deploy-lock-release" in marker
     assert "outcome=post_commit_cleanup_incomplete" in marker
@@ -1278,7 +1274,7 @@ def test_pre_migration_failure_restores_previous_release(tmp_path: Path) -> None
     marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
     assert "outcome=previous_release_restored" in marker
     log = log_path.read_text(encoding="utf-8")
-    assert "migrate:1" not in log
+    assert "migrate:0" not in log
     assert "load:api-only" not in log
     assert " up -d --pull never --no-build --force-recreate --remove-orphans" in log
 
@@ -1358,7 +1354,7 @@ def test_unproven_fail_closed_recovery_retains_deploy_lock(tmp_path: Path) -> No
         recovery_still_running=True,
     )
 
-    assert completed.returncode == 45
+    assert completed.returncode != 0
     marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
     assert "outcome=recovery_incomplete" in marker
     assert (remote_dir / ".deploy-lock").is_dir()
@@ -1372,11 +1368,11 @@ def test_recovery_docker_ps_failure_retains_deploy_lock(tmp_path: Path) -> None:
         recovery_docker_ps_fail=True,
     )
 
-    assert completed.returncode == 45
+    assert completed.returncode != 0
     marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
     assert "outcome=recovery_incomplete" in marker
     assert (remote_dir / ".deploy-lock").is_dir()
-    assert "Docker could not prove application services are stopped" in completed.stderr
+    assert "Docker could not prove governed release one-off containers absent" in completed.stderr
 
 
 def test_failed_removal_of_new_image_tag_retains_deploy_lock(tmp_path: Path) -> None:
@@ -1415,9 +1411,7 @@ def test_multiple_previous_containers_are_not_accepted_as_restored(
 def test_pre_mutation_validation_failure_does_not_stop_running_services(
     tmp_path: Path, current_kind: str
 ) -> None:
-    completed, remote_dir, log_path = _run_remote_cutover(
-        tmp_path, current_kind=current_kind
-    )
+    completed, remote_dir, log_path = _run_remote_cutover(tmp_path, current_kind=current_kind)
 
     assert completed.returncode == 1
     assert (remote_dir / "current").is_symlink()
@@ -1427,10 +1421,49 @@ def test_pre_mutation_validation_failure_does_not_stop_running_services(
     assert "running services were untouched" in completed.stderr
 
 
-@pytest.mark.parametrize("fail_at", ["migrate", "baseline"])
-def test_failure_after_migration_starts_is_fail_closed(
-    tmp_path: Path, fail_at: str
+def test_preexisting_one_off_lock_blocks_deploy_without_mutation(
+    tmp_path: Path,
 ) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path, preexisting_one_off_lock=True
+    )
+
+    assert completed.returncode != 0
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    assert (remote_dir / ".release-state" / ".release-one-off.lock").is_dir()
+    assert not (remote_dir / ".deploy-lock").exists()
+    marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
+    assert "outcome=validation_failed_before_mutation" in marker
+    log = log_path.read_text(encoding="utf-8")
+    assert "load:prepare-only" not in log
+    assert "docker:stop" not in log
+    assert "docker:rm" not in log
+    assert "left it untouched" in completed.stderr
+
+
+def test_internal_one_off_cleanup_failure_retains_both_recovery_locks(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path, fail_at="oneoff_cleanup"
+    )
+
+    assert completed.returncode != 0
+    assert (remote_dir / "current").resolve() == remote_dir / "release-previous"
+    assert (remote_dir / ".release-state" / ".release-one-off.lock").is_dir()
+    assert (remote_dir / ".deploy-lock").is_dir()
+    assert (remote_dir / ".deploy-lock" / "one-off-owner").is_file()
+    marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
+    assert "outcome=recovery_incomplete" in marker
+    log = log_path.read_text(encoding="utf-8")
+    assert "load:api-only" not in log
+    assert "load:workers-only" not in log
+    assert "load:traffic-only" not in log
+    assert "cleanup is unproved" in completed.stderr
+
+
+@pytest.mark.parametrize("fail_at", ["migrate", "baseline"])
+def test_failure_after_migration_starts_is_fail_closed(tmp_path: Path, fail_at: str) -> None:
     completed, remote_dir, log_path = _run_remote_cutover(tmp_path, fail_at=fail_at)
 
     assert completed.returncode in {43, 45}

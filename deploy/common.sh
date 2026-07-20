@@ -8,6 +8,55 @@ npcink_ai_cloud_require_cmd() {
 	}
 }
 
+npcink_ai_cloud_mode_of() {
+	local mode=""
+	if mode="$(stat -c '%a' -- "$1" 2>/dev/null)"; then
+		:
+	elif mode="$(stat -f '%Lp' "$1" 2>/dev/null)"; then
+		:
+	else
+		return 1
+	fi
+	printf '%s' "${mode}"
+}
+
+npcink_ai_cloud_require_deploy_lock_owner() {
+	local release_root="$1"
+	local resolved_root=""
+	local managed_root=""
+	local deploy_lock_dir=""
+	local owner_file=""
+	local configured_owner="${NPCINK_CLOUD_DEPLOY_LOCK_OWNER:-}"
+	local observed_owner=""
+
+	resolved_root="$(cd "${release_root}" 2>/dev/null && pwd -P)" || {
+		echo "[fail] Governed phase release root could not be resolved." >&2
+		return 1
+	}
+	[[ "$(basename "${resolved_root}")" =~ ^release-[A-Za-z0-9._-]+$ ]] || {
+		echo "[fail] Governed phase requires a managed release directory." >&2
+		return 1
+	}
+	managed_root="$(dirname "${resolved_root}")"
+	deploy_lock_dir="${managed_root}/.deploy-lock"
+	owner_file="${deploy_lock_dir}/one-off-owner"
+	if [[ ! "${configured_owner}" =~ ^[0-9a-f]{64}$ ]] || \
+		[ ! -d "${deploy_lock_dir}" ] || [ -L "${deploy_lock_dir}" ] || \
+		[ ! -O "${deploy_lock_dir}" ] || \
+		[ "$(npcink_ai_cloud_mode_of "${deploy_lock_dir}" 2>/dev/null || true)" != "700" ] || \
+		[ ! -f "${owner_file}" ] || [ -L "${owner_file}" ] || \
+		[ ! -O "${owner_file}" ] || \
+		[ "$(npcink_ai_cloud_mode_of "${owner_file}" 2>/dev/null || true)" != "600" ]; then
+		echo "[fail] Governed phase requires a matching deployment-lock owner proof." >&2
+		return 1
+	fi
+	IFS= read -r observed_owner <"${owner_file}" || return 1
+	if [ "${observed_owner}" != "${configured_owner}" ]; then
+		echo "[fail] Governed phase deployment-lock ownership proof failed." >&2
+		return 1
+	fi
+}
+
 npcink_ai_cloud_release_tool_python() {
 	printf '%s' "${NPCINK_CLOUD_RELEASE_TOOL_PYTHON:-python3}"
 }
@@ -209,6 +258,27 @@ npcink_ai_cloud_resolve_env_file() {
 	printf '%s' "${env_file}"
 }
 
+npcink_ai_cloud_env_key_is_runtime_config() {
+	local key="$1"
+	case "${key}" in
+		NPCINK_CLOUD_*|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|COMPOSE_PROJECT_NAME) ;;
+		*) return 1 ;;
+	esac
+	case "${key}" in
+		NPCINK_CLOUD_DEPLOY_*|NPCINK_CLOUD_DEPLOY_LOCK_OWNER|\
+		NPCINK_CLOUD_RELEASE_TOOL_PYTHON|NPCINK_CLOUD_COMPOSE_FILE|\
+		NPCINK_CLOUD_ENV_FILE|NPCINK_CLOUD_BACKEND_ENV_FILE|\
+		NPCINK_CLOUD_LOAD_MODE|NPCINK_CLOUD_ROLLBACK_IMAGE_MAP|\
+		NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX|NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT|\
+		NPCINK_CLOUD_TARGET_DAEMON_MAP|NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF|\
+		NPCINK_CLOUD_SKIP_FRONTEND_IMAGE|NPCINK_CLOUD_SECRET|\
+		NPCINK_CLOUD_*_RELEASE_IMAGE)
+			return 1
+			;;
+	esac
+	return 0
+}
+
 npcink_ai_cloud_load_env_file() {
 	local root_dir="$1"
 	local env_file
@@ -222,6 +292,7 @@ npcink_ai_cloud_load_env_file() {
 	fi
 	local line=""
 	local key=""
+	local value=""
 	while IFS= read -r line || [ -n "${line}" ]; do
 		case "${line}" in
 			'' | '#'*)
@@ -229,16 +300,34 @@ npcink_ai_cloud_load_env_file() {
 				;;
 		esac
 		if [[ "${line}" != *=* ]]; then
-			continue
+			echo "[fail] Invalid dotenv assignment in ${env_file}." >&2
+			return 1
 		fi
 		key="${line%%=*}"
 		if [[ ! "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-			continue
+			echo "[fail] Invalid dotenv key in ${env_file}." >&2
+			return 1
+		fi
+		if ! npcink_ai_cloud_env_key_is_runtime_config "${key}"; then
+			echo "[fail] Dotenv key is not an allowed runtime setting: ${key}" >&2
+			return 1
 		fi
 		if [ -n "${!key+x}" ]; then
 			continue
 		fi
-		eval "export ${line}"
+		value="${line#*=}"
+		if [[ "${value}" == \'*\' ]] || [[ "${value}" == \"*\" ]]; then
+			value="${value:1:${#value}-2}"
+		elif [[ "${value}" == \'* ]] || [[ "${value}" == *\' ]] || \
+			[[ "${value}" == \"* ]] || [[ "${value}" == *\" ]]; then
+			echo "[fail] Unbalanced dotenv quoting in ${env_file}." >&2
+			return 1
+		fi
+		# Assign the parsed bytes literally. Never eval dotenv content: production
+		# values may legitimately contain shell metacharacters, and none may turn
+		# into code when a root-owned release helper loads the file.
+		printf -v "${key}" '%s' "${value}" || return 1
+		export "${key}"
 	done < "${env_file}"
 }
 
@@ -278,15 +367,50 @@ npcink_ai_cloud_compose() {
 		docker compose -f "${compose_file}" "$@"
 }
 
+npcink_ai_cloud_pin_compose_service_image() {
+	local service="$1"
+	local image_id="$2"
+	[[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+		echo "[fail] Compose service image pin is not a target-daemon image ID." >&2
+		return 1
+	}
+	case "${service}" in
+		postgres) export NPCINK_CLOUD_POSTGRES_RELEASE_IMAGE="${image_id}" ;;
+		redis) export NPCINK_CLOUD_REDIS_RELEASE_IMAGE="${image_id}" ;;
+		api) export NPCINK_CLOUD_API_RELEASE_IMAGE="${image_id}" ;;
+		frontend) export NPCINK_CLOUD_FRONTEND_RELEASE_IMAGE="${image_id}" ;;
+		worker) export NPCINK_CLOUD_WORKER_RELEASE_IMAGE="${image_id}" ;;
+		callback-worker) export NPCINK_CLOUD_CALLBACK_WORKER_RELEASE_IMAGE="${image_id}" ;;
+		ops-worker) export NPCINK_CLOUD_OPS_WORKER_RELEASE_IMAGE="${image_id}" ;;
+		proxy) export NPCINK_CLOUD_PROXY_RELEASE_IMAGE="${image_id}" ;;
+		*)
+			echo "[fail] Unknown Compose service image pin target: ${service}" >&2
+			return 1
+			;;
+	esac
+}
+
 npcink_ai_cloud_compose_run_with_image_proof() {
 	local root_dir="$1"
 	local service="$2"
 	local expected_reference="$3"
-	local expected_image_id="$4"
+	local expected_daemon_id="$4"
 	shift 4
 
+	local requested_compose_file=""
+	local resolved_root_dir=""
+	local resolved_compose_file=""
+	local exec_env_name=""
+	local exec_env_names_seen=":"
+	local exec_env_args=()
 	local observed_image_id=""
 	local observed_reference_id=""
+	local observed_created_state=""
+	local resolved_compose_image=""
+	local release_tool_python=""
+	local proof_service="release-one-off"
+	local container_ids=""
+	local container_count=0
 	local run_status=0
 	local proof_failed=0
 	local cleanup_failed=0
@@ -297,13 +421,127 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 	local stdin_dir=""
 	local stdin_path=""
 	local payload_pid=""
-	local container_name="npcink-release-proof-${service}-$$-${RANDOM}"
+	local container_name=""
+	local one_off_lock_dir=""
+	local deploy_lock_dir=""
+	local deploy_lock_owner_file=""
+	local configured_deploy_lock_owner="${NPCINK_CLOUD_DEPLOY_LOCK_OWNER:-}"
+	local observed_deploy_lock_owner=""
+	local one_off_compose_project_name=""
+	local one_off_env_file=""
+	local preexisting_compose_ids=""
+	local preexisting_label_ids=""
+	local one_off_lock_armed=0
+	local saved_hup_trap=""
+	local saved_int_trap=""
+	local saved_term_trap=""
+
+	while [ "$#" -gt 0 ] && [ "$1" = "--exec-env" ]; do
+		[ "$#" -ge 2 ] || {
+			echo "[fail] One-off exec environment option requires a variable name." >&2
+			return 1
+		}
+		exec_env_name="$2"
+		if [[ ! "${exec_env_name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+			echo "[fail] Invalid one-off exec environment variable name." >&2
+			return 1
+		fi
+		case "${exec_env_names_seen}" in
+			*":${exec_env_name}:"*)
+				echo "[fail] Duplicate one-off exec environment variable name." >&2
+				return 1
+				;;
+		esac
+		if [ -z "${!exec_env_name+x}" ]; then
+			echo "[fail] One-off exec environment variable is not set: ${exec_env_name}" >&2
+			return 1
+		fi
+		exec_env_names_seen="${exec_env_names_seen}${exec_env_name}:"
+		exec_env_args+=(--env "${exec_env_name}")
+		shift 2
+	done
+	if [ "$#" -gt 0 ] && [ "$1" = "--" ]; then
+		shift
+	elif [ "${#exec_env_args[@]}" -gt 0 ]; then
+		echo "[fail] One-off exec environment options require a payload delimiter." >&2
+		return 1
+	fi
+	[ "$#" -gt 0 ] || {
+		echo "[fail] One-off command payload is empty." >&2
+		return 1
+	}
+
+	resolved_root_dir="$(cd "${root_dir}" 2>/dev/null && pwd -P)" || {
+		echo "[fail] One-off release root could not be resolved." >&2
+		return 1
+	}
+	requested_compose_file="${NPCINK_CLOUD_COMPOSE_FILE:-${resolved_root_dir}/docker-compose.prod.yml}"
+	if [[ "${requested_compose_file}" != /* ]]; then
+		requested_compose_file="${resolved_root_dir}/${requested_compose_file#./}"
+	fi
+	if [ ! -f "${requested_compose_file}" ] || [ -L "${requested_compose_file}" ]; then
+		echo "[fail] One-off Compose file must be a regular non-symlink release file." >&2
+		return 1
+	fi
+	resolved_compose_file="$(
+		cd "$(dirname "${requested_compose_file}")" 2>/dev/null &&
+			printf '%s/%s' "$(pwd -P)" "$(basename "${requested_compose_file}")"
+	)" || {
+		echo "[fail] One-off Compose file could not be resolved." >&2
+		return 1
+	}
+	case "${resolved_compose_file}" in
+		"${resolved_root_dir}/docker-compose.prod.yml"|"${resolved_root_dir}/docker-compose.runtime.yml") ;;
+		*)
+			echo "[fail] One-off execution requires a canonical bundled Compose file." >&2
+			return 1
+			;;
+	esac
+	root_dir="${resolved_root_dir}"
+	local NPCINK_CLOUD_COMPOSE_FILE="${resolved_compose_file}"
+	export NPCINK_CLOUD_COMPOSE_FILE
+	saved_hup_trap="$(trap -p HUP || true)"
+	saved_int_trap="$(trap -p INT || true)"
+	saved_term_trap="$(trap -p TERM || true)"
+
+	one_off_restore_signal_traps() {
+		trap - HUP INT TERM
+		[ -z "${saved_hup_trap}" ] || eval "${saved_hup_trap}"
+		[ -z "${saved_int_trap}" ] || eval "${saved_int_trap}"
+		[ -z "${saved_term_trap}" ] || eval "${saved_term_trap}"
+	}
 
 	one_off_remove_container() {
 		local attempt=0
+		local captured_remaining=""
+		local compose_remaining=""
+		local labelled_remaining=""
 		[ "${cleanup_armed}" -eq 1 ] || return 0
 		while [ "${attempt}" -lt 2 ]; do
-			if docker rm -f "${container_name}" >/dev/null 2>&1; then
+			if [ -n "${container_name}" ]; then
+				docker rm -f "${container_name}" >/dev/null 2>&1 || true
+			fi
+			npcink_ai_cloud_compose "${root_dir}" rm -f -s \
+				"${proof_service}" >/dev/null 2>&1 || true
+			if [ -n "${container_name}" ]; then
+				captured_remaining="$(
+					docker container ls -aq --no-trunc \
+						--filter "id=${container_name}" 2>/dev/null
+				)" || captured_remaining="__query_failed__"
+			else
+				captured_remaining=""
+			fi
+			compose_remaining="$(
+				npcink_ai_cloud_compose "${root_dir}" ps --all -q \
+					"${proof_service}" 2>/dev/null
+			)" || compose_remaining="__query_failed__"
+			labelled_remaining="$(
+				docker container ls -aq --no-trunc \
+					--filter "label=com.docker.compose.service=${proof_service}" 2>/dev/null
+			)" || labelled_remaining="__query_failed__"
+			if [ -z "${captured_remaining}" ] && \
+				[ -z "${compose_remaining}" ] && \
+				[ -z "${labelled_remaining}" ]; then
 				cleanup_armed=0
 				return 0
 			fi
@@ -332,6 +570,14 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		fi
 		return "${failed}"
 	}
+	one_off_remove_lock() {
+		[ "${one_off_lock_armed}" -eq 1 ] || return 0
+		if ! rmdir -- "${one_off_lock_dir}" >/dev/null 2>&1 || \
+			[ -e "${one_off_lock_dir}" ] || [ -L "${one_off_lock_dir}" ]; then
+			return 1
+		fi
+		one_off_lock_armed=0
+	}
 	one_off_mode_of() {
 		local mode=""
 		if mode="$(stat -c '%a' -- "$1" 2>/dev/null)"; then
@@ -343,15 +589,120 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		fi
 		printf '%s' "${mode}"
 	}
+	one_off_deploy_lock_authorized() {
+		observed_deploy_lock_owner=""
+		if [ -e "${deploy_lock_dir}" ] || [ -L "${deploy_lock_dir}" ]; then
+			if [ ! -d "${deploy_lock_dir}" ] || [ -L "${deploy_lock_dir}" ] || \
+				[ ! -O "${deploy_lock_dir}" ] || \
+				[ "$(one_off_mode_of "${deploy_lock_dir}" 2>/dev/null || true)" != "700" ] || \
+				[[ ! "${configured_deploy_lock_owner}" =~ ^[0-9a-f]{64}$ ]] || \
+				[ ! -f "${deploy_lock_owner_file}" ] || [ -L "${deploy_lock_owner_file}" ] || \
+				[ ! -O "${deploy_lock_owner_file}" ] || \
+				[ "$(one_off_mode_of "${deploy_lock_owner_file}" 2>/dev/null || true)" != "600" ]; then
+				echo "[fail] Governed one-off execution is blocked by an unowned deployment lock." >&2
+				return 1
+			fi
+			IFS= read -r observed_deploy_lock_owner <"${deploy_lock_owner_file}" || return 1
+			if [ "${observed_deploy_lock_owner}" != "${configured_deploy_lock_owner}" ]; then
+				echo "[fail] Governed one-off deployment-lock ownership proof failed." >&2
+				return 1
+			fi
+		elif [ -n "${configured_deploy_lock_owner}" ]; then
+			echo "[fail] Governed one-off deployment-lock owner is stale." >&2
+			return 1
+		fi
+	}
+	one_off_assert_preexisting_container_absent() {
+		preexisting_compose_ids="$(
+			npcink_ai_cloud_compose "${root_dir}" ps --all -q \
+				"${proof_service}" 2>/dev/null
+		)" || {
+			echo "[fail] Compose could not prove pre-existing one-off containers absent." >&2
+			return 1
+		}
+		preexisting_label_ids="$(
+			docker container ls -aq --no-trunc \
+				--filter "label=com.docker.compose.service=${proof_service}" 2>/dev/null
+		)" || {
+			echo "[fail] Docker could not prove pre-existing one-off containers absent." >&2
+			return 1
+		}
+		if [ -n "${preexisting_compose_ids}" ] || [ -n "${preexisting_label_ids}" ]; then
+			echo "[fail] A pre-existing governed one-off container requires operator recovery." >&2
+			return 1
+		fi
+	}
+	one_off_acquire_lock() {
+		local resolved_root=""
+		local state_root=""
+		resolved_root="$(cd "${root_dir}" && pwd -P)" || return 1
+		state_root="$(dirname "${resolved_root}")/.release-state"
+		if [ ! -d "${state_root}" ] || [ -L "${state_root}" ] || \
+			[ ! -O "${state_root}" ] || \
+			[ "$(one_off_mode_of "${state_root}" 2>/dev/null || true)" != "700" ]; then
+			echo "[fail] Global release state is missing or unsafe for one-off locking." >&2
+			return 1
+		fi
+		deploy_lock_dir="$(dirname "${state_root}")/.deploy-lock"
+		deploy_lock_owner_file="${deploy_lock_dir}/one-off-owner"
+		one_off_lock_dir="${state_root}/.release-one-off.lock"
+		# Acquire the one-off side of the two-lock handshake before observing the
+		# deployment lock. A deployment acquires those locks in the opposite
+		# order, so either participant must observe and reject the other.
+		if ! (umask 077; mkdir -- "${one_off_lock_dir}"); then
+			echo "[fail] Another governed release one-off is already active." >&2
+			return 1
+		fi
+		one_off_lock_armed=1
+		if ! chmod 0700 "${one_off_lock_dir}" || \
+			[ ! -d "${one_off_lock_dir}" ] || [ -L "${one_off_lock_dir}" ] || \
+			[ ! -O "${one_off_lock_dir}" ] || \
+			[ "$(one_off_mode_of "${one_off_lock_dir}" 2>/dev/null || true)" != "700" ]; then
+			echo "[fail] Governed release one-off lock is unsafe." >&2
+			return 1
+		fi
+		if ! one_off_deploy_lock_authorized; then
+			if ! one_off_remove_lock; then
+				echo "[fail] One-off lock cleanup failed after deployment-lock rejection." >&2
+			fi
+			return 1
+		fi
+		one_off_compose_project_name="${NPCINK_CLOUD_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-}}"
+		if [ -z "${one_off_compose_project_name}" ]; then
+			one_off_env_file="$(npcink_ai_cloud_resolve_env_file "${root_dir}")"
+			if [ -n "${one_off_env_file}" ]; then
+				one_off_compose_project_name="$(
+					npcink_ai_cloud_compose_project_name_from_env "${one_off_env_file}"
+				)" || return 1
+			fi
+		fi
+		one_off_compose_project_name="${one_off_compose_project_name:-npcink-ai-cloud}"
+		if [[ ! "${one_off_compose_project_name}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+			echo "[fail] Governed one-off Compose project name is invalid." >&2
+			return 1
+		fi
+		if ! one_off_assert_preexisting_container_absent; then
+			# The lock is now recovery evidence. Do not let the caller's generic
+			# acquisition cleanup erase it while an orphan/query ambiguity remains.
+			one_off_lock_armed=0
+			echo "[fail] Governed release one-off lock retained for operator recovery." >&2
+			return 1
+		fi
+	}
 	one_off_cleanup() {
 		local failed=0
 		one_off_remove_container || failed=1
 		one_off_remove_stdin || failed=1
+		# Retain the cross-release lock whenever container or protected-stdin
+		# cleanup is incomplete. A later helper must not race or erase evidence.
+		if [ "${failed}" -eq 0 ]; then
+			one_off_remove_lock || failed=1
+		fi
 		return "${failed}"
 	}
 	one_off_signal() {
 		local status="$1"
-		trap - EXIT HUP INT TERM
+		trap - HUP INT TERM
 		set +e
 		if [ -n "${payload_pid}" ]; then
 			kill "${payload_pid}" >/dev/null 2>&1 || true
@@ -368,12 +719,39 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		echo "[fail] Invalid one-off Compose service name." >&2
 		return 1
 	fi
+	if [ "${service}" != "api" ]; then
+		echo "[fail] Governed release one-off execution is restricted to the API image." >&2
+		return 1
+	fi
 	if [[ ! "${expected_reference}" =~ ^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$ ]]; then
 		echo "[fail] Invalid one-off expected image reference." >&2
 		return 1
 	fi
-	if [[ ! "${expected_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-		echo "[fail] Manifest-frozen one-off image ID is invalid." >&2
+	if [[ ! "${expected_daemon_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+		echo "[fail] Proved target-daemon one-off image ID is invalid." >&2
+		return 1
+	fi
+	if ! npcink_ai_cloud_pin_compose_service_image "${service}" "${expected_daemon_id}"; then
+		return 1
+	fi
+	release_tool_python="$(npcink_ai_cloud_release_tool_python)"
+	npcink_ai_cloud_require_release_tool_python "${release_tool_python}" || return 1
+	resolved_compose_image="$(
+		npcink_ai_cloud_compose "${root_dir}" config --format json "${proof_service}" 2>/dev/null |
+			"${release_tool_python}" -c \
+			'import json,sys; service=sys.argv[1]; print(json.load(sys.stdin)["services"][service]["image"])' \
+			"${proof_service}"
+	)" || {
+		echo "[fail] One-off Compose service image could not be resolved." >&2
+		return 1
+	}
+	if [ "${resolved_compose_image}" != "${expected_daemon_id}" ]; then
+		echo "[fail] One-off Compose service is not pinned to the proved target-daemon image ID." >&2
+		return 1
+	fi
+	if ! one_off_acquire_lock; then
+		one_off_cleanup || true
+		one_off_restore_signal_traps
 		return 1
 	fi
 
@@ -383,8 +761,10 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 	trap 'one_off_signal 143' TERM
 	if ! stdin_dir="$(mktemp -d "${TMPDIR:-/tmp}/npcink-release-proof-stdin.XXXXXX")"; then
 		stdin_cleanup_armed=0
-		trap - HUP INT TERM
+		one_off_restore_signal_traps
 		echo "[fail] Protected one-off stdin directory could not be created." >&2
+		one_off_cleanup || \
+			echo "[fail] One-off lock cleanup failed after protected stdin setup failed." >&2
 		return 1
 	fi
 	stdin_path="${stdin_dir}/payload.stdin"
@@ -432,20 +812,28 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		}
 	fi
 	if [ "${proof_failed}" -eq 0 ] && \
-		[ "${observed_reference_id}" != "${expected_image_id}" ]; then
+		[ "${observed_reference_id}" != "${expected_daemon_id}" ]; then
 		echo "[fail] One-off image tag drifted from the bundle manifest before container creation." >&2
 		proof_failed=1
 	fi
 
-	# Start the real Compose service shape with an inert process first. The
-	# migration/provider payload is not allowed to execute until the created
-	# container's immutable .Image matches the frozen exact tag.
+	# Create the real Compose service shape without starting it. No image code,
+	# including Python startup hooks, may execute before the stopped candidate's
+	# immutable .Image and the governed tag are both re-proved.
 	if [ "${proof_failed}" -eq 0 ]; then
 		cleanup_armed=1
-		if npcink_ai_cloud_compose "${root_dir}" run -d \
-			--name "${container_name}" --no-deps --rm --entrypoint python "${service}" \
-			-c 'import time; time.sleep(900)' >/dev/null; then
-			container_created=1
+		if npcink_ai_cloud_compose "${root_dir}" up --no-start --pull never \
+			--no-build --no-deps --force-recreate "${proof_service}" >/dev/null; then
+			container_ids="$(
+				npcink_ai_cloud_compose "${root_dir}" ps --all -q "${proof_service}" 2>/dev/null
+			)" || proof_failed=1
+			container_count="$(printf '%s\n' "${container_ids}" | awk 'NF {n += 1} END {print n + 0}')"
+			if [ "${proof_failed}" -eq 0 ] && [ "${container_count}" -eq 1 ]; then
+				container_name="$(printf '%s\n' "${container_ids}" | awk 'NF {print; exit}')"
+				container_created=1
+			else
+				proof_failed=1
+			fi
 		else
 			run_status=$?
 			proof_failed=1
@@ -456,13 +844,35 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		observed_image_id="$(
 			docker inspect --format '{{.Image}}' "${container_name}" 2>/dev/null
 		)" || proof_failed=1
+		observed_created_state="$(
+			docker inspect --format '{{.State.Status}} {{.RestartCount}}' \
+				"${container_name}" 2>/dev/null
+		)" || proof_failed=1
 		observed_reference_id="$(
 			docker image inspect --format '{{.Id}}' "${expected_reference}" 2>/dev/null
 		)" || proof_failed=1
-		if [ "${observed_image_id}" != "${expected_image_id}" ] || \
-			[ "${observed_reference_id}" != "${expected_image_id}" ]; then
+		if [ "${observed_image_id}" != "${expected_daemon_id}" ] || \
+			[ "${observed_created_state}" != "created 0" ] || \
+			[ "${observed_reference_id}" != "${expected_daemon_id}" ]; then
 			proof_failed=1
 		fi
+	fi
+
+	if [ "${proof_failed}" -eq 0 ]; then
+		if ! docker start "${container_name}" >/dev/null; then
+			proof_failed=1
+		fi
+	fi
+	if [ "${proof_failed}" -eq 0 ]; then
+		observed_image_id="$(
+			docker inspect --format '{{.Image}}' "${container_name}" 2>/dev/null
+		)" || proof_failed=1
+		observed_reference_id="$(
+			docker image inspect --format '{{.Id}}' "${expected_reference}" 2>/dev/null
+		)" || proof_failed=1
+		[ "${observed_image_id}" = "${expected_daemon_id}" ] || proof_failed=1
+		[ "${observed_reference_id}" = "${expected_daemon_id}" ] || proof_failed=1
+		[ "$(docker inspect --format '{{.State.Running}}' "${container_name}" 2>/dev/null || true)" = "true" ] || proof_failed=1
 	fi
 
 	if [ "${proof_failed}" -eq 0 ]; then
@@ -470,8 +880,17 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		# redirection is explicit. Freeze the caller's stdin above, then feed that
 		# exact protected file to the background Docker client. Neither its path
 		# nor its contents enter process argv or ordinary logs.
-		docker exec -i "${container_name}" "$@" <"${stdin_path}" &
-		payload_pid="$!"
+		# Bash 3.2 treats an empty-array expansion as unbound under `set -u`.
+		# Keep the direct Docker child as the tracked PID in both branches so the
+		# signal trap can still interrupt the actual client without a shell layer.
+		if [ "${#exec_env_args[@]}" -gt 0 ]; then
+			docker exec -i "${exec_env_args[@]}" "${container_name}" "$@" \
+				<"${stdin_path}" &
+			payload_pid="$!"
+		else
+			docker exec -i "${container_name}" "$@" <"${stdin_path}" &
+			payload_pid="$!"
+		fi
 		if wait "${payload_pid}"; then
 			run_status=0
 		else
@@ -481,30 +900,35 @@ npcink_ai_cloud_compose_run_with_image_proof() {
 		observed_reference_id="$(
 			docker image inspect --format '{{.Id}}' "${expected_reference}" 2>/dev/null
 		)" || proof_failed=1
-		[ "${observed_reference_id}" = "${expected_image_id}" ] || proof_failed=1
+		[ "${observed_reference_id}" = "${expected_daemon_id}" ] || proof_failed=1
 	fi
 	if ! one_off_cleanup; then
 		cleanup_failed=1
 	fi
-	trap - HUP INT TERM
+	one_off_restore_signal_traps
 
 	if [ "${proof_failed}" -ne 0 ]; then
 		if [ "${stdin_capture_failed}" -ne 0 ]; then
 			echo "[fail] One-off ${service} payload was blocked because protected stdin was unavailable." >&2
-			return 1
+		else
+			echo "[fail] One-off ${service} payload was blocked because the frozen exact image ID was not proved." >&2
 		fi
-		echo "[fail] One-off ${service} payload was blocked because the frozen exact image ID was not proved." >&2
-		return 1
 	fi
 	if [ "${run_status}" -ne 0 ]; then
 		echo "[fail] One-off ${service} command failed after exact image proof." >&2
-		return "${run_status}"
 	fi
 	if [ "${cleanup_failed}" -ne 0 ]; then
-		echo "[fail] One-off ${service} proof container could not be removed or protected stdin cleanup failed." >&2
+		echo "[fail] One-off ${service} cleanup was incomplete; the global one-off lock was retained." >&2
 		return 1
 	fi
-	printf '[ok] One-off %s container used the frozen exact image ID.\n' "${service}"
+	if [ "${proof_failed}" -ne 0 ]; then
+		return 1
+	fi
+	if [ "${run_status}" -ne 0 ]; then
+		return "${run_status}"
+	fi
+	printf '[ok] One-off %s container used the proved target-daemon image ID.\n' \
+		"${service}" >&2
 }
 
 npcink_ai_cloud_wait_for_ready() {

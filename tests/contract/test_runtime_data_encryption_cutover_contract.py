@@ -17,10 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "deploy" / "runtime-data-encryption-cutover.sh"
 
 OFF_HOST_ACK = "I_ACKNOWLEDGE_THE_BACKUP_COPY_IS_OFF_HOST_AND_INDEPENDENT"
-RESTORE_ACK = (
-    "I_ACKNOWLEDGE_ROLLBACK_RESTORES_DATABASE_RELEASE_ENV_"
-    "AND_BOTH_OLD_ROOTS_TOGETHER"
-)
+RESTORE_ACK = "I_ACKNOWLEDGE_ROLLBACK_RESTORES_DATABASE_RELEASE_ENV_AND_BOTH_OLD_ROOTS_TOGETHER"
 CUTOVER_ACK = "I_AUTHORIZE_THE_P1_E06_PRODUCTION_CUTOVER"
 RUNTIME_TARGET_SECRET = "cnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnI="  # gitleaks:allow
 SERVICE_TARGET_SECRET = "c3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3M="  # gitleaks:allow
@@ -28,12 +25,8 @@ RUNTIME_TARGET_KEY_ID = "p1-e06-runtime-target"
 SERVICE_TARGET_KEY_ID = "p1-e06-service-target"
 RUNTIME_OLD_SECRET = "legacy-runtime-root-secret-0123456789-ABCDEFGHIJ"  # gitleaks:allow
 SERVICE_OLD_SECRET = "legacy-service-root-secret-0123456789-ABCDEFGHIJ"  # gitleaks:allow
-REPLACEMENT_RUNTIME_TARGET_SECRET = (
-    "dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXU="  # gitleaks:allow
-)
-REPLACEMENT_SERVICE_TARGET_SECRET = (
-    "dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnY="  # gitleaks:allow
-)
+REPLACEMENT_RUNTIME_TARGET_SECRET = "dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXU="  # gitleaks:allow
+REPLACEMENT_SERVICE_TARGET_SECRET = "dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnY="  # gitleaks:allow
 REPLACEMENT_RUNTIME_OLD_SECRET = (
     "replacement-runtime-old-secret-0123456789-ABCDEFGHIJ"  # gitleaks:allow
 )
@@ -146,6 +139,7 @@ def _make_fixture(tmp_path: Path) -> CutoverFixture:
     staged_scripts = staged_release / "scripts"
     fake_bin = fixture_root / "fake-bin"
     state_dir = fixture_root / "state"
+    private_tmp = fixture_root / "tmp"
     backup_dir = fixture_root / "backups"
     receipt_dir = fixture_root / "receipts"
     previous_state = remote / ".release-state" / "release-old"
@@ -155,6 +149,7 @@ def _make_fixture(tmp_path: Path) -> CutoverFixture:
         staged_scripts,
         fake_bin,
         state_dir,
+        private_tmp,
         backup_dir,
         receipt_dir,
         previous_state,
@@ -162,10 +157,12 @@ def _make_fixture(tmp_path: Path) -> CutoverFixture:
         directory.mkdir(parents=True, exist_ok=True)
     (remote / ".release-state").chmod(0o700)
     previous_state.chmod(0o700)
+    private_tmp.chmod(0o700)
     (state_dir / "host-python").write_text(
         str(Path(sys.executable).resolve()) + "\n",
         encoding="utf-8",
     )
+    (state_dir / "fail-at").write_text("", encoding="utf-8")
     (state_dir / "production-service-row-identifiers.json").write_text(
         json.dumps(
             PRODUCTION_SERVICE_ROW_IDENTIFIERS,
@@ -192,18 +189,10 @@ def _make_fixture(tmp_path: Path) -> CutoverFixture:
     ):
         compose_file.write_text("services: {}\n", encoding="utf-8")
 
-    certificate_path = Path(
-        "/etc/letsencrypt/live/cloud.example.invalid/fullchain.pem"
-    )
-    private_key_path = Path(
-        "/etc/letsencrypt/live/cloud.example.invalid/privkey.pem"
-    )
-    certificate_real_path = Path(
-        "/etc/letsencrypt/archive/cloud.example.invalid/fullchain1.pem"
-    )
-    private_key_real_path = Path(
-        "/etc/letsencrypt/archive/cloud.example.invalid/privkey1.pem"
-    )
+    certificate_path = Path("/etc/letsencrypt/live/cloud.example.invalid/fullchain.pem")
+    private_key_path = Path("/etc/letsencrypt/live/cloud.example.invalid/privkey.pem")
+    certificate_real_path = Path("/etc/letsencrypt/archive/cloud.example.invalid/fullchain1.pem")
+    private_key_real_path = Path("/etc/letsencrypt/archive/cloud.example.invalid/privkey1.pem")
     certbot_path = fake_bin / "certbot"
     _write_executable(
         certbot_path,
@@ -384,6 +373,16 @@ systemctl reload nginx
                 chmod 0600 "${{NPCINK_CLOUD_ROLLBACK_IMAGE_MAP}}"
                 : >"${{FIXTURE_ROOT}}/state/image-prepared"
                 ;;
+            data-only)
+                env \
+                    -u POSTGRES_USER -u POSTGRES_DB -u COMPOSE_FILE \
+                    -u COMPOSE_PROFILES -u NPCINK_CLOUD_RELEASE_TOOL_PYTHON \
+                    docker compose \
+                    --env-file "${{NPCINK_CLOUD_ENV_FILE}}" \
+                    -f "${{NPCINK_CLOUD_COMPOSE_FILE}}" \
+                    up -d --pull never --no-build \
+                    --no-deps --force-recreate postgres redis
+                ;;
             api-only|workers-only|traffic-only)
                 ;;
             *)
@@ -429,7 +428,7 @@ systemctl reload nginx
 
         if sys.version_info < (3, 11):
             raise SystemExit(36)
-        if len(sys.argv) != 6 or sys.argv[1] != "role-image-id":
+        if len(sys.argv) != 6 or sys.argv[1] != "loaded-role-daemon-id":
             raise SystemExit(2)
         if sys.argv[2] != "--root" or sys.argv[4] != "--role":
             raise SystemExit(2)
@@ -442,7 +441,7 @@ systemctl reload nginx
         if role not in roles:
             raise SystemExit(3)
         with Path({str(fixture_root / "events.log")!r}).open("a", encoding="utf-8") as handle:
-            handle.write(f"manifest:role-image-id:{{role}}\\n")
+            handle.write(f"manifest:loaded-role-daemon-id:{{role}}\\n")
         print(roles[role])
         """,
     )
@@ -479,6 +478,7 @@ systemctl reload nginx
         [ "${1:-}" = "-c" ] || exit 2
         format="${2:-}"
         path="${3:-}"
+        [ "${path}" != "--" ] || path="${4:-}"
         case "${format}" in
             %a)
                 case "${path}" in
@@ -673,6 +673,7 @@ PY
         set -Eeuo pipefail
         FAKE_BIN="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
         FIXTURE_ROOT="$(dirname "${FAKE_BIN}")"
+        [ "${1:-}" != "--" ] || shift
         [ "$#" -eq 1 ] || exit 2
         fail_at="$(tr -d '\n' <"${FIXTURE_ROOT}/state/fail-at" 2>/dev/null || true)"
         is_deploy_lock=0
@@ -961,7 +962,7 @@ def _fake_docker_source() -> str:
             elif [[ "${joined}" = *'.Image'* ]]; then
                 container_id="${!#}"
                 one_off_container="$(
-                    tr -d '\n' <"${STATE}/api-oneoff-container" 2>/dev/null || true
+                    tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
                 )"
                 fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
                 case "${container_id}" in
@@ -984,11 +985,30 @@ def _fake_docker_source() -> str:
                     *)
                         printf '%s\n' "${OLD_API_IMAGE_ID}" ;;
                 esac
+			elif [[ "${joined}" = *'{{.State.Status}} {{.RestartCount}}'* ]]; then
+				one_off_container="$(
+					tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
+				)"
+				[ -n "${one_off_container}" ] && [ "${!#}" = "${one_off_container}" ] || exit 2
+				if [ -e "${STATE}/api-oneoff-started" ]; then
+					printf 'running 0\n'
+				else
+					printf 'created 0\n'
+					printf 'oneoff:candidate-created-proved\n' >>"${EVENTS}"
+				fi
             elif [[ "${joined}" = *'.State.Health'* ]]; then
                 printf 'true false 0 healthy\n'
                 printf 'recovery:dependency-health-proved\n' >>"${EVENTS}"
             elif [[ "${joined}" = *'.State.Running'* ]]; then
-                printf 'true false 0\n'
+				if [[ "${joined}" = *'.State.Restarting'* ]]; then
+					printf 'true false 0\n'
+				else
+					one_off_container="$(
+						tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
+					)"
+					[ -n "${one_off_container}" ] && [ "${!#}" = "${one_off_container}" ] || exit 2
+					[ -e "${STATE}/api-oneoff-started" ] && printf 'true\n' || printf 'false\n'
+				fi
             fi
             exit 0
             ;;
@@ -1073,6 +1093,15 @@ def _fake_docker_source() -> str:
             fi
             exit 0
             ;;
+		start)
+			one_off_container="$(
+				tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
+			)"
+			[ -n "${one_off_container}" ] && [ "${2:-}" = "${one_off_container}" ] || exit 2
+			: >"${STATE}/api-oneoff-started"
+			printf 'oneoff:captured-id-started\n' >>"${EVENTS}"
+			exit 0
+			;;
         network)
             printf 'network-id\n'
             exit 0
@@ -1100,13 +1129,57 @@ def _fake_docker_source() -> str:
             ;;
         exec)
             one_off_container="$(
-                tr -d '\n' <"${STATE}/api-oneoff-container" 2>/dev/null || true
+                tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
             )"
-            exec_container="${2:-}"
-            [ "${exec_container}" != "-i" ] || exec_container="${3:-}"
+			shift
+			exec_env_names=":"
+			exec_container=""
+			while [ "$#" -gt 0 ]; do
+				case "$1" in
+					-i)
+						shift
+						;;
+					--env|-e)
+						[ "$#" -ge 2 ] || exit 98
+						[[ "$2" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || exit 98
+						exec_env_names="${exec_env_names}$2:"
+						shift 2
+						;;
+					*)
+						exec_container="$1"
+						shift
+						break
+						;;
+				esac
+			done
             if [ -n "${one_off_container}" ] && \
                 [ "${exec_container}" = "${one_off_container}" ]; then
                 fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
+				for required_exec_env in \
+					NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET \
+					NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID \
+					NPCINK_CLOUD_SERVICE_SETTINGS_SECRET \
+					NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID; do
+					[[ "${exec_env_names}" = *":${required_exec_env}:"* ]] || exit 82
+				done
+				if [ "${NPCINK_CLOUD_DATABASE_URL+x}" = "x" ]; then
+					[[ "${exec_env_names}" = *':NPCINK_CLOUD_DATABASE_URL:'* ]] || exit 85
+				else
+					[[ "${exec_env_names}" != *':NPCINK_CLOUD_DATABASE_URL:'* ]] || exit 86
+				fi
+				for optional_exec_env in \
+					NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET \
+					NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET; do
+					if [ -n "${!optional_exec_env+x}" ]; then
+						[[ "${exec_env_names}" = *":${optional_exec_env}:"* ]] || exit 84
+					else
+						[[ "${exec_env_names}" != *":${optional_exec_env}:"* ]] || exit 77
+					fi
+				done
+				[ -d "${FIXTURE_ROOT}/remote/.release-state/.release-one-off.lock" ] || {
+					printf 'oneoff:lock-bypassed-before-payload\n' >>"${EVENTS}"
+					exit 99
+				}
                 printf 'oneoff:payload-started\n' >>"${EVENTS}"
                 if [ "${fail_at}" = "oneoff_term_wait" ]; then
                     while :; do /bin/sleep 1; done
@@ -1271,7 +1344,7 @@ PY
         rm)
             target="${!#}"
             one_off_container="$(
-                tr -d '\n' <"${STATE}/api-oneoff-container" 2>/dev/null || true
+                tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
             )"
             fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
             if [ -n "${one_off_container}" ] && [ "${target}" = "${one_off_container}" ]; then
@@ -1279,7 +1352,14 @@ PY
                     printf 'oneoff:cleanup-failed\n' >>"${EVENTS}"
                     exit 45
                 fi
-                rm -f "${STATE}/api-oneoff-container"
+				if [ "${fail_at}" = "oneoff_cleanup_false_success" ]; then
+					printf 'oneoff:cleanup-false-success\n' >>"${EVENTS}"
+					exit 0
+				fi
+				rm -f "${STATE}/api-oneoff-container" "${STATE}/api-oneoff-started"
+				if [ "${fail_at}" = "oneoff_cleanup_probe_failure" ]; then
+					: >"${STATE}/oneoff-cleanup-probe-armed"
+				fi
                 printf 'oneoff:container-removed\n' >>"${EVENTS}"
                 exit 0
             fi
@@ -1289,18 +1369,30 @@ PY
         container)
             if [ "${2:-}" = "ls" ]; then
 				fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
-				if [ "${fail_at}" = "oneoff_cleanup_probe_failure" ]; then
+				if [ "${fail_at}" = "oneoff_cleanup_probe_failure" ] && \
+					[ -e "${STATE}/oneoff-cleanup-probe-armed" ]; then
 					printf 'oneoff:cleanup-probe-failed\n' >>"${EVENTS}"
 					exit 46
 				fi
 				one_off_container="$(
-					tr -d '\n' <"${STATE}/api-oneoff-container" 2>/dev/null || true
+					tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
 				)"
-				[ -z "${one_off_container}" ] || printf '%s\n' "${one_off_container}"
-				exit 0
+				filter_id=""
+				previous_token=""
+				for token in "$@"; do
+					if [ "${previous_token}" = "--filter" ]; then
+						case "${token}" in id=*) filter_id="${token#id=}" ;; esac
+					fi
+					previous_token="${token}"
+				done
+				if [ -n "${one_off_container}" ] && \
+					{ [ -z "${filter_id}" ] || [ "${filter_id}" = "${one_off_container}" ]; }; then
+					printf '%s\n' "${one_off_container}"
+				fi
+                exit 0
 			elif [ "${2:-}" = "inspect" ]; then
                 one_off_container="$(
-                    tr -d '\n' <"${STATE}/api-oneoff-container" 2>/dev/null || true
+                    tr -d '\n' 2>/dev/null <"${STATE}/api-oneoff-container" || true
                 )"
                 [ -n "${one_off_container}" ] && [ "${3:-}" = "${one_off_container}" ]
                 exit $?
@@ -1315,14 +1407,18 @@ PY
             shift
             action=""
             compose_env_file=""
+			compose_file=""
             previous_token=""
             while [ "$#" -gt 0 ]; do
                 if [ "${previous_token}" = "--env-file" ]; then
                     compose_env_file="$1"
                 fi
+				if [ "${previous_token}" = "-f" ]; then
+					compose_file="$1"
+				fi
                 previous_token="$1"
                 case "$1" in
-                    exec|stop|run|ps|up)
+					config|exec|stop|run|ps|rm|up)
                         action="$1"
                         shift
                         break
@@ -1331,7 +1427,18 @@ PY
                 esac
             done
             action_joined=" $* "
+			case "${compose_file}" in
+				"${FIXTURE_ROOT}/remote/release-new/docker-compose.runtime.yml"|\
+				"${FIXTURE_ROOT}/remote/release-old/docker-compose.runtime.yml") ;;
+				*) exit 76 ;;
+			esac
             case "${action}" in
+				config)
+					[ "${!#}" = "release-one-off" ] || exit 2
+					printf '{"services":{"release-one-off":{"image":"%s"}}}\n' \
+						"${NPCINK_CLOUD_API_RELEASE_IMAGE}"
+					exit 0
+					;;
                 stop)
                     fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
                     if [ "${fail_at}" = "post_migration_stop" ] && \
@@ -1345,6 +1452,23 @@ PY
                     exit 0
                     ;;
                 up)
+					if [[ "${action_joined}" = *' release-one-off '* ]]; then
+						[[ "${action_joined}" = *' --no-start '* ]] || exit 67
+						[[ "${action_joined}" = *' --pull never '* ]] || exit 68
+						[[ "${action_joined}" = *' --no-build '* ]] || exit 69
+						[[ "${action_joined}" = *' --no-deps '* ]] || exit 70
+						[[ "${action_joined}" = *' --force-recreate '* ]] || exit 71
+						[ -d "${FIXTURE_ROOT}/remote/.release-state/.release-one-off.lock" ] || {
+							printf 'oneoff:lock-bypassed-before-create\n' >>"${EVENTS}"
+							exit 99
+						}
+						[ ! -e "${STATE}/api-oneoff-container" ] || exit 72
+						printf 'id-release-one-off\n' >"${STATE}/api-oneoff-container"
+						rm -f "${STATE}/api-oneoff-started"
+						printf 'oneoff:lock-observed\n' >>"${EVENTS}"
+						printf 'oneoff:container-created\n' >>"${EVENTS}"
+						exit 0
+					fi
                     if [[ "${action_joined}" = *' --force-recreate '* ]]; then
                         [[ "${action_joined}" = *' --no-deps '* ]] || exit 88
                         if [[ "${action_joined}" = *' postgres '* ]] && \
@@ -1399,7 +1523,11 @@ PY
                     ;;
                 ps)
                     service="${!#}"
-                    if [ "${service}" = "postgres" ] || [ "${service}" = "redis" ]; then
+                    if [ "${service}" = "release-one-off" ]; then
+						if [ -e "${STATE}/api-oneoff-container" ]; then
+							cat "${STATE}/api-oneoff-container"
+						fi
+					elif [ "${service}" = "postgres" ] || [ "${service}" = "redis" ]; then
                         generation="$(
                             tr -d '\n' <"${STATE}/data-generation" 2>/dev/null || \
                                 printf 'old'
@@ -1410,6 +1538,23 @@ PY
                     fi
                     exit 0
                     ;;
+				rm)
+					[ "${!#}" = "release-one-off" ] || exit 2
+					fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
+					if [ "${fail_at}" = "oneoff_cleanup_failure" ]; then
+						printf 'oneoff:cleanup-failed\n' >>"${EVENTS}"
+						exit 45
+					fi
+					if [ "${fail_at}" = "oneoff_cleanup_false_success" ]; then
+						printf 'oneoff:cleanup-false-success\n' >>"${EVENTS}"
+						exit 0
+					fi
+					if [ -e "${STATE}/api-oneoff-container" ]; then
+						rm -f "${STATE}/api-oneoff-container" "${STATE}/api-oneoff-started"
+						printf 'oneoff:container-removed\n' >>"${EVENTS}"
+					fi
+					exit 0
+					;;
                 exec)
                     if [[ "${action_joined}" = *'pg_dump'* ]]; then
                         printf 'FAKE_CUSTOM_POSTGRES_DUMP\n'
@@ -1428,57 +1573,6 @@ PY
                             fi
                         fi
                     fi
-                    exit 0
-                    ;;
-                run)
-                    [[ "${action_joined}" != *' --env-from-file '* ]] || exit 81
-                    [[ "${action_joined}" != *' --pull never '* ]] || exit 80
-                    [[ "${action_joined}" != *' --pull '* ]] || exit 80
-                    [[ "${action_joined}" = *' -d '* ]] || exit 71
-                    [[ "${action_joined}" = *' --no-deps '* ]] || exit 72
-                    [[ "${action_joined}" = *' --rm '* ]] || exit 73
-                    [[ "${action_joined}" = *' --entrypoint python '* ]] || exit 75
-                    [[ "${action_joined}" = *' api -c import time; time.sleep(900) '* ]] || exit 89
-                    has_env_name NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET "$@" || exit 82
-                    has_env_name NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID "$@" || exit 83
-                    has_env_name NPCINK_CLOUD_SERVICE_SETTINGS_SECRET "$@" || exit 91
-                    has_env_name NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID "$@" || exit 92
-                    if [ "${NPCINK_CLOUD_DATABASE_URL+x}" = "x" ]; then
-                        has_env_name NPCINK_CLOUD_DATABASE_URL "$@" || exit 85
-                    else
-                        ! has_env_name NPCINK_CLOUD_DATABASE_URL "$@" || exit 86
-                    fi
-                    if [ "${NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET+x}" = "x" ]; then
-                        has_env_name NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET "$@" || exit 84
-                    else
-                        ! has_env_name NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET "$@" || exit 77
-                        ! grep -q '^NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET=' \
-                            "${compose_env_file}" || exit 74
-                    fi
-                    if [ "${NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET+x}" = "x" ]; then
-                        has_env_name NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET "$@" || exit 93
-                    else
-                        ! has_env_name NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET "$@" || exit 78
-                        ! grep -q '^NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET=' \
-                            "${compose_env_file}" || exit 79
-                    fi
-                    if [ "${NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET+x}" = "x" ] && \
-                        [ "${NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET+x}" = "x" ]; then
-                        exit 76
-                    fi
-                    container_name=""
-                    previous_token=""
-                    for token in "$@"; do
-                        if [ "${previous_token}" = "--name" ]; then
-                            container_name="${token}"
-                        fi
-                        previous_token="${token}"
-                    done
-                    [[ "${container_name}" =~ \
-                        ^npcink-p1e06-api-proof-[0-9]+-[0-9]+-[0-9]+$ ]] || exit 70
-                    [ ! -e "${STATE}/api-oneoff-container" ] || exit 69
-                    printf '%s\n' "${container_name}" >"${STATE}/api-oneoff-container"
-                    printf 'oneoff:container-created\n' >>"${EVENTS}"
                     exit 0
                     ;;
             esac
@@ -1519,6 +1613,7 @@ def _cutover_command(fixture: CutoverFixture) -> list[str]:
 def _cutover_environment(fixture: CutoverFixture) -> dict[str, str]:
     environment = os.environ.copy()
     environment["PATH"] = f"{fixture.fake_bin}{os.pathsep}{environment['PATH']}"
+    environment["TMPDIR"] = str(fixture.root / "tmp")
     environment["POSTGRES_USER"] = "ambient-must-not-reach-compose"
     environment["POSTGRES_DB"] = "ambient-must-not-reach-compose"
     environment["COMPOSE_FILE"] = "/ambient/must-not-reach-compose.yml"
@@ -1630,12 +1725,16 @@ def _read_events(fixture: CutoverFixture) -> list[str]:
 def _one_off_exec_payloads(fixture: CutoverFixture) -> list[tuple[str, ...]]:
     payloads: list[tuple[str, ...]] = []
     for line in fixture.docker_calls.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("docker|exec|-i|npcink-p1e06-api-proof-"):
+        if not line.startswith("docker|exec|-i|") or "|id-release-one-off|" not in line:
             continue
         fields = line.split("|")
         assert fields[:3] == ["docker", "exec", "-i"]
-        assert fields[3].startswith("npcink-p1e06-api-proof-")
-        payloads.append(tuple(fields[4:]))
+        container_index = fields.index("id-release-one-off")
+        env_options = fields[3:container_index]
+        assert len(env_options) % 2 == 0
+        assert all(env_options[index] == "--env" for index in range(0, len(env_options), 2))
+        assert all(env_options[index].isidentifier() for index in range(1, len(env_options), 2))
+        payloads.append(tuple(fields[container_index + 1 :]))
     return payloads
 
 
@@ -1711,10 +1810,22 @@ def test_static_contract_is_fail_closed_and_compose_v227_compatible() -> None:
     assert '--resolve "${domain_name}:443:127.0.0.1"' in source
     assert "--env-from-file" not in source
     assert "run --rm --no-deps --pull never" not in source
-    assert "run_exact_api_one_off" in source
-    assert "api -c 'import time; time.sleep(900)'" in source
-    assert "docker inspect --format '{{.Image}}'" in source
-    assert 'docker exec -i "${API_ONE_OFF_CONTAINER}" "${payload[@]}" </dev/null &' in source
+    assert "run_exact_api_one_off_isolated() {" in source
+    assert 'run_exact_api_one_off_isolated "$@" &' in source
+    assert 'ONE_OFF_PREVIOUS_ASYNC_PID="$!"' in source
+    assert 'observed_async_pid="$!"' in source
+    assert 'ACTIVE_ONE_OFF_PID="${observed_async_pid}"' in source
+    assert 'kill "-${signal_name}" "${ACTIVE_ONE_OFF_PID}"' in source
+    assert source.index("set +x") < source.index("MAINTENANCE_ENV_SOURCE_PROOF=")
+    assert source.index(
+        'CURRENT_STAGE="prove-governed-one-off-absence-before-mutation"'
+    ) < source.index('CURRENT_STAGE="prepare-exact-bundle-images"')
+    assert "compose_maintenance" not in source
+    assert "time.sleep(900)" not in source
+    assert "npcink_ai_cloud_compose_run_with_image_proof" in source
+    assert 'exec_env_args+=(--exec-env "${env_name}")' in source
+    assert '"${exec_env_args[@]}" -- "${payload[@]}" </dev/null' in source
+    assert "API_ONE_OFF_CONTAINER" not in source
     assert "docker image inspect --format '{{.Id}}' npcink-ai-cloud-api:prod" in source
     assert "EXPECTED_RUNTIME_LEGACY_TOTAL=18" in source
     assert "EXPECTED_SERVICE_LEGACY_TOTAL=12" in source
@@ -1741,18 +1852,30 @@ def test_static_contract_is_fail_closed_and_compose_v227_compatible() -> None:
     assert 'NPCINK_CLOUD_RELEASE_TOOL_PYTHON="${HOST_PYTHON}"' in source
     assert "docker run -d \\\n\t--pull=never" in source
     assert '"${RESTORE_POSTGRES_IMAGE_ID}"' in source
-    assert '"${MANIFEST_HELPER}" role-image-id' in source
+    assert '"${MANIFEST_HELPER}" loaded-role-daemon-id' in source
+    assert "--target-daemon-map" not in source
     assert '--root "${STAGED_RELEASE}" --role api' in source
     assert '--root "${STAGED_RELEASE}" --role "${role}"' in source
     assert 'reference="npcink-ai-cloud-external-redis:prod"' in source
     assert 'reference="npcink-ai-cloud-redis:prod"' not in source
     assert "MIGRATION_STARTED=1" in source
+    assert (
+        "PREVIOUS_RUNTIME_SERVICES=(proxy frontend api worker callback-worker ops-worker)"
+        in source
+    )
+    assert (
+        'PUBLIC_AND_WRITER_SERVICES=("${PREVIOUS_RUNTIME_SERVICES[@]}" release-one-off)'
+        in source
+    )
+    assert 'for service in "${PREVIOUS_RUNTIME_SERVICES[@]}"; do' in source
     assert "backend-postgres-cutover:" in ci
     assert "image: postgres:16" in ci
     assert "tests/integration/test_runtime_data_encryption_0058_to_0068.py" in ci
     assert "BACKEND_POSTGRES_CUTOVER_RESULT" in ci
     assert "PostgreSQL 16 encryption cutover regression did not pass" in ci
     assert 'CURRENT_STAGE="switch-production-data-services-to-target-images"' in source
+    assert "NPCINK_CLOUD_LOAD_MODE=data-only" in source
+    assert 'bash "${STAGED_RELEASE}/deploy/remote-load-and-up.sh"' in source
     assert "DATA_SWITCH_ATTEMPTED=1" in source
     assert "ACTIVATION_COMMITTED=1" in source
     assert "activation_committed_terminalization_incomplete" in source
@@ -1792,11 +1915,7 @@ def test_maintenance_env_requires_exact_independent_canonical_dual_domain_values
         },
         "unexpected-seventh-key": base_values | {"NPCINK_CLOUD_UNEXPECTED": "rejected"},
         "noncanonical-runtime-root": base_values
-        | {
-            "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET": (
-                RUNTIME_TARGET_SECRET.rstrip("=")
-            )
-        },
+        | {"NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET": (RUNTIME_TARGET_SECRET.rstrip("="))},
         "shared-target-root": base_values
         | {"NPCINK_CLOUD_SERVICE_SETTINGS_SECRET": RUNTIME_TARGET_SECRET},
         "runtime-target-reused-as-service-old": base_values
@@ -1965,10 +2084,7 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
     assert f"NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET={RUNTIME_TARGET_SECRET}" in staged_env
     assert f"NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID={RUNTIME_TARGET_KEY_ID}" in staged_env
     assert f"NPCINK_CLOUD_SERVICE_SETTINGS_SECRET={SERVICE_TARGET_SECRET}" in staged_env
-    assert (
-        f"NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID={SERVICE_TARGET_KEY_ID}"
-        in staged_env
-    )
+    assert f"NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID={SERVICE_TARGET_KEY_ID}" in staged_env
     data_image_evidence = (fixture.evidence / "new-data-service-image-ids.tsv").read_text(
         encoding="utf-8"
     )
@@ -1984,12 +2100,8 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
     assert events.index("migration:independent-restore-to-0068") < events.index(
         "runtime:restore:inventory"
     )
-    assert events.index("runtime:restore:inventory") < events.index(
-        "service:restore:inventory"
-    )
-    assert events.index("service:restore:verify") < events.index(
-        "data:target-services-recreated"
-    )
+    assert events.index("runtime:restore:inventory") < events.index("service:restore:inventory")
+    assert events.index("service:restore:verify") < events.index("data:target-services-recreated")
     assert events.index("data:target-services-recreated") < events.index(
         "migration:production-to-0068"
     )
@@ -2001,9 +2113,9 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
     )
     assert events[-1] == "terminal:lock-released-after-global-receipt"
     assert "images:rollback-tag-removed" in events
-    assert "manifest:role-image-id:api" in events
-    assert "manifest:role-image-id:postgres" in events
-    assert "manifest:role-image-id:external_redis" in events
+    assert "manifest:loaded-role-daemon-id:api" in events
+    assert "manifest:loaded-role-daemon-id:postgres" in events
+    assert "manifest:loaded-role-daemon-id:external_redis" in events
     assert "failure:default-python3-used" not in events
     assert "failure:release-helper-host-python" not in events
     for location in ("restore", "production"):
@@ -2015,40 +2127,43 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
     run_calls = [
         line for line in docker_calls.splitlines() if "|compose|" in line and "|run|" in line
     ]
-    assert run_calls
-    assert len(run_calls) == 18
-    assert all("--env-from-file" not in line for line in run_calls)
-    assert all("|--pull|" not in line for line in run_calls)
-    assert all("|-d|" in line for line in run_calls)
-    assert all("|--rm|" in line for line in run_calls)
-    assert all("|--entrypoint|python|" in line for line in run_calls)
-    assert all("|api|-c|import time; time.sleep(900)" in line for line in run_calls)
-    assert all("|alembic|" not in line for line in run_calls)
-    assert all("|reencrypt_runtime_data|" not in line for line in run_calls)
-    assert all("|reencrypt_service_secrets|" not in line for line in run_calls)
-    assert all("|-e|NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET" in line for line in run_calls)
-    assert all("|-e|NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID" in line for line in run_calls)
-    assert all("|-e|NPCINK_CLOUD_SERVICE_SETTINGS_SECRET" in line for line in run_calls)
+    assert run_calls == []
+    assert "time.sleep(900)" not in docker_calls
+    one_off_create_calls = [
+        line
+        for line in docker_calls.splitlines()
+        if "|compose|" in line
+        and "|up|--no-start|--pull|never|--no-build|--no-deps|--force-recreate|release-one-off"
+        in line
+    ]
+    assert len(one_off_create_calls) == 18
+    exec_calls = [
+        line
+        for line in docker_calls.splitlines()
+        if line.startswith("docker|exec|-i|") and "|id-release-one-off|" in line
+    ]
+    assert len(exec_calls) == 18
+    assert all("|--env|NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET" in line for line in exec_calls)
+    assert all("|--env|NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID" in line for line in exec_calls)
+    assert all("|--env|NPCINK_CLOUD_SERVICE_SETTINGS_SECRET" in line for line in exec_calls)
     assert all(
-        "|-e|NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID" in line
-        for line in run_calls
+        "|--env|NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID" in line for line in exec_calls
     )
-    assert sum("|-e|NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET" in line for line in run_calls) == 4
     assert (
-        sum(
-            "|-e|NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET" in line
-            for line in run_calls
-        )
+        sum("|--env|NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET" in line for line in exec_calls) == 4
+    )
+    assert (
+        sum("|--env|NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET" in line for line in exec_calls)
         == 4
     )
     assert all(
         not (
-            "|-e|NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET" in line
-            and "|-e|NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET" in line
+            "|--env|NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET" in line
+            and "|--env|NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET" in line
         )
-        for line in run_calls
+        for line in exec_calls
     )
-    assert sum("|-e|NPCINK_CLOUD_DATABASE_URL" in line for line in run_calls) == 9
+    assert sum("|--env|NPCINK_CLOUD_DATABASE_URL" in line for line in exec_calls) == 9
     runtime_module = ("python", "-m", "app.dev.reencrypt_runtime_data")
     service_module = ("python", "-m", "app.dev.reencrypt_service_secrets")
     encryption_payloads = [
@@ -2091,6 +2206,17 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
     ]
     assert events.count("oneoff:container-created") == 18
     assert events.count("oneoff:container-removed") == 18
+    assert events.count("oneoff:lock-observed") == 18
+    assert events.count("oneoff:candidate-created-proved") == 18
+    assert events.count("oneoff:captured-id-started") == 18
+    assert "oneoff:lock-bypassed-before-create" not in events
+    assert "oneoff:lock-bypassed-before-payload" not in events
+    assert events.index("oneoff:lock-observed") < events.index("oneoff:candidate-created-proved")
+    assert events.index("oneoff:candidate-created-proved") < events.index(
+        "oneoff:captured-id-started"
+    )
+    assert events.index("oneoff:captured-id-started") < events.index("oneoff:payload-started")
+    assert not (fixture.remote / ".release-state" / ".release-one-off.lock").exists()
     assert RUNTIME_TARGET_SECRET not in docker_calls
     assert SERVICE_TARGET_SECRET not in docker_calls
     assert RUNTIME_OLD_SECRET not in docker_calls
@@ -2118,10 +2244,9 @@ def test_executable_success_proves_receipt_restore_lock_edge_env_and_terminal_ev
             family_segment = "" if family == "runtime" else "-service"
             for mode in ("inventory", "dry-run", "apply", "verify"):
                 report = json.loads(
-                    (
-                        fixture.evidence
-                        / f"{location}{family_segment}-{mode}.json"
-                    ).read_text(encoding="utf-8")
+                    (fixture.evidence / f"{location}{family_segment}-{mode}.json").read_text(
+                        encoding="utf-8"
+                    )
                 )
                 assert tuple(report["row_identifiers"]) == expected_identifiers
                 assert _row_identity_sha256(report["row_identifiers"]) == expected_digest
@@ -2256,13 +2381,83 @@ def test_exact_api_one_off_cleanup_probe_failure_is_fail_closed(tmp_path: Path) 
     assert "oneoff:container-created" in events
     assert "oneoff:payload-started" in events
     assert events.count("oneoff:cleanup-probe-failed") >= 2
-    assert "oneoff:container-removed" not in events
-    assert (fixture.state / "api-oneoff-container").exists()
+    assert "oneoff:container-removed" in events
+    assert not (fixture.state / "api-oneoff-container").exists()
+    assert (fixture.remote / ".release-state" / ".release-one-off.lock").is_dir()
     marker = _read_marker(fixture.remote / ".cutover-failed")
     assert marker["phase"] == "independent-restore-migration-rehearsal"
     assert marker["outcome"] == "recovery_incomplete"
     assert marker["recovery"] == "manual_recovery_required_from_observed_state"
     assert "migration:production-to-0068" not in events
+
+
+def test_exact_api_one_off_rejects_preexisting_cross_release_lock(tmp_path: Path) -> None:
+    fixture = _make_fixture(tmp_path)
+    global_one_off_lock = fixture.remote / ".release-state" / ".release-one-off.lock"
+    global_one_off_lock.mkdir(mode=0o700)
+
+    process, command = _start_cutover(fixture)
+    stdout, stderr = process.communicate(timeout=30)
+    completed = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+    assert completed.returncode != 0
+    events = _read_events(fixture)
+    assert "oneoff:container-created" not in events
+    assert "oneoff:payload-started" not in events
+    assert "images:prepared" not in events
+    assert not fixture.handoff.exists()
+    assert global_one_off_lock.is_dir()
+    assert (fixture.remote / ".deploy-lock").is_dir()
+    marker = _read_marker(fixture.remote / ".cutover-failed")
+    assert marker["phase"] == "prove-governed-one-off-absence-before-mutation"
+    assert marker["outcome"] == "recovery_incomplete"
+    assert "governed release one-off lock is already present" in completed.stderr
+
+
+def test_cutover_rejects_preexisting_one_off_container_before_mutation(
+    tmp_path: Path,
+) -> None:
+    fixture = _make_fixture(tmp_path)
+    (fixture.state / "api-oneoff-container").write_text(
+        "id-release-one-off\n", encoding="utf-8"
+    )
+
+    process, command = _start_cutover(fixture)
+    stdout, stderr = process.communicate(timeout=30)
+    completed = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+    assert completed.returncode != 0
+    events = _read_events(fixture)
+    assert "images:prepared" not in events
+    assert "writers:stopped" not in events
+    assert not fixture.handoff.exists()
+    assert (fixture.state / "api-oneoff-container").is_file()
+    assert (fixture.remote / ".deploy-lock").is_dir()
+    marker = _read_marker(fixture.remote / ".cutover-failed")
+    assert marker["phase"] == "prove-governed-one-off-absence-before-mutation"
+    assert marker["outcome"] == "validation_failed_before_image_or_database_mutation"
+    assert "a governed one-off container is already present" in completed.stderr
+
+
+def test_exact_api_one_off_retains_lock_when_cleanup_reports_false_success(
+    tmp_path: Path,
+) -> None:
+    fixture = _make_fixture(tmp_path)
+
+    completed = _run_cutover(fixture, fail_at="oneoff_cleanup_false_success")
+
+    assert completed.returncode != 0
+    events = _read_events(fixture)
+    assert "oneoff:container-created" in events
+    assert "oneoff:payload-started" in events
+    assert events.count("oneoff:cleanup-false-success") >= 2
+    assert "oneoff:container-removed" not in events
+    assert (fixture.state / "api-oneoff-container").exists()
+    assert (fixture.remote / ".release-state" / ".release-one-off.lock").is_dir()
+    errors = (fixture.evidence / "restore-migrate-to-head.stderr").read_text(
+        encoding="utf-8"
+    )
+    assert "cleanup was incomplete; the global one-off lock was retained" in errors
 
 
 def test_exact_api_one_off_term_signal_cleans_container(tmp_path: Path) -> None:
@@ -2330,7 +2525,9 @@ def test_executable_pre_migration_failure_restores_only_old_runtime_generation(
     force_recreate_calls = [
         line
         for line in fixture.docker_calls.read_text(encoding="utf-8").splitlines()
-        if "|up|" in line and "|--force-recreate|" in line
+        if "|up|" in line
+        and "|--force-recreate|" in line
+        and "|release-one-off" not in line
     ]
     assert len(force_recreate_calls) == 1
     assert "|--no-deps|" in force_recreate_calls[0]
@@ -2359,8 +2556,7 @@ def test_executable_post_migration_failure_never_restarts_old_code_and_requires_
         fixture.remote / ".release-state" / "release-old" / "env.deploy"
     )
     assert marker["required_old_root_env_names"] == (
-        "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET,"
-        "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
+        "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET,NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
     )
     assert marker["database_recovery_point"] == str(fixture.backup)
     assert marker["off_host_receipt"] == str(fixture.receipt)
@@ -2401,8 +2597,7 @@ def test_service_identity_drift_with_frozen_count_requires_full_restore(
         fixture.remote / ".release-state" / "release-old" / "env.deploy"
     )
     assert marker["required_old_root_env_names"] == (
-        "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET,"
-        "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
+        "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET,NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
     )
     assert marker["migration_started"] == "1"
     assert marker["data_services_switched"] == "1"
@@ -2416,9 +2611,7 @@ def test_service_identity_drift_with_frozen_count_requires_full_restore(
     assert not _global_activation_receipt(fixture).exists()
 
     drifted_report = json.loads(
-        (fixture.evidence / "production-service-inventory.json").read_text(
-            encoding="utf-8"
-        )
+        (fixture.evidence / "production-service-inventory.json").read_text(encoding="utf-8")
     )
     assert drifted_report["total"] == 12
     assert len(drifted_report["row_identifiers"]) == 12
@@ -2670,10 +2863,7 @@ def test_executable_result_cleanup_failure_is_an_explicit_locked_conflict(
     assert len(quarantined_results) == 1
     quarantined_result = quarantined_results[0]
     assert stat.S_IMODE(quarantined_result.stat().st_mode) == 0o600
-    assert (
-        json.loads(quarantined_result.read_text(encoding="utf-8"))["status"]
-        == "passed"
-    )
+    assert json.loads(quarantined_result.read_text(encoding="utf-8"))["status"] == "passed"
     assert marker["conflicting_terminal_evidence"] == str(quarantined_result)
     assert "conflicting terminal success evidence quarantined" in completed.stderr
     events = _read_events(fixture)

@@ -224,21 +224,49 @@ after remediation; the stable unchecked gate above remains authoritative.
   image or container mutation
 - [ ] if `--skip-frontend-image` was selected, exactly one running old frontend
   was proven before mutation; the option was not used for a first deploy
-- [ ] ordinary full deployment proved an existing managed `current` release;
+- [ ] ordinary production deployment proved an existing managed `current` release;
   no missing-pointer state was treated as an implicit host bootstrap
 - [ ] before image loading, the frozen previous PostgreSQL revision was read;
   `20260710_0058` was rejected outside the P1-E06 orchestrator
 - [ ] formal production deploy validated the root-owned
   `p1_e06_global_activation.v1` receipt, its complete digest-bound per-release
   evidence, and revision `0068` or a descendant in the staged Alembic graph
+- [ ] post-load verification published only the fixed
+  `.release-state/<release-name>/target-daemon-images.json` map; both state
+  directories were owner-controlled non-symlink mode-`0700` directories, the
+  map was an owner-controlled non-symlink regular file with mode `0600`, and
+  both read and write rejected maps larger than 256 KiB. Its bundle binding
+  matched the manifest and checksum hashes, source revision, image platform,
+  release name, and canonical resolved release path; malformed, oversized,
+  copied, tampered, or differently bound maps were rejected rather than
+  overwritten
+- [ ] `prepare-only` ran the full pre-load and post-load payload verification
+  before publishing the map. Every later phase remained in the same deployment
+  lock, proved that the exact release root was operator-owned and not
+  group/world writable, relied on the no-direct-server-code-edit policy, and
+  revalidated map binding, current governed tags, and candidate containers;
+  any unprovable release-root trust stopped the cutover and required a fresh
+  `prepare-only` plus full verifier run
 - [ ] the observed cutover order was `prepare images -> stop old app/write
   services -> data -> migration/refresh -> pointer -> API -> workers ->
   release-specific worker proof -> generic operational-ready -> traffic`
-- [ ] migration and provider refresh created inert named containers with
-  Compose `run -d --name --no-deps --rm`, proved tag plus container `.Image` against
-  the bundle manifest before `docker exec -i`, removed the proof containers,
-  verified signal cleanup plus the 15-minute self-termination bound, and never
-  supplied a CLI `--pull`; Runtime Compose used `pull_policy: never`
+- [ ] each `data-only`, `api-only`, `workers-only`, and `traffic-only` batch
+  froze all required target-daemon IDs and pinned its Compose image seams,
+  created the complete batch with
+  `up --no-start --pull never --no-build --no-deps --force-recreate`, captured
+  exactly one stopped `created`/zero-restart container ID per service, and
+  re-proved every candidate image plus governed tag only after the whole batch
+  existed. Only a fully proved batch was started by its captured IDs, and the
+  post-start gate proved those same IDs were running the same images before
+  health or readiness checks
+- [ ] migration and provider refresh pinned the profiled `release-one-off` API
+  service to the target-daemon map, created exactly one stopped candidate with
+  `up --no-start --pull never --no-build --no-deps --force-recreate`, proved its
+  `.Image` and the tag before starting the captured container ID, rechecked that
+  running identity before `docker exec -i`, removed the proof container, and
+  verified signal cleanup plus the cross-release private lock; incomplete
+  cleanup retained that lock for operator recovery, and Runtime Compose used
+  `pull_policy: never`
 - [ ] after worker startup, exactly one `worker`, `callback-worker`, and
   `ops-worker` container stayed running/non-restarting with zero restarts and
   stable IDs, and all three heartbeats were newer than the recorded cutoff
@@ -459,10 +487,12 @@ All items in this section are `Required`.
 - [ ] after receipt/restore rehearsal and before production migration, the
   orchestrator switched PostgreSQL and Redis to the exact target image IDs and
   proved both healthy plus PostgreSQL still at `20260710_0058`
-- [ ] every production/rehearsal one-off used the bundle-backed staged API image
-  with Docker Compose v2.27 `run --rm --no-deps -e VARIABLE_NAME`; no CLI
-  `--pull`, secret value argument, or env-file run option was used, and Runtime
-  Compose `pull_policy: never` plus image-ID proof bound the exact image
+- [ ] every production/rehearsal API one-off used the governed
+  `release-one-off` stopped candidate: Compose `up --no-start --pull never
+  --no-build --no-deps --force-recreate`, exact image/never-started proof,
+  start of the captured ID, then `docker exec -i --env VARIABLE_NAME` with
+  names only; no secret value argument or env-file run option was used, and
+  Runtime Compose `pull_policy: never` plus image-ID proof bound the exact image
 - [ ] the first raw-ciphertext cutover omitted `--old-key-id`; any later
   `rde.v1` rotation is a separate approved procedure that supplies old key IDs
   to `inventory` and positionally pairs each ID/root in `dry-run` and `apply`

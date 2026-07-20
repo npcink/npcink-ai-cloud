@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -224,9 +225,13 @@ def test_secret_bearing_cli_and_http_argv_patterns_are_retired() -> None:
     bootstrap = (ROOT / "deploy/remote-bootstrap-portal-site.sh").read_text(
         encoding="utf-8"
     )
+    bootstrap_ssh = (ROOT / "deploy/bootstrap-portal-site-to-ssh-host.sh").read_text(
+        encoding="utf-8"
+    )
     operational = (ROOT / "deploy/remote-operational-ready.sh").read_text(
         encoding="utf-8"
     )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert '"${SECRET}"' not in "\n".join(
         line for line in deploy.splitlines() if "REMOTE_SEQUENCE_VALUES" in line
@@ -236,6 +241,16 @@ def test_secret_bearing_cli_and_http_argv_patterns_are_retired() -> None:
     assert '-hmac "${SECRET}"' not in remote
     assert '--secret "${SECRET}"' not in seed
     assert '--secret "${SECRET}"' not in bootstrap
+    assert 'SECRET="${NPCINK_CLOUD_SECRET:-}"' in remote
+    assert "npcink-cloud-test-secret" not in remote
+    assert "NPCINK_CLOUD_SECRET is required for signed runtime smoke" in remote
+    assert "--secret npcink-cloud-test-secret" not in readme
+    assert "IFS= read -r -s NPCINK_CLOUD_SECRET" in readme
+    assert "NPCINK_CLOUD_SECRET is required with --issue-key" in bootstrap
+    assert "Remote portal bootstrap does not support --issue-key" in bootstrap_ssh
+    assert "--secret is forbidden" in bootstrap_ssh
+    assert bootstrap_ssh.index("--secret)") < bootstrap_ssh.index('REMOTE_CMD="')
+    assert bootstrap_ssh.index("--issue-key)") < bootstrap_ssh.index('REMOTE_CMD="')
     for script in (release, remote, portal):
         assert '--data "${body}"' not in script
         assert '--data-binary "@${request_body}"' in script
@@ -469,6 +484,34 @@ exec /bin/bash "$@"
 
     curl_log.unlink()
     state_path.unlink(missing_ok=True)
+
+    missing_remote_secret_environment = environment.copy()
+    missing_remote_secret_environment.update(
+        {
+            "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN": "remote-internal-token-sentinel",
+            "NPCINK_CLOUD_SKIP_FRONTEND_IMAGE": "1",
+        }
+    )
+    missing_remote_secret_environment.pop("NPCINK_CLOUD_SECRET", None)
+    missing_remote_secret = subprocess.run(
+        [
+            "/bin/bash",
+            str(fixture / "deploy/remote-smoke.sh"),
+            "--base-url",
+            "http://cloud.example.test",
+        ],
+        cwd=fixture,
+        env=missing_remote_secret_environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert missing_remote_secret.returncode == 1
+    assert "NPCINK_CLOUD_SECRET is required for signed runtime smoke" in (
+        missing_remote_secret.stderr
+    )
+    assert not curl_log.exists()
+
     remote_environment = environment.copy()
     remote_environment.update(
         {
@@ -520,16 +563,94 @@ def test_seed_bootstrap_operational_and_portal_children_hide_secrets(
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     docker_log = tmp_path / "docker.log"
+    exact_api_image_id = f"sha256:{'a' * 64}"
+    (tmp_path / ".release-state").mkdir(mode=0o700)
+    (fixture / "docker-compose.prod.yml").write_text(
+        "services: {}\n", encoding="utf-8"
+    )
+    _write(
+        fixture / "scripts/verify-release-bundle-manifest.py",
+        r'''from __future__ import annotations
+
+import os
+import sys
+
+arguments = sys.argv[1:]
+if (
+    len(arguments) != 5
+    or arguments[0] != "loaded-role-daemon-id"
+    or arguments[1] != "--root"
+    or arguments[3:] != ["--role", "api"]
+):
+    raise SystemExit(64)
+print(os.environ["EXACT_API_IMAGE_ID"])
+''',
+    )
     _write(
         fake_bin / "docker",
-        r'''#!/usr/bin/env bash
-set -euo pipefail
-{
-    printf 'docker'
-    for arg in "$@"; do printf '\t%s' "${arg}"; done
-    printf '\n'
-} >>"${DOCKER_ARGV_LOG}"
-cat >/dev/null || true
+        r'''#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+arguments = sys.argv[1:]
+with open(os.environ["DOCKER_ARGV_LOG"], "a", encoding="utf-8") as handle:
+    handle.write("docker\t" + "\t".join(arguments) + "\n")
+
+candidate = Path(os.environ["ONE_OFF_CANDIDATE"])
+started = Path(os.environ["ONE_OFF_STARTED"])
+container_id = "secret-proof-container"
+exact_id = os.environ["EXACT_API_IMAGE_ID"]
+
+if arguments[:1] == ["compose"]:
+    if "config" in arguments and arguments[-1] == "release-one-off":
+        print(json.dumps({"services": {"release-one-off": {"image": exact_id}}}))
+        raise SystemExit(0)
+    if "ps" in arguments and arguments[-1] == "release-one-off":
+        if candidate.exists():
+            print(container_id)
+        raise SystemExit(0)
+    if "up" in arguments and arguments[-1] == "release-one-off":
+        candidate.touch()
+        started.unlink(missing_ok=True)
+        raise SystemExit(0)
+    if "rm" in arguments and arguments[-1] == "release-one-off":
+        candidate.unlink(missing_ok=True)
+        started.unlink(missing_ok=True)
+        raise SystemExit(0)
+    raise SystemExit(64)
+
+if arguments[:2] == ["container", "ls"]:
+    if candidate.exists():
+        print(container_id)
+    raise SystemExit(0)
+if arguments[:2] == ["image", "inspect"]:
+    print(exact_id)
+    raise SystemExit(0)
+if arguments[:2] == ["inspect", "--format"]:
+    if arguments[2] == "{{.Image}}":
+        print(exact_id)
+    elif arguments[2] == "{{.State.Status}} {{.RestartCount}}":
+        print("running 0" if started.exists() else "created 0")
+    elif arguments[2] == "{{.State.Running}}":
+        print("true" if started.exists() else "false")
+    else:
+        raise SystemExit(64)
+    raise SystemExit(0)
+if arguments[:2] == ["start", container_id]:
+    started.touch()
+    raise SystemExit(0)
+if arguments[:1] == ["exec"]:
+    sys.stdin.buffer.read()
+    raise SystemExit(0)
+if arguments[:2] == ["rm", "-f"]:
+    candidate.unlink(missing_ok=True)
+    started.unlink(missing_ok=True)
+    raise SystemExit(0)
+raise SystemExit(64)
 ''',
         executable=True,
     )
@@ -544,9 +665,37 @@ cat >/dev/null || true
             "DOCKER_ARGV_LOG": str(docker_log),
             "CURL_ARGV_LOG": str(curl_log),
             "CURL_STATE_PATH": str(tmp_path / "curl-state"),
+            "EXACT_API_IMAGE_ID": exact_api_image_id,
+            "ONE_OFF_CANDIDATE": str(tmp_path / "one-off-candidate"),
+            "ONE_OFF_STARTED": str(tmp_path / "one-off-started"),
+            "NPCINK_CLOUD_RELEASE_TOOL_PYTHON": sys.executable,
             "TMPDIR": str(temp_root),
         }
     )
+
+    missing_bootstrap_environment = base_environment.copy()
+    missing_bootstrap_environment.update(
+        {
+            "NPCINK_CLOUD_SITE_ID": "site_runtime",
+            "NPCINK_CLOUD_MEMBER_EMAIL": "member@example.test",
+        }
+    )
+    missing_bootstrap_environment.pop("NPCINK_CLOUD_SECRET", None)
+    missing_bootstrap = subprocess.run(
+        [
+            "/bin/bash",
+            str(fixture / "deploy/remote-bootstrap-portal-site.sh"),
+            "--issue-key",
+        ],
+        cwd=fixture,
+        env=missing_bootstrap_environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert missing_bootstrap.returncode == 1
+    assert "NPCINK_CLOUD_SECRET is required with --issue-key" in missing_bootstrap.stderr
+    assert not docker_log.exists()
 
     seed_environment = base_environment.copy()
     seed_environment["NPCINK_CLOUD_SECRET"] = "seed-secret-sentinel"
@@ -580,8 +729,10 @@ cat >/dev/null || true
     docker_argv = docker_log.read_text(encoding="utf-8")
     assert "seed-secret-sentinel" not in docker_argv
     assert "bootstrap-secret-sentinel" not in docker_argv
-    assert "-e\tNPCINK_CLOUD_SEED_RUNTIME_SECRET" in docker_argv
-    assert "-e\tNPCINK_CLOUD_BOOTSTRAP_SITE_SECRET" in docker_argv
+    assert "--env\tNPCINK_CLOUD_SEED_RUNTIME_SECRET" in docker_argv
+    assert "--env\tNPCINK_CLOUD_BOOTSTRAP_SITE_SECRET" in docker_argv
+    assert "--site-admin-email\tmember@example.test" in docker_argv
+    assert "--member-role" not in docker_argv
 
     operational_environment = base_environment.copy()
     operational_environment.update(

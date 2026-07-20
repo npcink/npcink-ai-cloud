@@ -25,6 +25,15 @@ require_cmd() {
 [ -z "${DOCKER_CONTEXT:-}" ] || fail "deploy-bundle smoke forbids DOCKER_CONTEXT overrides"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/npcink-ai-cloud-deploy-smoke.XXXXXX")"
+RELEASE_DIR="${TMP_DIR}/release-smoke"
+STATE_DIR="${TMP_DIR}/.release-state/release-smoke"
+DEPLOY_LOCK_DIR="${TMP_DIR}/.deploy-lock"
+DEPLOY_LOCK_OWNER="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+install -d -m 0700 \
+	"${RELEASE_DIR}" "${TMP_DIR}/.release-state" "${STATE_DIR}" "${DEPLOY_LOCK_DIR}"
+printf '%s\n' "${DEPLOY_LOCK_OWNER}" >"${DEPLOY_LOCK_DIR}/one-off-owner"
+chmod 0600 "${DEPLOY_LOCK_DIR}/one-off-owner"
+export NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}"
 PROJECT_NAME="npcink-ai-cloud-deploy-smoke-$(date +%s)"
 PORT="${NPCINK_CLOUD_DEPLOY_SMOKE_PORT:-8110}"
 BASE_URL="${NPCINK_CLOUD_DEPLOY_SMOKE_BASE_URL:-http://127.0.0.1:${PORT}}"
@@ -58,20 +67,58 @@ export NPCINK_CLOUD_SKIP_FRONTEND_IMAGE="${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}"
 export NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES="${NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES:-1}"
 
 cleanup() {
+	local rollback_reference=""
 	if [ "${NPCINK_CLOUD_DEPLOY_SMOKE_KEEP:-0}" = "1" ]; then
 		return 0
 	fi
-	if [ -f "${TMP_DIR}/docker-compose.prod.yml" ]; then
+	if [ -f "${STATE_DIR}/rollback-images.tsv" ]; then
+		while IFS=$'\t' read -r _target_reference rollback_reference _image_id; do
+			[ -n "${rollback_reference}" ] && [ "${rollback_reference}" != "-" ] || continue
+			docker image rm "${rollback_reference}" >/dev/null 2>&1 || true
+		done <"${STATE_DIR}/rollback-images.tsv"
+	fi
+	if [ -f "${RELEASE_DIR}/docker-compose.prod.yml" ]; then
 		COMPOSE_PROJECT_NAME="${PROJECT_NAME}" \
 		NPCINK_CLOUD_PORT="${PORT}" \
-			docker compose -f "${TMP_DIR}/docker-compose.prod.yml" down -v --remove-orphans >/dev/null 2>&1 || true
+			docker compose -f "${RELEASE_DIR}/docker-compose.prod.yml" down -v --remove-orphans >/dev/null 2>&1 || true
 	fi
 	rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
 
 run_deploy_command() {
-	( cd "${TMP_DIR}" && "$@" )
+	( cd "${RELEASE_DIR}" && "$@" )
+}
+
+stop_replay_application_services() {
+	local service=""
+	local running_ids=""
+	run_deploy_command docker compose -f docker-compose.prod.yml stop \
+		api worker callback-worker ops-worker frontend proxy
+	for service in api worker callback-worker ops-worker frontend proxy; do
+		running_ids="$(
+			run_deploy_command docker compose -f docker-compose.prod.yml ps -q "${service}"
+		)" || fail "Docker could not prove ${service} stopped before data replay"
+		[ -z "${running_ids}" ] || \
+			fail "Application service remained running before data replay: ${service}"
+	done
+}
+
+replay_staged_release() {
+	NPCINK_CLOUD_LOAD_MODE=prepare-only \
+	NPCINK_CLOUD_ROLLBACK_IMAGE_MAP="${STATE_DIR}/rollback-images.tsv" \
+	NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX=deploy-smoke \
+		run_deploy_command bash deploy/remote-load-and-up.sh
+	stop_replay_application_services
+	NPCINK_CLOUD_LOAD_MODE=data-only \
+		run_deploy_command bash deploy/remote-load-and-up.sh
+	run_deploy_command bash deploy/remote-migrate.sh
+	NPCINK_CLOUD_LOAD_MODE=api-only \
+		run_deploy_command bash deploy/remote-load-and-up.sh
+	NPCINK_CLOUD_LOAD_MODE=workers-only \
+		run_deploy_command bash deploy/remote-load-and-up.sh
+	NPCINK_CLOUD_LOAD_MODE=traffic-only \
+		run_deploy_command bash deploy/remote-load-and-up.sh
 }
 
 require_cmd docker
@@ -103,8 +150,8 @@ CURRENT_REVISION="$(git rev-parse HEAD)"
 	fail "Exact deploy bundle revision ${BUNDLE_REVISION} does not match current HEAD ${CURRENT_REVISION}"
 BUNDLE_RECEIPT="$(cat dist/deploy-bundle.tgz.sha256)"
 
-ok "Extracting deploy bundle to ${TMP_DIR}"
-tar xzf dist/deploy-bundle.tgz -C "${TMP_DIR}"
+ok "Extracting deploy bundle to ${RELEASE_DIR}"
+tar xzf dist/deploy-bundle.tgz -C "${RELEASE_DIR}"
 
 export COMPOSE_PROJECT_NAME="${PROJECT_NAME}"
 export NPCINK_CLOUD_PORT="${PORT}"
@@ -112,10 +159,10 @@ export NPCINK_CLOUD_BASE_URL="${BASE_URL}"
 export NPCINK_CLOUD_SITE_ID="${SITE_ID}"
 export NPCINK_CLOUD_KEY_ID="${KEY_ID}"
 ok "Replaying bundle load/up"
-run_deploy_command bash deploy/remote-load-and-up.sh
+replay_staged_release
 
 ok "Replaying the same verified bundle a second time (no build)"
-run_deploy_command bash deploy/remote-load-and-up.sh
+replay_staged_release
 
 ok "Proving the exact bundle archive was not replaced during replay"
 bash deploy/verify-release-bundle.sh --archive \
@@ -123,9 +170,6 @@ bash deploy/verify-release-bundle.sh --archive \
 FINAL_BUNDLE_RECEIPT="$(cat dist/deploy-bundle.tgz.sha256)"
 [ "${FINAL_BUNDLE_RECEIPT}" = "${BUNDLE_RECEIPT}" ] || fail "Deploy bundle receipt changed during smoke replay"
 ok "The same exact bundle receipt was reused: ${BUNDLE_RECEIPT%%  *}"
-
-ok "Replaying migrate"
-run_deploy_command bash deploy/remote-migrate.sh
 
 ok "Replaying seed"
 NPCINK_CLOUD_SECRET="${SECRET}" \

@@ -11,6 +11,14 @@ require_file() {
 	fi
 }
 
+reject_file() {
+	local path="$1"
+	if [ -e "${ROOT_DIR}/${path}" ] || [ -L "${ROOT_DIR}/${path}" ]; then
+		echo "[fail] Retired release policy file still exists: ${path}" >&2
+		exit 1
+	fi
+}
+
 require_marker() {
 	local path="$1"
 	local marker="$2"
@@ -77,6 +85,21 @@ reject_service_marker() {
 	local marker="$3"
 	if compose_service_block "${path}" "${service}" | grep -Fq -- "${marker}"; then
 		echo "[fail] Forbidden ${service} service marker in ${path}: ${marker}" >&2
+		exit 1
+	fi
+}
+
+require_service_image_seam() {
+	local path="$1"
+	local service="$2"
+	local expected_image="$3"
+	local actual_lines
+	local expected_line
+
+	expected_line="    image: ${expected_image}"
+	actual_lines="$(compose_service_block "${path}" "${service}" | awk '/^    image:/ { print }')"
+	if [ "${actual_lines}" != "${expected_line}" ]; then
+		echo "[fail] ${path}:${service} must use the exact governed release image seam: ${expected_image}" >&2
 		exit 1
 	fi
 }
@@ -152,6 +175,7 @@ require_file "scripts/dev-compose.sh"
 require_file "scripts/dev-frontend-recover.sh"
 require_file "package.json"
 require_file "Makefile"
+require_file "README.md"
 require_file "AGENTS.md"
 require_file ".github/pull_request_template.md"
 require_file ".github/dependabot.yml"
@@ -185,6 +209,9 @@ require_marker "AGENTS.md" "pnpm run check:release-policy"
 
 require_marker "docs/cloud-production-release-policy-v1.md" "master"
 require_marker "docs/cloud-production-release-policy-v1.md" "production"
+require_marker "docs/cloud-production-release-policy-v1.md" "configuration and secret changes are releases"
+require_marker "docs/cloud-production-release-policy-v1.md" "edit the active release env or restart Compose services in place."
+require_marker "docs/cloud-production-release-policy-v1.md" "hosted provider connections, credentials, routing, and execution"
 require_marker "docs/cloud-production-release-policy-v1.md" "Approved for production validation by operator."
 require_marker "docs/cloud-production-release-policy-v1.md" "Do not directly edit production application code on the server."
 require_marker "docs/cloud-production-release-policy-v1.md" "Cloud is not becoming a WordPress write owner"
@@ -198,7 +225,9 @@ require_marker "docs/cloud-production-release-policy-v1.md" "python -m app.dev.r
 require_marker "docs/cloud-production-release-policy-v1.md" "deploy/runtime-data-encryption-cutover.sh"
 require_marker "docs/cloud-production-release-policy-v1.md" "deploy/deploy-to-ssh-host.sh --stage-only"
 require_marker "docs/cloud-production-release-policy-v1.md" "p1_e06_off_host_backup_receipt.v1"
-require_marker "docs/cloud-production-release-policy-v1.md" "run --rm --no-deps -e VARIABLE_NAME"
+require_marker "docs/cloud-production-release-policy-v1.md" 'release-one-off` stopped candidate'
+require_marker "docs/cloud-production-release-policy-v1.md" 'docker exec -i --env VARIABLE_NAME'
+reject_marker "docs/cloud-production-release-policy-v1.md" "run --rm --no-deps -e VARIABLE_NAME"
 require_marker "docs/cloud-production-release-policy-v1.md" "pull_policy: never"
 require_marker "docs/cloud-production-release-policy-v1.md" 'Future `rde.v1`'
 require_marker "docs/cloud-production-release-policy-v1.md" "independent PostgreSQL 16"
@@ -254,7 +283,9 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "deploy/runtime-data-encrypt
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "deploy/deploy-to-ssh-host.sh --stage-only --skip-bundle-build"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "staged_release=/absolute/release-path"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "p1_e06_off_host_backup_receipt.v1"
-require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "run --rm --no-deps -e VARIABLE_NAME"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'release-one-off` stopped candidate'
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'docker exec -i --env VARIABLE_NAME'
+reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "run --rm --no-deps -e VARIABLE_NAME"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "python -m app.dev.reencrypt_service_secrets"
@@ -278,14 +309,32 @@ require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "NPCINK_CLOUD_CERTIFICATE_RE
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "off-host-receipt-verified.json"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "activation-commit.json"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "activation_committed_terminalization_incomplete"
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "Runtime configuration changes are releases."
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "Never remove the lock first."
+require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "com.docker.compose.service=release-one-off"
+reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "Runtime configuration-only changes can normally be applied"
 require_marker "deploy/OPS_PLAYBOOK.md" "deploy/runtime-data-encryption-cutover.sh"
 require_marker "deploy/OPS_PLAYBOOK.md" "deploy/deploy-to-ssh-host.sh --stage-only"
 require_marker "deploy/OPS_PLAYBOOK.md" "staged_release=/absolute/release-path"
 require_marker "deploy/OPS_PLAYBOOK.md" "p1_e06_off_host_backup_receipt.v1"
 require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_runtime_data verify"
 require_marker "deploy/OPS_PLAYBOOK.md" "python -m app.dev.reencrypt_service_secrets verify"
-require_marker "deploy/OPS_PLAYBOOK.md" "run --rm --no-deps"
-require_marker "deploy/OPS_PLAYBOOK.md" "-e NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
+require_marker "deploy/OPS_PLAYBOOK.md" "There is intentionally no copy/paste Compose command"
+reject_marker "deploy/OPS_PLAYBOOK.md" "run --rm --no-deps"
+require_marker "deploy/OPS_PLAYBOOK.md" "protected names-only environment handoff"
+require_marker "deploy/OPS_PLAYBOOK.md" 'Retained `release-one-off` lock recovery'
+require_marker "deploy/OPS_PLAYBOOK.md" "Never remove the lock first."
+require_marker "deploy/OPS_PLAYBOOK.md" "npcink-release-proof-stdin.*"
+require_marker "deploy/OPS_PLAYBOOK.md" "There is no standalone production worker-restart entry point."
+reject_marker "deploy/OPS_PLAYBOOK.md" 'npcink_ai_cloud_compose "${RELEASE_DIR}" restart worker callback-worker ops-worker'
+require_marker "deploy/OPS_PLAYBOOK.md" "Database rollback is a matched release-recovery operation"
+require_marker "deploy/OPS_PLAYBOOK.md" "Do not use bare Compose restarts."
+require_marker "deploy/OPS_PLAYBOOK.md" "Cloud admin surface"
+reject_marker "deploy/OPS_PLAYBOOK.md" "Update provider routing/connection state from the local plugin control plane"
+reject_marker "deploy/OPS_PLAYBOOK.md" 'restart `callback-worker`.'
+reject_marker "deploy/OPS_PLAYBOOK.md" 'Restart `api`, `worker`, `callback-worker`, and `ops-worker`.'
+reject_marker "deploy/OPS_PLAYBOOK.md" 'restart `ops-worker`.'
+reject_marker "deploy/OPS_PLAYBOOK.md" "Tune resources through environment variables and service restarts"
 require_marker "deploy/OPS_PLAYBOOK.md" "--confirm-maintenance-window"
 require_marker "deploy/OPS_PLAYBOOK.md" "--old-root-env NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET"
 require_marker "deploy/OPS_PLAYBOOK.md" "--old-root-env NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET"
@@ -315,7 +364,9 @@ require_marker "deploy/RELEASE_CHECKLIST.md" "deploy/runtime-data-encryption-cut
 require_marker "deploy/RELEASE_CHECKLIST.md" "deploy/deploy-to-ssh-host.sh --stage-only --skip-bundle-build"
 require_marker "deploy/RELEASE_CHECKLIST.md" "staged_release=/absolute/release-path"
 require_marker "deploy/RELEASE_CHECKLIST.md" "p1_e06_off_host_backup_receipt.v1"
-require_marker "deploy/RELEASE_CHECKLIST.md" "run --rm --no-deps -e VARIABLE_NAME"
+require_marker "deploy/RELEASE_CHECKLIST.md" 'release-one-off` stopped candidate'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'docker exec -i --env VARIABLE_NAME'
+reject_marker "deploy/RELEASE_CHECKLIST.md" "run --rm --no-deps -e VARIABLE_NAME"
 require_marker "deploy/RELEASE_CHECKLIST.md" "pull_policy: never"
 require_marker "deploy/RELEASE_CHECKLIST.md" "first raw-ciphertext cutover omitted \`--old-key-id\`"
 require_marker "deploy/RELEASE_CHECKLIST.md" 'supplies old key IDs'
@@ -405,9 +456,27 @@ for service in api worker callback-worker ops-worker; do
 	require_service_marker "docker-compose.prod.yml" "${service}" "NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID"
 	require_service_marker "docker-compose.runtime.yml" "${service}" '${NPCINK_CLOUD_BACKEND_ENV_FILE:-.env.deploy}'
 done
-for service in postgres redis api frontend worker callback-worker ops-worker proxy; do
+for service in postgres redis api frontend worker callback-worker ops-worker proxy release-one-off; do
 	require_service_marker "docker-compose.runtime.yml" "${service}" "pull_policy: never"
 done
+for compose_file in docker-compose.prod.yml docker-compose.runtime.yml; do
+	require_service_image_seam "${compose_file}" "postgres" '${NPCINK_CLOUD_POSTGRES_RELEASE_IMAGE:-npcink-ai-cloud-postgres:prod}'
+	require_service_image_seam "${compose_file}" "redis" '${NPCINK_CLOUD_REDIS_RELEASE_IMAGE:-npcink-ai-cloud-external-redis:prod}'
+	require_service_image_seam "${compose_file}" "api" '${NPCINK_CLOUD_API_RELEASE_IMAGE:-npcink-ai-cloud-api:prod}'
+	require_service_image_seam "${compose_file}" "frontend" '${NPCINK_CLOUD_FRONTEND_RELEASE_IMAGE:-npcink-ai-cloud-frontend:prod}'
+	require_service_image_seam "${compose_file}" "proxy" '${NPCINK_CLOUD_PROXY_RELEASE_IMAGE:-npcink-ai-cloud-external-nginx:prod}'
+	require_service_image_seam "${compose_file}" "release-one-off" '${NPCINK_CLOUD_API_RELEASE_IMAGE:-npcink-ai-cloud-api:prod}'
+	require_service_marker "${compose_file}" "release-one-off" 'pull_policy: never'
+	require_service_marker "${compose_file}" "release-one-off" 'profiles: ["release-one-off"]'
+	require_service_marker "${compose_file}" "release-one-off" 'restart: "no"'
+	require_service_marker "${compose_file}" "release-one-off" 'import signal; signal.pause()'
+done
+require_service_image_seam "docker-compose.prod.yml" "worker" '${NPCINK_CLOUD_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}'
+require_service_image_seam "docker-compose.prod.yml" "callback-worker" '${NPCINK_CLOUD_CALLBACK_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-callback-worker:prod}'
+require_service_image_seam "docker-compose.prod.yml" "ops-worker" '${NPCINK_CLOUD_OPS_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-ops-worker:prod}'
+require_service_image_seam "docker-compose.runtime.yml" "worker" '${NPCINK_CLOUD_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}'
+require_service_image_seam "docker-compose.runtime.yml" "callback-worker" '${NPCINK_CLOUD_CALLBACK_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}'
+require_service_image_seam "docker-compose.runtime.yml" "ops-worker" '${NPCINK_CLOUD_OPS_WORKER_RELEASE_IMAGE:-npcink-ai-cloud-worker:prod}'
 for compose_file in docker-compose.dev.yml docker-compose.prod.yml docker-compose.runtime.yml; do
 	reject_service_marker "${compose_file}" "frontend" "env_file:"
 	reject_service_marker "${compose_file}" "frontend" "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET"
@@ -499,8 +568,10 @@ done
 require_marker "deploy/deploy-to-ssh-host.sh" 'RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"'
 require_marker "deploy/deploy-to-ssh-host.sh" 'RELEASE_STATE_DIR="${RELEASE_STATE_ROOT}/${RELEASE_NAME}"'
 require_marker "deploy/deploy-to-ssh-host.sh" 'RELEASE_ENV_FILE="${RELEASE_STATE_DIR}/env.deploy"'
-require_marker "deploy/deploy-to-ssh-host.sh" 'install -d -m 0700 "${RELEASE_STATE_ROOT}" "${RELEASE_STATE_DIR}"'
-require_marker "deploy/deploy-to-ssh-host.sh" 'install -m 0600 "${NEW_ENV_SOURCE}" "${RELEASE_ENV_FILE}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'ensure_private_release_state_directory "${RELEASE_STATE_ROOT}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'ensure_private_release_state_directory "${RELEASE_STATE_DIR}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'install -m 0600 "${NEW_ENV_SOURCE}" "${RELEASE_ENV_TMP}"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'mv -n "${RELEASE_ENV_TMP}" "${RELEASE_ENV_FILE}"'
 require_marker "deploy/deploy-to-ssh-host.sh" 'export NPCINK_CLOUD_BACKEND_ENV_FILE="${RELEASE_ENV_FILE}"'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Compose project rename is not supported during ordinary deployment'
 require_marker "deploy/deploy-to-ssh-host.sh" 'com.docker.compose.project'
@@ -514,7 +585,7 @@ require_marker "deploy/deploy-to-ssh-host.sh" 'p1_e06_global_activation.v1'
 require_marker "deploy/deploy-to-ssh-host.sh" 'a migration-graph descendant shipped by this release'
 require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT: "1"'
 require_marker "deploy/workspace-target.env.sh" 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT="1"'
-require_marker "docs/cloud-production-release-policy-v1.md" 'full deployment is never an implicit host bootstrap'
+require_marker "docs/cloud-production-release-policy-v1.md" 'production deployment is never an implicit host bootstrap'
 require_marker_before "deploy/deploy-to-ssh-host.sh" \
 	'Compose project rename is not supported during ordinary deployment' \
 	'CUTOVER_MUTATION_STARTED=1'
@@ -574,24 +645,118 @@ done
 require_marker "deploy/deploy-to-ssh-host.sh" 'MIGRATION_STARTED=1'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Never manufacture a rollback by starting the old API'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Deployment lock retained for operator recovery'
+require_marker "deploy/deploy-to-ssh-host.sh" 'GLOBAL_ONE_OFF_LOCK_DIR="${RELEASE_STATE_ROOT}/.release-one-off.lock"'
+require_marker "deploy/deploy-to-ssh-host.sh" 'assert_governed_one_off_absent'
+require_marker "deploy/deploy-to-ssh-host.sh" 'release-one-off)'
+require_marker_before "deploy/deploy-to-ssh-host.sh" \
+	'assert governed one-off absent before mutation' \
+	'CUTOVER_PHASE="prepare-release-images"'
 require_marker "deploy/deploy-to-ssh-host.sh" 'rm -f "${ROLLBACK_IMAGE_MAP}"'
 require_marker "deploy/deploy-to-ssh-host.sh" '--worker-cutoff "${WORKER_CUTOFF}"'
 
-require_marker "deploy/remote-load-and-up.sh" 'full|prepare-only|data-only|api-only|workers-only|traffic-only'
-require_marker "deploy/remote-load-and-up.sh" 'up -d --pull never --no-build'
-require_marker "deploy/remote-load-and-up.sh" '--no-deps --force-recreate'
+require_marker "deploy/remote-load-and-up.sh" 'prepare-only|data-only|api-only|workers-only|traffic-only'
+reject_marker "deploy/remote-load-and-up.sh" 'full|prepare-only'
+reject_marker "deploy/remote-load-and-up.sh" 'up -d --pull never --no-build'
+reject_marker "deploy/remote-load-and-up.sh" 'NPCINK_CLOUD_TARGET_DAEMON_MAP'
+reject_marker "deploy/remote-load-and-up.sh" '--target-daemon-map'
+require_marker "deploy/remote-load-and-up.sh" 'up --no-start --pull never --no-build --no-deps --force-recreate'
+require_marker "deploy/remote-load-and-up.sh" 'docker start "${container_ids_to_start[@]}"'
+require_marker "deploy/remote-load-and-up.sh" 'remove_exact_candidate_services'
+require_marker "deploy/remote-load-and-up.sh" 'docker container ls -aq --no-trunc'
+require_marker "deploy/remote-load-and-up.sh" "{{.State.Status}} {{.RestartCount}}"
+require_marker "deploy/remote-load-and-up.sh" 'Exact release loader requires a canonical bundled Compose file.'
 require_marker "deploy/remote-load-and-up.sh" 'npcink-ai-cloud-external-redis:prod'
 require_marker "deploy/remote-load-and-up.sh" 'true false 0 healthy'
-require_marker "deploy/common.sh" 'run -d'
-require_marker "deploy/common.sh" '--name "${container_name}" --no-deps --rm --entrypoint python'
+require_marker "deploy/common.sh" 'up --no-start --pull never'
+require_marker "deploy/common.sh" '--no-build --no-deps --force-recreate "${proof_service}"'
+require_marker "deploy/common.sh" 'docker start "${container_name}"'
+require_marker "deploy/common.sh" '.release-one-off.lock'
+require_marker "deploy/common.sh" "{{.State.Status}} {{.RestartCount}}"
+reject_marker "deploy/common.sh" 'run -d'
+require_marker "docker-compose.prod.yml" 'release-one-off:'
+require_marker "docker-compose.runtime.yml" 'release-one-off:'
+require_marker "docker-compose.prod.yml" 'profiles: ["release-one-off"]'
+require_marker "docker-compose.runtime.yml" 'profiles: ["release-one-off"]'
+require_marker "docker-compose.prod.yml" 'import signal; signal.pause()'
+require_marker "docker-compose.runtime.yml" 'import signal; signal.pause()'
+reject_marker "docs/cloud-production-release-policy-v1.md" 'run -d --name'
+reject_marker "deploy/OPS_PLAYBOOK.md" 'run -d --name'
+reject_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" 'run -d --name'
+reject_marker "deploy/RELEASE_CHECKLIST.md" 'run -d --name'
 require_marker "deploy/common.sh" "docker inspect --format '{{.Image}}'"
-require_marker "deploy/common.sh" 'docker exec -i "${container_name}"'
+require_marker "deploy/common.sh" 'docker exec -i "${exec_env_args[@]}" "${container_name}"'
 require_marker "deploy/common.sh" 'docker rm -f "${container_name}"'
 require_marker "deploy/common.sh" "trap 'one_off_signal 143' TERM"
-require_marker "deploy/remote-migrate.sh" 'role-image-id'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'ONE_OFF_PREVIOUS_ASYNC_PID="$!"'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'observed_async_pid="$!"'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'ACTIVE_ONE_OFF_PID="${observed_async_pid}"'
+require_marker_before "deploy/runtime-data-encryption-cutover.sh" \
+	'set +x' 'MAINTENANCE_ENV_SOURCE_PROOF='
+require_marker_before "deploy/runtime-data-encryption-cutover.sh" \
+	'CURRENT_STAGE="prove-governed-one-off-absence-before-mutation"' \
+	'CURRENT_STAGE="prepare-exact-bundle-images"'
+require_marker "deploy/remote-migrate.sh" 'loaded-role-daemon-id'
 require_marker "deploy/remote-migrate.sh" 'npcink_ai_cloud_compose_run_with_image_proof'
-require_marker "deploy/remote-refresh-providers.sh" 'role-image-id'
+require_marker "deploy/common.sh" 'npcink_ai_cloud_require_deploy_lock_owner()'
+require_marker_before "deploy/remote-load-and-up.sh" \
+	'npcink_ai_cloud_require_deploy_lock_owner "${ROOT_DIR}"' \
+	'npcink_ai_cloud_load_env_file "${ROOT_DIR}"'
+require_marker "deploy/remote-migrate.sh" 'npcink_ai_cloud_require_deploy_lock_owner "${ROOT_DIR}"'
+require_marker "deploy/remote-refresh-providers.sh" 'npcink_ai_cloud_require_deploy_lock_owner "${ROOT_DIR}"'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}"'
+require_marker "scripts/cloud-deploy-bundle-smoke-flow.sh" 'NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}"'
+reject_marker "deploy/common.sh" 'eval "export ${line}"'
+require_marker "deploy/common.sh" 'npcink_ai_cloud_env_key_is_runtime_config()'
+require_marker "deploy/common.sh" 'Dotenv key is not an allowed runtime setting'
+reject_marker "deploy/deploy-to-ssh-host.sh" 'npcink-cloud-test-secret'
+require_marker "deploy/deploy-to-ssh-host.sh" 'NPCINK_CLOUD_SECRET is required unless both runtime seed and signed smoke are skipped.'
+require_marker "deploy/deploy-to-ssh-host.sh" 'protected process environment'
+reject_marker "deploy/remote-smoke.sh" 'npcink-cloud-test-secret'
+require_marker "deploy/remote-smoke.sh" 'NPCINK_CLOUD_SECRET is required for signed runtime smoke'
+require_marker "deploy/remote-bootstrap-portal-site.sh" 'NPCINK_CLOUD_SECRET is required with --issue-key so the issued key is recoverable.'
+require_marker "deploy/bootstrap-portal-site-to-ssh-host.sh" 'Remote portal bootstrap does not support --issue-key'
+require_marker "deploy/bootstrap-portal-site-to-ssh-host.sh" '--secret is forbidden because process arguments and the SSH command are observable.'
+require_marker "README.md" 'The remote'
+require_marker "README.md" '`portal:bind:ssh` wrapper intentionally rejects key issuance.'
+reject_marker "deploy/production-performance-baseline-to-ssh-host.sh" '--with-synthetic-smoke'
+reject_marker "deploy/production-performance-baseline-to-ssh-host.sh" 'remote-smoke.sh'
+reject_marker "README.md" '--secret npcink-cloud-test-secret'
+require_marker "README.md" 'IFS= read -r -s NPCINK_CLOUD_SECRET'
+require_marker "README.md" 'is not read from `.env.deploy`'
+reject_file "deploy/env-to-ssh-host.sh"
+reject_file "deploy/remote-env-upsert.sh"
+reject_marker "package.json" '"env:ssh"'
+reject_marker "Makefile" "env-ssh"
+reject_marker "deploy/remote-migrate.sh" 'NPCINK_CLOUD_MIGRATION_ONLY'
+reject_marker "deploy/remote-migrate.sh" 'up -d --pull never --no-build'
+reject_marker "deploy/remote-migrate.sh" 'worker callback-worker ops-worker'
+require_marker_before "scripts/cloud-deploy-bundle-smoke-flow.sh" \
+	'NPCINK_CLOUD_LOAD_MODE=data-only' \
+	'run_deploy_command bash deploy/remote-migrate.sh'
+require_marker_before "scripts/cloud-deploy-bundle-smoke-flow.sh" \
+	'run_deploy_command bash deploy/remote-migrate.sh' \
+	'NPCINK_CLOUD_LOAD_MODE=api-only'
+require_marker "deploy/remote-refresh-providers.sh" 'loaded-role-daemon-id'
 require_marker "deploy/remote-refresh-providers.sh" 'npcink_ai_cloud_compose_run_with_image_proof'
+reject_marker "deploy/remote-refresh-providers.sh" 'exec -T api'
+reject_marker "deploy/remote-refresh-providers.sh" 'NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF'
+reject_marker "deploy/deploy-to-ssh-host.sh" 'NPCINK_CLOUD_REFRESH_PROVIDERS_ONE_OFF'
+require_marker "deploy/remote-load-and-up.sh" 'loaded-role-daemon-id'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'loaded-role-daemon-id'
+require_marker "scripts/verify-release-bundle-manifest.py" 'validate_target_daemon_map_payload'
+require_marker "scripts/verify-release-bundle-manifest.py" 'load_strict_target_daemon_map'
+require_marker "scripts/verify-release-bundle-manifest.py" 'MAX_TARGET_DAEMON_MAP_BYTES = 256 * 1024'
+require_marker "scripts/verify-release-bundle-manifest.py" '"release_name": root.resolve().name'
+require_marker "scripts/verify-release-bundle-manifest.py" '"release_path": str(root.resolve())'
+require_marker "deploy/RELEASE_CHECKLIST.md" '.release-state/<release-name>/target-daemon-images.json'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'canonical resolved release path'
+require_marker "deploy/RELEASE_CHECKLIST.md" 'required a fresh'
+require_marker "docs/p5-b5-exact-release-bundle-v1.md" 'canonical resolved release path'
+require_marker "docs/p5-b5-exact-release-bundle-v1.md" 'operator must rerun `prepare-only` and the full verifier'
+reject_marker "deploy/remote-migrate.sh" ' role-image-id'
+reject_marker "deploy/remote-refresh-providers.sh" ' role-image-id'
+reject_marker "deploy/remote-load-and-up.sh" ' role-image-id'
+reject_marker "deploy/runtime-data-encryption-cutover.sh" ' role-image-id'
 reject_marker "deploy/remote-migrate.sh" 'run --rm --no-deps --pull never'
 reject_marker "deploy/remote-refresh-providers.sh" 'run --rm --no-deps --pull never'
 reject_marker "deploy/runtime-data-encryption-cutover.sh" 'run --rm --no-deps --pull never'
@@ -653,7 +818,6 @@ require_marker ".github/workflows/production-maintenance.yml" 'mkdir -- "${remot
 require_marker ".github/workflows/production-maintenance.yml" 'rmdir -- "${remote_dir}/.deploy-lock"'
 for ssh_helper in \
 	deploy/bind-domain-to-ssh-host.sh \
-	deploy/env-to-ssh-host.sh \
 	deploy/deploy-static-terms-to-ssh-host.sh \
 	deploy/production-performance-baseline-to-ssh-host.sh \
 	deploy/wp-cron-to-ssh-host.sh \

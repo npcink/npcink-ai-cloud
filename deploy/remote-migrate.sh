@@ -5,13 +5,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 # Shared compose/env helpers for deploy scripts.
 . "${ROOT_DIR}/deploy/common.sh"
+npcink_ai_cloud_require_deploy_lock_owner "${ROOT_DIR}"
 
 npcink_ai_cloud_require_cmd docker
 RELEASE_TOOL_PYTHON="$(npcink_ai_cloud_release_tool_python)"
 MANIFEST_HELPER="${ROOT_DIR}/scripts/verify-release-bundle-manifest.py"
 npcink_ai_cloud_require_release_tool_python "${RELEASE_TOOL_PYTHON}"
 EXPECTED_API_IMAGE_ID="$(
-	"${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" role-image-id \
+	"${RELEASE_TOOL_PYTHON}" "${MANIFEST_HELPER}" loaded-role-daemon-id \
 		--root "${ROOT_DIR}" --role api
 )"
 
@@ -44,12 +45,4 @@ npcink_ai_cloud_run_timed "alembic upgrade" \
 	npcink_ai_cloud_compose_run_with_image_proof \
 	"${ROOT_DIR}" api npcink-ai-cloud-api:prod "${EXPECTED_API_IMAGE_ID}" \
 	alembic upgrade head
-
-if [ "${NPCINK_CLOUD_MIGRATION_ONLY:-0}" = "1" ]; then
-	echo "[ok] Migration completed without starting application workers."
-	exit 0
-fi
-
-npcink_ai_cloud_run_timed "start workers" \
-	npcink_ai_cloud_compose "${ROOT_DIR}" up -d --pull never --no-build \
-	worker callback-worker ops-worker
+echo "[ok] Migration completed without starting application services."

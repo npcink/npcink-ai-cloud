@@ -11,8 +11,10 @@ protection and environment approval are worth paying for.
 This policy covers changes that may reach `https://cloud.npc.ink`.
 
 It does not create a second WordPress control plane, approval system, ability
-registry, workflow registry, prompt truth, provider secret store, or runtime
-policy authority. Cloud remains the hosted runtime/service-plane layer.
+registry, workflow registry, local prompt truth, or local runtime-policy
+authority. Cloud remains the hosted runtime/service-plane layer and may own
+the hosted provider connections, credentials, routing, and execution required
+by that runtime.
 
 ## Branch Model
 
@@ -21,9 +23,12 @@ policy authority. Cloud remains the hosted runtime/service-plane layer.
 - feature and fix branches merge to `master` first.
 - production releases are promoted from `master` to `production`.
 
-Do not directly edit production application code on the server. Server-side
-changes are limited to runtime secrets in `.env.deploy` and emergency
-break-glass fixes that must be backported to Git immediately.
+Do not directly edit production application code on the server. Runtime
+configuration and secret changes are releases: supply them through a fresh,
+protected per-release env source consumed by the governed deployment. Never
+edit the active release env or restart Compose services in place. Other
+server-side changes are limited to emergency break-glass fixes that must be
+backported to Git immediately.
 
 Branch divergence is expected: `production` records the deployed release while
 `master` continues development. A production-only patch must not remain an
@@ -90,7 +95,12 @@ Before promoting `master` to `production`:
 - the release payload contains no `.env.deploy`; each managed release resolves
   its backend environment from
   `${REMOTE_DIR}/.release-state/<release-name>/env.deploy`, with both state
-  directories mode `0700` and the env file mode `0600`;
+  directories mode `0700` and the env file mode `0600`. Post-load image identity
+  is stored only at the fixed sibling path
+  `${REMOTE_DIR}/.release-state/<release-name>/target-daemon-images.json`, also
+  mode `0600`; that path is derived from the release name and is not
+  configurable, and the release name is part of the map's cryptographic
+  binding;
 - the old and new Compose project names must match before any image or container
   mutation, and the running old writers' actual Compose labels must match that
   project; an ordinary deploy must not silently rename the project and orphan
@@ -191,7 +201,7 @@ The previous and new Compose project names and the actual old writer container
 labels must match before image loading or container mutation begins.
 `--skip-frontend-image` additionally requires exactly one running old frontend
 to preserve; it is invalid for a first deploy or a missing frontend. Ordinary
-full deployment is never an implicit host bootstrap: a missing managed
+production deployment is never an implicit host bootstrap: a missing managed
 `current` release fails before image mutation. Before the first image load, the
 deploy reads the current PostgreSQL Alembic revision through the frozen previous
 release. Revision `20260710_0058` always fails and can advance only through the
@@ -199,8 +209,8 @@ P1-E06 orchestrator. Formal production dispatch additionally requires the
 root-owned global P1-E06 activation receipt, its digest-bound complete
 per-release evidence, and a current database revision that is `0068` or a
 descendant proven from the staged bundle's Alembic graph. Receipt enforcement
-is mandatory for every full deploy and is explicitly pinned by the production
-workspace target. Only archive-only staging may omit it.
+is mandatory for every ordinary production deployment and is explicitly pinned
+by the production workspace target. Only archive-only staging may omit it.
 Once migration starts, any failure leaves public and
 write-capable application services stopped; the deploy must not automatically
 restart the old application against a possibly changed schema. Recovery must
@@ -218,15 +228,32 @@ healthy active runtime; it returns nonzero, writes restricted failure evidence,
 and retains the rollback map and deploy lock. Success is reported only after
 tag/map removal and lock release are each proved.
 
-Ordinary migration/provider one-offs use Compose
-`run -d --name --no-deps --rm`
-only to create an inert proof container. Release tooling compares the current
-tag and that container's `.Image` with the bundle-manifest API image ID before
-executing the payload through `docker exec -i`, then removes the container.
-Signal cleanup is mandatory, with a 15-minute self-termination bound as a
-second cleanup path.
-Docker Compose v2.27 `run` receives no CLI `--pull` option, and Runtime Compose
-sets `pull_policy: never` for every explicit-image service.
+Ordinary migration/provider one-offs use the profiled `release-one-off` API
+service. Compose pins that service to the recorded target-local daemon ID and
+uses `up --no-start --pull never --no-build --no-deps --force-recreate` to
+create exactly one stopped candidate. Post-load verification first proves
+the loaded image's portable Config image ID and platform against the exact
+bundle, then records the corresponding target-local daemon ID only in
+`${REMOTE_DIR}/.release-state/<release-name>/target-daemon-images.json`.
+Release tooling compares the current tag and stopped candidate's `.Image` with
+this recorded target-local ID before starting that captured container ID. It
+then rechecks the running container and executes the payload through
+`docker exec -i` on the same ID before removing it.
+One fixed mode-`0700` lock under the managed `.release-state` root serializes
+one-offs across release directories. Signal cleanup is mandatory; incomplete
+container or protected-stdin cleanup retains that lock for operator recovery.
+Runtime Compose sets `pull_policy: never` for every explicit-image service.
+
+The loader accepts only the explicit `prepare-only`, `data-only`, `api-only`,
+`workers-only`, and `traffic-only` phases; no default or aggregate phase exists.
+`prepare-only` loads and proves images but starts no service. Each subsequent
+phase freezes all required daemon IDs from the fixed map, pins Compose to those
+IDs, creates force-recreated candidates with
+`up --no-start --pull never --no-build --no-deps --force-recreate`, captures exactly one stopped container ID per service, and verifies every candidate's
+`.Image`. It then re-proves the complete phase's
+governed tags against the map before using `docker start` on only the captured
+IDs. The same container IDs and image IDs must still be running before any
+health or readiness gate succeeds.
 
 The Service Settings pair
 `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` /
@@ -289,11 +316,14 @@ non-secret row-identifier set by canonical-JSON SHA-256; matching counts with a
 different identity set must fail closed. An intentional inventory change
 requires a newly reviewed digest, never a bypass. Before production migration, it then
 switches PostgreSQL and Redis to exact target image IDs and proves both healthy
-plus PostgreSQL still at `0058`. Production Docker Compose v2.27 one-off
-commands use `run --rm --no-deps -e VARIABLE_NAME`; they must never include a
-CLI `--pull`, secret values as arguments, or an env-file run option. Runtime
-Compose `pull_policy: never` and exact image-ID proof bind the command to the
-staged image. Inventory and new-key-only `verify` receive no old root; each old
+plus PostgreSQL still at `0058`. Every production/rehearsal API one-off uses
+the governed `release-one-off` stopped candidate: Compose creates it with
+`up --no-start --pull never --no-build --no-deps --force-recreate`, the host
+proves its exact image ID and never-started state, starts that captured ID, and
+passes only variable names to `docker exec -i --env VARIABLE_NAME`. Secret
+values never enter arguments or an env-file run option. Runtime Compose
+`pull_policy: never` and exact image-ID proof bind the command to the staged
+image. Inventory and new-key-only `verify` receive no old root; each old
 root is exposed only to its matching `dry-run` and `apply`. The first
 raw-ciphertext cutover omits `--old-key-id`.
 Future `rde.v1`

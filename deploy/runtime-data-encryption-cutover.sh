@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+set +x
 
 umask 077
 
@@ -376,6 +377,7 @@ IFS=$'\t' read -r \
 unset MAINTENANCE_ENV_SOURCE_PROOF
 
 RELEASE_STATE_ROOT="${REMOTE_DIR}/.release-state"
+GLOBAL_ONE_OFF_LOCK_DIR="${RELEASE_STATE_ROOT}/.release-one-off.lock"
 STAGED_STATE_DIR="${RELEASE_STATE_ROOT}/$(basename "${STAGED_RELEASE}")"
 EVIDENCE_DIR="${STAGED_STATE_DIR}/p1-e06-runtime-data-cutover"
 MAINTENANCE_ENV_SNAPSHOT="${EVIDENCE_DIR}/.maintenance-env.snapshot"
@@ -384,6 +386,8 @@ GLOBAL_ACTIVATION_RECEIPT_TMP=""
 GLOBAL_ACTIVATION_RECEIPT_ABSENT_AT_START=0
 
 DEPLOY_LOCK_DIR="${REMOTE_DIR}/.deploy-lock"
+DEPLOY_LOCK_OWNER_FILE="${DEPLOY_LOCK_DIR}/one-off-owner"
+DEPLOY_LOCK_OWNER=""
 FAILURE_MARKER="${REMOTE_DIR}/.cutover-failed"
 
 cleanup_private_cutover_artifacts() {
@@ -480,6 +484,17 @@ trap 'CURRENT_STAGE="signal-hup-before-initialization"; exit 129' HUP
 trap 'CURRENT_STAGE="signal-int-before-initialization"; exit 130' INT
 trap 'CURRENT_STAGE="signal-term-before-initialization"; exit 143' TERM
 chmod 0700 "${DEPLOY_LOCK_DIR}"
+DEPLOY_LOCK_OWNER="$("${HOST_PYTHON}" -c 'import secrets; print(secrets.token_hex(32))')"
+[[ "${DEPLOY_LOCK_OWNER}" =~ ^[0-9a-f]{64}$ ]] || \
+	fail "deployment lock owner token generation failed"
+if ! (umask 077; set -o noclobber; printf '%s\n' "${DEPLOY_LOCK_OWNER}" >"${DEPLOY_LOCK_OWNER_FILE}") || \
+	! chmod 0600 "${DEPLOY_LOCK_OWNER_FILE}" || \
+	[ ! -f "${DEPLOY_LOCK_OWNER_FILE}" ] || [ -L "${DEPLOY_LOCK_OWNER_FILE}" ] || \
+	[ ! -O "${DEPLOY_LOCK_OWNER_FILE}" ] || \
+	[ "$(mode_of "${DEPLOY_LOCK_OWNER_FILE}")" != "600" ]; then
+	fail "deployment lock owner proof could not be published safely"
+fi
+export NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}"
 
 CURRENT_STAGE="freeze-maintenance-env-after-lock"
 [ ! -e "${GLOBAL_ACTIVATION_RECEIPT}" ] && [ ! -L "${GLOBAL_ACTIVATION_RECEIPT}" ] || \
@@ -601,7 +616,8 @@ ROLLBACK_IMAGE_MAP="${EVIDENCE_DIR}/rollback-images.tsv"
 MANIFEST_HELPER="${STAGED_RELEASE}/scripts/verify-release-bundle-manifest.py"
 ROLLBACK_TAG_SUFFIX="p1e06-$(basename "${STAGED_RELEASE}" | sed 's/^release-//')"
 WRITER_SERVICES=(api worker callback-worker ops-worker)
-PUBLIC_AND_WRITER_SERVICES=(proxy frontend api worker callback-worker ops-worker)
+PREVIOUS_RUNTIME_SERVICES=(proxy frontend api worker callback-worker ops-worker)
+PUBLIC_AND_WRITER_SERVICES=("${PREVIOUS_RUNTIME_SERVICES[@]}" release-one-off)
 DATA_SERVICES=(postgres redis)
 WRITERS_FENCED=0
 MIGRATION_STARTED=0
@@ -621,8 +637,6 @@ OFF_HOST_RECEIPT_VERIFIED=0
 RESTORE_CONTAINER=""
 RESTORE_VOLUME=""
 RESTORE_DB_ENV=""
-API_ONE_OFF_CONTAINER=""
-API_ONE_OFF_PAYLOAD_PID=""
 BACKUP_TMP=""
 BACKUP_CHECKSUM_TMP=""
 OLD_WRITER_IMAGE_IDS_FILE=""
@@ -637,6 +651,9 @@ RECEIPT_SHA256=""
 ACTIVATION_COMMIT_MARKER="${EVIDENCE_DIR}/activation-commit.json"
 PASSED_RESULT="${EVIDENCE_DIR}/cutover-result.json"
 FINAL_RESULT_TMP=""
+ACTIVE_ONE_OFF_PID=""
+ONE_OFF_PID_ARMING=0
+ONE_OFF_PREVIOUS_ASYNC_PID=""
 
 write_failure_marker() {
 	local status_label="$1"
@@ -747,6 +764,31 @@ compose() {
 		-f "${STAGED_RELEASE}/docker-compose.runtime.yml" "$@"
 }
 
+assert_governed_one_off_absent() {
+	local compose_container_ids=""
+	local labelled_container_ids=""
+	if [ -e "${GLOBAL_ONE_OFF_LOCK_DIR}" ] || [ -L "${GLOBAL_ONE_OFF_LOCK_DIR}" ]; then
+		printf '[p1-e06:fail] governed release one-off lock is already present: %s\n' \
+			"${GLOBAL_ONE_OFF_LOCK_DIR}" >&2
+		return 1
+	fi
+	compose_container_ids="$(compose ps --all -q release-one-off 2>/dev/null)" || {
+		printf '[p1-e06:fail] Compose could not prove governed one-off containers absent.\n' >&2
+		return 1
+	}
+	labelled_container_ids="$(
+		docker container ls -aq --no-trunc \
+			--filter 'label=com.docker.compose.service=release-one-off' 2>/dev/null
+	)" || {
+		printf '[p1-e06:fail] Docker could not prove governed one-off containers absent.\n' >&2
+		return 1
+	}
+	if [ -n "${compose_container_ids}" ] || [ -n "${labelled_container_ids}" ]; then
+		printf '[p1-e06:fail] a governed one-off container is already present.\n' >&2
+		return 1
+	fi
+}
+
 release_helper() {
 	clean_env \
 		COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
@@ -755,30 +797,9 @@ release_helper() {
 		NPCINK_CLOUD_BACKEND_ENV_FILE="${STAGED_ENV_FILE}" \
 		NPCINK_CLOUD_COMPOSE_FILE="${STAGED_RELEASE}/docker-compose.runtime.yml" \
 		NPCINK_CLOUD_RELEASE_TOOL_PYTHON="${HOST_PYTHON}" \
+		NPCINK_CLOUD_DEPLOY_LOCK_OWNER="${DEPLOY_LOCK_OWNER}" \
 		"$@"
 }
-
-compose_maintenance() (
-	# Keep secret values exclusively in the child environment, never argv, but
-	# drop every ambient host override before Compose interpolation. Callers
-	# deliberately unset both OLD_ROOT values for Alembic/inventory/verify.
-	local exported_name=""
-	while IFS= read -r exported_name; do
-		case "${exported_name}" in
-			PATH|HOME|USER|LOGNAME|TMPDIR|XDG_CONFIG_HOME|XDG_RUNTIME_DIR|SSH_AUTH_SOCK|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG|DOCKER_CERT_PATH|DOCKER_TLS_VERIFY|DOCKER_API_VERSION|NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET|NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID|NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET|NPCINK_CLOUD_SERVICE_SETTINGS_SECRET|NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID|NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET|NPCINK_CLOUD_DATABASE_URL)
-				;;
-			*) unset "${exported_name}" ;;
-		esac
-	done < <(compgen -e)
-	export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME_EFFECTIVE}"
-	export NPCINK_CLOUD_COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME_EFFECTIVE}"
-	export NPCINK_CLOUD_ENV_FILE="${STAGED_ENV_FILE}"
-	export NPCINK_CLOUD_BACKEND_ENV_FILE="${STAGED_ENV_FILE}"
-	docker compose \
-		--project-directory "${STAGED_RELEASE}" \
-		--env-file "${STAGED_ENV_FILE}" \
-		-f "${STAGED_RELEASE}/docker-compose.runtime.yml" "$@"
-)
 
 compose_previous() {
 	clean_env \
@@ -799,11 +820,20 @@ stop_expected_services_and_verify() {
 	local failed=0
 	compose stop "${PUBLIC_AND_WRITER_SERVICES[@]}" >/dev/null 2>&1 || failed=1
 	for service in "${PUBLIC_AND_WRITER_SERVICES[@]}"; do
-		container_ids="$(docker ps -q \
-			--filter "label=com.docker.compose.service=${service}" 2>/dev/null)" || {
-			failed=1
-			continue
-		}
+		if [ "${service}" = "release-one-off" ]; then
+			container_ids="$(docker ps -q \
+				--filter "label=com.docker.compose.service=${service}" 2>/dev/null)" || {
+				failed=1
+				continue
+			}
+		else
+			container_ids="$(docker ps -q \
+				--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
+				--filter "label=com.docker.compose.service=${service}" 2>/dev/null)" || {
+				failed=1
+				continue
+			}
+		fi
 		while IFS= read -r container_id; do
 			[ -n "${container_id}" ] || continue
 			docker stop --time 10 "${container_id}" >/dev/null 2>&1 || failed=1
@@ -836,40 +866,6 @@ cleanup_restore_resources() {
 		rm -f -- "${temporary_path}" >/dev/null 2>&1 || cleanup_failed=1
 	done
 	return "${cleanup_failed}"
-}
-
-cleanup_api_one_off_container() {
-	local attempt=0
-	local matching_container_ids=""
-	if [ -n "${API_ONE_OFF_PAYLOAD_PID}" ]; then
-		kill "${API_ONE_OFF_PAYLOAD_PID}" >/dev/null 2>&1 || true
-		wait "${API_ONE_OFF_PAYLOAD_PID}" >/dev/null 2>&1 || true
-		API_ONE_OFF_PAYLOAD_PID=""
-	fi
-	[ -n "${API_ONE_OFF_CONTAINER}" ] || return 0
-	while [ "${attempt}" -lt 2 ]; do
-		if ! matching_container_ids="$(
-			docker container ls -aq --no-trunc \
-				--filter "name=^/${API_ONE_OFF_CONTAINER}$" 2>/dev/null
-		)"; then
-			return 1
-		fi
-		if [ -z "${matching_container_ids}" ]; then
-			API_ONE_OFF_CONTAINER=""
-			return 0
-		fi
-		docker rm -f "${API_ONE_OFF_CONTAINER}" >/dev/null 2>&1 || true
-		attempt=$((attempt + 1))
-		sleep 1
-	done
-	if ! matching_container_ids="$(
-		docker container ls -aq --no-trunc \
-			--filter "name=^/${API_ONE_OFF_CONTAINER}$" 2>/dev/null
-	)"; then
-		return 1
-	fi
-	[ -z "${matching_container_ids}" ] || return 1
-	API_ONE_OFF_CONTAINER=""
 }
 
 restore_release_image_tags() {
@@ -929,7 +925,7 @@ assert_previous_services_running() {
 	local ids=""
 	local count=0
 	local state=""
-	for service in "${PUBLIC_AND_WRITER_SERVICES[@]}"; do
+	for service in "${PREVIOUS_RUNTIME_SERVICES[@]}"; do
 		ids="$(compose_previous ps -q "${service}" 2>/dev/null)" || return 1
 		count="$(printf '%s\n' "${ids}" | awk 'NF {n += 1} END {print n + 0}')"
 		[ "${count}" -eq 1 ] || return 1
@@ -983,7 +979,7 @@ freeze_target_data_service_images() {
 			*) return 1 ;;
 		esac
 		expected_image_id="$(
-			"${HOST_PYTHON}" "${MANIFEST_HELPER}" role-image-id \
+			"${HOST_PYTHON}" "${MANIFEST_HELPER}" loaded-role-daemon-id \
 				--root "${STAGED_RELEASE}" --role "${role}"
 		)" || return 1
 		[[ "${expected_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
@@ -1067,11 +1063,18 @@ restore_previous_data_services() {
 
 ensure_failure_lock() {
 	if [ "${LOCK_HELD}" = "1" ]; then
-		[ -d "${DEPLOY_LOCK_DIR}" ] || return 1
-		return 0
+		if [ -d "${DEPLOY_LOCK_DIR}" ] && [ ! -L "${DEPLOY_LOCK_DIR}" ] && \
+			[ "$(mode_of "${DEPLOY_LOCK_DIR}" 2>/dev/null || true)" = "700" ] && \
+			[ "$(stat -c '%u' "${DEPLOY_LOCK_DIR}" 2>/dev/null || true)" = "0" ]; then
+			return 0
+		fi
+		LOCK_HELD=0
 	fi
 	if mkdir "${DEPLOY_LOCK_DIR}" 2>/dev/null; then
 		chmod 0700 "${DEPLOY_LOCK_DIR}" || return 1
+		[ ! -L "${DEPLOY_LOCK_DIR}" ] && \
+			[ "$(mode_of "${DEPLOY_LOCK_DIR}")" = "700" ] && \
+			[ "$(stat -c '%u' "${DEPLOY_LOCK_DIR}")" = "0" ] || return 1
 		LOCK_HELD=1
 		return 0
 	fi
@@ -1096,8 +1099,15 @@ on_exit() {
 	set +e
 
 	cleanup_private_cutover_artifacts || recovery_failed=1
-	cleanup_api_one_off_container || recovery_failed=1
 	cleanup_restore_resources || recovery_failed=1
+	# The governed one-off helper removes this global lock only after proving
+	# that its stopped/running candidate and protected stdin are both absent.
+	# Any residual filesystem object therefore makes automatic recovery claims
+	# unsafe, even when the previous release itself can still be restarted.
+	if [ -e "${GLOBAL_ONE_OFF_LOCK_DIR}" ] || [ -L "${GLOBAL_ONE_OFF_LOCK_DIR}" ]; then
+		printf '[p1-e06:fail] governed API one-off cleanup remains unproved; global one-off lock retained.\n' >&2
+		recovery_failed=1
+	fi
 	if [ "${status}" -ne 0 ] || [ "${CUTOVER_SUCCEEDED}" != "1" ]; then
 		if [ "${status}" -eq 0 ]; then
 			status=1
@@ -1175,10 +1185,38 @@ on_exit() {
 	printf '[p1-e06:ok] cutover complete; evidence=%s\n' "${EVIDENCE_DIR}"
 	exit 0
 }
+
+on_signal() {
+	local signal_name="$1"
+	local signal_status="$2"
+	local signal_stage="$3"
+	local observed_async_pid=""
+	if [ "${ONE_OFF_PID_ARMING}" = "1" ] && [ -z "${ACTIVE_ONE_OFF_PID}" ]; then
+		set +u
+		observed_async_pid="$!"
+		set -u
+		if [ -n "${observed_async_pid}" ] && \
+			[ "${observed_async_pid}" != "${ONE_OFF_PREVIOUS_ASYNC_PID}" ]; then
+			ACTIVE_ONE_OFF_PID="${observed_async_pid}"
+		else
+			trap - HUP INT TERM
+			CURRENT_STAGE="${signal_stage}"
+			exit "${signal_status}"
+		fi
+	fi
+	trap - HUP INT TERM
+	CURRENT_STAGE="${signal_stage}"
+	if [ -n "${ACTIVE_ONE_OFF_PID}" ]; then
+		kill "-${signal_name}" "${ACTIVE_ONE_OFF_PID}" >/dev/null 2>&1 || true
+		wait "${ACTIVE_ONE_OFF_PID}" >/dev/null 2>&1 || true
+		ACTIVE_ONE_OFF_PID=""
+	fi
+	exit "${signal_status}"
+}
 trap on_exit EXIT
-trap 'CURRENT_STAGE="signal-hup"; exit 129' HUP
-trap 'CURRENT_STAGE="signal-int"; exit 130' INT
-trap 'CURRENT_STAGE="signal-term"; exit 143' TERM
+trap 'on_signal HUP 129 signal-hup' HUP
+trap 'on_signal INT 130 signal-int' INT
+trap 'on_signal TERM 143 signal-term' TERM
 
 CURRENT_STAGE="prepare-external-release-state"
 install -d -m 0700 "${RELEASE_STATE_ROOT}" "${PREVIOUS_STATE_DIR}" "${STAGED_STATE_DIR}" "${EVIDENCE_DIR}"
@@ -1363,6 +1401,10 @@ freeze_original_data_services || fail "current PostgreSQL/Redis container and im
 assert_data_services_healthy_with_images "${OLD_DATA_SERVICE_STATE_FILE}" 1 staged || \
 	fail "current PostgreSQL/Redis services are not healthy at the frozen 0058 generation"
 
+CURRENT_STAGE="prove-governed-one-off-absence-before-mutation"
+assert_governed_one_off_absent || \
+	fail "governed one-off absence was not proved before image or database mutation"
+
 CURRENT_STAGE="prepare-exact-bundle-images"
 IMAGE_PREPARE_STARTED=1
 PREPARE_LOG="${EVIDENCE_DIR}/prepare-only.log"
@@ -1378,12 +1420,12 @@ if ! release_helper \
 fi
 [ -f "${ROLLBACK_IMAGE_MAP}" ] && [ "$(mode_of "${ROLLBACK_IMAGE_MAP}")" = "600" ] || fail "prepare-only rollback image map is missing or unsafe"
 NEW_API_IMAGE_ID="$(
-	"${HOST_PYTHON}" "${MANIFEST_HELPER}" role-image-id \
+	"${HOST_PYTHON}" "${MANIFEST_HELPER}" loaded-role-daemon-id \
 		--root "${STAGED_RELEASE}" --role api
-)" || fail "bundle manifest API image ID could not be frozen"
+)" || fail "bundle-proved target-daemon API image ID could not be frozen"
 [[ "${NEW_API_IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "prepared API image ID is invalid"
 [ "$(docker image inspect --format '{{.Id}}' npcink-ai-cloud-api:prod)" = "${NEW_API_IMAGE_ID}" ] || \
-	fail "prepared API tag differs from the bundle manifest image ID"
+	fail "prepared API tag differs from the bundle-proved target-daemon image ID"
 printf '%s\n' "${NEW_API_IMAGE_ID}" >>"${OLD_WRITER_IMAGE_IDS_FILE}"
 LC_ALL=C sort -u -o "${OLD_WRITER_IMAGE_IDS_FILE}" "${OLD_WRITER_IMAGE_IDS_FILE}"
 freeze_target_data_service_images || fail "prepared PostgreSQL/Redis image IDs could not be frozen"
@@ -1643,18 +1685,26 @@ assert_new_api_tag_frozen() {
 	[ "${observed_image_id}" = "${NEW_API_IMAGE_ID}" ]
 }
 
-run_exact_api_one_off() {
-	local env_flags=()
+run_exact_api_one_off_isolated() {
+	local exec_env_names=()
+	local exec_env_args=()
 	local payload=()
-	local observed_image_id=""
-	local observed_tag_id=""
-	local payload_status=0
-	local proof_failed=0
-	local cleanup_failed=0
-	local create_status=0
+	local env_name=""
+	local exported_name=""
+	local keep_exported_name=0
 	while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
-		env_flags+=("$1")
-		shift
+		[ "$#" -ge 2 ] && [ "$1" = "-e" ] || {
+			printf '[p1-e06:fail] exact API one-off env option must be a names-only -e pair.\n' >&2
+			return 1
+		}
+		env_name="$2"
+		[[ "${env_name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+			printf '[p1-e06:fail] exact API one-off env name is invalid.\n' >&2
+			return 1
+		}
+		exec_env_names+=("${env_name}")
+		exec_env_args+=(--exec-env "${env_name}")
+		shift 2
 	done
 	[ "$#" -gt 0 ] && [ "$1" = "--" ] || {
 		printf '[p1-e06:fail] exact API one-off payload delimiter is missing.\n' >&2
@@ -1666,92 +1716,66 @@ run_exact_api_one_off() {
 		printf '[p1-e06:fail] exact API one-off payload is empty.\n' >&2
 		return 1
 	}
-	[ -z "${API_ONE_OFF_CONTAINER}" ] || {
-		printf '[p1-e06:fail] another exact API one-off container is still armed.\n' >&2
-		return 1
-	}
+	# Match the former maintenance-Compose isolation without creating a second
+	# container lifecycle. Only names explicitly requested for docker exec and
+	# the minimum local Docker client context survive ambient-env contraction.
+	while IFS= read -r exported_name; do
+		keep_exported_name=0
+		case "${exported_name}" in
+			PATH|HOME|USER|LOGNAME|TMPDIR|XDG_CONFIG_HOME|XDG_RUNTIME_DIR|SSH_AUTH_SOCK|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG|DOCKER_CERT_PATH|DOCKER_TLS_VERIFY|DOCKER_API_VERSION|NPCINK_CLOUD_DEPLOY_LOCK_OWNER)
+				keep_exported_name=1
+				;;
+		esac
+		if [ "${keep_exported_name}" -eq 0 ]; then
+			if [ "${#exec_env_names[@]}" -gt 0 ]; then
+				for env_name in "${exec_env_names[@]}"; do
+					if [ "${exported_name}" = "${env_name}" ]; then
+						keep_exported_name=1
+						break
+					fi
+				done
+			fi
+		fi
+		[ "${keep_exported_name}" -eq 1 ] || unset "${exported_name}"
+	done < <(compgen -e)
+	local COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME_EFFECTIVE}"
+	local NPCINK_CLOUD_COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME_EFFECTIVE}"
+	local NPCINK_CLOUD_ENV_FILE="${STAGED_ENV_FILE}"
+	local NPCINK_CLOUD_BACKEND_ENV_FILE="${STAGED_ENV_FILE}"
+	local NPCINK_CLOUD_COMPOSE_FILE="${STAGED_RELEASE}/docker-compose.runtime.yml"
+	local NPCINK_CLOUD_RELEASE_TOOL_PYTHON="${HOST_PYTHON}"
+	local NPCINK_CLOUD_API_RELEASE_IMAGE=""
+	export COMPOSE_PROJECT_NAME NPCINK_CLOUD_COMPOSE_PROJECT_NAME
+	export NPCINK_CLOUD_ENV_FILE NPCINK_CLOUD_BACKEND_ENV_FILE NPCINK_CLOUD_COMPOSE_FILE
 
-	observed_tag_id="$(
-		docker image inspect --format '{{.Id}}' npcink-ai-cloud-api:prod 2>/dev/null
-	)" || {
-		printf '[p1-e06:fail] prepared API image tag is unavailable before one-off creation.\n' >&2
-		return 1
-	}
-	[ "${observed_tag_id}" = "${NEW_API_IMAGE_ID}" ] || {
-		printf '[p1-e06:fail] prepared API image tag drifted before one-off creation.\n' >&2
-		return 1
-	}
-
-	API_ONE_OFF_CONTAINER="npcink-p1e06-api-proof-$$-${RANDOM}-${RANDOM}"
-	if docker container inspect "${API_ONE_OFF_CONTAINER}" >/dev/null 2>&1; then
-		printf '[p1-e06:fail] generated API one-off container name already exists.\n' >&2
-		API_ONE_OFF_CONTAINER=""
-		return 1
-	fi
-	if compose_maintenance run -d \
-		--name "${API_ONE_OFF_CONTAINER}" \
-		--no-deps \
-		--rm \
-		--entrypoint python \
-		"${env_flags[@]}" \
-		api -c 'import time; time.sleep(900)' >/dev/null; then
-		create_status=0
+	if [ "${#exec_env_args[@]}" -gt 0 ]; then
+		npcink_ai_cloud_compose_run_with_image_proof \
+			"${STAGED_RELEASE}" api npcink-ai-cloud-api:prod "${NEW_API_IMAGE_ID}" \
+			"${exec_env_args[@]}" -- "${payload[@]}" </dev/null
 	else
-		create_status=$?
-		proof_failed=1
+		npcink_ai_cloud_compose_run_with_image_proof \
+			"${STAGED_RELEASE}" api npcink-ai-cloud-api:prod "${NEW_API_IMAGE_ID}" \
+			-- "${payload[@]}" </dev/null
 	fi
+}
 
-	if [ "${proof_failed}" -eq 0 ]; then
-		observed_image_id="$(
-			docker inspect --format '{{.Image}}' "${API_ONE_OFF_CONTAINER}" 2>/dev/null
-		)" || proof_failed=1
-		observed_tag_id="$(
-			docker image inspect --format '{{.Id}}' npcink-ai-cloud-api:prod 2>/dev/null
-		)" || proof_failed=1
-		if [ "${observed_image_id}" != "${NEW_API_IMAGE_ID}" ] || \
-			[ "${observed_tag_id}" != "${NEW_API_IMAGE_ID}" ]; then
-			proof_failed=1
-		fi
+run_exact_api_one_off() {
+	local run_status=0
+	set +u
+	ONE_OFF_PREVIOUS_ASYNC_PID="$!"
+	set -u
+	ONE_OFF_PID_ARMING=1
+	run_exact_api_one_off_isolated "$@" &
+	ACTIVE_ONE_OFF_PID="$!"
+	ONE_OFF_PID_ARMING=0
+	ONE_OFF_PREVIOUS_ASYNC_PID=""
+	if wait "${ACTIVE_ONE_OFF_PID}"; then
+		run_status=0
+	else
+		run_status=$?
 	fi
-
-	if [ "${proof_failed}" -eq 0 ]; then
-		# Cutover payloads are argv-only maintenance commands. Make the empty
-		# stdin contract explicit so Bash background-job semantics can never turn
-		# a future caller stream into an accidental false-success dependency.
-		docker exec -i "${API_ONE_OFF_CONTAINER}" "${payload[@]}" </dev/null &
-		API_ONE_OFF_PAYLOAD_PID="$!"
-		if wait "${API_ONE_OFF_PAYLOAD_PID}"; then
-			payload_status=0
-		else
-			payload_status=$?
-		fi
-		API_ONE_OFF_PAYLOAD_PID=""
-		observed_tag_id="$(
-			docker image inspect --format '{{.Id}}' npcink-ai-cloud-api:prod 2>/dev/null
-		)" || proof_failed=1
-		[ "${observed_tag_id}" = "${NEW_API_IMAGE_ID}" ] || proof_failed=1
-	fi
-
-	if ! cleanup_api_one_off_container; then
-		cleanup_failed=1
-	fi
-	if [ "${cleanup_failed}" -ne 0 ]; then
-		printf '[p1-e06:fail] exact API one-off container cleanup failed.\n' >&2
-		return 1
-	fi
-	if [ "${create_status}" -ne 0 ]; then
-		printf '[p1-e06:fail] exact API one-off container creation failed.\n' >&2
-		return "${create_status}"
-	fi
-	if [ "${proof_failed}" -ne 0 ]; then
-		printf '[p1-e06:fail] API payload was blocked because the manifest-frozen image ID was not proved.\n' >&2
-		return 1
-	fi
-	if [ "${payload_status}" -ne 0 ]; then
-		printf '[p1-e06:fail] exact API one-off payload failed after image proof.\n' >&2
-		return "${payload_status}"
-	fi
-	return 0
+	ACTIVE_ONE_OFF_PID=""
+	return "${run_status}"
 }
 
 run_api_evidence() {
@@ -2066,8 +2090,10 @@ assert_database_clients_quiesced
 assert_backup_integrity || fail "backup changed before the production data-service switch"
 assert_target_data_image_tags_frozen || fail "prepared PostgreSQL/Redis tags drifted before the data-service switch"
 DATA_SWITCH_ATTEMPTED=1
-if ! compose up -d --pull never --no-build --no-deps --force-recreate \
-	postgres redis >"${EVIDENCE_DIR}/data-service-switch.log" 2>&1; then
+if ! release_helper \
+	NPCINK_CLOUD_LOAD_MODE=data-only \
+	bash "${STAGED_RELEASE}/deploy/remote-load-and-up.sh" \
+	>"${EVIDENCE_DIR}/data-service-switch.log" 2>&1; then
 	fail "PostgreSQL/Redis could not be switched to the exact target bundle images"
 fi
 chmod 0600 "${EVIDENCE_DIR}/data-service-switch.log"
@@ -2416,7 +2442,17 @@ fsync_paths_and_parents "${GLOBAL_ACTIVATION_RECEIPT}"
 	fail "published global activation receipt is not a root-owned mode-0600 regular file"
 
 CURRENT_STAGE="release-deploy-lock"
+# A signal between filesystem unlock and the corresponding in-memory commit
+# flags could otherwise make EXIT believe a missing lock was still held.
+# Terminal activation is already committed, so ignore terminal signals across
+# this short non-interruptible unlock/state transition.
+trap '' HUP INT TERM
 rm -f "${FAILURE_MARKER}" >/dev/null 2>&1 || fail "stale failure marker could not be removed"
+rm -f -- "${DEPLOY_LOCK_OWNER_FILE}" || fail "deployment lock owner cleanup failed"
+[ ! -e "${DEPLOY_LOCK_OWNER_FILE}" ] && [ ! -L "${DEPLOY_LOCK_OWNER_FILE}" ] || \
+	fail "deployment lock owner cleanup could not be proved"
+unset NPCINK_CLOUD_DEPLOY_LOCK_OWNER
+DEPLOY_LOCK_OWNER=""
 rmdir "${DEPLOY_LOCK_DIR}" || fail "deployment lock could not be released"
 LOCK_HELD=0
 CUTOVER_SUCCEEDED=1
