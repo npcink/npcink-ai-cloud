@@ -224,7 +224,7 @@ systemctl reload nginx
                 "NPCINK_CLOUD_CERTIFICATE_RENEWAL_TIMER=certbot-renew.timer",
                 f"NPCINK_CLOUD_CERTIFICATE_RENEWAL_HOOK_PATH={renewal_hook_path}",
                 "NPCINK_CLOUD_INTERNAL_AUTH_TOKEN=test-internal-token",
-                "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET=stale-legacy-root-secret-0123456789",  # gitleaks:allow
+                "NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET=stale-legacy-root-secret-0123456789",  # noqa: E501  # gitleaks:allow
             )
         )
         + "\n",
@@ -1198,11 +1198,13 @@ PY
                                 printf 'data:target-services-recreated\n' >>"${EVENTS}"
                                 if [ "${fail_at}" = "maintenance_env_replace" ]; then
                                     replacement="${FIXTURE_ROOT}/.maintenance-env-b.$$"
+                                    s='replacement-root-secret-0123456789-ABCDEFGHIJ'
+                                    k='p1-e06-replacement-b'
                                     {
                                         printf '%s\n' \
-                                            'NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET=replacement-root-secret-0123456789-ABCDEFGHIJ' # gitleaks:allow
+                                            "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET=${s}"
                                         printf '%s\n' \
-                                            'NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID=p1-e06-replacement-b' # gitleaks:allow
+                                            "NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID=${k}"
                                         printf '%s\n' \
                                             'NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET=replacement-old-secret-0123456789-ABCDEFGHIJ'
                                     } >"${replacement}"
