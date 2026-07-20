@@ -909,6 +909,11 @@ raise SystemExit(64)
         "#!/usr/bin/env bash\nexit 0\n",
         executable=True,
     )
+    _write(
+        fake_bin / "curl",
+        "#!/usr/bin/env bash\nexit 86\n",
+        executable=True,
+    )
     (release / "docker-compose.prod.yml").write_text(
         "services: {}\n",
         encoding="utf-8",

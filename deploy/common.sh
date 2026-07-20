@@ -339,6 +339,7 @@ npcink_ai_cloud_compose() {
 	local env_file=""
 	local backend_env_file="${NPCINK_CLOUD_BACKEND_ENV_FILE:-}"
 	local compose_project_name="${NPCINK_CLOUD_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-}}"
+	local compose_status=0
 
 	env_file="$(npcink_ai_cloud_resolve_env_file "${root_dir}")"
 	if [ -n "${backend_env_file}" ]; then
@@ -358,13 +359,15 @@ npcink_ai_cloud_compose() {
 	if [ -n "${env_file}" ]; then
 		COMPOSE_PROJECT_NAME="${compose_project_name}" \
 			NPCINK_CLOUD_BACKEND_ENV_FILE="${backend_env_file}" \
-			docker compose --env-file "${env_file}" -f "${compose_file}" "$@"
-		return
+			docker compose --env-file "${env_file}" -f "${compose_file}" "$@" || \
+			compose_status=$?
+		return "${compose_status}"
 	fi
 
 	COMPOSE_PROJECT_NAME="${compose_project_name}" \
 		NPCINK_CLOUD_BACKEND_ENV_FILE="${backend_env_file}" \
-		docker compose -f "${compose_file}" "$@"
+		docker compose -f "${compose_file}" "$@" || compose_status=$?
+	return "${compose_status}"
 }
 
 npcink_ai_cloud_pin_compose_service_image() {

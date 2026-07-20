@@ -1078,14 +1078,17 @@ ensure_private_release_state_directory() {
 
 application_container_ids() {
 	local service_name="$1"
+	local docker_status=0
 	if [ "${service_name}" = "release-one-off" ]; then
 		docker ps -aq \
-			--filter "label=com.docker.compose.service=${service_name}"
-		return
+			--filter "label=com.docker.compose.service=${service_name}" || \
+			docker_status=$?
+		return "${docker_status}"
 	fi
 	docker ps -aq \
 		--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
-		--filter "label=com.docker.compose.service=${service_name}"
+		--filter "label=com.docker.compose.service=${service_name}" || docker_status=$?
+	return "${docker_status}"
 }
 
 stop_application_services() {

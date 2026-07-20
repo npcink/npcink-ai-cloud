@@ -233,6 +233,10 @@ if [ "${1:-}" = "ps" ] && [ -f "${CUTOVER_FAILURE_TRIGGERED}" ] && \
     [ "${RECOVERY_DOCKER_PS_FAIL:-0}" = "1" ]; then
     exit 71
 fi
+if [ "${1:-}" = "ps" ] && \
+    [[ " $* " = *"label=com.docker.compose.service=release-one-off"* ]]; then
+    exit 0
+fi
 if [ "${1:-}" = "info" ]; then
     exit 0
 fi
