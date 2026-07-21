@@ -91,6 +91,7 @@ runtime_network_state_file() {
 }
 
 discover_runtime_network_contract() {
+	local expected_proxy_ipv4="${1:-}"
 	local network_ids=""
 	local network_count=0
 	local network_id=""
@@ -113,32 +114,32 @@ discover_runtime_network_contract() {
 		--filter "label=com.docker.compose.network=default")" || return 1
 	network_count="$(printf '%s\n' "${network_ids}" | awk 'NF {n += 1} END {print n + 0}')"
 	if [ "${network_count}" -eq 0 ]; then
-		printf '%s\t%s\t%s\n' '172.28.0.0/24' '172.28.0.1' '172.28.0.10'
-		return 0
-	fi
-	if [ "${network_count}" -ne 1 ]; then
+		subnet="172.28.0.0/24"
+		gateway="172.28.0.1"
+	elif [ "${network_count}" -ne 1 ]; then
 		echo "[fail] Managed Compose default network is not unique." >&2
 		return 1
+	else
+		network_id="$(printf '%s\n' "${network_ids}" | awk 'NF {print; exit}')"
+		[[ "${network_id}" =~ ^[0-9a-f]{12,64}$ ]] || {
+			echo "[fail] Managed Compose default network ID is invalid." >&2
+			return 1
+		}
+		driver="$(docker network inspect --format '{{.Driver}}' "${network_id}")" || return 1
+		internal="$(docker network inspect --format '{{.Internal}}' "${network_id}")" || return 1
+		ipam_count="$(docker network inspect --format '{{len .IPAM.Config}}' "${network_id}")" || return 1
+		if [ "${driver}" != "bridge" ] || [ "${internal}" != "false" ] || [ "${ipam_count}" != "1" ]; then
+			echo "[fail] Managed Compose default network must be one non-internal bridge IPv4 network." >&2
+			return 1
+		fi
+		subnet="$(docker network inspect \
+			--format '{{(index .IPAM.Config 0).Subnet}}' "${network_id}")" || return 1
+		gateway="$(docker network inspect \
+			--format '{{(index .IPAM.Config 0).Gateway}}' "${network_id}")" || return 1
+		endpoints="$(docker network inspect \
+			--format '{{range $id, $container := .Containers}}{{$id}}|{{$container.IPv4Address}}{{println}}{{end}}' \
+			"${network_id}")" || return 1
 	fi
-	network_id="$(printf '%s\n' "${network_ids}" | awk 'NF {print; exit}')"
-	[[ "${network_id}" =~ ^[0-9a-f]{12,64}$ ]] || {
-		echo "[fail] Managed Compose default network ID is invalid." >&2
-		return 1
-	}
-	driver="$(docker network inspect --format '{{.Driver}}' "${network_id}")" || return 1
-	internal="$(docker network inspect --format '{{.Internal}}' "${network_id}")" || return 1
-	ipam_count="$(docker network inspect --format '{{len .IPAM.Config}}' "${network_id}")" || return 1
-	if [ "${driver}" != "bridge" ] || [ "${internal}" != "false" ] || [ "${ipam_count}" != "1" ]; then
-		echo "[fail] Managed Compose default network must be one non-internal bridge IPv4 network." >&2
-		return 1
-	fi
-	subnet="$(docker network inspect \
-		--format '{{(index .IPAM.Config 0).Subnet}}' "${network_id}")" || return 1
-	gateway="$(docker network inspect \
-		--format '{{(index .IPAM.Config 0).Gateway}}' "${network_id}")" || return 1
-	endpoints="$(docker network inspect \
-		--format '{{range $id, $container := .Containers}}{{$id}}|{{$container.IPv4Address}}{{println}}{{end}}' \
-		"${network_id}")" || return 1
 	while IFS='|' read -r container_id endpoint_cidr; do
 		[ -n "${container_id}" ] || continue
 		[[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] || {
@@ -163,26 +164,31 @@ discover_runtime_network_contract() {
 	done <<<"${endpoints}"
 
 	"${RELEASE_TOOL_PYTHON}" - \
-		"${subnet}" "${gateway}" "${proxy_ips}" "${occupied_ips}" <<'PY'
+		"${subnet}" "${gateway}" "${proxy_ips}" "${occupied_ips}" \
+		"${expected_proxy_ipv4}" <<'PY'
 from __future__ import annotations
 
 import ipaddress
 import sys
 
-subnet_text, gateway_text, proxy_text, occupied_text = sys.argv[1:]
+subnet_text, gateway_text, proxy_text, occupied_text, expected_proxy_text = sys.argv[1:]
 try:
     network = ipaddress.ip_network(subnet_text, strict=True)
     gateway = ipaddress.ip_address(gateway_text)
-    proxy_ips = {
+    proxy_values = [
         ipaddress.ip_address(value)
         for value in proxy_text.rstrip(",").split(",")
         if value
-    }
+    ]
+    proxy_ips = set(proxy_values)
     occupied = {
         ipaddress.ip_address(value)
         for value in occupied_text.rstrip(",").split(",")
         if value
     }
+    expected_proxy = (
+        ipaddress.ip_address(expected_proxy_text) if expected_proxy_text else None
+    )
 except ValueError as exc:
     raise SystemExit(f"[fail] Managed Compose network IPv4 contract is invalid: {exc}") from exc
 
@@ -191,13 +197,29 @@ if network.version != 4 or gateway.version != 4:
 if gateway not in network or gateway in {network.network_address, network.broadcast_address}:
     raise SystemExit("[fail] Managed Compose network gateway is outside its usable subnet.")
 for address in proxy_ips | occupied:
-    if address.version != 4 or address not in network:
-        raise SystemExit("[fail] Managed Compose endpoint is outside its IPv4 subnet.")
-if len(proxy_ips) > 1:
+    if (
+        address.version != 4
+        or address not in network
+        or address in {network.network_address, network.broadcast_address, gateway}
+    ):
+        raise SystemExit("[fail] Managed Compose endpoint is outside its usable IPv4 subnet.")
+if len(proxy_values) > 1:
     raise SystemExit("[fail] Managed Compose network has multiple proxy endpoint addresses.")
+if expected_proxy is not None and (
+    expected_proxy.version != 4
+    or expected_proxy not in network
+    or expected_proxy in {network.network_address, network.broadcast_address, gateway}
+):
+    raise SystemExit("[fail] Frozen runtime proxy IPv4 address is outside the usable subnet.")
 
 if proxy_ips:
     proxy = next(iter(proxy_ips))
+    if expected_proxy is not None and proxy != expected_proxy:
+        raise SystemExit("[fail] Managed proxy endpoint differs from the frozen runtime proxy IPv4 address.")
+elif expected_proxy is not None:
+    if expected_proxy in occupied:
+        raise SystemExit("[fail] Frozen runtime proxy IPv4 address is occupied by a non-proxy endpoint.")
+    proxy = expected_proxy
 else:
     preferred = network.network_address + 10
     proxy = None
@@ -296,10 +318,11 @@ freeze_runtime_network_contract() {
 		echo "[fail] Runtime network state requires the protected release-state directory." >&2
 		return 1
 	}
-	discovered="$(discover_runtime_network_contract)" || return 1
-	IFS=$'\t' read -r subnet gateway proxy_ipv4 <<<"${discovered}"
 	if [ -e "${state_file}" ] || [ -L "${state_file}" ]; then
 		load_runtime_network_contract "${state_file}" || return 1
+		discovered="$(discover_runtime_network_contract \
+			"${NPCINK_CLOUD_RUNTIME_PROXY_IPV4}")" || return 1
+		IFS=$'\t' read -r subnet gateway proxy_ipv4 <<<"${discovered}"
 		if [ "${NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET}" != "${subnet}" ] ||
 			[ "${NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY}" != "${gateway}" ] ||
 			[ "${NPCINK_CLOUD_RUNTIME_PROXY_IPV4}" != "${proxy_ipv4}" ]; then
@@ -308,6 +331,8 @@ freeze_runtime_network_contract() {
 		fi
 		return 0
 	fi
+	discovered="$(discover_runtime_network_contract)" || return 1
+	IFS=$'\t' read -r subnet gateway proxy_ipv4 <<<"${discovered}"
 	temporary="$(mktemp "${state_dir}/.runtime-network.env.XXXXXX")" || return 1
 	chmod 0600 "${temporary}" || {
 		rm -f -- "${temporary}"
@@ -349,7 +374,8 @@ assert_runtime_network_contract() {
 	local subnet=""
 	local gateway=""
 	local proxy_ipv4=""
-	discovered="$(discover_runtime_network_contract)" || return 1
+	discovered="$(discover_runtime_network_contract \
+		"${NPCINK_CLOUD_RUNTIME_PROXY_IPV4}")" || return 1
 	IFS=$'\t' read -r subnet gateway proxy_ipv4 <<<"${discovered}"
 	if [ "${NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET}" != "${subnet}" ] ||
 		[ "${NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY}" != "${gateway}" ] ||

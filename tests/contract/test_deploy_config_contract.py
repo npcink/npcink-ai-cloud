@@ -463,6 +463,7 @@ def _run_runtime_network_contract_prepare(
     subnet: str,
     gateway: str,
     endpoints: list[tuple[str, str, str]],
+    network_id: str = "f" * 64,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     cloud_root = _cloud_root()
     managed_root = tmp_path / "managed"
@@ -514,7 +515,6 @@ def _run_runtime_network_contract_prepare(
     )
     env_file.chmod(0o600)
 
-    endpoint_rows = "\n".join("|".join(row) for row in endpoints)
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
         r"""#!/usr/bin/env bash
@@ -567,23 +567,13 @@ esac
     )
     fake_docker.chmod(0o755)
 
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
-            "FAKE_NETWORK_ID": "f" * 64,
-            "FAKE_NETWORK_SUBNET": subnet,
-            "FAKE_NETWORK_GATEWAY": gateway,
-            "FAKE_NETWORK_ENDPOINTS": endpoint_rows,
-            "NPCINK_CLOUD_ENV_FILE": str(env_file),
-            "NPCINK_CLOUD_BACKEND_ENV_FILE": str(env_file),
-            "NPCINK_CLOUD_COMPOSE_FILE": str(release / "docker-compose.runtime.yml"),
-            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
-            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(state_dir / "rollback-images.tsv"),
-            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "network-contract",
-            "NPCINK_CLOUD_DEPLOY_LOCK_OWNER": owner,
-            "NPCINK_CLOUD_RELEASE_TOOL_PYTHON": sys.executable,
-        }
+    environment = _runtime_network_contract_environment(
+        tmp_path,
+        state_dir / "runtime-network.env",
+        subnet=subnet,
+        gateway=gateway,
+        endpoints=endpoints,
+        network_id=network_id,
     )
     completed = subprocess.run(
         ["bash", str(deploy / "remote-load-and-up.sh")],
@@ -594,6 +584,41 @@ esac
         check=False,
     )
     return completed, state_dir / "runtime-network.env"
+
+
+def _runtime_network_contract_environment(
+    tmp_path: Path,
+    state_file: Path,
+    *,
+    subnet: str,
+    gateway: str,
+    endpoints: list[tuple[str, str, str]],
+    network_id: str = "f" * 64,
+) -> dict[str, str]:
+    managed_root = state_file.parents[2]
+    release = managed_root / state_file.parent.name
+    env_file = state_file.parent / "env.deploy"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{tmp_path / 'bin'}{os.pathsep}{environment['PATH']}",
+            "FAKE_NETWORK_ID": network_id,
+            "FAKE_NETWORK_SUBNET": subnet,
+            "FAKE_NETWORK_GATEWAY": gateway,
+            "FAKE_NETWORK_ENDPOINTS": "\n".join("|".join(row) for row in endpoints),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_BACKEND_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_COMPOSE_FILE": str(release / "docker-compose.runtime.yml"),
+            "NPCINK_CLOUD_LOAD_MODE": "prepare-only",
+            "NPCINK_CLOUD_ROLLBACK_IMAGE_MAP": str(
+                state_file.parent / "rollback-images.tsv"
+            ),
+            "NPCINK_CLOUD_ROLLBACK_TAG_SUFFIX": "network-contract",
+            "NPCINK_CLOUD_DEPLOY_LOCK_OWNER": "a" * 64,
+            "NPCINK_CLOUD_RELEASE_TOOL_PYTHON": sys.executable,
+        }
+    )
+    return environment
 
 
 @pytest.mark.parametrize(
@@ -658,8 +683,267 @@ def test_runtime_network_prepare_freezes_existing_ipv4_topology(
     assert f"subnet={subnet} gateway={gateway} proxy={expected_proxy}" in completed.stdout
 
 
+def test_runtime_network_prepare_freezes_fresh_deploy_defaults(tmp_path: Path) -> None:
+    completed, state_file = _run_runtime_network_contract_prepare(
+        tmp_path,
+        subnet="ignored",
+        gateway="ignored",
+        endpoints=[],
+        network_id="",
+    )
+
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    assert state_file.read_text(encoding="utf-8").splitlines() == [
+        "NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT=npcink-ai-cloud",
+        "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET=172.28.0.0/24",
+        "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY=172.28.0.1",
+        "NPCINK_CLOUD_RUNTIME_PROXY_IPV4=172.28.0.10",
+    ]
+
+
+def test_runtime_network_revalidation_preserves_the_frozen_proxy_address(
+    tmp_path: Path,
+) -> None:
+    subnet = "192.168.240.0/20"
+    gateway = "192.168.240.1"
+    initial_endpoints = [
+        ("b" * 64, "192.168.240.3/20", "postgres"),
+        ("c" * 64, "192.168.240.4/20", "redis"),
+        ("d" * 64, "192.168.240.27/20", "proxy"),
+    ]
+    completed, state_file = _run_runtime_network_contract_prepare(
+        tmp_path,
+        subnet=subnet,
+        gateway=gateway,
+        endpoints=initial_endpoints,
+    )
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+
+    release = state_file.parents[2] / state_file.parent.name
+    without_proxy = initial_endpoints[:2]
+    environment = _runtime_network_contract_environment(
+        tmp_path,
+        state_file,
+        subnet=subnet,
+        gateway=gateway,
+        endpoints=without_proxy,
+    )
+    environment["NPCINK_CLOUD_ROLLBACK_IMAGE_MAP"] = str(
+        state_file.parent / "rollback-images-revalidate.tsv"
+    )
+    revalidated = subprocess.run(
+        ["bash", str(release / "deploy" / "remote-load-and-up.sh")],
+        cwd=release,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert revalidated.returncode == 0, f"{revalidated.stdout}\n{revalidated.stderr}"
+    assert "proxy=192.168.240.27" in revalidated.stdout
+
+    occupied_environment = _runtime_network_contract_environment(
+        tmp_path,
+        state_file,
+        subnet=subnet,
+        gateway=gateway,
+        endpoints=without_proxy
+        + [("e" * 64, "192.168.240.27/20", "worker")],
+    )
+    occupied_environment["NPCINK_CLOUD_ROLLBACK_IMAGE_MAP"] = str(
+        state_file.parent / "rollback-images-occupied.tsv"
+    )
+    occupied = subprocess.run(
+        ["bash", str(release / "deploy" / "remote-load-and-up.sh")],
+        cwd=release,
+        env=occupied_environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert occupied.returncode != 0
+    assert "occupied by a non-proxy endpoint" in occupied.stderr
+
+    wrong_proxy_environment = _runtime_network_contract_environment(
+        tmp_path,
+        state_file,
+        subnet=subnet,
+        gateway=gateway,
+        endpoints=without_proxy
+        + [("f" * 64, "192.168.240.28/20", "proxy")],
+    )
+    wrong_proxy_environment["NPCINK_CLOUD_ROLLBACK_IMAGE_MAP"] = str(
+        state_file.parent / "rollback-images-wrong-proxy.tsv"
+    )
+    wrong_proxy = subprocess.run(
+        ["bash", str(release / "deploy" / "remote-load-and-up.sh")],
+        cwd=release,
+        env=wrong_proxy_environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert wrong_proxy.returncode != 0
+    assert "differs from the frozen runtime proxy IPv4 address" in wrong_proxy.stderr
+
+
+def test_common_compose_wrapper_reloads_protected_runtime_network_state(
+    tmp_path: Path,
+) -> None:
+    cloud_root = _cloud_root()
+    managed_root = tmp_path / "managed"
+    release = managed_root / "release-common-network"
+    deploy = release / "deploy"
+    state_root = managed_root / ".release-state"
+    state_dir = state_root / release.name
+    fake_bin = tmp_path / "bin"
+    for directory in (deploy, state_root, state_dir, fake_bin):
+        directory.mkdir(parents=True, exist_ok=True)
+    state_root.chmod(0o700)
+    state_dir.chmod(0o700)
+    shutil.copy2(cloud_root / "deploy" / "common.sh", deploy / "common.sh")
+    shutil.copy2(cloud_root / "deploy" / "nginx.prod.conf", deploy / "nginx.prod.conf")
+    shutil.copy2(
+        cloud_root / "docker-compose.runtime.yml",
+        release / "docker-compose.runtime.yml",
+    )
+
+    state_file = state_dir / "runtime-network.env"
+    state_file.write_text(
+        "NPCINK_CLOUD_RUNTIME_NETWORK_PROJECT=npcink-ai-cloud\n"
+        "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET=10.255.1.0/24\n"
+        "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY=10.255.1.1\n"
+        "NPCINK_CLOUD_RUNTIME_PROXY_IPV4=10.255.1.27\n",
+        encoding="utf-8",
+    )
+    state_file.chmod(0o600)
+    nginx_source = (deploy / "nginx.prod.conf").read_text(encoding="utf-8")
+    nginx_runtime = state_dir / "nginx.runtime.conf"
+    nginx_runtime.write_text(
+        nginx_source.replace(
+            "    set_real_ip_from 172.28.0.1;",
+            "    set_real_ip_from 10.255.1.1;",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    nginx_runtime.chmod(0o600)
+    env_file = state_dir / "env.deploy"
+    env_file.write_text(
+        "NPCINK_CLOUD_COMPOSE_PROJECT_NAME=npcink-ai-cloud\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+
+    capture = tmp_path / "compose-runtime.env"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+[ "${1:-}" = "compose" ]
+{
+    printf 'subnet=%s\n' "${NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET-unset}"
+    printf 'gateway=%s\n' "${NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY-unset}"
+    printf 'proxy=%s\n' "${NPCINK_CLOUD_RUNTIME_PROXY_IPV4-unset}"
+    printf 'nginx=%s\n' "${NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH-unset}"
+} >"${CAPTURE_FILE}"
+printf '{"services":{"release-one-off":{"image":"test"}}}\n'
+""",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    command = [
+        "bash",
+        "-c",
+        '. "$1"; npcink_ai_cloud_compose "$2" config --format json release-one-off',
+        "_",
+        str(deploy / "common.sh"),
+        str(release),
+    ]
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+            "CAPTURE_FILE": str(capture),
+            "NPCINK_CLOUD_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_BACKEND_ENV_FILE": str(env_file),
+            "NPCINK_CLOUD_COMPOSE_FILE": str(release / "docker-compose.runtime.yml"),
+            "NPCINK_CLOUD_COMPOSE_PROJECT_NAME": "npcink-ai-cloud",
+            "NPCINK_CLOUD_RELEASE_TOOL_PYTHON": sys.executable,
+            "NPCINK_CLOUD_RUNTIME_NETWORK_SUBNET": "192.0.2.0/24",
+            "NPCINK_CLOUD_RUNTIME_NETWORK_GATEWAY": "192.0.2.1",
+            "NPCINK_CLOUD_RUNTIME_PROXY_IPV4": "192.0.2.10",
+            "NPCINK_CLOUD_RUNTIME_NGINX_CONFIG_PATH": "/ambient/nginx.conf",
+        }
+    )
+    completed = subprocess.run(
+        command,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, f"{completed.stdout}\n{completed.stderr}"
+    assert capture.read_text(encoding="utf-8").splitlines() == [
+        "subnet=10.255.1.0/24",
+        "gateway=10.255.1.1",
+        "proxy=10.255.1.27",
+        f"nginx={nginx_runtime}",
+    ]
+
+    nginx_runtime.write_text(nginx_source, encoding="utf-8")
+    drifted = subprocess.run(
+        command,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert drifted.returncode != 0
+    assert "differs from the bundled gateway contract" in drifted.stderr
+
+    nginx_runtime.write_text(
+        nginx_source.replace(
+            "    set_real_ip_from 172.28.0.1;",
+            "    set_real_ip_from 10.255.1.1;",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    state_file.unlink()
+    missing = subprocess.run(
+        command,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert missing.returncode != 0
+    assert "runtime-network.env" in missing.stderr
+
+    (release / "docker-compose.runtime.yml").write_text(
+        "services: {}\n",
+        encoding="utf-8",
+    )
+    legacy = subprocess.run(
+        command,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert legacy.returncode == 0, f"{legacy.stdout}\n{legacy.stderr}"
+    assert capture.read_text(encoding="utf-8").splitlines() == [
+        "subnet=unset",
+        "gateway=unset",
+        "proxy=unset",
+        "nginx=unset",
+    ]
+
+
 def test_runtime_network_contract_is_locked_before_image_or_container_mutation() -> None:
     loader = (_cloud_root() / "deploy" / "remote-load-and-up.sh").read_text()
+    common = (_cloud_root() / "deploy" / "common.sh").read_text()
 
     assert "printf '%s/runtime-network.env'" in loader
     assert '"$(npcink_ai_cloud_mode_of "${state_file}"' in loader
@@ -676,6 +960,12 @@ def test_runtime_network_contract_is_locked_before_image_or_container_mutation()
     )
     immutable_start = loader.index('docker start "${container_ids_to_start[@]}"')
     assert candidate_create < network_reproof < immutable_start
+    assert "npcink_ai_cloud_prepare_runtime_compose_environment() {" in common
+    assert "Parameterized runtime Compose interpolation structure" in common
+    assert "Frozen runtime NGINX config differs from the bundled gateway contract" in common
+    assert common.index("npcink_ai_cloud_prepare_runtime_compose_environment \\") < common.index(
+        "docker compose --env-file"
+    )
 
 
 def test_formal_runtime_requires_the_external_tls_edge_contract() -> None:
