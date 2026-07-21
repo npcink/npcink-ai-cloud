@@ -470,3 +470,25 @@ resolution; it does not rewrite or upgrade the historical P5-B7/P5-B8 evidence.
   image set must be rebuilt for `linux/amd64`, scanned, manifested, and replayed
   twice from that merged revision before P1-E05/P1-E06 or production promotion
   can use it.
+
+## Final Refactor Resolution — 2026-07-22
+
+The WordPress-first P0-P5 engineering refactor is complete. The exact
+controlled-production release completed P1-E05 title execution, idempotent
+replay and no-WordPress-write proof, plus P1-E06 inventory, independent backup
+and restore, dual-domain encryption cutover, activation and health evidence.
+The current WordPress text/media paths, latest implementation `master`, exact
+local bundle replay, security/dependency gates and clean six-repository matrix
+also passed.
+
+The current requirement-to-evidence table and exact revision separation are in
+[Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
+It distinguishes the deployed controlled-production release from later
+engineering `master` and does not authorize deploying the latter.
+
+GA remains a separate decision. Exactly three allowlisted Python 3.14.6 High
+findings remain under a controlled-production-only exception through
+`2026-08-05`; real-user value is not yet proved. The next stage is therefore
+CVE resolution plus bounded WordPress observation and a deliberate GA gate,
+not another structural refactor. Typecho, Z-BlogPHP, Ghost and additional media
+types remain future validation work.

@@ -1,7 +1,9 @@
 # Production WordPress AI Connector Smoke Runbook v1
 
 Status: active.
-Updated: 2026-07-17.
+Updated: 2026-07-22.
+
+Historical phase status retained from the original 2026-07-17 runbook:
 
 P1-E05 status: operator-only pending. This runbook and its local builder tests
 are preparation, not evidence that the production title smoke passed.
@@ -9,6 +11,16 @@ are preparation, not evidence that the production title smoke passed.
 P1-E06 status: operator-only pending. The pre-cutover inventory, backup, and
 restore rehearsal are separate operator evidence and are not produced by this
 smoke.
+
+Current evidence overlay — 2026-07-22: P1-E05 and P1-E06 are complete for the
+exact controlled-production release recorded in
+[Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md).
+The P1-E05 record includes production title execution, provider/run evidence,
+suggestion-only posture, idempotent replay, unchanged provider-call count, and
+no WordPress write. The separate P1-E06 operator record includes inventory,
+off-host backup, independent restore rehearsal, dual-domain cutover, activation
+and public-health receipts. Neither historical evidence set automatically
+completes a future release.
 
 ## Purpose
 
@@ -231,6 +243,8 @@ The report must retain the returned run/provider evidence without secrets. A
 real P1-E05 record must additionally attach operator-reviewed idempotency
 evidence; one successful builder or execute test does not prove replay
 behavior. Do not mark P1-E05 complete from local pytest output.
+
+Do not mark a future release complete by reusing the 2026-07-22 receipt.
 
 ## Local Test Gate
 
