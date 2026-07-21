@@ -161,6 +161,7 @@ require_file "deploy/RELEASE_CHECKLIST.md"
 require_file "deploy/OPS_PLAYBOOK.md"
 require_file "docs/refactor-master-plan-v1.md"
 require_file "docs/p5-b8-final-engineering-closeout-2026-07-19.md"
+require_file "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md"
 require_file "deploy/deploy-to-ssh-host.sh"
 require_file "deploy/runtime-data-encryption-cutover.sh"
 require_file "deploy/certificate-renewal-readiness.sh"
@@ -175,6 +176,7 @@ require_file "docker-compose.prod.yml"
 require_file "docker-compose.p5-b4-runtime-proof.yml"
 require_file "docker-compose.runtime.yml"
 require_file "scripts/cloud-deploy-bundle-smoke-flow.sh"
+require_file "scripts/production-image-supply.py"
 require_file "scripts/dev-compose.sh"
 require_file "scripts/dev-frontend-recover.sh"
 require_file "package.json"
@@ -196,6 +198,72 @@ require_file "site/terms/zh/data-retention.html"
 require_canonical_dependabot_config
 require_executable "deploy/runtime-data-encryption-cutover.sh"
 require_executable "deploy/certificate-renewal-readiness.sh"
+
+require_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'accepted_by_operator'
+require_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'controlled_production_validation_only'
+require_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'GA is not authorized'
+require_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'deployment, image-scan, and P1-E06 tooling do not consume this acceptance'
+for marker in \
+	'"decision_document": "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md"' \
+	'"source_revision": "<40-lowercase-hex>"' \
+	'"source_tree": "<40-lowercase-hex>"' \
+	'"bundle_sha256": "<64-lowercase-hex>"' \
+	'"scan_index_sha256": "<64-lowercase-hex>"' \
+	'"api_scan_receipt_sha256": "<64-lowercase-hex>"' \
+	'"allowlist_sha256": "<64-lowercase-hex>"' \
+	'"scan_index_status": "passed"' \
+	'"api_scan_status": "passed"' \
+	'"image_platform": "linux/amd64"' \
+	'"api_image_reference": "npcink-ai-cloud-api:prod"' \
+	'"blocking_finding_count": 3' \
+	'"allowlisted_blocking_finding_count": 3' \
+	'"unallowlisted_blocking_finding_count": 0' \
+	'"allowlisted_findings"' \
+	'"vulnerability_id": "CVE-2026-11940"' \
+	'"vulnerability_id": "CVE-2026-11972"' \
+	'"vulnerability_id": "CVE-2026-15308"' \
+	'"package_version": "3.14.6"' \
+	'"severity": "high"' \
+	'"fix_state": "unknown"' \
+	'"fix_state": "fixed"' \
+	'"cisa_ssvc_exploitation"' \
+	'"cisa_ssvc_checked_at_utc": "<RFC3339-UTC>"' \
+	'"exception_expires_on": "2026-08-05"' \
+	'"ga_authorized": false' \
+	'"authorized_by": "Muze"' \
+	'"authorized_at_utc": "<RFC3339-UTC>"' \
+	'outside Git, the deploy bundle, and every release tree' \
+	'owner-only mode-`0600` file' \
+	'record its SHA-256 separately' \
+	'cannot contain a self-digest'; do
+	require_marker \
+		"docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+		"${marker}"
+done
+reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'"receipt_sha256"'
+reject_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
+	'"acceptance_sha256"'
+require_marker "deploy/image-lock/cve-allowlist.json" \
+	'operator-authorized controlled production validation only'
+require_marker "deploy/image-lock/cve-allowlist.json" \
+	'no GA, customer rollout, or general production authorization'
+require_marker "deploy/image-lock/cve-allowlist.json" \
+	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker "deploy/OPS_PLAYBOOK.md" \
+	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker "deploy/OPS_PLAYBOOK.md" \
+	'root-owned mode-`0400` custom-format backup and checksum'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker "deploy/RELEASE_CHECKLIST.md" \
+	'root-owned non-symlink mode-`0400` backup and checksum'
 
 if git -C "${ROOT_DIR}" ls-files | grep -Eq '(^|/)\.env\.deploy$'; then
 	echo "[fail] Release payload source must not track .env.deploy" >&2
@@ -540,6 +608,10 @@ require_marker "deploy/runtime-data-encryption-cutover.sh" 'NPCINK_CLOUD_LOAD_MO
 require_marker "deploy/runtime-data-encryption-cutover.sh" 'p1_e06_off_host_backup_handoff.v1'
 require_marker "deploy/runtime-data-encryption-cutover.sh" '[p1-e06:handoff] marker=%s receipt=%s'
 require_marker "deploy/runtime-data-encryption-cutover.sh" 'p1_e06_independent_pg16_restore.v1'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'chmod 0400 "${BACKUP_PATH}"'
+require_marker "deploy/runtime-data-encryption-cutover.sh" 'chmod 0400 "${BACKUP_PATH}.sha256"'
+reject_marker "deploy/runtime-data-encryption-cutover.sh" 'chmod 0600 "${BACKUP_PATH}"'
+reject_marker "deploy/runtime-data-encryption-cutover.sh" 'chmod 0600 "${BACKUP_PATH}.sha256"'
 require_marker "deploy/runtime-data-encryption-cutover.sh" '-e NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET'
 require_marker "deploy/runtime-data-encryption-cutover.sh" '-e NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID'
 require_marker "deploy/runtime-data-encryption-cutover.sh" '-e NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET'
@@ -599,6 +671,9 @@ require_marker "deploy/deploy-to-ssh-host.sh" 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEI
 require_marker "deploy/deploy-to-ssh-host.sh" 'Full deployment cannot disable the P1-E06 activation receipt gate'
 require_marker "deploy/deploy-to-ssh-host.sh" 'Ordinary production deployment cannot migrate revision 0058'
 require_marker "deploy/deploy-to-ssh-host.sh" 'p1_e06_global_activation.v1'
+reject_marker "deploy/deploy-to-ssh-host.sh" 'npcink.controlled_production_cve_risk_acceptance.v1'
+reject_marker "deploy/runtime-data-encryption-cutover.sh" 'npcink.controlled_production_cve_risk_acceptance.v1'
+reject_marker "scripts/production-image-supply.py" 'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/deploy-to-ssh-host.sh" 'a migration-graph descendant shipped by this release'
 require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT: "1"'
 require_marker "deploy/workspace-target.env.sh" 'NPCINK_CLOUD_REQUIRE_P1_E06_RECEIPT="1"'

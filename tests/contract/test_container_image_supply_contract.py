@@ -487,8 +487,42 @@ def test_scan_policy_is_fail_closed_and_canonical_exceptions_are_exact_and_bound
     ]
     assert {entry["owner"] for entry in entries} == {"Muze"}
     assert {entry["expires_on"] for entry in entries} == {"2026-08-05"}
-    assert all("P5 engineering" in entry["reason"] for entry in entries)
-    assert all("no production or GA authorization" in entry["reason"] for entry in entries)
+    reason_prefix = (
+        "Temporary exception for P5 engineering scan, exact-bundle rehearsal, and "
+        "operator-authorized controlled production validation only; no GA, customer "
+        "rollout, or general production authorization. Controlled production validation "
+        "additionally requires a bundle-external "
+        "`npcink.controlled_production_cve_risk_acceptance.v1` receipt that binds the "
+        "exact commit, tree, bundle, and passed image scan; deployment, image-scan, and "
+        "P1-E06 tooling do not consume this operator acceptance. "
+    )
+    reachability_by_cve = {
+        "CVE-2026-11940": (
+            "Active Cloud runtime has no direct tarfile call path, and bundled archive "
+            "tools manually admit regular files without extractall."
+        ),
+        "CVE-2026-11972": (
+            "Active Cloud runtime has no direct tarfile call path, and bundled archive "
+            "tools do not use the affected tarfile streaming read mode (`r|`)."
+        ),
+        "CVE-2026-15308": (
+            "Active Cloud runtime has no direct html.parser.HTMLParser call path, but "
+            "indirect reachability is not asserted absent."
+        ),
+    }
+    upgrade_and_stop = (
+        "Upgrade to the first supported stable 3.14 build that contains the relevant "
+        "backport (3.14.7 is only the scheduled candidate), repin its exact digest, "
+        "rebuild and rescan, then remove this entry; stop the rehearsal and controlled "
+        "production validation if reachability changes."
+    )
+    for entry in entries:
+        assert entry["reason"] == (
+            reason_prefix
+            + reachability_by_cve[entry["vulnerability_id"]]
+            + " "
+            + upgrade_and_stop
+        )
     required = schema["properties"]["entries"]["items"]["required"]
     assert {"image", "vulnerability_id", "package", "package_version"}.issubset(required)
     assert {"owner", "reason", "expires_on"}.issubset(required)
