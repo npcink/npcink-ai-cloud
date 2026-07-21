@@ -440,6 +440,33 @@ The first raw-ciphertext migration is a one-time P1-E06 dual-domain operation.
 Use the single fail-closed orchestrator; do not reproduce its migration,
 backup, restore, key rewrite, pointer, worker, or cleanup sequence by hand.
 
+#### Controlled production CVE acceptance gate
+
+Before staging or any production-host mutation, follow
+`docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md`.
+After the final Linux/AMD64 bundle has a fresh passed scan and successful
+same-bundle double replay, create the bundle-external
+`npcink.controlled_production_cve_risk_acceptance.v1` file in the trusted
+operator evidence store. It must be owner-only mode `0600`, use
+`status=accepted_by_operator` and `scope=controlled_production_validation_only`,
+and bind the final commit, tree, outer bundle checksum, scan-index checksum,
+API scan-receipt checksum, allowlist checksum, exact three findings, zero
+unallowlisted blocking findings, fresh NVD/CISA check, operator, time, and
+2026-08-05 expiry. Record the acceptance file's SHA-256 separately.
+
+The operator must manually compare those values with the bundle manifest,
+outer checksum, `release/image-scan/scan-index.json`,
+`release/image-scan/api.receipt.json`, and embedded allowlist. Absence,
+malformation, mismatch, expiry, changed threat intelligence, or changed scan
+evidence is a hard stop. GA is not authorized. The deployment, image-scan, and
+P1-E06 tooling do not consume this acceptance, so a successful script exit
+cannot replace this manual pre-mutation gate.
+
+This acceptance is not `p1_e06_off_host_backup_receipt.v1`. The CVE acceptance
+binds an exact release artifact and operator risk decision; the later P1-E06
+receipt is machine-consumed proof that the database backup was copied to and
+verified on independent storage. Both gates are required.
+
 1. From the trusted operator workstation, stage the already-built exact bundle
    with `deploy/deploy-to-ssh-host.sh --stage-only`. Set the production host
    release-tool interpreter explicitly. Stage-only accepts only its mode,
@@ -547,8 +574,9 @@ backup, restore, key rewrite, pointer, worker, or cleanup sequence by hand.
      --confirm-production-cutover I_AUTHORIZE_THE_P1_E06_PRODUCTION_CUTOVER
    ```
 
-6. The orchestrator publishes a fresh mode-`0600` custom-format backup and
-   checksum, atomically writes its mode-`0600` handoff marker under the staged
+6. The orchestrator publishes a fresh
+   root-owned mode-`0400` custom-format backup and checksum, atomically writes
+   its mode-`0600` handoff marker under the staged
    release's external evidence directory, and waits in the same process. It
    does not accept an ordinary same-host copy as off-host evidence. From the
    trusted workstation, pull both backup files with `scp` to independent

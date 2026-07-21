@@ -67,6 +67,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "cloud-deploy-bundle-smoke-flow.sh",
         "dev-compose.sh",
         "dev-frontend-recover.sh",
+        "production-image-supply.py",
         "production-python-extras-smoke.sh",
         "verify-release-bundle-manifest.py",
     ):
@@ -1835,6 +1836,148 @@ def test_release_policy_service_marker_checks_are_pipefail_safe(tmp_path: Path) 
         'service_block="$(compose_service_block "${path}" "${service}")"'
     ) == 2
     assert script_text.count('grep -Fq -- "${marker}" <<<"${service_block}"') == 2
+
+
+def test_controlled_production_cve_risk_acceptance_is_manual_and_bundle_bound() -> None:
+    cloud_root = _cloud_root()
+    contract = "npcink.controlled_production_cve_risk_acceptance.v1"
+    decision = (
+        cloud_root
+        / "docs"
+        / "python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md"
+    ).read_text()
+    ops_playbook = (cloud_root / "deploy" / "OPS_PLAYBOOK.md").read_text()
+    release_checklist = (cloud_root / "deploy" / "RELEASE_CHECKLIST.md").read_text()
+    release_policy = (cloud_root / "scripts" / "check-release-policy.sh").read_text()
+    cutover = (
+        cloud_root / "deploy" / "runtime-data-encryption-cutover.sh"
+    ).read_text()
+
+    for marker in (
+        contract,
+        "accepted_by_operator",
+        "controlled_production_validation_only",
+        "GA is not authorized",
+    ):
+        assert marker in decision
+
+    template_text = decision.split("```json\n", maxsplit=1)[1].split(
+        "\n```", maxsplit=1
+    )[0]
+    template = json.loads(template_text)
+    assert set(template) == {
+        "contract",
+        "status",
+        "scope",
+        "decision_document",
+        "source_revision",
+        "source_tree",
+        "bundle_sha256",
+        "scan_index_sha256",
+        "api_scan_receipt_sha256",
+        "allowlist_sha256",
+        "scan_index_status",
+        "api_scan_status",
+        "image_platform",
+        "api_image_reference",
+        "blocking_finding_count",
+        "allowlisted_blocking_finding_count",
+        "unallowlisted_blocking_finding_count",
+        "allowlisted_findings",
+        "cisa_ssvc_exploitation",
+        "cisa_ssvc_checked_at_utc",
+        "exception_expires_on",
+        "ga_authorized",
+        "authorized_by",
+        "authorized_at_utc",
+    }
+    assert template == {
+        "contract": contract,
+        "status": "accepted_by_operator",
+        "scope": "controlled_production_validation_only",
+        "decision_document": (
+            "docs/python-3-14-6-controlled-production-validation-risk-decision-"
+            "2026-07-21.md"
+        ),
+        "source_revision": "<40-lowercase-hex>",
+        "source_tree": "<40-lowercase-hex>",
+        "bundle_sha256": "<64-lowercase-hex>",
+        "scan_index_sha256": "<64-lowercase-hex>",
+        "api_scan_receipt_sha256": "<64-lowercase-hex>",
+        "allowlist_sha256": "<64-lowercase-hex>",
+        "scan_index_status": "passed",
+        "api_scan_status": "passed",
+        "image_platform": "linux/amd64",
+        "api_image_reference": "npcink-ai-cloud-api:prod",
+        "blocking_finding_count": 3,
+        "allowlisted_blocking_finding_count": 3,
+        "unallowlisted_blocking_finding_count": 0,
+        "allowlisted_findings": [
+            {
+                "vulnerability_id": "CVE-2026-11940",
+                "package": "python",
+                "package_version": "3.14.6",
+                "severity": "high",
+                "fix_state": "unknown",
+            },
+            {
+                "vulnerability_id": "CVE-2026-11972",
+                "package": "python",
+                "package_version": "3.14.6",
+                "severity": "high",
+                "fix_state": "unknown",
+            },
+            {
+                "vulnerability_id": "CVE-2026-15308",
+                "package": "python",
+                "package_version": "3.14.6",
+                "severity": "high",
+                "fix_state": "fixed",
+            },
+        ],
+        "cisa_ssvc_exploitation": {
+            "CVE-2026-11940": "none",
+            "CVE-2026-11972": "none",
+            "CVE-2026-15308": "none",
+        },
+        "cisa_ssvc_checked_at_utc": "<RFC3339-UTC>",
+        "exception_expires_on": "2026-08-05",
+        "ga_authorized": False,
+        "authorized_by": "Muze",
+        "authorized_at_utc": "<RFC3339-UTC>",
+    }
+    assert "receipt_sha256" not in template
+    assert "acceptance_sha256" not in template
+
+    assert contract in ops_playbook
+    assert contract in release_checklist
+    assert contract in release_policy
+    assert "deployment, image-scan, and P1-E06 tooling do not consume this acceptance" in (
+        decision
+    )
+    for marker in (
+        "outside Git, the deploy bundle, and every release tree",
+        "owner-only mode-`0600` file",
+        "record its SHA-256 separately",
+        "cannot contain a self-digest",
+    ):
+        assert marker in decision
+    assert "root-owned mode-`0400` custom-format backup and checksum" in ops_playbook
+    assert (
+        "root-owned non-symlink mode-`0400` backup and checksum"
+        in release_checklist
+    )
+    assert 'chmod 0400 "${BACKUP_PATH}"' in cutover
+    assert 'chmod 0400 "${BACKUP_PATH}.sha256"' in cutover
+    assert 'chmod 0600 "${BACKUP_PATH}"' not in cutover
+    assert 'chmod 0600 "${BACKUP_PATH}.sha256"' not in cutover
+
+    for non_consumer in (
+        cloud_root / "deploy" / "deploy-to-ssh-host.sh",
+        cloud_root / "deploy" / "runtime-data-encryption-cutover.sh",
+        cloud_root / "scripts" / "production-image-supply.py",
+    ):
+        assert contract not in non_consumer.read_text()
 
 
 def test_exact_release_docs_freeze_map_trust_and_cutover_batch_order() -> None:

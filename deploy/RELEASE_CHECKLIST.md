@@ -193,6 +193,22 @@ after remediation; the stable unchecked gate above remains authoritative.
 
 ### 3.4 Production Guardrails
 
+- [ ] the decision in
+  `docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md`
+  is still within its 2026-08-05 expiry; all three NVD/CISA SSVC exploitation
+  values were freshly rechecked as `none`, and GA is not authorized
+- [ ] the owner-only mode-`0600`, bundle-external
+  `npcink.controlled_production_cve_risk_acceptance.v1` file uses
+  `status=accepted_by_operator` and `scope=controlled_production_validation_only`;
+  it is absent from Git, the bundle, and every release tree
+- [ ] the operator manually compared the acceptance with the exact manifest,
+  commit, tree, outer bundle SHA-256, scan-index SHA-256, API scan-receipt
+  SHA-256, allowlist SHA-256, Linux/AMD64 platform, exact three findings, and
+  zero unallowlisted blocking findings, then recorded the acceptance file's
+  own SHA-256 separately
+- [ ] deployment, image-scan, and P1-E06 tooling do not consume the CVE
+  acceptance; absence, mismatch, expiry, changed threat intelligence, or
+  changed scan evidence stopped all production-host mutation
 - [ ] the production SSH user is explicit and the manually dispatched
   `Deploy Production` workflow accepted the exact operator confirmation,
   GitHub `production` Environment approval, and a completed successful
@@ -313,8 +329,9 @@ after remediation; the stable unchecked gate above remains authoritative.
 All items in this section are `Required`.
 
 - [x] target database backup exists and restore path is known
-- [ ] the P1-E06 pre-cutover custom-format backup and checksum are fresh,
-  mode `0600`, and match the source revision `20260710_0058`
+- [ ] the P1-E06 pre-cutover
+  root-owned non-symlink mode-`0400` backup and checksum are fresh and match
+  the source revision `20260710_0058`
 - [ ] the operator pulled the backup and checksum from production with `scp` to
   independent off-host storage and verified SHA-256 on that local copy
 - [ ] the waiting cutover accepted only the atomically uploaded mode-`0600`
