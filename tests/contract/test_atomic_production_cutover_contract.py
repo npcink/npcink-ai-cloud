@@ -48,8 +48,28 @@ if [ "${NPCINK_CLOUD_LOAD_MODE:-}" = "prepare-only" ]; then
         printf 'npcink-ai-cloud-api:prod\t-\t-\n' \
             >"${NPCINK_CLOUD_ROLLBACK_IMAGE_MAP}"
     else
-        printf 'npcink-ai-cloud-api:prod\tnpcink-ai-cloud-rollback:test-1\tsha256:old\n' \
-            >"${NPCINK_CLOUD_ROLLBACK_IMAGE_MAP}"
+        {
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-api:prod' 'npcink-ai-cloud-rollback:test-1' 0
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-frontend:prod' 'npcink-ai-cloud-rollback:test-2' 1
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-external-nginx:prod' \
+                'npcink-ai-cloud-rollback:test-3' 2
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-worker:prod' 'npcink-ai-cloud-rollback:test-4' 3
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-callback-worker:prod' \
+                'npcink-ai-cloud-rollback:test-5' 4
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-ops-worker:prod' \
+                'npcink-ai-cloud-rollback:test-6' 5
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-postgres:prod' 'npcink-ai-cloud-rollback:test-7' 6
+            printf '%s\t%s\tsha256:%064d\n' \
+                'npcink-ai-cloud-external-redis:prod' \
+                'npcink-ai-cloud-rollback:test-8' 7
+        } >"${NPCINK_CLOUD_ROLLBACK_IMAGE_MAP}"
     fi
     chmod 0600 "${NPCINK_CLOUD_ROLLBACK_IMAGE_MAP}"
 fi
@@ -211,6 +231,15 @@ def _fake_docker(path: Path) -> None:
 set -euo pipefail
 FIXTURE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 . "${FIXTURE_ROOT}/fake-docker-config"
+OLD_API_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000000"
+OLD_FRONTEND_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000001"
+OLD_PROXY_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000002"
+OLD_WORKER_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000003"
+OLD_CALLBACK_WORKER_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000004"
+OLD_OPS_WORKER_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000005"
+OLD_POSTGRES_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000006"
+OLD_REDIS_IMAGE_ID="sha256:0000000000000000000000000000000000000000000000000000000000000007"
+WRONG_RECOVERY_IMAGE_ID="sha256:8888888888888888888888888888888888888888888888888888888888888888"
 printf 'docker:%s\n' "$*" >>"${CUTOVER_LOG}"
 if [ "${1:-}" = "compose" ]; then
     env_file=""
@@ -247,15 +276,33 @@ if [ "${1:-}" = "compose" ] && \
 fi
 if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
     inspected_reference="${*: -1}"
-    if [ "${inspected_reference}" = "npcink-ai-cloud-rollback:test-1" ] && \
+    if [[ "${inspected_reference}" = npcink-ai-cloud-rollback:test-* ]] && \
         [ -f "${ROLLBACK_REFERENCE_REMOVED}" ]; then
         exit 1
     fi
     if [ "${ABSENT_ROLLBACK_REFERENCE:-0}" = "1" ]; then
         [ ! -f "${ROLLBACK_REFERENCE_REMOVED}" ] || exit 1
-        printf 'sha256:new\n'
+        printf '%s\n' "${WRONG_RECOVERY_IMAGE_ID}"
     else
-        printf 'sha256:old\n'
+        case "${inspected_reference}" in
+            npcink-ai-cloud-api:prod|npcink-ai-cloud-rollback:test-1)
+                printf '%s\n' "${OLD_API_IMAGE_ID}" ;;
+            npcink-ai-cloud-frontend:prod|npcink-ai-cloud-rollback:test-2)
+                printf '%s\n' "${OLD_FRONTEND_IMAGE_ID}" ;;
+            npcink-ai-cloud-external-nginx:prod|npcink-ai-cloud-rollback:test-3)
+                printf '%s\n' "${OLD_PROXY_IMAGE_ID}" ;;
+            npcink-ai-cloud-worker:prod|npcink-ai-cloud-rollback:test-4)
+                printf '%s\n' "${OLD_WORKER_IMAGE_ID}" ;;
+            npcink-ai-cloud-callback-worker:prod|npcink-ai-cloud-rollback:test-5)
+                printf '%s\n' "${OLD_CALLBACK_WORKER_IMAGE_ID}" ;;
+            npcink-ai-cloud-ops-worker:prod|npcink-ai-cloud-rollback:test-6)
+                printf '%s\n' "${OLD_OPS_WORKER_IMAGE_ID}" ;;
+            npcink-ai-cloud-postgres:prod|npcink-ai-cloud-rollback:test-7)
+                printf '%s\n' "${OLD_POSTGRES_IMAGE_ID}" ;;
+            npcink-ai-cloud-external-redis:prod|npcink-ai-cloud-rollback:test-8)
+                printf '%s\n' "${OLD_REDIS_IMAGE_ID}" ;;
+            *) exit 72 ;;
+        esac
     fi
     exit 0
 fi
@@ -269,35 +316,112 @@ fi
 if [ "${1:-}" = "tag" ]; then
     exit 0
 fi
-if [ "${FAIL_OLD_COMPOSE_UP:-0}" = "1" ] && \
-    [ "${1:-}" = "compose" ] && [[ " $* " = *" up -d "* ]]; then
-    exit 61
+if [ "${1:-}" = "compose" ] && [[ " $* " = *" up -d "* ]] && \
+    [ -f "${CUTOVER_FAILURE_TRIGGERED}" ]; then
+    for service_name in postgres redis proxy frontend api worker callback-worker ops-worker; do
+        : >"${RECOVERY_RUNNING_STATE}/${service_name}"
+    done
+    if [ "${FAIL_OLD_COMPOSE_UP:-0}" = "1" ]; then
+        exit 61
+    fi
 fi
 if [ "${1:-}" = "compose" ] && [[ " $* " = *" config --services "* ]]; then
     printf '%s\n' postgres redis api frontend proxy worker callback-worker ops-worker
 elif [ "${1:-}" = "compose" ] && [[ " $* " = *" config --images "* ]]; then
-    printf '%s\n' npcink-ai-cloud-api:prod
+    printf '%s\n' \
+        npcink-ai-cloud-api:prod \
+        npcink-ai-cloud-frontend:prod \
+        npcink-ai-cloud-external-nginx:prod \
+        npcink-ai-cloud-worker:prod \
+        npcink-ai-cloud-callback-worker:prod \
+        npcink-ai-cloud-ops-worker:prod \
+        npcink-ai-cloud-postgres:prod \
+        npcink-ai-cloud-external-redis:prod
+elif [ "${1:-}" = "compose" ] && [[ " $* " = *" config --format json "* ]]; then
+    cat <<'JSON'
+{
+  "services": {
+    "postgres": {"image": "npcink-ai-cloud-postgres:prod"},
+    "redis": {"image": "npcink-ai-cloud-external-redis:prod"},
+    "proxy": {"image": "npcink-ai-cloud-external-nginx:prod"},
+    "frontend": {"image": "npcink-ai-cloud-frontend:prod"},
+    "api": {"image": "npcink-ai-cloud-api:prod"},
+    "worker": {"image": "npcink-ai-cloud-worker:prod"},
+    "callback-worker": {"image": "npcink-ai-cloud-callback-worker:prod"},
+    "ops-worker": {"image": "npcink-ai-cloud-ops-worker:prod"}
+  }
+}
+JSON
 elif [ "${1:-}" = "compose" ] && [[ " $* " = *" ps -q "* ]]; then
     service_name="${*: -1}"
-    if [ "${MISSING_PREVIOUS_SERVICE:-}" != "${service_name}" ]; then
+    if [ "${MISSING_PREVIOUS_SERVICE:-}" != "${service_name}" ] && \
+        { [ ! -f "${CUTOVER_FAILURE_TRIGGERED}" ] || \
+          [ -f "${RECOVERY_RUNNING_STATE}/${service_name}" ]; }; then
         printf 'previous-%s\n' "${service_name}"
     fi
     if [ "${MULTIPLE_PREVIOUS_CONTAINERS:-0}" = "1" ] && \
         [ -f "${CUTOVER_FAILURE_TRIGGERED}" ]; then
         printf 'previous-extra-%s\n' "${service_name}"
     fi
+elif [ "${1:-}" = "stop" ]; then
+    service_name="${2#previous-}"
+    [ -f "${RECOVERY_RUNNING_STATE}/${service_name}" ] || exit 75
+elif [ "${1:-}" = "rm" ]; then
+    service_name="${*: -1}"
+    service_name="${service_name#previous-}"
+    rm -f "${RECOVERY_RUNNING_STATE}/${service_name}"
 elif [ "${1:-}" = "inspect" ]; then
     if [[ "${3:-}" = *"com.docker.compose.project"* ]]; then
         printf '%s\n' "${ACTUAL_CONTAINER_PROJECT_NAME:-npcink-ai-cloud}"
     elif [ "${3:-}" = "{{.State.Running}}" ]; then
         printf 'true\n'
+    elif [ "${3:-}" = "{{.Config.Image}}" ]; then
+        case "${4:-}" in
+            previous-postgres) printf '%s\n' 'npcink-ai-cloud-postgres:prod' ;;
+            previous-redis) printf '%s\n' 'npcink-ai-cloud-external-redis:prod' ;;
+            previous-proxy) printf '%s\n' 'npcink-ai-cloud-external-nginx:prod' ;;
+            previous-frontend) printf '%s\n' 'npcink-ai-cloud-frontend:prod' ;;
+            previous-api) printf '%s\n' 'npcink-ai-cloud-api:prod' ;;
+            previous-worker) printf '%s\n' 'npcink-ai-cloud-worker:prod' ;;
+            previous-callback-worker) printf '%s\n' 'npcink-ai-cloud-callback-worker:prod' ;;
+            previous-ops-worker) printf '%s\n' 'npcink-ai-cloud-ops-worker:prod' ;;
+            *) exit 73 ;;
+        esac
+    elif [ "${3:-}" = "{{.Image}}" ]; then
+        service_name="${4#previous-}"
+        if [ "${RECOVERY_WRONG_IMAGE_SERVICE:-}" = "${service_name}" ] && \
+            [ -f "${CUTOVER_FAILURE_TRIGGERED}" ]; then
+            printf '%s\n' "${WRONG_RECOVERY_IMAGE_ID}"
+        else
+            case "${service_name}" in
+                postgres) printf '%s\n' "${OLD_POSTGRES_IMAGE_ID}" ;;
+                redis) printf '%s\n' "${OLD_REDIS_IMAGE_ID}" ;;
+                proxy) printf '%s\n' "${OLD_PROXY_IMAGE_ID}" ;;
+                frontend) printf '%s\n' "${OLD_FRONTEND_IMAGE_ID}" ;;
+                api) printf '%s\n' "${OLD_API_IMAGE_ID}" ;;
+                worker) printf '%s\n' "${OLD_WORKER_IMAGE_ID}" ;;
+                callback-worker) printf '%s\n' "${OLD_CALLBACK_WORKER_IMAGE_ID}" ;;
+                ops-worker) printf '%s\n' "${OLD_OPS_WORKER_IMAGE_ID}" ;;
+                *) exit 74 ;;
+            esac
+        fi
     else
         printf 'true false 0\n'
     fi
-elif [ "${1:-}" = "ps" ] && [[ " $* " = *" -q "* ]] && \
-    [ "${RECOVERY_STILL_RUNNING:-0}" = "1" ] && \
-    [ -f "${CUTOVER_FAILURE_TRIGGERED}" ]; then
-    printf 'stuck-container\n'
+elif [ "${1:-}" = "ps" ] && [ -f "${CUTOVER_FAILURE_TRIGGERED}" ]; then
+    service_name=""
+    for arg in "$@"; do
+        if [[ "${arg}" = label=com.docker.compose.service=* ]]; then
+            service_name="${arg#label=com.docker.compose.service=}"
+            break
+        fi
+    done
+    if [ -n "${service_name}" ] && \
+        [ -f "${RECOVERY_RUNNING_STATE}/${service_name}" ]; then
+        printf 'previous-%s\n' "${service_name}"
+    elif [ "${RECOVERY_STILL_RUNNING:-0}" = "1" ]; then
+        printf 'stuck-container\n'
+    fi
 fi
 """
     _write(path, script, executable=True)
@@ -365,6 +489,7 @@ def _run_remote_cutover(
     recovery_still_running: bool = False,
     recovery_docker_ps_fail: bool = False,
     multiple_previous_containers: bool = False,
+    recovery_wrong_image_service: str = "",
     skip_frontend_image: bool = False,
     actual_container_project_name: str = "npcink-ai-cloud",
     missing_previous_service: str = "",
@@ -395,10 +520,12 @@ def _run_remote_cutover(
     log = tmp_path / "cutover.log"
     failure_triggered = tmp_path / "cutover-failure-triggered"
     rollback_reference_removed = tmp_path / "rollback-reference-removed"
+    recovery_running_state = tmp_path / "recovery-running"
 
     incoming.mkdir(parents=True)
     previous.mkdir(parents=True)
     fake_bin.mkdir()
+    recovery_running_state.mkdir()
     (previous / ".env.deploy").write_text(
         f"NPCINK_CLOUD_COMPOSE_PROJECT_NAME={old_project_name}\n"
         f"NPCINK_CLOUD_TEST_RECOVERY_SENTINEL={old_env_sentinel}\n",
@@ -520,6 +647,8 @@ def _run_remote_cutover(
             "RECOVERY_STILL_RUNNING": "1" if recovery_still_running else "0",
             "RECOVERY_DOCKER_PS_FAIL": "1" if recovery_docker_ps_fail else "0",
             "MULTIPLE_PREVIOUS_CONTAINERS": ("1" if multiple_previous_containers else "0"),
+            "RECOVERY_WRONG_IMAGE_SERVICE": recovery_wrong_image_service,
+            "RECOVERY_RUNNING_STATE": str(recovery_running_state),
             "ACTUAL_CONTAINER_PROJECT_NAME": actual_container_project_name,
             "MISSING_PREVIOUS_SERVICE": missing_previous_service,
             "ABSENT_ROLLBACK_REFERENCE": "1" if absent_rollback_reference else "0",
@@ -553,6 +682,8 @@ def _run_remote_cutover(
         "FAIL_ROLLBACK_REMOVE": "1" if fail_rollback_remove else "0",
         "MISSING_PREVIOUS_SERVICE": missing_previous_service,
         "MULTIPLE_PREVIOUS_CONTAINERS": ("1" if multiple_previous_containers else "0"),
+        "RECOVERY_WRONG_IMAGE_SERVICE": recovery_wrong_image_service,
+        "RECOVERY_RUNNING_STATE": str(recovery_running_state),
         "RECOVERY_DOCKER_PS_FAIL": "1" if recovery_docker_ps_fail else "0",
         "RECOVERY_STILL_RUNNING": "1" if recovery_still_running else "0",
         "ROLLBACK_REFERENCE_REMOVED": str(rollback_reference_removed),
@@ -569,6 +700,24 @@ def _run_remote_cutover(
         check=False,
     )
     return completed, remote_dir, log
+
+
+def _assert_recovery_generation_was_refenced(tmp_path: Path, log_path: Path) -> None:
+    services = (
+        "postgres",
+        "redis",
+        "proxy",
+        "frontend",
+        "api",
+        "worker",
+        "callback-worker",
+        "ops-worker",
+    )
+    assert list((tmp_path / "recovery-running").iterdir()) == []
+    log = log_path.read_text(encoding="utf-8")
+    for service in services:
+        assert f"docker:stop --time 10 previous-{service}" in log
+        assert f"docker:rm -f previous-{service}" in log
 
 
 def test_atomic_cutover_command_order_and_one_off_modes() -> None:
@@ -1283,6 +1432,27 @@ def test_pre_migration_failure_restores_previous_release(tmp_path: Path) -> None
     assert " up -d --pull never --no-build --force-recreate --remove-orphans" in log
 
 
+def test_pre_migration_recovery_rejects_wrong_container_image(
+    tmp_path: Path,
+) -> None:
+    completed, remote_dir, log_path = _run_remote_cutover(
+        tmp_path,
+        fail_at="data-only",
+        recovery_wrong_image_service="callback-worker",
+    )
+
+    assert completed.returncode != 0
+    marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
+    assert "outcome=previous_release_restored" not in marker
+    assert "outcome=fail_closed_without_safe_rollback" in marker
+    assert (remote_dir / ".deploy-lock").is_dir()
+    assert "does not use its snapshotted rollback image" in completed.stderr
+    assert "Deployment lock retained for operator recovery" in completed.stderr
+    log = log_path.read_text(encoding="utf-8")
+    assert "postgres redis proxy frontend api worker callback-worker ops-worker" in log
+    _assert_recovery_generation_was_refenced(tmp_path, log_path)
+
+
 def test_previous_release_recovery_uses_only_previous_env_for_compose(
     tmp_path: Path,
 ) -> None:
@@ -1344,11 +1514,13 @@ def test_previous_compose_up_failure_is_not_misclassified_as_restored(
         fail_old_compose_up=True,
     )
 
-    assert completed.returncode == 42
+    assert completed.returncode != 0
     marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
     assert "outcome=fail_closed_without_safe_rollback" in marker
     assert "outcome=previous_release_restored" not in marker
     assert "Previous release Compose start failed" in completed.stderr
+    assert (remote_dir / ".deploy-lock").is_dir()
+    _assert_recovery_generation_was_refenced(tmp_path, _log_path)
 
 
 def test_unproven_fail_closed_recovery_retains_deploy_lock(tmp_path: Path) -> None:
@@ -1404,11 +1576,12 @@ def test_multiple_previous_containers_are_not_accepted_as_restored(
         multiple_previous_containers=True,
     )
 
-    assert completed.returncode == 42
+    assert completed.returncode != 0
     marker = (remote_dir / ".cutover-failed").read_text(encoding="utf-8")
     assert "outcome=fail_closed_without_safe_rollback" in marker
     assert "outcome=previous_release_restored" not in marker
     assert "must have exactly one container" in completed.stderr
+    assert (remote_dir / ".deploy-lock").is_dir()
 
 
 @pytest.mark.parametrize("current_kind", ["broken", "nested"])

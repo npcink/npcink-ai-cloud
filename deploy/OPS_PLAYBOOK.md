@@ -277,6 +277,10 @@ requires an existing managed `current` release and must not bootstrap a new
 host. Before
 image loading it queries PostgreSQL through the frozen previous release;
 revision `20260710_0058` is a hard stop requiring the P1-E06 orchestrator.
+The protected env file remains the complete Compose/backend runtime input.
+Root-owned host helpers import only their explicit reviewed key allowlist;
+unlisted `NPCINK_CLOUD_*`, database, provider, and PostgreSQL values stay in
+the file for Compose and do not become shell controls.
 Formal production dispatch additionally verifies the persistent global
 activation receipt, its complete digest-bound cutover evidence, and that the
 current revision is `0068` or a descendant in the staged Alembic graph. The
@@ -338,7 +342,11 @@ its images, Compose project, external env state, containers, pointer, and public
 health are all proven. Previous Compose runs execute in an isolated process
 environment so new-release variables cannot override the previous env file;
 restored tags must match their recorded old image IDs and formerly absent tags
-must be proven absent again. Once migration begins, any failure is fail-closed: do not
+must be proven absent again. Recovery explicitly recreates `postgres`, `redis`,
+`proxy`, `frontend`, `api`, `worker`, `callback-worker`, and `ops-worker` and
+binds every recovered container's Compose image reference and actual `.Image`
+to the unique old SHA256 recorded in the rollback map. A mismatch stops the
+recovery generation and retains `.deploy-lock`. Once migration begins, any failure is fail-closed: do not
 automatically start the old application against the possibly changed schema.
 Stop public/write services, restore the prior `current` pointer, and write the
 restricted failure marker for operator recovery. If stopped services, pointer,
@@ -592,7 +600,9 @@ Failure recovery has two non-interchangeable boundaries:
   restore the prior application and traffic. If they were switched to target
   image IDs, first restore the recorded PostgreSQL and Redis tags, recreate and
   prove those dependencies healthy with PostgreSQL still at `0058`, and only
-  then restore the prior API, workers, frontend, and proxy. Do not claim that
+  then restore the prior API, workers, frontend, and proxy. Each restored
+  application container must match the previous Runtime Compose reference and
+  rollback-map SHA256; any mismatch re-fences all application services. Do not claim that
   writers remain stopped when this verified pre-migration recovery succeeds.
 - Once production migration starts, do not downgrade and do not restart old
   code against the new or partially changed schema. Restore the whole fresh

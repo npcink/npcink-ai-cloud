@@ -44,9 +44,9 @@ def test_env_loader_assigns_shell_metacharacters_literally(tmp_path: Path) -> No
     env_file.write_text(
         "\n".join(
             (
-                f"NPCINK_CLOUD_LITERAL={command_substitution}",
-                f"NPCINK_CLOUD_BACKTICK={backtick_substitution}",
-                f"NPCINK_CLOUD_QUOTED='{quoted_literal}'",
+                f"NPCINK_CLOUD_PROMPT_TEXT={command_substitution}",
+                f"NPCINK_CLOUD_SITE_URL={backtick_substitution}",
+                f"NPCINK_CLOUD_WP_CRON_USER_AGENT='{quoted_literal}'",
             )
         )
         + "\n",
@@ -59,7 +59,11 @@ def test_env_loader_assigns_shell_metacharacters_literally(tmp_path: Path) -> No
             "NPCINK_CLOUD_ENV_FILE": str(env_file),
         }
     )
-    for key in ("NPCINK_CLOUD_LITERAL", "NPCINK_CLOUD_BACKTICK", "NPCINK_CLOUD_QUOTED"):
+    for key in (
+        "NPCINK_CLOUD_PROMPT_TEXT",
+        "NPCINK_CLOUD_SITE_URL",
+        "NPCINK_CLOUD_WP_CRON_USER_AGENT",
+    ):
         environment.pop(key, None)
     completed = subprocess.run(
         [
@@ -68,8 +72,8 @@ def test_env_loader_assigns_shell_metacharacters_literally(tmp_path: Path) -> No
             (
                 f'. "{ROOT / "deploy/common.sh"}"; '
                 f'npcink_ai_cloud_load_env_file "{tmp_path}"; '
-                "printf '%s\\n' \"${NPCINK_CLOUD_LITERAL}\" "
-                '"${NPCINK_CLOUD_BACKTICK}" "${NPCINK_CLOUD_QUOTED}"'
+                "printf '%s\\n' \"${NPCINK_CLOUD_PROMPT_TEXT}\" "
+                '"${NPCINK_CLOUD_SITE_URL}" "${NPCINK_CLOUD_WP_CRON_USER_AGENT}"'
             ),
         ],
         env=environment,
@@ -85,6 +89,154 @@ def test_env_loader_assigns_shell_metacharacters_literally(tmp_path: Path) -> No
         quoted_literal,
     ]
     assert not execution_marker.exists()
+
+
+def test_env_loader_keeps_unreviewed_runtime_keys_out_of_root_shell(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "container-only.env"
+    env_file.write_text(
+        "NPCINK_CLOUD_FUTURE_HOST_CONTROL=container-runtime-value\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["NPCINK_CLOUD_ENV_FILE"] = str(env_file)
+    environment.pop("NPCINK_CLOUD_FUTURE_HOST_CONTROL", None)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                f'. "{ROOT / "deploy/common.sh"}"; '
+                f'npcink_ai_cloud_load_env_file "{tmp_path}"; '
+                'if [ -n "${NPCINK_CLOUD_FUTURE_HOST_CONTROL+x}" ]; then exit 91; fi'
+            ),
+        ],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_env_loader_keeps_container_env_out_of_shell_but_passes_original_to_compose(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "runtime.env"
+    original = (
+        "NPCINK_CLOUD_BASE_URL=https://cloud.example.test\n"
+        "NPCINK_CLOUD_DATABASE_URL=postgresql+psycopg://runtime-secret\n"
+        "NPCINK_CLOUD_OPENAI_API_KEY=provider-secret\n"
+        "POSTGRES_PASSWORD=postgres-secret\n"
+        "NPCINK_CLOUD_FUTURE_HOST_CONTROL=container-only\n"
+    )
+    env_file.write_text(original, encoding="utf-8")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write(
+        fake_bin / "docker",
+        """#!/usr/bin/env bash
+set -euo pipefail
+for key in \
+    NPCINK_CLOUD_DATABASE_URL \
+    NPCINK_CLOUD_OPENAI_API_KEY \
+    POSTGRES_PASSWORD \
+    NPCINK_CLOUD_FUTURE_HOST_CONTROL; do
+    [ -z "${!key+x}" ] || exit 85
+done
+printf 'backend:%s\n' "${NPCINK_CLOUD_BACKEND_ENV_FILE:-unset}"
+printf 'argv:'
+printf '%s|' "$@"
+printf '\n'
+""",
+        executable=True,
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+    environment["NPCINK_CLOUD_ENV_FILE"] = str(env_file)
+    environment.pop("NPCINK_CLOUD_BACKEND_ENV_FILE", None)
+    for key in (
+        "NPCINK_CLOUD_BASE_URL",
+        "NPCINK_CLOUD_DATABASE_URL",
+        "NPCINK_CLOUD_OPENAI_API_KEY",
+        "POSTGRES_PASSWORD",
+        "NPCINK_CLOUD_FUTURE_HOST_CONTROL",
+    ):
+        environment.pop(key, None)
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                f'. "{ROOT / "deploy/common.sh"}"; '
+                f'npcink_ai_cloud_load_env_file "{tmp_path}"; '
+                '[ "${NPCINK_CLOUD_BASE_URL}" = "https://cloud.example.test" ]; '
+                f'npcink_ai_cloud_compose "{tmp_path}" config'
+            ),
+        ],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert f"backend:{env_file}" in completed.stdout
+    assert f"--env-file|{env_file}|" in completed.stdout
+    assert env_file.read_text(encoding="utf-8") == original
+
+
+def test_shell_import_allowlist_has_no_namespace_wildcard() -> None:
+    source = (ROOT / "deploy/common.sh").read_text(encoding="utf-8")
+    function_body = source.split(
+        "npcink_ai_cloud_env_key_is_shell_importable() {", 1
+    )[1].split("\n}\n\nnpcink_ai_cloud_load_env_file()", 1)[0]
+
+    assert "NPCINK_CLOUD_*|" not in function_body
+    assert "NPCINK_CLOUD_*_RELEASE_IMAGE" not in function_body
+
+
+@pytest.mark.parametrize(
+    "rows",
+    (
+        "",
+        "npcink-ai-cloud-api:prod\t-\t-\n",
+        "npcink-ai-cloud-api:prod\trollback\tsha256:short\n",
+        (
+            "npcink-ai-cloud-api:prod\trollback-1\t"
+            f"sha256:{'a' * 64}\n"
+            "npcink-ai-cloud-api:prod\trollback-2\t"
+            f"sha256:{'a' * 64}\n"
+        ),
+    ),
+)
+def test_rollback_image_lookup_rejects_missing_or_ambiguous_map_rows(
+    tmp_path: Path,
+    rows: str,
+) -> None:
+    rollback_map = tmp_path / "rollback.tsv"
+    rollback_map.write_text(rows, encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                f'. "{ROOT / "deploy/common.sh"}"; '
+                "npcink_ai_cloud_expected_rollback_image_id "
+                f'"{rollback_map}" "npcink-ai-cloud-api:prod"'
+            ),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
 
 
 @pytest.mark.parametrize(

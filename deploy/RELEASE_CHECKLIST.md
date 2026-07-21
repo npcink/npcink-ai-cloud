@@ -276,7 +276,11 @@ after remediation; the stable unchecked gate above remains authoritative.
   evidence retains `.deploy-lock` for manual recovery
 - [ ] previous Compose recovery used an isolated process environment so new env
   values could not override the previous release env; restored/removed image
-  tags were verified against the rollback map
+  tags were verified against the rollback map; the recovered PostgreSQL, Redis,
+  proxy, frontend, API, and three worker containers each matched the previous
+  Compose reference and rollback-map SHA256
+- [ ] the protected runtime env remained available to Compose/backend by file,
+  while the root host shell imported only the reviewed exact key allowlist
 - [ ] successful deployment retained the per-release external env state and
   removed the temporary rollback-image map and private rollback tags
 - [ ] post-activation incoming/tag/map/marker/unlock failure returned nonzero,

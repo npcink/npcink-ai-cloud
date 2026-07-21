@@ -279,6 +279,92 @@ npcink_ai_cloud_env_key_is_runtime_config() {
 	return 0
 }
 
+npcink_ai_cloud_env_key_is_shell_importable() {
+	local key="$1"
+	# Keep the protected dotenv file as the complete container-runtime input,
+	# but import only the values that an existing host helper reads directly.
+	# New NPCINK_CLOUD_* settings therefore remain container-only until this
+	# allowlist is intentionally reviewed, instead of silently becoming root
+	# shell controls through the broad runtime namespace.
+	case "${key}" in
+		COMPOSE_PROJECT_NAME|\
+		NPCINK_CLOUD_ABILITY_NAME|\
+		NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN|\
+		NPCINK_CLOUD_ALPHA_KEY_ID|\
+		NPCINK_CLOUD_ALPHA_SITE_ID|\
+		NPCINK_CLOUD_ALPHA_SITE_SECRET|\
+		NPCINK_CLOUD_BASE_URL|\
+		NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST|\
+		NPCINK_CLOUD_CERTIFICATE_RENEWAL_CERT_PATH|\
+		NPCINK_CLOUD_CERTIFICATE_RENEWAL_EVIDENCE_PATH|\
+		NPCINK_CLOUD_CERTIFICATE_RENEWAL_HOOK_PATH|\
+		NPCINK_CLOUD_CERTIFICATE_RENEWAL_TIMER|\
+		NPCINK_CLOUD_CHANNEL|\
+		NPCINK_CLOUD_COMPOSE_PROJECT_NAME|\
+		NPCINK_CLOUD_DEV_PORTAL_SITE_ID|\
+		NPCINK_CLOUD_DOMAIN_NAME|\
+		NPCINK_CLOUD_EXECUTION_KIND|\
+		NPCINK_CLOUD_EXPECTED_INSTANCE_ID|\
+		NPCINK_CLOUD_EXPECTED_MODEL_ID|\
+		NPCINK_CLOUD_EXPECTED_PROVIDER_ID|\
+		NPCINK_CLOUD_EXTERNAL_EDGE_READY|\
+		NPCINK_CLOUD_HEALTH_FORWARDED_PROTO|\
+		NPCINK_CLOUD_HEALTH_HOST_HEADER|\
+		NPCINK_CLOUD_IDEMPOTENCY_SUFFIX|\
+		NPCINK_CLOUD_INTERNAL_AUTH_TOKEN|\
+		NPCINK_CLOUD_KEY_ID|\
+		NPCINK_CLOUD_LOCAL_ALPHA_SMOKE_EVIDENCE_DIR|\
+		NPCINK_CLOUD_LOCAL_ALPHA_SMOKE_MEMBER_EMAIL|\
+		NPCINK_CLOUD_LOCAL_ALPHA_SMOKE_SUFFIX|\
+		NPCINK_CLOUD_MEMBER_EMAIL|\
+		NPCINK_CLOUD_MEMBER_REF|\
+		NPCINK_CLOUD_OPERATIONAL_READY_INTERNAL|\
+		NPCINK_CLOUD_OPERATIONAL_READY_WAIT_ATTEMPTS|\
+		NPCINK_CLOUD_OPERATIONAL_READY_WAIT_DELAY_SECONDS|\
+		NPCINK_CLOUD_PORT|\
+		NPCINK_CLOUD_PORTAL_COOKIE_JAR|\
+		NPCINK_CLOUD_PORTAL_LOGIN_CODE|\
+		NPCINK_CLOUD_PRODUCTION_PERF_ANALYZE|\
+		NPCINK_CLOUD_PRODUCTION_PERF_REQUIRE_PLAN_INDEX_USE|\
+		NPCINK_CLOUD_PRODUCTION_PERF_SKIP_HTTP|\
+		NPCINK_CLOUD_PROFILE_ID|\
+		NPCINK_CLOUD_PROMPT_TEXT|\
+		NPCINK_CLOUD_READY_ORIGIN|\
+		NPCINK_CLOUD_RELEASE_KEY_ID|\
+		NPCINK_CLOUD_RELEASE_KEY_SECRET|\
+		NPCINK_CLOUD_RELEASE_MEMBER_EMAIL|\
+		NPCINK_CLOUD_RELEASE_SITE_ID|\
+		NPCINK_CLOUD_ROTATION_CHECK_EMAIL|\
+		NPCINK_CLOUD_SCOPES|\
+		NPCINK_CLOUD_SITE_ID|\
+		NPCINK_CLOUD_SITE_KEY_SECRET|\
+		NPCINK_CLOUD_SITE_URL|\
+		NPCINK_CLOUD_SKIP_TERMS_CHECKS|\
+		NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST|\
+		NPCINK_CLOUD_WORDPRESS_ADMIN_PASSWORD|\
+		NPCINK_CLOUD_WORDPRESS_ADMIN_USER|\
+		NPCINK_CLOUD_WORKER_CUTOFF|\
+		NPCINK_CLOUD_WORKER_READINESS_ATTEMPTS|\
+		NPCINK_CLOUD_WORKER_READINESS_SLEEP_SECONDS|\
+		NPCINK_CLOUD_WORKER_STABILITY_SECONDS|\
+		NPCINK_CLOUD_WP_CRON_COMMENT_TAG|\
+		NPCINK_CLOUD_WP_CRON_CONNECT_TIMEOUT_SECONDS|\
+		NPCINK_CLOUD_WP_CRON_CURL_BIN|\
+		NPCINK_CLOUD_WP_CRON_CURL_TIMEOUT_SECONDS|\
+		NPCINK_CLOUD_WP_CRON_DOING_WP_CRON|\
+		NPCINK_CLOUD_WP_CRON_FLOCK_BIN|\
+		NPCINK_CLOUD_WP_CRON_LOCK_FILE|\
+		NPCINK_CLOUD_WP_CRON_SCHEDULE|\
+		NPCINK_CLOUD_WP_CRON_SITE_BASE_URL|\
+		NPCINK_CLOUD_WP_CRON_USER_AGENT)
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
 npcink_ai_cloud_load_env_file() {
 	local root_dir="$1"
 	local env_file
@@ -312,9 +398,6 @@ npcink_ai_cloud_load_env_file() {
 			echo "[fail] Dotenv key is not an allowed runtime setting: ${key}" >&2
 			return 1
 		fi
-		if [ -n "${!key+x}" ]; then
-			continue
-		fi
 		value="${line#*=}"
 		if [[ "${value}" == \'*\' ]] || [[ "${value}" == \"*\" ]]; then
 			value="${value:1:${#value}-2}"
@@ -323,12 +406,99 @@ npcink_ai_cloud_load_env_file() {
 			echo "[fail] Unbalanced dotenv quoting in ${env_file}." >&2
 			return 1
 		fi
+		if ! npcink_ai_cloud_env_key_is_shell_importable "${key}"; then
+			continue
+		fi
+		if [ -n "${!key+x}" ]; then
+			continue
+		fi
 		# Assign the parsed bytes literally. Never eval dotenv content: production
 		# values may legitimately contain shell metacharacters, and none may turn
 		# into code when a root-owned release helper loads the file.
 		printf -v "${key}" '%s' "${value}" || return 1
 		export "${key}"
 	done < "${env_file}"
+}
+
+npcink_ai_cloud_expected_rollback_image_id() {
+	local rollback_image_map="$1"
+	local target_reference="$2"
+	local mapped_reference=""
+	local _rollback_reference=""
+	local mapped_image_id=""
+	local expected_image_id=""
+	local matches=0
+
+	[ -f "${rollback_image_map}" ] || return 1
+	[ ! -L "${rollback_image_map}" ] || return 1
+	while IFS=$'\t' read -r mapped_reference _rollback_reference mapped_image_id; do
+		[ "${mapped_reference}" = "${target_reference}" ] || continue
+		matches=$((matches + 1))
+		expected_image_id="${mapped_image_id}"
+	done < "${rollback_image_map}"
+	[ "${matches}" -eq 1 ] || return 1
+	[[ "${expected_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+	printf '%s' "${expected_image_id}"
+}
+
+npcink_ai_cloud_compose_service_image_reference() {
+	local host_python="$1"
+	local service_name="$2"
+	"${host_python}" -c '
+import json
+import sys
+
+service_name = sys.argv[1]
+payload = json.load(sys.stdin)
+services = payload.get("services")
+if not isinstance(services, dict):
+    raise SystemExit(1)
+service = services.get(service_name)
+if not isinstance(service, dict):
+    raise SystemExit(1)
+image = service.get("image")
+if not isinstance(image, str) or not image.strip() or image != image.strip():
+    raise SystemExit(1)
+print(image)
+' "${service_name}"
+}
+
+npcink_ai_cloud_assert_container_matches_rollback_image() {
+	local rollback_image_map="$1"
+	local container_id="$2"
+	local service_name="$3"
+	local expected_reference="$4"
+	local configured_reference=""
+	local actual_image_id=""
+	local expected_image_id=""
+
+	configured_reference="$(
+		docker inspect --format '{{.Config.Image}}' "${container_id}" 2>/dev/null
+	)" || {
+		echo "[fail] Could not inspect recovered ${service_name} image reference." >&2
+		return 1
+	}
+	if [ "${configured_reference}" != "${expected_reference}" ]; then
+		echo "[fail] Recovered ${service_name} container image reference differs from previous Compose." >&2
+		return 1
+	fi
+	actual_image_id="$(
+		docker inspect --format '{{.Image}}' "${container_id}" 2>/dev/null
+	)" || {
+		echo "[fail] Could not inspect recovered ${service_name} image ID." >&2
+		return 1
+	}
+	expected_image_id="$(
+		npcink_ai_cloud_expected_rollback_image_id \
+			"${rollback_image_map}" "${expected_reference}"
+	)" || {
+		echo "[fail] Rollback image map has no unique valid prior image for recovered ${service_name}: ${expected_reference}" >&2
+		return 1
+	}
+	if [ "${actual_image_id}" != "${expected_image_id}" ]; then
+		echo "[fail] Recovered ${service_name} container does not use its snapshotted rollback image." >&2
+		return 1
+	fi
 }
 
 npcink_ai_cloud_compose() {

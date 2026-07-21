@@ -921,26 +921,90 @@ discard_rollback_image_tags_and_map() {
 }
 
 assert_previous_services_running() {
+	local previous_compose_config="$1"
 	local service=""
 	local ids=""
 	local count=0
 	local state=""
+	local expected_reference=""
 	for service in "${PREVIOUS_RUNTIME_SERVICES[@]}"; do
+		expected_reference="$(
+			npcink_ai_cloud_compose_service_image_reference \
+				"${HOST_PYTHON}" "${service}" <<<"${previous_compose_config}"
+		)" || return 1
 		ids="$(compose_previous ps -q "${service}" 2>/dev/null)" || return 1
 		count="$(printf '%s\n' "${ids}" | awk 'NF {n += 1} END {print n + 0}')"
 		[ "${count}" -eq 1 ] || return 1
 		state="$(docker inspect --format '{{.State.Running}} {{.State.Restarting}} {{.RestartCount}}' "${ids}" 2>/dev/null)"
 		[ "${state}" = "true false 0" ] || return 1
+		npcink_ai_cloud_assert_container_matches_rollback_image \
+			"${ROLLBACK_IMAGE_MAP}" "${ids}" "${service}" \
+			"${expected_reference}" || return 1
 	done
 }
 
+fence_previous_runtime_recovery() {
+	local service=""
+	local container_id=""
+	local container_ids=""
+	local failed=0
+
+	compose_previous stop "${PREVIOUS_RUNTIME_SERVICES[@]}" >/dev/null 2>&1 || failed=1
+	for service in "${PREVIOUS_RUNTIME_SERVICES[@]}"; do
+		container_ids="$(docker ps -q \
+			--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
+			--filter "label=com.docker.compose.service=${service}" 2>/dev/null)" || {
+			failed=1
+			continue
+		}
+		while IFS= read -r container_id; do
+			[ -n "${container_id}" ] || continue
+			docker stop --time 10 "${container_id}" >/dev/null 2>&1 || failed=1
+		done <<<"${container_ids}"
+	done
+	for service in "${PREVIOUS_RUNTIME_SERVICES[@]}"; do
+		container_ids="$(docker ps -q \
+			--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
+			--filter "label=com.docker.compose.service=${service}" 2>/dev/null)" || {
+			failed=1
+			continue
+		}
+		[ -z "${container_ids}" ] || failed=1
+	done
+	[ "${failed}" -eq 0 ]
+}
+
 restart_previous_services_without_caddy() {
+	local previous_compose_config=""
+	local service=""
+	local expected_reference=""
+	local restart_failed=0
+
 	# Data dependencies must already have been proved healthy at revision 0058.
 	# Recreate only the stopped public/writer generation, never retired Caddy.
+	previous_compose_config="$(compose_previous config --format json 2>/dev/null)" || return 1
+	for service in "${PREVIOUS_RUNTIME_SERVICES[@]}"; do
+		expected_reference="$(
+			npcink_ai_cloud_compose_service_image_reference \
+				"${HOST_PYTHON}" "${service}" <<<"${previous_compose_config}"
+		)" || return 1
+		npcink_ai_cloud_expected_rollback_image_id \
+			"${ROLLBACK_IMAGE_MAP}" "${expected_reference}" >/dev/null || return 1
+	done
 	compose_previous up -d --pull never --no-build --no-deps --force-recreate \
-		api worker callback-worker ops-worker frontend proxy >/dev/null 2>&1 || return 1
-	assert_previous_services_running || return 1
-	loopback_edge_health "${CURRENT_BASE_URL}" "${CURRENT_DOMAIN_NAME}" || return 1
+		api worker callback-worker ops-worker frontend proxy >/dev/null 2>&1 || restart_failed=1
+	if [ "${restart_failed}" -eq 0 ] && \
+		! assert_previous_services_running "${previous_compose_config}"; then
+		restart_failed=1
+	fi
+	if [ "${restart_failed}" -eq 0 ] && \
+		! loopback_edge_health "${CURRENT_BASE_URL}" "${CURRENT_DOMAIN_NAME}"; then
+		restart_failed=1
+	fi
+	if [ "${restart_failed}" -ne 0 ]; then
+		fence_previous_runtime_recovery || true
+		return 1
+	fi
 }
 
 freeze_original_data_services() {

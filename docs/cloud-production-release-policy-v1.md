@@ -336,7 +336,13 @@ After active-release validation, the script durably publishes
 Before production migration begins, pre-migration recovery may restore the old
 application. If data services were switched, it first restores their recorded
 tags, recreates PostgreSQL/Redis, and proves health plus `0058`; otherwise it
-proves the existing dependencies before restoring the old application. Once
+proves the existing dependencies before restoring the old application. Every
+recreated service must bind its previous Compose image reference to exactly one
+valid rollback-map SHA256 and prove the running container `.Image` matches it;
+an application mismatch is re-fenced and an incomplete recovery retains the
+deployment lock. The complete protected runtime env continues to reach Compose
+and backend containers by file, while only explicitly reviewed keys may be
+imported into the root host shell. Once
 production migration begins and before activation commits, do not downgrade or
 restart old code. Restore the matched whole `0058` database backup, old
 application revision, old external env, and both old roots together. Failure of

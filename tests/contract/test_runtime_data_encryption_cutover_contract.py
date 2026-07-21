@@ -93,6 +93,10 @@ PRODUCTION_SERVICE_IDENTITY_SHA256 = hashlib.sha256(
 ).hexdigest()
 OLD_API_IMAGE_ID = "sha256:" + "a" * 64
 NEW_API_IMAGE_ID = "sha256:" + "b" * 64
+OLD_FRONTEND_IMAGE_ID = "sha256:" + "1" * 64
+OLD_WORKER_IMAGE_ID = "sha256:" + "2" * 64
+OLD_PROXY_IMAGE_ID = "sha256:" + "3" * 64
+WRONG_RUNTIME_IMAGE_ID = "sha256:" + "9" * 64
 OLD_POSTGRES_IMAGE_ID = "sha256:" + "c" * 64
 NEW_POSTGRES_IMAGE_ID = "sha256:" + "d" * 64
 OLD_REDIS_IMAGE_ID = "sha256:" + "e" * 64
@@ -361,6 +365,18 @@ systemctl reload nginx
                         'npcink-ai-cloud-api:prod' \
                         'npcink-ai-cloud-api:rollback-p1e06' \
                         '{OLD_API_IMAGE_ID}'
+                    printf '%s\t%s\t%s\n' \
+                        'npcink-ai-cloud-frontend:prod' \
+                        'npcink-ai-cloud-frontend:rollback-p1e06' \
+                        '{OLD_FRONTEND_IMAGE_ID}'
+                    printf '%s\t%s\t%s\n' \
+                        'npcink-ai-cloud-worker:prod' \
+                        'npcink-ai-cloud-worker:rollback-p1e06' \
+                        '{OLD_WORKER_IMAGE_ID}'
+                    printf '%s\t%s\t%s\n' \
+                        'npcink-ai-cloud-external-nginx:prod' \
+                        'npcink-ai-cloud-external-nginx:rollback-p1e06' \
+                        '{OLD_PROXY_IMAGE_ID}'
                     printf '%s\t%s\t%s\n' \
                         'npcink-ai-cloud-postgres:prod' \
                         'npcink-ai-cloud-postgres:rollback-p1e06' \
@@ -881,6 +897,10 @@ def _fake_docker_source() -> str:
     HOST_PYTHON="$(tr -d '\n' <"${STATE}/host-python")"
     OLD_API_IMAGE_ID="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     NEW_API_IMAGE_ID="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    OLD_FRONTEND_IMAGE_ID="sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    OLD_WORKER_IMAGE_ID="sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    OLD_PROXY_IMAGE_ID="sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    WRONG_RUNTIME_IMAGE_ID="sha256:9999999999999999999999999999999999999999999999999999999999999999"
     OLD_POSTGRES_IMAGE_ID="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     NEW_POSTGRES_IMAGE_ID="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     OLD_REDIS_IMAGE_ID="sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -959,6 +979,15 @@ def _fake_docker_source() -> str:
         inspect)
             if [[ "${joined}" = *'.Config.Labels'* ]]; then
                 printf 'npcink-ai-cloud\n'
+            elif [[ "${joined}" = *'.Config.Image'* ]]; then
+                case "${!#}" in
+                    id-api) printf '%s\n' 'npcink-ai-cloud-api:prod' ;;
+                    id-frontend) printf '%s\n' 'npcink-ai-cloud-frontend:prod' ;;
+                    id-proxy) printf '%s\n' 'npcink-ai-cloud-external-nginx:prod' ;;
+                    id-worker|id-callback-worker|id-ops-worker)
+                        printf '%s\n' 'npcink-ai-cloud-worker:prod' ;;
+                    *) exit 78 ;;
+                esac
             elif [[ "${joined}" = *'.Image'* ]]; then
                 container_id="${!#}"
                 one_off_container="$(
@@ -982,6 +1011,19 @@ def _fake_docker_source() -> str:
                         printf '%s\n' "${NEW_POSTGRES_IMAGE_ID}" ;;
                     id-redis-new)
                         printf '%s\n' "${NEW_REDIS_IMAGE_ID}" ;;
+                    id-frontend)
+                        printf '%s\n' "${OLD_FRONTEND_IMAGE_ID}" ;;
+                    id-proxy)
+                        printf '%s\n' "${OLD_PROXY_IMAGE_ID}" ;;
+                    id-worker|id-ops-worker)
+                        printf '%s\n' "${OLD_WORKER_IMAGE_ID}" ;;
+                    id-callback-worker)
+                        if [ "${fail_at}" = "previous_runtime_image_mismatch" ]; then
+                            printf 'recovery:runtime-image-mismatch\n' >>"${EVENTS}"
+                            printf '%s\n' "${WRONG_RUNTIME_IMAGE_ID}"
+                        else
+                            printf '%s\n' "${OLD_WORKER_IMAGE_ID}"
+                        fi ;;
                     *)
                         printf '%s\n' "${OLD_API_IMAGE_ID}" ;;
                 esac
@@ -1040,6 +1082,12 @@ def _fake_docker_source() -> str:
                                 else
                                     printf '%s\n' "${NEW_API_IMAGE_ID}"
                                 fi ;;
+                            npcink-ai-cloud-frontend:prod)
+                                printf '%s\n' "${OLD_FRONTEND_IMAGE_ID}" ;;
+                            npcink-ai-cloud-worker:prod)
+                                printf '%s\n' "${OLD_WORKER_IMAGE_ID}" ;;
+                            npcink-ai-cloud-external-nginx:prod)
+                                printf '%s\n' "${OLD_PROXY_IMAGE_ID}" ;;
                             npcink-ai-cloud-postgres:prod)
                                 if [ "${restored}" = 1 ]; then
                                     printf '%s\n' "${OLD_POSTGRES_IMAGE_ID}"
@@ -1054,6 +1102,12 @@ def _fake_docker_source() -> str:
                                 fi ;;
                             npcink-ai-cloud-api:rollback-p1e06)
                                 printf '%s\n' "${OLD_API_IMAGE_ID}" ;;
+                            npcink-ai-cloud-frontend:rollback-p1e06)
+                                printf '%s\n' "${OLD_FRONTEND_IMAGE_ID}" ;;
+                            npcink-ai-cloud-worker:rollback-p1e06)
+                                printf '%s\n' "${OLD_WORKER_IMAGE_ID}" ;;
+                            npcink-ai-cloud-external-nginx:rollback-p1e06)
+                                printf '%s\n' "${OLD_PROXY_IMAGE_ID}" ;;
                             npcink-ai-cloud-postgres:rollback-p1e06)
                                 printf '%s\n' "${OLD_POSTGRES_IMAGE_ID}" ;;
                             npcink-ai-cloud-external-redis:rollback-p1e06)
@@ -1192,7 +1246,9 @@ def _fake_docker_source() -> str:
                     [ "${NPCINK_CLOUD_RUNTIME_DATA_OLD_ROOT_SECRET+x}" != "x" ] || exit 89
                     [ "${NPCINK_CLOUD_SERVICE_SETTINGS_OLD_ROOT_SECRET+x}" != "x" ] || exit 90
                     if [ "${NPCINK_CLOUD_DATABASE_URL+x}" = "x" ]; then
-                        if [ "${fail_at}" = "restore_migrate" ]; then
+                        if [ "${fail_at}" = "restore_migrate" ] || \
+                            [ "${fail_at}" = "previous_runtime_image_mismatch" ] || \
+                            [ "${fail_at}" = "previous_runtime_compose_up_failure" ]; then
                             printf 'failure:restore-migrate\n' >>"${EVENTS}"
                             exit 42
                         fi
@@ -1432,11 +1488,27 @@ PY
 				"${FIXTURE_ROOT}/remote/release-old/docker-compose.runtime.yml") ;;
 				*) exit 76 ;;
 			esac
-            case "${action}" in
+			case "${action}" in
 				config)
-					[ "${!#}" = "release-one-off" ] || exit 2
-					printf '{"services":{"release-one-off":{"image":"%s"}}}\n' \
-						"${NPCINK_CLOUD_API_RELEASE_IMAGE}"
+					if [ "${!#}" = "release-one-off" ]; then
+						printf '{"services":{"release-one-off":{"image":"%s"}}}\n' \
+							"${NPCINK_CLOUD_API_RELEASE_IMAGE}"
+					elif [[ "${action_joined}" = *' --format json '* ]]; then
+						cat <<'JSON'
+{
+  "services": {
+    "proxy": {"image": "npcink-ai-cloud-external-nginx:prod"},
+    "frontend": {"image": "npcink-ai-cloud-frontend:prod"},
+    "api": {"image": "npcink-ai-cloud-api:prod"},
+    "worker": {"image": "npcink-ai-cloud-worker:prod"},
+    "callback-worker": {"image": "npcink-ai-cloud-worker:prod"},
+    "ops-worker": {"image": "npcink-ai-cloud-worker:prod"}
+  }
+}
+JSON
+					else
+						exit 2
+					fi
 					exit 0
 					;;
                 stop)
@@ -1517,6 +1589,11 @@ PY
                             [[ "${action_joined}" != *' redis '* ]] || exit 90
                             rm -f "${STATE}/writers-stopped" "${STATE}/writers-reappeared"
                             printf 'recovery:previous-public-writers-recreated\n' >>"${EVENTS}"
+                            fail_at="$(tr -d '\n' <"${STATE}/fail-at" 2>/dev/null || true)"
+                            if [ "${fail_at}" = "previous_runtime_compose_up_failure" ]; then
+                                printf 'failure:previous-runtime-compose-up\n' >>"${EVENTS}"
+                                exit 48
+                            fi
                         fi
                     fi
                     exit 0
@@ -2534,6 +2611,68 @@ def test_executable_pre_migration_failure_restores_only_old_runtime_generation(
     assert "|postgres|" not in force_recreate_calls[0]
     assert "|redis|" not in force_recreate_calls[0]
     assert "|caddy|" not in force_recreate_calls[0]
+
+
+def test_executable_pre_migration_recovery_rejects_wrong_runtime_image(
+    tmp_path: Path,
+) -> None:
+    fixture = _make_fixture(tmp_path)
+
+    completed = _run_cutover(fixture, fail_at="previous_runtime_image_mismatch")
+
+    assert completed.returncode != 0
+    marker = _read_marker(fixture.remote / ".cutover-failed")
+    assert marker["outcome"] == "recovery_incomplete"
+    assert marker["recovery"] == "manual_recovery_required_from_observed_state"
+    assert marker["previous_runtime_restored"] == "0"
+    assert (fixture.remote / ".deploy-lock").is_dir()
+    assert (fixture.remote / "current").resolve() == fixture.previous_release
+    events = _read_events(fixture)
+    assert "recovery:runtime-image-mismatch" in events
+    assert events.count("writers:stopped") >= 2
+    assert "terminal:success-published-after-unlock" not in events
+
+
+def test_executable_pre_migration_recovery_refences_partial_compose_start(
+    tmp_path: Path,
+) -> None:
+    fixture = _make_fixture(tmp_path)
+
+    completed = _run_cutover(
+        fixture,
+        fail_at="previous_runtime_compose_up_failure",
+    )
+
+    assert completed.returncode != 0
+    marker = _read_marker(fixture.remote / ".cutover-failed")
+    assert marker["outcome"] == "recovery_incomplete"
+    assert marker["recovery"] == "manual_recovery_required_from_observed_state"
+    assert marker["previous_runtime_restored"] == "0"
+    assert (fixture.remote / ".deploy-lock").is_dir()
+    assert (fixture.remote / "current").resolve() == fixture.previous_release
+    events = _read_events(fixture)
+    assert "recovery:previous-public-writers-recreated" in events
+    assert "failure:previous-runtime-compose-up" in events
+    assert events.count("writers:stopped") >= 2
+    assert "terminal:success-published-after-unlock" not in events
+    for service in ("proxy", "frontend", "api", "worker", "callback-worker", "ops-worker"):
+        observed = subprocess.run(
+            [
+                str(fixture.fake_bin / "docker"),
+                "ps",
+                "-q",
+                "--filter",
+                "label=com.docker.compose.project=npcink-ai-cloud",
+                "--filter",
+                f"label=com.docker.compose.service={service}",
+            ],
+            env=_cutover_environment(fixture),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert observed.returncode == 0
+        assert observed.stdout == ""
 
 
 def test_executable_post_migration_failure_never_restarts_old_code_and_requires_full_restore(

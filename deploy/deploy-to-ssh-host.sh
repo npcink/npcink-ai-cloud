@@ -738,7 +738,7 @@ if [ "${SKIP_FRONTEND_IMAGE}" != "1" ]; then
 	APPLICATION_SERVICES+=(frontend)
 fi
 APPLICATION_SERVICES+=(api worker callback-worker ops-worker jaeger otel-collector release-one-off)
-RECOVERY_REQUIRED_SERVICES=(proxy frontend api worker callback-worker ops-worker)
+RECOVERY_REQUIRED_SERVICES=(postgres redis proxy frontend api worker callback-worker ops-worker)
 PREVIOUS_WRITER_SERVICES=(api worker callback-worker ops-worker)
 APPLICATIONS_STOPPED=0
 MIGRATION_STARTED=0
@@ -1594,13 +1594,22 @@ assert_previous_writer_project_alignment() {
 }
 
 assert_previous_release_services_running() {
+	local previous_compose_config="$1"
 	local service_name=""
 	local container_ids=""
 	local container_id=""
 	local container_state=""
 	local container_count=0
+	local expected_reference=""
 
 	for service_name in "${RECOVERY_REQUIRED_SERVICES[@]}"; do
+		expected_reference="$(
+			npcink_ai_cloud_compose_service_image_reference \
+				"${RELEASE_TOOL_PYTHON}" "${service_name}" <<<"${previous_compose_config}"
+		)" || {
+			echo "[fail] Previous Compose has no unique image reference for recovery service: ${service_name}" >&2
+			return 1
+		}
 		container_ids="$(compose_previous_release ps -q "${service_name}")" || return 1
 		container_count="$(printf '%s\n' "${container_ids}" | awk 'NF { count += 1 } END { print count + 0 }')"
 		if [ "${container_count}" -ne 1 ]; then
@@ -1614,22 +1623,86 @@ assert_previous_release_services_running() {
 				echo "[fail] Previous release service is not stably running: ${service_name}" >&2
 				return 1
 			fi
+			if ! npcink_ai_cloud_assert_container_matches_rollback_image \
+				"${ROLLBACK_IMAGE_MAP}" "${container_id}" "${service_name}" \
+				"${expected_reference}"; then
+				return 1
+			fi
 		done <<<"${container_ids}"
 	done
 }
 
+force_recovery_services_stopped() {
+	local service_name=""
+	local container_id=""
+	local running_ids=""
+	local failed=0
+
+	APPLICATIONS_STOPPED=1
+	for service_name in "${RECOVERY_REQUIRED_SERVICES[@]}"; do
+		while IFS= read -r container_id; do
+			[ -n "${container_id}" ] || continue
+			docker stop --time 10 "${container_id}" >/dev/null 2>&1 || failed=1
+			docker rm -f "${container_id}" >/dev/null 2>&1 || failed=1
+		done < <(application_container_ids "${service_name}" 2>/dev/null)
+	done
+	for service_name in "${RECOVERY_REQUIRED_SERVICES[@]}"; do
+		running_ids="$(docker ps -q \
+			--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
+			--filter "label=com.docker.compose.service=${service_name}" 2>/dev/null)" || {
+			failed=1
+			continue
+		}
+		[ -z "${running_ids}" ] || failed=1
+	done
+	[ "${failed}" -eq 0 ]
+}
+
 restart_previous_release() {
+	local previous_compose_config=""
+	local service_name=""
+	local expected_reference=""
+	local recovery_failed=0
+
+	previous_compose_config="$(compose_previous_release config --format json)" || {
+		echo "[fail] Previous release Compose config could not be rendered for recovery proof." >&2
+		return 1
+	}
+	for service_name in "${RECOVERY_REQUIRED_SERVICES[@]}"; do
+		expected_reference="$(
+			npcink_ai_cloud_compose_service_image_reference \
+				"${RELEASE_TOOL_PYTHON}" "${service_name}" <<<"${previous_compose_config}"
+		)" || recovery_failed=1
+		if [ "${recovery_failed}" -eq 0 ] && ! \
+			npcink_ai_cloud_expected_rollback_image_id \
+				"${ROLLBACK_IMAGE_MAP}" "${expected_reference}" >/dev/null; then
+			recovery_failed=1
+		fi
+		if [ "${recovery_failed}" -ne 0 ]; then
+			echo "[fail] Previous release recovery image expectation is invalid: ${service_name}" >&2
+			RETAIN_DEPLOY_LOCK=1
+			return 1
+		fi
+	done
 	if ! remote_run_timed "restore previous release services" \
-		compose_previous_release up -d --pull never --no-build --force-recreate --remove-orphans; then
+		compose_previous_release up -d --pull never --no-build --force-recreate \
+			--remove-orphans "${RECOVERY_REQUIRED_SERVICES[@]}"; then
 		echo "[fail] Previous release Compose start failed." >&2
-		return 1
+		recovery_failed=1
 	fi
-	if ! assert_previous_release_services_running; then
+	if [ "${recovery_failed}" -eq 0 ] && \
+		! assert_previous_release_services_running "${previous_compose_config}"; then
 		echo "[fail] Previous release containers could not be proven running." >&2
-		return 1
+		recovery_failed=1
 	fi
-	if ! npcink_ai_cloud_wait_for_ready "${BASE_URL}" 20 2; then
+	if [ "${recovery_failed}" -eq 0 ] && \
+		! npcink_ai_cloud_wait_for_ready "${BASE_URL}" 20 2; then
 		echo "[fail] Previous release did not become healthy after recovery." >&2
+		recovery_failed=1
+	fi
+	if [ "${recovery_failed}" -ne 0 ]; then
+		force_recovery_services_stopped || true
+		RETAIN_DEPLOY_LOCK=1
 		return 1
 	fi
 	atomic_set_current "${PREVIOUS_RELEASE_DIR}"
