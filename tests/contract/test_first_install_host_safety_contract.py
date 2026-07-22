@@ -476,6 +476,15 @@ def test_admin_key_rotation_fences_api_before_disk_mutation_and_supports_retry()
     assert 'ps -q api)"' not in source.split("API_CONTAINER_ID=", 1)[1].split("\n", 1)[0]
 
 
+def test_remote_provider_status_loads_completed_installation_runtime_config() -> None:
+    source = (ROOT / "deploy" / "remote-provider-status.sh").read_text()
+
+    assert "from app.core.config import get_settings" in source
+    assert "settings = get_settings()" in source
+    assert "from app.core.config import Settings" not in source
+    assert "settings = Settings()" not in source
+
+
 def test_ordinary_deploy_and_safe_prune_require_positive_durable_sentinel() -> None:
     deploy = (ROOT / "deploy" / "deploy-to-ssh-host.sh").read_text()
     maintenance = (ROOT / ".github/workflows/production-maintenance.yml").read_text()

@@ -20,7 +20,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.adapters.providers.registry import resolve_live_provider_adapters
-from app.core.config import Settings
+from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.models import CatalogInstance, CatalogModel, CatalogProvider
 from app.domain.provider_connections.runtime_settings import (
@@ -35,7 +35,7 @@ def isoformat(value: object) -> str | None:
     return None
 
 
-settings = Settings()
+settings = get_settings()
 runtime_projection = apply_provider_connection_runtime_settings(settings)
 providers = resolve_live_provider_adapters(settings, include_enabled_connections=True)
 provider_connections = ProviderConnectionAdminService(
