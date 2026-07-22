@@ -2,54 +2,69 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
-const bootstrapRoutePath = resolve(process.cwd(), 'src/app/admin/auth/bootstrap/route.ts');
+const loginRoutePath = resolve(process.cwd(), 'src/app/admin/auth/login/route.ts');
 const loginPagePath = resolve(process.cwd(), 'src/app/admin/login/page.tsx');
 const i18nPath = resolve(process.cwd(), 'src/lib/i18n.ts');
 
-const bootstrapRouteSource = readFileSync(bootstrapRoutePath, 'utf8');
+const loginRouteSource = readFileSync(loginRoutePath, 'utf8');
 const loginPageSource = readFileSync(loginPagePath, 'utf8');
 const i18nSource = readFileSync(i18nPath, 'utf8');
 
 assert.match(
-  bootstrapRouteSource,
-  /redirectToLogin\(request,\s*errorCode/,
-  'admin bootstrap proxy must redirect form-login failures back to the login page'
+  loginRouteSource,
+  /function redirectToLogin\([\s\S]*errorCode:[\s\S]*url\.searchParams\.set\('error', errorCode\)/,
+  'admin login proxy must redirect form-login failures back to the login page'
 );
 
 assert.match(
-  bootstrapRouteSource,
-  /wantsLoginRedirect:\s*!contentType\.includes\('application\/json'\)/,
-  'admin bootstrap proxy must preserve JSON behavior while improving browser form failures'
+  loginRouteSource,
+  /const wantsJson = contentType\.includes\('application\/json'\)/,
+  'admin login proxy must preserve JSON behavior while improving browser form failures'
 );
 
 assert.match(
-  bootstrapRouteSource,
+  loginRouteSource,
   /url\.searchParams\.set\('error',\s*errorCode\)/,
-  'admin bootstrap proxy must preserve backend error codes for the login page'
+  'admin login proxy must preserve backend error codes for the login page'
 );
 
 assert.match(
-  bootstrapRouteSource,
+  loginRouteSource,
   /url\.searchParams\.set\('redirect',\s*sanitizeAdminRedirect\(redirect\)\)/,
-  'admin bootstrap proxy must preserve only safe admin redirects after login errors'
+  'admin login proxy must preserve only safe admin redirects after login errors'
 );
 
 assert.match(
   loginPageSource,
-  /auth\.admin_bootstrap_token_invalid/,
-  'admin login page must special-case invalid bootstrap token errors'
+  /auth\.admin_key_invalid/,
+  'admin login page must special-case invalid admin key errors'
 );
 
 assert.match(
   loginPageSource,
   /t\('admin\.login_error_invalid'\)/,
-  'admin login invalid-token copy must use the localized operator guidance'
+  'admin login invalid-key copy must use the localized operator guidance'
 );
 assert.match(
   i18nSource,
-  /'admin\.login_error_invalid': 'The admin bootstrap token is not valid\.[^']+'[\s\S]*'admin\.login_error_invalid': '后台启动令牌无效，[^']+'/,
-  'admin login invalid-token guidance must exist in English and Simplified Chinese'
+  /'admin\.login_error_invalid': 'The admin key is not valid\.[^']+'[\s\S]*'admin\.login_error_invalid': '管理员密钥无效，[^']+'/,
+  'admin login invalid-key guidance must exist in English and Simplified Chinese'
 );
+
+assert.match(loginRouteSource, /buildBackendUrl\('\/admin\/auth\/login'\)/);
+assert.match(loginRouteSource, /admin_key: adminKey/);
+assert.doesNotMatch(loginRouteSource, /admin\/auth\/bootstrap|bootstrap token|admin_ref|principal_id/i);
+assert.match(loginRouteSource, /resolveTrustedAdminOrigin/);
+assert.match(loginRouteSource, /return new URL\(getPublicBaseUrl\(\)\)\.origin/);
+assert.doesNotMatch(loginRouteSource, /request\.nextUrl\.origin/);
+assert.doesNotMatch(loginRouteSource, /getExternalRequestOrigin/);
+assert.match(
+  loginRouteSource,
+  /parsed\.pathname !== '\/admin' && !parsed\.pathname\.startsWith\('\/admin\/'\)/,
+  'admin login redirects must reject lookalike paths such as /administrator'
+);
+assert.doesNotMatch(loginRouteSource, /!parsed\.pathname\.startsWith\('\/admin'\)/);
+assert.doesNotMatch(loginPageSource, /admin\/auth\/bootstrap|bootstrap token|name="token"/i);
 assert.match(
   loginPageSource,
   /createApiClient[\s\S]*resolveAdminLoginRedirect[\s\S]*\.request\('\/admin\/session'\)[\s\S]*router\.replace\(redirectTo\)/,
@@ -58,7 +73,7 @@ assert.match(
 assert.match(
   loginPageSource,
   /if \(isCheckingSession\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'admin login must not show the token form before session validation finishes'
+  'admin login must not show the key form before session validation finishes'
 );
 
 assert.match(

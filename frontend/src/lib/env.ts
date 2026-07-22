@@ -8,8 +8,8 @@ const envSchema = z.object({
   CLOUD_API_BASE_URL: z.string().url().default('http://127.0.0.1:8000'),
   CLOUD_PUBLIC_BASE_URL: z.string().url().default('http://127.0.0.1:8010'),
   NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: z.string().optional().default(''),
-  NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN: z.string().optional().default(''),
-  NPCINK_CLOUD_ADMIN_BOOTSTRAP_PRINCIPAL_ID: z.string().optional().default('platform:internal_root'),
+  NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE: z.string().default('/run/npcink-frontend-config/internal-auth-token'),
+  NPCINK_CLOUD_DEV_ADMIN_KEY: z.string().optional().default(''),
   NPCINK_CLOUD_DEV_PORTAL_EMAIL: z.string().optional().default('portal-demo@example.com'),
   NPCINK_CLOUD_DEV_PORTAL_SITE_ID: z.string().optional().default('site_smoke'),
 });
@@ -89,8 +89,8 @@ export function validateEnv(): Env {
     CLOUD_API_BASE_URL: rawApiBaseUrl,
     CLOUD_PUBLIC_BASE_URL: rawPublicBaseUrl,
     NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: process.env.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN,
-    NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN: process.env.NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN,
-    NPCINK_CLOUD_ADMIN_BOOTSTRAP_PRINCIPAL_ID: process.env.NPCINK_CLOUD_ADMIN_BOOTSTRAP_PRINCIPAL_ID,
+    NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE: process.env.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE,
+    NPCINK_CLOUD_DEV_ADMIN_KEY: process.env.NPCINK_CLOUD_DEV_ADMIN_KEY,
     NPCINK_CLOUD_DEV_PORTAL_EMAIL: process.env.NPCINK_CLOUD_DEV_PORTAL_EMAIL,
     NPCINK_CLOUD_DEV_PORTAL_SITE_ID: process.env.NPCINK_CLOUD_DEV_PORTAL_SITE_ID,
   });
@@ -112,6 +112,22 @@ export function validateEnv(): Env {
     if (missingVars.length > 0) {
       throw new Error(
         `Missing required environment configuration for ${runtimeEnvironment}: ${missingVars.join(', ')}`
+      );
+    }
+
+    if (String(process.env.NPCINK_CLOUD_INTERNAL_AUTH_TOKEN || '').trim()) {
+      throw new Error(
+        `Plaintext NPCINK_CLOUD_INTERNAL_AUTH_TOKEN is not allowed in ${runtimeEnvironment}; mount NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE instead`
+      );
+    }
+    if (String(process.env.NPCINK_CLOUD_DEV_ADMIN_KEY || '').trim()) {
+      throw new Error(
+        `NPCINK_CLOUD_DEV_ADMIN_KEY is not allowed in ${runtimeEnvironment}`
+      );
+    }
+    if (new URL(result.data.CLOUD_PUBLIC_BASE_URL).protocol !== 'https:') {
+      throw new Error(
+        `CLOUD_PUBLIC_BASE_URL must use HTTPS in ${runtimeEnvironment}`
       );
     }
 
@@ -191,30 +207,6 @@ export function getRuntimeApiBaseUrl(): string {
  */
 export function getPublicBaseUrl(): string {
   return getEnv().CLOUD_PUBLIC_BASE_URL;
-}
-
-export function getInternalAuthToken(): string {
-  const token = getEnv().NPCINK_CLOUD_INTERNAL_AUTH_TOKEN.trim();
-
-  if (!token) {
-    throw new Error('NPCINK_CLOUD_INTERNAL_AUTH_TOKEN is not configured for frontend admin proxy');
-  }
-
-  return token;
-}
-
-export function getAdminBootstrapToken(): string {
-  const token = getEnv().NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN.trim();
-
-  if (!token) {
-    throw new Error('NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN is not configured for frontend admin bootstrap');
-  }
-
-  return token;
-}
-
-export function getAdminBootstrapAdminRef(): string {
-  return getEnv().NPCINK_CLOUD_ADMIN_BOOTSTRAP_PRINCIPAL_ID.trim() || 'platform:internal_root';
 }
 
 export function getDevPortalEmail(): string {

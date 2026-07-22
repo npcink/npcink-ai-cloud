@@ -27,27 +27,27 @@ function AdminLoginPageContent() {
   const router = useRouter();
   const { t } = useLocale();
   const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const [isTokenVisible, setIsTokenVisible] = useState(false);
+  const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const error = searchParams.get('error');
-  const detail = searchParams.get('detail');
   const traceId = searchParams.get('trace_id');
   const redirectTo = resolveAdminLoginRedirect(searchParams.get('redirect'));
   const errorMessage = (() => {
     switch (error) {
-      case 'auth.admin_bootstrap_token_invalid':
+      case 'auth.admin_key_invalid':
         return t('admin.login_error_invalid');
-      case 'auth.admin_bootstrap_token_required':
+      case 'auth.admin_key_required':
         return t('admin.login_error_required');
-      case 'auth.admin_bootstrap_not_configured':
+      case 'auth.admin_key_not_configured':
         return t('admin.login_error_not_configured');
       case 'auth.origin_not_allowed':
       case 'auth.browser_origin_not_allowed':
         return t('admin.login_error_origin');
       case 'auth.dev_entry_unreachable':
+      case 'auth.admin_login_unreachable':
         return t('admin.login_error_unreachable');
       default:
-        return detail || error || '';
+        return error || '';
     }
   })();
 
@@ -90,7 +90,7 @@ function AdminLoginPageContent() {
             {t('admin.login_title', {}, 'Sign in to admin')}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t('admin.login_desc', {}, 'For platform operators only. Enter the current Cloud admin bootstrap token.')}
+            {t('admin.login_desc', {}, 'For platform operators only. Enter the current Cloud admin key.')}
           </p>
         </div>
 
@@ -110,36 +110,36 @@ function AdminLoginPageContent() {
             </div>
           ) : null}
 
-          <form action="/admin/auth/bootstrap" method="post" className="space-y-5" onSubmit={() => setIsSubmitting(true)}>
+          <form action="/admin/auth/login" method="post" className="space-y-5" onSubmit={() => setIsSubmitting(true)}>
             <input type="hidden" name="redirect" value={redirectTo} />
 
             <div>
               <label
-                htmlFor="token"
+                htmlFor="admin_key"
                 className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200"
               >
-                {t('admin.internal_auth_token')}
+                {t('admin.admin_key')}
               </label>
               <div className="relative">
                 <input
-                  id="token"
-                  name="token"
-                  type={isTokenVisible ? 'text' : 'password'}
+                  id="admin_key"
+                  name="admin_key"
+                  type={isKeyVisible ? 'text' : 'password'}
                   autoComplete="current-password"
                   autoFocus
                   required
                   aria-invalid={error ? true : undefined}
                   aria-describedby={error ? 'admin-login-token-help admin-login-error' : 'admin-login-token-help'}
                   className="input h-12 rounded-xl pr-20 font-mono"
-                  placeholder={t('admin.internal_auth_token_placeholder')}
+                  placeholder={t('admin.admin_key_placeholder')}
                 />
                 <button
                   type="button"
                   className="absolute inset-y-1.5 right-1.5 rounded-lg px-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-                  aria-pressed={isTokenVisible}
-                  onClick={() => setIsTokenVisible((current) => !current)}
+                  aria-pressed={isKeyVisible}
+                  onClick={() => setIsKeyVisible((current) => !current)}
                 >
-                  {isTokenVisible ? t('admin.login_hide_token') : t('admin.login_show_token')}
+                  {isKeyVisible ? t('admin.login_hide_key') : t('admin.login_show_key')}
                 </button>
               </div>
               <p id="admin-login-token-help" className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
@@ -152,7 +152,7 @@ function AdminLoginPageContent() {
               disabled={isSubmitting}
               className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-70 dark:bg-blue-500 dark:text-slate-950 dark:hover:bg-blue-400 dark:focus:ring-offset-slate-950"
             >
-              {isSubmitting ? t('admin.login_submitting') : t('admin.open_admin_with_internal_token')}
+              {isSubmitting ? t('admin.login_submitting') : t('admin.open_admin_with_key')}
             </button>
           </form>
 
