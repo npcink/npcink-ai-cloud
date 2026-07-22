@@ -24,6 +24,13 @@ only bounded, non-secret interrupted-attempt evidence. A completed installation
 never returns to `pending` automatically. Database failure after completion is a
 runtime outage and recovery event.
 
+The application never infers `pending` from an absent `install-state.json`.
+Only the root-owned host preparation helper may create the first explicit
+`pending` state, while it holds the shared installation lock and has proved
+that no runtime artifact, permanent completion sentinel, or conflicting
+first-install lifecycle exists. Missing or corrupt installation evidence
+therefore fails closed and never reopens Setup.
+
 `GET /setup/v1/state` remains available after completion and returns only the
 minimal `complete` projection required by the frontend gateway. The `/setup`
 page and all other setup endpoints return `404 setup.already_complete` after
@@ -39,6 +46,7 @@ The shared host configuration directory is mounted at `/run/npcink-config`:
 | `install-state.json` | state, setup revision, timestamps, config digest | `0640` |
 | `rds-ca.pem` | RDS server CA chain | `0600` |
 | `setup-auth.json` | setup-code digest and transient session root | `0600` |
+| `frontend/internal-auth-token` | dedicated internal-token projection for Admin BFF only | `0640` |
 
 Writes use a same-filesystem temporary file, file `fsync`, atomic rename, and
 directory `fsync`. Secret values are never passed through a shell command,
@@ -49,21 +57,37 @@ root signing/encryption/session values. Duplicate production values in the
 environment fail validation instead of silently overriding the file. Development
 and test modes may explicitly use the existing environment source.
 
+The frontend container mounts only the `frontend/` projection directory, not
+`runtime-config.json`, the database password, the RDS CA, or any signing and
+encryption root. Setup BFF code never reads or forwards the projected internal
+token.
+
 ## 4. Setup authentication
 
-The deployment helper generates:
+The host preparation and rotation helpers generate:
 
 - `nca_setup_` plus 32 random bytes encoded as unpadded URL-safe Base64;
 - a separate transient setup-session signing root.
 
-Only the SHA-256 digest of the setup code is stored. The plaintext is printed
-once to the operator terminal. `POST /setup/v1/session` is limited to five
-failed attempts per source IP in 15 minutes. A successful exchange issues a
-15-minute `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The code and transient
-session root are deleted after installation.
+Only the SHA-256 digest of the setup code is stored. Automated deployment
+deliberately does not emit the initially generated plaintext into CI output.
+The operator issues a usable replacement through the active release's
+`setup-code-rotate` helper, which requires an attached TTY, prints the plaintext
+once, and refuses captured or non-interactive output. The frozen single API
+worker limits `POST /setup/v1/session` to five failed attempts per source IP in
+15 minutes with a process-local counter; a process restart clears that
+defense-in-depth counter, while the unguessable 32-byte code remains the primary
+control. A successful exchange issues a 15-minute `HttpOnly`, `Secure`,
+`SameSite=Strict` cookie. The active digest and transient session root are
+atomically retired before `complete` is committed; a protected tombstone makes
+the pre-commit crash window recoverable and is deleted idempotently afterward.
 
 Losing an unused code requires the operator-only `setup-code-rotate` command.
-There is no public setup reset or recovery endpoint.
+Rotation invalidates existing Setup cookies. If an interrupted attempt exists,
+it retains only the attempt ID needed to recognize its database marker and
+clears the old session-keyed idempotency/request fingerprints so the new
+session can establish a fresh pair. There is no public setup reset or recovery
+endpoint.
 
 ## 5. API contract
 
@@ -108,10 +132,19 @@ Requires the setup cookie and a valid `Idempotency-Key`. Input contains:
 - an HTTPS `public_base_url` with no path, query, or fragment;
 - the same database object accepted by the test endpoint.
 
+`public_base_url` must exactly match one of the public origins approved in the
+bootstrap environment. The installer cannot silently move the runtime to a
+different host than the protected Setup page and frontend gateway.
+
 Under the exclusive install lock it repeats validation, migrates to the current
 Alembic head, generates runtime roots, builds and validates full Settings, writes
-configuration atomically, activates runtime services, commits `complete`, and
-deletes setup authentication.
+configuration atomically, proves full runtime-service construction, deletes
+setup authentication, and only then commits `complete`.
+
+Interrupted-attempt evidence stores only the SHA-256 digest of the idempotency
+key and an HMAC-SHA256 of the canonical install request keyed by the transient
+setup-session root. A retry must match both values. Neither the key, database
+password, CA, nor a plain request digest is written to `install-state.json`.
 
 The success response returns exactly one unrecoverable plaintext value:
 
@@ -122,12 +155,23 @@ The server stores only `SHA-256(admin_key)`. A completed replay never reveals or
 regenerates the key. If the success response is lost, the operator uses
 `admin-key-rotate`.
 
+Admin-key rotation publishes a bounded `admin_key_rotation.v1` transition in
+`install-state.json`: the old and target runtime-config digests are accepted
+only across the two atomic file replacements, then the old digest is removed.
+An interruption before the new plaintext key is shown therefore keeps one
+valid runtime configuration and a rerun safely supersedes the unknown key.
+
 ### `POST /admin/auth/login`
 
 Replaces the development-era bootstrap endpoint. Input: `admin_key`. The server
-compares its digest in constant time and then uses the existing `platform_admin`
-identity, persisted grant checks, session-version checks, and HttpOnly session
-cookie.
+compares its digest in constant time and then uses the existing single
+`platform_admin` reference and an HttpOnly session cookie. A fresh empty
+database has no persisted administrator grant: the root administrator is a
+bounded synthetic identity whose authority comes from the admin-key digest.
+Rotating the admin key also rotates the session-signing secret and restarts the
+API, invalidating both the old key and every old cookie. If a persisted grant is
+introduced later, the existing grant and session-version checks also apply; the
+installer does not create a second administrator registry.
 
 ## 6. Error contract
 
@@ -138,6 +182,15 @@ Stable setup errors include:
 - `setup.code_invalid`
 - `setup.rate_limited`
 - `setup.installation_in_progress`
+- `setup.request_invalid`
+- `setup.route_not_found`
+- `setup.idempotency_key_required`
+- `setup.idempotency_key_invalid`
+- `setup.idempotency_key_conflict`
+- `setup.request_too_large`
+- `setup.state_unavailable`
+- `setup.public_origin_unavailable`
+- `setup.public_base_url_mismatch`
 - `setup.database_unreachable`
 - `setup.database_tls_required`
 - `setup.database_version_unsupported`
@@ -146,6 +199,11 @@ Stable setup errors include:
 - `setup.migration_failed`
 - `setup.config_write_failed`
 - `setup.already_complete`
+- `proxy.setup_route_not_allowed`
+- `proxy.setup_unreachable`
+- `auth.admin_login_request_invalid`
+- `auth.admin_key_required`
+- `auth.admin_key_not_configured`
 - `auth.admin_key_invalid`
 
 Internal exception messages, SQL, credentials, resolved IP lists, and filesystem
@@ -159,9 +217,16 @@ Before completion:
 - `GET /health/ready` remains internal-only and reports not ready;
 - setup state/session/test/install and required static frontend assets are the
   only public application paths;
+- the frontend's exact `GET|HEAD /api/health` container-health route is also
+  available; other methods and extension-shaped dynamic paths remain gated;
 - Admin, Portal, public runtime, Open, and ordinary frontend BFF routes return
   `503 setup.installation_required`;
 - workers wait for `install-state=complete` and do not connect to PostgreSQL.
+
+After completion, `GET /health/live` remains independent of runtime
+configuration and database activation. An RDS or protected-config failure makes
+authenticated readiness return 503, but it never changes the canonical state
+or makes Setup available again.
 
 The frontend `/setup` route is outside the Admin layout. Its BFF has an explicit
 method/path allowlist and forwards only the setup cookie; it never injects an
@@ -178,6 +243,9 @@ The first external target is Alibaba Cloud RDS PostgreSQL 18 Basic Edition
 - SQLAlchemy `pool_size=2`, `max_overflow=1`, `pool_timeout=10`,
   `pool_recycle=1800`, `connect_timeout=5`, and `pool_pre_ping=true`;
 - private VPC endpoint and TLS `verify-full`;
+- every API/worker process re-resolves the RDS hostname, rejects any non-private
+  answer, and passes the approved private `hostaddr` while retaining the
+  hostname for TLS identity verification;
 - automatic backups with at least seven days retention.
 
 The local/CI PostgreSQL 18 proof establishes schema and database semantics. It
@@ -191,6 +259,25 @@ PostgreSQL service, image, volume, or hard dependency. A fresh deployment starts
 Redis, setup-capable API, frontend, and proxy; workers begin only after install.
 An installed release still follows the governed order: fence writers, migrate
 with the release one-off image, start API, start workers, then restore traffic.
+
+A successful fresh install commits
+`database_contract=pg18_empty_initialization.v1` together with the exact raw
+`runtime-config.json` digest. Subsequent ordinary deployments validate that
+evidence and use the candidate release image to prove protected-config loading,
+private TLS PostgreSQL 18 reachability, and current Alembic head before stopping
+writers. For this explicitly pre-user reset, only the locked host helper may
+turn an empty protected tree into a fresh `pending` state. A `complete` state
+without the PG18 marker is unsupported and fails closed; the database refactor
+does not reinterpret legacy completion evidence or reopen a compatibility path.
+
+The pending first-install cutover stops but preserves the previous local
+PostgreSQL container and volume, pins the previous application images and
+rollback map, and publishes a root-owned lifecycle marker. Ordinary deployment
+and `safe-prune` fail closed until the operator either restores that previous
+release while state is still `pending`, or explicitly finalizes after browser
+installation and acceptance. Finalization first publishes the permanent
+completion sentinel, keeps pruning blocked while cleanup is incomplete, and
+then retires the preserved container and rollback pins idempotently.
 
 Before migration begins, the previous release may be restored. After migration
 begins, old code must not automatically attach to the new database. Rollback

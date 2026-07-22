@@ -23,24 +23,21 @@ by that runtime.
 - feature and fix branches merge to `master` first.
 - production releases are promoted from `master` to `production`.
 
-Do not directly edit production application code on the server. Runtime
-configuration and secret changes are releases: supply them through a fresh,
-protected per-release env source consumed by the governed deployment. Never
-edit the active release env or restart Compose services in place. Other
-server-side changes are limited to emergency break-glass fixes that must be
-backported to Git immediately.
+Do not directly edit production application code on the server. Production
+database credentials and runtime root secrets are authoritative only in the
+protected structured configuration under `shared/config/`; they are never
+copied into `.env.deploy`. The deploy environment remains a protected source
+for non-secret host, edge, provider, and runtime-tuning inputs. Database-target
+or runtime-root changes require their governed operator procedure, not an
+in-place Compose restart. Other server-side changes are limited to the
+documented first-install/key-rotation helpers and emergency break-glass fixes
+that must be backported to Git immediately.
 
-The sole planned exception is the first P1-E06 cutover's Edge-readiness
-handoff. `deploy/runtime-data-encryption-cutover.sh` may, while holding the
-shared deploy lock, atomically add only the five reviewed non-secret Edge keys
-from a separate root-owned mode-`0600` file. It freezes the original env bytes
-and digest first, fsyncs the lock owner plus the lock/evidence directory chain
-before replacing the env, emits value-free digest evidence, restores the original bytes
-on handled pre-migration failures and catchable `HUP`/`INT`/`TERM` signals, and
-retains that snapshot for whole recovery after migration starts. An uncatchable
-`SIGKILL` or host power loss leaves the persistent snapshot and deploy lock for
-manual recovery. This exception is not a reusable active-env update path and
-does not permit an operator to edit the file directly.
+The former P1-E06 Edge-readiness handoff exception is closed as an ordinary
+deployment dependency by the PostgreSQL 18 reset. Its evidence and procedure
+remain documented in the historical section below; they do not authorize an
+active-env edit and are not prerequisites for a fresh PG18 installation or a
+later PG18 deployment.
 
 Branch divergence is expected: `production` records the deployed release while
 `master` continues development. A production-only patch must not remain an
@@ -49,7 +46,97 @@ equivalent on `master`, forward-port it to `master`, or document why the old
 deployment behavior is obsolete. Do not merge the accumulated `production`
 history back into `master` merely to make the branch graph look aligned.
 
-## Pre-refactor Production Reconciliation
+## Current Promotion Gates
+
+Before merging a feature or fix to `master`, record the focused module and
+non-goals, confirm the Cloud/WordPress ownership boundary, keep secrets out of
+Git, and run the narrowest relevant local gates plus CI. Before promoting
+`master` to `production`, additionally require:
+
+- green CI for the exact `master` commit and an intentional release scope;
+- the applicable release checklist, exact-bundle evidence, known rollback
+  boundary, and no direct server code edit as source truth;
+- protected server-side configuration and credentials absent from the release
+  archive, GitHub logs, process arguments, and `.env.deploy`;
+- the production-promotion PR sentence
+  `Approved for production validation by operator.`;
+- manual production workflow dispatch and Environment approval after the exact
+  `production` revision passes CI.
+
+Recommended repository gate:
+
+```bash
+pnpm run check:release-policy
+```
+
+## Current PostgreSQL 18 Release Contract
+
+The current production database contract is a fresh external Alibaba Cloud RDS
+PostgreSQL 18 database initialized by the one-time installer. The application
+and release tooling must fail closed unless all of the following are true:
+
+- `install-state.json` is an explicit, protected state created only by the
+  root-owned first-install helper;
+- `complete` carries `database_contract=pg18_empty_initialization.v1` and the
+  SHA-256 of the exact protected runtime configuration;
+- the candidate API image loads that protected configuration, resolves the RDS
+  hostname only to approved private addresses, verifies TLS with the stored CA,
+  observes PostgreSQL major version 18, and proves the database is at the
+  candidate Alembic head before old writers are stopped;
+- production Compose contains no PostgreSQL service, image, volume, password,
+  database URL, or database startup dependency;
+- workers remain behind the install-state gate and cannot connect before
+  `complete`.
+
+A first install is a distinct release lifecycle. The deploy stops but preserves
+the previous local PostgreSQL container and volume, pins the previous release
+and images, and writes a protected pending marker. A second deployment and
+safe-prune are forbidden until the operator either rolls back while setup is
+still pending or explicitly finalizes a completed, accepted install. Finalize
+publishes the permanent completion sentinel before idempotent cleanup and keeps
+pruning blocked until cleanup finishes.
+
+After installation, the ordinary deployment order is:
+
+```text
+validate exact bundle and candidate images
+-> validate complete-state/config digest
+-> candidate-image RDS PostgreSQL 18/TLS/Alembic preflight
+-> stop public and write-capable application services
+-> run the candidate migration against RDS
+-> activate API
+-> activate workers and prove heartbeats
+-> pass operational readiness
+-> restore frontend/proxy traffic
+```
+
+Once a migration starts, old code must not automatically connect to the changed
+database. Recovery requires a matched application release, protected runtime
+configuration, and RDS restore point. The validation Basic Edition instance is
+not approved for real users, paid workloads, or irreplaceable data; upgrade it
+to a high-availability edition first.
+
+The required gates for this contract are the focused Setup/Auth/frontend tests,
+PostgreSQL 18 schema and semantic proof, production Compose and exact-bundle
+contracts, release-policy checks, current CI, real RDS private/TLS smoke, and a
+WordPress text/media round trip. The Python image CVE exception must be closed
+in a separate release before this database cutover is authorized.
+
+The canonical procedures are:
+
+- [Cloud First Install Contract](cloud-first-install-contract-v1.md);
+- [Cloud First Install with Alibaba RDS PostgreSQL 18](cloud-first-install-rds-pg18-runbook.md);
+- [ADR-022](decisions/022-one-time-cloud-install-and-rds-postgresql-18.md).
+
+## Historical PG16 and P1-E06 Policy (non-normative)
+
+Everything from this heading through the next `Emergency Rule` heading is the
+preserved pre-PG18 production policy. It records how the former local
+PostgreSQL 16 and P1-E06 cutover were governed, but it is no longer an active
+ordinary-deployment requirement and must not be used to reopen compatibility
+paths or require legacy activation receipts.
+
+### Pre-refactor Production Reconciliation
 
 The production-only patches below were reconciled against development
 `master` on 2026-07-14. Their behavior is present in the current development
@@ -67,7 +154,7 @@ required:
 This is a semantic reconciliation record, not a claim that the two branch
 histories or trees should be identical.
 
-## Required Gates Before `master`
+### Historical Required Gates Before `master`
 
 For normal feature and fix PRs:
 
@@ -87,7 +174,7 @@ Recommended command:
 pnpm run check:release-policy
 ```
 
-## Required Gates Before `production`
+### Historical Required Gates Before `production`
 
 Before promoting `master` to `production`:
 
@@ -181,7 +268,7 @@ Approved for production validation by operator.
 Put that sentence in the production promotion PR body until paid branch
 protection/environment approval is enabled.
 
-## Deployment Rule
+### Historical Deployment Rule
 
 Merging or pushing to `production` runs validation only; it must never mutate
 the host. After the exact `production` revision passes `Cloud CI`, an operator

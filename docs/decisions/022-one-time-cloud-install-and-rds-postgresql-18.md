@@ -30,7 +30,10 @@ database and take the platform-admin credential.
 
 Adopt a one-time Cloud installer and a fresh external RDS PostgreSQL 18 database:
 
-- a deployment-generated, high-entropy setup code proves control of the host;
+- a host-generated, high-entropy setup code proves control of the host;
+- automated deployment stores only an initial digest and never emits usable
+  plaintext into CI logs; the operator must issue the usable replacement from
+  an interactive SSH TTY, where it is displayed exactly once;
 - the server stores only the setup-code digest and deletes it after install;
 - the installer accepts a private RDS endpoint, PostgreSQL database credentials,
   and the RDS CA certificate, and requires TLS `verify-full`;
@@ -38,9 +41,13 @@ Adopt a one-time Cloud installer and a fresh external RDS PostgreSQL 18 database
   the recoverable state of the same interrupted install);
 - the installer applies the complete Alembic history, generates the required
   runtime secrets, and atomically commits a protected runtime configuration;
+- interrupted retries bind both the idempotency key and canonical request to
+  the same attempt without storing the request or a password-guessable digest;
 - the installer generates one high-entropy platform-admin key, returns it once,
   and stores only its digest;
 - a completed installation never reopens setup because the database is down;
+- the application always fails closed when installation state is absent;
+  only the locked root host helper may create the first explicit pending state;
 - the formal production Compose topology uses external PostgreSQL and no longer
   owns or bundles a PostgreSQL image;
 - a separate PostgreSQL 18 proof topology remains available for local and CI
@@ -68,6 +75,9 @@ The application has two configuration phases:
   after installation is complete.
 
 Development and test environments may continue to use environment variables.
+The production frontend receives only a dedicated read-only projection of the
+internal service token required by existing Admin BFF routes. It cannot mount or
+read the database configuration or runtime root-secret file.
 
 ## Boundary
 
@@ -107,9 +117,14 @@ empty database to this Cloud runtime.
   single-concurrency workers during validation;
 - losing the one-time admin key requires an operator rotation command; it cannot
   be recovered from stored data;
+- setup/admin key rotation requires an interactive terminal so plaintext cannot
+  be captured by automated deployment logs;
 - future RDS address changes are an operator-controlled cutover, not an ordinary
   admin setting;
 - Basic Edition availability is explicitly insufficient for real-user launch.
+- fresh PG18 installs carry a digest-bound completion marker for future release
+  gates; a completed state without that marker is unsupported by the new deploy
+  path and fails closed instead of reopening a P1-E06 compatibility path.
 
 ## Rollback
 
