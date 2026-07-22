@@ -46,12 +46,14 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/004-wordpress-first-cloud-runtime-refactor.md](docs/decisions/004-wordpress-first-cloud-runtime-refactor.md)
 - [docs/multi-platform-connector-boundary-v1.md](docs/multi-platform-connector-boundary-v1.md)
 - [docs/media-runtime-boundary-v1.md](docs/media-runtime-boundary-v1.md)
+- [docs/cloud-first-install-contract-v1.md](docs/cloud-first-install-contract-v1.md)
 - [docs/cloud-hosted-runtime-profiles-v1.md](docs/cloud-hosted-runtime-profiles-v1.md)
 - [docs/refactor-deletion-inventory-v1.md](docs/refactor-deletion-inventory-v1.md)
 - [docs/p4-portal-admin-surface-inventory-2026-07-16.md](docs/p4-portal-admin-surface-inventory-2026-07-16.md)
 - [docs/decisions/016-fail-closed-portal-admin-service-boundaries.md](docs/decisions/016-fail-closed-portal-admin-service-boundaries.md)
 - [docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md](docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md)
 - [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
+- [docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md](docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md)
 - [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
 
 Evidence records (not target-contract completion proof):
