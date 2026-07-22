@@ -9,6 +9,7 @@ import pytest
 from alembic.config import Config as AlembicConfig
 
 from app.core import runtime_config as runtime_config_module
+from app.core.config import get_settings
 from app.core.runtime_config import (
     RuntimeConfigError,
     configure_alembic_database_url,
@@ -17,6 +18,7 @@ from app.core.runtime_config import (
     runtime_config_digest,
 )
 from app.setup.state import SetupConfigStore, SetupStateError
+from app.workers import catalog_refresh
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +71,17 @@ def _complete_store(tmp_path: Path) -> tuple[SetupConfigStore, dict[str, object]
     return store, payload
 
 
+def _configure_production_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    config_dir: Path,
+) -> None:
+    for environment_name in runtime_config_module._PRODUCTION_RUNTIME_ENV_KEYS:
+        monkeypatch.delenv(environment_name, raising=False)
+    monkeypatch.setenv("NPCINK_CLOUD_ENVIRONMENT", "production")
+    monkeypatch.setenv("NPCINK_CLOUD_CONFIG_DIR", str(config_dir))
+    get_settings.cache_clear()
+
+
 def test_completed_runtime_config_loads_structured_rds_and_secret_projection(
     tmp_path: Path,
 ) -> None:
@@ -88,6 +101,54 @@ def test_completed_runtime_config_loads_structured_rds_and_secret_projection(
     assert values["database_max_overflow"] == 1
     assert (tmp_path / "runtime-config.json").stat().st_mode & 0o777 == 0o600
     assert (tmp_path / "frontend/internal-auth-token").stat().st_mode & 0o777 == 0o640
+
+
+@pytest.mark.parametrize("state_kind", ("pending", "missing", "corrupt"))
+def test_production_get_settings_never_falls_back_when_installation_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state_kind: str,
+) -> None:
+    store = SetupConfigStore(tmp_path)
+    if state_kind == "pending":
+        store.mark_pending()
+    elif state_kind == "corrupt":
+        _complete_store(tmp_path)
+        store.state_path.write_text("{not-json", encoding="utf-8")
+        store.state_path.chmod(0o640)
+    _configure_production_runtime(monkeypatch, tmp_path)
+
+    try:
+        with pytest.raises(RuntimeConfigError):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_worker_like_production_settings_call_rejects_legacy_database_env_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    SetupConfigStore(tmp_path).mark_pending()
+    _configure_production_runtime(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "NPCINK_CLOUD_DATABASE_URL",
+        "postgresql+psycopg://legacy:legacy-secret@old-db.invalid/legacy",
+    )
+
+    def unexpected_database_connection(_database_url: str) -> None:
+        raise AssertionError("worker must fail before consuming a legacy database URL")
+
+    monkeypatch.setattr(
+        catalog_refresh,
+        "require_database_connection",
+        unexpected_database_connection,
+    )
+    try:
+        with pytest.raises(RuntimeConfigError, match="must not be duplicated"):
+            catalog_refresh.main()
+    finally:
+        get_settings.cache_clear()
 
 
 def test_alembic_runtime_url_escapes_percent_interpolation_without_leaking_errors(

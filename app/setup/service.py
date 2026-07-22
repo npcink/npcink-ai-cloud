@@ -73,11 +73,15 @@ class SetupService:
                 "setup.config_write_failed",
                 "installation state is unavailable",
             ) from error
+        if state.installation_state == "complete":
+            self._cleanup_retired_setup_auth()
+            return state
         if recover_interrupted and state.installation_state == "initializing":
             try:
                 with self.store.install_lock():
                     current = self.store.read_state()
                     if current.installation_state == "initializing":
+                        self.store.restore_retired_setup_auth()
                         self.store.delete_partial_runtime()
                         return self.store.mark_pending(
                             attempt_id=current.attempt_id,
@@ -147,7 +151,13 @@ class SetupService:
                 "database validation failed",
             ) from error
 
-    def install(self, request: InstallInput, *, idempotency_key: str) -> dict[str, str]:
+    def install(
+        self,
+        request: InstallInput,
+        *,
+        idempotency_key: str,
+        setup_session_token: str,
+    ) -> dict[str, str]:
         if _IDEMPOTENCY_KEY_PATTERN.fullmatch(idempotency_key) is None:
             raise SetupError(
                 400,
@@ -156,31 +166,22 @@ class SetupService:
             )
         idempotency_key_sha256 = sha256_text(idempotency_key)
         try:
-            setup_auth = self.store.read_setup_auth()
-        except SetupStateError as error:
-            raise SetupError(
-                503,
-                "setup.config_write_failed",
-                "setup authentication is unavailable",
-            ) from error
-        request_fingerprint = hmac.new(
-            setup_auth.session_secret.encode("utf-8"),
-            canonical_json_bytes(
-                {
-                    "cloud_name": request.cloud_name,
-                    "public_base_url": request.public_base_url,
-                    "database": {
-                        **request.database.connection_components(),
-                        "ca_pem": request.database.ca_pem,
-                    },
-                }
-            ),
-            hashlib.sha256,
-        ).hexdigest()
-        try:
             with self.store.install_lock():
                 state = self.state(recover_interrupted=False)
                 self._ensure_setup_open(state, allow_interrupted=True)
+                try:
+                    setup_auth = self.store.read_setup_auth()
+                except SetupStateError as error:
+                    raise SetupError(
+                        503,
+                        "setup.config_write_failed",
+                        "setup authentication is unavailable",
+                    ) from error
+                verify_setup_session_token(setup_auth, setup_session_token)
+                request_fingerprint = self._request_fingerprint(
+                    request,
+                    session_secret=setup_auth.session_secret,
+                )
                 if (
                     state.idempotency_key_sha256
                     and state.idempotency_key_sha256 != idempotency_key_sha256
@@ -211,16 +212,14 @@ class SetupService:
                 try:
                     return self._install_locked(request, attempt_id=attempt_id)
                 except SetupError:
-                    self.store.delete_partial_runtime()
-                    self.store.mark_pending(
+                    self._recover_incomplete_install(
                         attempt_id=attempt_id,
                         idempotency_key_sha256=idempotency_key_sha256,
                         install_request_hmac_sha256=request_fingerprint,
                     )
                     raise
                 except Exception as error:
-                    self.store.delete_partial_runtime()
-                    self.store.mark_pending(
+                    self._recover_incomplete_install(
                         attempt_id=attempt_id,
                         idempotency_key_sha256=idempotency_key_sha256,
                         install_request_hmac_sha256=request_fingerprint,
@@ -283,8 +282,20 @@ class SetupService:
         )
         self.runtime_activation_validator(settings)
         digest = runtime_config_digest(runtime_config)
-        self.store.delete_setup_auth()
-        self.store.mark_complete(config_digest=digest)
+        self.store.retire_setup_auth()
+        try:
+            self.store.mark_complete(config_digest=digest)
+        except Exception:
+            try:
+                observed_state = self.store.read_state()
+            except SetupStateError:
+                raise
+            if (
+                observed_state.installation_state != "complete"
+                or not hmac.compare_digest(observed_state.config_digest, digest)
+            ):
+                raise
+        self._cleanup_retired_setup_auth()
         try:
             completed_database_url = load_runtime_settings_values(self.store.config_dir)[
                 "database_url"
@@ -295,6 +306,53 @@ class SetupService:
             # migrations, configuration validation, and the complete state are durable.
             pass
         return {"admin_key": admin_key, "next_url": "/admin/login"}
+
+    @staticmethod
+    def _request_fingerprint(request: InstallInput, *, session_secret: str) -> str:
+        return hmac.new(
+            session_secret.encode("utf-8"),
+            canonical_json_bytes(
+                {
+                    "cloud_name": request.cloud_name,
+                    "public_base_url": request.public_base_url,
+                    "database": {
+                        **request.database.connection_components(),
+                        "ca_pem": request.database.ca_pem,
+                    },
+                }
+            ),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _recover_incomplete_install(
+        self,
+        *,
+        attempt_id: str,
+        idempotency_key_sha256: str,
+        install_request_hmac_sha256: str,
+    ) -> None:
+        try:
+            self.store.restore_retired_setup_auth()
+            self.store.delete_partial_runtime()
+            self.store.mark_pending(
+                attempt_id=attempt_id,
+                idempotency_key_sha256=idempotency_key_sha256,
+                install_request_hmac_sha256=install_request_hmac_sha256,
+            )
+        except (OSError, SetupStateError) as error:
+            raise SetupError(
+                500,
+                "setup.config_write_failed",
+                "installation recovery could not be completed",
+            ) from error
+
+    def _cleanup_retired_setup_auth(self) -> None:
+        try:
+            self.store.delete_retired_setup_auth()
+        except (OSError, SetupStateError):
+            # Complete is irreversible. A protected tombstone can be removed
+            # idempotently on a later request without reopening Setup.
+            pass
 
     @staticmethod
     def _build_runtime_config(request: InstallInput, *, admin_key: str) -> dict[str, Any]:

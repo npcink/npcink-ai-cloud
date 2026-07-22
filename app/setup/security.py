@@ -55,6 +55,8 @@ def resolve_setup_source_ip(request: Request) -> str:
 
 
 class SetupAttemptLimiter:
+    """Per-process guard for the frozen single-API-worker first-install topology."""
+
     def __init__(self) -> None:
         self._failures: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()

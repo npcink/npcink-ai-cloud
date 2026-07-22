@@ -22,6 +22,7 @@ from app.core.runtime_config import (
 )
 
 SETUP_AUTH_FILE = "setup-auth.json"
+RETIRED_SETUP_AUTH_FILE = ".setup-auth.retired.json"
 INSTALL_LOCK_FILE = ".install.lock"
 
 
@@ -71,6 +72,10 @@ class SetupConfigStore:
     @property
     def setup_auth_path(self) -> Path:
         return self.config_dir / SETUP_AUTH_FILE
+
+    @property
+    def retired_setup_auth_path(self) -> Path:
+        return self.config_dir / RETIRED_SETUP_AUTH_FILE
 
     @property
     def runtime_config_path(self) -> Path:
@@ -247,8 +252,39 @@ class SetupConfigStore:
         os.chmod(parent, 0o750)
         self.atomic_write_bytes(self.internal_token_path, token.encode("utf-8"), mode=0o640)
 
-    def delete_setup_auth(self) -> None:
-        self._unlink(self.setup_auth_path)
+    def retire_setup_auth(self) -> None:
+        self._validate_directory()
+        active_exists = self._path_exists(self.setup_auth_path)
+        retired_exists = self._path_exists(self.retired_setup_auth_path)
+        if retired_exists:
+            self._read_json(self.retired_setup_auth_path, secret=True)
+            if active_exists:
+                raise SetupStateError("setup authentication retirement is ambiguous")
+            return
+        if not active_exists:
+            raise SetupStateError("setup authentication is unavailable")
+        self._read_json(self.setup_auth_path, secret=True)
+        self._replace_and_fsync(self.setup_auth_path, self.retired_setup_auth_path)
+
+    def restore_retired_setup_auth(self) -> None:
+        self._validate_directory()
+        active_exists = self._path_exists(self.setup_auth_path)
+        retired_exists = self._path_exists(self.retired_setup_auth_path)
+        if not retired_exists:
+            if not active_exists:
+                raise SetupStateError("setup authentication recovery is unavailable")
+            self._read_json(self.setup_auth_path, secret=True)
+            return
+        self._read_json(self.retired_setup_auth_path, secret=True)
+        if active_exists:
+            raise SetupStateError("setup authentication recovery is ambiguous")
+        self._replace_and_fsync(self.retired_setup_auth_path, self.setup_auth_path)
+
+    def delete_retired_setup_auth(self) -> None:
+        if not self._path_exists(self.retired_setup_auth_path):
+            return
+        self._read_json(self.retired_setup_auth_path, secret=True)
+        self._unlink(self.retired_setup_auth_path)
 
     def delete_partial_runtime(self) -> None:
         for path in (self.runtime_config_path, self.ca_path, self.internal_token_path):
@@ -259,6 +295,10 @@ class SetupConfigStore:
             path.exists() or path.is_symlink()
             for path in (self.runtime_config_path, self.ca_path, self.internal_token_path)
         )
+
+    @staticmethod
+    def _path_exists(path: Path) -> bool:
+        return path.exists() or path.is_symlink()
 
     @contextmanager
     def install_lock(self) -> Iterator[None]:
@@ -349,6 +389,15 @@ class SetupConfigStore:
                 os.close(directory_descriptor)
         except FileNotFoundError:
             return
+
+    def _replace_and_fsync(self, source: Path, target: Path) -> None:
+        self._validate_directory()
+        os.replace(source, target)
+        directory_descriptor = os.open(self.config_dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
 
 
 def new_attempt_id() -> str:

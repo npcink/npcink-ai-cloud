@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import json
 import re
 from functools import lru_cache
 from urllib.parse import urlsplit
@@ -879,21 +878,11 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     from app.core.runtime_config import (
-        INSTALL_STATE_FILE,
         config_dir_from_environment,
         load_runtime_settings_values,
         production_runtime_enabled,
     )
 
     if production_runtime_enabled():
-        state_path = config_dir_from_environment() / INSTALL_STATE_FILE
-        try:
-            state_payload = json.loads(state_path.read_bytes())
-        except (OSError, UnicodeDecodeError, ValueError):
-            state_payload = {}
-        if (
-            isinstance(state_payload, dict)
-            and state_payload.get("installation_state") == "complete"
-        ):
-            return Settings(**load_runtime_settings_values(config_dir_from_environment()))
+        return Settings(**load_runtime_settings_values(config_dir_from_environment()))
     return Settings()

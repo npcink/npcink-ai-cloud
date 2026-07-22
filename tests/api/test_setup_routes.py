@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -22,8 +23,8 @@ from app.api.routes import setup as setup_routes_module
 from app.core.config import Settings
 from app.setup.database import DatabaseValidationResult
 from app.setup.errors import SetupError
-from app.setup.models import DatabaseInput
-from app.setup.security import sha256_text
+from app.setup.models import DatabaseInput, InstallInput
+from app.setup.security import build_setup_session_token, sha256_text
 from app.setup.service import SetupService
 from app.setup.state import SetupConfigStore
 
@@ -170,6 +171,19 @@ def _client(
     monkeypatch.setenv("NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST", "testserver")
     monkeypatch.setenv("NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST", "https://testserver")
     return TestClient(_create_setup_app(service), base_url="https://testserver")
+
+
+def _install(
+    service: SetupService,
+    request: InstallInput,
+    *,
+    idempotency_key: str,
+) -> dict[str, str]:
+    return service.install(
+        request,
+        idempotency_key=idempotency_key,
+        setup_session_token=build_setup_session_token(service.store.read_setup_auth()),
+    )
 
 
 def test_setup_session_database_install_and_permanent_close(
@@ -321,9 +335,8 @@ def test_complete_liveness_survives_runtime_activation_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service(tmp_path, FakeDatabaseValidator())
-    from app.setup.models import InstallInput
-
-    service.install(
+    _install(
+        service,
         InstallInput.model_validate(
             {
                 "cloud_name": "Npcink Test Cloud",
@@ -377,11 +390,9 @@ def test_install_retry_requires_same_idempotency_key(
         "public_base_url": "https://cloud.example.com",
         "database": _database_payload(_ca_pem()),
     }
-    from app.setup.models import InstallInput
-
     payload = InstallInput.model_validate(request)
     with pytest.raises(SetupError) as first:
-        service.install(payload, idempotency_key="install-attempt-one")
+        _install(service, payload, idempotency_key="install-attempt-one")
     assert first.value.error_code == "setup.migration_failed"
     state = service.store.read_state()
     assert state.installation_state == "pending"
@@ -389,7 +400,7 @@ def test_install_retry_requires_same_idempotency_key(
     assert state.install_request_hmac_sha256
 
     with pytest.raises(SetupError) as conflict:
-        service.install(payload, idempotency_key="install-attempt-two")
+        _install(service, payload, idempotency_key="install-attempt-two")
     assert conflict.value.error_code == "setup.idempotency_key_conflict"
     assert "install-attempt-one" not in service.store.state_path.read_text()
     assert "database-secret" not in service.store.state_path.read_text()
@@ -398,7 +409,7 @@ def test_install_retry_requires_same_idempotency_key(
     changed_request["cloud_name"] = "Different Cloud"
     changed_payload = InstallInput.model_validate(changed_request)
     with pytest.raises(SetupError) as payload_conflict:
-        service.install(changed_payload, idempotency_key="install-attempt-one")
+        _install(service, changed_payload, idempotency_key="install-attempt-one")
     assert payload_conflict.value.error_code == "setup.idempotency_key_conflict"
 
 
@@ -411,11 +422,10 @@ def test_setup_auth_cleanup_failure_does_not_commit_complete(
     def fail_cleanup() -> None:
         raise PermissionError("simulated protected-file cleanup failure")
 
-    monkeypatch.setattr(service.store, "delete_setup_auth", fail_cleanup)
-    from app.setup.models import InstallInput
-
+    monkeypatch.setattr(service.store, "retire_setup_auth", fail_cleanup)
     with pytest.raises(SetupError) as failure:
-        service.install(
+        _install(
+            service,
             InstallInput.model_validate(
                 {
                     "cloud_name": "Npcink Test Cloud",
@@ -434,6 +444,139 @@ def test_setup_auth_cleanup_failure_does_not_commit_complete(
     assert not service.store.internal_token_path.exists()
 
 
+def test_complete_commit_failure_restores_setup_auth_before_pending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(tmp_path, FakeDatabaseValidator())
+
+    def fail_complete(*, config_digest: str) -> object:
+        assert config_digest
+        assert service.store.retired_setup_auth_path.exists()
+        assert not service.store.setup_auth_path.exists()
+        raise PermissionError("simulated complete-state write failure")
+
+    monkeypatch.setattr(service.store, "mark_complete", fail_complete)
+
+    with pytest.raises(SetupError) as failure:
+        _install(
+            service,
+            InstallInput.model_validate(
+                {
+                    "cloud_name": "Npcink Test Cloud",
+                    "public_base_url": "https://cloud.example.com",
+                    "database": _database_payload(_ca_pem()),
+                }
+            ),
+            idempotency_key="complete-state-write-fails",
+        )
+
+    assert failure.value.error_code == "setup.config_write_failed"
+    assert service.store.read_state().installation_state == "pending"
+    assert service.store.setup_auth_path.exists()
+    assert not service.store.retired_setup_auth_path.exists()
+    assert not service.store.runtime_config_path.exists()
+
+
+def test_durable_complete_after_write_error_still_returns_admin_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(tmp_path, FakeDatabaseValidator())
+    original_mark_complete = service.store.mark_complete
+
+    def commit_then_fail(*, config_digest: str) -> object:
+        original_mark_complete(config_digest=config_digest)
+        raise OSError("simulated post-rename directory fsync failure")
+
+    monkeypatch.setattr(service.store, "mark_complete", commit_then_fail)
+
+    result = _install(
+        service,
+        InstallInput.model_validate(
+            {
+                "cloud_name": "Npcink Test Cloud",
+                "public_base_url": "https://cloud.example.com",
+                "database": _database_payload(_ca_pem()),
+            }
+        ),
+        idempotency_key="complete-state-is-already-durable",
+    )
+
+    assert result["admin_key"].startswith("nca_admin_")
+    assert service.store.read_state().installation_state == "complete"
+    assert not service.store.setup_auth_path.exists()
+    assert not service.store.retired_setup_auth_path.exists()
+
+
+def test_interrupted_retired_setup_auth_is_restored_before_pending(tmp_path: Path) -> None:
+    service = _service(tmp_path, FakeDatabaseValidator())
+    setup_session_token = build_setup_session_token(service.store.read_setup_auth())
+    service.store.mark_initializing(
+        attempt_id="install_retired_interrupted",
+        idempotency_key_sha256="a" * 64,
+        install_request_hmac_sha256="b" * 64,
+    )
+    service.store.retire_setup_auth()
+    service.store.write_runtime_config({"partial": True})
+
+    state = service.state()
+
+    assert state.installation_state == "pending"
+    assert state.attempt_id == "install_retired_interrupted"
+    assert service.store.setup_auth_path.exists()
+    assert not service.store.retired_setup_auth_path.exists()
+    assert not service.store.runtime_config_path.exists()
+    service.require_session(setup_session_token)
+
+
+def test_install_revalidates_cookie_after_lock_and_rejects_rotated_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    validator = FakeDatabaseValidator()
+    service = _service(tmp_path, validator)
+    client = _client(monkeypatch, service)
+    session = client.post(
+        "/setup/v1/session",
+        json={"setup_code": SETUP_CODE},
+        headers={"X-Real-IP": "10.0.0.11"},
+    )
+    assert session.status_code == 200
+    original_install_lock = service.store.install_lock
+
+    @contextmanager
+    def rotate_after_route_precheck():  # type: ignore[no-untyped-def]
+        with original_install_lock():
+            service.store.atomic_write_json(
+                service.store.setup_auth_path,
+                {
+                    "setup_code_sha256": sha256_text("nca_setup_" + "r" * 43),
+                    "session_secret": secrets.token_urlsafe(32),
+                    "created_at": "2026-07-22T01:00:00Z",
+                },
+                mode=0o600,
+            )
+            yield
+
+    monkeypatch.setattr(service.store, "install_lock", rotate_after_route_precheck)
+
+    response = client.post(
+        "/setup/v1/install",
+        json={
+            "cloud_name": "Npcink Test Cloud",
+            "public_base_url": "https://cloud.example.com",
+            "database": _database_payload(_ca_pem()),
+        },
+        headers={"Idempotency-Key": "rotated-cookie-race"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "setup.session_required"
+    assert validator.events == []
+    assert service.store.read_state().installation_state == "pending"
+
+
 def test_runtime_activation_failure_does_not_commit_complete(tmp_path: Path) -> None:
     validator = FakeDatabaseValidator()
     activation_states: list[str] = []
@@ -447,10 +590,9 @@ def test_runtime_activation_failure_does_not_commit_complete(tmp_path: Path) -> 
         validator,
         runtime_activation_validator=fail_activation,
     )
-    from app.setup.models import InstallInput
-
     with pytest.raises(SetupError) as failure:
-        service.install(
+        _install(
+            service,
             InstallInput.model_validate(
                 {
                     "cloud_name": "Npcink Test Cloud",
@@ -499,9 +641,8 @@ def test_default_runtime_activation_constructs_services_before_complete(
         "app.core.services.create_default_services",
         capture_activation,
     )
-    from app.setup.models import InstallInput
-
-    service.install(
+    _install(
+        service,
         InstallInput.model_validate(
             {
                 "cloud_name": "Npcink Test Cloud",
@@ -523,10 +664,9 @@ def test_install_rejects_public_origin_that_differs_from_bootstrap_origin(
     validator = FakeDatabaseValidator()
     service = _service(tmp_path, validator)
     service.public_origin_allowlist = {"https://cloud.example.com"}
-    from app.setup.models import InstallInput
-
     with pytest.raises(SetupError) as mismatch:
-        service.install(
+        _install(
+            service,
             InstallInput.model_validate(
                 {
                     "cloud_name": "Npcink Test Cloud",
@@ -594,9 +734,8 @@ def test_cleared_complete_configuration_never_reopens_setup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service(tmp_path, FakeDatabaseValidator())
-    from app.setup.models import InstallInput
-
-    service.install(
+    _install(
+        service,
         InstallInput.model_validate(
             {
                 "cloud_name": "Npcink Test Cloud",

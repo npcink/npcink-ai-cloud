@@ -145,12 +145,14 @@ async def setup_database_test(request: Request) -> JSONResponse:
 async def setup_install(request: Request) -> JSONResponse:
     try:
         service = _service(request)
-        service.require_session(_setup_cookie(request))
+        setup_session_token = _setup_cookie(request)
+        service.require_session(setup_session_token)
         payload = await _validated_body(request, InstallInput)
         result = await asyncio.to_thread(
             service.install,
             payload,
             idempotency_key=str(request.headers.get("idempotency-key") or "").strip(),
+            setup_session_token=setup_session_token,
         )
         response = _no_store(JSONResponse(
             status_code=200,
