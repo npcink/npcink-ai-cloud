@@ -310,7 +310,7 @@ def _create_setup_app(setup_service: SetupService) -> FastAPI:
         )
 
     async def installation_required(request: Request) -> JSONResponse:
-        if request.url.path.startswith("/setup/v1/"):
+        if request.url.path == "/setup/v1" or request.url.path.startswith("/setup/v1/"):
             return JSONResponse(
                 status_code=404,
                 content=build_envelope(
@@ -360,6 +360,9 @@ class InstallAwareApplication:
         if state.installation_state != "complete":
             await self.setup_app(scope, receive, send)
             return
+        if self._is_setup_api_path(scope):
+            await self.setup_app(scope, receive, send)
+            return
         if self._is_http_path(scope, "/health/live") and not self._is_http_get(scope):
             await self._method_not_allowed_response()(scope, receive, send)
             return
@@ -389,6 +392,13 @@ class InstallAwareApplication:
     @staticmethod
     def _is_http_get(scope: Scope) -> bool:
         return str(scope.get("method") or "").upper() == "GET"
+
+    @staticmethod
+    def _is_setup_api_path(scope: Scope) -> bool:
+        if scope.get("type") != "http":
+            return False
+        path = str(scope.get("path") or "")
+        return path == "/setup/v1" or path.startswith("/setup/v1/")
 
     @staticmethod
     def _response_headers() -> dict[str, str]:

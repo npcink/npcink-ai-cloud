@@ -214,6 +214,9 @@ def test_setup_session_database_install_and_permanent_close(
     assert client.get("/v1/catalog/models").json()["error_code"] == (
         "setup.installation_required"
     )
+    setup_root = client.get("/setup/v1")
+    assert setup_root.status_code == 404
+    assert setup_root.json()["error_code"] == "setup.route_not_found"
     assert client.get("/setup/v1/not-a-route").status_code == 404
     assert client.get("/health/ready").status_code == 503
 
@@ -378,6 +381,75 @@ def test_complete_liveness_survives_runtime_activation_failure(
     assert ready.status_code == 503
     assert ready.json()["error_code"] == "health.dependency_unavailable"
     assert service.store.read_state().installation_state == "complete"
+
+
+def test_complete_setup_api_remains_closed_and_observable_when_runtime_activation_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(tmp_path, FakeDatabaseValidator())
+    database_payload = _database_payload(_ca_pem())
+    _install(
+        service,
+        InstallInput.model_validate(
+            {
+                "cloud_name": "Npcink Test Cloud",
+                "public_base_url": "https://cloud.example.com",
+                "database": database_payload,
+            }
+        ),
+        idempotency_key="complete-runtime-setup-state-failure",
+    )
+    monkeypatch.setenv("NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST", "testserver")
+    monkeypatch.setenv("NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST", "https://testserver")
+    application = main_module.InstallAwareApplication(service)
+    activation_attempts: list[str] = []
+
+    def unavailable_runtime() -> object:
+        activation_attempts.append("build")
+        raise RuntimeError("simulated runtime database activation failure")
+
+    monkeypatch.setattr(application, "_build_runtime_application", unavailable_runtime)
+    client = TestClient(application, base_url="https://testserver")
+
+    state = client.get("/setup/v1/state")
+    assert state.status_code == 200
+    assert state.json()["data"] == {
+        "installation_state": "complete",
+        "setup_revision": "first-install-v1",
+        "retry_allowed": False,
+    }
+    assert state.headers["cache-control"] == "no-store"
+
+    setup_root = client.get("/setup/v1")
+    assert setup_root.status_code == 404
+    assert setup_root.json()["error_code"] == "setup.route_not_found"
+    closed_responses = (
+        client.post(
+            "/setup/v1/session",
+            json={"setup_code": SETUP_CODE},
+            headers={"X-Real-IP": "10.0.0.12"},
+        ),
+        client.post("/setup/v1/database/test", json=database_payload),
+        client.post(
+            "/setup/v1/install",
+            json={
+                "cloud_name": "Npcink Test Cloud",
+                "public_base_url": "https://cloud.example.com",
+                "database": database_payload,
+            },
+            headers={"Idempotency-Key": "must-remain-closed"},
+        ),
+    )
+    for response in closed_responses:
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "setup.already_complete"
+
+    assert activation_attempts == []
+    adjacent_path = client.get("/setup/v10/state")
+    assert adjacent_path.status_code == 503
+    assert adjacent_path.json()["error_code"] == "health.dependency_unavailable"
+    assert activation_attempts == ["build"]
 
 
 def test_install_retry_requires_same_idempotency_key(
