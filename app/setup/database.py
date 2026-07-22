@@ -87,10 +87,11 @@ class PostgreSQL18Validator:
                     max_connections = int(
                         connection.execute(text("SHOW max_connections")).scalar_one()
                     )
-                    relation_names = self._relation_names(connection)
+                    current_schema, relation_identities = self._relation_names(connection)
                     database_empty, alembic_state = self._classify_database(
                         connection,
-                        relation_names=relation_names,
+                        current_schema=current_schema,
+                        relation_identities=relation_identities,
                         interrupted_attempt_id=interrupted_attempt_id,
                     )
                     self._probe_ddl_permissions(connection)
@@ -189,28 +190,36 @@ class PostgreSQL18Validator:
             ) from error
 
     @staticmethod
-    def _relation_names(connection: Connection) -> set[str]:
+    def _relation_names(connection: Connection) -> tuple[str, set[tuple[str, str, str]]]:
+        current_schema = str(
+            connection.execute(text("SELECT current_schema()")).scalar_one()
+        )
         rows = connection.execute(
             text(
-                "SELECT c.relname FROM pg_class c "
+                "SELECT n.nspname, c.relname, c.relkind FROM pg_class c "
                 "JOIN pg_namespace n ON n.oid = c.relnamespace "
                 "WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') "
                 "AND n.nspname NOT LIKE 'pg_toast%' "
                 "AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')"
             )
-        ).scalars()
-        return {str(item) for item in rows}
+        )
+        return current_schema, {
+            (str(schema_name), str(relation_name), str(relation_kind))
+            for schema_name, relation_name, relation_kind in rows
+        }
 
     def _classify_database(
         self,
         connection: Connection,
         *,
-        relation_names: set[str],
+        current_schema: str,
+        relation_identities: set[tuple[str, str, str]],
         interrupted_attempt_id: str,
     ) -> tuple[bool, str]:
-        if not relation_names:
+        if not relation_identities:
             return True, "empty"
-        if not interrupted_attempt_id or INSTALL_MARKER_TABLE not in relation_names:
+        marker_identity = (current_schema, INSTALL_MARKER_TABLE, "r")
+        if not interrupted_attempt_id or marker_identity not in relation_identities:
             raise SetupError(409, "setup.database_not_empty", "database must be empty")
         marker_attempts = connection.execute(
             text(f"SELECT attempt_id FROM {INSTALL_MARKER_TABLE}")
@@ -218,19 +227,36 @@ class PostgreSQL18Validator:
         if marker_attempts != [interrupted_attempt_id]:
             raise SetupError(409, "setup.database_not_empty", "database must be empty")
         model_tables = {table.name for table in Base.metadata.sorted_tables}
-        allowed = model_tables | {"alembic_version", INSTALL_MARKER_TABLE}
         unexpected = {
-            name
-            for name in relation_names
-            if name not in allowed
-            and not any(
-                name.startswith(f"{table_name}_") and name.endswith("_seq")
-                for table_name in model_tables
+            (schema_name, relation_name, relation_kind)
+            for schema_name, relation_name, relation_kind in relation_identities
+            if schema_name != current_schema
+            or not (
+                (
+                    relation_kind in {"r", "p"}
+                    and relation_name in model_tables
+                )
+                or (
+                    relation_kind == "r"
+                    and relation_name in {"alembic_version", INSTALL_MARKER_TABLE}
+                )
+                or (
+                    relation_kind == "S"
+                    and any(
+                        relation_name.startswith(f"{table_name}_")
+                        and relation_name.endswith("_seq")
+                        for table_name in model_tables
+                    )
+                )
             )
         }
         if unexpected:
             raise SetupError(409, "setup.database_not_empty", "database must be empty")
-        alembic_state = "interrupted" if "alembic_version" in relation_names else "empty"
+        alembic_state = (
+            "interrupted"
+            if (current_schema, "alembic_version", "r") in relation_identities
+            else "empty"
+        )
         return False, alembic_state
 
     @staticmethod

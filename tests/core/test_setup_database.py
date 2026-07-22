@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.setup.database import PostgreSQL18Validator
+from app.core.models import Base
+from app.setup.database import INSTALL_MARKER_TABLE, PostgreSQL18Validator
 from app.setup.errors import SetupError
 from app.setup.models import DatabaseInput
 
@@ -47,12 +48,20 @@ class _FakeConnection:
         version_number: int = 180000,
         tls_active: bool = True,
         relation_names: set[str] | None = None,
+        relation_identities: set[tuple[str, str, str]] | None = None,
+        current_schema: str = "public",
         marker_attempts: list[str] | None = None,
         fail_ddl: bool = False,
     ) -> None:
         self.version_number = version_number
         self.tls_active = tls_active
-        self.relation_names = relation_names or set()
+        self.current_schema = current_schema
+        self.relation_identities = relation_identities or {
+            (current_schema, name, "r") for name in relation_names or set()
+        }
+        self.relation_names = {
+            name for _schema, name, _kind in self.relation_identities
+        }
         self.marker_attempts = marker_attempts or []
         self.fail_ddl = fail_ddl
         self.transaction = _FakeTransaction()
@@ -74,7 +83,11 @@ class _FakeConnection:
             return _FakeResult(self.tls_active)
         if sql == "SHOW max_connections":
             return _FakeResult(100)
+        if sql == "SELECT current_schema()":
+            return _FakeResult(self.current_schema)
         if "FROM pg_class" in sql:
+            if "n.nspname, c.relname, c.relkind" in sql:
+                return _FakeResult(sorted(self.relation_identities))
             return _FakeResult(sorted(self.relation_names))
         if "SELECT attempt_id" in sql:
             return _FakeResult(self.marker_attempts)
@@ -215,6 +228,52 @@ def test_database_validator_rejects_nonempty_database(tmp_path: Path) -> None:
         tmp_path,
         _FakeConnection(relation_names={"existing_business_table"}),
     ) == "setup.database_not_empty"
+
+
+def test_database_validator_rejects_allowed_table_name_in_external_schema(
+    tmp_path: Path,
+) -> None:
+    model_table_name = Base.metadata.sorted_tables[0].name
+    assert _validation_error_code(
+        tmp_path,
+        _FakeConnection(
+            relation_identities={
+                ("public", INSTALL_MARKER_TABLE, "r"),
+                ("public", "alembic_version", "r"),
+                ("external_schema", model_table_name, "r"),
+            },
+            marker_attempts=["install_interrupted"],
+        ),
+        interrupted_attempt_id="install_interrupted",
+    ) == "setup.database_not_empty"
+
+
+def test_database_validator_accepts_known_interrupted_relations_in_current_schema(
+    tmp_path: Path,
+) -> None:
+    model_table_name = Base.metadata.sorted_tables[0].name
+    connection = _FakeConnection(
+        relation_identities={
+            ("public", INSTALL_MARKER_TABLE, "r"),
+            ("public", "alembic_version", "r"),
+            ("public", model_table_name, "r"),
+            ("public", f"{model_table_name}_id_seq", "S"),
+        },
+        marker_attempts=["install_interrupted"],
+    )
+    engine = _FakeEngine(connection)
+    validator = _ValidatorWithFakeEngine(engine)
+
+    result = validator.validate(
+        _database_input(),
+        ca_path=tmp_path / "rds-ca.pem",
+        interrupted_attempt_id="install_interrupted",
+    )
+
+    assert result.database_empty is False
+    assert result.alembic_state == "interrupted"
+    assert engine.disposed is True
+    assert connection.transaction.rolled_back is True
 
 
 def test_database_validator_maps_ddl_permission_failure_without_leaking_details(
