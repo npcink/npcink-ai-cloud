@@ -11,7 +11,7 @@ import {
   requireAdminSessionData,
   type AdminCapability,
 } from '../_shared';
-import { getInternalAuthToken } from '@/lib/env';
+import { getInternalAuthToken } from '@/lib/server-env';
 
 /**
  * Admin API catch-all proxy.

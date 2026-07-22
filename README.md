@@ -46,12 +46,14 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/004-wordpress-first-cloud-runtime-refactor.md](docs/decisions/004-wordpress-first-cloud-runtime-refactor.md)
 - [docs/multi-platform-connector-boundary-v1.md](docs/multi-platform-connector-boundary-v1.md)
 - [docs/media-runtime-boundary-v1.md](docs/media-runtime-boundary-v1.md)
+- [docs/cloud-first-install-contract-v1.md](docs/cloud-first-install-contract-v1.md)
 - [docs/cloud-hosted-runtime-profiles-v1.md](docs/cloud-hosted-runtime-profiles-v1.md)
 - [docs/refactor-deletion-inventory-v1.md](docs/refactor-deletion-inventory-v1.md)
 - [docs/p4-portal-admin-surface-inventory-2026-07-16.md](docs/p4-portal-admin-surface-inventory-2026-07-16.md)
 - [docs/decisions/016-fail-closed-portal-admin-service-boundaries.md](docs/decisions/016-fail-closed-portal-admin-service-boundaries.md)
 - [docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md](docs/decisions/018-cloud-hosted-runtime-profile-admin-surface.md)
 - [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
+- [docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md](docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md)
 - [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
 
 Evidence records (not target-contract completion proof):
@@ -250,7 +252,7 @@ Current repository status is:
   soft-limit, runtime downgrade overrides, commercial policy inspect, and
   ledger-vs-snapshot reconciliation inspect
 - bounded platform-admin seam is now landed for:
-  - bounded `/admin` session cookie login via `internal token`
+  - bounded `/admin` session cookie login via the one-time-generated admin key
   - accounts, sites, plans, subscriptions, runtime diagnostics, audit, and commercial decisions
 - bounded portal auth seam is now landed for:
   - invited `user` email verification-code login
@@ -448,8 +450,9 @@ feature branch should compare against a different base.
 After hardening-sensitive changes, also rerun the production packaging lane:
 
 ```bash
-POSTGRES_PASSWORD='prod-password-32-characters-secret' \
-NPCINK_CLOUD_DATABASE_URL='postgresql+psycopg://npcink:prod-password-32-characters-secret@postgres:5432/npcink_ai_cloud' \
+NPCINK_CLOUD_BASE_URL='https://cloud.example.com' \
+NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST='https://cloud.example.com' \
+NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST='cloud.example.com' \
 docker compose -f docker-compose.prod.yml config >/dev/null
 docker build -t npcink-cloud-prod-check -f Dockerfile .
 ```
@@ -621,7 +624,7 @@ NPCINK_CLOUD_DEV_OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318/v1
 ```
 
 Keep local-only debug credentials such as `NPCINK_CLOUD_INTERNAL_AUTH_TOKEN`,
-`NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`, `NPCINK_CLOUD_ADMIN_SESSION_SECRET`, and
+`NPCINK_CLOUD_DEV_ADMIN_KEY`, `NPCINK_CLOUD_ADMIN_SESSION_SECRET`, and
 `NPCINK_CLOUD_PORTAL_JWT_SECRET` in `.env.local` for dev Docker runs.
 `.env.local` is gitignored, while production-style deploy helpers read
 `.env.deploy` instead.
@@ -640,28 +643,30 @@ Runtime catalog metadata can also include Ollama-sourced model records in two mo
 The allowlist mode is best for private nodes you actually run. Ollama metadata is consumed as runtime catalog input only; it does not create a platform model operations surface.
 
 For production-style remote deploys, start from [.env.example](.env.example),
-then copy it to `.env.deploy` or another deploy env file. Production-style
-config now fails fast when these are missing:
+then copy only non-secret bootstrap and runtime tuning values to `.env.deploy`.
+The public origin and trusted host must be configured before the browser opens
+`/setup`. Database credentials, the internal token, `NPCINK_CLOUD_ADMIN_KEY`,
+`NPCINK_CLOUD_ADMIN_SESSION_SECRET`, service/runtime encryption roots, and the
+Portal JWT root are generated or persisted under protected `shared/config/`;
+they must not be added to `.env.deploy`.
 
-- `NPCINK_CLOUD_INTERNAL_AUTH_TOKEN`
-- `NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`
-- `NPCINK_CLOUD_ADMIN_SESSION_SECRET`
-- `NPCINK_CLOUD_SERVICE_SETTINGS_SECRET` is recommended for new production
-  deploys so service-setting credentials are not tied to the admin session
-  secret.
-- `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_SECRET`
-- `NPCINK_CLOUD_RUNTIME_DATA_ENCRYPTION_KEY_ID`
-- `NPCINK_CLOUD_PORTAL_JWT_SECRET`
-- `NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST`
-- `NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST`
+On the first deploy, the host helper initializes setup authentication without
+putting a usable code in CI output. Issue the usable `nca_setup_...` replacement
+from the active release in an interactive SSH TTY, then open `/setup`, enter the
+Cloud origin and Alibaba RDS PostgreSQL 18 details, verify the private TLS
+connection, and save the one-time `nca_admin_...` key.
+The canonical operator procedure is
+[Cloud First Install with Alibaba RDS PostgreSQL 18](docs/cloud-first-install-rds-pg18-runbook.md),
+and the frozen API/security contract is
+[Cloud First Install Contract v1](docs/cloud-first-install-contract-v1.md).
 
 After the first platform-admin login, configure Portal public URL, QQ login,
 and Portal email delivery in `/admin/service-settings`. These service settings
 are stored by Cloud runtime storage and are no longer read from `.env`.
 Secret values saved through `/admin/service-settings` use the active `sse.v1`
-key family. Legacy raw rows are not read through a compatibility chain; they
-must be migrated by the stopped-writer P1-E06 procedure before ordinary
-runtime resumes.
+key family. A fresh PostgreSQL 18 installation does not import legacy raw rows
+or consume the retired P1-E06 migration evidence; historical databases are not
+accepted through a compatibility chain.
 
 The runtime-data secret and key ID are not ordinary configuration-only rotation
 values. Changing them requires the stopped-writer inventory, backup,
@@ -684,7 +689,7 @@ stdout, and does not re-enable `.env` fallback.
 Additional hardening rules now enforced:
 
 - production API runs behind `gunicorn` + `uvicorn.workers.UvicornWorker`
-- admin bootstrap auth is a separate secret from internal service auth outside development/test
+- admin-key login is a separate secret from internal service auth outside development/test
 - browser same-origin checks use explicit origin allowlists and fail closed on bad forwarded origin input
 - trusted host / forwarded host validation no longer assumes ingress is always configured correctly
 - callback registration and dispatch only accept `https://` targets that resolve to public IP space
@@ -694,13 +699,15 @@ Additional hardening rules now enforced:
 
 Before a formal deploy, run the combined release smoke:
 
+Create a mode-`0600` JSON credentials file outside the repository with the
+required `NPCINK_CLOUD_INTERNAL_AUTH_TOKEN`, `NPCINK_CLOUD_ADMIN_KEY`, Portal,
+and signed-runtime smoke fields listed in
+[deploy/release-smoke.env.example](deploy/release-smoke.env.example), then run:
+
 ```bash
 bash deploy/release-smoke.sh \
   --base-url https://cloud.example.com \
-  --internal-auth-token "$NPCINK_CLOUD_INTERNAL_AUTH_TOKEN" \
-  --admin-token "$NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN" \
-  --member-email invited-admin@example.com \
-  --login-code 123456
+  --credentials-file /secure/path/release-smoke-credentials.json
 ```
 
 The release smoke verifies:
@@ -713,7 +720,7 @@ The release smoke verifies:
 - `POST /portal/v1/auth/code/verify`
 - `GET /portal/v1/session`
 - `GET /admin/login`
-- `POST /admin/auth/bootstrap`
+- `POST /admin/auth/login`
 - `GET /admin/session`
 
 This workspace now also keeps a local remote-target handoff at
@@ -802,12 +809,12 @@ Portal member auth:
   - Portal public URL
   - QQ login, when enabled
   - SMTP sender settings for verification-code delivery
-Platform admin bootstrap auth:
+Platform admin key auth:
 
 - Cloud now assumes one non-self-serve `platform_admin`
-- current bounded bootstrap path:
-  - `POST /admin/auth/bootstrap`
-  - request body: `{"token":"<admin bootstrap token>"}`
+- current bounded login path:
+  - `POST /admin/auth/login`
+  - request body: `{"admin_key":"<current admin key>"}`
   - response establishes `npcink_admin_session_token`
 - current admin session inspect path:
   - `GET /admin/session`
@@ -820,7 +827,7 @@ Platform admin bootstrap auth:
   - one `Identity Layers` block for platform roles vs customer portal roles
   - one `Plan catalog` block derived from live `plan_distribution`
   - quick drill-in links to `/admin/plans`, `/admin/accounts`, and `/admin/subscriptions`
-- platform-admin bootstrap uses the configured single platform admin reference
+- platform-admin login uses the configured single platform admin reference
   and does not require a separate identity-provisioning surface
 - current operator runbook for lean validation:
   - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
@@ -927,14 +934,16 @@ Cloud now also exposes one internal-only admin console:
 - `GET /admin/subscriptions/{subscription_id}`
 - `GET /admin/plans`
 - `GET /admin/login`
-- `POST /admin/auth/bootstrap`
+- `POST /admin/auth/login`
 - `GET /admin/session`
 - `GET /admin/logout`
 
-Admin auth is bounded to the dedicated admin bootstrap token seam:
+Admin auth is bounded to the dedicated one-time-generated admin-key seam:
 
-- `POST /admin/auth/bootstrap` with `token=<NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN>`
+- `POST /admin/auth/login` with the saved one-time `nca_admin_...` key
   establishes one bounded ops cookie session
+- production stores only the key digest in protected runtime configuration;
+  the plaintext is not an environment variable
 - it does not replace future formal admin auth or IAM
 
 Current `/admin` overview is not just counters. It now also includes:
@@ -979,7 +988,7 @@ Current internal admin routes:
 - `GET /admin/subscriptions`
 - `GET /admin/subscriptions/{subscription_id}`
 - `GET /admin/login`
-- `POST /admin/auth/bootstrap`
+- `POST /admin/auth/login`
 - `GET /admin/session`
 - `GET /admin/logout`
 
@@ -1002,7 +1011,7 @@ Current admin list filters:
 Current login shape:
 
 - open `/admin/login`
-- provide the current `NPCINK_CLOUD_ADMIN_BOOTSTRAP_TOKEN`
+- provide the saved current `nca_admin_...` key
 - the page sets one bounded admin cookie session for `/admin`
 
 This remains an internal runtime/operations surface. It is not a customer portal

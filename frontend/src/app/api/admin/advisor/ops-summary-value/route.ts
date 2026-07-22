@@ -10,7 +10,7 @@ import {
   requireAdminCapability,
   requireAdminSessionData,
 } from '../../_shared';
-import { getInternalAuthToken } from '@/lib/env';
+import { getInternalAuthToken } from '@/lib/server-env';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const sessionResult = await requireAdminSessionData(request);

@@ -68,6 +68,7 @@ assert.doesNotMatch(
 
 const translationLockedFiles = [
   resolve(root, 'src/app/admin/layout.tsx'),
+  resolve(root, 'src/app/admin/login/page.tsx'),
   resolve(root, 'src/app/admin/page.tsx'),
   resolve(root, 'src/app/admin/accounts/page.tsx'),
   resolve(root, 'src/app/admin/accounts/[accountId]/page.tsx'),
@@ -83,6 +84,7 @@ const translationLockedFiles = [
   resolve(root, 'src/app/admin/coverage/page.tsx'),
   resolve(root, 'src/components/admin/AdminAuditSummaryPanel.tsx'),
   resolve(root, 'src/components/admin/AdminMutationReceipt.tsx'),
+  resolve(root, 'src/components/setup/SetupWizard.tsx'),
   resolve(root, 'src/app/page.tsx'),
   resolve(root, 'src/app/portal/page.tsx'),
   resolve(root, 'src/app/portal/login/page.tsx'),

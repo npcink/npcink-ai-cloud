@@ -410,3 +410,23 @@ engineering bundle. `linux/amd64`, production Edge/DNS/WAF/TLS/OTLP/secrets,
 production backup/RPO/RTO, penetration testing, live-provider quality, and
 real-user value are also `production-only not claimed`. External object storage
 remains a deferred non-goal rather than a production prerequisite.
+
+## Final Current Resolution — 2026-07-22
+
+This append-only update does not revise the original audit snapshot, the
+failed-first evidence, or what remained unproved on 2026-07-17/19.
+
+The exact controlled-production release subsequently completed both
+operator-only phase-exit items: P1-E05 production title execution plus
+idempotent replay/no-WordPress-write proof, and P1-E06 protected inventory,
+off-host backup, independent restore rehearsal, dual-domain cutover, activation
+and public-health proof. The current local WordPress text/media paths and the
+latest implementation `master` also passed the Cloud/plugin gates, exact local
+bundle replay and clean six-repository matrix.
+
+The authoritative current requirement-to-evidence conclusion is
+[Post-P5 Final Integration And Production Validation Closeout](post-p5-final-integration-and-production-validation-closeout-2026-07-22.md):
+the WordPress-first P0-P5 engineering refactor is complete, while GA remains a
+separate blocked decision. The three named Python 3.14.6 High findings remain
+under a controlled-production-only exception through `2026-08-05`; zero
+unallowlisted blockers must not be described as zero vulnerabilities.

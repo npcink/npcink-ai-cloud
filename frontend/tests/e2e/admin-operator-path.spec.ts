@@ -38,7 +38,7 @@ test('an invalid admin cookie does not expose navigation or trap the login page'
   ]);
   await page.reload();
 
-  await expect(page.locator('#token')).toBeVisible();
+  await expect(page.locator('#admin_key')).toBeVisible();
   await expect(page.locator('[data-ui="admin-primary-nav"]')).toHaveCount(0);
 });
 
