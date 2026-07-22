@@ -1442,7 +1442,9 @@ def test_runtime_data_encryption_deploy_boundary_is_backend_only() -> None:
     assert "Stage-only remote entry requires exactly five arguments." in deploy_to_ssh
     assert "cleanup_remote_incoming_on_exit" in deploy_to_ssh
     assert "--stage-only does not accept an env file" in deploy_to_ssh
-    stage_branch = deploy_to_ssh.split('if [ "${STAGE_ONLY}" = "1" ]; then', 2)[2]
+    stage_branch = deploy_to_ssh.split(
+        "# Stage-only deliberately exits before resolving current", 1
+    )[1]
     stage_branch = stage_branch.split("atomic_set_current()", 1)[0]
     assert "verify-release-bundle.sh" in stage_branch
     assert "--pre-load" in stage_branch
