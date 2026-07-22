@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendForwardHeaders, buildBackendUrl, buildForwardedRequestHeaders } from '@/app/api/admin/_shared';
 import {
-  getAdminBootstrapToken,
-  getAdminBootstrapAdminRef,
   getPublicBaseUrl,
   isMiniDevHost,
   isMiniDevRequestHost,
 } from '@/lib/env';
+import { getDevAdminKey } from '@/lib/server-env';
 
 function isUsableExternalMiniHost(hostname: string): boolean {
   const host = hostname.trim().toLowerCase();
@@ -138,7 +137,12 @@ function isMiniDevEntryEnabledForRequest(request: NextRequest): boolean {
 
 function resolveRedirectPath(request: NextRequest): string {
   const requestedRedirect = String(request.nextUrl.searchParams.get('redirect') || '').trim();
-  if (!requestedRedirect.startsWith('/admin')) {
+  if (
+    requestedRedirect !== '/admin' &&
+    !requestedRedirect.startsWith('/admin/') &&
+    !requestedRedirect.startsWith('/admin?') &&
+    !requestedRedirect.startsWith('/admin#')
+  ) {
     return '/admin';
   }
   return requestedRedirect;
@@ -153,7 +157,7 @@ export async function GET(request: NextRequest) {
   const resolvedOriginUrl = new URL(resolvedOrigin);
   let response: Response;
   try {
-    response = await fetch(buildBackendUrl('/admin/auth/bootstrap'), {
+    response = await fetch(buildBackendUrl('/admin/auth/login'), {
       method: 'POST',
       headers: buildForwardedRequestHeaders(request, {
         Accept: 'text/html,application/json',
@@ -165,8 +169,7 @@ export async function GET(request: NextRequest) {
         Referer: `${resolvedOrigin}/`,
       }),
       body: JSON.stringify({
-        token: getAdminBootstrapToken(),
-        admin_ref: getAdminBootstrapAdminRef(),
+        admin_key: getDevAdminKey(),
         redirect: resolveRedirectPath(request),
       }),
       redirect: 'manual',

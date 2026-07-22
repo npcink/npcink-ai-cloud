@@ -23,6 +23,73 @@ def test_get_engine_hides_sql_parameters(tmp_path: Path) -> None:
         db_module.dispose_engine(database_url)
 
 
+def test_get_engine_supports_sqlite_singleton_pool() -> None:
+    database_url = "sqlite+pysqlite:///:memory:"
+    engine = db_module.get_engine(database_url)
+
+    try:
+        assert engine.dialect.name == "sqlite"
+    finally:
+        db_module.dispose_engine(database_url)
+
+
+def test_postgresql_engine_keeps_frozen_queue_pool_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = "postgresql+psycopg://db-user:db-password@private-db/cloud"
+    sentinel = object()
+    captured: dict[str, object] = {}
+
+    def capture_engine(url: str, **kwargs: object) -> Any:
+        captured["url"] = url
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(db_module, "create_engine", capture_engine)
+    db_module.get_engine.cache_clear()
+    try:
+        assert db_module.get_engine(
+            database_url,
+            pool_size=3,
+            max_overflow=2,
+            pool_timeout_seconds=11,
+            pool_recycle_seconds=1900,
+            connect_timeout_seconds=6,
+        ) is sentinel
+    finally:
+        db_module.get_engine.cache_clear()
+
+    assert captured["url"] == database_url
+    assert captured["pool_size"] == 3
+    assert captured["max_overflow"] == 2
+    assert captured["pool_timeout"] == 11
+    assert captured["pool_recycle"] == 1900
+    assert captured["connect_args"] == {"connect_timeout": 6}
+
+
+def test_engine_creation_type_error_is_not_retried_or_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fail_engine_creation(_url: str, **kwargs: object) -> Any:
+        calls.append(kwargs)
+        raise TypeError("driver-specific engine failure")
+
+    monkeypatch.setattr(db_module, "create_engine", fail_engine_creation)
+    db_module.get_engine.cache_clear()
+    try:
+        with pytest.raises(TypeError, match="driver-specific engine failure"):
+            db_module.get_engine("sqlite+pysqlite:///:memory:")
+    finally:
+        db_module.get_engine.cache_clear()
+
+    assert len(calls) == 1
+    assert "pool_size" not in calls[0]
+    assert "max_overflow" not in calls[0]
+    assert "pool_timeout" not in calls[0]
+
+
 def test_database_connection_failure_returns_stable_non_sensitive_error_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

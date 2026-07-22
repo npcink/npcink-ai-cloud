@@ -13,19 +13,15 @@ const rootLayoutSource = readFileSync(rootLayoutPath, 'utf8');
 
 assert.match(
   adminRouteSource,
-  /buildBackendUrl\('\/admin\/auth\/bootstrap'\)/,
-  'admin dev-entry must bootstrap through /admin/auth/bootstrap'
+  /buildBackendUrl\('\/admin\/auth\/login'\)/,
+  'admin dev-entry must log in through /admin/auth/login'
 );
 assert.match(
   adminRouteSource,
-  /token:\s*getAdminBootstrapToken\(\)/,
-  'admin dev-entry must send the admin bootstrap token'
+  /admin_key:\s*getDevAdminKey\(\)/,
+  'admin dev-entry must send the development-only admin key'
 );
-assert.match(
-  adminRouteSource,
-  /admin_ref:\s*getAdminBootstrapAdminRef\(\)/,
-  'admin dev-entry must send the bootstrap admin ref'
-);
+assert.doesNotMatch(adminRouteSource, /admin\/auth\/bootstrap|admin_ref|getAdminBootstrap/i);
 assert.match(
   adminRouteSource,
   /redirect:\s*resolveRedirectPath\(request\)/,
@@ -43,7 +39,7 @@ assert.match(
 );
 assert.match(
   adminRouteSource,
-  /if \(!requestedRedirect\.startsWith\('\/admin'\)\) \{\s*return '\/admin';\s*\}/m,
+  /requestedRedirect !== '\/admin'[\s\S]*!requestedRedirect\.startsWith\('\/admin\/'\)[\s\S]*!requestedRedirect\.startsWith\('\/admin\?'\)/m,
   'admin dev-entry must only honor redirects that stay inside /admin'
 );
 assert.match(

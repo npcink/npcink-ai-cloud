@@ -16,33 +16,50 @@ EXPECTED_API_IMAGE_ID="$(
 		--root "${ROOT_DIR}" --role api
 )"
 
-npcink_ai_cloud_run_timed "wait for database auth" \
+npcink_ai_cloud_run_timed "wait for configured external database" \
 	npcink_ai_cloud_compose_run_with_image_proof \
-	"${ROOT_DIR}" api npcink-ai-cloud-api:prod "${EXPECTED_API_IMAGE_ID}" python -c '
-import os
-import sys
-import time
-
-import psycopg
-
-url = os.environ["NPCINK_CLOUD_DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://")
-last_error = None
-for _ in range(30):
-    try:
-        with psycopg.connect(url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("select 1")
-                cursor.fetchone()
-        sys.exit(0)
-    except Exception as exc:
-        last_error = exc
-        time.sleep(2)
-
-print(f"[fail] Database authentication did not become ready: {last_error}", file=sys.stderr)
-sys.exit(1)
-'
+	"${ROOT_DIR}" api npcink-ai-cloud-api:prod "${EXPECTED_API_IMAGE_ID}" \
+	sh -ceu '
+		attempt=0
+		while [ "${attempt}" -lt 30 ]; do
+			if alembic current >/dev/null 2>&1; then
+				exit 0
+			fi
+			attempt=$((attempt + 1))
+			sleep 2
+		done
+		echo "[fail] Configured external database did not become ready." >&2
+		exit 1
+	'
 npcink_ai_cloud_run_timed "alembic upgrade" \
 	npcink_ai_cloud_compose_run_with_image_proof \
 	"${ROOT_DIR}" api npcink-ai-cloud-api:prod "${EXPECTED_API_IMAGE_ID}" \
-	alembic upgrade head
-echo "[ok] Migration completed without starting application services."
+	sh -ceu 'alembic upgrade head
+python - <<'"'"'PY'"'"'
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import text
+
+from app.core.config import get_settings
+from app.core.db import get_engine
+from scripts.alembic_revision_gate import require_exact_candidate_heads
+
+settings = get_settings()
+engine = get_engine(
+    settings.database_url,
+    pool_size=settings.database_pool_size,
+    max_overflow=settings.database_max_overflow,
+    pool_timeout_seconds=settings.database_pool_timeout_seconds,
+    pool_recycle_seconds=settings.database_pool_recycle_seconds,
+    connect_timeout_seconds=settings.database_connect_timeout_seconds,
+)
+with engine.connect() as connection:
+    observed = {
+        str(row[0])
+        for row in connection.execute(text("SELECT version_num FROM alembic_version"))
+    }
+require_exact_candidate_heads(
+    ScriptDirectory.from_config(Config("alembic.ini")), observed
+)
+PY'
+echo "[ok] Migration completed without starting application services; exact candidate Alembic head was proved."

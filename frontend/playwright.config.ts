@@ -10,6 +10,9 @@ const useExternalServer = Boolean(process.env.NPCINK_CLOUD_FRONTEND_BASE_URL);
 const webServerEnv = {
   ...process.env,
   NEXT_TELEMETRY_DISABLED: '1',
+  NEXT_PUBLIC_ENV: process.env.NEXT_PUBLIC_ENV || 'test',
+  NPCINK_CLOUD_SETUP_STATE_OVERRIDE:
+    process.env.NPCINK_CLOUD_SETUP_STATE_OVERRIDE || 'complete',
 };
 
 if (webServerEnv.NO_COLOR) {
