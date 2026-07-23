@@ -183,6 +183,35 @@ def test_database_model_rejects_non_aliyun_rds_hostname(
     assert any(error["loc"] == ("host",) for error in captured.value.errors())
 
 
+def test_database_model_rejects_private_key_in_ca_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.setup.models.ssl.create_default_context",
+        lambda **_kwargs: object(),
+    )
+
+    with pytest.raises(ValidationError) as captured:
+        DatabaseInput.model_validate(
+            {
+                "host": "rm-test.pg.rds.aliyuncs.com",
+                "port": 5432,
+                "database": "npcink",
+                "username": "npcink",
+                "password": "database-password",
+                "ssl_mode": "verify-full",
+                "ca_pem": (
+                    "-----BEGIN CERTIFICATE-----\nunused\n"
+                    "-----END CERTIFICATE-----\n"
+                    "-----BEGIN PRIVATE KEY-----\nsecret\n"
+                    "-----END PRIVATE KEY-----\n"
+                ),
+            }
+        )
+
+    assert any(error["loc"] == ("ca_pem",) for error in captured.value.errors())
+
+
 @pytest.mark.parametrize("unsafe_address", ["8.8.8.8", "127.0.0.1"])
 def test_database_dns_rejects_any_public_or_loopback_address(
     monkeypatch: pytest.MonkeyPatch,
@@ -206,7 +235,27 @@ def test_database_dns_rejects_any_public_or_loopback_address(
     with pytest.raises(SetupError) as captured:
         PostgreSQL18Validator._resolve_private_address("rm-test.rds.aliyuncs.com", 5432)
 
-    assert captured.value.error_code == "setup.database_unreachable"
+    assert captured.value.error_code == "setup.database_private_endpoint_required"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_error_code"),
+    (
+        ("password authentication failed for user npcink", "setup.database_auth_failed"),
+        ("SSL error: certificate verify failed", "setup.database_tls_required"),
+        ("connection timed out", "setup.database_unreachable"),
+    ),
+)
+def test_database_connection_failures_are_classified_without_exposing_detail(
+    message: str,
+    expected_error_code: str,
+) -> None:
+    error = RuntimeError(message)
+
+    assert (
+        PostgreSQL18Validator._connection_error_code(error)
+        == expected_error_code
+    )
 
 
 def test_database_validator_rejects_postgresql_17(tmp_path: Path) -> None:

@@ -109,6 +109,10 @@ test('first install keeps secrets in memory and reveals the admin key once', asy
   await page.getByLabel(/^数据库$|^Database$/i).fill('npcink_cloud');
   await page.getByLabel(/^用户名$|^Username$/i).fill('npcink_app');
   await page.getByLabel(/^密码$|^Password$/i).fill(databasePassword);
+  await expect(page.getByText(/Cloud 到 PostgreSQL|Cloud-to-PostgreSQL/i)).toBeVisible();
+  await page.getByText(/如何获取 RDS CA 证书|How to obtain the RDS CA certificate/i).click();
+  await expect(page.getByRole('link', { name: /阿里云官方 SSL 说明|official Alibaba Cloud SSL guide/i })).toHaveAttribute('href', /help\.aliyun\.com/);
+  await expect(page.getByText(/ApsaraDB-CA-Chain\.pem/).first()).toBeVisible();
   await page.getByLabel(/RDS CA 证书|RDS CA certificate/i).fill('-----BEGIN CERTIFICATE-----\nTEST-ONLY\n-----END CERTIFICATE-----');
   await page.getByRole('button', { name: /测试数据库|Test database/i }).click();
   await expect(page.getByText(/数据库验证通过|Database validation passed/i)).toBeVisible();

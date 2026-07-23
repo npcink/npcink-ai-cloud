@@ -85,6 +85,11 @@ assert.doesNotMatch(wizard, /setNextUrl|location\.assign\(nextUrl\)/);
 assert.match(wizard, /data-setup-installation-state=\{installationComplete \? 'complete' : 'pending'\}/);
 assert.match(wizard, /installationComplete[\s\S]*setup\.install_complete_status/);
 assert.match(wizard, /I saved this admin key|setup\.admin_key_saved_confirm/);
+assert.match(
+  wizard,
+  /setup\.database_ca_purpose[\s\S]*<details[\s\S]*setup\.database_ca_how_to[\s\S]*help\.aliyun\.com/,
+  'RDS CA field must explain its purpose and link to the official retrieval guide'
+);
 
 const i18n = readFileSync(resolve(root, 'src/lib/i18n.ts'), 'utf8');
 assert.match(
@@ -101,6 +106,16 @@ assert.doesNotMatch(
   i18n,
   /code printed once by the deployment command|部署命令只显示一次的安装码/,
   'setup copy must not claim that automated deployment reveals the usable plaintext code'
+);
+assert.match(
+  i18n,
+  /'setup\.database_ca_purpose': 'This CA chain verifies[\s\S]*'setup\.database_ca_purpose': '此 CA 证书链用于/,
+  'RDS CA purpose must be explicit in English and Simplified Chinese'
+);
+assert.match(
+  i18n,
+  /'setup\.error_database_private_endpoint_required':[\s\S]*'setup\.error_database_auth_failed':[\s\S]*'setup\.error_database_private_endpoint_required':[\s\S]*'setup\.error_database_auth_failed':/,
+  'database policy and authentication failures must have actionable localized copy'
 );
 
 assert.match(env, /NPCINK_CLOUD_INTERNAL_AUTH_TOKEN_FILE/);

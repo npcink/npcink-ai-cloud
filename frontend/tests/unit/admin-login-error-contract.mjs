@@ -39,6 +39,11 @@ assert.match(
   /auth\.admin_key_invalid/,
   'admin login page must special-case invalid admin key errors'
 );
+assert.match(
+  loginPageSource,
+  /auth\.admin_login_failed[\s\S]*t\('admin\.login_error_invalid'\)/,
+  'legacy generic login failure must resolve to actionable current-key guidance'
+);
 
 assert.match(
   loginPageSource,

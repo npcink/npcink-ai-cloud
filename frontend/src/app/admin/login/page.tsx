@@ -35,6 +35,7 @@ function AdminLoginPageContent() {
   const errorMessage = (() => {
     switch (error) {
       case 'auth.admin_key_invalid':
+      case 'auth.admin_login_failed':
         return t('admin.login_error_invalid');
       case 'auth.admin_key_required':
         return t('admin.login_error_required');

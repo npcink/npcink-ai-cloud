@@ -42,6 +42,8 @@ function setupErrorTranslationKey(errorCode: string): string {
     'setup.rate_limited': 'setup.error_rate_limited',
     'setup.installation_in_progress': 'setup.error_installation_in_progress',
     'setup.database_unreachable': 'setup.error_database_unreachable',
+    'setup.database_private_endpoint_required': 'setup.error_database_private_endpoint_required',
+    'setup.database_auth_failed': 'setup.error_database_auth_failed',
     'setup.database_tls_required': 'setup.error_database_tls_required',
     'setup.database_version_unsupported': 'setup.error_database_version',
     'setup.database_not_empty': 'setup.error_database_not_empty',
@@ -575,6 +577,27 @@ export function SetupWizard() {
                     </label>
                   </div>
                   <textarea id="database_ca" className="input min-h-36 resize-y font-mono text-xs" required spellCheck={false} value={database.ca_pem} onChange={(event) => updateDatabase('ca_pem', event.target.value)} placeholder="-----BEGIN CERTIFICATE-----" />
+                  <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                    {t('setup.database_ca_purpose')}
+                  </p>
+                  <details className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
+                    <summary className="cursor-pointer font-semibold text-blue-700 dark:text-blue-300">
+                      {t('setup.database_ca_how_to')}
+                    </summary>
+                    <ol className="mt-2 list-decimal space-y-1 pl-5 leading-5">
+                      <li>{t('setup.database_ca_step_console')}</li>
+                      <li>{t('setup.database_ca_step_file')}</li>
+                      <li>{t('setup.database_ca_step_upload')}</li>
+                    </ol>
+                    <a
+                      className="mt-2 inline-flex font-semibold text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
+                      href="https://help.aliyun.com/zh/rds/apsaradb-rds-for-postgresql/configure-ssl-encryption-for-an-apsaradb-rds-for-postgresql-instance"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t('setup.database_ca_official_guide')}
+                    </a>
+                  </details>
                   <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('setup.database_tls_help')}</p>
                 </div>
 

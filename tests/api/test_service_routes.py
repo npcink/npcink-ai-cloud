@@ -1637,6 +1637,44 @@ def test_admin_provider_connections_store_encrypted_credentials_and_project_to_a
     assert "provider-connection-test-secret" not in json.dumps(projection)
 
 
+def test_admin_provider_connection_create_generates_distinct_opaque_ids_when_omitted(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    generated_ids: list[str] = []
+
+    for index in range(2):
+        response = client.post(
+            "/internal/service/admin/provider-connections",
+            headers=build_internal_headers(
+                idempotency_key=f"provider-connection-generated-{index}"
+            ),
+            json={
+                "provider_id": "mqzj",
+                "provider_type": "openai_compatible",
+                "kind": "openai_compatible",
+                "display_name": "Npcink AI Cloud",
+                "enabled": True,
+                "base_url": "https://api.mqzj.top/v1",
+                "capability_ids": ["text_generation"],
+                "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+                "config": {"model_ids": ["gpt-5.4-mini"]},
+                "credential": "generated-id-secret",
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        connection_id = response.json()["data"]["connection_id"]
+        assert connection_id.startswith("pconn_")
+        assert len(connection_id) == len("pconn_") + 32
+        generated_ids.append(connection_id)
+
+    assert generated_ids[0] != generated_ids[1]
+    with get_session(database_url) as session:
+        for connection_id in generated_ids:
+            assert session.get(ProviderConnection, connection_id) is not None
+
+
 def test_admin_provider_connection_catalog_preview_fetches_models_without_persisting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1681,7 +1719,6 @@ def test_admin_provider_connection_catalog_preview_fetches_models_without_persis
         "/internal/service/admin/provider-connections/preview-catalog",
         headers=build_internal_headers(idempotency_key="provider-connection-preview-catalog"),
         json={
-            "connection_id": "mqzj_preview",
             "provider_id": "mqzj",
             "provider_type": "openai_compatible",
             "kind": "openai_compatible",
@@ -1706,16 +1743,19 @@ def test_admin_provider_connection_catalog_preview_fetches_models_without_persis
         "feature": "text",
         "status": "available",
         "is_deprecated": False,
-        "runtime_supported": True,
-        "verified": True,
+        "catalog_visible": True,
+        "adapter_supported": True,
+        "execution_status": "not_executed",
         "capability_tags": [],
     }
-    assert data["models"][1]["runtime_supported"] is False
+    assert data["models"][1]["catalog_visible"] is True
+    assert data["models"][1]["adapter_supported"] is False
+    assert data["models"][1]["execution_status"] == "not_executed"
     assert data["credential_value_exposure"] == "none"
     assert data["boundary"]["secret_exposure"] == "masked_status_only"
     assert "preview-secret-value" not in json.dumps(response.json())
     with get_session(database_url) as session:
-        assert session.get(ProviderConnection, "mqzj_preview") is None
+        assert list(session.scalars(select(ProviderConnection))) == []
 
 
 def test_admin_provider_connection_test_syncs_catalog_for_openai_compatible_supplier(

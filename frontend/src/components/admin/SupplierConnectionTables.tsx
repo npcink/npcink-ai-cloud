@@ -106,6 +106,62 @@ function connectionErrorLabel(errorCode: string, translate: Translate): string {
       'provider_error_unsupported_kind',
       'This connection type cannot be tested automatically.'
     ),
+    'provider_connection.missing_secret': translate(
+      'error_credential_required',
+      'Enter the provider API key, save the connection, and test again.'
+    ),
+    'provider_connection.auth_failed': translate(
+      'error_provider_auth',
+      'The provider rejected this API key. Check or replace the credential and retry.'
+    ),
+    'provider.auth_invalid': translate(
+      'error_provider_auth',
+      'The provider rejected this API key. Check or replace the credential and retry.'
+    ),
+    'provider.endpoint_not_found': translate(
+      'error_model_not_executable',
+      'The upstream catalog exposes this model, but its execution endpoint is unavailable. Check the model ID, Base URL, and API compatibility.'
+    ),
+    'provider.unsupported_operation': translate(
+      'error_model_not_executable',
+      'The upstream provider does not support this model for the selected operation. Choose another model or capability.'
+    ),
+    'provider.network_error': translate(
+      'error_provider_network',
+      'Cloud could not reach the provider. Check the Base URL, DNS, firewall, and upstream service status.'
+    ),
+    'provider.timeout': translate(
+      'error_provider_timeout',
+      'The provider did not respond in time. Check its status and retry later.'
+    ),
+    'provider.rate_limited': translate(
+      'error_provider_rate_limited',
+      'The provider rate limit was reached. Wait briefly or review the account quota before retrying.'
+    ),
+    'provider.invalid_response': translate(
+      'error_provider_invalid_response',
+      'The provider returned an incompatible response. Confirm the API compatibility and model endpoint.'
+    ),
+    'provider.output_contract_invalid': translate(
+      'error_provider_invalid_response',
+      'The model response did not match the required output contract. Try a compatible model.'
+    ),
+    'provider.upstream_error': translate(
+      'error_provider_unavailable',
+      'The upstream provider failed this request. Check its service status and retry later.'
+    ),
+    'provider.upstream_unavailable': translate(
+      'error_provider_unavailable',
+      'The upstream provider is temporarily unavailable. Check its service status and retry later.'
+    ),
+    'provider.unavailable': translate(
+      'error_provider_unavailable',
+      'The upstream provider is temporarily unavailable. Check its service status and retry later.'
+    ),
+    'provider.error': translate(
+      'error_provider_test_failed',
+      'The provider test failed. Check the credential, Base URL, model ID, and upstream service status.'
+    ),
   };
   return labels[errorCode] || translate(
     'provider_last_test_failed',

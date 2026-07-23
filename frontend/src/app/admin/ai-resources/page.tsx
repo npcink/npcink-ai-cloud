@@ -51,8 +51,9 @@ type ProviderCatalogPreviewModel = {
   feature: string;
   status: string;
   is_deprecated: boolean;
-  runtime_supported: boolean;
-  verified: boolean;
+  catalog_visible: boolean;
+  adapter_supported: boolean;
+  execution_status: 'not_executed' | 'verified' | 'failed';
   capability_tags: string[];
 };
 
@@ -120,7 +121,6 @@ type ModelVisibilityRow = {
   sourceLabel: string;
   sourceKind: 'reference' | 'catalog' | 'manual';
   selected: boolean;
-  verified: boolean;
   deprecated: boolean;
   reference?: ModelReferenceEntry;
   catalog?: ProviderCatalogPreviewModel;
@@ -759,8 +759,13 @@ function normalizeProviderCatalogPreview(value: any): ProviderCatalogPreview | n
         feature: String(model?.feature ?? ''),
         status: String(model?.status ?? ''),
         is_deprecated: Boolean(model?.is_deprecated),
-        runtime_supported: Boolean(model?.runtime_supported),
-        verified: Boolean(model?.verified),
+        catalog_visible: Boolean(model?.catalog_visible),
+        adapter_supported: Boolean(model?.adapter_supported),
+        execution_status: (
+          model?.execution_status === 'verified' || model?.execution_status === 'failed'
+            ? model.execution_status
+            : 'not_executed'
+        ),
         capability_tags: Array.isArray(model?.capability_tags) ? model.capability_tags.map(String) : [],
       }))
       .filter((model: ProviderCatalogPreviewModel) => model.model_id)
@@ -794,8 +799,9 @@ function catalogPreviewForMetadata(preview: ProviderCatalogPreview | null): Prov
       feature: model.feature,
       status: model.status,
       is_deprecated: model.is_deprecated,
-      runtime_supported: model.runtime_supported,
-      verified: model.verified,
+      catalog_visible: model.catalog_visible,
+      adapter_supported: model.adapter_supported,
+      execution_status: model.execution_status,
       capability_tags: model.capability_tags,
     })),
     truncated: preview.truncated,
@@ -806,6 +812,112 @@ function catalogPreviewFromConnection(connection: Connection): ProviderCatalogPr
   return normalizeProviderCatalogPreview(
     connection.metadata?.model_catalog_preview || connection.metadata?.model_catalog
   );
+}
+
+function providerErrorCopy(errorCode: string): { key: string; fallback: string } | null {
+  const copies: Record<string, { key: string; fallback: string }> = {
+    'provider_connection.connection_id_invalid': {
+      key: 'error_connection_id_internal',
+      fallback: 'Cloud could not create the internal connection identifier. Refresh and try again.',
+    },
+    'provider_connection.response_invalid': {
+      key: 'error_connection_response_invalid',
+      fallback: 'Cloud saved no usable connection identifier. Refresh and try again.',
+    },
+    'provider_connection.preview_credential_required': {
+      key: 'error_credential_required',
+      fallback: 'Enter the provider API key before synchronizing its model catalog.',
+    },
+    'provider_connection.missing_secret': {
+      key: 'error_credential_required',
+      fallback: 'Enter the provider API key, save the connection, and test again.',
+    },
+    'provider_connection.saved_credential_unreadable': {
+      key: 'error_credential_unreadable',
+      fallback: 'The saved API key can no longer be read. Enter it again, save, and retry.',
+    },
+    'provider.auth_invalid': {
+      key: 'error_provider_auth',
+      fallback: 'The provider rejected this API key. Check or replace the credential and retry.',
+    },
+    'provider.access_denied': {
+      key: 'error_provider_auth',
+      fallback: 'The provider account cannot access this operation. Check the key permissions and model entitlement.',
+    },
+    'provider_connection.auth_failed': {
+      key: 'error_provider_auth',
+      fallback: 'The provider rejected this API key. Check or replace the credential and retry.',
+    },
+    'provider.endpoint_not_found': {
+      key: 'error_model_not_executable',
+      fallback: 'The upstream catalog exposes this model, but its execution endpoint is unavailable. Check the model ID, Base URL, and API compatibility.',
+    },
+    'provider.unsupported_operation': {
+      key: 'error_model_not_executable',
+      fallback: 'The upstream provider does not support this model for the selected operation. Choose another model or capability.',
+    },
+    'provider.invalid_request': {
+      key: 'error_provider_invalid_request',
+      fallback: 'The upstream provider rejected the request shape. Check the model ID, Base URL, and compatible API type.',
+    },
+    'provider.error': {
+      key: 'error_provider_test_failed',
+      fallback: 'The provider test failed. Check the credential, Base URL, model ID, and upstream service status.',
+    },
+    'provider.network_error': {
+      key: 'error_provider_network',
+      fallback: 'Cloud could not reach the provider. Check the Base URL, DNS, firewall, and upstream service status.',
+    },
+    'provider_connection.network_error': {
+      key: 'error_provider_network',
+      fallback: 'Cloud could not reach the provider. Check the Base URL, DNS, firewall, and upstream service status.',
+    },
+    'provider.timeout': {
+      key: 'error_provider_timeout',
+      fallback: 'The provider did not respond in time. Check its status and retry later.',
+    },
+    'provider.rate_limited': {
+      key: 'error_provider_rate_limited',
+      fallback: 'The provider rate limit was reached. Wait briefly or review the account quota before retrying.',
+    },
+    'provider.invalid_response': {
+      key: 'error_provider_invalid_response',
+      fallback: 'The provider returned an incompatible response. Confirm the API compatibility and model endpoint.',
+    },
+    'provider.output_contract_invalid': {
+      key: 'error_provider_invalid_response',
+      fallback: 'The model response did not match the required output contract. Try a compatible model.',
+    },
+    'provider.upstream_error': {
+      key: 'error_provider_unavailable',
+      fallback: 'The upstream provider failed this request. Check its service status and retry later.',
+    },
+    'provider.upstream_unavailable': {
+      key: 'error_provider_unavailable',
+      fallback: 'The upstream provider is temporarily unavailable. Check its service status and retry later.',
+    },
+    'provider.unavailable': {
+      key: 'error_provider_unavailable',
+      fallback: 'The upstream provider is temporarily unavailable. Check its service status and retry later.',
+    },
+    'provider.response_too_large': {
+      key: 'error_provider_invalid_response',
+      fallback: 'The provider response exceeded the safe limit. Check the endpoint and choose a compatible model.',
+    },
+    'provider_connection.catalog_empty': {
+      key: 'error_catalog_empty',
+      fallback: 'The provider returned no usable models. Check the Base URL, account access, and API compatibility.',
+    },
+    'provider_connection.unsupported_provider_kind': {
+      key: 'error_unsupported_kind',
+      fallback: 'Cloud has no runtime adapter for this provider type. Choose a supported compatible API type.',
+    },
+    'provider_connection.test_failed': {
+      key: 'error_provider_test_failed',
+      fallback: 'The provider test failed. Check the credential, Base URL, model ID, and upstream service status.',
+    },
+  };
+  return copies[errorCode] || null;
 }
 
 function AiResourcesContent() {
@@ -819,6 +931,11 @@ function AiResourcesContent() {
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.ai_resources.${key}`, params, fallback),
     [t]
   );
+  const providerActionableErrorMessage = useCallback((error: unknown, fallback: string): string => {
+    const errorCode = error instanceof ApiError ? error.errorCode : '';
+    const copy = providerErrorCopy(errorCode);
+    return copy ? aiText(copy.key, copy.fallback) : resolveUiErrorMessage(error, fallback);
+  }, [aiText]);
   const [data, setData] = useState<AiResources | null>(null);
   const [connectionStatusFilter, setConnectionStatusFilter] = useState<ConnectionStatusFilter>('all');
   const [connectionSearch, setConnectionSearch] = useState('');
@@ -963,7 +1080,6 @@ function AiResourcesContent() {
   }, [searchParams]);
 
   async function saveProviderConnection() {
-    const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
     const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
@@ -981,7 +1097,7 @@ function AiResourcesContent() {
       }>('/api/admin/provider-connections', {
         method: 'POST',
         body: {
-          connection_id: normalizedConnectionId,
+          connection_id: providerFormMode === 'edit' ? providerConnectionForm.connectionId : undefined,
           provider_id: normalizedProviderId,
           provider_type: providerConnectionForm.kind,
           kind: providerConnectionForm.kind,
@@ -1004,7 +1120,14 @@ function AiResourcesContent() {
           credential: providerConnectionForm.credential || undefined,
         },
       });
-      const savedConnectionId = String(response.data.connection_id || normalizedConnectionId);
+      const savedConnectionId = String(response.data.connection_id || providerConnectionForm.connectionId).trim();
+      if (!savedConnectionId) {
+        throw new ApiError({
+          statusCode: 502,
+          errorCode: 'provider_connection.response_invalid',
+          message: 'provider connection response did not include connection_id',
+        });
+      }
       setLastReceipt(response.data.receipt || null);
       let testFailed = false;
       let successMessage = '';
@@ -1017,7 +1140,7 @@ function AiResourcesContent() {
         testFailed = true;
         setError(
           aiText('message_connection_saved_test_failed', 'Provider connection saved, but the connection test failed: {{message}}', {
-            message: resolveUiErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
+            message: providerActionableErrorMessage(testError, aiText('error_test_connection', 'Provider connection test failed.')),
           })
         );
       }
@@ -1030,7 +1153,7 @@ function AiResourcesContent() {
         toast.success(successMessage, t('common.success'));
       }
     } catch (saveError) {
-      setError(resolveUiErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.')));
+      setError(providerActionableErrorMessage(saveError, aiText('error_save_connection', 'Failed to save provider connection.')));
     } finally {
       setSavingConnection(false);
     }
@@ -1091,7 +1214,6 @@ function AiResourcesContent() {
   }
 
   async function fetchProviderCatalogPreview() {
-    const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
     const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
@@ -1111,7 +1233,7 @@ function AiResourcesContent() {
       const response = await aiResourcesClient.request<ProviderCatalogPreview>('/api/admin/provider-connections/preview-catalog', {
         method: 'POST',
         body: {
-          connection_id: normalizedConnectionId,
+          connection_id: providerFormMode === 'edit' ? providerConnectionForm.connectionId : undefined,
           provider_id: normalizedProviderId,
           provider_type: providerConnectionForm.kind,
           kind: providerConnectionForm.kind,
@@ -1134,14 +1256,8 @@ function AiResourcesContent() {
       });
       const preview = response.data;
       setProviderCatalogPreview(preview);
-      const verifiedModelIds = (preview.models || [])
-        .filter((model) => !model.is_deprecated && (model.verified || model.runtime_supported))
-        .map((model) => model.model_id);
-      if (!splitList(providerConnectionForm.modelIds).length && verifiedModelIds.length) {
-        setProviderModelIds(verifiedModelIds);
-      }
       const referenceProviderId = inferReferenceProviderFromModelIds(
-        verifiedModelIds.length ? verifiedModelIds : (preview.model_ids || []),
+        preview.model_ids || [],
         defaultReferenceProviderId(normalizedProviderId, providerConnectionForm.providerPreset)
       );
       if (referenceProviderId !== modelReferenceProviderId) {
@@ -1168,7 +1284,7 @@ function AiResourcesContent() {
         }
       ));
     } catch (catalogError) {
-      setError(resolveUiErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.')));
+      setError(providerActionableErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.')));
     } finally {
       setFetchingProviderCatalog(false);
     }
@@ -1263,7 +1379,7 @@ function AiResourcesContent() {
       }
       if (announce) {
         setLastReceipt(result?.receipt || null);
-        const testMessage = resolveUiErrorMessage(
+        const testMessage = providerActionableErrorMessage(
           testError,
           result?.message || aiText('error_test_connection', 'Provider connection test failed.')
         );
@@ -1387,7 +1503,7 @@ function AiResourcesContent() {
         capabilityIds: preset.capabilityIds,
         runtimeProfileIds: preset.runtimeProfileIds,
         modelIds: preset.modelIds,
-        connectionId: current.connectionId || slugifyProviderValue(displayName || preset.providerId),
+        connectionId: current.connectionId,
       };
     });
   }
@@ -1407,6 +1523,12 @@ function AiResourcesContent() {
 
   const providerTestMessage = useCallback((result: ProviderConnectionTestResult): string => {
     const normalizedMessage = result.message.trim();
+    if (!result.ok && result.error_code) {
+      const copy = providerErrorCopy(result.error_code);
+      if (copy) {
+        return aiText(copy.key, copy.fallback);
+      }
+    }
     if (result.stage === 'web_search_probe') {
       return aiText('test_message_web_search_candidates', 'Search provider returned {{count}} source candidates.', {
         count: String(result.probe?.result_count ?? 0),
@@ -1697,7 +1819,6 @@ function AiResourcesContent() {
         sourceLabel: reference.source_label,
         sourceKind: 'reference',
         selected: Boolean(selectedModelId),
-        verified: false,
         deprecated: reference.is_deprecated,
         reference,
       });
@@ -1719,7 +1840,6 @@ function AiResourcesContent() {
         sourceLabel: existing?.sourceLabel || aiText('model_source_upstream', 'Upstream catalog'),
         sourceKind: existing?.sourceKind || 'catalog',
         selected: Boolean(selectedModelId),
-        verified: model.verified || existing?.verified || false,
         deprecated: model.is_deprecated || existing?.deprecated || false,
         reference: existing?.reference,
         catalog: model,
@@ -1735,7 +1855,6 @@ function AiResourcesContent() {
           sourceLabel: aiText('model_source_enabled_only', 'Saved model ID only'),
           sourceKind: 'manual',
           selected: true,
-          verified: false,
           deprecated: false,
         });
       }
@@ -1919,13 +2038,7 @@ function AiResourcesContent() {
                         <input
                           className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           value={providerConnectionForm.displayName}
-                          onChange={(event) => {
-                            const displayName = event.target.value;
-                            updateProviderConnectionForm({
-                              displayName,
-                              connectionId: providerConnectionForm.connectionId ? providerConnectionForm.connectionId : slugifyProviderValue(displayName),
-                            });
-                          }}
+                          onChange={(event) => updateProviderConnectionForm({ displayName: event.target.value })}
                           placeholder="GPT-5.5 via NewAPI"
                           required
                         />
@@ -2236,9 +2349,29 @@ function AiResourcesContent() {
                                       <div className="text-slate-500 dark:text-slate-400">
                                         {row.family}
                                         {row.sourceKind === 'manual' ? ` · ${row.sourceLabel}` : ''}
-                                        {row.verified ? ` · ${aiText('catalog_model_status_verified', 'Verified')}` : ''}
+                                        {row.catalog?.catalog_visible ? ` · ${aiText('catalog_model_status_visible', 'Visible in upstream catalog')}` : ''}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
+                                      {row.catalog ? (
+                                        <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                                          <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                                            row.catalog.adapter_supported
+                                              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                                          }`}>
+                                            {row.catalog.adapter_supported
+                                              ? aiText('catalog_model_status_adapter_supported', 'Cloud adapter available')
+                                              : aiText('catalog_model_status_adapter_missing', 'No Cloud execution adapter')}
+                                          </span>
+                                          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                                            {row.catalog.execution_status === 'verified'
+                                              ? aiText('catalog_model_status_execution_verified', 'Exact model execution verified')
+                                              : row.catalog.execution_status === 'failed'
+                                                ? aiText('catalog_model_status_execution_failed', 'Latest exact-model execution failed')
+                                                : aiText('catalog_model_status_not_executed', 'Exact model not executed')}
+                                          </span>
+                                        </div>
+                                      ) : null}
                                       {row.deprecated && row.selected ? (
                                         <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                                           {aiText('deprecated_selected_model_hint', 'Deprecated model is kept only because it is already saved. Remove it before saving new model visibility choices.')}
@@ -2306,15 +2439,19 @@ function AiResourcesContent() {
                       {aiText('advanced_settings_desc', 'These values are kept for runtime metadata and diagnostics. They do not edit prompts, router rules, abilities, or WordPress writes.')}
                     </p>
                     <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_connection_id', 'Connection ID')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.connectionId}
-                          onChange={(event) => updateProviderConnectionForm({ connectionId: event.target.value })}
-                          placeholder="openai_primary"
-                        />
-                      </label>
+                      {providerFormMode === 'edit' && providerConnectionForm.connectionId ? (
+                        <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                          {aiText('field_connection_id', 'System connection ID')}
+                          <input
+                            className="h-11 rounded-lg border border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            value={providerConnectionForm.connectionId}
+                            readOnly
+                          />
+                          <span className="text-xs font-normal leading-5 text-slate-500 dark:text-slate-400">
+                            {aiText('field_connection_id_help', 'Generated by Cloud and kept stable for runtime references.')}
+                          </span>
+                        </label>
+                      ) : null}
                       <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                         {aiText('field_provider_id', 'Provider ID')}
                         <input

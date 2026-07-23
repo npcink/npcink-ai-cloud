@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from sqlalchemy import select
@@ -45,15 +46,22 @@ _RUNTIME_CONFIG_CONNECTION_KINDS = frozenset(
     }
 )
 _PUBLIC_PROVIDER_TEST_ERROR_CODES = {
+    "provider.access_denied": "provider.access_denied",
     "provider.auth_invalid": "provider.auth_invalid",
+    "provider.endpoint_not_found": "provider.endpoint_not_found",
     "provider.error": "provider.error",
+    "provider.invalid_request": "provider.invalid_request",
     "provider.invalid_response": "provider.invalid_response",
     "provider.network_error": "provider.network_error",
+    "provider.output_contract_invalid": "provider.output_contract_invalid",
     "provider.rate_limited": "provider.rate_limited",
     "provider.reader_error": "provider.reader_error",
     "provider.response_too_large": "provider.response_too_large",
     "provider.timeout": "provider.timeout",
     "provider.unavailable": "provider.unavailable",
+    "provider.unsupported_operation": "provider.unsupported_operation",
+    "provider.upstream_error": "provider.upstream_error",
+    "provider.upstream_unavailable": "provider.upstream_unavailable",
     "web_search.apify_actor_missing": "web_search.apify_actor_missing",
     "web_search.apify_api_token_missing": "web_search.apify_api_token_missing",
     "web_search.apify_http_error": "web_search.apify_http_error",
@@ -574,8 +582,8 @@ class ProviderConnectionAdminService:
         provider_type = _string(
             payload.get("provider_type") or payload.get("kind") or raw_provider_id
         )
-        if not raw_connection_id and raw_provider_id:
-            raw_connection_id = raw_provider_id
+        if not raw_connection_id:
+            raw_connection_id = _generate_connection_id()
         normalized_connection_id = _normalize_identifier(raw_connection_id, field="connection_id")
         normalized_provider_id = _normalize_identifier(
             raw_provider_id or normalized_connection_id,
@@ -723,15 +731,16 @@ def _catalog_preview_model(model: Any) -> dict[str, Any]:
             if str(tag)
         }
     )
-    runtime_supported = bool(instances)
+    adapter_supported = bool(instances)
     return {
         "model_id": str(getattr(model, "model_id", "") or ""),
         "family": str(getattr(model, "family", "") or ""),
         "feature": str(getattr(model, "feature", "") or ""),
         "status": str(getattr(model, "status", "") or ""),
         "is_deprecated": bool(getattr(model, "is_deprecated", False)),
-        "runtime_supported": runtime_supported,
-        "verified": runtime_supported,
+        "catalog_visible": True,
+        "adapter_supported": adapter_supported,
+        "execution_status": "not_executed",
         "capability_tags": capability_tags,
     }
 
@@ -832,6 +841,10 @@ def _normalize_identifier(value: str, *, field: str) -> str:
             ),
         )
     return normalized
+
+
+def _generate_connection_id() -> str:
+    return f"pconn_{uuid4().hex}"
 
 
 def _normalize_id_list(value: object) -> list[str]:

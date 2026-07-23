@@ -12,6 +12,29 @@ assert.match(directory, /selectedTestResult\?\.ok[\s\S]*role="status"[\s\S]*test
 assert.match(directory, /selectedTestResult && !selectedTestResult\.ok[\s\S]*role="alert"/, 'failed supplier tests must render beside the selected supplier');
 assert.match(directory, /selectedIsConfirmingDelete[\s\S]*role="alert"[\s\S]*delete_confirmation_notice/, 'delete confirmation must state impact in the selected supplier inspector');
 
+assert.match(
+  page,
+  /connection_id: providerFormMode === 'edit' \? providerConnectionForm\.connectionId : undefined/,
+  'new provider connections must let Cloud generate the opaque connection id'
+);
+assert.match(
+  page,
+  /providerFormMode === 'edit'[\s\S]*field_connection_id[\s\S]*readOnly/,
+  'existing connection ids may be shown only as read-only technical evidence'
+);
+assert.doesNotMatch(
+  page,
+  /setProviderModelIds\(verifiedModelIds\)/,
+  'catalog visibility must never auto-enable every upstream model'
+);
+assert.doesNotMatch(
+  page,
+  /catalog_model_status_verified/,
+  'catalog visibility must not be presented as execution verification'
+);
+assert.match(page, /catalog_model_status_visible/, 'catalog rows must state that the model is only visible upstream');
+assert.match(page, /catalog_model_status_not_executed/, 'catalog rows must state that no exact-model execution was run');
+
 assert.match(dialog, /document\.body\.style\.overflow = 'hidden'/, 'provider configuration must prevent background scroll');
 assert.match(dialog, /event\.key === 'Escape'[\s\S]*onCloseRef\.current\(\)/, 'provider configuration must close with Escape while idle');
 assert.match(dialog, /event\.key !== 'Tab'[\s\S]*first[\s\S]*last[\s\S]*\.focus\(\)/, 'provider configuration must contain keyboard focus');
@@ -24,6 +47,9 @@ assert.match(page, /BackofficeDiagnosticNotice[\s\S]*onRetry=\{\(\) => void load
 for (const key of [
   'admin.ai_resources.test_result_passed_inline',
   'admin.ai_resources.delete_confirmation_notice',
+  'admin.ai_resources.catalog_model_status_visible',
+  'admin.ai_resources.catalog_model_status_not_executed',
+  'admin.ai_resources.error_model_not_executable',
 ]) {
   assert.ok(i18n.includes(`'${key}':`), `${key} must have Simplified Chinese operator copy`);
 }

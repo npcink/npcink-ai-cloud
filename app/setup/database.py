@@ -102,7 +102,7 @@ class PostgreSQL18Validator:
         except Exception as error:
             raise SetupError(
                 422,
-                "setup.database_unreachable",
+                self._connection_error_code(error),
                 "database validation failed",
             ) from error
         finally:
@@ -183,11 +183,68 @@ class PostgreSQL18Validator:
         try:
             return resolve_private_database_address(host, port)
         except RuntimeConfigError as error:
+            error_code = (
+                "setup.database_private_endpoint_required"
+                if "must resolve only to private addresses" in str(error)
+                else "setup.database_unreachable"
+            )
             raise SetupError(
                 422,
-                "setup.database_unreachable",
-                "database hostname must resolve only to private addresses",
+                error_code,
+                (
+                    "database hostname does not satisfy private endpoint policy"
+                    if error_code == "setup.database_private_endpoint_required"
+                    else "database hostname could not be resolved"
+                ),
             ) from error
+
+    @staticmethod
+    def _connection_error_code(error: Exception) -> str:
+        pending: list[BaseException] = [error]
+        observed: set[int] = set()
+        messages: list[str] = []
+        sqlstates: set[str] = set()
+        while pending and len(observed) < 8:
+            current = pending.pop()
+            if id(current) in observed:
+                continue
+            observed.add(id(current))
+            messages.append(str(current).lower())
+            for attribute in ("sqlstate", "pgcode"):
+                value = str(getattr(current, attribute, "") or "").strip().upper()
+                if value:
+                    sqlstates.add(value)
+            for nested in (
+                getattr(current, "orig", None),
+                current.__cause__,
+                current.__context__,
+            ):
+                if isinstance(nested, BaseException):
+                    pending.append(nested)
+
+        combined = " ".join(messages)
+        if sqlstates.intersection({"28000", "28P01"}) or any(
+            marker in combined
+            for marker in (
+                "password authentication failed",
+                "authentication failed",
+                "invalid password",
+            )
+        ):
+            return "setup.database_auth_failed"
+        if any(
+            marker in combined
+            for marker in (
+                "certificate verify failed",
+                "certificate validation failed",
+                "hostname mismatch",
+                "ssl error",
+                "sslrootcert",
+                "tls error",
+            )
+        ):
+            return "setup.database_tls_required"
+        return "setup.database_unreachable"
 
     @staticmethod
     def _relation_names(connection: Connection) -> tuple[str, set[tuple[str, str, str]]]:

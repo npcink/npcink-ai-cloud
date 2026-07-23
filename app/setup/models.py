@@ -48,6 +48,8 @@ class DatabaseInput(BaseModel):
     @classmethod
     def validate_ca_pem(cls, value: str) -> str:
         normalized = value.strip() + "\n"
+        if "PRIVATE KEY-----" in normalized:
+            raise ValueError("ca_pem must not contain a private key")
         if (
             "-----BEGIN CERTIFICATE-----" not in normalized
             or "-----END CERTIFICATE-----" not in normalized

@@ -101,6 +101,7 @@ const connections = [
 async function installProviderDirectoryHarness(page: Page) {
   await installAdminMocks(page);
   let requestCount = 0;
+  let lastCreatePayload: Record<string, unknown> | null = null;
   await page.route('**/api/admin/ai-resources', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
@@ -161,25 +162,29 @@ async function installProviderDirectoryHarness(page: Page) {
       await route.fallback();
       return;
     }
-    const payload = route.request().postDataJSON() as { connection_id?: string; provider_id?: string };
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    lastCreatePayload = payload;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(
         buildAdminApiEnvelope({
-          connection_id: payload.connection_id || 'openai_compatible',
-          provider_id: payload.provider_id || 'openai',
+          connection_id: String(payload.connection_id || 'pconn_generated_e2e'),
+          provider_id: String(payload.provider_id || 'openai'),
           receipt: {
             event_kind: 'provider_connection.save',
             scope_kind: 'provider_connection',
-            scope_id: payload.connection_id || 'openai_compatible',
+            scope_id: String(payload.connection_id || 'pconn_generated_e2e'),
             outcome: 'succeeded',
           },
         })
       ),
     });
   });
-  return { getRequestCount: () => requestCount };
+  return {
+    getRequestCount: () => requestCount,
+    getLastCreatePayload: () => lastCreatePayload,
+  };
 }
 
 test('model supplier queue keeps URL-backed focus and removes fixed-width table behavior', async ({ page }, testInfo) => {
@@ -242,7 +247,7 @@ test('supplier inspector keeps test feedback and destructive confirmation beside
   await expect(inspector.getByRole('button', { name: /Confirm delete|确认删除/i })).toHaveCount(0);
 });
 
-test('failed supplier test keeps its canonical error and audit receipt', async ({ page }) => {
+test('failed supplier test turns its canonical error into actionable guidance and keeps the audit receipt', async ({ page }) => {
   await installProviderDirectoryHarness(page);
   await page.route('**/api/admin/provider-connections/model_attention/test', async (route) => {
     await route.fulfill({
@@ -277,7 +282,11 @@ test('failed supplier test keeps its canonical error and audit receipt', async (
 
   const inspector = page.locator('[data-ui="supplier-inspector"]');
   await inspector.getByRole('button', { name: /^Test$|^测试$/i }).click();
-  await expect(page.getByText('provider credential is missing').first()).toBeVisible();
+  await expect(
+    inspector.getByRole('alert').filter({
+      hasText: /请填写供应商 API Key|Add the provider API key/i,
+    })
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: /Latest operation|最近操作/i })).toBeVisible();
 });
 
@@ -306,7 +315,7 @@ test('provider configuration dialog supports PC keyboard entry, focus loop, and 
 test('save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await installProviderDirectoryHarness(page);
+  const harness = await installProviderDirectoryHarness(page);
   await page.goto('/admin/ai-resources');
 
   await page.getByRole('button', { name: /Add model supplier|添加模型供应商/i }).click();
@@ -318,4 +327,5 @@ test('save and test closes the dialog, uses a compact toast, and keeps the recei
   await expect(page.getByRole('status').filter({ hasText: /saved and tested|已保存并完成测试/i })).toBeVisible();
   await expect(page.locator('main [role="status"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Latest operation|最近操作/i })).toBeVisible();
+  expect(harness.getLastCreatePayload()).not.toHaveProperty('connection_id');
 });
