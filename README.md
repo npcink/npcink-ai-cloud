@@ -68,6 +68,7 @@ Operational references:
 
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
+- [docs/m4-preview-development-v1.md](docs/m4-preview-development-v1.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
@@ -303,11 +304,13 @@ Cloud development and verification now follow a fixed three-layer order:
 1. Local source workspace:
    - edit `app/**`, `frontend/**`, `tests/**`, contracts, and feature docs here first
    - this remains the only day-to-day development truth
-2. Local Docker runtime:
-   - validate the current branch with `docker-compose.dev.yml`, focused `pytest`,
-     and `pnpm run check:perimeter`
-   - this is the default runtime test loop for auth, perimeter, worker, and
-     bundle-adjacent behavior
+2. Development Docker runtime:
+   - run `docker-compose.dev.yml` either locally or through the approved
+     [M4 Preview workflow](docs/m4-preview-development-v1.md)
+   - when using M4 Preview, the authoring machine packages the current
+     worktree while M4 alone builds and runs Docker; M4 has no Git role
+   - validate the current branch with focused `pytest` and the narrowest
+     applicable perimeter gate
 3. Remote host deploy verification:
    - use `deploy-to-ssh-host.sh` only after local checks pass
    - remote hosts exist to prove `scp -> load/up -> migrate -> seed -> smoke`,
@@ -315,10 +318,11 @@ Cloud development and verification now follow a fixed three-layer order:
    - they do not replace the local development loop or become a second source
      of truth
 
-Remote hosts are therefore release-verification surfaces, not the primary
-authoring environment. If a problem appears only after SSH deploy, treat it as
-deploy/config/state drift to be fixed back in the repo, not as a reason to move
-daily development onto the host.
+Remote hosts are never the primary authoring environment. M4 Preview is an
+explicit development-runtime exception, while release hosts remain
+release-verification surfaces. If a problem appears only on a remote runtime,
+treat it as deploy/config/state drift to be fixed back in the repo; do not edit
+or commit source on that host.
 
 ## Borrowed Foundations
 
