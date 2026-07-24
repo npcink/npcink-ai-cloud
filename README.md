@@ -69,6 +69,7 @@ Operational references:
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
 - [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
+- [docs/image-processing-fc-oss-readiness-2026-07-20.md](docs/image-processing-fc-oss-readiness-2026-07-20.md)
 - [docs/m4-preview-development-v1.md](docs/m4-preview-development-v1.md)
 - [docs/decisions/024-risk-tiered-development-validation-authority.md](docs/decisions/024-risk-tiered-development-validation-authority.md)
 - [docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
