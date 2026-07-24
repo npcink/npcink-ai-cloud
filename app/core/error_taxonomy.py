@@ -48,6 +48,12 @@ _ERROR_TAXONOMY: dict[str, ErrorTaxonomyEntry] = {
         retryable=False,
         fallback_eligible=True,
     ),
+    "provider.context_overflow": ErrorTaxonomyEntry(
+        error_code="provider.context_overflow",
+        error_stage="provider",
+        retryable=False,
+        fallback_eligible=True,
+    ),
     "provider.auth_invalid": ErrorTaxonomyEntry(
         error_code="provider.auth_invalid",
         error_stage="provider",
