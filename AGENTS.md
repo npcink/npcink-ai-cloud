@@ -50,6 +50,11 @@ prompt/router/preset local truth, or WordPress write owner.
   from `.github/pull_request_template.md`; do not replace it with ad hoc
   `gh pr create --body` text that omits `Scope`, `Boundary`, `Verification`, or
   `Risk`.
+- Dependabot-authored PRs use the trusted bot contract documented in
+  `docs/pr-and-dependency-update-policy.md`. Do not manually weaken or bypass
+  that contract: bot identity, same-repository origin, `dependabot/*` branch,
+  `master` target, dependency-only changed files, and the from/to version
+  statement must all validate.
 - The publisher checks the current base-branch revision, creates the PR, and
   requests protected squash auto-merge. It never bypasses required checks and
   never deletes local or remote branches, because this repository commonly

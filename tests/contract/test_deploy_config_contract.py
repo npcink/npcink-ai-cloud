@@ -168,6 +168,9 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
     (fixture_github / "workflows").symlink_to(
         cloud_root / ".github" / "workflows", target_is_directory=True
     )
+    (fixture_github / "scripts").symlink_to(
+        cloud_root / ".github" / "scripts", target_is_directory=True
+    )
     (fixture_github / "dependabot.yml").write_text(dependabot_text)
 
     fixture_scripts = fixture_root / "scripts"
@@ -191,6 +194,7 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "production-python-extras-smoke.sh",
         "publish-pr.sh",
         "pg18-semantic-proof.py",
+        "test-pr-body-contract.py",
         "verify-release-bundle-manifest.py",
     ):
         (fixture_scripts / name).symlink_to(cloud_root / "scripts" / name)
