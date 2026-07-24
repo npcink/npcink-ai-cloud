@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings
 from app.core.db import get_session
@@ -65,8 +67,17 @@ class RoutingService:
                 region=instance.region,
                 weight=instance.weight,
                 health_status=instance.health_status,
+                context_window=models_by_id[instance.model_id].context_window,
                 price_input=models_by_id[instance.model_id].price_input,
                 price_output=models_by_id[instance.model_id].price_output,
+                price_cache_read=self._runtime_cache_price(
+                    models_by_id[instance.model_id].raw_json,
+                    "cache_read",
+                ),
+                price_cache_write=self._runtime_cache_price(
+                    models_by_id[instance.model_id].raw_json,
+                    "cache_write",
+                ),
                 capability_tags=instance.capability_tags,
             )
             for instance in instances
@@ -97,3 +108,21 @@ class RoutingService:
         if not self.execution_provider_ids:
             return True
         return provider_id in self.execution_provider_ids
+
+    @staticmethod
+    def _runtime_cache_price(
+        raw_json: object,
+        price_key: str,
+    ) -> float | None:
+        if not isinstance(raw_json, dict):
+            return None
+        runtime_pricing = raw_json.get("runtime_pricing")
+        if not isinstance(runtime_pricing, dict):
+            return None
+        value = runtime_pricing.get(price_key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        normalized = float(value)
+        if not math.isfinite(normalized) or normalized < 0:
+            return None
+        return normalized

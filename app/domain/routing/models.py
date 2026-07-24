@@ -13,8 +13,11 @@ class RoutingCandidate:
     region: str
     weight: int
     health_status: str
+    context_window: int | None = None
     price_input: float | None = None
     price_output: float | None = None
+    price_cache_read: float | None = None
+    price_cache_write: float | None = None
     capability_tags: list[str] = field(default_factory=list)
 
 
