@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 from urllib.request import urlopen
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "m4-preview.sh"
@@ -23,6 +26,12 @@ CHECKPOINT_ADR = (
     / "docs"
     / "decisions"
     / "025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md"
+)
+SOURCE_RELAY_ADR = (
+    ROOT / "docs" / "decisions" / "026-private-source-relay-transfer.md"
+)
+SOURCE_RELAY_VALIDATION = (
+    ROOT / "docs" / "m4-source-relay-transfer-validation-2026-07-24.md"
 )
 OLLAMA_LAUNCH_AGENT = ROOT / "deploy" / "top.mqzj.npcink-ollama-preview.plist"
 
@@ -71,6 +80,22 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert 'work_dir="${remote_dir}"' in source
     assert "com.docker.compose.service" in source
     assert "source_bundle_sha256" in source
+    assert "source_transfer_mode" in source
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE" in source
+    assert "NPCINK_CLOUD_M4_RELAY_SSH_HOST" in source
+    assert "ConnectionAttempts=3" in source
+    assert "root@100.90.87.36" in source
+    assert "74.82.195.160" not in source
+    assert "source relay download complete" in source
+    assert "source relay bundle integrity mismatch" in source
+    assert "source relay cleanup failed" in source
+    assert "M4 relay SSH host contains unsupported characters" in source
+    assert "source transfer holds" in source
+    assert "systemd-run --quiet --collect" in source
+    assert '--bind "${bind_ip}"' in source
+    assert "--retry-all-errors" in source
+    assert "--max-time 120" in source
+    assert "--speed-time 20" in source
     assert "source_dirty_paths" in source
     assert "acceptance_state" in source
     assert "promotion_pr" in source
@@ -104,6 +129,8 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "test_scope=contract" in source
     assert "test_scope=domain" in source
     assert "test_scope=full" in source
+    assert 'if [ "${#test_targets[@]}" -gt 0 ]; then' in source
+    assert 'remote_locked_operation test "${test_scope}"' in source
     assert 'label=com.docker.compose.oneoff=False' in source
     assert "recovery requires existing container" in source
     assert '"${compose[@]}" start postgres redis' in source
@@ -139,6 +166,70 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert source.index("wait_for_http") < source.index('> "${deployed_image_marker}"')
 
 
+@pytest.mark.skipif(
+    not (ROOT / ".git").exists(),
+    reason="source transfer dry-run requires Git worktree metadata",
+)
+def test_m4_source_transfer_defaults_to_private_relay_and_direct_is_explicit() -> None:
+    relayed = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "source transfer mode: relay" in relayed.stdout
+    assert "root@100.90.87.36" in relayed.stdout
+    assert "100.90.87.36:18080" in relayed.stdout
+
+    direct_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "direct",
+    }
+    direct = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=direct_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "source transfer mode: direct" in direct.stdout
+    assert "would upload source directly to M4" in direct.stdout
+
+
+def test_m4_source_transfer_validation_fails_closed_without_git_metadata() -> None:
+    invalid_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE": "automatic",
+    }
+    invalid = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=invalid_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert invalid.returncode != 0
+    assert "must be relay or direct" in invalid.stderr
+
+    invalid_host_env = {
+        **os.environ,
+        "NPCINK_CLOUD_M4_RELAY_SSH_HOST": "root@relay invalid",
+    }
+    invalid_host = subprocess.run(
+        ["bash", str(SCRIPT), "sync", "--dry-run"],
+        cwd=ROOT,
+        env=invalid_host_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert invalid_host.returncode != 0
+    assert "SSH host contains unsupported characters" in invalid_host.stderr
+
+
 def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
     completed = subprocess.run(
         ["bash", str(SCRIPT), "tunnel", "--dry-run"],
@@ -157,7 +248,9 @@ def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
     assert "rsync" not in completed.stdout
 
 
-def test_m4_test_scopes_are_explicit_and_dry_run_is_non_mutating() -> None:
+def test_m4_test_scopes_are_explicit_and_dry_run_is_non_mutating(
+    tmp_path: Path,
+) -> None:
     focused = subprocess.run(
         [
             "bash",
@@ -201,6 +294,25 @@ def test_m4_test_scopes_are_explicit_and_dry_run_is_non_mutating() -> None:
     )
     assert rejected.returncode != 0
     assert "must stay under tests/" in rejected.stderr
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text("#!/bin/sh\ncat >/dev/null\n", encoding="utf-8")
+    fake_ssh.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+    no_target_full = subprocess.run(
+        ["bash", str(SCRIPT), "test", "--full"],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert "unbound variable" not in no_target_full.stderr
 
 
 def test_m4_ollama_launch_agent_is_loopback_only_and_dry_run_is_non_mutating() -> None:
@@ -417,6 +529,10 @@ def test_m4_runbook_preserves_source_cloudflare_and_recovery_boundaries() -> Non
     assert "checks are the merge authority" in runbook
     assert "same revision" in runbook
     assert "source bundle intentionally omits `.git`" in runbook
+    assert "Private Source Relay Contract" in runbook
+    assert "root@100.90.87.36" in runbook
+    assert "NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct" in runbook
+    assert "does not become source or Git truth" in runbook
     assert "AI checkpoint rule" in runbook
     assert "coherent task checkpoint" in runbook
     assert "does not authorize an unreported" in runbook
@@ -496,3 +612,23 @@ def test_m4_checkpoint_dispatch_decision_is_linked_and_bounded() -> None:
     assert "does not authorize\nproduction deployment" in decision
     assert "per-save watchers" in decision
     assert "GitHub-hosted M4 credentials" in decision
+
+
+def test_m4_private_source_relay_decision_and_validation_are_linked() -> None:
+    decision = SOURCE_RELAY_ADR.read_text(encoding="utf-8")
+    validation = SOURCE_RELAY_VALIDATION.read_text(encoding="utf-8")
+    standard = AI_STANDARD.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    decision_name = "026-private-source-relay-transfer.md"
+
+    assert decision_name in standard
+    assert decision_name in runbook
+    assert decision_name in readme
+    assert "Tailscale-only source relay" in agents
+    assert "does not become source or Git truth" in decision
+    assert "explicit direct fallback" in decision
+    assert "4,823,040" in validation
+    assert "18 seconds" in validation
+    assert "SHA-256" in validation

@@ -72,6 +72,8 @@ Operational references:
 - [docs/m4-preview-development-v1.md](docs/m4-preview-development-v1.md)
 - [docs/decisions/024-risk-tiered-development-validation-authority.md](docs/decisions/024-risk-tiered-development-validation-authority.md)
 - [docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
+- [docs/decisions/026-private-source-relay-transfer.md](docs/decisions/026-private-source-relay-transfer.md)
+- [docs/m4-source-relay-transfer-validation-2026-07-24.md](docs/m4-source-relay-transfer-validation-2026-07-24.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)

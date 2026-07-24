@@ -13,14 +13,25 @@ M4_TUNNEL_LOCAL_PORT="${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18010}"
 M4_OLLAMA_PORT="${NPCINK_CLOUD_M4_OLLAMA_PORT:-11434}"
 M4_OLLAMA_LABEL="top.mqzj.npcink-ollama-preview"
 M4_OLLAMA_PLIST="${ROOT_DIR}/deploy/${M4_OLLAMA_LABEL}.plist"
+M4_SOURCE_TRANSFER_MODE="${NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE:-relay}"
+M4_RELAY_SSH_HOST="${NPCINK_CLOUD_M4_RELAY_SSH_HOST:-root@100.90.87.36}"
+M4_RELAY_TAILSCALE_IP="${NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP:-100.90.87.36}"
+M4_RELAY_HTTP_PORT="${NPCINK_CLOUD_M4_RELAY_HTTP_PORT:-18080}"
+M4_RELAY_BASE_DIR="/var/tmp/npcink-ai-cloud-m4-source-relay"
 
 DRY_RUN=0
 TMP_DIR=""
 REMOTE_SOURCE_BUNDLE=""
 SOURCE_BUNDLE_PATH=""
+SOURCE_RELAY_ACTIVE=0
+SOURCE_RELAY_DIR=""
+SOURCE_RELAY_BUNDLE=""
+SOURCE_RELAY_LOCK_DIR="${M4_RELAY_BASE_DIR}/operation.lock"
+SOURCE_RELAY_UNIT=""
+SOURCE_RELAY_URL=""
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
-SCP_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
+SCP_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
 ALLOWED_SERVICES="postgres redis api frontend proxy worker callback-worker ops-worker"
 
 usage() {
@@ -55,6 +66,10 @@ Environment overrides:
   NPCINK_CLOUD_M4_REDIS_PORT
   NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT
   NPCINK_CLOUD_M4_OLLAMA_PORT
+  NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE
+  NPCINK_CLOUD_M4_RELAY_SSH_HOST
+  NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP
+  NPCINK_CLOUD_M4_RELAY_HTTP_PORT
 EOF
 }
 
@@ -116,14 +131,76 @@ validate_target() {
 	validate_port "M4 PostgreSQL port" "${M4_POSTGRES_PORT}"
 	validate_port "M4 Redis port" "${M4_REDIS_PORT}"
 	validate_port "M4 Ollama port" "${M4_OLLAMA_PORT}"
+	case "${M4_SOURCE_TRANSFER_MODE}" in
+		relay|direct)
+			;;
+		*)
+			fail "M4 source transfer mode must be relay or direct"
+			;;
+	esac
+	case "${M4_RELAY_TAILSCALE_IP}" in
+		''|*[!0-9.]*) fail "M4 relay Tailscale IP must contain only digits and dots" ;;
+	esac
+	case "${M4_RELAY_SSH_HOST}" in
+		''|-*|*[!A-Za-z0-9._@:-]*)
+			fail "M4 relay SSH host contains unsupported characters"
+			;;
+	esac
+	validate_port "M4 relay HTTP port" "${M4_RELAY_HTTP_PORT}"
+}
+
+cleanup_source_relay() {
+	if [ "${SOURCE_RELAY_ACTIVE}" != "1" ]; then
+		return 0
+	fi
+	if ssh "${SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+		"${SOURCE_RELAY_UNIT}" \
+		"${SOURCE_RELAY_BUNDLE}" \
+		"${SOURCE_RELAY_DIR}" \
+		"${SOURCE_RELAY_LOCK_DIR}" \
+		"${M4_RELAY_BASE_DIR}" <<'REMOTE_RELAY_CLEANUP' >/dev/null 2>&1
+set -euo pipefail
+unit="$1"
+bundle="$2"
+run_dir="$3"
+lock_dir="$4"
+base_dir="$5"
+if [ -n "${unit}" ]; then
+	systemctl stop "${unit}" >/dev/null 2>&1 || true
+fi
+if [ -n "${bundle}" ]; then
+	rm -f "${bundle}"
+fi
+if [ -n "${run_dir}" ]; then
+	rmdir "${run_dir}"
+fi
+rm -f "${lock_dir}/owner.txt"
+rmdir "${lock_dir}"
+rmdir "${base_dir}"
+test ! -e "${bundle}"
+test ! -e "${run_dir}"
+test ! -e "${lock_dir}"
+REMOTE_RELAY_CLEANUP
+	then
+		:
+	else
+		return 1
+	fi
+	SOURCE_RELAY_ACTIVE=0
+	SOURCE_RELAY_DIR=""
+	SOURCE_RELAY_BUNDLE=""
+	SOURCE_RELAY_UNIT=""
+	SOURCE_RELAY_URL=""
 }
 
 cleanup() {
 	local status=$?
 	trap - EXIT INT TERM
+	cleanup_source_relay || true
 	if [ -n "${REMOTE_SOURCE_BUNDLE}" ]; then
 		ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" \
-			"rm -f $(printf '%q' "${REMOTE_SOURCE_BUNDLE}")" >/dev/null 2>&1 || true
+			"rm -f $(printf '%q' "${REMOTE_SOURCE_BUNDLE}") $(printf '%q' "${REMOTE_SOURCE_BUNDLE}.partial")" \
+			>/dev/null 2>&1 || true
 	fi
 	if [ -n "${TMP_DIR}" ] && [ -d "${TMP_DIR}" ]; then
 		find "${TMP_DIR}" -depth -delete
@@ -757,6 +834,117 @@ source_dirty_count() {
 	git -C "${ROOT_DIR}" status --porcelain=v1 --untracked-files=all | wc -l | tr -d ' '
 }
 
+prepare_source_relay() {
+	local source_bundle="$1"
+	local source_sha="$2"
+	local source_bytes=""
+	local upload_started="${SECONDS}"
+
+	require_cmd scp
+	require_cmd ssh
+	source_bytes="$(wc -c < "${source_bundle}" | tr -d ' ')"
+	SOURCE_RELAY_DIR="${M4_RELAY_BASE_DIR}/${RUN_ID}"
+	SOURCE_RELAY_BUNDLE="${SOURCE_RELAY_DIR}/source-${source_sha}.tgz"
+	SOURCE_RELAY_UNIT="npcink-m4-source-${RUN_ID}.service"
+	SOURCE_RELAY_URL="http://${M4_RELAY_TAILSCALE_IP}:${M4_RELAY_HTTP_PORT}/$(basename "${SOURCE_RELAY_BUNDLE}")"
+
+	log "acquiring private source-relay lock at ${M4_RELAY_SSH_HOST}"
+	ssh "${SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+		"${M4_RELAY_BASE_DIR}" \
+		"${SOURCE_RELAY_LOCK_DIR}" \
+		"${SOURCE_RELAY_DIR}" \
+		"${RUN_ID}" <<'REMOTE_RELAY_PREPARE'
+set -euo pipefail
+base_dir="$1"
+lock_dir="$2"
+run_dir="$3"
+run_id="$4"
+lock_acquired=0
+
+cleanup_prepare() {
+	status=$?
+	trap - EXIT
+	if [ "${status}" -ne 0 ] && [ "${lock_acquired}" = "1" ]; then
+		rm -f "${lock_dir}/owner.txt"
+		rmdir "${lock_dir}" >/dev/null 2>&1 || true
+		rmdir "${run_dir}" >/dev/null 2>&1 || true
+		rmdir "${base_dir}" >/dev/null 2>&1 || true
+	fi
+	exit "${status}"
+}
+trap cleanup_prepare EXIT
+
+command -v curl >/dev/null
+command -v python3 >/dev/null
+command -v sha256sum >/dev/null
+command -v systemd-run >/dev/null
+install -d -m 700 "${base_dir}"
+if ! mkdir "${lock_dir}" 2>/dev/null; then
+	echo "[m4-preview] another source transfer holds ${lock_dir}" >&2
+	if [ -f "${lock_dir}/owner.txt" ]; then
+		cat "${lock_dir}/owner.txt" >&2
+	fi
+	exit 75
+fi
+lock_acquired=1
+{
+	printf 'run_id=%s\n' "${run_id}"
+	printf 'started_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "${lock_dir}/owner.txt"
+mkdir "${run_dir}"
+chmod 700 "${run_dir}"
+REMOTE_RELAY_PREPARE
+	SOURCE_RELAY_ACTIVE=1
+
+	log "uploading source bundle to the private Tailscale relay"
+	upload_started="${SECONDS}"
+	scp "${SCP_ARGS[@]}" "${source_bundle}" \
+		"${M4_RELAY_SSH_HOST}:${SOURCE_RELAY_BUNDLE}"
+	log "source relay upload complete in $((SECONDS - upload_started))s"
+
+	ssh "${SSH_ARGS[@]}" "${M4_RELAY_SSH_HOST}" bash -s -- \
+		"${SOURCE_RELAY_BUNDLE}" \
+		"${source_bytes}" \
+		"${source_sha}" \
+		"${SOURCE_RELAY_UNIT}" \
+		"${M4_RELAY_HTTP_PORT}" \
+		"${M4_RELAY_TAILSCALE_IP}" \
+		"${SOURCE_RELAY_DIR}" \
+		"${SOURCE_RELAY_URL}" <<'REMOTE_RELAY_SERVE'
+set -euo pipefail
+bundle="$1"
+expected_bytes="$2"
+expected_sha="$3"
+unit="$4"
+port="$5"
+bind_ip="$6"
+run_dir="$7"
+url="$8"
+
+actual_bytes="$(stat -c '%s' "${bundle}")"
+actual_sha="$(sha256sum "${bundle}" | awk '{print $1}')"
+if [ "${actual_bytes}" != "${expected_bytes}" ] || [ "${actual_sha}" != "${expected_sha}" ]; then
+	echo '[m4-preview] source relay bundle integrity mismatch' >&2
+	exit 65
+fi
+systemd-run --quiet --collect --unit="${unit}" --property=Restart=no \
+	/usr/bin/python3 -m http.server "${port}" --bind "${bind_ip}" --directory "${run_dir}"
+for readiness_attempt in 1 2 3 4 5; do
+	if curl -fsSI --connect-timeout 2 "${url}" >/dev/null 2>&1; then
+		exit 0
+	fi
+	if ! systemctl is-active --quiet "${unit}"; then
+		echo '[m4-preview] source relay HTTP service exited before readiness' >&2
+		exit 69
+	fi
+	sleep 1
+done
+echo '[m4-preview] source relay HTTP service did not become ready' >&2
+exit 69
+REMOTE_RELAY_SERVE
+	log "source relay ready on its Tailscale-only address"
+}
+
 upload_and_apply() {
 	local mode="$1"
 	local acceptance_state="${2:-candidate}"
@@ -788,8 +976,14 @@ upload_and_apply() {
 	log "source bundle SHA256: ${source_sha}"
 	log "image input SHA256: ${image_input_sha}"
 	log "config input SHA256: ${config_input_sha}"
+	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
 
 	if [ "${DRY_RUN}" = "1" ]; then
+		if [ "${M4_SOURCE_TRANSFER_MODE}" = "relay" ]; then
+			log "dry-run: would stage source through ${M4_RELAY_SSH_HOST} and ${M4_RELAY_TAILSCALE_IP}:${M4_RELAY_HTTP_PORT}"
+		else
+			log "dry-run: would upload source directly to M4"
+		fi
 		log "dry-run: would ${mode} ${M4_PROJECT_NAME} at ${M4_SSH_HOST}:${M4_REMOTE_DIR}"
 		return 0
 	fi
@@ -797,8 +991,13 @@ upload_and_apply() {
 	require_cmd scp
 	require_cmd ssh
 	REMOTE_SOURCE_BUNDLE="/tmp/npcink-ai-cloud-m4-source-${RUN_ID}.tgz"
-	log "uploading source bundle to M4"
-	scp "${SCP_ARGS[@]}" "${source_bundle}" "${M4_SSH_HOST}:${REMOTE_SOURCE_BUNDLE}"
+	if [ "${M4_SOURCE_TRANSFER_MODE}" = "relay" ]; then
+		prepare_source_relay "${source_bundle}" "${source_sha}"
+	else
+		log "uploading source bundle directly to M4 by explicit fallback"
+		scp "${SCP_ARGS[@]}" "${source_bundle}" "${M4_SSH_HOST}:${REMOTE_SOURCE_BUNDLE}"
+		SOURCE_RELAY_URL="none"
+	fi
 
 	log "applying source and ${mode} operation under the remote deployment lock"
 	ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" bash -s -- \
@@ -818,7 +1017,9 @@ upload_and_apply() {
 		"${M4_POSTGRES_PORT}" \
 		"${M4_REDIS_PORT}" \
 		"${acceptance_state}" \
-		"${promotion_pr}" <<'REMOTE_APPLY'
+		"${promotion_pr}" \
+		"${M4_SOURCE_TRANSFER_MODE}" \
+		"${SOURCE_RELAY_URL}" <<'REMOTE_APPLY'
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -840,6 +1041,8 @@ postgres_port="${14}"
 redis_port="${15}"
 acceptance_state="${16}"
 promotion_pr="${17}"
+source_transfer_mode="${18}"
+source_relay_url="${19}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -910,6 +1113,7 @@ deployed_config_marker="${cache_dir}/deployed-config-input.sha256"
 state_file="${cache_dir}/last-deploy.txt"
 docker_config="${cache_dir}/docker-config"
 frontend_volume_marker="${cache_dir}/frontend-volume-image.txt"
+source_bundle_partial="${source_bundle}.partial"
 stack_touched=0
 lock_acquired=0
 prefetch_archive=""
@@ -926,7 +1130,7 @@ cleanup_remote() {
 		kill "${package_proxy_pid}" >/dev/null 2>&1 || true
 		wait "${package_proxy_pid}" >/dev/null 2>&1 || true
 	fi
-	rm -f "${source_bundle}"
+	rm -f "${source_bundle}" "${source_bundle_partial}"
 	if [ -n "${prefetch_archive}" ]; then
 		rm -f "${prefetch_archive}"
 	fi
@@ -986,6 +1190,36 @@ lock_acquired=1
 command -v docker >/dev/null
 command -v rsync >/dev/null
 command -v shasum >/dev/null
+
+case "${source_transfer_mode}" in
+	relay)
+		command -v curl >/dev/null
+		rm -f "${source_bundle_partial}"
+		download_started="${SECONDS}"
+		curl --fail --location --silent --show-error \
+			--retry 3 \
+			--retry-all-errors \
+			--retry-delay 1 \
+			--connect-timeout 10 \
+			--max-time 120 \
+			--speed-limit 1024 \
+			--speed-time 20 \
+			--output "${source_bundle_partial}" \
+			"${source_relay_url}"
+		mv "${source_bundle_partial}" "${source_bundle}"
+		echo "[m4-preview] source relay download complete in $((SECONDS - download_started))s"
+		;;
+	direct)
+		test -f "${source_bundle}" || {
+			echo '[m4-preview] direct source bundle is missing' >&2
+			exit 66
+		}
+		;;
+	*)
+		echo '[m4-preview] invalid source transfer mode' >&2
+		exit 64
+		;;
+esac
 
 actual_sha="$(shasum -a 256 "${source_bundle}" | awk '{print $1}')"
 if [ "${actual_sha}" != "${source_sha}" ]; then
@@ -1497,6 +1731,7 @@ printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 	printf 'source_dirty=%s\n' "${source_dirty}"
 	printf 'source_dirty_paths=%s\n' "${dirty_count}"
 	printf 'source_bundle_sha256=%s\n' "${source_sha}"
+	printf 'source_transfer_mode=%s\n' "${source_transfer_mode}"
 	printf 'image_input_sha256=%s\n' "${image_input_sha}"
 	printf 'config_input_sha256=%s\n' "${config_input_sha}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"
@@ -1511,6 +1746,8 @@ printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 stack_touched=0
 REMOTE_APPLY
 	REMOTE_SOURCE_BUNDLE=""
+	cleanup_source_relay ||
+		fail "source relay cleanup failed; inspect ${SOURCE_RELAY_LOCK_DIR}"
 }
 
 remote_status() {
@@ -1975,7 +2212,11 @@ main() {
 					printf '[m4-preview] dry-run: test_target=%s\n' "${test_targets[@]}"
 				fi
 			else
-				remote_locked_operation test "${test_scope}" "${test_targets[@]}"
+				if [ "${#test_targets[@]}" -gt 0 ]; then
+					remote_locked_operation test "${test_scope}" "${test_targets[@]}"
+				else
+					remote_locked_operation test "${test_scope}"
+				fi
 			fi
 			;;
 		recover)
