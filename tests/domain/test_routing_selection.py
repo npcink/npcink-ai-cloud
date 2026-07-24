@@ -39,6 +39,15 @@ def test_routing_service_prefers_balanced_text_instance(tmp_path: Path) -> None:
     init_schema(database_url)
     CatalogService(database_url).refresh_catalog()
     with get_session(database_url) as session:
+        model = session.get(CatalogModel, "gpt-4.1-mini")
+        assert model is not None
+        model.raw_json = {
+            **(model.raw_json or {}),
+            "runtime_pricing": {
+                "cache_read": 0.04,
+                "cache_write": 0.4,
+            },
+        }
         session.add(
             ProviderConnection(
                 connection_id="openai",
@@ -69,6 +78,9 @@ def test_routing_service_prefers_balanced_text_instance(tmp_path: Path) -> None:
     assert resolution.profile_id == "text.balanced"
     assert resolution.default_policy["timeout_ms"] == 30000
     assert resolution.selected_candidate.instance_id == "openai-us-east-text-balanced"
+    assert resolution.selected_candidate.context_window == 128000
+    assert resolution.selected_candidate.price_cache_read == 0.04
+    assert resolution.selected_candidate.price_cache_write == 0.4
     assert [candidate.instance_id for candidate in resolution.candidates] == [
         "openai-us-east-text-balanced",
         "openai-us-east-text-economy",

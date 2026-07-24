@@ -58,8 +58,11 @@ class Candidate:
     instance_id: str
     endpoint_variant: str = "test"
     region: str = "test-region"
+    context_window: int | None = None
     price_input: float | None = None
     price_output: float | None = None
+    price_cache_read: float | None = None
+    price_cache_write: float | None = None
 
 
 class SequenceProvider:
@@ -347,6 +350,114 @@ def test_candidate_engine_retries_then_falls_back_and_succeeds(database_url: str
             1,
             0,
         ]
+
+
+def test_context_preflight_skips_small_model_and_falls_back_without_upstream_call(
+    database_url: str,
+) -> None:
+    primary = SequenceProvider("primary", [provider_success("must not run")])
+    fallback = SequenceProvider("fallback", [provider_success("fallback result")])
+    usage_recorder = RecordingUsageRecorder()
+    service = execution_service(
+        providers={"primary": primary, "fallback": fallback},
+        controller=RecordingRunController(),
+        usage_recorder=usage_recorder,
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_context_preflight_fallback",
+            policy={"allow_fallback": True, "max_retries": 2},
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[
+                Candidate(
+                    "primary",
+                    "small-model",
+                    "small-instance",
+                    endpoint_variant="responses",
+                    context_window=100,
+                ),
+                Candidate(
+                    "fallback",
+                    "large-model",
+                    "large-instance",
+                    endpoint_variant="responses",
+                    context_window=200,
+                ),
+            ],
+            input_payload={"input": "a" * 300, "max_output_tokens": 20},
+        )
+
+        assert primary.attempts == []
+        assert fallback.attempts == [0]
+        assert run.status == "succeeded"
+        assert run.selected_provider_id == "fallback"
+        provider_calls = repository.list_provider_calls(run.run_id)
+        assert [call.error_code for call in provider_calls] == [
+            "provider.context_overflow",
+            None,
+        ]
+        assert provider_calls[0].tokens_in == 0
+        assert provider_calls[0].cost == 0
+        assert usage_recorder.calls[0]["usage_context"] == {
+            "context_preflight": "rejected",
+            "estimated_input_tokens": 75,
+            "requested_output_tokens": 20,
+            "context_safety_margin_tokens": 16,
+            "estimated_total_tokens": 111,
+            "context_window": 100,
+        }
+
+
+def test_provider_result_passes_cache_usage_context_to_metering(database_url: str) -> None:
+    provider = SequenceProvider(
+        "primary",
+        [
+            ProviderExecutionResult(
+                output={"output_text": "cached result"},
+                latency_ms=25,
+                tokens_in=1000,
+                tokens_out=50,
+                cost=0.004,
+                uncached_input_tokens=100,
+                cache_read_tokens=800,
+                cache_write_tokens=100,
+                reasoning_tokens=20,
+                cost_estimate_mode="cache_rates",
+            )
+        ],
+    )
+    usage_recorder = RecordingUsageRecorder()
+    service = execution_service(
+        providers={"primary": provider},
+        controller=RecordingRunController(),
+        usage_recorder=usage_recorder,
+    )
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(repository, run_id="run_cache_metering")
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[Candidate("primary", "model", "instance")],
+            input_payload={"input": "short"},
+        )
+
+        assert run.status == "succeeded"
+        assert usage_recorder.calls[0]["usage_context"] == {
+            "input_tokens_uncached": 100,
+            "cache_read_tokens": 800,
+            "cache_write_tokens": 100,
+            "reasoning_tokens": 20,
+            "cache_hit_ratio": 0.8,
+            "cost_estimate_mode": "cache_rates",
+        }
 
 
 def test_candidate_engine_stops_on_nonfallbackable_error(database_url: str) -> None:
