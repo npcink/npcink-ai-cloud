@@ -269,6 +269,11 @@ def _instantiate_connection_adapter(
                     config.get("default_reasoning_effort")
                 )
                 or None,
+                prompt_cache_affinity_enabled=(
+                    config["supports_prompt_cache_key"]
+                    if isinstance(config.get("supports_prompt_cache_key"), bool)
+                    else provider_id == "openai"
+                ),
             ),
             provider_id=provider_id,
             display_name=display_name,
