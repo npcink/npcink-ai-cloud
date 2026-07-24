@@ -368,6 +368,11 @@ requires the latest target-branch revision, and requests protected squash
 auto-merge without deleting branches. A PR targeting `production` must also
 contain `Approved for production validation by operator.`.
 
+Dependabot PRs use a separate trusted-bot semantic contract instead of the
+human-authored heading template. The contract and recovery procedure are
+documented in
+[PR And Dependency Update Policy](docs/pr-and-dependency-update-policy.md).
+
 ## Borrowed Foundations
 
 Cloud should keep borrowing mature infrastructure patterns instead of growing
