@@ -1440,12 +1440,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "portal_path": "/portal",
                     "qq_bind_path": "/portal/account",
                     "connection_path": (
-                        f"/portal/sites/{site.site_id}" if site is not None else "/portal/sites"
-                    ),
-                    "sites_path": (
-                        f"/portal/sites?site={site.site_id}"
-                        if site is not None
-                        else "/portal/sites"
+                        f"/portal/sites/{site.site_id}" if site is not None else "/portal"
                     ),
                 },
             }

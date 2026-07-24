@@ -2793,7 +2793,7 @@ def test_portal_qq_bind_and_callback_login_reuse_user_session(
     assert initial_provider_data["bound"] is False
     assert initial_provider_data["binding"] is None
 
-    start_response = client.get("/portal/v1/auth/qq/start?return_to=/portal/sites")
+    start_response = client.get("/portal/v1/auth/qq/start?return_to=/portal")
     assert start_response.status_code == 200
     start_data = start_response.json()["data"]
     assert start_data["provider"] == "qq"
