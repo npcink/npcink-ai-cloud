@@ -14,6 +14,7 @@ from app.core.models import (
     AccountSubscription,
     CreditLedgerEntry,
     PaidCreditGrant,
+    UsageMeterEvent,
 )
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.errors import RuntimeQuotaExceededError
@@ -124,6 +125,100 @@ def test_authorize_runtime_request_allows_cloud_managed_knowledge_family(
     assert decision["decision_code"] == "commercial.allowed"
     assert decision["entitlements"]["ability_families"] == ["*"]
 
+    dispose_engine(database_url)
+
+
+def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_cache_metering",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+    service = CommercialService(database_url)
+
+    with get_session(database_url) as session:
+        subscription = session.scalar(select(AccountSubscription))
+        assert subscription is not None
+        runtime_repository = RuntimeRepository(session)
+        run = runtime_repository.create_run(
+            run_id="run_cache_metering",
+            site_id="site_cache_metering",
+            account_id=subscription.account_id,
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            ability_name="test/cache-metering",
+            ability_family="text",
+            skill_id="",
+            workflow_id="",
+            contract_version="v1",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            execution_pattern="inline",
+            data_classification="internal",
+            profile_id="text.balanced",
+            canonical_run_id=None,
+            status="running",
+            idempotency_key="run-cache-metering",
+            request_fingerprint="fingerprint-cache-metering",
+            trace_id="trace-cache-metering",
+            input_json={},
+            execution_input_ciphertext=None,
+            policy_json={},
+        )
+        provider_call = runtime_repository.record_provider_call(
+            run_id=run.run_id,
+            provider_id="openai",
+            model_id="gpt-4.1-mini",
+            instance_id="openai-global",
+            region="global",
+            latency_ms=25,
+            tokens_in=1000,
+            tokens_out=50,
+            cost=0.004,
+            retry_count=0,
+            fallback_used=False,
+        )
+        service.record_provider_call_usage(
+            session=session,
+            run=run,
+            provider_call=provider_call,
+            usage_context={
+                "input_tokens_uncached": 100,
+                "cache_read_tokens": 800,
+                "cache_write_tokens": 100,
+                "cache_hit_ratio": 0.8,
+                "cost_estimate_mode": "cache_rates",
+            },
+        )
+        events = list(
+            session.scalars(
+                select(UsageMeterEvent).where(
+                    UsageMeterEvent.run_id == run.run_id
+                )
+            )
+        )
+        quantities = {event.meter_key: event.quantity for event in events}
+        provider_event = next(
+            event for event in events if event.meter_key == "provider_calls"
+        )
+        provider_payload = dict(provider_event.payload_json or {})
+        session.commit()
+
+    assert quantities == {
+        "provider_calls": 1.0,
+        "tokens_in": 1000.0,
+        "tokens_out": 50.0,
+        "tokens_total": 1050.0,
+        "cost": 0.004,
+        "input_tokens_uncached": 100.0,
+        "cache_read_tokens": 800.0,
+        "cache_write_tokens": 100.0,
+    }
+    assert provider_payload["cache_hit_ratio"] == 0.8
+    assert provider_payload["cost_estimate_mode"] == "cache_rates"
     dispose_engine(database_url)
 
 
