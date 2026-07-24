@@ -8,6 +8,8 @@ The rationale for candidate and accepted states is recorded in
 [ADR-023](decisions/023-m4-preview-candidate-acceptance-promotion.md).
 The source-only authoring and agent checkpoint-dispatch decision is recorded in
 [ADR-025](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md).
+The private source-transfer decision is recorded in
+[ADR-026](decisions/026-private-source-relay-transfer.md).
 
 ## Decision
 
@@ -24,6 +26,7 @@ keeping two Cloud stacks in parallel. The current defaults are:
 | Boundary | Value |
 | --- | --- |
 | SSH transport | `muze@100.102.170.79` |
+| Private source relay | `root@100.90.87.36` |
 | M4 source mirror | `/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev` |
 | Compose project | `npcink-ai-cloud-m4-dev` |
 | Preview proxy | `127.0.0.1:8010` |
@@ -35,6 +38,60 @@ This decision supersedes the earlier proposed parallel `8011` V2 rollout. It
 does not authorize a production deploy or any
 Cloudflare DNS, Access, or Tunnel change. The existing tunnel continues to use
 `127.0.0.1:8010`.
+
+## Private Source Relay Contract
+
+Ordinary source bundles default to a transient private relay because the
+authoring Mac and M4 can each connect directly to the relay even when they
+cannot establish a direct path to each other.
+
+The fixed flow is:
+
+1. package the eligible authoring worktree into `source.tgz` and calculate its
+   SHA-256;
+2. acquire the relay operation lock;
+3. upload to `root@100.90.87.36` under a mode-`0700` per-run directory;
+4. verify byte size and SHA-256 on the relay;
+5. start a temporary HTTP server bound only to
+   `100.90.87.36:18080`;
+6. acquire the existing M4 deployment lock, then let M4 download with bounded
+   retries, timeout, and low-speed detection;
+7. verify SHA-256 on M4 before extraction;
+8. stop the temporary service and remove the relay and M4 transfer files on
+   success, failure, or interruption.
+
+The relay contains only transient bytes for the active operation.
+It does not become source or Git truth. It is not a persistent revision cache,
+a Docker runtime, an acceptance record, or another deployment controller. The
+public relay SSH maintenance address is deliberately outside this default
+flow.
+
+The normal environment defaults are:
+
+```text
+NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=relay
+NPCINK_CLOUD_M4_RELAY_SSH_HOST=root@100.90.87.36
+NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP=100.90.87.36
+NPCINK_CLOUD_M4_RELAY_HTTP_PORT=18080
+```
+
+The script fails visibly when the relay is unavailable. For a bounded
+operator-selected recovery, use the explicit direct fallback:
+
+```bash
+NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE=direct pnpm run m4:preview:sync
+```
+
+Do not turn that override into a silent fallback. A degraded endpoint-to-
+endpoint transfer must remain observable. If the relay lock is stale, inspect
+`/var/tmp/npcink-ai-cloud-m4-source-relay/operation.lock/owner.txt` on the
+relay and verify that no transfer service is active before removing only that
+exact lock.
+
+SSH and SCP allow up to three bounded connection attempts because the observed
+Peer Relay path can lose an initial handshake. This retries connection
+establishment only; it does not hide a failed transfer, switch transport mode,
+or extend an operation without limit.
 
 ## Safety Boundary
 
@@ -413,6 +470,7 @@ After a successful deployment, status records:
 - source commit and branch;
 - clean or dirty state and dirty path count;
 - source bundle SHA-256;
+- source transfer mode;
 - dependency and runtime-config fingerprints;
 - runtime and frontend image IDs and creation times;
 - Alembic revision and deployment UTC time.

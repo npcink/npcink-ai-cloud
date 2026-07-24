@@ -19,6 +19,9 @@ The documents have separate responsibilities:
 - [ADR-025](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
   records why the authoring Mac is source-only and why an agent dispatches M4
   automatically at a coherent task checkpoint.
+- [ADR-026](decisions/026-private-source-relay-transfer.md) records why source
+  bundles use a transient Tailscale-only file relay instead of one
+  endpoint-to-endpoint SFTP session.
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.
@@ -36,6 +39,7 @@ the runbook for command mechanics.
 | Authoring Mac | source edits, source/static checks, Git worktrees, commits, pull requests, operator commands | a routine Cloud Docker runtime |
 | GitHub `master` | reviewed development integration truth | proof that an unpromoted M4 candidate is accepted |
 | M4 | disposable Docker build, runtime, migration, test, and preview evidence | source or Git truth |
+| Private source relay | transient byte transfer for one active M4 operation | source truth, accepted revision cache, runtime, or deployment authority |
 | Local WordPress | abilities, workflows, approval, preflight, final writes, local settings truth | dependent on Cloud for its control-plane truth |
 | Npcink AI Cloud | hosted runtime execution and bounded runtime/service evidence | a second WordPress control plane |
 
@@ -406,7 +410,10 @@ coordination cost.
 
 Current measured reference values from 2026-07-24 are:
 
-- ordinary candidate source sync: about 18.41 seconds;
+- private relay proof, upload start through M4 SHA-256 verification: 18 seconds;
+- ordinary candidate source sync before private-relay integration: about
+  18.41 seconds when a direct path was available, but three to seven minutes
+  on the observed endpoint-to-endpoint Peer Relay path;
 - post-merge source promotion: about 23.05 seconds;
 - full M4 contract + domain gate: about nine minutes.
 

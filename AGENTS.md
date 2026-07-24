@@ -134,6 +134,11 @@ exactly what passed or failed.
   GitHub-hosted M4 deployment credentials. Batch related edits into a coherent
   checkpoint; if source changes after validation, dispatch the candidate again
   before claiming M4 evidence.
+- The default source path is the Tailscale-only source relay documented in
+  ADR-026. Keep the relay transient and private; it does not become source or
+  Git truth. Do not substitute its public SSH maintenance address or silently
+  fall back to direct transfer. Use the explicit direct fallback only when the
+  operator selects it for a bounded recovery.
 - During the edit loop, prefer
   `pnpm run m4:preview:test -- --focused <tests/path-or-node-id>`. Use
   `--contract`, `--domain`, or `--full` only when that broader scope answers a
