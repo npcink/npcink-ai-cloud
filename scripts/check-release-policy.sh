@@ -148,6 +148,17 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - dependencies
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 1
+    labels:
+      - dependencies
 YAML
 	if ! cmp -s "${ROOT_DIR}/.github/dependabot.yml" <(printf '%s' "${expected}"); then
 		echo "[fail] .github/dependabot.yml does not match the canonical pre-GA policy" >&2
@@ -189,6 +200,7 @@ require_file "scripts/cloud-deploy-bundle-smoke-flow.sh"
 require_file "scripts/classify-ci-changes.sh"
 require_file "scripts/check-pg18-proof.sh"
 require_file "scripts/check-first-install-cve-gate.py"
+require_file "scripts/check-python-cve-upstream.py"
 require_file "scripts/alembic_revision_gate.py"
 require_file "scripts/pg18-semantic-proof.py"
 require_file "scripts/production-image-supply.py"
@@ -203,6 +215,7 @@ require_file "scripts/publish-pr.sh"
 require_file ".github/dependabot.yml"
 require_file ".github/workflows/ci.yml"
 require_file ".github/workflows/deploy-production.yml"
+require_file ".github/workflows/python-cve-upstream-watch.yml"
 require_file "deploy/deploy-static-terms-to-ssh-host.sh"
 require_file "site/terms/en/terms.html"
 require_file "site/terms/en/privacy.html"
@@ -306,6 +319,16 @@ require_marker "deploy/OPS_PLAYBOOK.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker ".github/workflows/python-cve-upstream-watch.yml" \
+	'python3 scripts/check-python-cve-upstream.py'
+require_marker ".github/workflows/python-cve-upstream-watch.yml" \
+	'cron: "15 1 * * *"'
+require_marker "scripts/check-python-cve-upstream.py" \
+	'fixed_image_claimed=False'
+require_marker "scripts/check-python-cve-upstream.py" \
+	'exception_expired'
+require_marker "package.json" \
+	'"check:python-cve-upstream": "python3 scripts/check-python-cve-upstream.py"'
 
 if git -C "${ROOT_DIR}" ls-files | grep -Eq '(^|/)\.env\.deploy$'; then
 	echo "[fail] Release payload source must not track .env.deploy" >&2
