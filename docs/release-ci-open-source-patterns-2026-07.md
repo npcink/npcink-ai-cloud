@@ -114,6 +114,13 @@ additional full runs after refreshing the weights. Escalate only if the longest
 shard remains above 10 minutes and the fastest-to-slowest spread remains above
 2x; keep all existing tests and recovery-contract semantics intact.
 
+The first post-refresh `master` observation is Cloud CI run `30079632893`.
+Its backend pytest jobs completed in 8m37s, 9m36s, and 6m56s. The longest job
+fell below 10 minutes and the fastest-to-slowest ratio fell to about 1.38x, so
+this run does not trigger node-level sharding. Use the next naturally occurring
+full high-risk run as the second observation; do not manufacture an expensive
+run only to satisfy the sample count.
+
 ## References
 
 - FastAPI GitHub Actions test workflow:
