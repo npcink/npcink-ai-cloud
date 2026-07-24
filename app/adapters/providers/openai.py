@@ -23,6 +23,14 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
     ProviderMediaCandidate,
 )
+from app.adapters.providers.compatibility import (
+    NormalizedProviderUsage,
+    TokenCostEstimate,
+    build_prompt_cache_key,
+    estimate_token_cost,
+    normalize_openai_usage,
+    normalize_provider_error_code,
+)
 from app.domain.hosted_model_defaults import GROK_IMAGINE_IMAGE_MODEL_ID
 
 DEEPSEEK_MODEL_PRICING_PER_MILLION: dict[str, dict[str, float]] = {
@@ -107,6 +115,7 @@ class OpenAIProviderAdapter:
         image_output_hosts: Iterable[str] = (),
         image_response_format: str | None = None,
         default_reasoning_effort: str | None = None,
+        prompt_cache_affinity_enabled: bool | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -142,6 +151,12 @@ class OpenAIProviderAdapter:
                 "default_reasoning_effort must be none, low, medium, high, or max"
             )
         self.default_reasoning_effort = normalized_reasoning_effort or None
+        self.prompt_cache_affinity_enabled = (
+            self.provider_id == "openai"
+            if prompt_cache_affinity_enabled is None
+            else bool(prompt_cache_affinity_enabled)
+        )
+        self._prompt_cache_key_supported = self.prompt_cache_affinity_enabled
         if self.provider_label:
             self.display_name = self.provider_label
         self.transport = transport
@@ -406,14 +421,20 @@ class OpenAIProviderAdapter:
                 f"provider call exceeded timeout budget for {request.instance_id}",
             ) from error
         except httpx.HTTPStatusError as error:
-            error_code = self._map_http_status_error(error.response.status_code)
+            upstream_error_message = self._extract_http_error_message(error.response)
+            error_code = normalize_provider_error_code(
+                self._map_http_status_error(error.response.status_code),
+                message=upstream_error_message,
+                error_type=self._extract_http_error_type(error.response),
+                status_code=error.response.status_code,
+            )
             error_message = (
                 IMAGE_GENERATION_PROVIDER_ERROR_MESSAGE
                 if result_request.endpoint_variant == "image_generations"
                 else (
                     VISION_PROVIDER_ERROR_MESSAGE
                     if result_request.execution_kind == "vision"
-                    else self._extract_http_error_message(error.response)
+                    else upstream_error_message
                 )
             )
             raise ProviderExecutionError(
@@ -454,23 +475,33 @@ class OpenAIProviderAdapter:
         payload: dict[str, Any],
     ) -> httpx.Response:
         response = self._post_provider_request(client, endpoint_path, payload)
-        if (
-            response.status_code == 400
-            and "metadata" in payload
-            and self._response_reports_unsupported_parameter(response, "metadata")
-        ):
+        for _compatibility_attempt in range(3):
+            if response.status_code != 400:
+                break
             retry_payload = dict(payload)
-            retry_payload.pop("metadata", None)
-            response = self._post_provider_request(client, endpoint_path, retry_payload)
+            if (
+                "prompt_cache_key" in payload
+                and self._response_reports_unsupported_parameter(
+                    response,
+                    "prompt_cache_key",
+                )
+            ):
+                retry_payload.pop("prompt_cache_key", None)
+                self._prompt_cache_key_supported = False
+            elif (
+                "metadata" in payload
+                and self._response_reports_unsupported_parameter(response, "metadata")
+            ):
+                retry_payload.pop("metadata", None)
+            elif (
+                payload.get("temperature") != 1
+                and self._response_requires_temperature_one(response)
+            ):
+                retry_payload["temperature"] = 1
+            else:
+                break
             payload = retry_payload
-        if (
-            response.status_code == 400
-            and payload.get("temperature") != 1
-            and self._response_requires_temperature_one(response)
-        ):
-            retry_payload = dict(payload)
-            retry_payload["temperature"] = 1
-            response = self._post_provider_request(client, endpoint_path, retry_payload)
+            response = self._post_provider_request(client, endpoint_path, payload)
         return response
 
     def _post_provider_request(
@@ -614,6 +645,7 @@ class OpenAIProviderAdapter:
             if isinstance(options.get("max_output_tokens"), int):
                 responses_payload["max_output_tokens"] = options["max_output_tokens"]
             self._apply_responses_request_options(responses_payload, options)
+            self._apply_prompt_cache_affinity(responses_payload, request)
             return "/responses", responses_payload
 
         chat_payload: dict[str, Any] = {
@@ -625,7 +657,26 @@ class OpenAIProviderAdapter:
         if isinstance(options.get("max_tokens"), int):
             chat_payload["max_tokens"] = options["max_tokens"]
         self._apply_chat_request_options(chat_payload, options)
+        self._apply_prompt_cache_affinity(chat_payload, request)
         return "/chat/completions", chat_payload
+
+    def _apply_prompt_cache_affinity(
+        self,
+        payload: dict[str, Any],
+        request: ProviderExecutionRequest,
+    ) -> None:
+        if not self._prompt_cache_key_supported:
+            return
+        prompt_cache_key = build_prompt_cache_key(
+            site_id=request.site_id,
+            profile_id=request.profile_id,
+            model_id=request.model_id,
+            ability_name=request.ability_name,
+            contract_version=request.contract_version,
+            input_payload=request.input_payload,
+        )
+        if prompt_cache_key:
+            payload["prompt_cache_key"] = prompt_cache_key
 
     def _build_http_result(
         self,
@@ -640,8 +691,16 @@ class OpenAIProviderAdapter:
                 first_embedding.get("embedding") if isinstance(first_embedding, dict) else []
             )
             usage = response_json.get("usage", {})
-            tokens_in = self._coerce_int(usage.get("prompt_tokens"))
-            tokens_out = 0
+            normalized_usage = normalize_openai_usage(
+                usage,
+                input_field="prompt_tokens",
+                output_field="completion_tokens",
+            )
+            cost_estimate = self._estimate_cost_details(
+                request,
+                normalized_usage,
+                usage=usage,
+            )
             output = {
                 "embedding": embedding if isinstance(embedding, list) else [],
                 "dimensions": len(embedding) if isinstance(embedding, list) else 0,
@@ -651,23 +710,32 @@ class OpenAIProviderAdapter:
             return ProviderExecutionResult(
                 output=output,
                 latency_ms=latency_ms,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
+                tokens_in=normalized_usage.total_input_tokens,
+                tokens_out=normalized_usage.output_tokens,
+                cost=cost_estimate.total_cost,
+                uncached_input_tokens=normalized_usage.uncached_input_tokens,
+                cache_read_tokens=normalized_usage.cache_read_tokens,
+                cache_write_tokens=normalized_usage.cache_write_tokens,
+                reasoning_tokens=normalized_usage.reasoning_tokens,
+                cost_estimate_mode=cost_estimate.mode,
             )
 
         if request.endpoint_variant == "image_generations":
             usage = response_json.get("usage", {})
-            tokens_in = (
-                self._coerce_int(usage.get("prompt_tokens")) if isinstance(usage, dict) else 0
+            normalized_usage = normalize_openai_usage(
+                usage,
+                input_field="prompt_tokens",
+                output_field="completion_tokens",
             )
             cost = self._extract_image_generation_cost(usage)
             usage_for_cost = usage if isinstance(usage, dict) else {}
-            resolved_cost = (
-                cost
-                if cost > 0
-                else self._estimate_cost(request, tokens_in, 0, usage=usage_for_cost)
+            cost_estimate = self._estimate_cost_details(
+                request,
+                normalized_usage,
+                usage=usage_for_cost,
             )
+            resolved_cost = cost if cost > 0 else cost_estimate.total_cost
+            cost_estimate_mode = "provider_reported" if cost > 0 else cost_estimate.mode
             try:
                 media_candidates = self._build_image_media_candidates(response_json)
             except ProviderExecutionError as error:
@@ -675,8 +743,12 @@ class OpenAIProviderAdapter:
                     error.error_code,
                     error.message,
                     retryable=error.retryable,
-                    tokens_in=tokens_in,
+                    tokens_in=normalized_usage.total_input_tokens,
                     cost=resolved_cost,
+                    usage_context={
+                        **self._usage_context(normalized_usage),
+                        "cost_estimate_mode": cost_estimate_mode,
+                    },
                 ) from error
             output = {
                 "model_id": self._optional_string(response_json.get("model")) or request.model_id,
@@ -686,10 +758,15 @@ class OpenAIProviderAdapter:
             return ProviderExecutionResult(
                 output=output,
                 latency_ms=latency_ms,
-                tokens_in=tokens_in,
-                tokens_out=0,
+                tokens_in=normalized_usage.total_input_tokens,
+                tokens_out=normalized_usage.output_tokens,
                 cost=resolved_cost,
                 media_candidates=media_candidates,
+                uncached_input_tokens=normalized_usage.uncached_input_tokens,
+                cache_read_tokens=normalized_usage.cache_read_tokens,
+                cache_write_tokens=normalized_usage.cache_write_tokens,
+                reasoning_tokens=normalized_usage.reasoning_tokens,
+                cost_estimate_mode=cost_estimate_mode,
             )
 
         if request.endpoint_variant == "responses":
@@ -714,15 +791,28 @@ class OpenAIProviderAdapter:
                             "tool_calls": tool_calls,
                         }
                     ]
-            tokens_in = self._coerce_int(usage.get("input_tokens"))
-            tokens_out = self._coerce_int(usage.get("output_tokens"))
+            normalized_usage = normalize_openai_usage(
+                usage,
+                input_field="input_tokens",
+                output_field="output_tokens",
+            )
+            cost_estimate = self._estimate_cost_details(
+                request,
+                normalized_usage,
+                usage=usage,
+            )
             return ProviderExecutionResult(
                 output=output,
                 latency_ms=latency_ms,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
+                tokens_in=normalized_usage.total_input_tokens,
+                tokens_out=normalized_usage.output_tokens,
+                cost=cost_estimate.total_cost,
                 finish_reason=self._extract_responses_finish_reason(response_json),
+                uncached_input_tokens=normalized_usage.uncached_input_tokens,
+                cache_read_tokens=normalized_usage.cache_read_tokens,
+                cache_write_tokens=normalized_usage.cache_write_tokens,
+                reasoning_tokens=normalized_usage.reasoning_tokens,
+                cost_estimate_mode=cost_estimate.mode,
             )
 
         choices = response_json.get("choices")
@@ -736,19 +826,32 @@ class OpenAIProviderAdapter:
             "model_id": response_json.get("model", request.model_id),
             "usage": usage if isinstance(usage, dict) else {},
         }
-        tokens_in = self._coerce_int(usage.get("prompt_tokens"))
-        tokens_out = self._coerce_int(usage.get("completion_tokens"))
+        normalized_usage = normalize_openai_usage(
+            usage,
+            input_field="prompt_tokens",
+            output_field="completion_tokens",
+        )
+        cost_estimate = self._estimate_cost_details(
+            request,
+            normalized_usage,
+            usage=usage,
+        )
         return ProviderExecutionResult(
             output=output,
             latency_ms=latency_ms,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            cost=self._estimate_cost(request, tokens_in, tokens_out, usage=usage),
+            tokens_in=normalized_usage.total_input_tokens,
+            tokens_out=normalized_usage.output_tokens,
+            cost=cost_estimate.total_cost,
             finish_reason=(
                 first_choice.get("finish_reason", "stop")
                 if isinstance(first_choice, dict)
                 else "stop"
             ),
+            uncached_input_tokens=normalized_usage.uncached_input_tokens,
+            cache_read_tokens=normalized_usage.cache_read_tokens,
+            cache_write_tokens=normalized_usage.cache_write_tokens,
+            reasoning_tokens=normalized_usage.reasoning_tokens,
+            cost_estimate_mode=cost_estimate.mode,
         )
 
     def _build_image_media_candidates(
@@ -1318,6 +1421,7 @@ class OpenAIProviderAdapter:
         status = self._infer_catalog_status(payload)
         is_deprecated = self._infer_catalog_deprecated(status, payload)
         endpoint_variant = self._select_catalog_endpoint_variant(feature, tier)
+        runtime_pricing = self._runtime_cache_pricing(payload)
 
         return CatalogModelSeed(
             model_id=catalog_model_id,
@@ -1364,6 +1468,7 @@ class OpenAIProviderAdapter:
                 "tier": tier,
                 "owned_by": payload.get("owned_by"),
                 "upstream_model_id": model_id,
+                **({"runtime_pricing": runtime_pricing} if runtime_pricing else {}),
             },
             instances=[
                 CatalogInstanceSeed(
@@ -1385,6 +1490,34 @@ class OpenAIProviderAdapter:
                 )
             ],
         )
+
+    def _runtime_cache_pricing(self, payload: dict[str, Any]) -> dict[str, float]:
+        cache_read = self._coerce_float(
+            self._lookup_nested(
+                payload,
+                ("price_cache_read",),
+                ("pricing", "cache_read"),
+                ("pricing", "cache_read_per_million"),
+                ("metadata", "price_cache_read"),
+            )
+        )
+        cache_write = self._coerce_float(
+            self._lookup_nested(
+                payload,
+                ("price_cache_write",),
+                ("pricing", "cache_write"),
+                ("pricing", "cache_write_per_million"),
+                ("metadata", "price_cache_write"),
+            )
+        )
+        return {
+            key: value
+            for key, value in (
+                ("cache_read", cache_read),
+                ("cache_write", cache_write),
+            )
+            if value is not None
+        }
 
     def _catalog_sort_key(self, model_seed: CatalogModelSeed) -> tuple[int, int, str]:
         feature_rank = {"text": 0, "vision": 1, "image_generation": 2, "embedding": 3}.get(
@@ -1691,21 +1824,76 @@ class OpenAIProviderAdapter:
         *,
         usage: dict[str, Any] | None = None,
     ) -> float:
+        normalized_usage = NormalizedProviderUsage(
+            total_input_tokens=max(0, int(tokens_in or 0)),
+            output_tokens=max(0, int(tokens_out or 0)),
+            uncached_input_tokens=max(0, int(tokens_in or 0)),
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+        )
+        return self._estimate_cost_details(
+            request,
+            normalized_usage,
+            usage=usage or {},
+        ).total_cost
+
+    def _estimate_cost_details(
+        self,
+        request: ProviderExecutionRequest,
+        normalized_usage: NormalizedProviderUsage,
+        *,
+        usage: object = None,
+    ) -> TokenCostEstimate:
+        raw_usage = usage if isinstance(usage, dict) else {}
         deepseek_cost = self._estimate_deepseek_cost(
             request=request,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            usage=usage or {},
+            tokens_in=normalized_usage.total_input_tokens,
+            tokens_out=normalized_usage.output_tokens,
+            usage=raw_usage,
         )
         if deepseek_cost is not None:
-            return deepseek_cost
+            cache_aware = (
+                normalized_usage.cache_read_tokens > 0
+                or normalized_usage.cache_write_tokens > 0
+            )
+            return TokenCostEstimate(
+                total_cost=deepseek_cost,
+                mode=(
+                    "provider_model_cache_rates"
+                    if cache_aware
+                    else "provider_model_rates"
+                ),
+            )
 
-        if request.price_input is None and request.price_output is None:
-            return 0.0
+        return estimate_token_cost(
+            normalized_usage,
+            price_input=request.price_input,
+            price_output=request.price_output,
+            price_cache_read=request.price_cache_read,
+            price_cache_write=request.price_cache_write,
+        )
 
-        input_cost = ((request.price_input or 0.0) * tokens_in) / 1_000_000
-        output_cost = ((request.price_output or 0.0) * tokens_out) / 1_000_000
-        return round(input_cost + output_cost, 6)
+    @staticmethod
+    def _usage_context(usage: NormalizedProviderUsage) -> dict[str, object]:
+        context: dict[str, object] = {}
+        has_cache_evidence = usage.cache_read_tokens > 0 or usage.cache_write_tokens > 0
+        if has_cache_evidence:
+            context.update(
+                {
+                    "input_tokens_uncached": usage.uncached_input_tokens,
+                    "cache_read_tokens": usage.cache_read_tokens,
+                    "cache_write_tokens": usage.cache_write_tokens,
+                }
+            )
+        if usage.reasoning_tokens > 0:
+            context["reasoning_tokens"] = usage.reasoning_tokens
+        if has_cache_evidence and usage.total_input_tokens > 0:
+            context["cache_hit_ratio"] = round(
+                min(usage.cache_read_tokens, usage.total_input_tokens)
+                / usage.total_input_tokens,
+                6,
+            )
+        return context
 
     def _estimate_deepseek_cost(
         self,
@@ -1897,6 +2085,21 @@ class OpenAIProviderAdapter:
             return self._bounded_error_message(payload["message"])
 
         return self._bounded_response_text(response) or f"http {response.status_code}"
+
+    @staticmethod
+    def _extract_http_error_type(response: httpx.Response) -> str:
+        try:
+            payload = response.json()
+        except ValueError:
+            return ""
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if not isinstance(error, dict):
+            return ""
+        for key in ("type", "code"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
 
     def _bounded_response_text(self, response: httpx.Response) -> str:
         return self._bounded_error_message(response.text)
