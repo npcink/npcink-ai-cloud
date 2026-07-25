@@ -388,10 +388,12 @@ Until the security gate and first real-editor observation close, pause:
       revision `3fc59bc59fb1b0a07c728238d547e28a107c2979`.
 - [x] The next stage was narrowed to security gate, bounded real-editor
       observation, and deliberate GA decision.
-- [ ] Post-merge accepted M4 promotion for PR #270 remains pending. At
-      closeout, M4 was occupied by the newer uncommitted
-      `codex/fix-dark-header` candidate (`source_dirty=true`,
-      `source_dirty_paths=3`), so the older revision was not promoted over it.
+- [x] Post-merge accepted M4 promotion completed through the newer PR #272,
+      whose `master` revision includes PR #270. Final evidence recorded
+      `acceptance_state=accepted`, `promotion_pr=272`,
+      `source_revision=f06d2dbbd57ea9e2484a86cf38882f1604d2b9db`,
+      `source_branch=master`, and `source_dirty=false`; the focused dark-header
+      Playwright smoke then passed against the M4 tunnel.
 - [ ] Human/external acceptance remains intentionally pending.
 - [ ] The Python fixed-image candidate remains externally unavailable at the
       timestamp recorded above.
