@@ -38,42 +38,47 @@ interface PublicPlanCatalogEnvelope {
   data?: PublicPlanCatalog;
 }
 
+interface TierCopy {
+  zhPositioning: string;
+  enPositioning: string;
+  zhAction: string;
+  enAction: string;
+  href: string;
+}
+
+interface TierView {
+  tierId: TierId;
+  data: PublicPlanTier | null;
+  copy: TierCopy;
+}
+
 const tierOrder: TierId[] = ['free', 'plus', 'pro', 'agency'];
 
-const tierCopy: Record<
-  TierId,
-  {
-    zhPositioning: string;
-    enPositioning: string;
-    zhAction: string;
-    enAction: string;
-    href: string;
-  }
-> = {
+const tierCopy: Record<TierId, TierCopy> = {
   free: {
-    zhPositioning: '适合单站点体验托管运行与基础用量记录。',
-    enPositioning: 'For one site getting started with hosted runtime and usage evidence.',
+    zhPositioning: '适合一个站点体验托管运行。',
+    enPositioning: 'For one site trying hosted execution.',
     zhAction: '免费开始',
     enAction: 'Start free',
     href: '/portal/register',
   },
   plus: {
-    zhPositioning: '适合已经超过免费额度的个人站长。',
-    enPositioning: 'For site owners who have outgrown the Free allowance.',
-    zhAction: '登录后试用',
-    enAction: 'Sign in to try',
+    zhPositioning: '适合稳定使用 AI 的个人站长。',
+    enPositioning: 'For site owners using AI consistently.',
+    zhAction: '选择 Plus',
+    enAction: 'Choose Plus',
     href: '/portal/register?plan=plus',
   },
   pro: {
-    zhPositioning: '适合持续使用 AI 工作流的个人与小团队。',
-    enPositioning: 'For individuals and small teams running AI workflows regularly.',
-    zhAction: '登录后试用',
-    enAction: 'Sign in to try',
+    zhPositioning: '适合多站点使用的个人与小团队。',
+    enPositioning: 'For individuals and small teams using multiple sites.',
+    zhAction: '选择 Pro',
+    enAction: 'Choose Pro',
     href: '/portal/register?plan=pro',
   },
   agency: {
-    zhPositioning: '适合多站点或需要更高运行余量的团队。',
-    enPositioning: 'For teams that need multi-site coverage and higher runtime headroom.',
+    zhPositioning: '适合需要更高运行余量的团队。',
+    enPositioning: 'For teams needing higher runtime headroom.',
     zhAction: '申请方案',
     enAction: 'Request a plan',
     href: '/portal/login?redirect=%2Fportal%2Fsupport',
@@ -85,6 +90,10 @@ function formatNumber(value: number | null): string {
     return '—';
   }
   return new Intl.NumberFormat('en-US').format(value);
+}
+
+function planLabel(view: TierView): string {
+  return view.data?.label || view.tierId[0].toUpperCase() + view.tierId.slice(1);
 }
 
 function PlanValue({
@@ -100,9 +109,149 @@ function PlanValue({
     <span>
       {unavailable ? '—' : formatNumber(value)}
       {!unavailable && value !== null ? (
-        <span className="ml-1 text-slate-500 dark:text-slate-400">{suffix}</span>
+        <span className="ml-1 text-slate-400">{suffix}</span>
       ) : null}
     </span>
+  );
+}
+
+function PlanPrice({
+  agency,
+  amount,
+  loading,
+  unavailable,
+  zh,
+  compact = false,
+}: {
+  agency: boolean;
+  amount: number | null;
+  loading: boolean;
+  unavailable: boolean;
+  zh: boolean;
+  compact?: boolean;
+}) {
+  if (agency) {
+    return <span className={compact ? 'text-lg font-black' : 'text-3xl font-black'}>{zh ? '按需报价' : 'Custom quote'}</span>;
+  }
+  if (loading) {
+    return <span className="text-sm font-bold text-slate-400">{zh ? '正在读取…' : 'Loading…'}</span>;
+  }
+  if (unavailable || amount === null) {
+    return <span className="text-sm font-black text-slate-300">{zh ? '暂未开放' : 'Not available'}</span>;
+  }
+  if (compact) {
+    return (
+      <span className="font-black">
+        ¥{formatNumber(amount)}
+        <span className="ml-1 text-xs font-medium text-slate-400">{zh ? '/30 天' : '/30 days'}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-end gap-2">
+      <span className="text-sm font-bold text-[#9eb3ff]">¥</span>
+      <span className="text-5xl font-black leading-none">{formatNumber(amount)}</span>
+      <span className="pb-1 text-sm text-slate-400">{zh ? '/ 30 天' : '/ 30 days'}</span>
+    </span>
+  );
+}
+
+function PlanDetails({
+  agency,
+  data,
+  loading,
+  unavailable,
+  zh,
+}: {
+  agency: boolean;
+  data: PublicPlanTier | null;
+  loading: boolean;
+  unavailable: boolean;
+  zh: boolean;
+}) {
+  return (
+    <dl className="divide-y divide-white/10 text-sm">
+      <div className="flex items-center justify-between gap-4 py-3">
+        <dt className="text-slate-400">{zh ? '每月 AI 用量' : 'Monthly AI allowance'}</dt>
+        <dd className="font-bold">
+          {agency && (!data || unavailable) ? (
+            zh ? '按方案' : 'Custom'
+          ) : (
+            <PlanValue
+              value={data?.monthly_points ?? null}
+              suffix={zh ? '/月' : '/mo'}
+              unavailable={loading || unavailable}
+            />
+          )}
+        </dd>
+      </div>
+      <div className="flex items-center justify-between gap-4 py-3">
+        <dt className="text-slate-400">{zh ? '可连接站点' : 'Connected sites'}</dt>
+        <dd className="font-bold">
+          {agency && (!data || unavailable) ? (
+            zh ? '多站点' : 'Multi-site'
+          ) : (
+            <PlanValue
+              value={data?.site_limit ?? null}
+              suffix={zh ? '个' : 'sites'}
+              unavailable={loading || unavailable}
+            />
+          )}
+        </dd>
+      </div>
+      <div className="flex items-center justify-between gap-4 py-3">
+        <dt className="text-slate-400">{zh ? '同时处理任务' : 'Concurrent runs'}</dt>
+        <dd className="font-bold">
+          {agency && (!data || unavailable) ? (
+            zh ? '按方案' : 'Custom'
+          ) : (
+            <PlanValue
+              value={data?.concurrency_limit ?? null}
+              suffix={zh ? '项' : 'runs'}
+              unavailable={loading || unavailable}
+            />
+          )}
+        </dd>
+      </div>
+      <div className="flex items-center justify-between gap-4 py-3">
+        <dt className="text-slate-400">{zh ? '单次批量数量' : 'Batch size'}</dt>
+        <dd className="font-bold">
+          {agency && (!data || unavailable) ? (
+            zh ? '按方案' : 'Custom'
+          ) : (
+            <PlanValue
+              value={data?.batch_item_limit ?? null}
+              suffix={zh ? '项' : 'items'}
+              unavailable={loading || unavailable}
+            />
+          )}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function PlanAction({
+  copy,
+  recommended,
+  zh,
+}: {
+  copy: TierCopy;
+  recommended: boolean;
+  zh: boolean;
+}) {
+  return (
+    <Link
+      href={copy.href}
+      className={`flex h-12 items-center justify-between border px-4 text-sm font-black transition ${
+        recommended
+          ? 'border-[#2357ff] bg-[#2357ff] text-white hover:border-[#4773ff] hover:bg-[#4773ff]'
+          : 'border-white/25 text-white hover:border-white hover:bg-white/5'
+      }`}
+    >
+      <span>{zh ? copy.zhAction : copy.enAction}</span>
+      <span aria-hidden="true">→</span>
+    </Link>
   );
 }
 
@@ -111,6 +260,7 @@ export function PublicPricingSection() {
   const zh = locale === 'zh-CN';
   const [catalog, setCatalog] = useState<PublicPlanCatalog | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [expandedTier, setExpandedTier] = useState<TierId | null>('pro');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,7 +290,7 @@ export function PublicPricingSection() {
     return () => controller.abort();
   }, []);
 
-  const tiers = useMemo(() => {
+  const tiers = useMemo<TierView[]>(() => {
     const byId = new Map(catalog?.tiers.map((tier) => [tier.tier_id, tier]));
     return tierOrder.map((tierId) => ({
       tierId,
@@ -154,33 +304,36 @@ export function PublicPricingSection() {
   return (
     <section
       id="pricing"
+      data-home-pricing
       className="border-b border-slate-200 bg-[#0b1424] text-white dark:border-white/10"
     >
-      <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8">
-        <div className="grid gap-8 border-b border-white/15 pb-10 lg:grid-cols-[.8fr_1.2fr]">
+      <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-20">
+        <div className="grid gap-6 border-b border-white/15 pb-8 lg:grid-cols-[.8fr_1.2fr]">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#9eb3ff]">
               {zh ? '套餐与权益' : 'Plans & access'}
             </p>
             <h2 className="mt-5 text-4xl font-black leading-tight tracking-[-0.04em] sm:text-5xl">
-              {zh ? '从一站起步，按运行规模升级。' : 'Start with one site. Scale with your runtime.'}
+              {zh ? '从一个站点开始，按使用规模升级。' : 'Start with one site. Scale as usage grows.'}
             </h2>
           </div>
           <div className="flex items-end">
             <p className="max-w-2xl text-base leading-8 text-slate-300">
               {zh
-                ? '四档套餐使用同一套托管运行边界。差别集中在 AI 额度、站点数量、并发与批量规模。'
-                : 'Every plan keeps the same hosted-runtime boundary. The difference is AI allowance, sites, concurrency, and batch scale.'}
+                ? '先看适合谁和每月价格，再比较站点数、同时任务和单次批量数量。'
+                : 'Start with fit and monthly price, then compare sites, concurrent runs, and batch size.'}
             </p>
           </div>
         </div>
 
         <div
-          className="grid border-l border-white/15 sm:grid-cols-2 xl:grid-cols-4"
+          data-plan-comparison="desktop"
+          className="hidden border-l border-white/15 md:grid md:grid-cols-2 xl:grid-cols-4"
           aria-label={zh ? '套餐比较' : 'Plan comparison'}
           role="list"
         >
-          {tiers.map(({ tierId, data, copy }, index) => {
+          {tiers.map((view, index) => {
+            const { tierId, data, copy } = view;
             const loading = catalog === null && !loadFailed;
             const unavailable = Boolean(
               loadFailed ||
@@ -194,7 +347,7 @@ export function PublicPricingSection() {
               <article
                 key={tierId}
                 role="listitem"
-                className={`relative flex flex-col border-b border-r border-white/15 px-6 py-8 transition duration-300 hover:bg-white/[.045] sm:px-7 xl:min-h-[39rem] ${
+                className={`relative flex flex-col border-b border-r border-white/15 px-6 py-7 transition duration-300 hover:bg-white/[.045] xl:min-h-[34rem] ${
                   recommended ? 'bg-[#2357ff]/10' : ''
                 }`}
               >
@@ -204,119 +357,122 @@ export function PublicPricingSection() {
                   </span>
                 ) : null}
                 <p className="font-mono text-xs text-[#9eb3ff]">0{index + 1}</p>
-                <h3 className="mt-7 text-3xl font-black">
-                  {data?.label || tierId[0].toUpperCase() + tierId.slice(1)}
-                </h3>
-                <p className="mt-4 min-h-20 text-sm leading-6 text-slate-400">
+                <h3 className="mt-5 text-3xl font-black">{planLabel(view)}</h3>
+                <p className="mt-3 min-h-16 text-sm leading-6 text-slate-400">
                   {zh ? copy.zhPositioning : copy.enPositioning}
                 </p>
-
-                <div className="mt-7 border-y border-white/15 py-6">
-                  {agency ? (
-                    <p className="text-3xl font-black">{zh ? '按需报价' : 'Custom quote'}</p>
-                  ) : loading ? (
-                    <p className="text-sm font-bold text-slate-400">
-                      {zh ? '正在读取当前报价…' : 'Loading current offer…'}
-                    </p>
-                  ) : unavailable || amount === null ? (
-                    <p className="text-xl font-black text-slate-300">
-                      {zh ? '暂未开放' : 'Not currently available'}
-                    </p>
-                  ) : (
-                    <p className="flex items-end gap-2">
-                      <span className="text-sm font-bold text-[#9eb3ff]">¥</span>
-                      <span className="text-5xl font-black leading-none">
-                        {formatNumber(amount)}
-                      </span>
-                      <span className="pb-1 text-sm text-slate-400">
-                        {zh ? '/ 30 天' : '/ 30 days'}
-                      </span>
-                    </p>
-                  )}
+                <div className="mt-5 border-y border-white/15 py-5">
+                  <PlanPrice
+                    agency={agency}
+                    amount={amount}
+                    loading={loading}
+                    unavailable={unavailable}
+                    zh={zh}
+                  />
                 </div>
-
-                <dl className="mt-6 divide-y divide-white/10 text-sm">
-                  <div className="flex items-center justify-between gap-4 py-3">
-                    <dt className="text-slate-400">{zh ? 'AI 额度' : 'AI credits'}</dt>
-                    <dd className="font-bold">
-                      {agency && (!data || unavailable) ? (
-                        zh ? '按方案' : 'Custom'
-                      ) : (
-                        <PlanValue
-                          value={data?.monthly_points ?? null}
-                          suffix={zh ? '/月' : '/mo'}
-                          unavailable={loading || unavailable}
-                        />
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 py-3">
-                    <dt className="text-slate-400">{zh ? '连接站点' : 'Connected sites'}</dt>
-                    <dd className="font-bold">
-                      {agency && (!data || unavailable) ? (
-                        zh ? '多站点' : 'Multi-site'
-                      ) : (
-                        <PlanValue
-                          value={data?.site_limit ?? null}
-                          suffix={zh ? '个' : 'sites'}
-                          unavailable={loading || unavailable}
-                        />
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 py-3">
-                    <dt className="text-slate-400">{zh ? '同时运行' : 'Concurrent runs'}</dt>
-                    <dd className="font-bold">
-                      {agency && (!data || unavailable) ? (
-                        zh ? '按方案' : 'Custom'
-                      ) : (
-                        <PlanValue
-                          value={data?.concurrency_limit ?? null}
-                          suffix={zh ? '项' : 'runs'}
-                          unavailable={loading || unavailable}
-                        />
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 py-3">
-                    <dt className="text-slate-400">{zh ? '单批上限' : 'Batch limit'}</dt>
-                    <dd className="font-bold">
-                      {agency && (!data || unavailable) ? (
-                        zh ? '按方案' : 'Custom'
-                      ) : (
-                        <PlanValue
-                          value={data?.batch_item_limit ?? null}
-                          suffix={zh ? '项' : 'items'}
-                          unavailable={loading || unavailable}
-                        />
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div className="mt-auto pt-8">
-                  <Link
-                    href={copy.href}
-                    className={`flex h-12 items-center justify-between border px-4 text-sm font-black transition ${
-                      recommended
-                        ? 'border-[#2357ff] bg-[#2357ff] text-white hover:border-[#4773ff] hover:bg-[#4773ff]'
-                        : 'border-white/25 text-white hover:border-white hover:bg-white/5'
-                    }`}
-                  >
-                    <span>{zh ? copy.zhAction : copy.enAction}</span>
-                    <span aria-hidden="true">→</span>
-                  </Link>
+                <div className="mt-4">
+                  <PlanDetails
+                    agency={agency}
+                    data={data}
+                    loading={loading}
+                    unavailable={unavailable}
+                    zh={zh}
+                  />
+                </div>
+                <div className="mt-auto pt-6">
+                  <PlanAction copy={copy} recommended={recommended} zh={zh} />
                 </div>
               </article>
             );
           })}
         </div>
 
-        <div className="grid gap-5 border-x border-b border-white/15 px-6 py-6 text-sm leading-6 text-slate-400 sm:px-7 md:grid-cols-[1fr_auto] md:items-center">
+        <div
+          data-plan-comparison="mobile"
+          className="border-l border-t border-white/15 md:hidden"
+          aria-label={zh ? '移动端套餐比较' : 'Mobile plan comparison'}
+          role="list"
+        >
+          {tiers.map((view, index) => {
+            const { tierId, data, copy } = view;
+            const loading = catalog === null && !loadFailed;
+            const unavailable = Boolean(
+              loadFailed ||
+                (catalog !== null && (!data || data.availability !== 'available'))
+            );
+            const recommended = tierId === 'pro';
+            const agency = tierId === 'agency';
+            const amount = agency ? null : data?.amount ?? null;
+            const expanded = expandedTier === tierId;
+            const panelId = `mobile-plan-${tierId}`;
+
+            return (
+              <article key={tierId} role="listitem" className="border-b border-r border-white/15">
+                <button
+                  type="button"
+                  aria-label={zh ? `${planLabel(view)} 套餐详情` : `${planLabel(view)} plan details`}
+                  aria-expanded={expanded}
+                  aria-controls={panelId}
+                  onClick={() => setExpandedTier(expanded ? null : tierId)}
+                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-5 text-left transition hover:bg-white/[.045] ${
+                    recommended ? 'bg-[#2357ff]/10' : ''
+                  }`}
+                >
+                  <span className="font-mono text-xs text-[#9eb3ff]">0{index + 1}</span>
+                  <span>
+                    <span className="flex items-center gap-2 text-xl font-black">
+                      {planLabel(view)}
+                      {recommended ? (
+                        <span className="bg-[#2357ff] px-2 py-1 text-[10px] font-black tracking-[0.12em] text-white">
+                          {zh ? '推荐' : 'Recommended'}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1 block text-sm leading-6 text-slate-400">
+                      {zh ? copy.zhPositioning : copy.enPositioning}
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <PlanPrice
+                      agency={agency}
+                      amount={amount}
+                      loading={loading}
+                      unavailable={unavailable}
+                      zh={zh}
+                      compact
+                    />
+                    <span className="mt-2 block text-xs text-[#9eb3ff]" aria-hidden="true">
+                      {expanded ? '−' : '+'}
+                    </span>
+                  </span>
+                </button>
+                {expanded ? (
+                  <div
+                    id={panelId}
+                    className="motion-safe:animate-fade-in border-t border-white/10 px-5 pb-6 pt-3"
+                  >
+                    <PlanDetails
+                      agency={agency}
+                      data={data}
+                      loading={loading}
+                      unavailable={unavailable}
+                      zh={zh}
+                    />
+                    <div className="pt-5">
+                      <PlanAction copy={copy} recommended={recommended} zh={zh} />
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="grid gap-4 border-x border-b border-white/15 px-5 py-5 text-sm leading-6 text-slate-400 md:grid-cols-[1fr_auto] md:items-center">
           <p>
             {zh
-              ? `Plus、Pro 与 Agency 共享一次 ${trialDays} 天付费套餐试用资格；Agency 试用和报价需要审核。`
-              : `Plus, Pro, and Agency share one ${trialDays}-day paid-plan trial. Agency trials and quotes require approval.`}
+              ? `Plus、Pro 与 Agency 共享一次 ${trialDays} 天付费套餐试用资格；Agency 需要审核。`
+              : `Plus, Pro, and Agency share one ${trialDays}-day paid-plan trial. Agency requires approval.`}
           </p>
           <p className="font-bold text-slate-300">
             {zh
