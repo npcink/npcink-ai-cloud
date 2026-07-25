@@ -1,9 +1,10 @@
 # Provider Runtime Evidence Surface Validation — 2026-07-25
 
-Status: source implemented and validated as M4 Preview `candidate`; Draft PR
-`#256` is open. M4 acceptance, merge, production, signed WordPress
-title-generation E2E, monetary benefit, and live P2 context-preflight
-acceptance are not claimed.
+Status: source merged through PR `#256` as
+`e4fa6fdb65cd2b17a5cc846d3653360dfcd096ea` and promoted from a clean current
+`master` to M4 Preview with `acceptance_state=accepted`. Production, signed
+WordPress title-generation E2E, monetary benefit, and live P2
+context-preflight acceptance are not claimed.
 
 Scope: the next provider-runtime evidence phase after the accepted
 Pi-inspired P0-P2 compatibility work. This record covers an internal read-only
@@ -17,7 +18,7 @@ decision, or production approval.
 
 ## Outcome
 
-The candidate resolves the observability gap without importing Pi's agent
+The merged source resolves the observability gap without importing Pi's agent
 architecture or adding a second runtime:
 
 - `GET /internal/service/runtime/provider-evidence/summary` aggregates existing
@@ -184,6 +185,29 @@ clean worktree where `gh` is installed. Neither the script, Docker image, nor
 that contract is changed by PR `#256`; this is retained as an environment
 exception rather than hidden or fixed by expanding the provider scope.
 
+Accepted closeout evidence:
+
+- every required PR `#256` check passed, including backend-targeted, CodeQL,
+  dependency audit, secret scan, frontend, scope classification, PR-body
+  contract, and CI observability;
+- squash merge:
+  `e4fa6fdb65cd2b17a5cc846d3653360dfcd096ea`;
+- `acceptance_state=accepted`;
+- `promotion_pr=256`;
+- `source_branch=master`;
+- `source_dirty=false`;
+- accepted deployment time: `2026-07-25T04:44:15Z`;
+- accepted HTTP smoke: `/` and `/health/live` returned `200`;
+- accepted evidence-route smoke: HTTP `200`, revision `m1`, `8` records,
+  success rate `100%`, metering completeness `100%`, cache-read ratio
+  `57.485%`, monetary status `blocked_missing_explicit_cache_rates`, and
+  context-preflight status `not_observed`.
+
+The accepted promotion reused the candidate runtime and frontend images
+because the merged image inputs were identical. It updated the source and
+acceptance ledger, reran migration and health checks, and did not repeat the
+external provider cohort.
+
 ## Boundary And Stop Rule
 
 The new internal surface is runtime-detail evidence only. It must not become:
@@ -195,10 +219,10 @@ The new internal surface is runtime-detail evidence only. It must not become:
 - AI-credit, entitlement, invoice, or package truth;
 - a reason to enable generic streaming or import Pi's agent architecture.
 
-This phase stops after protected source review, candidate M4 evidence, and the
-small RuntimeService cohort. M4 acceptance may occur only after PR `#256`
-merges into `master` and a clean-master promotion succeeds. Production and
-signed WordPress title-generation E2E remain separate scopes.
+This phase stops after protected source review and merge, candidate M4
+evidence, the small RuntimeService cohort, and clean-master M4 accepted
+promotion. Production and signed WordPress title-generation E2E remain
+separate scopes.
 
 ## Related Records
 
