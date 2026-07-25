@@ -5,18 +5,16 @@ import { useState, type ReactNode } from 'react';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { useLocale } from '@/contexts/LocaleContext';
+import {
+  PUBLIC_FOOTER_NAV_ITEMS,
+  PUBLIC_HEADER_NAV_ITEMS,
+  publicNavigationLabel,
+} from '@/lib/public-navigation';
 
 export function PublicSiteShell({ children }: { children: ReactNode }) {
   const { locale } = useLocale();
   const zh = locale === 'zh-CN';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const navItems = [
-    { href: '/#capabilities', label: zh ? '能力' : 'Capabilities' },
-    { href: '/#boundary', label: zh ? '工作方式' : 'How it works' },
-    { href: '/#pricing', label: zh ? '套餐' : 'Plans' },
-    { href: '/status', label: zh ? '服务状态' : 'Service status' },
-    { href: '/help', label: zh ? '帮助' : 'Help' },
-  ];
 
   return (
     <div className="min-h-screen bg-[#f6f7f9] text-[#101828] dark:bg-[#09101c] dark:text-slate-50">
@@ -36,9 +34,9 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 dark:text-slate-300 md:flex">
-            {navItems.map((item) => (
-              <Link key={item.href} href={item.href} className="transition-colors hover:text-[#2357ff]">
-                {item.label}
+            {PUBLIC_HEADER_NAV_ITEMS.map((item) => (
+              <Link key={item.id} href={item.href} className="transition-colors hover:text-[#2357ff]">
+                {publicNavigationLabel(item, locale)}
               </Link>
             ))}
           </nav>
@@ -79,14 +77,14 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
           className={mobileNavOpen ? 'border-t border-slate-200 bg-white dark:border-white/10 dark:bg-[#09101c] md:hidden' : 'hidden'}
         >
           <nav className="mx-auto grid max-w-7xl gap-1 px-5 py-4 text-sm font-bold">
-            {navItems.map((item) => (
+            {PUBLIC_HEADER_NAV_ITEMS.map((item) => (
               <Link
-                key={item.href}
+                key={item.id}
                 href={item.href}
                 className="px-3 py-3 text-slate-700 hover:bg-slate-100 hover:text-[#2357ff] dark:text-slate-200 dark:hover:bg-white/5"
                 onClick={() => setMobileNavOpen(false)}
               >
-                {item.label}
+                {publicNavigationLabel(item, locale)}
               </Link>
             ))}
             <Link
@@ -117,10 +115,11 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
             </p>
           </div>
           <nav className="flex flex-wrap content-start gap-x-6 gap-y-3 text-sm text-slate-600 dark:text-slate-300">
-            <Link href="/privacy" className="hover:text-[#2357ff]">{zh ? '隐私政策' : 'Privacy'}</Link>
-            <Link href="/terms" className="hover:text-[#2357ff]">{zh ? '服务条款' : 'Terms'}</Link>
-            <Link href="/help" className="hover:text-[#2357ff]">{zh ? '帮助中心' : 'Help'}</Link>
-            <Link href="/status" className="hover:text-[#2357ff]">{zh ? '服务状态' : 'Status'}</Link>
+            {PUBLIC_FOOTER_NAV_ITEMS.map((item) => (
+              <Link key={item.id} href={item.href} className="hover:text-[#2357ff]">
+                {publicNavigationLabel(item, locale)}
+              </Link>
+            ))}
           </nav>
         </div>
         <div className="border-t border-slate-200 px-5 py-5 text-center text-xs text-slate-500 dark:border-white/10 dark:text-slate-500">
