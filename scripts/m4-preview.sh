@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 M4_SSH_HOST="${NPCINK_CLOUD_M4_SSH_HOST:-muze@100.102.170.79}"
+M4_LAN_SSH_HOST="${NPCINK_CLOUD_M4_LAN_SSH_HOST:-muze@192.168.10.200}"
 M4_REMOTE_DIR="${NPCINK_CLOUD_M4_REMOTE_DIR:-/Users/muze/docker-workspaces/npcink-ai-cloud-m4-dev}"
 M4_PROJECT_NAME="${NPCINK_CLOUD_M4_PROJECT_NAME:-npcink-ai-cloud-m4-dev}"
 M4_PORT="${NPCINK_CLOUD_M4_PORT:-8010}"
@@ -32,6 +33,7 @@ SOURCE_RELAY_URL=""
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
 SCP_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
+TUNNEL_PROBE_SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 ALLOWED_SERVICES="postgres redis api frontend proxy worker callback-worker ops-worker"
 
 usage() {
@@ -41,7 +43,7 @@ Usage:
   scripts/m4-preview.sh deploy [--dry-run]
   scripts/m4-preview.sh sync [--dry-run]
   scripts/m4-preview.sh promote --pr N [--deploy] [--dry-run]
-  scripts/m4-preview.sh tunnel [--dry-run] [--local-port N]
+  scripts/m4-preview.sh tunnel [--auto] [--dry-run] [--local-port N]
   scripts/m4-preview.sh status
   scripts/m4-preview.sh logs [--follow] [--tail N] <service> [...]
   scripts/m4-preview.sh test [--dry-run] [--full|--contract|--domain]
@@ -59,6 +61,7 @@ local machine, synchronized to the M4, and built/run only by M4 Docker.
 
 Environment overrides:
   NPCINK_CLOUD_M4_SSH_HOST
+  NPCINK_CLOUD_M4_LAN_SSH_HOST
   NPCINK_CLOUD_M4_REMOTE_DIR
   NPCINK_CLOUD_M4_PROJECT_NAME
   NPCINK_CLOUD_M4_PORT
@@ -99,6 +102,16 @@ validate_port() {
 	fi
 }
 
+validate_ssh_host() {
+	local label="$1"
+	local host="$2"
+	case "${host}" in
+		''|-*|*[!A-Za-z0-9._@:-]*)
+			fail "${label} contains unsupported characters"
+			;;
+	esac
+}
+
 validate_target() {
 	case "${M4_PROJECT_NAME}" in
 		npcink-ai-cloud-m4-preview)
@@ -131,6 +144,8 @@ validate_target() {
 	validate_port "M4 PostgreSQL port" "${M4_POSTGRES_PORT}"
 	validate_port "M4 Redis port" "${M4_REDIS_PORT}"
 	validate_port "M4 Ollama port" "${M4_OLLAMA_PORT}"
+	validate_ssh_host "M4 SSH host" "${M4_SSH_HOST}"
+	validate_ssh_host "M4 LAN SSH host" "${M4_LAN_SSH_HOST}"
 	case "${M4_SOURCE_TRANSFER_MODE}" in
 		relay|direct)
 			;;
@@ -346,13 +361,49 @@ promote_accepted_master() {
 	fi
 }
 
+probe_tunnel_host() {
+	local ssh_host="$1"
+	local connect_timeout="$2"
+	local connection_attempts="$3"
+	ssh "${TUNNEL_PROBE_SSH_ARGS[@]}" \
+		-o ConnectTimeout="${connect_timeout}" \
+		-o ConnectionAttempts="${connection_attempts}" \
+		"${ssh_host}" \
+		"/usr/bin/curl --fail --silent --show-error --max-time 5 http://127.0.0.1:${M4_PORT}/health/live >/dev/null" \
+		>/dev/null 2>&1
+}
+
+select_auto_tunnel_host() {
+	log "checking preview route: lan (${M4_LAN_SSH_HOST})"
+	if probe_tunnel_host "${M4_LAN_SSH_HOST}" 2 1; then
+		TUNNEL_SELECTED_ROUTE="lan"
+		TUNNEL_SELECTED_HOST="${M4_LAN_SSH_HOST}"
+		return 0
+	fi
+
+	log "LAN preview route unavailable; checking Tailscale (${M4_SSH_HOST})"
+	if probe_tunnel_host "${M4_SSH_HOST}" 5 3; then
+		TUNNEL_SELECTED_ROUTE="tailscale"
+		TUNNEL_SELECTED_HOST="${M4_SSH_HOST}"
+		return 0
+	fi
+
+	fail "M4 preview is unavailable through both LAN and Tailscale; verify M4 power, SSH, Docker, and Tailscale"
+}
+
 open_tunnel() {
 	local local_port="${M4_TUNNEL_LOCAL_PORT}"
 	local tunnel_dry_run=0
+	local auto_route=0
 	local forward=""
+	local ssh_host="${M4_SSH_HOST}"
 
 	while [ "$#" -gt 0 ]; do
 		case "$1" in
+			--auto)
+				auto_route=1
+				shift
+				;;
 			--dry-run)
 				tunnel_dry_run=1
 				shift
@@ -375,7 +426,21 @@ open_tunnel() {
 	forward="127.0.0.1:${local_port}:127.0.0.1:${M4_PORT}"
 
 	log "local_url=http://127.0.0.1:${local_port}"
-	log "remote_preview=https://cloud.mqzjmax.top"
+	if [ "${auto_route}" = "1" ]; then
+		log "route_order=lan:${M4_LAN_SSH_HOST},tailscale:${M4_SSH_HOST}"
+		if [ "${tunnel_dry_run}" = "1" ]; then
+			ssh_host="${M4_LAN_SSH_HOST}"
+			log "dry-run uses the first candidate; no network probe is performed"
+		else
+			require_cmd ssh
+			select_auto_tunnel_host
+			ssh_host="${TUNNEL_SELECTED_HOST}"
+			log "selected_route=${TUNNEL_SELECTED_ROUTE}"
+		fi
+	else
+		log "selected_route=configured"
+	fi
+	log "ssh_target=${ssh_host}"
 	log "the tunnel stays in the foreground; press Ctrl+C to close it"
 
 	if [ "${tunnel_dry_run}" = "1" ]; then
@@ -387,7 +452,7 @@ open_tunnel() {
 			-o ServerAliveCountMax=3 \
 			-N \
 			-L "${forward}" \
-			"${M4_SSH_HOST}"
+			"${ssh_host}"
 		printf '\n'
 		return 0
 	fi
@@ -400,7 +465,7 @@ open_tunnel() {
 		-o ServerAliveCountMax=3 \
 		-N \
 		-L "${forward}" \
-		"${M4_SSH_HOST}"
+		"${ssh_host}"
 }
 
 remote_ollama_status() {

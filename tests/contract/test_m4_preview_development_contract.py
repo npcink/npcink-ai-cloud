@@ -54,6 +54,7 @@ def test_m4_preview_commands_are_explicit() -> None:
         "m4:preview:sync": "bash scripts/m4-preview.sh sync",
         "m4:preview:promote": "bash scripts/m4-preview.sh promote",
         "m4:preview:tunnel": "bash scripts/m4-preview.sh tunnel",
+        "m4:preview:auto": "bash scripts/m4-preview.sh tunnel --auto",
         "m4:preview:status": "bash scripts/m4-preview.sh status",
         "m4:preview:logs": "bash scripts/m4-preview.sh logs",
         "m4:preview:test": "bash scripts/m4-preview.sh test",
@@ -255,6 +256,77 @@ def test_m4_tunnel_dry_run_is_local_only_and_non_mutating() -> None:
     assert "ServerAliveCountMax=3" in completed.stdout
     assert "docker" not in completed.stdout
     assert "rsync" not in completed.stdout
+
+
+def test_m4_auto_tunnel_prefers_lan_and_falls_back_to_tailscale(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        """#!/bin/sh
+printf '%s\n' "$*" >> "${FAKE_SSH_LOG}"
+case "$*" in
+  *192.168.10.200*health/live*) exit "${FAKE_LAN_STATUS:-0}" ;;
+  *100.102.170.79*health/live*) exit "${FAKE_TAILSCALE_STATUS:-0}" ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+
+    for lan_status, expected_route, expected_host in (
+        ("0", "lan", "muze@192.168.10.200"),
+        ("1", "tailscale", "muze@100.102.170.79"),
+    ):
+        ssh_log = tmp_path / f"{expected_route}.log"
+        runtime_env = {
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_SSH_LOG": str(ssh_log),
+            "FAKE_LAN_STATUS": lan_status,
+        }
+        completed = subprocess.run(
+            ["bash", str(SCRIPT), "tunnel", "--auto"],
+            cwd=ROOT,
+            env=runtime_env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        assert f"selected_route={expected_route}" in completed.stdout
+        assert f"ssh_target={expected_host}" in completed.stdout
+        assert expected_host in ssh_log.read_text(encoding="utf-8").splitlines()[-1]
+        assert "127.0.0.1:18010:127.0.0.1:8010" in ssh_log.read_text(
+            encoding="utf-8"
+        ).splitlines()[-1]
+
+
+def test_m4_auto_tunnel_fails_when_both_routes_are_unhealthy(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_ssh.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "tunnel", "--auto"],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "both LAN and Tailscale" in completed.stderr
 
 
 def test_m4_test_scopes_are_explicit_and_dry_run_is_non_mutating(
