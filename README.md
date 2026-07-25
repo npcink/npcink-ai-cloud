@@ -64,6 +64,7 @@ Evidence records (not target-contract completion proof):
 - [docs/p5-b2-security-hardening-2026-07-17.md](docs/p5-b2-security-hardening-2026-07-17.md)
 - [docs/p5-b4-runtime-load-soak-closeout-2026-07-19.md](docs/p5-b4-runtime-load-soak-closeout-2026-07-19.md)
 - [docs/project-remediation-and-development-retrospective-2026-07-25.md](docs/project-remediation-and-development-retrospective-2026-07-25.md)
+- [docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md](docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md)
 
 Operational references:
 

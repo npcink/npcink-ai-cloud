@@ -107,14 +107,14 @@ The current delivery state is:
 
 | Priority | Recommendation | Current evidence | Honest status |
 | --- | --- | --- | --- |
-| P0 | Build a provider compatibility corpus and normalize provider messages, usage, and errors. | Draft PR `#243` adds original Python compatibility primitives, provider-focused tests, error normalization, and cross-provider cache-usage handling. Its recorded focused suite and protected checks passed on its then-current base. | Source implemented in a draft PR; not merged into `master`. |
-| P1 | Record cache read/write usage and cost evidence only after hosted text acceptance. | Draft PR `#243` adds cache-read/cache-write accounting, explicit cost-estimate modes, and a hashed site-isolated OpenAI cache-affinity key. Its comparison uses synthetic rates and explicitly claims no production savings. | Mechanism implemented; real accepted-provider cache-hit rate, latency, and cost benefit remain unverified. |
-| P2 | Add token-budget and context-overflow preflight without silently rewriting prompts. | Draft PR `#243` carries known model context windows through routing, rejects known overflow before an upstream call, and may use the existing candidate fallback chain. It does not truncate or rewrite input. | Source implemented in a draft PR; not merged or live-acceptance complete. |
+| P0 | Build a provider compatibility corpus and normalize provider messages, usage, and errors. | PR `#243` merged as `ed5ddf6a`; the accepted M4 source reran 107 focused tests, and the real `gpt-5.5` cohort completed `20 / 20` calls successfully. | Passed for the selected real provider/model cohort. |
+| P1 | Record cache read/write usage and cost evidence only after hosted text acceptance. | The cohort recorded `72,960` cache-read tokens and an `86.18%` observed hit ratio. The catalog remained unpriced, so results correctly reported `cost_estimate_mode=unpriced`. | Cache affinity and usage evidence passed; monetary benefit remains pending trusted price metadata. |
+| P2 | Add token-budget and context-overflow preflight without silently rewriting prompts. | PR `#243` merged with deterministic preflight and fallback coverage. The selected live catalog still reported `context_window=0`. | Deterministic behavior passed; real-provider acceptance remains pending trusted context metadata. |
 
-Grouping P0-P2 into one draft branch does not collapse their acceptance gates.
-P0 and P2 still require a current-base review and protected merge. P1 still
-requires a real accepted hosted-text cohort before any cache-efficiency,
-latency, or savings claim.
+Grouping P0-P2 into one source branch did not collapse their acceptance gates.
+P0 passed real execution, P1 passed cache evidence without a monetary claim,
+and P2 remains operationally pending even though its deterministic behavior is
+merged and tested.
 
 These changes also do not close the separate WordPress title-generation E2E
 proof. That proof still requires an enabled and verified Addon, a running Cloud
@@ -391,20 +391,15 @@ The original dirty checkout may be reconciled later, but only as a separate
 cleanup batch that inventories each draft against current `master`. It is not a
 blocker for the merged source or the active watch.
 
-The provider-runtime compatibility draft should be handled as a separate code
-module:
+The provider-runtime compatibility source and real cache-evidence stage is now
+closed. Its remaining work is split into three independent modules:
 
-1. rebase PR `#243` onto the current `origin/master`;
-2. review the combined P0-P2 diff against the original staged acceptance
-   boundaries;
-3. rerun focused compatibility, routing, provider, static, anti-drift, and
-   protected PR gates;
-4. merge only if P0/P2 remain bounded and no prompt, session, tool, workflow,
-   or control-plane ownership moved;
-5. treat P1 after merge as an observation phase, using a real accepted hosted
-   text cohort to compare cache-hit rate, latency, tokens, and cost;
-6. retain a no-benefit outcome as valid evidence and do not tune billing or
-   advertise savings without measured results.
+1. close the signed WordPress title-generation external-provider E2E without
+   moving local review or final-write ownership;
+2. establish authoritative `context_window` metadata, then run P2
+   real-provider acceptance;
+3. establish trusted dated price metadata, then calculate cache economics
+   without changing AI-credit or package policy.
 
 Streaming remains deferred. It requires a separately versioned connector
 contract and must not be slipped into the compatibility merge.
@@ -433,3 +428,4 @@ completed fix.
 - [Image Processing FC/OSS Readiness — 2026-07-20](image-processing-fc-oss-readiness-2026-07-20.md)
 - [Media Derivative Operations Runbook](media-derivative-operations-runbook-v1.md)
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
+- [Provider Runtime Compatibility Development Retrospective](provider-runtime-compatibility-development-retrospective-2026-07-25.md)
