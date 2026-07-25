@@ -768,7 +768,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
     assert result["output"]["output_text"] == ("Npcink Cloud Addon: WordPress AI scene helper")
     assert data["execution_context"]["contract_version"] == "cloud_connector_runtime.v1"
     assert data["execution_context"]["ability_family"] == "text"
-    assert data["execution_context"]["data_classification"] == "public_site_content"
+    assert data["execution_context"]["data_classification"] == "internal"
     assert provider.requests[0].ability_name == "npcink-cloud/connector-runtime"
     assert provider.requests[0].execution_kind == "text"
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
