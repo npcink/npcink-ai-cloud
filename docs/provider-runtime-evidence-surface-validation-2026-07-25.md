@@ -6,6 +6,12 @@ Status: source merged through PR `#256` as
 WordPress title-generation E2E, monetary benefit, and live P2
 context-preflight acceptance are not claimed.
 
+Follow-up: the signed Local WordPress title-generation external Provider E2E
+and the live accepted-context preflight were subsequently closed on M4 Preview
+in [WordPress Title Provider E2E And Context Preflight Validation](wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md).
+The statements below remain the time-bounded result of this earlier cohort.
+Monetary benefit remains unclaimed.
+
 Scope: the next provider-runtime evidence phase after the accepted
 Pi-inspired P0-P2 compatibility work. This record covers an internal read-only
 evidence surface, accepted-context scalar propagation, cache-affinity
@@ -226,6 +232,7 @@ separate scopes.
 
 ## Related Records
 
+- [WordPress Title Provider E2E And Context Preflight Validation](wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md)
 - [Provider Runtime Compatibility Development Retrospective](provider-runtime-compatibility-development-retrospective-2026-07-25.md)
 - [Pi-Inspired Provider Runtime Compatibility Evidence](pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
