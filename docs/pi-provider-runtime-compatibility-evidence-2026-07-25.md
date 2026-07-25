@@ -356,3 +356,8 @@ non-economic part of P1. It does not close:
 The change has no database migration and no data rewrite. Roll back by reverting
 the focused commit. Existing provider-call records and public result fields
 remain readable; the additive cache meter rows simply stop being emitted.
+
+## Follow-up Revalidations
+
+- [Independent WordPress Title External Provider E2E Revalidation](wordpress-title-external-provider-e2e-revalidation-2026-07-25.md)
+- [Independent Provider Context Window And P2 Revalidation](provider-context-window-p2-revalidation-2026-07-25.md)
