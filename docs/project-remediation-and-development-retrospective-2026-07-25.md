@@ -5,7 +5,8 @@ candidate remains unresolved.
 
 Scope: the evidence-led review, prioritization, implementation, publication,
 and operational verification completed around the Python 3.14 CVE watch and
-the FC/OSS image-processing readiness record.
+the FC/OSS image-processing readiness record, plus the current delivery status
+of the P0-P2 provider-runtime compatibility recommendations.
 
 This is an evidence record, not a new architecture decision, production
 approval, GA claim, or extension of any security exception.
@@ -24,6 +25,8 @@ durable corrections:
 4. Keep every change inside the existing Cloud boundary: Cloud remains the
    hosted runtime and evidence layer; WordPress remains the control, approval,
    and final-write owner.
+5. Separate provider-compatibility source implementation from merge state,
+   live acceptance, and measured product benefit.
 
 The stage produced two merged pull requests:
 
@@ -82,6 +85,42 @@ duplicated current decisions.
 The correct action was to salvage the single useful decision record onto a
 clean current base, reconcile it with the accepted RDS PostgreSQL 18 direction,
 and leave obsolete drafts outside the merge.
+
+## P0-P2 Learning And Delivery Status
+
+The provider-runtime recommendations were learned as bounded mechanisms, not
+as permission to import the upstream product architecture. The accepted
+learning boundary is:
+
+- borrow provider error normalization, cross-provider compatibility behavior,
+  context-overflow detection, prompt-cache affinity, and cache token/cost
+  accounting;
+- do not add `pi-ai` as a dependency, a Node sidecar, an Agent/session/tool
+  platform, a second control plane, or a public-contract migration;
+- keep cache identity site-scoped and derived from bounded stable inputs;
+- never retain raw prompts in a cache key;
+- never silently truncate, compact, or rewrite WordPress-owned input;
+- keep streaming deferred until a versioned WordPress connector contract owns
+  it.
+
+The current delivery state is:
+
+| Priority | Recommendation | Current evidence | Honest status |
+| --- | --- | --- | --- |
+| P0 | Build a provider compatibility corpus and normalize provider messages, usage, and errors. | Draft PR `#243` adds original Python compatibility primitives, provider-focused tests, error normalization, and cross-provider cache-usage handling. Its recorded focused suite and protected checks passed on its then-current base. | Source implemented in a draft PR; not merged into `master`. |
+| P1 | Record cache read/write usage and cost evidence only after hosted text acceptance. | Draft PR `#243` adds cache-read/cache-write accounting, explicit cost-estimate modes, and a hashed site-isolated OpenAI cache-affinity key. Its comparison uses synthetic rates and explicitly claims no production savings. | Mechanism implemented; real accepted-provider cache-hit rate, latency, and cost benefit remain unverified. |
+| P2 | Add token-budget and context-overflow preflight without silently rewriting prompts. | Draft PR `#243` carries known model context windows through routing, rejects known overflow before an upstream call, and may use the existing candidate fallback chain. It does not truncate or rewrite input. | Source implemented in a draft PR; not merged or live-acceptance complete. |
+
+Grouping P0-P2 into one draft branch does not collapse their acceptance gates.
+P0 and P2 still require a current-base review and protected merge. P1 still
+requires a real accepted hosted-text cohort before any cache-efficiency,
+latency, or savings claim.
+
+These changes also do not close the separate WordPress title-generation E2E
+proof. That proof still requires an enabled and verified Addon, a running Cloud
+candidate, and a real `generate -> review -> insert -> normal save` path with
+adoption evidence. Provider contracts or M4 health alone are not equivalent to
+that user-facing acceptance.
 
 ## Implementation Sequence
 
@@ -351,6 +390,24 @@ required. The watch must not renew the exception automatically.
 The original dirty checkout may be reconciled later, but only as a separate
 cleanup batch that inventories each draft against current `master`. It is not a
 blocker for the merged source or the active watch.
+
+The provider-runtime compatibility draft should be handled as a separate code
+module:
+
+1. rebase PR `#243` onto the current `origin/master`;
+2. review the combined P0-P2 diff against the original staged acceptance
+   boundaries;
+3. rerun focused compatibility, routing, provider, static, anti-drift, and
+   protected PR gates;
+4. merge only if P0/P2 remain bounded and no prompt, session, tool, workflow,
+   or control-plane ownership moved;
+5. treat P1 after merge as an observation phase, using a real accepted hosted
+   text cohort to compare cache-hit rate, latency, tokens, and cost;
+6. retain a no-benefit outcome as valid evidence and do not tune billing or
+   advertise savings without measured results.
+
+Streaming remains deferred. It requires a separately versioned connector
+contract and must not be slipped into the compatibility merge.
 
 ## Boundary Closeout
 
