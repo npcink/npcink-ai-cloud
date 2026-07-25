@@ -75,6 +75,8 @@ Operational references:
 - [docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
 - [docs/decisions/026-private-source-relay-transfer.md](docs/decisions/026-private-source-relay-transfer.md)
 - [docs/m4-source-relay-transfer-validation-2026-07-24.md](docs/m4-source-relay-transfer-validation-2026-07-24.md)
+- [docs/decisions/027-m4-package-proxy-streaming-cache.md](docs/decisions/027-m4-package-proxy-streaming-cache.md)
+- [docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)

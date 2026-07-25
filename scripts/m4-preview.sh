@@ -1120,6 +1120,9 @@ prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
 package_proxy_port="18081"
+package_proxy_cache_dir="${cache_dir}/package-proxy"
+package_proxy_cache_max_bytes="2147483648"
+package_proxy_cache_max_age_seconds="1209600"
 pip_index_secret=""
 pip_trusted_host_secret=""
 
@@ -1348,6 +1351,9 @@ start_package_proxy() {
 	python3 scripts/m4-package-proxy.py \
 		--bind 127.0.0.1 \
 		--port "${package_proxy_port}" \
+		--cache-dir "${package_proxy_cache_dir}" \
+		--cache-max-bytes "${package_proxy_cache_max_bytes}" \
+		--cache-max-age-seconds "${package_proxy_cache_max_age_seconds}" \
 		--ready-file "${package_proxy_ready}" &
 	package_proxy_pid=$!
 
@@ -1516,7 +1522,8 @@ build_runtime_image() {
 	tail -n +2 Dockerfile |
 		sed \
 			-e "s#ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc#${uv_base_image}#" \
-			-e "s#python:3.14-alpine@sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92#${python_base_image}#" |
+			-e "s#python:3.14-alpine@sha256:26730869004e2b9c4b9ad09cab8625e81d256d1ce97e72df5520e806b1709f92#${python_base_image}#" \
+			-e 's#--timeout 60#--timeout 300#' |
 		docker build \
 			--pull=false \
 			--target development \
@@ -1546,7 +1553,7 @@ build_frontend_image() {
 					next
 				}
 				$0 == "RUN pnpm install --frozen-lockfile --filter frontend..." {
-					print "RUN npm_config_registry=\"${NPCINK_CLOUD_M4_NPM_REGISTRY}\" pnpm install --frozen-lockfile --filter frontend..."
+					print "RUN --mount=type=cache,id=npcink-ai-cloud-m4-pnpm-store,target=/pnpm/store npm_config_registry=\"${NPCINK_CLOUD_M4_NPM_REGISTRY}\" npm_config_fetch_timeout=300000 npm_config_fetch_retries=4 npm_config_network_concurrency=8 pnpm install --frozen-lockfile --filter frontend... --store-dir=/pnpm/store"
 					next
 				}
 				{ print }

@@ -22,6 +22,8 @@ The documents have separate responsibilities:
 - [ADR-026](decisions/026-private-source-relay-transfer.md) records why source
   bundles use a transient Tailscale-only file relay instead of one
   endpoint-to-endpoint SFTP session.
+- [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) records why
+  public package artifacts stream through a bounded disposable M4 cache.
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.
@@ -40,6 +42,7 @@ the runbook for command mechanics.
 | GitHub `master` | reviewed development integration truth | proof that an unpromoted M4 candidate is accepted |
 | M4 | disposable Docker build, runtime, migration, test, and preview evidence | source or Git truth |
 | Private source relay | transient byte transfer for one active M4 operation | source truth, accepted revision cache, runtime, or deployment authority |
+| M4 package cache | disposable public package artifacts for build retries | source, dependency, accepted-revision, or private-package truth |
 | Local WordPress | abilities, workflows, approval, preflight, final writes, local settings truth | dependent on Cloud for its control-plane truth |
 | Npcink AI Cloud | hosted runtime execution and bounded runtime/service evidence | a second WordPress control plane |
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -32,6 +33,14 @@ SOURCE_RELAY_ADR = (
 )
 SOURCE_RELAY_VALIDATION = (
     ROOT / "docs" / "m4-source-relay-transfer-validation-2026-07-24.md"
+)
+PACKAGE_PROXY_ADR = (
+    ROOT / "docs" / "decisions" / "027-m4-package-proxy-streaming-cache.md"
+)
+PACKAGE_PROXY_VALIDATION = (
+    ROOT
+    / "docs"
+    / "m4-package-proxy-streaming-cache-validation-2026-07-25.md"
 )
 OLLAMA_LAUNCH_AGENT = ROOT / "deploy" / "top.mqzj.npcink-ollama-preview.plist"
 
@@ -436,11 +445,14 @@ def test_m4_package_proxy_is_fixed_destination_and_rewrites_registry_links() -> 
     proxy = _load_package_proxy()
     pypi = proxy.resolve_route("/pypi/simple/alembic/?x=1")
     npm = proxy.resolve_route("/npm/pnpm")
+    npm_binary = proxy.resolve_route("/npm/pnpm/-/pnpm-10.33.0.tgz")
 
     assert pypi is not None
     assert npm is not None
+    assert npm_binary is not None
     assert pypi.upstream_url == "https://pypi.org/simple/alembic/?x=1"
     assert npm.upstream_url == "https://registry.npmjs.org/pnpm"
+    assert npm_binary.kind == "npm_binary"
     assert proxy.resolve_route("/https://example.com/private") is None
 
     public_base = "http://host.docker.internal:18081"
@@ -496,8 +508,273 @@ def test_m4_package_proxy_buffers_and_retries_upstream_downloads() -> None:
     preview_source = SCRIPT.read_text(encoding="utf-8")
     assert "tempfile.SpooledTemporaryFile" in proxy_source
     assert "for attempt in range(1, 4)" in proxy_source
+    assert "PackageCache" in proxy_source
+    assert "X-Npcink-M4-Cache" in proxy_source
+    assert "STREAM_CHUNK_BYTES" in proxy_source
+    assert "downstream_disconnects" in proxy_source
     assert 'package_proxy_port="18081"' in preview_source
     assert '--port "${package_proxy_port}"' in preview_source
+    assert '--cache-dir "${package_proxy_cache_dir}"' in preview_source
+    assert 'package_proxy_cache_max_bytes="2147483648"' in preview_source
+    assert "npm_config_fetch_timeout=300000" in preview_source
+    assert "npm_config_fetch_retries=4" in preview_source
+    assert "npm_config_network_concurrency=8" in preview_source
+    assert "id=npcink-ai-cloud-m4-pnpm-store" in preview_source
+    assert "-e 's#--timeout 60#--timeout 300#'" in preview_source
+
+
+class _FakePackageResponse:
+    def __init__(
+        self,
+        payload: bytes,
+        on_first_read=None,
+        *,
+        declared_length: int | None = None,
+    ) -> None:
+        self.status = 200
+        self.headers = {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(
+                len(payload) if declared_length is None else declared_length
+            ),
+        }
+        self._chunks = [payload[:3], payload[3:], b""]
+        self._on_first_read = on_first_read
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _traceback) -> None:
+        return None
+
+    def getcode(self) -> int:
+        return self.status
+
+    def read(self, _size: int) -> bytes:
+        if self._on_first_read is not None:
+            callback = self._on_first_read
+            self._on_first_read = None
+            callback()
+        return self._chunks.pop(0)
+
+
+class _FakePackageOpener:
+    def __init__(self, response_factory) -> None:
+        self.response_factory = response_factory
+        self.calls = 0
+
+    def open(self, _request, timeout: int):
+        assert timeout == 120
+        self.calls += 1
+        return self.response_factory()
+
+
+def _new_proxy_handler(proxy, path: str, writer, cache):
+    handler = proxy.PackageProxyHandler.__new__(proxy.PackageProxyHandler)
+    handler.path = path
+    handler.command = "GET"
+    handler.requestline = f"GET {path} HTTP/1.1"
+    handler.request_version = "HTTP/1.1"
+    handler.close_connection = False
+    handler.wfile = writer
+    handler.cache = cache
+    handler.metrics = proxy.PackageProxyMetrics()
+    return handler
+
+
+def test_m4_package_proxy_streams_binary_before_upstream_completion_and_caches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proxy = _load_package_proxy()
+    cache = proxy.PackageCache(
+        tmp_path / "cache",
+        max_bytes=1024 * 1024,
+        max_age_seconds=3600,
+    )
+    first_writer = io.BytesIO()
+
+    def assert_headers_arrived() -> None:
+        assert b"HTTP/1.1 200 OK" in first_writer.getvalue()
+        assert b"\r\n\r\n" in first_writer.getvalue()
+
+    opener = _FakePackageOpener(
+        lambda: _FakePackageResponse(b"abcdef", assert_headers_arrived)
+    )
+    monkeypatch.setattr(proxy, "DIRECT_OPENER", opener)
+
+    path = "/npm/example/-/example-1.0.0.tgz"
+    first = _new_proxy_handler(proxy, path, first_writer, cache)
+    first._serve(send_body=True)
+    assert opener.calls == 1
+    assert first_writer.getvalue().endswith(b"abcdef")
+    assert b"X-Npcink-M4-Cache: miss" in first_writer.getvalue()
+    assert not list((tmp_path / "cache").rglob("*.partial"))
+
+    monkeypatch.setattr(
+        proxy,
+        "DIRECT_OPENER",
+        _FakePackageOpener(
+            lambda: pytest.fail("cache hit must not open the upstream registry")
+        ),
+    )
+    second_writer = io.BytesIO()
+    second = _new_proxy_handler(proxy, path, second_writer, cache)
+    second._serve(send_body=True)
+    assert b"X-Npcink-M4-Cache: hit" in second_writer.getvalue()
+    assert second_writer.getvalue().endswith(b"abcdef")
+
+
+def test_m4_package_proxy_finishes_atomic_cache_fill_after_client_disconnect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proxy = _load_package_proxy()
+    cache = proxy.PackageCache(
+        tmp_path / "cache",
+        max_bytes=1024 * 1024,
+        max_age_seconds=3600,
+    )
+
+    class DisconnectAfterHeaders(io.BytesIO):
+        def write(self, payload: bytes) -> int:
+            if payload.startswith(b"HTTP/1.1"):
+                return super().write(payload)
+            raise BrokenPipeError
+
+    path = "/npm/example/-/example-1.0.0.tgz"
+    route = proxy.resolve_route(path)
+    assert route is not None
+    opener = _FakePackageOpener(lambda: _FakePackageResponse(b"abcdef"))
+    monkeypatch.setattr(proxy, "DIRECT_OPENER", opener)
+    handler = _new_proxy_handler(proxy, path, DisconnectAfterHeaders(), cache)
+
+    handler._serve(send_body=True)
+
+    assert handler.metrics.downstream_disconnects == 1
+    cached = cache.lookup(route.upstream_url)
+    assert cached is not None
+    assert cached.path.read_bytes() == b"abcdef"
+    assert not list((tmp_path / "cache").rglob("*.partial"))
+
+
+def test_m4_package_proxy_rejects_corrupt_or_symlinked_cache_entries(
+    tmp_path: Path,
+) -> None:
+    proxy = _load_package_proxy()
+    cache = proxy.PackageCache(
+        tmp_path / "cache",
+        max_bytes=1024 * 1024,
+        max_age_seconds=3600,
+    )
+    upstream_url = "https://registry.npmjs.org/example/-/example-1.0.0.tgz"
+    _key, partial_path, partial = cache.new_partial(upstream_url)
+    partial.write(b"abcdef")
+    partial.close()
+    cache.commit(
+        upstream_url,
+        partial_path,
+        content_type="application/octet-stream",
+        content_length=6,
+    )
+    cached = cache.lookup(upstream_url)
+    assert cached is not None
+    cached.path.write_bytes(b"bad")
+
+    assert cache.lookup(upstream_url) is None
+    assert not cached.path.exists()
+
+    symlink_root = tmp_path / "symlink-cache"
+    symlink_root.symlink_to(tmp_path / "cache", target_is_directory=True)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        proxy.PackageCache(
+            symlink_root,
+            max_bytes=1024 * 1024,
+            max_age_seconds=3600,
+        )
+
+
+def test_m4_package_proxy_discards_truncated_upstream_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proxy = _load_package_proxy()
+    cache = proxy.PackageCache(
+        tmp_path / "cache",
+        max_bytes=1024 * 1024,
+        max_age_seconds=3600,
+    )
+    path = "/npm/example/-/example-1.0.0.tgz"
+    route = proxy.resolve_route(path)
+    assert route is not None
+    opener = _FakePackageOpener(
+        lambda: _FakePackageResponse(b"abcdef", declared_length=7)
+    )
+    monkeypatch.setattr(proxy, "DIRECT_OPENER", opener)
+    handler = _new_proxy_handler(proxy, path, io.BytesIO(), cache)
+
+    handler._serve(send_body=True)
+
+    assert handler.close_connection is True
+    assert cache.lookup(route.upstream_url) is None
+    assert not list((tmp_path / "cache").rglob("*.partial"))
+
+
+def test_m4_package_proxy_prunes_partial_and_oldest_cache_entries(
+    tmp_path: Path,
+) -> None:
+    proxy = _load_package_proxy()
+    cache_root = tmp_path / "cache"
+    cache = proxy.PackageCache(
+        cache_root,
+        max_bytes=6,
+        max_age_seconds=3600,
+    )
+    first_url = "https://registry.npmjs.org/first/-/first-1.0.0.tgz"
+    second_url = "https://registry.npmjs.org/second/-/second-1.0.0.tgz"
+
+    _key, first_partial_path, first_partial = cache.new_partial(first_url)
+    first_partial.write(b"1111")
+    first_partial.close()
+    cache.commit(
+        first_url,
+        first_partial_path,
+        content_type="application/octet-stream",
+        content_length=4,
+    )
+    first = cache.lookup(first_url)
+    assert first is not None
+    old_time = time.time() - 60
+    os.utime(first.path, (old_time, old_time))
+
+    _key, second_partial_path, second_partial = cache.new_partial(second_url)
+    second_partial.write(b"2222")
+    second_partial.close()
+    cache.commit(
+        second_url,
+        second_partial_path,
+        content_type="application/octet-stream",
+        content_length=4,
+    )
+
+    assert cache.lookup(first_url) is None
+    second = cache.lookup(second_url)
+    assert second is not None
+    assert second.path.read_bytes() == b"2222"
+
+    _key, abandoned_path, abandoned = cache.new_partial(
+        "https://registry.npmjs.org/abandoned/-/abandoned-1.0.0.tgz"
+    )
+    abandoned.write(b"partial")
+    abandoned.close()
+    assert abandoned_path.exists()
+
+    proxy.PackageCache(
+        cache_root,
+        max_bytes=6,
+        max_age_seconds=3600,
+    )
+    assert not abandoned_path.exists()
 
 
 def test_m4_runbook_preserves_source_cloudflare_and_recovery_boundaries() -> None:
@@ -536,6 +813,35 @@ def test_m4_runbook_preserves_source_cloudflare_and_recovery_boundaries() -> Non
     assert "AI checkpoint rule" in runbook
     assert "coherent task checkpoint" in runbook
     assert "does not authorize an unreported" in runbook
+    assert "~/.cache/npcink-ai-cloud-m4-dev/package-proxy" in runbook
+    assert "at most 2 GiB" in runbook
+    assert "unused for 14 days" in runbook
+    assert "disposable build optimization" in runbook
+
+
+def test_m4_package_proxy_decision_is_linked_measured_and_bounded() -> None:
+    decision = PACKAGE_PROXY_ADR.read_text(encoding="utf-8")
+    validation = PACKAGE_PROXY_VALIDATION.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    standard = AI_STANDARD.read_text(encoding="utf-8")
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    decision_name = "027-m4-package-proxy-streaming-cache.md"
+    validation_name = "m4-package-proxy-streaming-cache-validation-2026-07-25.md"
+
+    for document in (runbook, standard, readme):
+        assert decision_name in document
+    for document in (runbook, readme):
+        assert validation_name in document
+    assert "whole-body buffering" in decision
+    assert "2 GiB" in decision
+    assert "14 days" in decision
+    assert "not source or Git truth" in decision
+    assert "remove only" in decision
+    assert "42,303,110" in validation
+    assert "12.07 seconds" in validation
+    assert "M4 candidate" in validation
+    assert "package proxy cache documented in ADR-027" in agents
 
 
 def test_m4_ai_development_standard_is_actionable_and_linked() -> None:
