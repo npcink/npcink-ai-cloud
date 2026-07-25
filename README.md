@@ -67,6 +67,7 @@ Evidence records (not target-contract completion proof):
 - [docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md](docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md)
 - [docs/provider-three-item-closeout-and-development-retrospective-2026-07-25.md](docs/provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
 - [docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md](docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md)
+- [docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md](docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
 
 Operational references:
 
