@@ -106,19 +106,28 @@ volume deletion, or deletion by a partial name. Other M4 Docker workloads are
 outside this workflow.
 
 All published ports bind to `127.0.0.1`. They are intentionally unreachable
-through the M4 LAN or Tailscale address. Use the Cloudflare Access protected
-domain for remote browser preview, or the checked-in SSH tunnel command for
-local browser and WordPress-to-Cloud integration:
+through the M4 LAN or Tailscale address. For the single operator's browser and
+WordPress-to-Cloud integration, use the automatic SSH tunnel:
 
 ```bash
-pnpm run m4:preview:tunnel
+pnpm run m4:preview:auto
 open http://127.0.0.1:18010
 ```
 
+The automatic command first verifies the M4 loopback health endpoint over the
+office LAN SSH target `muze@192.168.10.200`. When that path is unavailable, it
+verifies and uses the existing Tailscale target `muze@100.102.170.79`. The
+browser address remains `http://127.0.0.1:18010` in both locations. Override
+the LAN target with `NPCINK_CLOUD_M4_LAN_SSH_HOST` only when the office address
+changes; `NPCINK_CLOUD_M4_SSH_HOST` remains the Tailscale/deployment target.
+
 The tunnel binds only the authoring Mac's `127.0.0.1:18010`, stays in the
-foreground, and closes with `Ctrl+C`. It does not update source, acquire the
-remote deployment lock, or change containers. Use `-- --local-port <port>` or
-`NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT` only when `18010` is already occupied.
+foreground, and closes with `Ctrl+C`. It does not update source, use the source
+relay, acquire the remote deployment lock, or change containers. Use
+`-- --local-port <port>` or `NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT` only when
+`18010` is already occupied. The deterministic
+`pnpm run m4:preview:tunnel` command remains available when an explicitly
+configured SSH target is required.
 
 `https://cloud.mqzjmax.top` remains the protected browser-preview entry. Do not
 configure an automated local WordPress connector against that hostname:
@@ -246,8 +255,8 @@ local Docker substitute.
 Run commands from the local repository worktree:
 
 ```bash
-# Open one local-only browser and WordPress integration path
-pnpm run m4:preview:tunnel
+# Open the single-operator preview; office LAN first, Tailscale fallback
+pnpm run m4:preview:auto
 
 # First deployment or dependency/Dockerfile/lock-file change
 pnpm run m4:preview:deploy
