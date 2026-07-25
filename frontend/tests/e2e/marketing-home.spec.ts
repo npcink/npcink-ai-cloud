@@ -208,3 +208,24 @@ test('public status explains impact and offers a fresh check', async ({ page }) 
   await expect(page.getByRole('button', { name: /Check again|重新检查/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Sign in to view|登录后查看/i }).first()).toBeVisible();
 });
+
+test('public header keeps readable contrast in dark mode', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('theme', 'dark');
+  });
+
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveClass(/dark/);
+
+  const header = page.locator('[data-public-header]');
+  await expect(header).toHaveCSS('background-color', 'rgb(9, 16, 28)');
+  await expect(page.getByRole('link', { name: 'Npcink AI Cloud' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Sign in|登录服务中心/i }).first()).toBeVisible();
+  await expect(header).toHaveScreenshot('marketing-home-header-dark.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    scale: 'css',
+    maxDiffPixelRatio: 0.02,
+  });
+});
