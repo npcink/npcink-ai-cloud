@@ -1,6 +1,6 @@
 # Pi-Inspired Provider Runtime Compatibility Evidence — 2026-07-25
 
-Status: validated M4 candidate; production is unchanged.
+Status: accepted M4 development provider cohort; production is unchanged.
 
 ## Decision
 
@@ -263,17 +263,93 @@ worktree intentionally has no `.env`. The equivalent repository-local
 contract/domain/API/health tests and production Compose configuration checks
 above passed without copying credentials or starting a second runtime.
 
+## Accepted M4 Real Provider Cohort
+
+On 2026-07-25, the merged compatibility change was promoted from a clean,
+current `master` worktree to the accepted M4 Preview runtime:
+
+- accepted source revision:
+  `26c1478fd1d85c7556918fc05f4cc253a2155c8c`;
+- provider compatibility merge: PR `#243`, revision
+  `ed5ddf6a46efb894cf51d6d5fbf867792803f9ac`;
+- M4 acceptance state: `accepted`;
+- M4 API, frontend, PostgreSQL, Redis, proxy, worker, callback worker, and ops
+  worker: running; API and frontend healthy;
+- HTTP `/` and `/health/live`: `200`;
+- Alembic: `20260717_0068 (head)`.
+
+The live cohort ran inside the accepted M4 API container against the configured
+external `openai` connection (`mqzj`) and its `gpt-5.5` Responses instance. It
+was deliberately bounded to the Cloud provider-adapter edge: it did not change
+provider configuration, WordPress routing, AI-credit policy, or production,
+and it did not write WordPress content. The probe retained only hashes and
+scalar metrics; it did not record a credential, raw prompt, or raw model
+output.
+
+The cohort used one 20,959-character non-sensitive stable validation prefix,
+twenty changing scene inputs, and a maximum output budget of 16 tokens per
+request. All requests generated the same site-isolated hashed cache-affinity
+key.
+
+| Metric | Result |
+| --- | ---: |
+| Attempts / successes / failures | `20 / 20 / 0` |
+| Exact output-contract matches | `20 / 20` |
+| Input tokens | `84,660` |
+| Uncached input tokens | `11,700` |
+| Cache-read tokens | `72,960` |
+| Cache-write tokens | `0` |
+| Observed cache-hit ratio | `86.18%` |
+| Output tokens | `411` |
+| First-call latency | `3,461 ms` |
+| Warm-call median latency | `3,070 ms` |
+| Overall p95 latency | `5,481 ms` |
+
+The first request reported no cache-read tokens. Each of requests 2 through 20
+reported `3,840` cache-read tokens and `393` uncached input tokens. This is
+real provider evidence that cache affinity and cached-token normalization work
+for this connection and model. The latency sample is observational rather than
+a randomized no-cache comparison, so it does not prove that caching caused the
+latency difference.
+
+The provider catalog currently supplies neither model prices nor a positive
+context window for this model:
+
+- `price_input`, `price_output`, and cache prices are absent, so every result
+  correctly reported `cost_estimate_mode=unpriced` and no monetary saving is
+  claimed;
+- `context_window=0`, so the live cohort cannot validate P2 context-budget
+  preflight. P2 remains deterministically covered but operationally pending
+  valid provider model metadata.
+
+The accepted M4 source then reran the complete focused provider, commercial,
+routing, runtime-execution, and public-contract set:
+`107 passed, 0 failed` in `20.81s`, with one upstream Starlette deprecation
+warning.
+
+This closes the real-provider execution and cache-evidence gap for P0 and the
+non-economic part of P1. It does not close:
+
+- monetary cache-savings validation until trusted price metadata is present;
+- P2 real-provider preflight until a positive context window is present;
+- the signed WordPress title-generation end-to-end path, whose external
+  provider routing remains a separate operator decision.
+
 ## Acceptance Ledger
 
 | Layer | Status | Evidence |
 | --- | --- | --- |
 | Local focused behavior | Passed | 107 focused tests plus deterministic before/after probe |
 | Repository-wide gates | Passed with Docker-wrapper environment note | 1418 contract/domain tests, 926 API tests, Ruff, mypy, anti-drift, and production Compose config |
-| M4 candidate sync | Passed before final rebase | provider-runtime source applied under the remote deployment lock |
-| M4 focused runtime validation | Passed before final rebase | provider-runtime 92-test suite; services healthy; HTTP smoke passed |
-| GitHub CI / merge | Pending | candidate branch only |
+| M4 accepted deployment | Passed | clean `master@26c1478f`; PR #243 compatibility revision included; services healthy; HTTP smoke passed |
+| M4 focused runtime validation | Passed | 107 tests on the accepted source |
+| Real provider P0 | Passed | 20/20 successful `gpt-5.5` executions with normalized usage and reasoning evidence |
+| Real provider P1 cache evidence | Passed | 72,960 cache-read tokens; 86.18% observed hit ratio; stable hashed affinity key |
+| Real provider P1 monetary evidence | Pending metadata | provider catalog is unpriced; no savings amount claimed |
+| Real provider P2 | Pending metadata | provider catalog reports `context_window=0` |
+| GitHub CI / merge | Passed | PR #243 merged into `master` as `ed5ddf6a` |
 | Production | Not changed | no production action authorized |
-| Human acceptance | Pending | operator review remains separate |
+| WordPress title E2E | Pending separate scope | external `wp-ai.short-text` routing was not changed for this cohort |
 
 ## Rollback
 
