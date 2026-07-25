@@ -205,6 +205,13 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
             event for event in events if event.meter_key == "provider_calls"
         )
         provider_payload = dict(provider_event.payload_json or {})
+        credit_source_types = set(
+            session.scalars(
+                select(CreditLedgerEntry.source_type).where(
+                    CreditLedgerEntry.run_id == run.run_id
+                )
+            )
+        )
         session.commit()
 
     assert quantities == {
@@ -219,6 +226,7 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
     }
     assert provider_payload["cache_hit_ratio"] == 0.8
     assert provider_payload["cost_estimate_mode"] == "cache_rates"
+    assert credit_source_types == {"tokens_total"}
     dispose_engine(database_url)
 
 

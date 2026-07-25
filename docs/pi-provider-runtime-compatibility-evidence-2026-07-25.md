@@ -61,8 +61,11 @@ Explicitly not owned:
 - automatic prompt rewriting, truncation, summarization, or compaction;
 - a public generic chat, tool, session, or streaming protocol.
 
-The existing public provider-call result field set is unchanged. No database
-migration is required.
+The existing public provider-call result field set is unchanged. The existing
+`/v1/runtime/resolve` routing-candidate objects gain three backward-compatible
+optional fields: `context_window`, `price_cache_read`, and
+`price_cache_write`. Their exact additive shape is covered by the runtime
+contract suite. No database migration is required.
 
 ## Before Baseline
 
@@ -188,7 +191,7 @@ cost of breaking the accepted product boundary, so it remains out of scope.
 | Route context metadata | context window and optional cache prices survive routing serialization |
 | Local overflow preflight | a `75 input + 20 output + 16 margin > 100 window` request is rejected before the provider call |
 
-Focused implementation tests:
+Pre-rebase focused implementation tests:
 
 - final local candidate: `92 passed in 10.49s`;
 - final M4 candidate: `92 passed in 10.57s`;
@@ -203,10 +206,13 @@ cohort with live usage evidence.
 
 ## Validation Evidence
 
-Final candidate identity:
+Reviewed candidate identity:
 
 - branch: `codex/pi-provider-runtime-compat`;
-- source base: `6dca97ccd0c3969caca5c4981fc29c930a0c377f`;
+- original implementation base:
+  `6dca97ccd0c3969caca5c4981fc29c930a0c377f`;
+- review/rebase base:
+  `c02bde02e18fb1f9d37e952825629f30504a041e`;
 - acceptance state: `candidate`;
 - Alembic: `20260717_0068 (head)`;
 - M4 API, frontend, PostgreSQL, Redis, and proxy: healthy;
@@ -214,17 +220,35 @@ Final candidate identity:
 
 Gates:
 
-- M4 contract/domain coverage:
+- pre-rebase M4 contract/domain coverage:
   `1403 passed, 4 skipped, 0 failed` in `634.43s`;
-- M4 API coverage:
+- pre-rebase M4 API coverage:
   `926 passed, 0 failed` in `516.75s`;
 - after the review narrowed overflow text matching to 400/413/422 responses,
   the exact final bundle reran all affected provider/runtime tests:
   `92 passed, 0 failed`;
-- local exact-final focused suite: `92 passed, 0 failed`;
+- pre-rebase local focused suite: `92 passed, 0 failed`;
 - Ruff: passed;
 - mypy: `244 source files` passed;
 - `check:anti-drift`: passed.
+
+Post-rebase review gates:
+
+- focused provider, runtime, commercial, routing, and public-contract suite:
+  `107 passed, 0 failed` in `7.58s`;
+- final-base integration suite, including the public-pricing commercial changes
+  added by `1da524b4`: `184 passed, 0 failed` in `36.96s`;
+- final CI-rebase integration suite, including the shard-weight stabilization
+  added by `c02bde02`: `121 passed, 0 failed` in `7.28s`;
+- local contract/domain coverage:
+  `1418 passed, 3 skipped, 0 failed` in `714.46s`;
+- local API coverage:
+  `926 passed, 0 failed` in `206.67s`;
+- Ruff: passed;
+- mypy: `244 source files` passed;
+- `check:anti-drift` and provider-env retirement: passed;
+- production Compose configuration: parsed successfully with synthetic
+  perimeter values and no repository secret material.
 
 The documented `m4:preview:test -- --full` command currently reaches an empty
 Bash-array expansion on the source Mac's Bash 3.2. The equivalent explicit
@@ -233,14 +257,20 @@ M4 test runner. Local `check:seam` also intentionally did not copy `.env` or
 start a second Docker runtime; its complete API suite and health/perimeter
 behavior were validated on M4 instead.
 
+After the final rebase, the Docker-backed `check:fast` and `check:perimeter`
+wrappers again stopped before test collection because the clean review
+worktree intentionally has no `.env`. The equivalent repository-local
+contract/domain/API/health tests and production Compose configuration checks
+above passed without copying credentials or starting a second runtime.
+
 ## Acceptance Ledger
 
 | Layer | Status | Evidence |
 | --- | --- | --- |
-| Local focused behavior | Passed | 92 focused tests plus deterministic before/after probe |
-| Repository-wide gates | Passed | Ruff, mypy, anti-drift; M4 contract/domain and API suites |
-| M4 candidate sync | Passed | candidate source applied under the remote deployment lock |
-| M4 focused runtime validation | Passed | exact-final 92 tests; services healthy; HTTP smoke passed |
+| Local focused behavior | Passed | 107 focused tests plus deterministic before/after probe |
+| Repository-wide gates | Passed with Docker-wrapper environment note | 1418 contract/domain tests, 926 API tests, Ruff, mypy, anti-drift, and production Compose config |
+| M4 candidate sync | Passed before final rebase | provider-runtime source applied under the remote deployment lock |
+| M4 focused runtime validation | Passed before final rebase | provider-runtime 92-test suite; services healthy; HTTP smoke passed |
 | GitHub CI / merge | Pending | candidate branch only |
 | Production | Not changed | no production action authorized |
 | Human acceptance | Pending | operator review remains separate |
