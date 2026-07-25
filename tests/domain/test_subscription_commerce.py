@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
+from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
@@ -291,6 +293,57 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
     assert checkout["order"]["amount"] == 19.0
     assert checkout["order"]["plan_version_id"] == "plus_v2"
     assert checkout["subscription_order"]["list_amount"] == 19.0
+    dispose_engine(database_url)
+
+
+def test_legacy_account_scoped_standard_offer_cannot_override_public_price(
+    tmp_path: Path,
+) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    account_id = "acct_legacy_standard_offer"
+    _account(service, account_id)
+    service.list_account_plan_offers(account_id=account_id)
+
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        canonical = repository.get_plan_offer("plus_monthly_v1")
+        assert canonical is not None
+        repository.upsert_plan_offer(
+            offer_id="legacy_account_plus_108",
+            plan_id=canonical.plan_id,
+            plan_version_id=canonical.plan_version_id,
+            account_id=account_id,
+            tier_id="plus",
+            billing_cycle="monthly",
+            amount=Decimal("108.00"),
+            currency="CNY",
+            purchase_mode="self_serve",
+            status="active",
+            trial_enabled=True,
+            trial_days=14,
+            trial_credit_limit=3_000,
+            trial_requires_approval=False,
+            valid_from_at=None,
+            valid_until_at=None,
+            metadata_json={"source": "legacy_account_offer"},
+        )
+        session.commit()
+
+    offers = service.list_account_plan_offers(account_id=account_id)
+    plus_offers = [item for item in offers["items"] if item["tier_id"] == "plus"]
+    assert len(plus_offers) == 1
+    assert plus_offers[0]["offer_id"] == "plus_monthly_v1"
+    assert plus_offers[0]["amount"] == 15.0
+
+    with pytest.raises(CommercialNotFoundError) as stale_checkout:
+        service.create_account_subscription_payment_order(
+            account_id=account_id,
+            offer_id="legacy_account_plus_108",
+            audit_context=_audit("legacy-account-offer-checkout"),
+        )
+    assert stale_checkout.value.error_code == "service.plan_offer_not_found"
     dispose_engine(database_url)
 
 

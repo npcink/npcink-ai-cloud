@@ -1586,6 +1586,8 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(packageDialog.getByText(/published package does not currently define|已发布套餐尚未定义/i)).toBeVisible();
   await expect(packageDialog.getByRole('radio', { name: /Plus/i })).toBeDisabled();
   await expect(packageDialog.getByRole('radio', { name: /Pro/i })).toBeEnabled();
+  await expect(packageDialog.getByText(/¥29\.00/)).toBeVisible();
+  await expect(packageDialog.getByText(/¥208\.80/)).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.getByText(/^Payment orders$|^支付订单$/i)).toBeVisible();
   await expect(page.getByRole('tab', { name: /Pending|待支付/i })).toHaveAttribute('aria-selected', 'true');

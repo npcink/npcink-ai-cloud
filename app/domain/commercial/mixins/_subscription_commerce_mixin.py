@@ -196,11 +196,22 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             self._require_commerce_account(repository, account_id)
             self._ensure_standard_plan_offers_in_session(repository)
-            offers = repository.list_plan_offers(
+            accessible_offers = repository.list_plan_offers(
                 account_id=account_id,
                 status=PLAN_OFFER_STATUS_ACTIVE,
                 now=now,
             )
+            canonical_standard_offer_ids = {
+                str(settings["offer_id"]) for settings in STANDARD_PLAN_OFFERS.values()
+            }
+            offers = [
+                offer
+                for offer in accessible_offers
+                if (
+                    offer.offer_id in canonical_standard_offer_ids
+                    or (offer.tier_id == "agency" and offer.account_id == account_id)
+                )
+            ]
             claim = repository.find_trial_claim(account_id=account_id)
             current = cast(Any, self)._select_primary_subscription(
                 repository.list_account_subscriptions(account_id)
@@ -1426,6 +1437,13 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "service.plan_offer_not_found",
                 "The selected package offer is not available",
             )
+        if offer.tier_id in STANDARD_PLAN_OFFERS:
+            canonical_offer_id = str(STANDARD_PLAN_OFFERS[offer.tier_id]["offer_id"])
+            if offer.account_id is not None or offer.offer_id != canonical_offer_id:
+                raise CommercialNotFoundError(
+                    "service.plan_offer_not_found",
+                    "The selected package offer is not available",
+                )
         if offer.valid_from_at and self._aware_datetime(offer.valid_from_at) > now:
             raise CommercialValidationError(
                 "service.plan_offer_not_started",

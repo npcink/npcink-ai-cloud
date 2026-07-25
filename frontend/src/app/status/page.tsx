@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 import { PublicSiteShell } from '@/components/public/PublicSiteShell';
 import { useLocale } from '@/contexts/LocaleContext';
 
@@ -12,8 +13,9 @@ export default function StatusPage() {
   const [state, setState] = useState<HealthState>('checking');
   const [checkedAt, setCheckedAt] = useState('');
 
-  useEffect(() => {
+  const checkHealth = useCallback(() => {
     let active = true;
+    setState('checking');
     fetch('/api/health', { cache: 'no-store' })
       .then(async (response) => {
         const payload = await response.json() as { status?: string; checked_at?: string };
@@ -29,11 +31,15 @@ export default function StatusPage() {
     };
   }, []);
 
+  useEffect(() => {
+    return checkHealth();
+  }, [checkHealth]);
+
   const healthy = state === 'healthy';
 
   return (
     <PublicSiteShell>
-      <main className="mx-auto max-w-5xl px-5 py-16 sm:py-24 lg:px-8">
+      <main id="main-content" tabIndex={-1} className="mx-auto max-w-5xl px-5 py-16 sm:py-24 lg:px-8">
         <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#2357ff]">
           {zh ? '服务状态' : 'Service status'}
         </p>
@@ -49,6 +55,21 @@ export default function StatusPage() {
             ? '这里展示普通用户能够理解和验证的公开可用性。账号、站点和单次运行的详细诊断只在登录后的服务中心显示。'
             : 'This page shows public availability that users can understand and verify. Account, site, and individual-run diagnostics are available only after sign-in.'}
         </p>
+
+        <div className={`mt-10 border-l-4 px-5 py-4 ${healthy ? 'border-emerald-500 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/25 dark:text-emerald-100' : state === 'checking' ? 'border-slate-400 bg-white text-slate-700 dark:bg-white/5 dark:text-slate-200' : 'border-red-500 bg-red-50 text-red-950 dark:bg-red-950/25 dark:text-red-100'}`}>
+          <p className="font-bold">
+            {state === 'checking'
+              ? (zh ? '正在获取最新检查结果' : 'Retrieving the latest check')
+              : healthy
+                ? (zh ? '当前影响：未发现公开入口故障' : 'Current impact: no public-entry outage detected')
+                : (zh ? '当前影响：官网、登录或页面请求可能失败' : 'Current impact: website, sign-in, or page requests may fail')}
+          </p>
+          <p className="mt-2 text-sm leading-6 opacity-80">
+            {state === 'unavailable'
+              ? (zh ? '请稍后重试；如果问题持续，记录发生时间和页面地址，恢复登录后通过工单提交。' : 'Try again shortly. If it continues, note the time and page URL, then submit a ticket after sign-in is restored.')
+              : (zh ? '此结果只代表公开入口；您自己的站点运行、额度和提供方状态需要登录后查看。' : 'This result covers only the public entry. Sign in to review your site runtime, allowance, and provider status.')}
+          </p>
+        </div>
 
         <div className="mt-12 border-t border-slate-300 dark:border-white/15">
           <div className="grid items-center gap-4 border-b border-slate-300 py-7 dark:border-white/15 sm:grid-cols-[1fr_auto]">
@@ -66,16 +87,28 @@ export default function StatusPage() {
               <h2 className="text-lg font-bold">{zh ? '站点运行与提供方状态' : 'Site runtime and provider status'}</h2>
               <p className="mt-1 text-sm text-slate-500">{zh ? '按账号授权展示，避免公开内部运行信息' : 'Shown per authorized account to protect internal runtime information'}</p>
             </div>
-            <span className="text-sm font-bold text-slate-600 dark:text-slate-300">{zh ? '登录后查看' : 'Sign in to view'}</span>
+            <Link href="/portal" className="text-sm font-bold text-[#2357ff] hover:underline">{zh ? '登录后查看 →' : 'Sign in to view →'}</Link>
+          </div>
+          <div className="grid items-center gap-4 border-b border-slate-300 py-7 dark:border-white/15 sm:grid-cols-[1fr_auto]">
+            <div>
+              <h2 className="text-lg font-bold">{zh ? '套餐、用量与支付记录' : 'Plans, usage, and payment records'}</h2>
+              <p className="mt-1 text-sm text-slate-500">{zh ? '按账号授权展示当前套餐与订单证据' : 'Current package and order evidence shown to the authorized account'}</p>
+            </div>
+            <Link href="/portal/billing" className="text-sm font-bold text-[#2357ff] hover:underline">{zh ? '登录后查看 →' : 'Sign in to view →'}</Link>
           </div>
         </div>
 
-        {checkedAt ? (
-          <p className="mt-5 text-xs text-slate-500">
-            {zh ? '最近检查：' : 'Last checked: '}
-            {new Date(checkedAt).toLocaleString(zh ? 'zh-CN' : 'en-US')}
-          </p>
-        ) : null}
+        <div className="mt-5 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+          {checkedAt ? (
+            <p>
+              {zh ? '最近检查：' : 'Last checked: '}
+              {new Date(checkedAt).toLocaleString(zh ? 'zh-CN' : 'en-US')}
+            </p>
+          ) : null}
+          <button type="button" className="font-bold text-[#2357ff] hover:underline" onClick={() => checkHealth()}>
+            {zh ? '重新检查' : 'Check again'}
+          </button>
+        </div>
       </main>
     </PublicSiteShell>
   );

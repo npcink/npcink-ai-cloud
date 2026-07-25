@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   PortalMetricStrip,
@@ -170,6 +170,26 @@ function PortalBillingContent() {
   const [showOnlyPackageDifferences, setShowOnlyPackageDifferences] = useState(true);
   const [selectedCreditPackId, setSelectedCreditPackId] = useState<string | null>(null);
   const [paymentLaunch, setPaymentLaunch] = useState<PaymentLaunchState | null>(null);
+  const handledUpgradeIntentRef = useRef('');
+
+  useEffect(() => {
+    const requestedTier = searchParams.get('plan');
+    const requestedAction = searchParams.get('action');
+    const intentKey = `${requestedAction}:${requestedTier}`;
+    if (
+      requestedAction !== 'upgrade'
+      || (requestedTier !== 'plus' && requestedTier !== 'pro')
+      || handledUpgradeIntentRef.current === intentKey
+      || !(planOffers?.items || []).some((offer) => offer.tier_id === requestedTier)
+    ) {
+      return;
+    }
+    handledUpgradeIntentRef.current = intentKey;
+    setPackageError(null);
+    setSelectedPackageTier(requestedTier);
+    setShowOnlyPackageDifferences(true);
+    setActiveCommercialDialog('package');
+  }, [planOffers?.items, searchParams]);
 
   useEffect(() => {
     const allowedTiers = planOffers?.trial?.allowed_tiers || [];

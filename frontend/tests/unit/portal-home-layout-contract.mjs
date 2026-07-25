@@ -43,6 +43,11 @@ assert.match(
   /accountEntitlements\?\.quota_summary\?\.credit\?\.remaining/,
   'Portal home must use the one account entitlement response for remaining credits'
 );
+assert.match(
+  source,
+  /creditUnavailable[\s\S]*resourceOverLimit[\s\S]*Number\(resource\.used \|\| 0\) > Number\(resource\.limit \|\| 0\)/,
+  'Portal service status must not treat an exactly-full site allowance as a runtime incident'
+);
 assert.match(source, /data-portal-home="operation-overview"/);
 assert.match(source, /shouldShowFollowUpSection/);
 assert.match(source, /operationFocusItems\.length > 0 \? \(/);

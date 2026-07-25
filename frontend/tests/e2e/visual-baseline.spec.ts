@@ -38,7 +38,7 @@ test('cloud frontend visual baseline: portal page', async ({ page }) => {
 
   // 验证已登录状态的关键元素
   await expect(
-    page.getByText(/Member-Gated Preview|成员预览面/i).first()
+    page.getByRole('heading', { name: /My service|我的服务/i }).first()
   ).toBeVisible();
 
   // 截取整个页面
@@ -97,7 +97,7 @@ test('cloud frontend visual baseline: portal billing page', async ({ page }) => 
 
   // 验证已登录状态的关键元素
   await expect(
-    page.getByText(/Billing Preview|账单预览/i).first()
+    page.getByRole('heading', { name: /Package|套餐/i }).first()
   ).toBeVisible();
 
   // 截取整个页面

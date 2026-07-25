@@ -198,11 +198,20 @@ export default function PortalPage() {
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
   const remainingCredits = Number(accountEntitlements?.quota_summary?.credit?.remaining ?? 0);
-  const accountQuotaStatus = String(accountEntitlements?.quota_summary?.status || '');
+  const creditUnavailable =
+    String(accountEntitlements?.quota_summary?.credit?.status || '') === 'limited';
+  const resourceOverLimit = Boolean(
+    accountEntitlements?.quota_summary?.resource_limits?.some((resource) => (
+      !resource.unlimited
+      && Number(resource.limit || 0) > 0
+      && Number(resource.used || 0) > Number(resource.limit || 0)
+    ))
+  );
   const currentServiceStatusToken =
     !selectedSite ||
     restrictedCount > 0 ||
-    accountQuotaStatus === 'limited' ||
+    creditUnavailable ||
+    resourceOverLimit ||
     (currentSubscription?.status && currentSubscription.status !== 'active')
       ? 'warning'
       : 'active';

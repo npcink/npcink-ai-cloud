@@ -207,6 +207,17 @@ test('QQ is a first-class login entry and preserves the Portal return path', asy
   expect(calls.qqStartReturnTo()).toBe('/portal/usage');
 });
 
+test('registration preserves a selected paid plan through QQ authentication', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page);
+
+  await page.goto('/portal/register?plan=pro');
+  await expect(page.getByText(/Continue with Pro after signup|注册后继续选择 Pro/i)).toBeVisible();
+  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
+  expect(calls.qqStartReturnTo()).toBe('/portal/billing?plan=pro&action=upgrade');
+});
+
 test('portal email-code login enters the dashboard after verification', async ({ page }) => {
   const calls = await installLoginFlowMocks(page);
 
