@@ -74,6 +74,7 @@ Operational references:
 - [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
 - [docs/image-processing-fc-oss-readiness-2026-07-20.md](docs/image-processing-fc-oss-readiness-2026-07-20.md)
 - [docs/m4-preview-development-v1.md](docs/m4-preview-development-v1.md)
+- [docs/m4-personal-preview-auto-route-retrospective-2026-07-25.md](docs/m4-personal-preview-auto-route-retrospective-2026-07-25.md)
 - [docs/decisions/024-risk-tiered-development-validation-authority.md](docs/decisions/024-risk-tiered-development-validation-authority.md)
 - [docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
 - [docs/decisions/026-private-source-relay-transfer.md](docs/decisions/026-private-source-relay-transfer.md)

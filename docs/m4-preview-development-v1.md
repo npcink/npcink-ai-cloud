@@ -129,6 +129,10 @@ relay, acquire the remote deployment lock, or change containers. Use
 `pnpm run m4:preview:tunnel` command remains available when an explicitly
 configured SSH target is required.
 
+The implementation reasoning, rejected alternatives, timeout correction,
+measured LAN/Tailscale evidence, and troubleshooting lessons are recorded in
+[the 2026-07-25 single-operator preview retrospective](m4-personal-preview-auto-route-retrospective-2026-07-25.md).
+
 `https://cloud.mqzjmax.top` remains the protected browser-preview entry. Do not
 configure an automated local WordPress connector against that hostname:
 Cloudflare Access returns a browser login redirect, while the connector requires
@@ -139,7 +143,17 @@ existing verified Cloud connection merely to exercise M4 Preview.
 
 ### Portal Test Account
 
-After completing the Cloudflare Access challenge, open:
+For a local SSH tunnel, open:
+
+```text
+http://127.0.0.1:18010/portal/dev-entry?origin=http%3A%2F%2F127.0.0.1%3A18010&redirect=%2Fportal
+```
+
+The explicit local `origin` keeps the redirect on
+`http://127.0.0.1:18010/portal`. Without it, the configured public base URL may
+redirect the browser to `cloud.mqzjmax.top`.
+
+For the Cloudflare Access protected path, open:
 
 ```text
 https://cloud.mqzjmax.top/portal/dev-entry
