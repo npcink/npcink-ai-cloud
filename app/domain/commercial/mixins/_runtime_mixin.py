@@ -740,11 +740,39 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             payload_json=base_payload,
         )
         self._record_credit_for_usage_meter_event(repository=repository, event=event)
+        normalized_usage_context = usage_context if isinstance(usage_context, dict) else {}
         metric_rows = (
             ("tokens_in", float(provider_call.tokens_in)),
             ("tokens_out", float(provider_call.tokens_out)),
             ("tokens_total", float(provider_call.tokens_in + provider_call.tokens_out)),
             ("cost", float(provider_call.cost)),
+            (
+                "input_tokens_uncached",
+                max(
+                    0.0,
+                    self._coerce_float(
+                        normalized_usage_context.get("input_tokens_uncached")
+                    ),
+                ),
+            ),
+            (
+                "cache_read_tokens",
+                max(
+                    0.0,
+                    self._coerce_float(
+                        normalized_usage_context.get("cache_read_tokens")
+                    ),
+                ),
+            ),
+            (
+                "cache_write_tokens",
+                max(
+                    0.0,
+                    self._coerce_float(
+                        normalized_usage_context.get("cache_write_tokens")
+                    ),
+                ),
+            ),
         )
         for meter_key, quantity in metric_rows:
             if quantity <= 0:

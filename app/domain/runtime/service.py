@@ -5569,8 +5569,11 @@ class RuntimeService:
             "region": candidate.region,
             "weight": candidate.weight,
             "health_status": candidate.health_status,
+            "context_window": candidate.context_window,
             "price_input": candidate.price_input,
             "price_output": candidate.price_output,
+            "price_cache_read": candidate.price_cache_read,
+            "price_cache_write": candidate.price_cache_write,
             "capability_tags": candidate.capability_tags,
         }
 
@@ -5592,8 +5595,13 @@ class RuntimeService:
                     region=str(item.get("region") or ""),
                     weight=max(0, self._coerce_int(item.get("weight"), default=0)),
                     health_status=str(item.get("health_status") or "unknown"),
+                    context_window=self._coerce_optional_positive_int(
+                        item.get("context_window")
+                    ),
                     price_input=self._coerce_float(item.get("price_input")),
                     price_output=self._coerce_float(item.get("price_output")),
+                    price_cache_read=self._coerce_float(item.get("price_cache_read")),
+                    price_cache_write=self._coerce_float(item.get("price_cache_write")),
                     capability_tags=[
                         str(tag) for tag in item.get("capability_tags", []) if isinstance(tag, str)
                     ],
@@ -6217,6 +6225,10 @@ class RuntimeService:
             except ValueError:
                 return default
         return default
+
+    def _coerce_optional_positive_int(self, value: object | None) -> int | None:
+        normalized = self._coerce_int(value, default=0)
+        return normalized if normalized > 0 else None
 
     def _coerce_float(self, value: object | None) -> float | None:
         if value is None:

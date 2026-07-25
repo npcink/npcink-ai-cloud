@@ -13,6 +13,10 @@ from app.adapters.providers.base import (
     ProviderExecutionRequest,
     ProviderExecutionResult,
 )
+from app.adapters.providers.compatibility import (
+    normalize_anthropic_usage,
+    normalize_provider_error_code,
+)
 from app.adapters.providers.openai import OpenAIProviderAdapter
 
 
@@ -41,6 +45,7 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
             app_name=app_name,
             allow_sample_catalog=allow_sample_catalog,
             allow_sample_execution=allow_sample_execution,
+            prompt_cache_affinity_enabled=False,
             transport=transport,
         )
         self.api_version = api_version
@@ -212,10 +217,16 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
                 f"provider call exceeded timeout budget for {request.instance_id}",
             ) from error
         except httpx.HTTPStatusError as error:
-            error_code = self._map_anthropic_error(error.response)
+            error_message = self._extract_http_error_message(error.response)
+            error_code = normalize_provider_error_code(
+                self._map_anthropic_error(error.response),
+                message=error_message,
+                error_type=self._extract_http_error_type(error.response),
+                status_code=error.response.status_code,
+            )
             raise ProviderExecutionError(
                 error_code,
-                self._extract_http_error_message(error.response),
+                error_message,
                 retryable=error_code
                 in {
                     "provider.timeout",
@@ -263,15 +274,24 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
             "messages": [{"role": "assistant", "content": output_text}],
             "model_id": response_json.get("model", request.model_id),
         }
-        tokens_in = self._coerce_int(usage.get("input_tokens"))
-        tokens_out = self._coerce_int(usage.get("output_tokens"))
+        normalized_usage = normalize_anthropic_usage(usage)
+        cost_estimate = self._estimate_cost_details(
+            request,
+            normalized_usage,
+            usage=usage,
+        )
         return ProviderExecutionResult(
             output=output,
             latency_ms=latency_ms,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            cost=self._estimate_cost(request, tokens_in, tokens_out),
+            tokens_in=normalized_usage.total_input_tokens,
+            tokens_out=normalized_usage.output_tokens,
+            cost=cost_estimate.total_cost,
             finish_reason=self._resolve_finish_reason(response_json),
+            uncached_input_tokens=normalized_usage.uncached_input_tokens,
+            cache_read_tokens=normalized_usage.cache_read_tokens,
+            cache_write_tokens=normalized_usage.cache_write_tokens,
+            reasoning_tokens=normalized_usage.reasoning_tokens,
+            cost_estimate_mode=cost_estimate.mode,
         )
 
     def _build_catalog_model_seed(self, payload: Any) -> CatalogModelSeed | None:
@@ -286,6 +306,7 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
         region = self._infer_catalog_region(payload)
         status = self._infer_catalog_status(payload)
         is_deprecated = self._infer_catalog_deprecated(status, payload)
+        runtime_pricing = self._runtime_cache_pricing(payload)
 
         return CatalogModelSeed(
             model_id=model_id,
@@ -314,6 +335,7 @@ class AnthropicProviderAdapter(OpenAIProviderAdapter):
                 "display_name": payload.get("display_name"),
                 "tier": tier,
                 "type": payload.get("type"),
+                **({"runtime_pricing": runtime_pricing} if runtime_pricing else {}),
             },
             instances=[
                 CatalogInstanceSeed(

@@ -426,6 +426,27 @@ def test_runtime_resolve_response_shape_includes_execution_context(tmp_path: Pat
         "data_classification",
         "storage_mode",
     }
+    expected_candidate_fields = {
+        "provider_id",
+        "model_id",
+        "instance_id",
+        "endpoint_variant",
+        "region",
+        "weight",
+        "health_status",
+        "context_window",
+        "price_input",
+        "price_output",
+        "price_cache_read",
+        "price_cache_write",
+        "capability_tags",
+    }
+    assert set(payload["data"]["selected_candidate"].keys()) == expected_candidate_fields
+    assert set(payload["data"]["candidates"][0].keys()) == expected_candidate_fields
+    assert (
+        set(payload["data"]["policy"]["routing_candidates"][0].keys())
+        == expected_candidate_fields
+    )
 
     dispose_engine(database_url)
 

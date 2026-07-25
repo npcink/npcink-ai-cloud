@@ -57,8 +57,12 @@ class ProviderExecutionRequest:
     input_payload: dict[str, Any] = field(repr=False)
     policy: dict[str, Any]
     timeout_ms: int
+    contract_version: str = ""
+    context_window: int | None = None
     price_input: float | None = None
     price_output: float | None = None
+    price_cache_read: float | None = None
+    price_cache_write: float | None = None
     retry_count: int = 0
 
 
@@ -103,6 +107,42 @@ class ProviderExecutionResult:
     cost: float
     finish_reason: str = "stop"
     media_candidates: tuple[ProviderMediaCandidate, ...] = ()
+    uncached_input_tokens: int | None = None
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
+    cost_estimate_mode: str = ""
+
+    def usage_context(self) -> dict[str, object]:
+        total_input_tokens = max(0, int(self.tokens_in or 0))
+        cache_read_tokens = max(0, int(self.cache_read_tokens or 0))
+        cache_write_tokens = max(0, int(self.cache_write_tokens or 0))
+        uncached_input_tokens = (
+            max(0, int(self.uncached_input_tokens or 0))
+            if self.uncached_input_tokens is not None
+            else max(0, total_input_tokens - cache_read_tokens - cache_write_tokens)
+        )
+        context: dict[str, object] = {}
+        has_cache_evidence = cache_read_tokens > 0 or cache_write_tokens > 0
+        if has_cache_evidence:
+            context.update(
+                {
+                    "input_tokens_uncached": uncached_input_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "cache_write_tokens": cache_write_tokens,
+                }
+            )
+        reasoning_tokens = max(0, int(self.reasoning_tokens or 0))
+        if reasoning_tokens > 0:
+            context["reasoning_tokens"] = reasoning_tokens
+        if has_cache_evidence and total_input_tokens > 0:
+            context["cache_hit_ratio"] = round(
+                min(cache_read_tokens, total_input_tokens) / total_input_tokens,
+                6,
+            )
+        if self.cost_estimate_mode:
+            context["cost_estimate_mode"] = self.cost_estimate_mode
+        return context
 
 
 class ProviderExecutionError(Exception):
@@ -115,6 +155,7 @@ class ProviderExecutionError(Exception):
         tokens_in: int = 0,
         tokens_out: int = 0,
         cost: float = 0.0,
+        usage_context: dict[str, object] | None = None,
     ) -> None:
         super().__init__(message)
         self.error_code = error_code
@@ -125,6 +166,7 @@ class ProviderExecutionError(Exception):
         self.tokens_in = max(0, int(tokens_in))
         self.tokens_out = max(0, int(tokens_out))
         self.cost = max(0.0, float(cost))
+        self.usage_context = dict(usage_context) if isinstance(usage_context, dict) else None
 
 
 class ProviderAdapter(Protocol):
