@@ -122,7 +122,7 @@ Operational references:
 - [docs/wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md](docs/wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md)
 - [docs/wordpress-title-external-provider-e2e-revalidation-2026-07-25.md](docs/wordpress-title-external-provider-e2e-revalidation-2026-07-25.md)
 - [docs/provider-context-window-p2-revalidation-2026-07-25.md](docs/provider-context-window-p2-revalidation-2026-07-25.md)
-- [docs/wordpress-title-summary-controlled-trial-and-cache-economics-2026-07-25.md](docs/wordpress-title-summary-controlled-trial-and-cache-economics-2026-07-25.md)
+- [docs/provider-pricing-and-cache-economics-revalidation-2026-07-25.md](docs/provider-pricing-and-cache-economics-revalidation-2026-07-25.md)
 - [docs/cloud-runtime-reference-notes-2026-07.md](docs/cloud-runtime-reference-notes-2026-07.md)
 - [docs/wordpress-ai-editor-runtime-closeout-2026-07-07.md](docs/wordpress-ai-editor-runtime-closeout-2026-07-07.md)
 - [docs/wordpress-ai-generation-reference-stage-closeout-2026-07-12.md](docs/wordpress-ai-generation-reference-stage-closeout-2026-07-12.md)

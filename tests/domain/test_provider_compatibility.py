@@ -117,6 +117,53 @@ def test_cache_cost_is_conservative_when_cache_rates_are_unknown() -> None:
     assert estimate.mode == "conservative_input_rate"
 
 
+def test_observed_provider_cohort_repricing_uses_cache_rates_without_double_counting() -> (
+    None
+):
+    observed_usage = normalize_openai_usage(
+        {
+            "input_tokens": 84660,
+            "output_tokens": 411,
+            "input_tokens_details": {"cached_tokens": 72960},
+        },
+        input_field="input_tokens",
+        output_field="output_tokens",
+    )
+    observed = estimate_token_cost(
+        observed_usage,
+        price_input=5.0,
+        price_output=30.0,
+        price_cache_read=0.5,
+        price_cache_write=5.0,
+    )
+
+    no_cache_usage = normalize_openai_usage(
+        {
+            "input_tokens": 84660,
+            "output_tokens": 411,
+            "input_tokens_details": {"cached_tokens": 0},
+        },
+        input_field="input_tokens",
+        output_field="output_tokens",
+    )
+    no_cache = estimate_token_cost(
+        no_cache_usage,
+        price_input=5.0,
+        price_output=30.0,
+        price_cache_read=0.5,
+        price_cache_write=5.0,
+    )
+
+    assert observed_usage.uncached_input_tokens == 11700
+    assert observed_usage.cache_read_tokens == 72960
+    assert observed_usage.cache_write_tokens == 0
+    assert observed.total_cost == 0.10731
+    assert observed.mode == "cache_rates"
+    assert no_cache.total_cost == 0.43563
+    assert no_cache.mode == "standard_rates"
+    assert round(no_cache.total_cost - observed.total_cost, 6) == 0.32832
+
+
 def test_prompt_cache_key_is_stable_site_isolated_and_prompt_free() -> None:
     stable_prefix = (
         "Generate exactly one concise title faithful to the main topic. "
