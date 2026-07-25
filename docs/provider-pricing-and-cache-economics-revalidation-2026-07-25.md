@@ -1,7 +1,7 @@
 # Provider Pricing And Cache Economics Revalidation — 2026-07-25
 
-Status: source/local and corrected M4 candidate verified. The correction
-PR/CI, merge, and accepted promotion remain pending at this record revision.
+Status: source/local and corrected M4 candidate verified. Correction PR `#264`
+passed CI, merged as `f478d3dd`, and was accepted on M4 from clean `master`.
 Production was not changed.
 
 This is the independent price/cache-economics work item. It does not change AI
@@ -257,8 +257,8 @@ receiving most of the bundle, resumed under the existing script, completed in
 
 After the PR `#262` merge race was discovered, the correction commit was
 cherry-picked onto exact current `origin/master=2fe8052c` as
-`7b2f045a67fc6da8c96503fdf8f3a9cf5fbdaa04`. The final clean correction
-candidate synchronized with bundle
+`7b2f045a67fc6da8c96503fdf8f3a9cf5fbdaa04`. That clean correction candidate
+synchronized with bundle
 `1bf87e6272e6938211a3e8a3141cb38c150460ae03a35060cc714c210372263e`.
 Migration, worker restart, Nginx validation, and service checks completed.
 
@@ -271,19 +271,46 @@ pnpm run m4:preview:test -- --focused \
 32 passed in 0.61s
 ```
 
-Final status reported `acceptance_state=candidate`, branch
-`codex/provider-cache-cost-evidence-correction`, source revision `7b2f045a`,
-`source_dirty=false`, all eight services running, required services healthy,
-Alembic
-`20260717_0068 (head)`, and HTTP `200` for `/` and `/health/live`.
+The correction was then rebased onto the newer exact
+`origin/master=dbd892d6` without changing its scoped content. Final PR head
+`bbc6cefb14ad43313c01ff6d07d7182f4da338a4` synchronized as a clean candidate
+with bundle
+`719adbb5cfc9ea7d0e40725cc74935b73cd1434867f0d8f477b920c1a5c4363c`;
+the two exact new pytest nodes passed.
+
+PR `#264` passed all required checks (`12` successful, `5` scope-skipped,
+`0` failed); `backend-targeted` completed in `8m03s`. It merged into `master`
+as `f478d3dd81e46bb675166436000a5bd7193817ae`.
+
+The accepted promotion reported:
+
+- `acceptance_state=accepted`;
+- `promotion_pr=264`;
+- `source_revision=f478d3dd81e46bb675166436000a5bd7193817ae`;
+- `source_branch=master`;
+- `source_dirty=false` and `source_dirty_paths=0`;
+- accepted source bundle
+  `2ffeca228c8d837e724e503fe00730dae1a9405694b09c533c03ce6b7e8b910c`;
+- all eight services running, required services healthy;
+- Alembic `20260717_0068 (head)`;
+- HTTP `200` for `/` and `/health/live`.
+
+The post-merge accepted-runtime command was:
+
+```text
+pnpm run m4:preview:test -- --focused \
+  tests/domain/test_provider_compatibility.py::test_observed_provider_cohort_repricing_uses_cache_rates_without_double_counting \
+  tests/domain/test_ai_credit_policy.py::test_cache_usage_meters_do_not_discount_token_credit_component
+2 passed in 0.04s
+```
 
 | State | Result |
 | --- | --- |
 | source/local verified | Passed: 32 focused tests, Ruff, diff check, and link check |
-| candidate validated on M4 | Passed: 32 focused tests; services/HTTP/migration healthy |
-| PR/CI | PR #262 first version merged in a race; independent correction PR pending |
-| merged into master | Pending |
-| accepted on M4 | Pending post-merge clean-master promotion |
+| candidate validated on M4 | Passed: 32 focused tests, then the two exact new nodes on final rebased candidate; services/HTTP/migration healthy |
+| PR/CI | PR #262 first version merged in a race; correction PR #264 passed 12 required checks with 5 scope-skipped and 0 failures |
+| merged into master | Correction PR #264 merged as `f478d3dd` |
+| accepted on M4 | Passed: PR #264, clean `master@f478d3dd`, post-merge exact tests 2 passed |
 | production | Not changed |
 | human/external acceptance | Pending |
 
@@ -299,7 +326,8 @@ Alembic
 
 ## Rollback
 
-- Source/docs: revert PR `#262`.
+- Corrected source/docs: revert PR `#264`; PR `#262` remains the recorded
+  superseded merge-race revision.
 - Runtime estimate baseline: restore the preceding context-only model override,
   run the existing Provider connection test/catalog sync, and verify the lane
   returns `unpriced`.
