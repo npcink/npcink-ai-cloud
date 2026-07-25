@@ -422,6 +422,63 @@ def test_context_preflight_skips_small_model_and_falls_back_without_upstream_cal
         }
 
 
+def test_context_preflight_fails_closed_without_rewriting_or_upstream_usage(
+    database_url: str,
+) -> None:
+    provider = SequenceProvider("primary", [provider_success("must not run")])
+    usage_recorder = RecordingUsageRecorder()
+    service = execution_service(
+        providers={"primary": provider},
+        controller=RecordingRunController(),
+        usage_recorder=usage_recorder,
+    )
+    input_payload = {"input": "a" * 300, "max_output_tokens": 20}
+    original_payload = dict(input_payload)
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = create_run(
+            repository,
+            run_id="run_context_preflight_fail_closed",
+            policy={"allow_fallback": False, "max_retries": 2},
+        )
+        service.execute_candidate_chain(
+            repository=repository,
+            run=run,
+            candidates=[
+                Candidate(
+                    "primary",
+                    "small-model",
+                    "small-instance",
+                    endpoint_variant="responses",
+                    context_window=100,
+                ),
+            ],
+            input_payload=input_payload,
+        )
+
+        assert provider.attempts == []
+        assert input_payload == original_payload
+        assert run.status == "failed"
+        assert run.error_code == "provider.context_overflow"
+        provider_calls = repository.list_provider_calls(run.run_id)
+        assert len(provider_calls) == 1
+        assert provider_calls[0].tokens_in == 0
+        assert provider_calls[0].tokens_out == 0
+        assert provider_calls[0].cost == 0
+        assert provider_calls[0].retry_count == 0
+        assert provider_calls[0].fallback_used is False
+        assert usage_recorder.calls[0]["usage_context"] == {
+            "context_preflight": "rejected",
+            "estimated_input_tokens": 75,
+            "requested_output_tokens": 20,
+            "context_safety_margin_tokens": 16,
+            "estimated_total_tokens": 111,
+            "context_window": 100,
+        }
+        assert "input" not in usage_recorder.calls[0]["usage_context"]
+
+
 def test_provider_result_passes_cache_usage_context_to_metering(database_url: str) -> None:
     provider = SequenceProvider(
         "primary",

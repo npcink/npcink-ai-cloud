@@ -290,6 +290,7 @@ Boundary result:
 ## Related Records
 
 - [Independent WordPress Title External Provider E2E Revalidation](wordpress-title-external-provider-e2e-revalidation-2026-07-25.md)
+- [Independent Provider Context Window And P2 Revalidation](provider-context-window-p2-revalidation-2026-07-25.md)
 - [Provider Runtime Evidence Surface Validation](provider-runtime-evidence-surface-validation-2026-07-25.md)
 - [Pi-Inspired Provider Runtime Compatibility Evidence](pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [Cloud Content Generation Boundary](cloud-content-generation-boundary-v1.md)
