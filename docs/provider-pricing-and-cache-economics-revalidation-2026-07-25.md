@@ -1,6 +1,6 @@
 # Provider Pricing And Cache Economics Revalidation — 2026-07-25
 
-Status: source/local investigation complete. The corrected M4 candidate,
+Status: source/local and corrected M4 candidate verified. The correction
 PR/CI, merge, and accepted promotion remain pending at this record revision.
 Production was not changed.
 
@@ -55,10 +55,13 @@ evidence showed:
 - successes: `39 / 39`;
 - no three-consecutive-failure condition occurred.
 
-This exceeded the requested total cap of `30`. Auto-merge for PR `#262` was
-disabled immediately after discovery. No further Provider call was made. The
-unrelated controlled-adoption narrative was removed from the corrected net
-diff; the scalar call-cap incident remains recorded here rather than hidden.
+This exceeded the requested total cap of `30`. An attempt was made to disable
+PR `#262` auto-merge immediately after discovery, but the checks/merge race had
+already completed; the first version merged as `2fe8052c`. No further Provider
+call was made. A correction branch was created from that exact current
+`master`, and the unrelated controlled-adoption narrative was removed from
+its net diff. The scalar call-cap incident remains recorded here rather than
+hidden.
 
 ## Price Source, Meaning, And Ownership
 
@@ -247,11 +250,17 @@ passed
 
 ## M4 Candidate, PR, And Acceptance
 
-The corrected seven-path candidate synchronized through the private relay. The
-initial relay download hit its bounded 120-second curl timeout after receiving
-most of the bundle, resumed under the existing script, completed in `145s`,
-and the overall sync exited `0`. Migration, worker restart, Nginx validation,
-and service checks completed.
+The first corrected seven-path candidate synchronized through the private
+relay. Its initial relay download hit the bounded 120-second curl timeout after
+receiving most of the bundle, resumed under the existing script, completed in
+`145s`, and the overall sync exited `0`.
+
+After the PR `#262` merge race was discovered, the correction commit was
+cherry-picked onto exact current `origin/master=2fe8052c` as
+`7b2f045a67fc6da8c96503fdf8f3a9cf5fbdaa04`. The final clean correction
+candidate synchronized with bundle
+`1bf87e6272e6938211a3e8a3141cb38c150460ae03a35060cc714c210372263e`.
+Migration, worker restart, Nginx validation, and service checks completed.
 
 The focused candidate command then ran both changed test files:
 
@@ -259,19 +268,20 @@ The focused candidate command then ran both changed test files:
 pnpm run m4:preview:test -- --focused \
   tests/domain/test_provider_compatibility.py \
   tests/domain/test_ai_credit_policy.py
-32 passed in 0.62s
+32 passed in 0.61s
 ```
 
-Status reported `acceptance_state=candidate`, branch
-`codex/m4-title-adoption-cache-economics`, seven dirty paths, all eight
-services running, required services healthy, Alembic
+Final status reported `acceptance_state=candidate`, branch
+`codex/provider-cache-cost-evidence-correction`, source revision `7b2f045a`,
+`source_dirty=false`, all eight services running, required services healthy,
+Alembic
 `20260717_0068 (head)`, and HTTP `200` for `/` and `/health/live`.
 
 | State | Result |
 | --- | --- |
 | source/local verified | Passed: 32 focused tests, Ruff, diff check, and link check |
 | candidate validated on M4 | Passed: 32 focused tests; services/HTTP/migration healthy |
-| PR/CI | PR #262 open; auto-merge disabled during correction |
+| PR/CI | PR #262 first version merged in a race; independent correction PR pending |
 | merged into master | Pending |
 | accepted on M4 | Pending post-merge clean-master promotion |
 | production | Not changed |
