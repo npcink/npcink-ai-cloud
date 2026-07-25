@@ -47,6 +47,17 @@ async def finish_open_qq_login(
     return await finish_qq_login_callback(request, code=code, state=state)
 
 
+@router.get("/plan-catalog")
+async def list_open_plan_catalog(request: Request) -> Any:
+    catalog = _get_commercial_service(request).list_public_plan_catalog()
+    return build_envelope(
+        status="ok",
+        message="public plan catalog loaded",
+        data=catalog,
+        revision="public-plan-catalog-v1",
+    )
+
+
 @router.get("/auth/wechat/callback")
 async def finish_open_wechat_login(
     code: str = Query(default=""),

@@ -2977,6 +2977,34 @@ def test_portal_qq_start_rejects_redirect_uri_outside_allowlist(tmp_path: Path) 
     dispose_engine(database_url)
 
 
+def test_open_plan_catalog_is_anonymous_and_bounded(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    response = client.get("/open/plan-catalog")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["meta"]["revision"] == "public-plan-catalog-v1"
+    assert [tier["tier_id"] for tier in payload["data"]["tiers"]] == [
+        "free",
+        "plus",
+        "pro",
+        "agency",
+    ]
+    assert payload["data"]["shared_paid_trial"]["days"] == 14
+    serialized = json.dumps(payload["data"], ensure_ascii=False)
+    for private_field in (
+        "account_id",
+        "principal_id",
+        "metadata",
+        "provider",
+        "cost",
+    ):
+        assert f'"{private_field}"' not in serialized
+
+    dispose_engine(database_url)
+
+
 def test_open_reserved_callbacks_fail_closed(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 

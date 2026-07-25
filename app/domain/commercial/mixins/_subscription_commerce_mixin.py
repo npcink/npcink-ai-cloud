@@ -19,6 +19,8 @@ from app.core.models import (
     PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
     PLAN_OFFER_STATUS_ACTIVE,
     PLAN_OFFER_STATUS_RETIRED,
+    PLAN_STATUS_ACTIVE,
+    PLAN_VERSION_STATUS_PUBLISHED,
     SUBSCRIPTION_ORDER_KIND_DOWNGRADE,
     SUBSCRIPTION_ORDER_KIND_PURCHASE,
     SUBSCRIPTION_ORDER_KIND_RENEWAL,
@@ -79,6 +81,115 @@ MAX_PENDING_SUBSCRIPTION_ORDERS = 5
 
 
 class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
+    def list_public_plan_catalog(self) -> dict[str, object]:
+        """Return the bounded public package comparison without account context."""
+
+        now = cast(Any, self).now_factory()
+        tier_order = ("free", "plus", "pro", "agency")
+        with get_session(cast(Any, self).database_url) as session:
+            repository = CommercialRepository(session)
+            offers_by_tier = {
+                str(offer.tier_id): offer
+                for offer in repository.list_plan_offers(
+                    status=PLAN_OFFER_STATUS_ACTIVE,
+                    self_serve_only=True,
+                    now=now,
+                )
+            }
+            tiers: list[dict[str, object]] = []
+            for tier_id in tier_order:
+                offer = offers_by_tier.get(tier_id)
+                plan_version: PlanVersion | None = None
+                plan_active = False
+                if offer is not None:
+                    candidate = repository.get_plan_version(offer.plan_version_id)
+                    if (
+                        candidate is not None
+                        and candidate.status == PLAN_VERSION_STATUS_PUBLISHED
+                    ):
+                        plan_version = candidate
+                if plan_version is None:
+                    published_versions = repository.list_plan_versions(
+                        plan_id=tier_id,
+                        status=PLAN_VERSION_STATUS_PUBLISHED,
+                        limit=1,
+                    )
+                    if published_versions:
+                        plan_version = published_versions[0]
+
+                comparison: dict[str, object] = {}
+                if plan_version is not None:
+                    plan = repository.get_plan(plan_version.plan_id)
+                    plan_active = bool(
+                        plan is not None and plan.status == PLAN_STATUS_ACTIVE
+                    )
+                    comparison = self._serialize_plan_comparison_tier(
+                        tier_id=tier_id,
+                        plan_version=plan_version,
+                        label=str(getattr(plan, "name", "") or tier_id.title()),
+                        offer=offer,
+                    )
+
+                requires_offer = tier_id in {"plus", "pro"}
+                available = plan_version is not None and plan_active and (
+                    not requires_offer or offer is not None
+                )
+                tiers.append(
+                    {
+                        "tier_id": tier_id,
+                        "label": str(comparison.get("label") or tier_id.title()),
+                        "availability": "available" if available else "unavailable",
+                        "plan_id": str(comparison.get("plan_id") or tier_id),
+                        "plan_version_id": str(
+                            comparison.get("plan_version_id") or ""
+                        ),
+                        "monthly_points": comparison.get("monthly_points"),
+                        "site_limit": comparison.get("site_limit"),
+                        "concurrency_limit": comparison.get("concurrency_limit"),
+                        "batch_item_limit": comparison.get("batch_item_limit"),
+                        "amount": (
+                            0.0
+                            if tier_id == "free" and available
+                            else comparison.get("amount")
+                        ),
+                        "currency": str(comparison.get("currency") or "CNY"),
+                        "billing_cycle": comparison.get("billing_cycle"),
+                        "purchase_mode": (
+                            PLAN_OFFER_PURCHASE_MODE_QUOTE
+                            if tier_id == "agency"
+                            else str(
+                                comparison.get("purchase_mode")
+                                or (
+                                    "included"
+                                    if tier_id == "free"
+                                    else PLAN_OFFER_PURCHASE_MODE_SELF_SERVE
+                                )
+                            )
+                        ),
+                        "trial_enabled": bool(
+                            offer.trial_enabled if offer is not None else False
+                        ),
+                        "trial_days": int(
+                            offer.trial_days if offer is not None else 0
+                        ),
+                        "trial_requires_approval": bool(
+                            offer.trial_requires_approval
+                            if offer is not None
+                            else tier_id == "agency"
+                        ),
+                    }
+                )
+            return {
+                "tiers": tiers,
+                "tier_order": list(tier_order),
+                "shared_paid_trial": {
+                    "days": PAID_PACKAGE_TRIAL_DAYS,
+                    "one_per_customer": True,
+                    "self_serve_tiers": ["plus", "pro"],
+                    "approval_required_tiers": ["agency"],
+                },
+            }
+
     def list_account_plan_offers(self, *, account_id: str) -> dict[str, object]:
         now = cast(Any, self).now_factory()
         with get_session(cast(Any, self).database_url) as session:
