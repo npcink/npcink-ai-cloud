@@ -28,6 +28,9 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
             <Link href="/#boundary" className="transition-colors hover:text-[#2357ff]">
               {zh ? '工作方式' : 'How it works'}
             </Link>
+            <Link href="/#pricing" className="transition-colors hover:text-[#2357ff]">
+              {zh ? '套餐' : 'Plans'}
+            </Link>
             <Link href="/status" className="transition-colors hover:text-[#2357ff]">
               {zh ? '服务状态' : 'Service status'}
             </Link>

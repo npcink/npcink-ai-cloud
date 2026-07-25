@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PublicPricingSection } from '@/components/public/PublicPricingSection';
 import { PublicSiteShell } from '@/components/public/PublicSiteShell';
 import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -153,6 +154,8 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        <PublicPricingSection />
 
         <section className="mx-auto max-w-7xl px-5 py-24 lg:px-8">
           <div className="grid items-center gap-12 bg-white p-7 shadow-[0_24px_80px_rgba(15,23,42,.08)] dark:bg-[#101827] sm:p-10 lg:grid-cols-[1fr_22rem]">

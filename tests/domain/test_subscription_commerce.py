@@ -96,6 +96,49 @@ def _pay(
     )
 
 
+def test_public_plan_catalog_reads_published_versions_and_active_offers(
+    tmp_path: Path,
+) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _account(service, "acct_public_catalog")
+
+    service.list_account_plan_offers(account_id="acct_public_catalog")
+    service.create_account_agency_quote(
+        account_id="acct_public_catalog",
+        amount_cny=199,
+    )
+
+    catalog = service.list_public_plan_catalog()
+    tiers = catalog["tiers"]
+
+    assert [tier["tier_id"] for tier in tiers] == [
+        "free",
+        "plus",
+        "pro",
+        "agency",
+    ]
+    assert [tier["amount"] for tier in tiers] == [0.0, 15.0, 29.0, None]
+    assert [tier["monthly_points"] for tier in tiers] == [
+        300,
+        3_000,
+        10_000,
+        150_000,
+    ]
+    assert [tier["site_limit"] for tier in tiers] == [1, 3, 5, 25]
+    assert tiers[3]["purchase_mode"] == "quote"
+    assert tiers[3]["trial_requires_approval"] is True
+    assert catalog["shared_paid_trial"] == {
+        "days": 14,
+        "one_per_customer": True,
+        "self_serve_tiers": ["plus", "pro"],
+        "approval_required_tiers": ["agency"],
+    }
+
+    dispose_engine(database_url)
+
+
 def test_paid_trial_is_shared_and_only_moves_upward(tmp_path: Path) -> None:
     database_url = _database_url(tmp_path)
     init_schema(database_url)
