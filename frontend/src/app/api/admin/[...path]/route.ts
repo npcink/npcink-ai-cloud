@@ -134,9 +134,9 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
-    pattern: /^service-settings$/,
+    pattern: /^(?:service-settings|site-compliance)$/,
     namespace: 'admin',
-    // The existing session model has no service-settings capability.
+    // The existing session model has no service-settings/compliance capability.
     // The platform_admin identity/role gate remains the explicit authority.
   },
 
@@ -265,6 +265,16 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   {
     methods: ['POST'],
     pattern: /^service-settings\/(?:qq-login\/test|email\/test|email\/preview|alipay-payment\/test)$/,
+    namespace: 'admin',
+  },
+  {
+    methods: ['PUT'],
+    pattern: /^site-compliance\/draft$/,
+    namespace: 'admin',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^site-compliance\/publish$/,
     namespace: 'admin',
   },
 ];

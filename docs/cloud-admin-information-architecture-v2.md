@@ -92,6 +92,7 @@ products.
 ### 4.4 System
 
 - Service settings (`/admin/service-settings`)
+- Site compliance (`/admin/site-compliance`)
 
 ### 4.5 Contextual Detail Routes
 
@@ -229,6 +230,7 @@ consolidation.
 | `/admin/agent-feedback` | Runtime Operations | `diagnostic` | Runtime diagnostics | Read-only quality view |
 | `/admin/ai-advisor` | Runtime Operations | `diagnostic` | Runtime diagnostics | Current conclusion first; AI evaluation advanced |
 | `/admin/service-settings` | System | `configuration` | Service settings | Keep; one active configuration group at a time |
+| `/admin/site-compliance` | System | `configuration` | Public compliance | One versioned Cloud disclosure document with fact-derived defaults, save/validate, and explicit publication; never expose drafts or credentials |
 
 ## 7. State Model
 

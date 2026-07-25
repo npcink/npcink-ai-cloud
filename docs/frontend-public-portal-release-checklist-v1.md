@@ -74,6 +74,43 @@ Engineering may publish accurate product behavior and data-flow descriptions,
 but it must not invent the legal operator, registered address, public contact,
 retention period, refund promise, or regulatory qualification.
 
+The platform-admin workspace at `/admin/site-compliance` is the canonical
+entry point for these Cloud-owned public facts:
+
+1. the service derives safe defaults from executable runtime/configuration
+   evidence and lists currently enabled QQ, email, payment, and hosted-provider
+   disclosure candidates;
+2. the operator fills or corrects the real operator, contact, refund,
+   retention, and third-party details;
+3. **Save draft** stores a non-public version and reruns blockers/warnings;
+4. **Publish to public pages** is available only for a saved draft with no
+   blockers;
+5. `/open/compliance` exposes only the published snapshot, which the privacy,
+   terms, and help pages append to their maintained baseline copy;
+6. a later publication supersedes the prior snapshot and retains bounded
+   version history.
+
+Do not enter secrets, provider tokens, customer data, qualifications, identity
+documents, or payment credentials in this workspace. QQ App ID/secret,
+callback, SMTP, and Alipay credentials remain under
+`/admin/service-settings`. Qualification documents remain in the relevant
+external platform.
+
+The following current defaults have different evidence strength and must not
+be flattened into one legal promise:
+
+| Fact | Current source | Publication treatment |
+| --- | --- | --- |
+| AI runtime result maximum limited retention | runtime execution contract, currently 7 days | prefilled and marked enforced |
+| plugin observability events | automated cleanup setting, currently 180 days | prefilled and marked enforced |
+| audit evidence, currently 90 days | entitlement/public projection default only | warning until actual cleanup is confirmed |
+| account, payment, and support records | maintained policy copy only | warning until actual retention/deletion is confirmed |
+| refund request window, currently 14 days | current payment-order/product contract | prefilled; operator may correct before publication |
+| automatic renewal, currently false | current product behavior | prefilled; must change if billing behavior changes |
+| refund processing business days | no executable source | blocking operator input |
+| operator and public contact | no trustworthy repository source | blocking operator input |
+| third-party service candidate | enabled Cloud service/provider configuration | automatically suggested; loopback/private endpoints default to self-hosted, while operator classification, legal entity, and privacy details still require confirmation |
+
 Before public production or QQ acceptance, the operator must supply and
 approve:
 
@@ -88,11 +125,21 @@ approve:
 Until those facts are approved, the authenticated ticket flow is the supported
 request channel and production/external acceptance remains pending.
 
+Publication requires confirmed retention enforcement and, for every enabled
+third-party candidate, its legal operator, privacy URL, and processing region.
+Warnings such as missing filing information, missing service hours, or pending
+legal review remain visible to the operator and must still be resolved before
+real production/external acceptance even when they are not technical publish
+blockers. See
+`docs/decisions/028-versioned-public-site-compliance-projection.md`.
+
 ## Required verification
 
 At minimum for a related change:
 
 ```bash
+uv run pytest tests/domain/test_site_compliance.py -q
+uv run pytest tests/api/test_service_routes.py -k site_compliance -q
 uv run pytest tests/domain/test_subscription_commerce.py -q
 pnpm --dir frontend run type-check
 pnpm --dir frontend run lint

@@ -953,6 +953,98 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     dispose_engine(database_url)
 
 
+def test_admin_site_compliance_draft_publish_and_public_projection(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    initial = client.get(
+        "/internal/service/admin/site-compliance",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    payload = initial.json()["data"]["draft"]["payload"]
+    assert initial.json()["data"]["published"] is None
+    assert client.get("/open/compliance").json()["data"]["published"] is False
+
+    payload["operator"]["entity_name"] = "示例运营主体"
+    payload["operator"]["entity_type"] = "企业"
+    payload["refund"]["processing_business_days"] = 7
+    payload["review"]["operator_confirmed"] = True
+    for item in payload["retention"]:
+        item["confirmed"] = True
+
+    saved = client.put(
+        "/internal/service/admin/site-compliance/draft",
+        json={"payload": payload},
+        headers=build_internal_headers(idempotency_key="site-compliance-save-001"),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["draft"]["validation"]["ready_to_publish"] is True
+
+    published = client.post(
+        "/internal/service/admin/site-compliance/publish",
+        json={},
+        headers=build_internal_headers(idempotency_key="site-compliance-publish-001"),
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["data"]["published"]["version_number"] == 1
+
+    public = client.get("/open/compliance")
+    assert public.status_code == 200, public.text
+    public_data = public.json()["data"]
+    assert public_data["published"] is True
+    assert public_data["payload"]["operator"]["entity_name"] == "示例运营主体"
+    assert "draft" not in public_data
+    assert "review" not in public_data["payload"]
+
+    with get_session(database_url) as session:
+        events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "site_compliance"
+                )
+            )
+        )
+    assert {event.event_kind for event in events} == {
+        "site_compliance.draft.save",
+        "site_compliance.publish",
+    }
+    assert "示例运营主体" not in json.dumps(
+        [event.payload_json for event in events],
+        ensure_ascii=False,
+    )
+
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_publish_is_blocked_until_required_fields_are_confirmed(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    initial = client.get(
+        "/internal/service/admin/site-compliance",
+        headers=build_internal_headers(),
+    )
+    payload = initial.json()["data"]["draft"]["payload"]
+
+    saved = client.put(
+        "/internal/service/admin/site-compliance/draft",
+        json={"payload": payload},
+        headers=build_internal_headers(idempotency_key="site-compliance-save-blocked"),
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["draft"]["validation"]["blockers"]
+
+    published = client.post(
+        "/internal/service/admin/site-compliance/publish",
+        json={},
+        headers=build_internal_headers(idempotency_key="site-compliance-publish-blocked"),
+    )
+    assert published.status_code == 409
+    assert published.json()["error_code"] == "site_compliance.publish_blocked"
+
+    dispose_engine(database_url)
+
+
 def test_admin_service_settings_email_replaces_unreadable_existing_password(
     tmp_path: Path,
 ) -> None:

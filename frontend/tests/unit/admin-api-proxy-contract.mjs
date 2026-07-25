@@ -73,6 +73,12 @@ assert.match(
   'admin service-settings writes must enumerate the supported method for each subpath'
 );
 
+assert.match(
+  source,
+  /methods: \['GET'\],[\s\S]*?pattern: \/\^\(\?:service-settings\|site-compliance\)\$\/[\s\S]*?methods: \['PUT'\],[\s\S]*?pattern: \/\^site-compliance\\\/draft\$\/[\s\S]*?methods: \['POST'\],[\s\S]*?pattern: \/\^site-compliance\\\/publish\$\//,
+  'site compliance proxy routes must enumerate read, draft save, and publish methods'
+);
+
 assert.doesNotMatch(
   source,
   /audio-providers/,

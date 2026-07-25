@@ -1,6 +1,7 @@
 'use client';
 
 import { DocumentSection, PublicDocument } from '@/components/public/PublicDocument';
+import { PublicComplianceDetails } from '@/components/public/PublicComplianceDetails';
 import { useLocale } from '@/contexts/LocaleContext';
 
 export default function TermsPage() {
@@ -32,6 +33,7 @@ export default function TermsPage() {
       <DocumentSection title={zh ? '变更与中断' : 'Changes and interruptions'}>
         <p>{zh ? '我们可能为安全、维护或产品改进调整服务。计划性变更会尽量提前说明；紧急安全处置可能立即执行。' : 'We may adjust the service for security, maintenance, or product improvement. Planned changes will be announced where practical; urgent security measures may take effect immediately.'}</p>
       </DocumentSection>
+      <PublicComplianceDetails surface="terms" />
     </PublicDocument>
   );
 }

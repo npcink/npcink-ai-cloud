@@ -264,6 +264,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           labelKey: 'admin.nav_service_settings',
           fallback: 'Service Settings',
         },
+        {
+          href: '/admin/site-compliance',
+          labelKey: 'admin.nav_site_compliance',
+          fallback: 'Site Compliance',
+        },
       ],
     },
   ], []);
