@@ -24,7 +24,10 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
       >
         {zh ? '跳到主要内容' : 'Skip to main content'}
       </a>
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-[#f6f7f9]/90 backdrop-blur-xl dark:border-white/10 dark:bg-[#09101c]/88">
+      <header
+        data-public-header
+        className="sticky top-0 z-40 border-b border-slate-200/70 bg-[#f6f7f9]/90 backdrop-blur-xl dark:border-white/10 dark:bg-[#09101c]"
+      >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
           <Link href="/" className="group flex items-center gap-3" aria-label="Npcink AI Cloud">
             <span className="grid h-8 w-8 place-items-center bg-[#2357ff] text-sm font-black text-white transition-transform group-hover:-rotate-3">
