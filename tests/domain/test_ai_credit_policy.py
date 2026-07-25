@@ -19,6 +19,7 @@ from app.domain.commercial.credits import (
     estimate_runtime_request_ai_credits,
     list_ai_credit_feature_charge_rules,
     record_credit_ledger_component,
+    usage_meter_credit_component,
 )
 from app.domain.commercial.service import CommercialService
 
@@ -129,6 +130,37 @@ def test_ai_credit_estimates_match_declared_provider_components() -> None:
         execution_kind="site_knowledge",
         payload_json={"billing_mode": "meter_only"},
     ) == 1.0
+
+
+def test_cache_usage_meters_do_not_discount_token_credit_component() -> None:
+    token_component = usage_meter_credit_component(
+        SimpleNamespace(
+            meter_key="tokens_total",
+            quantity=4233,
+            payload_json={"cost_estimate_mode": "cache_rates"},
+        )
+    )
+    cache_components = [
+        usage_meter_credit_component(
+            SimpleNamespace(
+                meter_key=meter_key,
+                quantity=quantity,
+                payload_json={"cost_estimate_mode": "cache_rates"},
+            )
+        )
+        for meter_key, quantity in (
+            ("input_tokens_uncached", 393),
+            ("cache_read_tokens", 3840),
+            ("cache_write_tokens", 0),
+            ("cost", 0.002),
+        )
+    ]
+
+    assert token_component is not None
+    assert token_component["source_type"] == "tokens_total"
+    assert token_component["quantity"] == 4233
+    assert token_component["credits"] == 5
+    assert cache_components == [None, None, None, None]
 
 
 def test_record_credit_ledger_component_is_idempotent(tmp_path: Path) -> None:

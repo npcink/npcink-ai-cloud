@@ -251,11 +251,11 @@ used to calculate cache cost per successful call or claim monetary benefit.
 Until then, `price_input`, `price_output`, cache rates, and monetary savings
 remain unset and unclaimed.
 
-Follow-up on `2026-07-25`: the user authorized official OpenAI `gpt-5.5` list
-prices as a clearly labeled interim calculation baseline. M4 price metadata,
-the priced evidence cohort, and observed/counterfactual cache economics are
+Follow-up on `2026-07-25`: the official OpenAI `gpt-5.5` list price was
+accepted only as a clearly labeled interim runtime-estimate baseline. M4 price
+metadata and the existing 20-call cohort's retrospective cache economics are
 recorded in
-[WordPress Title And Summary Controlled Trial And Cache Economics](wordpress-title-summary-controlled-trial-and-cache-economics-2026-07-25.md).
+[Provider Pricing And Cache Economics Revalidation](provider-pricing-and-cache-economics-revalidation-2026-07-25.md).
 The historical gateway-specific billing limitation above remains in force.
 
 ## Verification And Boundaries
