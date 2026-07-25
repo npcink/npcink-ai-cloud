@@ -12,6 +12,13 @@ This is a development retrospective and handoff record. It is not a new public
 runtime contract, production approval, GA claim, pricing decision, WordPress
 write authorization, or permission to import Pi's agent architecture.
 
+Follow-up: the three independent gaps listed in this record were subsequently
+handled. Their reconciled current status, corrections, remaining deferrals,
+and development lessons are recorded in
+[Provider Three-Item Closeout And Development Retrospective](provider-three-item-closeout-and-development-retrospective-2026-07-25.md).
+The historical “Next focus” and pending rows below describe this document's
+original stage boundary; they are not the current project ledger.
+
 ## Executive Summary
 
 The useful lesson from the upstream project was not "replace the current
@@ -379,6 +386,7 @@ Do not expand this closeout into:
 
 ## Related Records
 
+- [Provider Three-Item Closeout And Development Retrospective](provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
 - [Provider Runtime Evidence Surface Validation](provider-runtime-evidence-surface-validation-2026-07-25.md)
 - [Pi-Inspired Provider Runtime Compatibility Evidence](pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [Project Remediation and Development Retrospective](project-remediation-and-development-retrospective-2026-07-25.md)
