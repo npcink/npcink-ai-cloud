@@ -512,3 +512,27 @@ jobs:
             echo "" >> "${GITHUB_STEP_SUMMARY}"
             echo "Timing summary was unavailable for this run." >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+      - name: Summarize pytest shard balance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          balance_dir="$(mktemp -d "${RUNNER_TEMP}/pytest-shard-balance.XXXXXX")"
+          trap 'rm -rf "${balance_dir}"' EXIT
+          if gh run download "${GITHUB_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${balance_dir}" \
+            --pattern 'pytest-backend-timing-shard-*' >/dev/null 2>&1; then
+            if ! python3 scripts/report-pytest-shard-balance.py "${balance_dir}" \
+              >> "${GITHUB_STEP_SUMMARY}"; then
+              echo "## Pytest Shard Balance" >> "${GITHUB_STEP_SUMMARY}"
+              echo "" >> "${GITHUB_STEP_SUMMARY}"
+              echo "Pytest shard balance summary was unavailable." >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          else
+            echo "## Pytest Shard Balance" >> "${GITHUB_STEP_SUMMARY}"
+            echo "" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Pytest shard balance summary was unavailable because the full lane did not execute." \
+              >> "${GITHUB_STEP_SUMMARY}"
+          fi

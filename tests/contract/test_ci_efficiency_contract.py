@@ -11,6 +11,7 @@ CLASSIFIER = ROOT / "scripts" / "classify-ci-changes.sh"
 DOCS_GATE = ROOT / "scripts" / "check-docs-only.sh"
 BACKEND_GATE = ROOT / "scripts" / "check-pr-backend-gate.sh"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
+BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
@@ -45,10 +46,13 @@ def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
         "docs_only": "true",
     }
 
-    assert _classify(
-        "docs/m4-preview-development-v1.md",
-        "tests/contract/test_ci_efficiency_contract.py",
-    )["docs_only"] == "false"
+    assert (
+        _classify(
+            "docs/m4-preview-development-v1.md",
+            "tests/contract/test_ci_efficiency_contract.py",
+        )["docs_only"]
+        == "false"
+    )
 
 
 def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() -> None:
@@ -79,7 +83,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
 
     assert "git -C" in docs_gate
     assert "mapfile" not in docs_gate
-    assert "changed_files+=(\"${changed_file}\")" in docs_gate
+    assert 'changed_files+=("${changed_file}")' in docs_gate
     assert "--diff-filter=ACMRD" in docs_gate
     assert "diff --check" in docs_gate
     assert "check-release-policy.sh" in docs_gate
@@ -123,7 +127,7 @@ def test_docs_only_gate_runs_fail_closed_with_system_bash() -> None:
 def test_targeted_backend_gate_times_contracts_without_rerunning_changed_contracts() -> None:
     source = BACKEND_GATE.read_text(encoding="utf-8")
     changed_test_selection = source.split(
-        'while IFS= read -r path; do',
+        "while IFS= read -r path; do",
         1,
     )[1].split(
         'done < "${TMP_CHANGED}"',
@@ -144,14 +148,43 @@ def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
         capture_output=True,
         check=True,
     )
+    too_few_result = subprocess.run(
+        ["bash", str(WEIGHT_REFRESH), "--", "123"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
     source = WEIGHT_REFRESH.read_text(encoding="utf-8")
     package = (ROOT / "package.json").read_text(encoding="utf-8")
 
     assert "ci:pytest:weights:refresh" in help_result.stdout
+    assert too_few_result.returncode == 2
+    assert "at least 3 run ids are required" in too_few_result.stderr
     assert "EXPECTED_SHARDS=3" in source
+    assert "MINIMUM_RUNS=3" in source
     assert "gh run download" in source
+    assert "validate_master_run" in source
+    assert "success\\tpush\\tmaster" in source
+    assert "--recent-master" in source
+    assert "--event push" in source
+    assert "--status success" in source
     assert "pytest-backend-timing-shard-*" in source
     assert "write-pytest-duration-weights.py" in source
     assert "expected ${EXPECTED_SHARDS} pytest shard reports" in source
+    assert "--aggregation mean-plus-stddev" in source
     assert 'mv "${OUTPUT_TEMP}" "${ROOT_DIR}/ci/pytest-backend-durations.json"' in source
     assert '"ci:pytest:weights:refresh"' in package
+
+
+def test_pytest_balance_observability_is_advisory_and_uses_complete_artifacts() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    report = BALANCE_REPORT.read_text(encoding="utf-8")
+
+    assert "Summarize pytest shard balance" in workflow
+    assert "gh run download" in workflow
+    assert "report-pytest-shard-balance.py" in workflow
+    assert "Pytest shard balance summary was unavailable" in workflow
+    assert "::warning title=Pytest shard balance drift::" in report
+    assert "actual_max_min_ratio" in report
+    assert "file_drift_seconds" in report
