@@ -128,6 +128,10 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
       name: /Start with one site.*Scale with your runtime|从一站起步.*按运行规模升级/i,
     })
   ).toBeVisible();
+  await page.getByRole('button', { name: /Open menu|打开菜单/i }).click();
+  await expect(page.getByRole('link', { name: /Service status|服务状态/i }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: /Sign in|登录服务中心/i }).last()).toBeVisible();
+  await page.getByRole('button', { name: /Close menu|关闭菜单/i }).click();
   await expect(page).toHaveScreenshot('marketing-home-mobile.png', {
     fullPage: true,
     animations: 'disabled',
@@ -135,4 +139,23 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
     scale: 'css',
     maxDiffPixelRatio: 0.02,
   });
+});
+
+test('public status explains impact and offers a fresh check', async ({ page }) => {
+  await page.route('**/api/health', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'healthy',
+        checked_at: '2026-07-25T08:00:00Z',
+      }),
+    });
+  });
+
+  await page.goto('/status');
+  await expect(page.getByRole('heading', { name: /Public entry is operational|公开入口运行正常/i })).toBeVisible();
+  await expect(page.getByText(/no public-entry outage detected|未发现公开入口故障/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Check again|重新检查/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Sign in to view|登录后查看/i }).first()).toBeVisible();
 });

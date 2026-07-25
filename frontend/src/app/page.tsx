@@ -36,7 +36,7 @@ export default function HomePage() {
 
   return (
     <PublicSiteShell>
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <section className="relative overflow-hidden border-b border-slate-200 bg-[#0b1424] text-white dark:border-white/10">
           <div className="absolute inset-0 opacity-60 [background-image:linear-gradient(rgba(255,255,255,.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.045)_1px,transparent_1px)] [background-size:56px_56px]" />
           <div className="absolute -right-24 top-24 h-80 w-80 rounded-full bg-[#2357ff]/35 blur-3xl" />

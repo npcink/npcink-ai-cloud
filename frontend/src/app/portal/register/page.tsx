@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useState } from 'react';
 import { PortalAuthShell } from '@/components/portal/PortalAuthShell';
 import { PortalCard } from '@/components/portal/PortalScaffold';
@@ -23,8 +23,22 @@ interface RegisterFormState {
 
 function RegisterFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const { isAuthenticated, isLoading, refresh } = useSession();
+  const requestedPlan = searchParams.get('plan') === 'plus'
+    ? 'plus'
+    : searchParams.get('plan') === 'pro'
+      ? 'pro'
+      : null;
+  const postRegistrationTarget = requestedPlan
+    ? `/portal/billing?plan=${requestedPlan}&action=upgrade`
+    : '/portal';
+  const requestedPlanLabel = requestedPlan === 'plus'
+    ? 'Plus'
+    : requestedPlan === 'pro'
+      ? 'Pro'
+      : 'Free';
   const [form, setForm] = useState<RegisterFormState>({
     email: '',
     code: '',
@@ -35,9 +49,9 @@ function RegisterFormContent() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace('/portal');
+      router.replace(postRegistrationTarget);
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, postRegistrationTarget, router]);
 
   if (isLoading || isAuthenticated) {
     return <LoadingFallback />;
@@ -112,7 +126,7 @@ function RegisterFormContent() {
     try {
       await portalClient.verifyRegistration({ email, code });
       await refresh();
-      window.location.replace('/portal');
+      window.location.replace(postRegistrationTarget);
     } catch (error) {
       setForm((prev) => ({
         ...prev,
@@ -199,17 +213,29 @@ function RegisterFormContent() {
         <>
           <PortalCard className="bg-white/70 dark:bg-slate-950/35">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-300">
-              {t('portal.register.free_label', undefined, 'Free')}
+              {requestedPlanLabel}
             </p>
             <h2 className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
-              {t('portal.register.free_title', undefined, 'Start with one WordPress site')}
+              {requestedPlan
+                ? t(
+                    'portal.register.plan_intent_title',
+                    { plan: requestedPlanLabel },
+                    `Continue with ${requestedPlanLabel} after signup`
+                  )
+                : t('portal.register.free_title', undefined, 'Start with one WordPress site')}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              {t(
-                'portal.register.desc',
-                undefined,
-                'Use QQ to create a Free account directly, or continue with email verification.'
-              )}
+              {requestedPlan
+                ? t(
+                    'portal.register.plan_intent_desc',
+                    { plan: requestedPlanLabel },
+                    `Create the account first. We will keep your ${requestedPlanLabel} selection and open the current package offer before payment.`
+                  )
+                : t(
+                    'portal.register.desc',
+                    undefined,
+                    'Use QQ to create a Free account directly, or continue with email verification.'
+                  )}
             </p>
           </PortalCard>
           <PortalCard className="mt-4 bg-white/70 dark:bg-slate-950/35">
@@ -219,7 +245,10 @@ function RegisterFormContent() {
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               {t('portal.register.already_desc', undefined, 'Use your email verification code to log in.')}
             </p>
-            <Link href="/portal/login" className="btn btn-secondary mt-4 w-full justify-center">
+            <Link
+              href={`/portal/login?redirect=${encodeURIComponent(postRegistrationTarget)}`}
+              className="btn btn-secondary mt-4 w-full justify-center"
+            >
               {t('nav.sign_in')}
             </Link>
           </PortalCard>
@@ -227,7 +256,7 @@ function RegisterFormContent() {
       )}
     >
       <div className="space-y-5">
-        <QqLoginButton />
+        <QqLoginButton returnTo={postRegistrationTarget} />
         <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
           <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
           <span>{t('auth.or_email_code', undefined, 'or register with email')}</span>

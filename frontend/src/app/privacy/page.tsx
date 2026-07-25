@@ -18,10 +18,15 @@ export default function PrivacyPage() {
           <p>We use this information to authenticate you, create or maintain your Free account, provide hosted runtime and usage records, prevent abuse, diagnose service issues, and respond to support requests.</p>
         </DocumentSection>
         <DocumentSection title="Storage and sharing">
-          <p>We retain information only as needed for service operation, security, accounting, and legal obligations. We do not sell personal information. Service providers receive only the information needed to perform their contracted function.</p>
+          <p>We retain information only as needed for service operation, security, accounting, dispute handling, and legal obligations. Retention periods vary by record type; payment, security, and audit evidence may need to remain after account closure.</p>
+          <p>We do not sell personal information. Authentication, email delivery, payment, infrastructure, and model providers receive only the information needed to perform their contracted function.</p>
+        </DocumentSection>
+        <DocumentSection title="Security and cross-service processing">
+          <p>We use access controls, scoped credentials, transport security, and operational logging to protect service data. No internet service can guarantee absolute security.</p>
+          <p>When a requested AI operation uses a model provider, the content and instructions needed for that operation may be sent to the selected provider. The connected WordPress site remains responsible for deciding what content to submit.</p>
         </DocumentSection>
         <DocumentSection title="Your choices">
-          <p>You can unbind QQ login in the Portal account page. For access, correction, deletion, or other privacy requests, sign in and submit a request through the service support area.</p>
+          <p>You can unbind QQ login in the Portal account page. For access, correction, account closure, deletion, or other privacy requests, sign in and submit a ticket. We may verify identity and retain records that must be kept for security, payment, dispute, or legal reasons.</p>
         </DocumentSection>
       </PublicDocument>
     );
@@ -37,10 +42,15 @@ export default function PrivacyPage() {
         <p>这些信息用于完成身份认证、创建或维护 Free 账号、提供托管运行与用量记录、防止滥用、诊断服务问题，以及处理支持请求。</p>
       </DocumentSection>
       <DocumentSection title="保存与共享">
-        <p>我们只在服务运营、安全、账务与法定义务所需的期限内保存信息，不出售个人信息。服务提供方仅在履行其受托功能所必需的范围内处理数据。</p>
+        <p>我们只在服务运营、安全、账务、争议处理与法定义务所需的期限内保存信息。不同记录的期限可能不同；账号关闭后，支付、安全和审计证据仍可能依法或为处理争议继续保存。</p>
+        <p>我们不出售个人信息。身份认证、邮件发送、支付、基础设施和模型服务提供方，仅在履行其受托功能所必需的范围内处理数据。</p>
+      </DocumentSection>
+      <DocumentSection title="安全与跨服务处理">
+        <p>我们通过访问控制、限定范围的凭据、传输安全与运营日志保护服务数据，但任何互联网服务都无法保证绝对安全。</p>
+        <p>当您发起的 AI 操作需要使用模型提供方时，完成该次操作所需的内容与指令可能会发送给所选提供方。连接的 WordPress 站点仍负责决定提交哪些内容。</p>
       </DocumentSection>
       <DocumentSection title="您的选择">
-        <p>您可以在服务中心的账号页面解除 QQ 登录绑定。如需访问、更正、删除信息或提出其他隐私请求，请登录后通过服务支持入口提交。</p>
+        <p>您可以在服务中心的账号页面解除 QQ 登录绑定。如需访问、更正、关闭账号、删除信息或提出其他隐私请求，请登录后提交工单。我们可能需要验证身份，并保留因安全、支付、争议或法定义务必须继续保存的记录。</p>
       </DocumentSection>
     </PublicDocument>
   );

@@ -38,8 +38,20 @@ function useSessionController(): UseSessionReturn {
   const loadSession = useCallback(async () => {
     try {
       const response = await portalClient.getSession();
+      let nextSession = response.data;
+      const activeSites = nextSession.sites.filter((site) => site.status === 'active');
+      if (!nextSession.selected_context && activeSites.length === 1) {
+        try {
+          const selected = await portalClient.selectSite(activeSites[0].site_id);
+          nextSession = selected.data;
+        } catch {
+          // Keep the authenticated session usable if automatic context
+          // selection is temporarily unavailable. The site can still be
+          // selected explicitly from the workspace.
+        }
+      }
       setState({
-        session: response.data,
+        session: nextSession,
         isLoading: false,
         isAuthenticated: true,
         error: null,

@@ -76,7 +76,7 @@ const tierCopy: Record<
     enPositioning: 'For teams that need multi-site coverage and higher runtime headroom.',
     zhAction: '申请方案',
     enAction: 'Request a plan',
-    href: '/portal/login?next=/portal/support',
+    href: '/portal/login?redirect=%2Fportal%2Fsupport',
   },
 };
 

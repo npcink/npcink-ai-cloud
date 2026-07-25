@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 export default function robots(): MetadataRoute.Robots {
+  const baseUrl = (process.env.CLOUD_PUBLIC_BASE_URL || 'https://cloud.npc.ink').replace(/\/+$/, '');
   return {
     rules: [
       {
@@ -9,6 +10,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/admin/', '/portal/'],
       },
     ],
-    sitemap: 'https://cloud.npc.ink/sitemap.xml',
+    sitemap: `${baseUrl}/sitemap.xml`,
   };
 }

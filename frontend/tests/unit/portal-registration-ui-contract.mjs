@@ -89,8 +89,8 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /const \{ isAuthenticated, isLoading, refresh \} = useSession\(\);[\s\S]*!isLoading && isAuthenticated[\s\S]*router\.replace\('\/portal'\)/,
-  'authenticated users must leave the Portal registration page for the default workspace'
+  /const \{ isAuthenticated, isLoading, refresh \} = useSession\(\);[\s\S]*const postRegistrationTarget = requestedPlan[\s\S]*!isLoading && isAuthenticated[\s\S]*router\.replace\(postRegistrationTarget\)/,
+  'authenticated users must leave registration for the default workspace or preserved package intent'
 );
 assert.match(
   registerSource,
@@ -99,8 +99,13 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /await portalClient\.verifyRegistration\([\s\S]*await refresh\(\)[\s\S]*window\.location\.replace\('\/portal'\)/,
-  'portal registration must refresh the cookie-backed Portal session and use a full-page navigation before entering the dashboard'
+  /await portalClient\.verifyRegistration\([\s\S]*await refresh\(\)[\s\S]*window\.location\.replace\(postRegistrationTarget\)/,
+  'portal registration must refresh the cookie-backed session and preserve package intent during full-page navigation'
+);
+assert.match(
+  registerSource,
+  /searchParams\.get\('plan'\)[\s\S]*<QqLoginButton returnTo=\{postRegistrationTarget\}/,
+  'portal registration must preserve a valid paid-plan intent through QQ authentication'
 );
 assert.match(
   registerSource,

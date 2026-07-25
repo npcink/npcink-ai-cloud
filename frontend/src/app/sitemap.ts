@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.CLOUD_PUBLIC_BASE_URL || 'https://cloud.npc.ink';
+  const baseUrl = (process.env.CLOUD_PUBLIC_BASE_URL || 'https://cloud.npc.ink').replace(/\/+$/, '');
   return [
     { url: baseUrl, changeFrequency: 'monthly', priority: 1 },
     { url: `${baseUrl}/status`, changeFrequency: 'daily', priority: 0.7 },

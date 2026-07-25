@@ -7,7 +7,11 @@ import type {
   PortalPlanComparisonTier,
   PortalPlanOffer,
 } from '@/lib/portal-client';
-import { formatPortalCurrency } from '@/lib/currency';
+import {
+  DEFAULT_PORTAL_CURRENCY,
+  formatPortalCurrency,
+  normalizePortalCurrency,
+} from '@/lib/currency';
 import { formatNumber } from '@/lib/utils';
 
 export type PortalPackageTier = 'free' | 'plus' | 'pro';
@@ -49,6 +53,13 @@ const requiredComparisonRights: PortalPlanComparisonRightKey[] = [
   'concurrency_limit',
   'batch_item_limit',
 ];
+
+function formatOfferAmount(offer: PortalPlanOffer): string {
+  return formatPortalCurrency(offer.amount, {
+    from: normalizePortalCurrency(offer.currency),
+    to: DEFAULT_PORTAL_CURRENCY,
+  });
+}
 
 export function PortalPackageChangePanel({
   t,
@@ -99,8 +110,8 @@ export function PortalPackageChangePanel({
       description: plusOffer && plusRightsArePublished
         ? t(
             'portal.package.paid_offer_desc',
-            { amount: formatPortalCurrency(plusOffer.amount) },
-            `${formatPortalCurrency(plusOffer.amount)} for 30 days.`
+            { amount: formatOfferAmount(plusOffer) },
+            `${formatOfferAmount(plusOffer)} for 30 days.`
           )
         : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.'),
       selectable: Boolean(plusOffer && plusRightsArePublished),
@@ -121,8 +132,8 @@ export function PortalPackageChangePanel({
       description: proOffer && proRightsArePublished
         ? t(
             'portal.package.paid_offer_desc',
-            { amount: formatPortalCurrency(proOffer.amount) },
-            `${formatPortalCurrency(proOffer.amount)} for 30 days.`
+            { amount: formatOfferAmount(proOffer) },
+            `${formatOfferAmount(proOffer)} for 30 days.`
           )
         : t('portal.package.offer_unavailable_desc', {}, 'This package is not currently available for purchase.'),
       selectable: Boolean(proOffer && proRightsArePublished),
@@ -197,7 +208,7 @@ export function PortalPackageChangePanel({
   const selectedTierRightsArePublished = selectedTier
     ? tierRightsArePublished(selectedTier)
     : false;
-  const selectedAmount = selectedOffer ? formatPortalCurrency(selectedOffer.amount) : '';
+  const selectedAmount = selectedOffer ? formatOfferAmount(selectedOffer) : '';
   const actionLabel = selectedTier === 'free'
     ? t('portal.package.schedule_free_downgrade', {}, 'Switch to Free at period end')
     : selectedTier === 'plus' || selectedTier === 'pro'
@@ -394,8 +405,8 @@ export function PortalPackageChangePanel({
             {agencyOffer
               ? t(
                   'portal.billing.agency_quote_ready_desc',
-                  { amount: formatPortalCurrency(agencyOffer.amount) },
-                  `Your Agency quote is ready at ${formatPortalCurrency(agencyOffer.amount)} for 30 days.`
+                  { amount: formatOfferAmount(agencyOffer) },
+                  `Your Agency quote is ready at ${formatOfferAmount(agencyOffer)} for 30 days.`
                 )
               : t('portal.package.agency_desc', {}, 'Custom high-volume coverage. Submit a request for a time-limited quote and approved trial.')}
           </p>
