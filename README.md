@@ -66,6 +66,7 @@ Evidence records (not target-contract completion proof):
 - [docs/project-remediation-and-development-retrospective-2026-07-25.md](docs/project-remediation-and-development-retrospective-2026-07-25.md)
 - [docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md](docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md)
 - [docs/provider-three-item-closeout-and-development-retrospective-2026-07-25.md](docs/provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
+- [docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md](docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md)
 
 Operational references:
 
@@ -158,6 +159,7 @@ repository; it points at a path that no longer exists here.
 - local frontend dependency lock check: `pnpm run check:frontend-locks`
 - local frontend health check: `bash scripts/dev-frontend-doctor.sh`
 - local frontend dependency recovery: `bash scripts/dev-frontend-recover.sh`
+- shared real-Provider experiment budget: `pnpm run provider:call-ledger --help`
 - perimeter seam: `pnpm run check:perimeter`
 - hosted runtime smoke: `pnpm run smoke:local-alpha`
 - internal alpha onboarding smoke: `pnpm run smoke:internal-alpha-onboarding`
