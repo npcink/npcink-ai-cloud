@@ -8,6 +8,7 @@ const login = read('src/app/portal/login/page.tsx');
 const register = read('src/app/portal/register/page.tsx');
 const health = read('src/app/api/health/route.ts');
 const publicShell = read('src/components/public/PublicSiteShell.tsx');
+const publicStatus = read('src/components/public/PublicStatusSummary.tsx');
 const legacyFooter = read('src/components/ui/Footer.tsx');
 const legacyNavbar = read('src/components/ui/Navbar.tsx');
 const proxy = read('src/proxy.ts');
@@ -32,6 +33,10 @@ assert.match(proxy, /X-Robots-Tag[\s\S]*noindex/, 'admin responses must opt out 
 
 assert.match(health, /status: 'healthy'/, 'machine health must retain a stable status field');
 assert.match(health, /checked_at:/, 'machine health must expose its check time');
+assert.match(home, /<PublicStatusSummary/, 'home must expose a public service-status summary');
+assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the minimal public health endpoint');
+assert.match(publicStatus, /href="\/status"/, 'home status must link to the full status page');
+assert.match(publicShell, /href: '\/status'/, 'public navigation must link to the full status page');
 assert.doesNotMatch(
   health,
   /process\.uptime|npm_package_version|NODE_ENV/,

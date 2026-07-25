@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { PublicPricingSection } from '@/components/public/PublicPricingSection';
 import { PublicSiteShell } from '@/components/public/PublicSiteShell';
+import { PublicStatusSummary } from '@/components/public/PublicStatusSummary';
 import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { useLocale } from '@/contexts/LocaleContext';
 
@@ -97,6 +98,8 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        <PublicStatusSummary />
 
         <section id="capabilities" className="mx-auto max-w-7xl px-5 py-24 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-[.7fr_1.3fr]">
