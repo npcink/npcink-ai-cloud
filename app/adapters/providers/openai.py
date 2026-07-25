@@ -68,6 +68,18 @@ MAX_PROVIDER_IMAGE_RESPONSE_BYTES = (((MAX_PROVIDER_IMAGE_TOTAL_BYTES + 2) // 3)
 )
 ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS = frozenset({"url", "b64_json"})
 ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "max"})
+ALLOWED_MODEL_METADATA_OVERRIDE_FIELDS = frozenset(
+    {
+        "context_window",
+        "price_input",
+        "price_output",
+        "price_cache_read",
+        "price_cache_write",
+        "source",
+        "revision",
+    }
+)
+MAX_MODEL_METADATA_OVERRIDES = 100
 ALLOWED_PROVIDER_IMAGE_USAGE_FIELDS = frozenset(
     {
         "cost",
@@ -90,6 +102,49 @@ def _truncate_upstream_error_message(value: str) -> str:
     if len(value) <= MAX_UPSTREAM_ERROR_MESSAGE_CHARS:
         return value
     return f"{value[:MAX_UPSTREAM_ERROR_MESSAGE_CHARS]}...[truncated]"
+
+
+def _normalize_model_metadata_overrides(
+    value: object,
+) -> dict[str, dict[str, object]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, dict[str, object]] = {}
+    for raw_model_id, raw_override in list(value.items())[:MAX_MODEL_METADATA_OVERRIDES]:
+        model_id = str(raw_model_id or "").strip()
+        if not model_id or len(model_id) > 191 or not isinstance(raw_override, dict):
+            continue
+        override: dict[str, object] = {}
+        for raw_key, raw_value in raw_override.items():
+            key = str(raw_key or "").strip()
+            if key not in ALLOWED_MODEL_METADATA_OVERRIDE_FIELDS:
+                continue
+            if key == "context_window":
+                if isinstance(raw_value, bool):
+                    continue
+                try:
+                    context_window = int(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                if context_window > 0:
+                    override[key] = context_window
+                continue
+            if key.startswith("price_"):
+                if isinstance(raw_value, bool):
+                    continue
+                try:
+                    price = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(price) and price >= 0:
+                    override[key] = price
+                continue
+            text = str(raw_value or "").strip()
+            if text:
+                override[key] = text[:191]
+        if override:
+            normalized[model_id] = override
+    return normalized
 
 
 class OpenAIProviderAdapter:
@@ -116,6 +171,7 @@ class OpenAIProviderAdapter:
         image_response_format: str | None = None,
         default_reasoning_effort: str | None = None,
         prompt_cache_affinity_enabled: bool | None = None,
+        model_metadata_overrides: object = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -157,6 +213,9 @@ class OpenAIProviderAdapter:
             else bool(prompt_cache_affinity_enabled)
         )
         self._prompt_cache_key_supported = self.prompt_cache_affinity_enabled
+        self.model_metadata_overrides = _normalize_model_metadata_overrides(
+            model_metadata_overrides
+        )
         if self.provider_label:
             self.display_name = self.provider_label
         self.transport = transport
@@ -466,7 +525,13 @@ class OpenAIProviderAdapter:
                 "image generation response must be a JSON object",
             )
         latency_ms = max(1, int((time.monotonic() - started_at) * 1000))
-        return self._build_http_result(result_request, response_json, latency_ms)
+        result = self._build_http_result(result_request, response_json, latency_ms)
+        if result_request.endpoint_variant in {"responses", "chat_completions"}:
+            result.cache_affinity_applied = bool(
+                payload.get("prompt_cache_key")
+                and self._prompt_cache_key_supported
+            )
+        return result
 
     def _post_with_compatibility_retry(
         self,
@@ -1414,14 +1479,31 @@ class OpenAIProviderAdapter:
         if not isinstance(model_id, str) or not model_id:
             return None
         catalog_model_id = self._namespace_catalog_model_id(model_id)
+        metadata_override = self.model_metadata_overrides.get(
+            model_id,
+            self.model_metadata_overrides.get(catalog_model_id, {}),
+        )
+        effective_payload = {
+            **payload,
+            **{
+                key: value
+                for key, value in metadata_override.items()
+                if key not in {"source", "revision"}
+            },
+        }
 
-        feature = self._infer_catalog_feature(model_id, payload)
-        tier = self._infer_catalog_tier(model_id, feature, payload)
-        region = self._infer_catalog_region(payload)
-        status = self._infer_catalog_status(payload)
-        is_deprecated = self._infer_catalog_deprecated(status, payload)
+        feature = self._infer_catalog_feature(model_id, effective_payload)
+        tier = self._infer_catalog_tier(model_id, feature, effective_payload)
+        region = self._infer_catalog_region(effective_payload)
+        status = self._infer_catalog_status(effective_payload)
+        is_deprecated = self._infer_catalog_deprecated(status, effective_payload)
         endpoint_variant = self._select_catalog_endpoint_variant(feature, tier)
-        runtime_pricing = self._runtime_cache_pricing(payload)
+        runtime_pricing = self._runtime_cache_pricing(effective_payload)
+        override_evidence = {
+            key: metadata_override[key]
+            for key in ("source", "revision")
+            if key in metadata_override
+        }
 
         return CatalogModelSeed(
             model_id=catalog_model_id,
@@ -1430,7 +1512,7 @@ class OpenAIProviderAdapter:
             status=status,
             context_window=self._coerce_int(
                 self._lookup_nested(
-                    payload,
+                    effective_payload,
                     ("context_window",),
                     ("context_length",),
                     ("max_context_tokens",),
@@ -1440,7 +1522,7 @@ class OpenAIProviderAdapter:
             ),
             price_input=self._coerce_float(
                 self._lookup_nested(
-                    payload,
+                    effective_payload,
                     ("price_input",),
                     ("pricing", "input"),
                     ("pricing", "input_per_million"),
@@ -1449,7 +1531,7 @@ class OpenAIProviderAdapter:
             ),
             price_output=self._coerce_float(
                 self._lookup_nested(
-                    payload,
+                    effective_payload,
                     ("price_output",),
                     ("pricing", "output"),
                     ("pricing", "output_per_million"),
@@ -1469,6 +1551,11 @@ class OpenAIProviderAdapter:
                 "owned_by": payload.get("owned_by"),
                 "upstream_model_id": model_id,
                 **({"runtime_pricing": runtime_pricing} if runtime_pricing else {}),
+                **(
+                    {"operator_metadata_override": override_evidence}
+                    if override_evidence
+                    else {}
+                ),
             },
             instances=[
                 CatalogInstanceSeed(
@@ -1483,7 +1570,7 @@ class OpenAIProviderAdapter:
                         model_id,
                         feature,
                         tier,
-                        payload,
+                        effective_payload,
                     ),
                     is_default=True,
                     weight=self._catalog_weight_for_tier(tier),

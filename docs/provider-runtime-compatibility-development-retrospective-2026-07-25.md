@@ -379,6 +379,7 @@ Do not expand this closeout into:
 
 ## Related Records
 
+- [Provider Runtime Evidence Surface Validation](provider-runtime-evidence-surface-validation-2026-07-25.md)
 - [Pi-Inspired Provider Runtime Compatibility Evidence](pi-provider-runtime-compatibility-evidence-2026-07-25.md)
 - [Project Remediation and Development Retrospective](project-remediation-and-development-retrospective-2026-07-25.md)
 - [Text Model Provider Integration Decision](text-model-provider-integration-decision-2026-07-11.md)

@@ -412,6 +412,14 @@ def test_context_preflight_skips_small_model_and_falls_back_without_upstream_cal
             "estimated_total_tokens": 111,
             "context_window": 100,
         }
+        assert usage_recorder.calls[1]["usage_context"] == {
+            "context_preflight": "accepted",
+            "estimated_input_tokens": 75,
+            "requested_output_tokens": 20,
+            "context_safety_margin_tokens": 16,
+            "estimated_total_tokens": 111,
+            "context_window": 200,
+        }
 
 
 def test_provider_result_passes_cache_usage_context_to_metering(database_url: str) -> None:

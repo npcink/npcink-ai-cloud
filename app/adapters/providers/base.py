@@ -112,6 +112,7 @@ class ProviderExecutionResult:
     cache_write_tokens: int = 0
     reasoning_tokens: int = 0
     cost_estimate_mode: str = ""
+    cache_affinity_applied: bool | None = None
 
     def usage_context(self) -> dict[str, object]:
         total_input_tokens = max(0, int(self.tokens_in or 0))
@@ -124,7 +125,7 @@ class ProviderExecutionResult:
         )
         context: dict[str, object] = {}
         has_cache_evidence = cache_read_tokens > 0 or cache_write_tokens > 0
-        if has_cache_evidence:
+        if self.uncached_input_tokens is not None or has_cache_evidence:
             context.update(
                 {
                     "input_tokens_uncached": uncached_input_tokens,
@@ -142,6 +143,8 @@ class ProviderExecutionResult:
             )
         if self.cost_estimate_mode:
             context["cost_estimate_mode"] = self.cost_estimate_mode
+        if self.cache_affinity_applied is not None:
+            context["cache_affinity_applied"] = self.cache_affinity_applied
         return context
 
 

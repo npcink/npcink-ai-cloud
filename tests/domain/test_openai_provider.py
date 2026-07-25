@@ -72,6 +72,44 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
     assert snapshot.models[3].instances[0].endpoint_variant == "embeddings"
 
 
+def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": "gateway-model"}]})
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        model_metadata_overrides={
+            "gateway-model": {
+                "context_window": 64000,
+                "price_input": 1.25,
+                "price_output": 5,
+                "price_cache_read": 0.125,
+                "price_cache_write": 1.25,
+                "source": "gateway billing console",
+                "revision": "2026-07-25",
+                "ignored_nested": {"secret": "must-not-project"},
+            }
+        },
+        transport=httpx.MockTransport(handler),
+    )
+
+    model = adapter.fetch_catalog().models[0]
+
+    assert model.context_window == 64000
+    assert model.price_input == 1.25
+    assert model.price_output == 5.0
+    assert model.raw_json["runtime_pricing"] == {
+        "cache_read": 0.125,
+        "cache_write": 1.25,
+    }
+    assert model.raw_json["operator_metadata_override"] == {
+        "source": "gateway billing console",
+        "revision": "2026-07-25",
+    }
+    assert "ignored_nested" not in model.raw_json
+
+
 def test_openai_adapter_classifies_bge_catalog_models_as_embeddings() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/models")
@@ -1461,6 +1499,7 @@ def test_openai_adapter_applies_cache_affinity_and_normalizes_cached_usage() -> 
         "reasoning_tokens": 20,
         "cache_hit_ratio": 0.8,
         "cost_estimate_mode": "cache_rates",
+        "cache_affinity_applied": True,
     }
 
 
@@ -1506,14 +1545,16 @@ def test_openai_adapter_disables_unsupported_prompt_cache_key_after_one_retry() 
         },
     )
 
-    adapter.execute(request)
+    first_result = adapter.execute(request)
     request.input_payload["input"] = (
         "Use this stable instruction and return only the final value."
         "\n\nScene input:\nsecond"
     )
-    adapter.execute(request)
+    second_result = adapter.execute(request)
 
     assert prompt_cache_presence == [True, False, False]
+    assert first_result.cache_affinity_applied is False
+    assert second_result.cache_affinity_applied is False
 
 
 def test_openai_adapter_maps_context_overflow_separately_from_invalid_request() -> None:

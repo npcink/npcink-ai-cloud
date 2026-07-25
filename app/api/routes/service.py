@@ -4988,6 +4988,38 @@ async def get_runtime_diagnostics_summary(
     )
 
 
+@router.get("/runtime/provider-evidence/summary")
+async def get_provider_runtime_evidence_summary(
+    request: Request,
+    site_id: str | None = Query(default=None),
+    provider_id: str | None = Query(default=None, min_length=1, max_length=64),
+    model_id: str | None = Query(default=None, min_length=1, max_length=191),
+    ability_name: str | None = Query(default=None, min_length=1, max_length=191),
+    recent_minutes: int = Query(default=1440, ge=1, le=10080),
+    lane_limit: int = Query(default=50, ge=1, le=100),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = RuntimeService(
+        services.settings.database_url
+    ).get_provider_runtime_evidence_summary(
+        site_id=site_id,
+        provider_id=provider_id,
+        model_id=model_id,
+        ability_name=ability_name,
+        recent_minutes=recent_minutes,
+        lane_limit=lane_limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="provider runtime evidence summary loaded",
+        data=result,
+        revision="m1",
+    )
+
+
 @router.get("/runtime/diagnostics/nightly-inspection")
 async def get_nightly_inspection_observability(
     request: Request,
