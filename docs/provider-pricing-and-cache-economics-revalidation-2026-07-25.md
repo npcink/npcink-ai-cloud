@@ -2,7 +2,9 @@
 
 Status: source/local and corrected M4 candidate verified. Correction PR `#264`
 passed CI, merged as `f478d3dd`, and was accepted on M4 from clean `master`.
-Production was not changed.
+Production was not changed. Human/external acceptance of the third-party
+gateway's actual settlement price is explicitly deferred until the reopening
+conditions below are met.
 
 This is the independent price/cache-economics work item. It does not change AI
 credits, plans, entitlement, invoices, cache-discount policy, WordPress
@@ -312,11 +314,61 @@ pnpm run m4:preview:test -- --focused \
 | merged into master | Correction PR #264 merged as `f478d3dd` |
 | accepted on M4 | Passed: PR #264, clean `master@f478d3dd`, post-merge exact tests 2 passed |
 | production | Not changed |
-| human/external acceptance | Pending |
+| human/external acceptance | Deferred until a reopening condition below is met; not accepted |
+
+## Third-Party Settlement Price Deferral
+
+Decision recorded `2026-07-25`: do not pursue or claim acceptance of the
+`mqzj` gateway's actual settlement price before there is commercial evidence
+to validate. The official OpenAI list-price baseline remains useful only for
+runtime cost estimation and observational cache-economics evidence. It is not
+the gateway's invoice truth and must not drive user billing, AI credits, plan
+entitlement, cache discounts, or margin claims.
+
+This decision is `human/external acceptance pending`, with lifecycle state
+`deferred_until_real_user_or_invoice_evidence`. It is not an acceptance,
+waiver, or conversion of estimated cost into settled cost. No Provider call,
+M4 change, production change, or external configuration change is required to
+record the deferral.
+
+Reopen this work before the first paid-user launch if Provider cost affects
+pricing, entitlement, spend limits, or margin decisions. Also reopen it when
+any of the following occurs:
+
+- the gateway supplies a valid tariff, invoice, settlement statement, or
+  signed commercial schedule;
+- a real-user trial creates the first reviewable settlement record;
+- the gateway changes currency, token unit, upstream model, regional tier,
+  long-context tier, cache treatment, markup, discount, tax, or effective
+  date;
+- observed external spend reaches an operator-approved materiality threshold.
+  No threshold is invented by this record; it must be stated explicitly when
+  the operator adopts one.
+
+The reopened acceptance must independently record:
+
+- the authoritative external source and evidence owner;
+- currency, unit, ordinary input, output, cache-read, and cache-write treatment;
+- effective period, regional/long-context tier, discount/markup, tax, and FX
+  handling where applicable;
+- a scalar reconciliation between Cloud's runtime estimate and the external
+  settlement record, including variance and any double-count check;
+- whether the connection must remain `unpriced`, or whether an updated
+  operator-managed runtime estimate is justified;
+- a separate reviewed decision for any user billing, AI credits, plans,
+  entitlement, or cache-discount policy change.
+
+Until then, keep the gateway settlement field externally unverified and retain
+`unpriced` whenever no trustworthy rate applies. Existing scalar usage and
+cost-estimate evidence may continue to be collected without prompts, outputs,
+credentials, or other protected payloads. A non-paid trial should retain an
+operator-controlled spend cap and alerting boundary rather than treating this
+deferral as unlimited cost authorization.
 
 ## Unverified Boundaries
 
-- Actual `api.mqzj.top` invoice price remains externally unverified.
+- Actual `api.mqzj.top` invoice price remains externally unverified and its
+  human/external acceptance is deliberately deferred under the lifecycle above.
 - No post-price real cache hit was observed.
 - No causal latency, content-quality, or natural-adoption claim is made.
 - Production, AI credits, packages, entitlement, invoices, and cache-discount
