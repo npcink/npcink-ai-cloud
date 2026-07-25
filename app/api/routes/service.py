@@ -55,6 +55,11 @@ from app.domain.service_settings import (
     ServiceSettingsAdminService,
     resolve_portal_public_base_url,
 )
+from app.domain.site_compliance import (
+    SITE_COMPLIANCE_SETTING_ID,
+    SiteComplianceAdminError,
+    SiteComplianceAdminService,
+)
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.site_knowledge.vector_profile import (
     SiteKnowledgeVectorProfileAdminError,
@@ -397,6 +402,12 @@ class ServiceSettingsEmailPreviewPayload(BaseModel):
     from_email: str = Field(default="", max_length=320)
 
 
+class SiteComplianceDraftPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payload: dict[str, Any]
+
+
 class ModelReferenceSyncPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -676,6 +687,42 @@ def _service_setting_audit_result(result: dict[str, Any]) -> dict[str, Any]:
         "status": str(result.get("status") or ""),
         "last_error_code": str(result.get("last_error_code") or ""),
     }
+
+
+def _record_site_compliance_audit(
+    request: Request,
+    *,
+    event_kind: str,
+    outcome: str,
+    result: dict[str, Any] | None = None,
+    error_code: str = "",
+    message: str = "",
+) -> None:
+    data = result or {}
+    draft = _dict_value(data.get("draft"))
+    published = _dict_value(data.get("published"))
+    validation = _dict_value(draft.get("validation"))
+    try:
+        _get_commercial_service(request).record_service_audit_event(
+            audit_context=_build_audit_context(request),
+            event_kind=event_kind,
+            outcome=outcome,
+            scope_kind="service_setting",
+            scope_id=SITE_COMPLIANCE_SETTING_ID,
+            payload_json={
+                "surface": "admin_site_compliance",
+                "draft_version_id": str(draft.get("version_id") or ""),
+                "published_version_id": str(published.get("version_id") or ""),
+                "blocker_count": len(_dict_list(validation.get("blockers"))),
+                "warning_count": len(_dict_list(validation.get("warnings"))),
+                "error_code": error_code,
+                "message": message,
+                "content_exposed": False,
+                "credential_value_exposure": "none",
+            },
+        )
+    except Exception:
+        return
 
 
 def _provider_connection_audit_payload(
@@ -3627,6 +3674,111 @@ async def get_admin_service_settings(request: Request) -> Any:
         message="service settings loaded",
         data=result,
         revision="m6",
+    )
+
+
+@router.get("/admin/site-compliance")
+async def get_admin_site_compliance(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = SiteComplianceAdminService(
+        services.settings.database_url,
+        services.settings,
+    ).get_workspace()
+    return build_envelope(
+        status="ok",
+        message="site compliance workspace loaded",
+        data=result,
+        revision="site-compliance-admin-v1",
+    )
+
+
+@router.put("/admin/site-compliance/draft")
+async def save_admin_site_compliance_draft(
+    request: Request,
+    payload: SiteComplianceDraftPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = SiteComplianceAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_draft(payload.payload, actor_ref="internal")
+    except SiteComplianceAdminError as error:
+        _record_site_compliance_audit(
+            request,
+            event_kind="site_compliance.draft.save",
+            outcome="error",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="site-compliance-admin-v1",
+            ),
+        )
+    _record_site_compliance_audit(
+        request,
+        event_kind="site_compliance.draft.save",
+        outcome="succeeded",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="site compliance draft saved",
+        data=result,
+        revision="site-compliance-admin-v1",
+    )
+
+
+@router.post("/admin/site-compliance/publish")
+async def publish_admin_site_compliance(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = SiteComplianceAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).publish(actor_ref="internal")
+    except SiteComplianceAdminError as error:
+        _record_site_compliance_audit(
+            request,
+            event_kind="site_compliance.publish",
+            outcome="error",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="site-compliance-admin-v1",
+            ),
+        )
+    _record_site_compliance_audit(
+        request,
+        event_kind="site_compliance.publish",
+        outcome="succeeded",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="site compliance published",
+        data=result,
+        revision="site-compliance-admin-v1",
     )
 
 

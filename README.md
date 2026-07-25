@@ -736,6 +736,16 @@ key family. A fresh PostgreSQL 18 installation does not import legacy raw rows
 or consume the retired P1-E06 migration evidence; historical databases are not
 accepted through a compatibility chain.
 
+Then review `/admin/site-compliance`. It derives non-secret public-disclosure
+candidates from current Cloud configuration but requires the operator to
+confirm real identity, contact, refund-processing, retention, and third-party
+facts. Saving a draft does not change public pages. Publishing creates a
+versioned snapshot for anonymous `GET /open/compliance`; drafts, validation,
+history, and credentials are never returned there. See
+[ADR-028](docs/decisions/028-versioned-public-site-compliance-projection.md)
+and the
+[public/Portal release checklist](docs/frontend-public-portal-release-checklist-v1.md).
+
 The runtime-data secret and key ID are not ordinary configuration-only rotation
 values. Changing them requires the stopped-writer inventory, backup,
 re-encryption, verification, and matched rollback procedure in
@@ -891,6 +901,8 @@ Platform admin key auth:
   - `GET /admin/plans`
   - `GET /admin/accounts/{account_id}`
   - `GET /admin/sites/{site_id}`
+  - `GET /admin/service-settings`
+  - `GET /admin/site-compliance`
 - current `/admin` overview now also includes:
   - one `Identity Layers` block for platform roles vs customer portal roles
   - one `Plan catalog` block derived from live `plan_distribution`
@@ -902,6 +914,10 @@ Platform admin key auth:
 Buyer-facing web routes:
 
 - `GET /`
+- `GET /help`
+- `GET /privacy`
+- `GET /terms`
+- `GET /status`
 - `GET /portal/login`
 - `GET /portal`
 - `GET /portal/usage`
@@ -909,12 +925,13 @@ Buyer-facing web routes:
 - `GET /portal/audit`
 - `GET /portal/logout`
 
-These routes are a bounded Cloud service status and portal layer, not a
-customer-facing commercial front-office. Marketing pages, standalone top-up
-catalog request pages, impersonation pages, compliance pages, and request queues
-are intentionally removed. The Portal usage surface may show credit-pack
-catalog, payment orders, and simulated payment status as bounded billing detail;
-real external payment provider checkout remains gated by
+These routes are a bounded Cloud public-service and Portal layer, not a second
+WordPress control plane. Standalone top-up catalog request pages,
+impersonation pages, and public request queues remain intentionally absent.
+Privacy, terms, and help keep maintained baseline copy and append only the
+current published site-compliance projection. The Portal usage surface may
+show credit-pack catalog, payment orders, and simulated payment status as
+bounded billing detail; real external payment provider checkout remains gated by
 [payment-gateway-contract-v1.md](docs/payment-gateway-contract-v1.md).
 
 ## Verification Quickstart

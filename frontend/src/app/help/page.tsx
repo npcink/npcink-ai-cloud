@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { DocumentSection, PublicDocument } from '@/components/public/PublicDocument';
+import { PublicComplianceDetails } from '@/components/public/PublicComplianceDetails';
 import { useLocale } from '@/contexts/LocaleContext';
 
 export default function HelpPage() {
@@ -48,6 +49,7 @@ export default function HelpPage() {
           <p>{zh ? '不会。QQ 仅用于 Cloud 服务中心身份认证；WordPress 内容、配置、最终确认与发布仍留在站点。' : 'No. QQ is only an identity method for the Cloud Portal. WordPress content, settings, final approval, and publishing remain in the site.'}</p>
         </div>
       </DocumentSection>
+      <PublicComplianceDetails surface="help" />
     </PublicDocument>
   );
 }

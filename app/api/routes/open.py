@@ -12,6 +12,7 @@ from app.api.routes.portal import finish_qq_login_callback
 from app.api.routes.service import _get_commercial_service
 from app.domain.commercial.errors import CommercialServiceError
 from app.domain.service_settings import resolve_alipay_payment_runtime_config
+from app.domain.site_compliance import SiteComplianceAdminService
 
 router = APIRouter(prefix="/open", tags=["open"])
 
@@ -55,6 +56,21 @@ async def list_open_plan_catalog(request: Request) -> Any:
         message="public plan catalog loaded",
         data=catalog,
         revision="public-plan-catalog-v1",
+    )
+
+
+@router.get("/compliance")
+async def get_open_site_compliance(request: Request) -> Any:
+    services = get_cloud_services(request)
+    result = SiteComplianceAdminService(
+        services.settings.database_url,
+        services.settings,
+    ).get_public_projection()
+    return build_envelope(
+        status="ok",
+        message="public site compliance loaded",
+        data=result,
+        revision="public-site-compliance-v1",
     )
 
 

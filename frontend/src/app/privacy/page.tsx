@@ -1,6 +1,7 @@
 'use client';
 
 import { DocumentSection, PublicDocument } from '@/components/public/PublicDocument';
+import { PublicComplianceDetails } from '@/components/public/PublicComplianceDetails';
 import { useLocale } from '@/contexts/LocaleContext';
 
 export default function PrivacyPage() {
@@ -28,6 +29,7 @@ export default function PrivacyPage() {
         <DocumentSection title="Your choices">
           <p>You can unbind QQ login in the Portal account page. For access, correction, account closure, deletion, or other privacy requests, sign in and submit a ticket. We may verify identity and retain records that must be kept for security, payment, dispute, or legal reasons.</p>
         </DocumentSection>
+        <PublicComplianceDetails surface="privacy" />
       </PublicDocument>
     );
   }
@@ -52,6 +54,7 @@ export default function PrivacyPage() {
       <DocumentSection title="您的选择">
         <p>您可以在服务中心的账号页面解除 QQ 登录绑定。如需访问、更正、关闭账号、删除信息或提出其他隐私请求，请登录后提交工单。我们可能需要验证身份，并保留因安全、支付、争议或法定义务必须继续保存的记录。</p>
       </DocumentSection>
+      <PublicComplianceDetails surface="privacy" />
     </PublicDocument>
   );
 }
