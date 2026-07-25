@@ -80,21 +80,28 @@ and branch protection.
 
 ## Follow-Up Order
 
-1. Refresh `ci/pytest-backend-durations.json` from all successful
-   `pytest-backend-timing-shard-*` artifacts in the same full run; passing all
-   shard XML files to `scripts/write-pytest-duration-weights.py` merges their
-   per-file timing evidence without dropping files from the other shards. Use
-   the repeatable entry point:
+1. Refresh `ci/pytest-backend-durations.json` from complete
+   `pytest-backend-timing-shard-*` artifacts for the five most recent
+   successful full `master` runs. The generator merges every shard within a
+   run, then uses each file's mean plus population standard deviation. This
+   keeps high-variance files from clustering while ensuring one run does not
+   become durable scheduling truth. Use the repeatable entry point:
 
    ```bash
-   pnpm run ci:pytest:weights:refresh -- <successful-cloud-ci-run-id>
+   pnpm run ci:pytest:weights:refresh -- --recent-master 5
    ```
-2. Compare actual wall time for `backend-static` and the three pytest shards
-   against the previous 7-8 minute monolithic backend gate.
-3. Rebalance shard count only if one shard remains the long pole for several
-   releases.
-4. Keep `production` deployment dependent on stable aggregate gates, not on
+2. Review the advisory `Pytest Shard Balance` summary. Refresh through a
+   focused PR when `max/min > 1.30` or material per-file drift persists.
+3. Observe three successful full `master` runs after refresh. Split sustained
+   slow files before adding node-level scheduling metadata.
+4. Add a fourth shard only if three shards are balanced but the critical path
+   still misses the agreed feedback target.
+5. Keep `production` deployment dependent on stable aggregate gates, not on
    individual shard names.
+
+The normative command, warning thresholds, escalation order, and verification
+gate are recorded in
+[CI Pytest Sharding v1](ci-pytest-sharding-v1.md).
 
 ## Validation Record
 
