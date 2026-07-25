@@ -170,15 +170,19 @@ class RuntimeProviderExecutionService:
         return provider.execute(request)
 
     @staticmethod
-    def enforce_context_budget(request: ProviderExecutionRequest) -> None:
+    def enforce_context_budget(
+        request: ProviderExecutionRequest,
+    ) -> dict[str, object] | None:
         assessment = assess_context_budget(
             request.input_payload,
             context_window=request.context_window,
             execution_kind=request.execution_kind,
             endpoint_variant=request.endpoint_variant,
         )
-        if assessment is None or assessment.fits:
-            return
+        if assessment is None:
+            return None
+        if assessment.fits:
+            return assessment.usage_context()
         raise ProviderExecutionError(
             "provider.context_overflow",
             "estimated context requirement exceeds the selected model budget",
@@ -305,12 +309,20 @@ class RuntimeProviderExecutionService:
                     price_cache_write=getattr(candidate, "price_cache_write", None),
                     retry_count=retry_count,
                 )
+                preflight_usage_context: dict[str, object] | None = None
                 try:
-                    self.enforce_context_budget(provider_request)
+                    preflight_usage_context = self.enforce_context_budget(
+                        provider_request
+                    )
                     provider_result = provider.execute(
                         provider_request
                     )
                 except ProviderExecutionError as error:
+                    if preflight_usage_context:
+                        error.usage_context = {
+                            **preflight_usage_context,
+                            **(error.usage_context or {}),
+                        }
                     self._record_attempt_error(
                         repository=repository,
                         run=run,
@@ -363,6 +375,7 @@ class RuntimeProviderExecutionService:
                         fallback_used=fallback_used,
                         provider_result=provider_result,
                         error_code=decision.error_code,
+                        preflight_usage_context=preflight_usage_context,
                     )
                     if allow_fallback:
                         break
@@ -385,6 +398,7 @@ class RuntimeProviderExecutionService:
                     retry_count=retry_count,
                     fallback_used=fallback_used,
                     provider_result=provider_result,
+                    preflight_usage_context=preflight_usage_context,
                 )
                 try:
                     durable_result = self.output_finalizer(
@@ -472,7 +486,12 @@ class RuntimeProviderExecutionService:
         fallback_used: bool,
         provider_result: ProviderExecutionResult,
         error_code: str | None = None,
+        preflight_usage_context: dict[str, object] | None = None,
     ) -> None:
+        usage_context = {
+            **(preflight_usage_context or {}),
+            **provider_result.usage_context(),
+        }
         self.record_provider_call(
             repository=repository,
             run=run,
@@ -489,7 +508,7 @@ class RuntimeProviderExecutionService:
                 fallback_used=fallback_used,
                 error_code=error_code,
             ),
-            usage_context=provider_result.usage_context(),
+            usage_context=usage_context,
         )
 
     @staticmethod

@@ -201,6 +201,12 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
                 "image_output_hosts": ["cdn.openai.example", "assets.openai.example"],
                 "image_response_format": "b64_json",
                 "default_reasoning_effort": "none",
+                "model_metadata_overrides": {
+                    "gpt-gateway": {
+                        "context_window": 64000,
+                        "source": "operator declaration",
+                    }
+                },
             },
             "credential": "db-openai-key",
         }
@@ -219,6 +225,12 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
     )
     assert openai.image_response_format == "b64_json"
     assert openai.default_reasoning_effort == "none"
+    assert openai.model_metadata_overrides == {
+        "gpt-gateway": {
+            "context_window": 64000,
+            "source": "operator declaration",
+        }
+    }
 
     env_only_providers = build_provider_adapters(settings, include_enabled_connections=False)
     assert "openai" not in env_only_providers

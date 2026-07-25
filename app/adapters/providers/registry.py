@@ -274,6 +274,7 @@ def _instantiate_connection_adapter(
                     if isinstance(config.get("supports_prompt_cache_key"), bool)
                     else provider_id == "openai"
                 ),
+                model_metadata_overrides=config.get("model_metadata_overrides"),
             ),
             provider_id=provider_id,
             display_name=display_name,

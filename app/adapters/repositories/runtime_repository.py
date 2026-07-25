@@ -19,6 +19,7 @@ from app.core.models import (
     RunRecord,
     RuntimeGuardEvent,
     Site,
+    UsageMeterEvent,
 )
 from app.domain.runtime.models import (
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS,
@@ -31,6 +32,11 @@ from app.domain.runtime.models import (
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
     RUNTIME_STORAGE_MODE_NO_STORE,
     RUNTIME_STORAGE_MODE_RESULT_ONLY,
+)
+from app.domain.runtime.provider_evidence import (
+    PROVIDER_EVIDENCE_METER_KEYS,
+    ProviderEvidenceMeterEvent,
+    ProviderEvidenceRecord,
 )
 
 type SQLAFilter = ColumnElement[bool]
@@ -438,6 +444,113 @@ class RuntimeRepository:
                 )
             )
         )
+
+    def list_provider_evidence_records(
+        self,
+        *,
+        since: datetime,
+        limit: int,
+        site_id: str | None = None,
+        provider_id: str | None = None,
+        model_id: str | None = None,
+        ability_name: str | None = None,
+    ) -> tuple[list[ProviderEvidenceRecord], bool]:
+        statement = (
+            select(
+                ProviderCallRecord,
+                RunRecord.site_id,
+                RunRecord.ability_name,
+            )
+            .join(RunRecord, RunRecord.run_id == ProviderCallRecord.run_id)
+            .where(ProviderCallRecord.created_at >= since)
+        )
+        if site_id:
+            statement = statement.where(RunRecord.site_id == site_id)
+        if provider_id:
+            statement = statement.where(ProviderCallRecord.provider_id == provider_id)
+        if model_id:
+            statement = statement.where(ProviderCallRecord.model_id == model_id)
+        if ability_name:
+            statement = statement.where(RunRecord.ability_name == ability_name)
+        statement = statement.order_by(
+            ProviderCallRecord.created_at.desc(),
+            ProviderCallRecord.id.desc(),
+        ).limit(max(1, limit) + 1)
+        records: list[ProviderEvidenceRecord] = []
+        for call, resolved_site_id, resolved_ability_name in self.session.execute(
+            statement
+        ):
+            records.append(
+                ProviderEvidenceRecord(
+                    call_id=int(call.id),
+                    run_id=str(call.run_id or ""),
+                    site_id=str(resolved_site_id or ""),
+                    ability_name=str(resolved_ability_name or ""),
+                    provider_id=str(call.provider_id or ""),
+                    model_id=str(call.model_id or ""),
+                    instance_id=str(call.instance_id or ""),
+                    latency_ms=max(0, int(call.latency_ms or 0)),
+                    tokens_in=max(0, int(call.tokens_in or 0)),
+                    tokens_out=max(0, int(call.tokens_out or 0)),
+                    cost=max(0.0, float(call.cost or 0.0)),
+                    retry_count=max(0, int(call.retry_count or 0)),
+                    fallback_used=bool(call.fallback_used),
+                    error_code=str(call.error_code or ""),
+                    created_at=call.created_at,
+                )
+            )
+        truncated = len(records) > max(1, limit)
+        if truncated:
+            records = records[: max(1, limit)]
+        records.reverse()
+        return records, truncated
+
+    def list_provider_evidence_meter_events(
+        self,
+        provider_call_ids: list[int],
+    ) -> list[ProviderEvidenceMeterEvent]:
+        normalized_ids = sorted(
+            {
+                int(provider_call_id)
+                for provider_call_id in provider_call_ids
+                if int(provider_call_id) > 0
+            }
+        )
+        events: list[ProviderEvidenceMeterEvent] = []
+        chunk_size = 500
+        for start in range(0, len(normalized_ids), chunk_size):
+            chunk = normalized_ids[start : start + chunk_size]
+            statement = (
+                select(
+                    UsageMeterEvent.provider_call_id,
+                    UsageMeterEvent.meter_key,
+                    UsageMeterEvent.quantity,
+                    UsageMeterEvent.payload_json,
+                )
+                .where(
+                    UsageMeterEvent.provider_call_id.in_(chunk),
+                    UsageMeterEvent.meter_key.in_(PROVIDER_EVIDENCE_METER_KEYS),
+                )
+                .order_by(UsageMeterEvent.id.asc())
+            )
+            for provider_call_id, meter_key, quantity, payload_json in (
+                self.session.execute(statement)
+            ):
+                if provider_call_id is None:
+                    continue
+                events.append(
+                    ProviderEvidenceMeterEvent(
+                        provider_call_id=int(provider_call_id),
+                        meter_key=str(meter_key or ""),
+                        quantity=max(0.0, float(quantity or 0.0)),
+                        payload=(
+                            dict(payload_json)
+                            if isinstance(payload_json, dict)
+                            else {}
+                        ),
+                    )
+                )
+        return events
 
     def get_runtime_diagnostics_summary(
         self,

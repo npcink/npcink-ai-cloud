@@ -27,6 +27,7 @@ from app.adapters.providers.minimax import MiniMaxProviderAdapter
 from app.adapters.providers.siliconflow import SiliconFlowProviderAdapter
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.api.main import create_app
 from app.api.routes import service as service_routes
 from app.core.config import Settings
@@ -100,6 +101,116 @@ from tests.conftest import (
     seed_provider_model_allowlist,
     seed_site_auth,
 )
+
+
+def test_internal_provider_runtime_evidence_summary_is_read_only_and_filterable(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    seed_site_auth(database_url, site_id="site_provider_evidence")
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = repository.create_run(
+            run_id="run_provider_evidence",
+            site_id="site_provider_evidence",
+            account_id=None,
+            subscription_id=None,
+            plan_version_id=None,
+            ability_name="npcink/test-provider-evidence",
+            ability_family="text",
+            skill_id="",
+            workflow_id="",
+            contract_version="v1",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            execution_pattern="inline",
+            data_classification="internal",
+            profile_id="text.balanced",
+            canonical_run_id=None,
+            status="succeeded",
+            idempotency_key="idem-provider-evidence",
+            request_fingerprint="fingerprint-provider-evidence",
+            trace_id="trace-provider-evidence",
+            input_json={},
+            execution_input_ciphertext=None,
+            policy_json={},
+        )
+        provider_call = repository.record_provider_call(
+            run_id=run.run_id,
+            provider_id="openai",
+            model_id="gpt-test",
+            instance_id="openai-global-gpt-test",
+            region="global",
+            latency_ms=125,
+            tokens_in=1000,
+            tokens_out=50,
+            cost=0.005,
+            retry_count=0,
+            fallback_used=False,
+        )
+        CommercialService(database_url).record_provider_call_usage(
+            session=session,
+            run=run,
+            provider_call=provider_call,
+            usage_context={
+                "input_tokens_uncached": 100,
+                "cache_read_tokens": 800,
+                "cache_write_tokens": 100,
+                "cache_hit_ratio": 0.8,
+                "cost_estimate_mode": "cache_rates",
+                "cache_affinity_applied": True,
+                "context_preflight": "accepted",
+                "estimated_input_tokens": 900,
+                "requested_output_tokens": 50,
+                "context_safety_margin_tokens": 16,
+                "estimated_total_tokens": 966,
+                "context_window": 4096,
+            },
+        )
+        session.commit()
+
+    unauthorized = client.get(
+        "/internal/service/runtime/provider-evidence/summary"
+    )
+    response = client.get(
+        "/internal/service/runtime/provider-evidence/summary"
+        "?site_id=site_provider_evidence"
+        "&provider_id=openai"
+        "&model_id=gpt-test"
+        "&ability_name=npcink%2Ftest-provider-evidence"
+        "&recent_minutes=120"
+        "&lane_limit=10",
+        headers=build_internal_headers(),
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["revision"] == "m1"
+    evidence = payload["data"]
+    assert evidence["filters"] == {
+        "site_id": "site_provider_evidence",
+        "provider_id": "openai",
+        "model_id": "gpt-test",
+        "ability_name": "npcink/test-provider-evidence",
+        "recent_minutes": 120,
+        "lane_limit": 10,
+    }
+    assert evidence["summary"]["evidence_records_total"] == 1
+    assert evidence["window"]["record_limit"] == 10000
+    assert evidence["window"]["records_truncated"] is False
+    assert evidence["summary"]["metering"]["completeness_ratio"] == 1.0
+    assert evidence["summary"]["cache"]["read_ratio"] == 0.8
+    assert evidence["summary"]["cost"]["cache_monetary_evidence_status"] == (
+        "confirmed"
+    )
+    assert evidence["summary"]["context_preflight"]["accepted_records"] == 1
+    assert evidence["lanes"][0]["provider_id"] == "openai"
+    assert evidence["lanes"][0]["model_id"] == "gpt-test"
+    assert evidence["boundary"]["read_only"] is True
+    assert evidence["boundary"]["contains_prompt_or_result_payloads"] is False
 
 SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"S" * 32).decode("ascii")
 OLD_SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"O" * 32).decode("ascii")

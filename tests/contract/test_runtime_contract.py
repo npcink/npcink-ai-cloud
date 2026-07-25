@@ -111,6 +111,47 @@ def _runtime_callback_metadata(callback_url: str) -> dict[str, object]:
     }
 
 
+def test_internal_provider_runtime_evidence_contract_is_read_only_and_bounded(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    response = client.get(
+        "/internal/service/runtime/provider-evidence/summary"
+        "?site_id=site_contract&recent_minutes=120&lane_limit=10",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["revision"] == "m1"
+    assert set(payload["data"].keys()) == {
+        "filters",
+        "window",
+        "generated_at",
+        "summary",
+        "lanes",
+        "lanes_total",
+        "lanes_truncated",
+        "decision_support",
+        "boundary",
+    }
+    assert payload["data"]["window"]["record_limit"] == 10000
+    assert payload["data"]["window"]["records_truncated"] is False
+    assert payload["data"]["boundary"] == {
+        "surface": "internal_operator_runtime_evidence",
+        "cloud_role": "runtime_detail",
+        "read_only": True,
+        "contains_prompt_or_result_payloads": False,
+        "contains_cache_keys": False,
+        "direct_wordpress_write": False,
+        "local_prompt_workflow_and_write_truth_unchanged": True,
+    }
+    assert payload["data"]["summary"]["evidence_records_total"] == 0
+
+    dispose_engine(database_url)
+
+
 def test_runtime_execute_response_shape_is_stable(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
     request_payload = {
