@@ -7,6 +7,11 @@ This record is limited to the WordPress title-generation external Provider
 path. Context-window ownership and rejection behavior, trusted price metadata,
 and cache monetary evidence are separate work items.
 
+Follow-up on `2026-07-25`: the user authorized official OpenAI list prices as
+an explicitly non-gateway-billing baseline. The subsequent controlled cohort
+and cache calculation are recorded in
+[WordPress Title And Summary Controlled Trial And Cache Economics](wordpress-title-summary-controlled-trial-and-cache-economics-2026-07-25.md).
+
 ## Change Envelope
 
 - Repository changed: `npcink-ai-cloud`, documentation only.
