@@ -31,6 +31,7 @@
     "test:e2e:setup": "NPCINK_CLOUD_SETUP_STATE_OVERRIDE=pending node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/setup-first-install.spec.ts && NPCINK_CLOUD_SETUP_STATE_OVERRIDE=complete node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/setup-complete-gate.spec.ts",
     "test:e2e:agent-workflow-metadata": "NPCINK_CLOUD_FRONTEND_BASE_URL=${NPCINK_CLOUD_FRONTEND_BASE_URL:-http://127.0.0.1:8010} node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/agent-workflow-metadata-smoke.spec.ts",
     "test:visual": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/marketing-home.spec.ts tests/e2e/portal-login.spec.ts tests/e2e/visual-baseline.spec.ts",
+    "test:visual:marketing:baseline": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/marketing-home.spec.ts --update-snapshots",
     "test:visual:baseline": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/visual-baseline.spec.ts --update-snapshots",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest"

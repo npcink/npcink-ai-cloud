@@ -27,7 +27,9 @@ for (const [name, source] of [
   );
 }
 
-assert.match(home, /<QqLoginButton/, 'home must expose the QQ login entry');
+assert.doesNotMatch(home, /<QqLoginButton/, 'home must keep one primary CTA instead of duplicating the login form');
+assert.match(home, /href="\/portal\/register"/, 'home must keep a clear registration CTA');
+assert.match(home, /注册页支持 QQ 快捷登录/, 'home must explain that registration supports QQ login');
 assert.match(login, /<QqLoginButton/, 'login must expose the QQ login entry');
 assert.match(register, /<QqLoginButton/, 'registration must expose the QQ login entry');
 assert.match(proxy, /X-Robots-Tag[\s\S]*noindex/, 'admin responses must opt out of indexing');
@@ -37,6 +39,7 @@ assert.match(health, /checked_at:/, 'machine health must expose its check time')
 assert.match(home, /<PublicStatusSummary/, 'home must expose a public service-status summary');
 assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the minimal public health endpoint');
 assert.match(publicStatus, /href="\/status"/, 'home status must link to the full status page');
+assert.match(publicStatus, /aria-busy=/, 'home status must expose its checking state without changing layout');
 assert.match(publicNavigation, /href: '\/status'/, 'public navigation must link to the full status page');
 assert.match(publicShell, /PUBLIC_HEADER_NAV_ITEMS/, 'desktop and mobile navigation must use the shared header config');
 assert.match(publicShell, /PUBLIC_FOOTER_NAV_ITEMS/, 'footer navigation must use the shared footer config');

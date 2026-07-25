@@ -32,7 +32,7 @@ export function PublicStatusSummary() {
   const copy = state === 'healthy'
     ? {
         label: zh ? '公开入口运行正常' : 'Public entry is operational',
-        detail: zh ? '官网公开入口当前可访问。' : 'The public website entry is currently reachable.',
+        detail: zh ? '刚刚完成可用性检查。' : 'Availability was checked moments ago.',
         dot: 'bg-emerald-500',
         text: 'text-emerald-700 dark:text-emerald-400',
       }
@@ -44,35 +44,35 @@ export function PublicStatusSummary() {
           text: 'text-amber-700 dark:text-amber-400',
         }
       : {
-          label: zh ? '正在检查公开入口' : 'Checking the public entry',
-          detail: zh ? '正在获取最新可用性结果。' : 'Retrieving the latest availability result.',
+          label: zh ? '正在更新服务状态' : 'Updating service status',
+          detail: zh ? '最新结果将在这里显示。' : 'The latest result will appear here.',
           dot: 'bg-slate-400',
           text: 'text-slate-600 dark:text-slate-300',
         };
 
   return (
-    <section
+    <div
+      data-home-status
       aria-labelledby="public-status-title"
-      className="border-b border-slate-200 bg-white dark:border-white/10 dark:bg-[#0d1625]"
+      aria-busy={state === 'checking'}
+      className="grid gap-4 border-b border-slate-200 pb-7 dark:border-white/10 sm:grid-cols-[auto_1fr_auto] sm:items-center"
     >
-      <div className="mx-auto grid max-w-7xl gap-5 px-5 py-5 sm:grid-cols-[auto_1fr_auto] sm:items-center lg:px-8">
-        <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-          {zh ? '服务状态' : 'Service status'}
+      <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+        {zh ? '服务状态' : 'Service status'}
+      </p>
+      <div aria-live="polite">
+        <p id="public-status-title" className={`flex items-center gap-3 text-sm font-bold ${copy.text}`}>
+          <span className={`h-2.5 w-2.5 rounded-full ${copy.dot}`} aria-hidden="true" />
+          {copy.label}
         </p>
-        <div aria-live="polite">
-          <p id="public-status-title" className={`flex items-center gap-3 text-sm font-bold ${copy.text}`}>
-            <span className={`h-2.5 w-2.5 rounded-full ${copy.dot}`} aria-hidden="true" />
-            {copy.label}
-          </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{copy.detail}</p>
-        </div>
-        <Link
-          href="/status"
-          className="w-fit text-sm font-bold text-[#2357ff] underline-offset-4 hover:underline"
-        >
-          {zh ? '查看完整状态 →' : 'View full status →'}
-        </Link>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{copy.detail}</p>
       </div>
-    </section>
+      <Link
+        href="/status"
+        className="w-fit text-sm font-bold text-[#2357ff] underline-offset-4 hover:underline"
+      >
+        {zh ? '查看完整状态 →' : 'View full status →'}
+      </Link>
+    </div>
   );
 }
