@@ -6,12 +6,14 @@ Every AI development session should start with:
 
 1. Run `git status --short --branch`.
 2. Read `README.md`.
-3. Read the relevant boundary docs before editing:
+3. For feature, bug-fix, M4, or CI work, read
+   `docs/development-validation-operating-model-v1.md`.
+4. Read the relevant boundary docs before editing:
    - `docs/cloud-content-generation-boundary-v1.md`
    - `docs/cloud-task-pack-boundary-v1.md`
    - `docs/cloud-agent-workflow-metadata-projection-v1.md`
    - `docs/cloud-agent-feedback-quality-gate-v1.md`
-4. Briefly report the focused module, relevant Cloud boundary, and intended
+5. Briefly report the focused module, relevant Cloud boundary, and intended
    verification gate before editing.
 
 ## Product Boundary
