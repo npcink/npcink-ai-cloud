@@ -139,6 +139,10 @@ exactly what passed or failed.
   Git truth. Do not substitute its public SSH maintenance address or silently
   fall back to direct transfer. Use the explicit direct fallback only when the
   operator selects it for a bounded recovery.
+- The package proxy cache documented in ADR-027 is disposable M4 build state.
+  Preserve frozen-lockfile and package-manager integrity authority; do not
+  repurpose the cache as source, dependency, accepted-revision, relay, or
+  private-package truth. Recover by removing only its exact cache directory.
 - During the edit loop, prefer
   `pnpm run m4:preview:test -- --focused <tests/path-or-node-id>`. Use
   `--contract`, `--domain`, or `--full` only when that broader scope answers a

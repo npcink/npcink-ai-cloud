@@ -322,6 +322,41 @@ client credentials, and is stopped before `prepare` or `deploy` returns. PyPI
 configuration is passed as a BuildKit secret; the npm URL is a non-secret build
 argument. The canonical Dockerfiles remain unchanged.
 
+Registry metadata remains buffered because its embedded artifact URLs must be
+rewritten. Wheel and npm tarball responses send upstream headers immediately,
+then stream 256 KiB chunks to the build client and an atomic M4-host cache at
+`~/.cache/npcink-ai-cloud-m4-dev/package-proxy`. This prevents a large
+artifact from consuming the package manager's whole idle timeout before the
+first response byte. A client disconnect does not leave a corrupt hit: the
+proxy finishes and validates the bounded upstream object when possible, then
+atomically publishes it. Length mismatches, interrupted fills, symlinks, and
+invalid metadata are discarded.
+
+The cache retains at most 2 GiB and removes entries unused for 14 days. The M4
+operation lock permits only one managed proxy process, while per-artifact
+locks collapse duplicate requests inside that process. The cache is a
+disposable build optimization for public artifacts, not source truth,
+dependency truth, an accepted-revision cache, or a private-package store.
+Package lock files and package-manager integrity checks remain authoritative.
+Do not copy this cache to the authoring Mac, relay, production, or Git.
+
+M4-only generated build recipes give pip a 300-second timeout and give pnpm a
+300-second fetch timeout, four retries, and network concurrency eight. The
+frontend build also mounts a persistent BuildKit pnpm store cache. These
+settings absorb intermittent upstream stalls without editing the canonical
+Dockerfiles or weakening frozen-lockfile verification.
+
+For a bounded recovery, stop the active M4 operation and remove only
+`~/.cache/npcink-ai-cloud-m4-dev/package-proxy`; the next dependency build
+recreates it cold. Never use `docker system prune`, `docker volume prune`, or a
+broad cache-directory removal for package-proxy recovery. Proxy shutdown emits
+request, hit, miss, upstream-byte, served-cache-byte, and downstream-disconnect
+counters for diagnosis. See
+[ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) for the decision
+boundary and
+[the 2026-07-25 validation record](m4-package-proxy-streaming-cache-validation-2026-07-25.md)
+for measured evidence.
+
 The frontend image already contains its pinned `node_modules`. M4 Preview starts
 Next.js directly instead of performing an online install on every container
 start. When the frontend image changes, deploy verifies the exact Compose
