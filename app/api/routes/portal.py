@@ -116,9 +116,6 @@ class PortalRegistrationCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str = ""
-    site_url: str = Field(default="", max_length=2048)
-    site_name: str = ""
-    use_case: str = ""
     locale: str = ""
 
 
@@ -2482,7 +2479,6 @@ async def request_portal_registration_code(
     if same_origin is not None:
         return same_origin
     email = payload.email.strip()
-    site_url = payload.site_url.strip()
     locale = resolve_portal_email_locale(request, payload.locale)
     if not email:
         return portal_json_error(
@@ -2517,9 +2513,6 @@ async def request_portal_registration_code(
     try:
         issued = _get_commercial_service(request).issue_portal_registration_code(
             email=email,
-            site_url=site_url,
-            site_name=payload.site_name,
-            use_case=payload.use_case,
             ttl_seconds=ttl_seconds,
         )
     except CommercialServiceError as error:
@@ -3806,10 +3799,14 @@ async def exchange_portal_addon_connection(
     request: Request,
     payload: PortalAddonConnectionExchangePayload,
 ) -> Any:
+    audit_context = _build_audit_context(request)
+    audit_context.actor_kind = "wordpress_addon"
+    audit_context.actor_ref = "pending_exchange"
     try:
         result = _get_commercial_service(request).consume_wordpress_addon_connection(
             code=payload.code,
             addon_state=payload.state,
+            audit_context=audit_context,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

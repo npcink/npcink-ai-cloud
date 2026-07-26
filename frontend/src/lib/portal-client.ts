@@ -98,9 +98,6 @@ export interface PortalEmailChangeResult extends PortalSession {
 
 export interface PortalRegistrationCodeRequest {
   email: string;
-  site_url?: string;
-  site_name?: string;
-  use_case?: string;
   locale?: 'en' | 'zh-CN';
 }
 
@@ -161,8 +158,8 @@ export interface AddonConnectionResult {
   site_id: string;
   site_url: string;
   platform_kind: 'wordpress';
-  key_id: string;
   site_created: boolean;
+  activation_state: 'pending_exchange';
   redirect_url: string;
   return_url: string;
   expires_at: string;
@@ -1647,7 +1644,7 @@ export class PortalClient {
   }
 
   /**
-   * 验证注册验证码并创建 Free 账号
+   * 验证注册验证码并创建账号；Free 权益在 WordPress Addon 完成真实连接后激活
    * POST /portal/v1/register/verify
    */
   async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {

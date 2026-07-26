@@ -331,8 +331,8 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
     portal_audit_items = portal_audit_response.json()["data"]["items"]
     assert {item["event_kind"] for item in portal_audit_items} >= {
         "site.provision",
-        "site_key.issue",
         "wordpress_addon_connection.issue",
+        "wordpress_addon_connection.exchange",
     }
 
     admin_audit_response = client.get(

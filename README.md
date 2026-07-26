@@ -32,6 +32,12 @@ Current repository status is a strong-contraction cleanup baseline:
 - portal surface is bounded to login, session, site connection, usage,
   entitlements, billing, support, Cloud audit, health, and diagnostics; runtime
   keys are system-managed through the WordPress addon connection exchange
+- email or QQ registration creates an active login identity and account only;
+  it does not create a site, subscription, runtime key, or Free credit budget
+- the first verified WordPress addon exchange atomically activates the default
+  Free entitlement, creates or reconnects the site, and issues its
+  system-managed runtime key after membership, host binding, replay, capacity,
+  and site-ownership checks pass
 - addon projection/repair surfaces are not part of this baseline; they remain
   deferred to a separate proposal with independent review
 
@@ -877,7 +883,8 @@ Internal read-only detail examples:
 
 Portal member auth:
 
-- portal members are invite-only `user` identities
+- portal members may be invited or self-register as `user` identities through
+  email verification or QQ
 - browser login is two-step:
   - `POST /portal/v1/auth/code/request`
   - `POST /portal/v1/auth/code/verify`
@@ -885,9 +892,13 @@ Portal member auth:
   `/portal/*` and `/portal/v1/*`
 - WordPress addon authorization uses the bounded Portal connection seam:
   - `POST /portal/v1/addon-connections` requires a Portal session and issues a
-    short-lived return code after creating or activating the site connection
+    short-lived, host-bound return code without creating a site, subscription,
+    or runtime key
   - `POST /portal/v1/addon-connections/exchange` consumes that one-time code
-    from the WordPress server and returns the customer-facing Cloud API key
+    from the WordPress server; after revalidating account access and
+    entitlement/site capacity, it atomically creates or reconnects the site,
+    activates the default Free entitlement for a never-subscribed account, and
+    returns the customer-facing Cloud API key
 - production deploys should set:
   - `NPCINK_CLOUD_PORTAL_JWT_SECRET`
 - production deploys should configure in `/admin/service-settings`:
@@ -1121,8 +1132,9 @@ Current auth decision stays bounded:
   current bounded seam
 - remote smoke should use `/portal/v1/auth/code/request` and
   `/portal/v1/auth/code/verify`
-- do not add email+password, public registration, or persistent session
-  inventory in the current lane
+- public registration remains passwordless and identity-only; do not restore
+  registration-time site provisioning or Free credit activation
+- do not add email+password or persistent session inventory in the current lane
 
 Portal email login delivery:
 
