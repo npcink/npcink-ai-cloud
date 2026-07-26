@@ -234,12 +234,25 @@ function PlanDetails({
 function PlanAction({
   copy,
   recommended,
+  unavailable,
   zh,
 }: {
   copy: TierCopy;
   recommended: boolean;
+  unavailable: boolean;
   zh: boolean;
 }) {
+  if (unavailable) {
+    return (
+      <span
+        aria-disabled="true"
+        className="flex h-12 items-center border border-white/15 px-4 text-sm font-black text-slate-500"
+      >
+        {zh ? '暂未开放' : 'Not available'}
+      </span>
+    );
+  }
+
   return (
     <Link
       href={copy.href}
@@ -346,6 +359,7 @@ export function PublicPricingSection() {
             return (
               <article
                 key={tierId}
+                data-plan-tier={tierId}
                 role="listitem"
                 className={`relative flex flex-col border-b border-r border-white/15 px-6 py-7 transition duration-300 hover:bg-white/[.045] xl:min-h-[34rem] ${
                   recommended ? 'bg-[#2357ff]/10' : ''
@@ -380,7 +394,12 @@ export function PublicPricingSection() {
                   />
                 </div>
                 <div className="mt-auto pt-6">
-                  <PlanAction copy={copy} recommended={recommended} zh={zh} />
+                  <PlanAction
+                    copy={copy}
+                    recommended={recommended}
+                    unavailable={unavailable && !agency}
+                    zh={zh}
+                  />
                 </div>
               </article>
             );
@@ -407,7 +426,12 @@ export function PublicPricingSection() {
             const panelId = `mobile-plan-${tierId}`;
 
             return (
-              <article key={tierId} role="listitem" className="border-b border-r border-white/15">
+              <article
+                key={tierId}
+                data-plan-tier={tierId}
+                role="listitem"
+                className="border-b border-r border-white/15"
+              >
                 <button
                   type="button"
                   aria-label={zh ? `${planLabel(view)} 套餐详情` : `${planLabel(view)} plan details`}
@@ -459,7 +483,12 @@ export function PublicPricingSection() {
                       zh={zh}
                     />
                     <div className="pt-5">
-                      <PlanAction copy={copy} recommended={recommended} zh={zh} />
+                      <PlanAction
+                        copy={copy}
+                        recommended={recommended}
+                        unavailable={unavailable && !agency}
+                        zh={zh}
+                      />
                     </div>
                   </div>
                 ) : null}
