@@ -469,11 +469,18 @@ export function PublicPricingSection() {
         </div>
 
         <div className="grid gap-4 border-x border-b border-white/15 px-5 py-5 text-sm leading-6 text-slate-400 md:grid-cols-[1fr_auto] md:items-center">
-          <p>
-            {zh
-              ? `Plus、Pro 与 Agency 共享一次 ${trialDays} 天付费套餐试用资格；Agency 需要审核。`
-              : `Plus, Pro, and Agency share one ${trialDays}-day paid-plan trial. Agency requires approval.`}
-          </p>
+          <div className="space-y-2">
+            <p data-plan-entitlement-notice>
+              {zh
+                ? 'Free 服务和额度归 Cloud 账户，不随站点转移；更换账户连接时，必须先释放站点并遵守 Cloud 显示的冷却期。'
+                : 'Free service and credits belong to the Cloud account and do not move with a site. Connecting the site to another account requires release and the cooldown shown by Cloud.'}
+            </p>
+            <p>
+              {zh
+                ? `Plus、Pro 与 Agency 共享一次 ${trialDays} 天付费套餐试用资格；Agency 需要审核。`
+                : `Plus, Pro, and Agency share one ${trialDays}-day paid-plan trial. Agency requires approval.`}
+            </p>
+          </div>
           <p className="font-bold text-slate-300">
             {zh
               ? '实际价格与权益以当前已发布方案为准'
