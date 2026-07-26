@@ -44,6 +44,7 @@ from app.core.models import (
     RunRecord,
     ServiceAuditEvent,
     Site,
+    SiteAccountBinding,
     SiteApiKey,
     SupportRequestAttachment,
 )
@@ -1902,19 +1903,19 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
         state="addon-state-archived-primary",
         idempotency_key="portal-addon-archived-primary",
     )
+    remove_response = client.post(
+        "/portal/v1/sites/site_primary-example-com/remove",
+        headers=build_portal_headers(
+            principal_id="principal:addon-archived-reactivate@example.com",
+            idempotency_key="portal-addon-archived-remove",
+        ),
+    )
+    assert remove_response.status_code == 200, remove_response.text
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
-        site.status = "archived"
-        site.metadata_json = {
-            **(site.metadata_json or {}),
-            "portal_lifecycle": {
-                "previous_status": "active",
-                "removed": True,
-                "removed_at": "2026-07-09T04:44:35Z",
-            },
-        }
-        session.commit()
+        assert site.status == "archived"
+        assert site.relink_cooldown_until is not None
 
     return_url = (
         "https://primary.example.com/wp-admin/admin-post.php"
@@ -1964,6 +1965,306 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
             if item.status == "active"
         ]
         assert [item.key_id for item in active_keys] == [exchange_data["key_id"]]
+        bindings = list(
+            session.scalars(
+                select(SiteAccountBinding)
+                .where(SiteAccountBinding.site_id == "site_primary-example-com")
+                .order_by(SiteAccountBinding.bound_at.asc())
+            )
+        )
+        assert [item.account_id for item in bindings] == [account_id, account_id]
+        assert [item.status for item in bindings] == ["released", "active"]
+
+    dispose_engine(database_url)
+
+
+def test_cross_account_addon_relink_waits_for_cooldown_and_keeps_free_account_owned(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    first_request = _request_portal_registration_code(
+        client,
+        email="site-relink-first@example.com",
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    _verify_portal_registration_code(
+        client,
+        email="site-relink-first@example.com",
+        code=str(first_request["code"]),
+    )
+    first_account_id = str(
+        _ACCESS_BY_EMAIL["site-relink-first@example.com"]["account_id"]
+    )
+    _connect_wordpress_addon(
+        client,
+        account_id=first_account_id,
+        site_url="https://transfer.example.com",
+        site_name="Transfer Site",
+        state="site-relink-first",
+        idempotency_key="site-relink-first-connect",
+    )
+    second_request = _request_portal_registration_code(
+        client,
+        email="site-relink-second@example.com",
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    _verify_portal_registration_code(
+        client,
+        email="site-relink-second@example.com",
+        code=str(second_request["code"]),
+    )
+    second_account_id = str(
+        _ACCESS_BY_EMAIL["site-relink-second@example.com"]["account_id"]
+    )
+    return_url = (
+        "https://transfer.example.com/wp-admin/admin-post.php"
+        "?action=npcink_cloud_addon_complete_auth&state=site-relink-blocked"
+    )
+    active_owner_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": second_account_id,
+            "site_url": "https://transfer.example.com",
+            "site_name": "Transfer Site",
+            "return_url": return_url,
+            "state": "site-relink-blocked",
+        },
+        headers={"Idempotency-Key": "site-relink-second-active-owner"},
+    )
+    assert active_owner_response.status_code == 409, active_owner_response.text
+    assert (
+        active_owner_response.json()["error_code"]
+        == "service.portal_site_conflict"
+    )
+
+    remove_response = client.post(
+        "/portal/v1/sites/site_transfer-example-com/remove",
+        headers=build_portal_headers(
+            principal_id="principal:site-relink-first@example.com",
+            idempotency_key="site-relink-first-remove",
+        ),
+    )
+    assert remove_response.status_code == 200, remove_response.text
+    removed_site = remove_response.json()["data"]["site"]
+    assert removed_site["status"] == "archived"
+    with get_session(database_url) as session:
+        released_site = session.get(Site, "site_transfer-example-com")
+        assert released_site is not None
+        assert released_site.ownership_released_at is not None
+        assert released_site.relink_cooldown_until is not None
+
+    blocked_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": second_account_id,
+            "site_url": "https://transfer.example.com",
+            "site_name": "Transfer Site",
+            "return_url": return_url,
+            "state": "site-relink-blocked",
+        },
+        headers={"Idempotency-Key": "site-relink-second-blocked"},
+    )
+    assert blocked_response.status_code == 409, blocked_response.text
+    assert (
+        blocked_response.json()["error_code"]
+        == "service.site_relink_cooldown_active"
+    )
+    assert blocked_response.json()["data"]["retry_after_at"]
+    assert blocked_response.json()["data"]["cooldown_days"] == 90
+
+    disable_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": False, "cooldown_days": 90},
+        headers=build_internal_headers(idempotency_key="site-relink-disable"),
+    )
+    assert disable_response.status_code == 200, disable_response.text
+    clear_response = client.patch(
+        "/internal/service/admin/sites/site_transfer-example-com/relink-cooldown",
+        json={"action": "clear", "reason": "verified ownership transfer"},
+        headers=build_internal_headers(idempotency_key="site-relink-clear"),
+    )
+    assert clear_response.status_code == 200, clear_response.text
+    assert clear_response.json()["data"]["cross_account_relink_ready"] is False
+
+    disabled_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": second_account_id,
+            "site_url": "https://transfer.example.com",
+            "site_name": "Transfer Site",
+            "return_url": return_url,
+            "state": "site-relink-blocked",
+        },
+        headers={"Idempotency-Key": "site-relink-second-disabled"},
+    )
+    assert disabled_response.status_code == 409, disabled_response.text
+    assert (
+        disabled_response.json()["error_code"]
+        == "service.site_cross_account_relink_disabled"
+    )
+    enable_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 90},
+        headers=build_internal_headers(idempotency_key="site-relink-enable"),
+    )
+    assert enable_response.status_code == 200, enable_response.text
+
+    _, exchange = _connect_wordpress_addon(
+        client,
+        account_id=second_account_id,
+        site_url="https://transfer.example.com",
+        site_name="Transfer Site",
+        state="site-relink-second",
+        idempotency_key="site-relink-second-connect",
+    )
+    assert exchange["site_transferred"] is True
+    assert exchange["free_entitlement_activated"] is True
+
+    with get_session(database_url) as session:
+        site = session.get(Site, "site_transfer-example-com")
+        assert site is not None
+        assert site.account_id == second_account_id
+        assert site.status == "active"
+        assert site.ownership_released_at is None
+        assert site.relink_cooldown_until is None
+        subscriptions = list(
+            session.scalars(
+                select(AccountSubscription).where(
+                    AccountSubscription.account_id.in_(
+                        [first_account_id, second_account_id]
+                    )
+                )
+            )
+        )
+        assert {item.account_id for item in subscriptions} == {
+            first_account_id,
+            second_account_id,
+        }
+        bindings = list(
+            session.scalars(
+                select(SiteAccountBinding)
+                .where(
+                    SiteAccountBinding.site_id == "site_transfer-example-com"
+                )
+                .order_by(SiteAccountBinding.bound_at.asc())
+            )
+        )
+        assert [item.account_id for item in bindings] == [
+            first_account_id,
+            second_account_id,
+        ]
+        assert bindings[0].status == "released"
+        assert bindings[0].released_at is not None
+        assert bindings[1].status == "active"
+        assert bindings[1].released_at is None
+
+    dispose_engine(database_url)
+
+
+def test_site_relink_policy_change_is_prospective_until_site_reset(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    policy_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 180},
+        headers=build_internal_headers(idempotency_key="site-relink-policy-180"),
+    )
+    assert policy_response.status_code == 200, policy_response.text
+
+    registration_request = _request_portal_registration_code(
+        client,
+        email="site-relink-policy@example.com",
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    _verify_portal_registration_code(
+        client,
+        email="site-relink-policy@example.com",
+        code=str(registration_request["code"]),
+    )
+    account_id = str(_ACCESS_BY_EMAIL["site-relink-policy@example.com"]["account_id"])
+    _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://policy-snapshot.example.com",
+        site_name="Policy Snapshot",
+        state="site-relink-policy-connect",
+        idempotency_key="site-relink-policy-connect",
+    )
+    remove_response = client.post(
+        "/portal/v1/sites/site_policy-snapshot-example-com/remove",
+        headers=build_portal_headers(
+            principal_id="principal:site-relink-policy@example.com",
+            idempotency_key="site-relink-policy-remove",
+        ),
+    )
+    assert remove_response.status_code == 200, remove_response.text
+
+    with get_session(database_url) as session:
+        released = session.get(Site, "site_policy-snapshot-example-com")
+        assert released is not None
+        assert released.ownership_released_at is not None
+        assert released.relink_cooldown_until is not None
+        original_unlock = released.relink_cooldown_until
+        assert (released.relink_cooldown_until - released.ownership_released_at).days == 180
+
+    policy_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 90},
+        headers=build_internal_headers(idempotency_key="site-relink-policy-90"),
+    )
+    assert policy_response.status_code == 200, policy_response.text
+    with get_session(database_url) as session:
+        released = session.get(Site, "site_policy-snapshot-example-com")
+        assert released is not None
+        assert released.relink_cooldown_until == original_unlock
+
+    exact_unlock = datetime.now(UTC) + timedelta(days=120)
+    set_response = client.patch(
+        "/internal/service/admin/sites/site_policy-snapshot-example-com/relink-cooldown",
+        json={
+            "action": "set",
+            "cooldown_until": exact_unlock.isoformat(),
+            "reason": "operator-selected transfer date",
+        },
+        headers=build_internal_headers(idempotency_key="site-relink-policy-set"),
+    )
+    assert set_response.status_code == 200, set_response.text
+    with get_session(database_url) as session:
+        released = session.get(Site, "site_policy-snapshot-example-com")
+        assert released is not None
+        stored_unlock = released.relink_cooldown_until
+        assert stored_unlock is not None
+        normalized_stored_unlock = (
+            stored_unlock.replace(tzinfo=UTC)
+            if stored_unlock.tzinfo is None
+            else stored_unlock.astimezone(UTC)
+        )
+        assert abs((normalized_stored_unlock - exact_unlock).total_seconds()) < 1
+
+    reset_response = client.patch(
+        "/internal/service/admin/sites/site_policy-snapshot-example-com/relink-cooldown",
+        json={"action": "reset", "reason": "apply current default"},
+        headers=build_internal_headers(idempotency_key="site-relink-policy-reset"),
+    )
+    assert reset_response.status_code == 200, reset_response.text
+    assert reset_response.json()["data"]["default_cooldown_days"] == 90
+    with get_session(database_url) as session:
+        released = session.get(Site, "site_policy-snapshot-example-com")
+        assert released is not None
+        assert released.ownership_released_at is not None
+        assert released.relink_cooldown_until is not None
+        assert (released.relink_cooldown_until - released.ownership_released_at).days == 90
 
     dispose_engine(database_url)
 

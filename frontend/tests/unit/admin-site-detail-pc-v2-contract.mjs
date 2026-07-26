@@ -9,6 +9,24 @@ assert.match(page, /BackofficeDisclosure[\s\S]*admin\.site_detail\.advanced_oper
 assert.match(page, /siteRuntimeExplanationText\(item\.explain_text, t\)/, 'known runtime explanations must be localized before default display');
 assert.doesNotMatch(page, /href=\{site\.related_surfaces\.audit_href\}/, 'site detail must not expose the raw audit API as a primary link');
 assert.doesNotMatch(page, /href="\/admin\/subscriptions"/, 'site detail must not expose an unscoped duplicate coverage link');
+assert.match(
+  page,
+  /\/api\/admin\/sites\/\$\{encodeURIComponent\(site\.site_id\)\}\/relink-cooldown/,
+  'site detail must update the bounded site relink endpoint'
+);
+for (const action of ["'clear'", "'reset'", "'set'"]) {
+  assert.match(page, new RegExp(`handleRelinkCooldownUpdate\\(${action}\\)`), `site detail must expose the ${action} relink action`);
+}
+assert.match(
+  page,
+  /setConfirmRelinkClearOpen\(true\)[\s\S]*<ConfirmModal[\s\S]*relink_clear_confirm_desc[\s\S]*handleRelinkCooldownUpdate\('clear'\)/,
+  'immediate cross-account relink must require an explicit operator confirmation'
+);
+assert.match(
+  page,
+  /site\.status === 'archived' &&\s*site\.site_relink_policy\?\.ownership_released_at/,
+  'site relink controls must remain unavailable until ownership has been released'
+);
 
 const primaryStart = page.indexOf('<BackofficePrimaryPanel');
 const primaryEnd = page.indexOf('</BackofficePrimaryPanel>', primaryStart);
@@ -22,6 +40,13 @@ for (const key of [
   'admin.site_detail.runtime_explanation_callback',
   'admin.site_detail.runtime_explanation_queued',
   'admin.site_detail.runtime_explanation_guard',
+  'admin.site_detail.relink_policy_title',
+  'admin.site_detail.relink_clear_now',
+  'admin.site_detail.relink_clear_confirm_action',
+  'admin.site_detail.relink_clear_confirm_desc',
+  'admin.site_detail.relink_clear_confirm_title',
+  'admin.site_detail.relink_reset_default',
+  'admin.site_detail.relink_save_date',
 ]) {
   const occurrences = Array.from(i18n.matchAll(new RegExp(`'${key.replaceAll('.', '\\.')}':`, 'g'))).length;
   assert.equal(occurrences, 2, `${key} must exist in English and Simplified Chinese`);

@@ -87,6 +87,11 @@ engine, a local ability or workflow registry, WordPress write authority, or a
 second control plane. Additional anti-abuse controls require measured abuse
 evidence and an independently reviewed contract.
 
+Cross-account reuse of a previously connected site is governed separately by
+[ADR-030](030-cross-account-site-relink-cooldown.md); that follow-up preserves
+account-owned Free entitlement and adds an explicit-release cooldown without
+weakening the verified Addon exchange.
+
 ## Consequences
 
 - Registered users can log in immediately but initially see no connected site

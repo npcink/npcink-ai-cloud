@@ -154,6 +154,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     requiredCapability: 'can_manage_accounts',
   },
   {
+    methods: ['PATCH'],
+    pattern: /^sites\/[^/]+\/relink-cooldown$/,
+    namespace: 'admin',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
     methods: ['POST'],
     pattern: /^accounts\/[^/]+\/(?:suspend|restore|agency-quotes|agency-trial)$/,
     namespace: 'admin',
@@ -259,7 +265,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['PATCH'],
-    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment)$/,
+    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy)$/,
     namespace: 'admin',
   },
   {

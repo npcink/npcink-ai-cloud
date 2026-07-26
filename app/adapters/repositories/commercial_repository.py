@@ -44,6 +44,7 @@ from app.core.models import (
     RunRecord,
     ServiceAuditEvent,
     Site,
+    SiteAccountBinding,
     SiteApiKey,
     SiteKnowledgeChunk,
     SiteKnowledgeDocument,
@@ -1009,6 +1010,77 @@ class CommercialRepository:
 
     def get_site(self, site_id: str) -> Site | None:
         return self.session.get(Site, site_id)
+
+    def get_site_for_update(self, site_id: str) -> Site | None:
+        return self.session.scalar(select(Site).where(Site.site_id == site_id).with_for_update())
+
+    def get_current_site_account_binding(
+        self,
+        site_id: str,
+        *,
+        for_update: bool = False,
+    ) -> SiteAccountBinding | None:
+        statement = (
+            select(SiteAccountBinding)
+            .where(
+                SiteAccountBinding.site_id == site_id,
+                SiteAccountBinding.released_at.is_(None),
+            )
+            .order_by(
+                SiteAccountBinding.bound_at.desc(),
+                SiteAccountBinding.binding_id.desc(),
+            )
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def get_latest_released_site_account_binding(
+        self,
+        site_id: str,
+    ) -> SiteAccountBinding | None:
+        statement = (
+            select(SiteAccountBinding)
+            .where(
+                SiteAccountBinding.site_id == site_id,
+                SiteAccountBinding.released_at.is_not(None),
+            )
+            .order_by(
+                SiteAccountBinding.released_at.desc(),
+                SiteAccountBinding.binding_id.desc(),
+            )
+            .limit(1)
+        )
+        return self.session.scalar(statement)
+
+    def create_site_account_binding(
+        self,
+        *,
+        binding_id: str,
+        site_id: str,
+        account_id: str,
+        status: str,
+        bound_at: datetime,
+        released_at: datetime | None = None,
+        cooldown_until: datetime | None = None,
+        release_reason: str | None = None,
+        metadata_json: dict[str, object] | None = None,
+    ) -> SiteAccountBinding:
+        binding = SiteAccountBinding(
+            binding_id=binding_id,
+            site_id=site_id,
+            account_id=account_id,
+            status=status,
+            bound_at=bound_at,
+            released_at=released_at,
+            cooldown_until=cooldown_until,
+            release_reason=release_reason,
+            metadata_json=metadata_json,
+        )
+        self.session.add(binding)
+        self.session.flush()
+        return binding
 
     def list_sites(
         self,
