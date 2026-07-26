@@ -42,11 +42,12 @@ class EditorAssistQualityService:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
         bounded_hours = min(168, max(1, int(window_hours or 24)))
         start_at = current_time - timedelta(hours=bounded_hours)
+        comparison_start_at = start_at - timedelta(hours=bounded_hours)
 
         conditions = [
             PluginObservabilityEvent.plugin_slug == ADDON_PLUGIN_SLUG,
             PluginObservabilityEvent.event_kind.in_(QUALITY_EVENT_KINDS),
-            PluginObservabilityEvent.received_at >= start_at,
+            PluginObservabilityEvent.received_at >= comparison_start_at,
             PluginObservabilityEvent.received_at <= current_time,
         ]
         if site_id:
@@ -64,6 +65,99 @@ class EditorAssistQualityService:
                 )
             )
 
+        all_sessions, _, _ = self._build_sessions(
+            events,
+            task_key=task_key,
+        )
+        sessions = {
+            key: item
+            for key, item in all_sessions.items()
+            if self._aware_datetime(item.get("started_at")) >= start_at
+        }
+        previous_sessions = {
+            key: item
+            for key, item in all_sessions.items()
+            if comparison_start_at
+            <= self._aware_datetime(item.get("started_at"))
+            < start_at
+        }
+        current_events = [
+            event
+            for event in events
+            if self._aware_datetime(event.received_at) >= start_at
+        ]
+        _, generation_total, latencies = self._build_sessions(
+            current_events,
+            task_key=task_key,
+        )
+        task_summaries = self._task_summaries(sessions)
+        previous_task_summaries = self._task_summaries(previous_sessions)
+        totals = self._summarize_sessions("all", list(sessions.values()))
+        totals["generation_total"] = generation_total
+        totals["p50_generation_latency_ms"] = self._percentile(latencies, 0.50)
+        totals["p95_generation_latency_ms"] = self._percentile(latencies, 0.95)
+
+        issue_candidates: list[dict[str, object]] = []
+        previous_issue_candidates: list[dict[str, object]] = []
+        for summary in task_summaries:
+            issue_candidates.extend(self._issue_candidates(summary))
+        for summary in previous_task_summaries:
+            previous_issue_candidates.extend(self._issue_candidates(summary))
+        issue_candidates = self._decorate_issue_candidates(
+            issue_candidates,
+            previous_issue_candidates,
+        )
+
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "artifact_type": "editor_assist_quality_summary",
+            "generated_at": self._format_datetime(current_time),
+            "window": {
+                "hours": bounded_hours,
+                "start_at": self._format_datetime(start_at),
+                "end_at": self._format_datetime(current_time),
+            },
+            "comparison_window": {
+                "hours": bounded_hours,
+                "start_at": self._format_datetime(comparison_start_at),
+                "end_at": self._format_datetime(start_at),
+                "session_total": len(previous_sessions),
+                "issue_candidate_total": len(previous_issue_candidates),
+            },
+            "filters": {
+                "site_id": site_id,
+                "task_key": task_key,
+            },
+            "totals": totals,
+            "tasks": task_summaries,
+            "trend": self._build_trend(
+                sessions,
+                start_at=start_at,
+                end_at=current_time,
+                window_hours=bounded_hours,
+            ),
+            "issue_candidates": issue_candidates,
+            "read_only": True,
+            "surface": "internal_editor_assist_quality",
+            "boundary": {
+                "production_mutation": False,
+                "automatic_prompt_mutation": False,
+                "automatic_model_mutation": False,
+                "automatic_router_mutation": False,
+                "approval_truth": "wordpress_local",
+                "preflight_truth": "wordpress_local",
+                "final_write_truth": "wordpress_local",
+                "control_plane": "wordpress_local",
+                "raw_content_retention": False,
+            },
+        }
+
+    def _build_sessions(
+        self,
+        events: list[PluginObservabilityEvent],
+        *,
+        task_key: str,
+    ) -> tuple[dict[str, dict[str, Any]], int, list[int]]:
         sessions: dict[str, dict[str, Any]] = {}
         generation_total = 0
         latencies: list[int] = []
@@ -90,10 +184,11 @@ class EditorAssistQualityService:
                     "outcome": "",
                     "outcome_confidence": "",
                     "save_kind": "",
-                    "latest_at": event.received_at,
+                    "started_at": self._aware_datetime(event.received_at),
+                    "latest_at": self._aware_datetime(event.received_at),
                 },
             )
-            item["latest_at"] = event.received_at
+            item["latest_at"] = self._aware_datetime(event.received_at)
             if event.event_kind == GENERATION_EVENT:
                 generation_total += 1
                 sequence = self._int(payload.get("generation_sequence"))
@@ -117,55 +212,21 @@ class EditorAssistQualityService:
                     payload.get("outcome_confidence") or ""
                 )
                 item["save_kind"] = str(payload.get("save_kind") or "")
+        return sessions, generation_total, latencies
 
+    def _task_summaries(
+        self,
+        sessions: dict[str, dict[str, Any]],
+    ) -> list[dict[str, object]]:
         task_groups = {
             task: [item for item in sessions.values() if item["task_key"] == task]
             for task in sorted(TRACKED_TASKS)
         }
-        task_summaries = [
+        return [
             self._summarize_sessions(task, items)
             for task, items in task_groups.items()
             if items
         ]
-        totals = self._summarize_sessions("all", list(sessions.values()))
-        totals["generation_total"] = generation_total
-        totals["p50_generation_latency_ms"] = self._percentile(latencies, 0.50)
-        totals["p95_generation_latency_ms"] = self._percentile(latencies, 0.95)
-
-        issue_candidates: list[dict[str, object]] = []
-        for summary in task_summaries:
-            issue_candidates.extend(self._issue_candidates(summary))
-
-        return {
-            "contract_version": CONTRACT_VERSION,
-            "artifact_type": "editor_assist_quality_summary",
-            "generated_at": self._format_datetime(current_time),
-            "window": {
-                "hours": bounded_hours,
-                "start_at": self._format_datetime(start_at),
-                "end_at": self._format_datetime(current_time),
-            },
-            "filters": {
-                "site_id": site_id,
-                "task_key": task_key,
-            },
-            "totals": totals,
-            "tasks": task_summaries,
-            "issue_candidates": issue_candidates,
-            "read_only": True,
-            "surface": "internal_editor_assist_quality",
-            "boundary": {
-                "production_mutation": False,
-                "automatic_prompt_mutation": False,
-                "automatic_model_mutation": False,
-                "automatic_router_mutation": False,
-                "approval_truth": "wordpress_local",
-                "preflight_truth": "wordpress_local",
-                "final_write_truth": "wordpress_local",
-                "control_plane": "wordpress_local",
-                "raw_content_retention": False,
-            },
-        }
 
     def _summarize_sessions(
         self,
@@ -218,7 +279,58 @@ class EditorAssistQualityService:
                 expired_sessions, resolved_sessions
             ),
             "published_exact_session_total": published_exact_sessions,
+            "sample_stage": self._sample_stage(session_total),
         }
+
+    def _build_trend(
+        self,
+        sessions: dict[str, dict[str, Any]],
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        window_hours: int,
+    ) -> list[dict[str, object]]:
+        bucket_total = max(1, min(7, (window_hours + 23) // 24))
+        bucket_seconds = max(
+            1,
+            int((end_at - start_at).total_seconds() / bucket_total),
+        )
+        trend: list[dict[str, object]] = []
+        session_items = list(sessions.values())
+        for index in range(bucket_total):
+            bucket_start = start_at + timedelta(seconds=bucket_seconds * index)
+            bucket_end = (
+                end_at
+                if index == bucket_total - 1
+                else start_at + timedelta(seconds=bucket_seconds * (index + 1))
+            )
+            bucket_sessions = [
+                item
+                for item in session_items
+                if bucket_start
+                <= self._aware_datetime(item.get("started_at"))
+                and (
+                    self._aware_datetime(item.get("started_at")) <= bucket_end
+                    if index == bucket_total - 1
+                    else self._aware_datetime(item.get("started_at")) < bucket_end
+                )
+            ]
+            summary = self._summarize_sessions("all", bucket_sessions)
+            trend.append(
+                {
+                    "label": bucket_start.date().isoformat(),
+                    "start_at": self._format_datetime(bucket_start),
+                    "end_at": self._format_datetime(bucket_end),
+                    "session_total": summary["session_total"],
+                    "repeat_session_rate": summary["repeat_session_rate"],
+                    "exact_saved_rate": summary["exact_saved_rate"],
+                    "unmatched_saved_rate": summary["unmatched_saved_rate"],
+                    "expired_without_save_rate": summary[
+                        "expired_without_save_rate"
+                    ],
+                }
+            )
+        return trend
 
     def _issue_candidates(
         self,
@@ -290,6 +402,8 @@ class EditorAssistQualityService:
         interpretation: str,
         comparison: str = "at_or_above",
     ) -> dict[str, object]:
+        sample_stage = self._sample_stage(sample_size)
+        confidence = self._sample_confidence(sample_size)
         return {
             "code": code,
             "severity": "warning",
@@ -299,12 +413,66 @@ class EditorAssistQualityService:
             "threshold": threshold,
             "comparison": comparison,
             "interpretation": interpretation,
-            "next_action": "run_fixed_corpus_evaluation",
+            "sample_stage": sample_stage,
+            "confidence": confidence,
+            "persistence": "new",
+            "previous_observed_rate": 0.0,
+            "actionable": False,
+            "next_action": (
+                "validate_instrumentation"
+                if confidence == "low"
+                else "review_quality_trend"
+            ),
             "recommended_eval_task": (
                 "summary_hard_gate" if task_key == "content_summary" else task_key
             ),
             "production_mutation": False,
         }
+
+    def _decorate_issue_candidates(
+        self,
+        candidates: list[dict[str, object]],
+        previous_candidates: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        previous_by_key = {
+            (str(item.get("task_key") or ""), str(item.get("code") or "")): item
+            for item in previous_candidates
+        }
+        for candidate in candidates:
+            previous = previous_by_key.get(
+                (
+                    str(candidate.get("task_key") or ""),
+                    str(candidate.get("code") or ""),
+                )
+            )
+            sustained = previous is not None
+            candidate["persistence"] = "sustained" if sustained else "new"
+            candidate["previous_observed_rate"] = (
+                self._float(previous.get("observed_rate")) if previous else 0.0
+            )
+            actionable = (
+                sustained and str(candidate.get("confidence") or "") == "high"
+            )
+            candidate["actionable"] = actionable
+            if actionable:
+                candidate["next_action"] = "run_fixed_corpus_evaluation"
+        return candidates
+
+    def _sample_stage(self, sample_size: int) -> str:
+        if sample_size < MIN_ISSUE_SAMPLE:
+            return "insufficient"
+        if sample_size < 50:
+            return "validation"
+        if sample_size < 200:
+            return "observation"
+        return "decision"
+
+    def _sample_confidence(self, sample_size: int) -> str:
+        if sample_size < 50:
+            return "low"
+        if sample_size < 200:
+            return "medium"
+        return "high"
 
     def _percentile(self, values: list[int], quantile: float) -> int:
         if not values:
@@ -333,9 +501,12 @@ class EditorAssistQualityService:
             return 0.0
 
     def _format_datetime(self, value: datetime) -> str:
-        normalized = (
-            value.replace(tzinfo=UTC)
-            if value.tzinfo is None
-            else value.astimezone(UTC)
-        )
+        normalized = self._aware_datetime(value)
         return normalized.isoformat().replace("+00:00", "Z")
+
+    def _aware_datetime(self, value: object) -> datetime:
+        if not isinstance(value, datetime):
+            return datetime.min.replace(tzinfo=UTC)
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)

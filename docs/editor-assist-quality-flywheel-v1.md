@@ -81,7 +81,8 @@ Filters:
 
 The response includes session counts, repeat rate, exact saved rate, unmatched
 saved rate, expired-without-save rate, exact publish count, generation latency
-P50/P95, task breakdowns, and issue candidates.
+P50/P95, task breakdowns, a bounded trend, the immediately preceding comparison
+window, and issue candidates.
 
 Issue candidates require at least five relevant sessions:
 
@@ -89,9 +90,50 @@ Issue candidates require at least five relevant sessions:
 - no-save pressure: expired rate at or above 30%;
 - exact adoption low: exact saved rate below 40%.
 
-These thresholds are initial diagnostic defaults, not product promises. Every
-candidate has `next_action=run_fixed_corpus_evaluation` and
-`production_mutation=false`.
+These thresholds are initial diagnostic defaults, not product promises.
+Candidates are classified by sample size:
+
+- fewer than 5 sessions: `insufficient`;
+- 5 to 49 sessions: `validation`, low confidence;
+- 50 to 199 sessions: `observation`, medium confidence;
+- 200 or more sessions: `decision`, high confidence.
+
+A candidate is `sustained` only when the same task and issue code also crossed
+the threshold in the immediately preceding equal-length window. Only a
+high-confidence sustained candidate is marked `actionable` and recommends
+`run_fixed_corpus_evaluation`. This recommendation remains read-only and never
+starts Eval automatically.
+
+## Runtime Diagnostics v1.1
+
+The existing Runtime Diagnostics page contains a compact
+`Editor-assist quality` section. It reuses the existing admin read boundary and
+chart component to show:
+
+- current sessions and adoption rates;
+- up to seven bounded trend buckets;
+- task filters for title, summary, and rewrite;
+- sample stage, confidence, persistence, and candidate next action.
+
+This is an operator diagnostic surface, not a second product dashboard. It has
+no feedback form, mutation control, notification action, or WordPress write
+path.
+
+## Daily Read-only Detection
+
+The existing `ops-worker` cadence evaluates the seven-day summary once every
+24 hours. It records only aggregate counts and bounded candidate references in
+the existing cadence audit evidence:
+
+- issue code and task key;
+- sample size and confidence;
+- new or sustained persistence;
+- actionable candidate count.
+
+The detector creates no database table, notification, ticket, Eval run, or
+production configuration change. It remains useful while volume is low because
+the result distinguishes instrumentation validation from decision-grade
+evidence.
 
 ## Existing Components Reused
 
@@ -101,8 +143,8 @@ candidate has `next_action=run_fixed_corpus_evaluation` and
 - Eval Lab fixed-corpus and Promptfoo-style evaluation tasks, including
   `summary_hard_gate`.
 
-No new telemetry platform, queue, database migration, or dashboard framework is
-introduced in v1.
+No new telemetry platform, queue, database migration, scheduler, notification
+system, or dashboard framework is introduced in v1.1.
 
 ## Gate
 

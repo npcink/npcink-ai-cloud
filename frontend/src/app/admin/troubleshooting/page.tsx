@@ -11,6 +11,7 @@ import {
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
+import { EditorAssistQualityPanel } from '@/components/admin/EditorAssistQualityPanel';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
@@ -247,6 +248,7 @@ export default function AdminTroubleshootingPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [qualityRefreshSignal, setQualityRefreshSignal] = useState(0);
   const requestActiveRef = useRef(false);
   const requestSequenceRef = useRef(0);
   const hasLoadedRef = useRef(false);
@@ -318,7 +320,15 @@ export default function AdminTroubleshootingPage() {
         description={t('admin.troubleshooting.description', {}, 'Review the current runtime conclusion, open active anomalies, and continue into the narrowest evidence view.')}
         aside={<BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />}
         actions={(
-          <button type="button" className="btn btn-secondary btn-sm" disabled={loading || refreshing} onClick={() => void loadTelemetry(true)}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={loading || refreshing}
+            onClick={() => {
+              setQualityRefreshSignal((current) => current + 1);
+              void loadTelemetry(true);
+            }}
+          >
             {refreshing ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
           </button>
         )}
@@ -424,6 +434,11 @@ export default function AdminTroubleshootingPage() {
           </BackofficeSectionPanel>
         </div>
       )}
+
+      <EditorAssistQualityPanel
+        windowHours={windowHours}
+        refreshSignal={qualityRefreshSignal}
+      />
 
       <BackofficeSectionPanel id="evidence-lanes" className="overflow-hidden p-0 md:p-0">
         <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6"><h2 className="text-lg font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</h2><p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{t('admin.troubleshooting.lanes_desc', {}, 'Open the narrowest read-only detail view that matches the support question.')}</p></div>

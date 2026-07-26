@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -94,6 +94,10 @@ def test_editor_assist_quality_summary_builds_problem_candidates(
     assert data["totals"]["expired_without_save_rate"] == 0.4
     assert data["totals"]["p50_generation_latency_ms"] == 300
     assert data["totals"]["p95_generation_latency_ms"] == 500
+    assert data["totals"]["sample_stage"] == "validation"
+    assert len(data["trend"]) == 1
+    assert data["trend"][0]["session_total"] == 5
+    assert data["comparison_window"]["session_total"] == 0
     assert data["tasks"][0]["task_key"] == "content_summary"
     assert {
         candidate["code"] for candidate in data["issue_candidates"]
@@ -103,8 +107,11 @@ def test_editor_assist_quality_summary_builds_problem_candidates(
         "editor_assist.exact_adoption_low",
     }
     assert all(
-        candidate["next_action"] == "run_fixed_corpus_evaluation"
+        candidate["next_action"] == "validate_instrumentation"
         and candidate["recommended_eval_task"] == "summary_hard_gate"
+        and candidate["confidence"] == "low"
+        and candidate["persistence"] == "new"
+        and candidate["actionable"] is False
         and candidate["production_mutation"] is False
         for candidate in data["issue_candidates"]
     )
@@ -196,3 +203,47 @@ def test_editor_assist_quality_task_filter_is_read_only(tmp_path: Path) -> None:
     assert summary["filters"]["task_key"] == "title_generation"
     assert summary["totals"]["session_total"] == 1
     assert summary["tasks"][0]["task_key"] == "title_generation"
+
+
+def test_editor_assist_quality_marks_repeated_window_candidates_as_sustained(
+    tmp_path: Path,
+) -> None:
+    database_url, _ = _build_client(tmp_path)
+    current_time = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    previous_events = []
+    for event in _fixture_events():
+        previous_events.append(
+            {
+                **event,
+                "event_id": f"previous_{event['event_id']}",
+                "quality_session_id": f"previous_{event['quality_session_id']}",
+            }
+        )
+    PluginObservabilityService(database_url).ingest_events(
+        site_id="site-quality",
+        key_id="key_default",
+        events=previous_events,
+        received_at=current_time - timedelta(days=8),
+    )
+    PluginObservabilityService(database_url).ingest_events(
+        site_id="site-quality",
+        key_id="key_default",
+        events=_fixture_events(),
+        received_at=current_time,
+    )
+
+    summary = EditorAssistQualityService(database_url).get_summary(
+        window_hours=168,
+        now=current_time,
+    )
+
+    assert summary["comparison_window"]["session_total"] == 5
+    assert len(summary["trend"]) == 7
+    assert sum(int(item["session_total"]) for item in summary["trend"]) == 5
+    assert all(
+        candidate["persistence"] == "sustained"
+        and candidate["previous_observed_rate"] > 0
+        and candidate["confidence"] == "low"
+        and candidate["actionable"] is False
+        for candidate in summary["issue_candidates"]
+    )

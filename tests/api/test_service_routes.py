@@ -6818,7 +6818,7 @@ def test_service_routes_expose_ops_cadence_summary(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    assert payload["totals"]["tasks_total"] == 10
+    assert payload["totals"]["tasks_total"] == 11
     assert any(item["task_id"] == "retention_cleanup" for item in payload["items"])
     assert any(item["task_id"] == "artifact_inventory_reconciliation" for item in payload["items"])
     assert any(item["task_id"] == "payment_order_expiration" for item in payload["items"])
@@ -6881,7 +6881,7 @@ def test_service_routes_expose_observability_summary(tmp_path: Path) -> None:
     assert "feature_flags" not in payload
     assert payload["workers"]["totals"]["workers_total"] == 3
     assert any(item["worker_id"] == "runtime_queue" for item in payload["workers"]["items"])
-    assert payload["cadence"]["totals"]["tasks_total"] == 10
+    assert payload["cadence"]["totals"]["tasks_total"] == 11
     assert any(
         item["task_id"] == "artifact_inventory_reconciliation"
         for item in payload["cadence"]["items"]

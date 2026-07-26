@@ -439,6 +439,49 @@ export async function installAdminMocks(page: Page) {
       return;
     }
 
+    if (pathname === '/api/admin/editor-assist-quality') {
+      await fulfillJson(route, {
+        contract_version: 'editor_assist_quality.v1',
+        generated_at: '2026-04-08T10:00:00Z',
+        filters: {
+          task_key: searchParams.get('task_key') || '',
+          window_hours: Number(searchParams.get('window_hours') || 24),
+        },
+        totals: {
+          session_total: 65,
+          resolved_session_total: 60,
+          repeat_session_rate: 0.2769,
+          exact_saved_rate: 0.45,
+          unmatched_saved_rate: 0.35,
+          expired_without_save_rate: 0.2,
+          sample_stage: 'observation',
+        },
+        trend: [
+          { label: '2026-04-02', session_total: 8, repeat_session_rate: 0.25, exact_saved_rate: 0.5 },
+          { label: '2026-04-03', session_total: 9, repeat_session_rate: 0.22, exact_saved_rate: 0.44 },
+          { label: '2026-04-04', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
+          { label: '2026-04-05', session_total: 7, repeat_session_rate: 0.29, exact_saved_rate: 0.43 },
+          { label: '2026-04-06', session_total: 11, repeat_session_rate: 0.27, exact_saved_rate: 0.45 },
+          { label: '2026-04-07', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.5 },
+          { label: '2026-04-08', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
+        ],
+        issue_candidates: [
+          {
+            code: 'editor_assist.repeat_pressure',
+            task_key: 'content_summary',
+            sample_size: 65,
+            observed_rate: 0.2769,
+            confidence: 'medium',
+            persistence: 'sustained',
+            actionable: false,
+            next_action: 'review_quality_trend',
+          },
+        ],
+        read_only: true,
+      });
+      return;
+    }
+
     if (pathname === '/api/admin/runtime-telemetry') {
       await fulfillJson(route, {
         generated_at: '2026-04-08T10:00:00Z',

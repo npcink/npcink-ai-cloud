@@ -25,7 +25,10 @@ echo "[editor-assist-quality] Validating metadata-only regression fixture"
 	>/tmp/npcink-editor-assist-quality-events.json
 
 echo "[editor-assist-quality] Running focused API and aggregation tests"
-"${PYTHON_BIN}" -m pytest tests/api/test_editor_assist_quality_routes.py -q
+"${PYTHON_BIN}" -m pytest \
+	tests/api/test_editor_assist_quality_routes.py \
+	tests/workers/test_ops_cadence_worker.py::test_editor_assist_quality_detection_records_bounded_read_only_evidence \
+	-q
 
 echo "[editor-assist-quality] Running targeted Python lint"
 "${RUFF_CMD[@]}" check \
@@ -33,7 +36,16 @@ echo "[editor-assist-quality] Running targeted Python lint"
 	app/domain/observability/plugin_events.py \
 	app/api/routes/observability.py \
 	app/api/routes/service.py \
-	tests/api/test_editor_assist_quality_routes.py
+	app/workers/ops_cadence.py \
+	tests/api/test_editor_assist_quality_routes.py \
+	tests/workers/test_ops_cadence_worker.py
+
+echo "[editor-assist-quality] Running bounded Admin UI contract"
+(
+	cd frontend
+	node tests/unit/admin-editor-assist-quality-contract.mjs
+	node tests/unit/admin-api-route-allowlist-contract.mjs
+)
 
 echo "[editor-assist-quality] Checking the no-auto-mutation boundary"
 rg -q '"automatic_prompt_mutation": False' \
@@ -44,5 +56,9 @@ rg -q '"automatic_router_mutation": False' \
 	app/domain/observability/editor_assist_quality.py
 rg -q '"raw_content_retention": False' \
 	app/domain/observability/editor_assist_quality.py
+rg -q '"automatic_evaluation_trigger": False' \
+	app/workers/ops_cadence.py
+rg -q 'interval_seconds=lambda _settings: 24 \* 60 \* 60' \
+	app/workers/ops_cadence.py
 
 echo "[editor-assist-quality] Gate passed"
