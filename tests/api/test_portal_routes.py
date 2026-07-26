@@ -1101,6 +1101,17 @@ def test_portal_remove_site_soft_removes_record_and_revokes_active_keys(
     )
     assert issue_response.status_code == 200, issue_response.text
 
+    policy_response = client.get(
+        "/portal/v1/site-relink-policy",
+        headers=build_portal_headers(),
+    )
+    assert policy_response.status_code == 200, policy_response.text
+    assert policy_response.json()["data"] == {
+        "enabled": True,
+        "cooldown_days": 90,
+        "same_account_reconnect_allowed": True,
+    }
+
     remove_response = client.post(
         "/portal/v1/sites/site_portal_remove/remove",
         headers=build_portal_headers(idempotency_key="portal-remove-site"),
@@ -1108,7 +1119,15 @@ def test_portal_remove_site_soft_removes_record_and_revokes_active_keys(
     assert remove_response.status_code == 200, remove_response.text
     remove_data = remove_response.json()["data"]
     assert remove_data["site"]["status"] == "archived"
+    assert remove_data["site"]["ownership_released_at"]
+    assert remove_data["site"]["relink_cooldown_until"]
     assert remove_data["revoked_key_ids"] == [key_id]
+    assert remove_data["relink_policy"] == {
+        "enabled": True,
+        "cooldown_days": 90,
+        "same_account_reconnect_allowed": True,
+        "relink_available_at": remove_data["site"]["relink_cooldown_until"],
+    }
     _assert_no_portal_commercial_internal_fields(remove_data)
 
     with get_session(database_url) as session:
@@ -1136,6 +1155,10 @@ def test_portal_remove_site_soft_removes_record_and_revokes_active_keys(
     assert idempotent_response.status_code == 200, idempotent_response.text
     assert idempotent_response.json()["data"]["site"]["status"] == "archived"
     assert idempotent_response.json()["data"]["revoked_key_ids"] == []
+    assert (
+        idempotent_response.json()["data"]["relink_policy"]["relink_available_at"]
+        == remove_data["relink_policy"]["relink_available_at"]
+    )
 
     dispose_engine(database_url)
 
@@ -2085,6 +2108,18 @@ def test_cross_account_addon_relink_waits_for_cooldown_and_keeps_free_account_ow
         headers=build_internal_headers(idempotency_key="site-relink-disable"),
     )
     assert disable_response.status_code == 200, disable_response.text
+    disabled_policy_response = client.get(
+        "/portal/v1/site-relink-policy",
+        headers=build_portal_headers(
+            principal_id="principal:site-relink-first@example.com"
+        ),
+    )
+    assert disabled_policy_response.status_code == 200, disabled_policy_response.text
+    assert disabled_policy_response.json()["data"] == {
+        "enabled": False,
+        "cooldown_days": 90,
+        "same_account_reconnect_allowed": True,
+    }
     clear_response = client.patch(
         "/internal/service/admin/sites/site_transfer-example-com/relink-cooldown",
         json={"action": "clear", "reason": "verified ownership transfer"},
@@ -5920,6 +5955,8 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "site_url",
         "platform_kind",
         "status",
+        "ownership_released_at",
+        "relink_cooldown_until",
         "created_at",
     }
     assert set(summary_data["coverage"]) == {
@@ -5981,6 +6018,8 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         "site_url",
         "platform_kind",
         "status",
+        "ownership_released_at",
+        "relink_cooldown_until",
         "created_at",
     }
     assert set(entitlements_data["plan_version"]) == {

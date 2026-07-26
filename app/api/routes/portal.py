@@ -63,6 +63,7 @@ from app.domain.observability.site_monitoring_overview import SiteMonitoringOver
 from app.domain.portal_idempotency import build_portal_business_idempotency_key
 from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
+    resolve_site_relink_policy,
 )
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.usage.service import UsageService
@@ -212,6 +213,8 @@ def _portal_public_site_data(value: object) -> dict[str, object]:
         "site_url": str(site.get("site_url") or ""),
         "platform_kind": str(site.get("platform_kind") or ""),
         "status": str(site.get("status") or ""),
+        "ownership_released_at": str(site.get("ownership_released_at") or ""),
+        "relink_cooldown_until": str(site.get("relink_cooldown_until") or ""),
         "created_at": str(site.get("created_at") or ""),
     }
 
@@ -982,11 +985,31 @@ def _portal_free_downgrade_data(value: object) -> dict[str, object]:
 
 def _portal_remove_site_data(value: object) -> dict[str, object]:
     result = _dict_value(value)
+    relink_policy = _dict_value(result.get("relink_policy"))
     return {
         "site": _portal_public_site_data(result.get("site")),
         "revoked_key_ids": [
             str(item) for item in _object_list(result.get("revoked_key_ids"))
         ],
+        "relink_policy": {
+            "enabled": bool(relink_policy.get("enabled")),
+            "cooldown_days": int(relink_policy.get("cooldown_days") or 0),
+            "same_account_reconnect_allowed": bool(
+                relink_policy.get("same_account_reconnect_allowed")
+            ),
+            "relink_available_at": str(
+                relink_policy.get("relink_available_at") or ""
+            ),
+        },
+    }
+
+
+def _portal_site_relink_policy_data(value: object) -> dict[str, object]:
+    policy = _dict_value(value)
+    return {
+        "enabled": bool(policy.get("enabled", True)),
+        "cooldown_days": int(policy.get("cooldown_days") or 90),
+        "same_account_reconnect_allowed": True,
     }
 
 
@@ -3699,6 +3722,23 @@ async def submit_portal_support_request_feedback(
     return _portal_route_envelope(
         message="portal support request feedback submitted",
         data=result,
+    )
+
+
+@router.get("/site-relink-policy")
+async def get_portal_site_relink_policy(request: Request) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    return _portal_route_envelope(
+        message="portal site relink policy loaded",
+        data=_portal_site_relink_policy_data(
+            resolve_site_relink_policy(_get_commercial_service(request).database_url)
+        ),
     )
 
 

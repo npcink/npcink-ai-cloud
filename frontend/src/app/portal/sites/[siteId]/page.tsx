@@ -15,8 +15,14 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { usePortalSiteMonitoring } from '@/hooks/usePortalSiteMonitoring';
 import { usePortalSiteKnowledge } from '@/hooks/usePortalSiteKnowledge';
 import { useSession } from '@/hooks/useSession';
-import { portalClient, type PortalSiteSummaryRecord, type Site } from '@/lib/portal-client';
+import {
+  portalClient,
+  type PortalSiteRelinkPolicy,
+  type PortalSiteSummaryRecord,
+  type Site,
+} from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { formatDate } from '@/lib/utils';
 import {
   getPortalSiteDisplayName,
   getPortalSiteUrl,
@@ -33,6 +39,8 @@ function PortalSiteRecordContent() {
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [removeError, setRemoveError] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
+  const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
+  const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const siteMonitoring = usePortalSiteMonitoring(siteId, t);
   const siteKnowledge = usePortalSiteKnowledge(siteId, t);
 
@@ -58,6 +66,34 @@ function PortalSiteRecordContent() {
       alive = false;
     };
   }, [isAuthenticated, siteId, t]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSiteRelinkPolicy(null);
+      setExpectedRelinkAvailableAt('');
+      return;
+    }
+    let alive = true;
+    portalClient
+      .getSiteRelinkPolicy()
+      .then((response) => {
+        if (alive) {
+          setSiteRelinkPolicy(response.data);
+          setExpectedRelinkAvailableAt(
+            formatDate(new Date(Date.now() + response.data.cooldown_days * 86400000))
+          );
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setSiteRelinkPolicy(null);
+          setExpectedRelinkAvailableAt('');
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return <PortalLoadingState message={t('common.loading')} />;
@@ -129,7 +165,7 @@ function PortalSiteRecordContent() {
     try {
       await portalClient.removeSite(site.site_id);
       await refresh();
-      router.push('/portal#sites');
+      router.push(`/portal?removed_site=${encodeURIComponent(site.site_id)}#sites`);
     } catch (err) {
       setRemoveError(
         formatPortalErrorMessage(
@@ -142,6 +178,24 @@ function PortalSiteRecordContent() {
       setIsRemovingSite(false);
     }
   };
+
+  const removeSiteConfirmation = expectedRelinkAvailableAt
+    ? siteRelinkPolicy?.enabled
+      ? t(
+          'portal.remove_site_confirm_with_date',
+          { date: expectedRelinkAvailableAt },
+          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account may try after approximately ${expectedRelinkAvailableAt}. Free service and credits stay with this account.`
+        )
+      : t(
+          'portal.remove_site_confirm_disabled_with_date',
+          { date: expectedRelinkAvailableAt },
+          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately. The cooldown is expected to end around ${expectedRelinkAvailableAt}, but cross-account relinking is currently disabled. Free service and credits stay with this account.`
+        )
+    : t(
+        'portal.remove_site_confirm',
+        {},
+        'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
+      );
 
   return (
     <PortalPageStack>
@@ -281,11 +335,7 @@ function PortalSiteRecordContent() {
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         title={t('portal.remove_site_action', {}, 'Remove site')}
-        description={t(
-          'portal.remove_site_confirm',
-          {},
-          'Remove this site? Cloud service will stop, active keys will be revoked, and usage history will be kept.'
-        )}
+        description={removeSiteConfirmation}
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={closeRemoveModal} disabled={isRemovingSite}>

@@ -20,9 +20,33 @@ import {
 import {
   portalClient,
   type PortalAddonConnectionAccount,
+  type PortalSiteRelinkPolicy,
   type Site,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { formatDate } from '@/lib/utils';
+
+type PortalTranslator = (
+  key: string,
+  params?: Record<string, string>,
+  fallback?: string
+) => string;
+
+function siteRemovalNotice(t: PortalTranslator, relinkAvailableAt: string): string {
+  const formattedDate = formatDate(relinkAvailableAt);
+  if (!formattedDate) {
+    return t(
+      'portal.site_remove_success_no_date',
+      {},
+      'Site removed. Active keys were revoked. The same account may reconnect at any time; another account must wait for the Cloud cooldown to end. Free service and credits remain with this account.'
+    );
+  }
+  return t(
+    'portal.site_remove_success_with_date',
+    { date: formattedDate },
+    `Site removed. Active keys were revoked. The same account may reconnect at any time; another account may try after ${formattedDate} if cross-account relinking is available. Free service and credits remain with this account.`
+  );
+}
 
 function PortalSitesWorkspaceContent() {
   const pathname = usePathname();
@@ -41,6 +65,8 @@ function PortalSitesWorkspaceContent() {
   const [removeError, setRemoveError] = useState('');
   const [removeNotice, setRemoveNotice] = useState('');
   const [isRemovingSite, setIsRemovingSite] = useState(false);
+  const [siteRelinkPolicy, setSiteRelinkPolicy] = useState<PortalSiteRelinkPolicy | null>(null);
+  const [expectedRelinkAvailableAt, setExpectedRelinkAvailableAt] = useState('');
   const sites = session?.sites || [];
   const visibleSites = getVisiblePortalSites(sites);
   const selectedSiteId = session?.selected_context?.site.site_id || '';
@@ -82,6 +108,47 @@ function PortalSitesWorkspaceContent() {
       setShowConnectModal(true);
     }
   }, [addonConnectMode, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSiteRelinkPolicy(null);
+      setExpectedRelinkAvailableAt('');
+      return;
+    }
+    let cancelled = false;
+    void portalClient.getSiteRelinkPolicy()
+      .then((response) => {
+        if (!cancelled) {
+          setSiteRelinkPolicy(response.data);
+          setExpectedRelinkAvailableAt(
+            formatDate(new Date(Date.now() + response.data.cooldown_days * 86400000))
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSiteRelinkPolicy(null);
+          setExpectedRelinkAvailableAt('');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const removedSiteId = searchParams.get('removed_site');
+    if (!removedSiteId || !session) return;
+    const removedSite = session.sites.find(
+      (site) => site.site_id === removedSiteId && site.status === 'archived'
+    );
+    if (!removedSite) return;
+    setRemoveNotice(siteRemovalNotice(t, removedSite.relink_cooldown_until || ''));
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('removed_site');
+    const nextQuery = params.toString();
+    router.replace(`${pathname}${nextQuery ? `?${nextQuery}` : ''}#sites`, { scroll: false });
+  }, [pathname, router, searchParams, session, t]);
 
   useEffect(() => {
     if (!addonConnectMode || !isAuthenticated) {
@@ -171,15 +238,9 @@ function PortalSitesWorkspaceContent() {
     setRemoveError('');
     setRemoveNotice('');
     try {
-      await portalClient.removeSite(pendingRemoveSite.site_id);
+      const response = await portalClient.removeSite(pendingRemoveSite.site_id);
       await refresh();
-      setRemoveNotice(
-        t(
-          'portal.site_remove_success',
-          {},
-          'Site removed. Active keys were revoked; Cloud retains operational evidence for support and audit, but the site is no longer available in Portal.'
-        )
-      );
+      setRemoveNotice(siteRemovalNotice(t, response.data.relink_policy.relink_available_at));
       setPendingRemoveSite(null);
     } catch (error) {
       setRemoveError(
@@ -193,6 +254,24 @@ function PortalSitesWorkspaceContent() {
       setIsRemovingSite(false);
     }
   };
+
+  const removeSiteConfirmation = expectedRelinkAvailableAt
+    ? siteRelinkPolicy?.enabled
+      ? t(
+          'portal.remove_site_confirm_with_date',
+          { date: expectedRelinkAvailableAt },
+          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account may try after approximately ${expectedRelinkAvailableAt}. Free service and credits stay with this account.`
+        )
+      : t(
+          'portal.remove_site_confirm_disabled_with_date',
+          { date: expectedRelinkAvailableAt },
+          `Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately. The cooldown is expected to end around ${expectedRelinkAvailableAt}, but cross-account relinking is currently disabled. Free service and credits stay with this account.`
+        )
+    : t(
+        'portal.remove_site_confirm',
+        {},
+        'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.'
+      );
 
   return (
     <section id="sites" className="scroll-mt-24" data-portal-home="sites-workspace">
@@ -357,11 +436,7 @@ function PortalSitesWorkspaceContent() {
         closeLabel={t('common.close', {}, 'Close')}
         closeOnOverlay={!isRemovingSite}
         title={t('portal.remove_site_action', {}, 'Remove site')}
-        description={t(
-          'portal.remove_site_confirm',
-          {},
-          'Remove this site? Cloud service will stop, active keys will be revoked, and the site will no longer be available in Portal. Cloud retains operational evidence under its retention policy.'
-        )}
+        description={removeSiteConfirmation}
         className="portal-commercial-dialog rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
         footer={
           <>

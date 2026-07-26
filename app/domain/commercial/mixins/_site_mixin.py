@@ -645,6 +645,14 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 return {
                     "site": self._serialize_site(site),
                     "revoked_key_ids": [],
+                    "relink_policy": {
+                        "enabled": bool(relink_policy.get("enabled", True)),
+                        "cooldown_days": int(relink_policy.get("cooldown_days") or 90),
+                        "same_account_reconnect_allowed": True,
+                        "relink_available_at": self._serialize_datetime(
+                            site.relink_cooldown_until
+                        ),
+                    },
                 }
             metadata = dict(site.metadata_json or {})
             lifecycle = metadata.get("portal_lifecycle")
@@ -711,6 +719,12 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             return {
                 "site": payload,
                 "revoked_key_ids": revoked_key_ids,
+                "relink_policy": {
+                    "enabled": bool(relink_policy.get("enabled", True)),
+                    "cooldown_days": int(relink_policy.get("cooldown_days") or 90),
+                    "same_account_reconnect_allowed": True,
+                    "relink_available_at": self._serialize_datetime(cooldown_until),
+                },
             }
 
     def update_site_relink_cooldown(

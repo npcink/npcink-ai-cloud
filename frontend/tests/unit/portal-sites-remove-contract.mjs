@@ -15,6 +15,11 @@ assert.match(
   /async removeSite\(siteId: string\)[\s\S]*\/sites\/\$\{siteId\}\/remove/,
   'portal client must expose the service-side soft-remove endpoint'
 );
+assert.match(
+  portalClientSource,
+  /async getSiteRelinkPolicy\(\)[\s\S]*\/site-relink-policy/,
+  'portal client must expose the Cloud-owned read-only relink policy'
+);
 
 assert.match(
   sitesPageSource,
@@ -24,20 +29,25 @@ assert.match(
 
 assert.match(
   sitesPageSource,
-  /portal\.remove_site_confirm/,
-  'the merged service page must explain that removal stops service, revokes active keys, and keeps history before confirming'
+  /portal\.remove_site_confirm_with_date[\s\S]*portal\.remove_site_confirm_disabled_with_date/,
+  'the merged service page must explain the expected cross-account date and disabled-policy state before confirming'
 );
 
 assert.match(
   sitesPageSource,
-  /portal\.site_remove_success/,
-  'the merged service page must show the service stopped, keys revoked, history kept success state'
+  /siteRemovalNotice[\s\S]*relink_available_at/,
+  'the merged service page must show the authoritative relink date returned after removal'
 );
 
 assert.match(
   siteRecordPageSource,
   /remove_sites[\s\S]*portalClient\.removeSite/,
   '/portal/sites/[siteId] must keep the same permission-gated remove action available from the site record'
+);
+assert.match(
+  siteRecordPageSource,
+  /getSiteRelinkPolicy[\s\S]*portal\.remove_site_confirm_with_date/,
+  '/portal/sites/[siteId] must use the same Cloud-owned policy for its remove confirmation'
 );
 
 assert.doesNotMatch(
