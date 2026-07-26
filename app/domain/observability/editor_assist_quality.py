@@ -317,14 +317,18 @@ class EditorAssistQualityService:
         return round(numerator / denominator, 4) if denominator > 0 else 0.0
 
     def _int(self, value: object) -> int:
+        if not isinstance(value, (str, int, float)):
+            return 0
         try:
-            return int(value)  # type: ignore[arg-type]
+            return int(value)
         except (TypeError, ValueError):
             return 0
 
     def _float(self, value: object) -> float:
+        if not isinstance(value, (str, int, float)):
+            return 0.0
         try:
-            return float(value)  # type: ignore[arg-type]
+            return float(value)
         except (TypeError, ValueError):
             return 0.0
 
