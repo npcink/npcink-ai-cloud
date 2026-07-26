@@ -212,7 +212,7 @@ export function EditorAssistQualityPanel({
           [t('admin.editor_quality.sessions', {}, 'Sessions'), formatNumber(data?.totals.sessionTotal || 0)],
           [t('admin.editor_quality.repeat_rate', {}, 'Repeat rate'), formatRate(data?.totals.repeatRate || 0)],
           [t('admin.editor_quality.exact_rate', {}, 'Exact adoption'), formatRate(data?.totals.exactSavedRate || 0)],
-          [t('admin.editor_quality.edited_rate', {}, 'Saved after edit'), formatRate(data?.totals.unmatchedSavedRate || 0)],
+          [t('admin.editor_quality.unmatched_rate', {}, 'Post-generation save (unmatched)'), formatRate(data?.totals.unmatchedSavedRate || 0)],
           [t('admin.editor_quality.expired_rate', {}, 'No-save expiry'), formatRate(data?.totals.expiredRate || 0)],
         ].map(([label, value]) => (
           <div key={label} className="px-5 py-3.5 md:px-6">
