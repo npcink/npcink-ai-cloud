@@ -53,6 +53,17 @@ assert.doesNotMatch(pageSource, /isCapabilityProviderForm|capabilityAddDialogOpe
 assert.doesNotMatch(pageSource, /action_add_capability_supplier|capability_channel_form|capability_diagnostics/);
 assert.doesNotMatch(pageSource, /runtime-telemetry|RuntimeTelemetrySummary|provider_model_health|capability_matrix/);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
+assert.match(pageSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
+assert.match(pageSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
+assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);
+assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
+assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);
+assert.match(pageSource, /imageOutputHostsAreExact\(imageOutputHosts\)/);
+assert.match(pageSource, /URL output requires an exact provider-owned download host/);
+assert.match(pageSource, /schemes, paths, ports, and wildcards are rejected/);
+assert.match(i18nSource, /'admin\.ai_resources\.field_image_output_hosts': '精确图片下载域名'/);
+assert.match(i18nSource, /文本或模型目录连接测试通过，不代表生成图片一定可以交付/);
+assert.match(i18nSource, /不能包含协议、路径、端口或通配符/);
 
 assert.match(toolbarSource, /action_add_model_supplier/);
 assert.doesNotMatch(toolbarSource, /SupplierTypeFilter|supplierTypeFilter|action_add_capability_supplier/);

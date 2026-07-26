@@ -17,6 +17,11 @@ export type SupplierConnection = {
   capability_ids: string[];
   runtime_profile_ids: string[];
   model_ids?: string[];
+  config?: {
+    image_response_format?: string;
+    image_output_hosts?: string[];
+    [key: string]: unknown;
+  };
   last_tested_at?: string;
   last_error_code?: string;
   last_error_message?: string;
