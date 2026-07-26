@@ -1,7 +1,8 @@
 # Editor Assist Quality Flywheel Closeout and Development Retrospective — 2026-07-26
 
-Status: source, protected merge, CI, and M4 acceptance receipt completed.
-Production deployment and real-editor quality benefit are not claimed.
+Status: v1.1 source, protected merge, CI, daily detection, and final M4
+acceptance receipt completed. Production deployment and real-editor quality
+benefit are not claimed.
 
 Scope: the discussion, design, implementation, verification, and closeout of
 the metadata-only quality flywheel for WordPress AI title, summary, and rewrite
@@ -25,33 +26,48 @@ reliable, privacy-preserving connection between a generation and the editor's
 later behavior. Without that connection, a technically successful provider
 call could not answer whether the suggestion was useful.
 
-The completed v1 closes that instrumentation gap:
+The completed v1.1 closes that instrumentation gap without adding editor
+interruptions:
 
 - the Cloud Addon correlates title, summary, and rewrite generations with
   repeated generation, exact local save/publish, unmatched save, or expiry;
 - it uploads only bounded metadata, keyed fingerprints, and HMAC scopes;
 - Cloud aggregates the events into a read-only quality summary and diagnostic
   issue candidates;
+- the existing Runtime Diagnostics surface shows bounded trends, task filters,
+  sample stage, confidence, persistence, and the next evidence action;
+- the existing operations cadence evaluates the seven-day summary once every
+  24 hours and records aggregate evidence without creating a notification,
+  ticket, Eval run, or product mutation;
 - every issue candidate points to fixed-corpus evaluation rather than changing
   production behavior automatically;
 - WordPress remains approval, adoption, and final-write truth.
 
-The delivery used two protected pull requests:
+The delivery used protected pull requests in the Addon and Cloud repositories:
 
 - Cloud Addon PR
   [#57](https://github.com/npcink/npcink-cloud-addon/pull/57), merged as
   `4e8a39026fab02e884e2716151392699ea53b5e4`;
 - Cloud PR
   [#279](https://github.com/npcink/npcink-ai-cloud/pull/279), merged as
-  `11bdddb00750b765cc676a51214757b5a1faa9cf`.
+  `11bdddb00750b765cc676a51214757b5a1faa9cf`;
+- Cloud PR
+  [#284](https://github.com/npcink/npcink-ai-cloud/pull/284), merged as
+  `e77d0d09`, added the compact diagnostic view, comparison windows,
+  confidence stages, persistence, and daily read-only detection;
+- Cloud PR
+  [#286](https://github.com/npcink/npcink-ai-cloud/pull/286), merged as
+  `310ad998`, corrected the unmatched-save label so the UI did not claim
+  edited adoption that the evidence could not prove.
 
-Both repositories passed their focused and protected gates. Cloud
-`master@11bdddb0` was promoted and recorded
-`acceptance_state=accepted`, `promotion_pr=279`,
-`source_branch=master`, and `source_dirty=false`. A later unrelated candidate
-subsequently replaced the visible shared M4 preview state. That does not undo
-the historical acceptance receipt, but it proves that M4 status is mutable
-preview state and must not be used as a durable acceptance ledger.
+Both repositories passed their focused and protected gates. After the final
+Cloud integration change in PR #287, clean `master@fe5e3d01` was promoted and
+recorded `acceptance_state=accepted`, `source_branch=master`, and
+`source_dirty=false`. This final receipt is important because the shared M4
+database had briefly advanced to migration `20260726_0069` while the accepted
+`master` source did not yet contain that migration. The recovery preserved
+database truth, restored the exact migration-owning candidate, waited for its
+protected merge, and then promoted current clean `master`.
 
 ## 1. How The Work Evolved
 
@@ -160,6 +176,58 @@ Cloud implemented the read owner:
 No new database migration, queue, dashboard framework, feedback UI, workflow
 engine, or control plane was added.
 
+### 1.6 Add the smallest operational visibility layer
+
+The first implementation made the evidence queryable, but an operator still
+had to call the endpoint and interpret one window manually. The agreed
+development-stage improvement was deliberately smaller than a general analytics
+product:
+
+- add one compact section to the existing Runtime Diagnostics page;
+- reuse the existing chart component and internal Admin read boundary;
+- show at most seven bounded trend buckets;
+- support title, summary, and rewrite task filters;
+- compare the current window with the immediately preceding equal window;
+- distinguish sample stage, confidence, and new versus sustained candidates;
+- run the same seven-day summary through the existing operations cadence once
+  per day.
+
+This made problem discovery routine without creating a new dashboard product,
+alerting stack, scheduler, or user-facing feedback form.
+
+### 1.7 Preserve evidence confidence in product language
+
+The first diagnostic UI labelled
+`saved_after_generation_unmatched` as "Saved after edit." That wording was
+stronger than the event contract: a different value was saved after a
+generation, but the system could not prove that the generated output was
+edited or adopted.
+
+PR #286 changed the label to "Post-generation save (unmatched)" and added a
+contract test against the stronger claim. This was not cosmetic. A quality
+flywheel can only improve the product if its metric names retain the confidence
+and limitations of the underlying evidence.
+
+### 1.8 Learn from the shared M4 migration mismatch
+
+While the quality work was being closed, another M4 candidate introduced
+migration `20260726_0069` before its owning PR had merged. Promoting an older
+clean `master` then failed because the database revision was ahead of the
+migrations available in that source and the stack stopped fail-closed.
+
+The correct recovery was:
+
+1. do not downgrade the shared database or falsify its Alembic revision;
+2. identify the exact worktree that owns the migration already applied;
+3. restore that candidate and verify services, HTTP health, and Alembic head;
+4. wait for the migration-owning PR to pass protected merge;
+5. promote current clean `origin/master`;
+6. rerun the focused quality tests and record the accepted source revision.
+
+This is a general rule for mutable integration environments: source and
+database migration lineage must move together, and recovery must restore the
+exact compatible source rather than merely restart containers.
+
 ## 2. Current End-to-End Flow
 
 ```mermaid
@@ -181,7 +249,10 @@ flowchart TD
     L --> N
     M --> N
     N --> O["Cloud read-only aggregation"]
-    O --> P{"Diagnostic threshold met?"}
+    O --> O1["Runtime Diagnostics trend and task filters"]
+    O --> O2["Daily read-only cadence evidence"]
+    O1 --> P{"Threshold, sample, and persistence gates met?"}
+    O2 --> P
     P -->|"No"| Q["Continue bounded observation"]
     P -->|"Yes"| R["Create fixed-corpus evaluation candidate"]
     R --> S["Human-reviewed change or PR"]
@@ -234,6 +305,39 @@ The correct conclusion is therefore:
 > The architecture is reasonable and the instrumentation seam is implemented.
 > Product-quality benefit remains a measured next-stage question.
 
+### 3.1 Capabilities borrowed from mature tools
+
+The implementation stood on existing open-source and repository capabilities
+without adopting another platform wholesale:
+
+| Source capability | What was borrowed | What was intentionally not added |
+| --- | --- | --- |
+| OpenTelemetry signal discipline | Correlation IDs, bounded runtime timing, and separation of traces from product-quality outcomes. | A new collector, trace backend, or claim that runtime success equals editor usefulness. |
+| Eval Lab and Promptfoo-style fixed-corpus evaluation | Reproducible regression cases and a hard gate before a behavior change is proposed. | Automatic Eval execution or automatic prompt/model/router mutation. |
+| Product analytics funnel/cohort concepts | Generation, repeat, later save/publish, expiry, equal-window comparison, and sample-stage thinking. | Raw content capture, user profiling, a new analytics warehouse, or a third-party customer telemetry SDK. |
+| Existing Runtime Diagnostics and chart components | One compact operator view on the current authenticated read boundary. | A second dashboard framework or another navigation surface. |
+| Existing operations cadence | One bounded 24-hour detector with aggregate audit evidence. | A new scheduler, notification service, ticket system, or autonomous remediation worker. |
+
+The choice was capability reuse, not dependency accumulation. A dedicated
+platform such as Langfuse, PostHog, or another observability product may become
+useful only if future scale creates a proven retention, exploration, or
+cross-product analysis gap that the current bounded store cannot serve. v1.1
+does not have that evidence.
+
+### 3.2 Five-plugin responsibility closeout
+
+| Component | Responsibility in this flywheel | Explicit non-responsibility |
+| --- | --- | --- |
+| Abilities Toolkit | Keep local ability definitions and schemas stable. | No quality aggregation or Cloud control truth. |
+| Governance Core | Continue governing flows that actually require proposal review, approval, preflight, or governed writes. | No second review for editor-visible title, summary, or rewrite text that the user has already reviewed and chosen to save or publish. |
+| AI Client Adapter | Keep its existing channel and Core integration boundary. | No duplicate editor-assist feedback or telemetry platform. |
+| Workflow Toolbox | Avoid duplicating the official title, summary, and rewrite editor surfaces; consume evaluated improvements through normal reviewed changes when relevant. | No parallel quality dashboard, prompt truth, or autonomous mutation. |
+| Cloud Addon | Own short-lived local correlation, HMAC/fingerprint creation, opt-out, and signed metadata-only upload. | No generated-content retention, user interruption, approval, or WordPress write. |
+
+Npcink AI Cloud is the sixth runtime-side participant: it owns hosted execution,
+bounded read-only aggregation, diagnostics, and issue evidence. It remains
+outside WordPress approval and final-write authority.
+
 ## 4. Delivery And Verification Evidence
 
 ### 4.1 Cloud Addon
@@ -269,7 +373,7 @@ tests, gate script, and boundary documentation:
 The six-repository quality matrix was rerun after exact Cloud `master` CI
 completed and passed for the platform repositories in scope.
 
-### 4.3 M4 acceptance receipt
+### 4.3 Initial M4 acceptance receipt
 
 The clean operations worktree promoted PR #279 from current `origin/master`.
 The closeout receipt recorded:
@@ -302,6 +406,49 @@ preview, but it exposes an operational lesson:
 
 No production deployment was performed.
 
+### 4.4 Cloud v1.1 operational layer
+
+PR #284 added the development-stage visibility and automatic issue-discovery
+portion of the loop:
+
+- bounded trends and immediately preceding comparison windows;
+- task filters for title, summary, and rewrite;
+- sample stages: `insufficient`, `validation`, `observation`, and `decision`;
+- low, medium, and high confidence derived from sample size;
+- `new` versus `sustained` issue persistence;
+- an `actionable` recommendation only for a high-confidence sustained
+  candidate;
+- a compact Runtime Diagnostics panel;
+- a 24-hour operations-cadence detector that records only aggregate evidence.
+
+The detector does not start Eval, notify users, create tickets, or change
+production behavior. PR #284 merged as `e77d0d09` after the focused quality
+gate and required GitHub checks passed. PR #286 then merged the confidence-safe
+unmatched-save label as `310ad998`, with a frontend contract preventing the
+stronger "edited adoption" interpretation from returning.
+
+### 4.5 Final accepted integration receipt
+
+After PR #287 supplied migration `20260726_0069`, current clean Cloud
+`master@fe5e3d01e12ba7612209d4c30022b0f9214ce325` was promoted to M4. The final
+receipt recorded:
+
+```text
+acceptance_state=accepted
+source_revision=fe5e3d01e12ba7612209d4c30022b0f9214ce325
+source_branch=master
+source_dirty=false
+alembic_revision=20260726_0069 (head)
+/=200
+/health/live=200
+```
+
+The focused M4 quality set passed 6 tests, covering the editor-assist quality
+routes and daily cadence evidence. The cadence log recorded
+`editor_assist_quality_detection` start and success with a redacted aggregate
+payload. This proves the merged runtime and detector operated together on M4;
+it still does not prove production deployment or real-editor quality benefit.
+
 ## 5. Work Review Report
 
 ### Original goal
@@ -317,6 +464,10 @@ through protected Git, CI, and M4 acceptance.
 - [x] Preserved the Cloud/WordPress ownership boundary.
 - [x] Implemented metadata-only Addon correlation.
 - [x] Implemented Cloud aggregation and diagnostic candidates.
+- [x] Added compact Runtime Diagnostics trends, filters, confidence, and
+  persistence.
+- [x] Added daily read-only issue detection through the existing ops cadence.
+- [x] Corrected unmatched-save language to preserve evidence confidence.
 - [x] Added focused fixtures, tests, lint, and no-auto-mutation gates.
 - [x] Merged the Addon and Cloud pull requests through protected CI.
 - [x] Ran the cross-repository matrix.
@@ -332,6 +483,8 @@ through protected Git, CI, and M4 acceptance.
 | Should correct | Early discussion risked treating "generation succeeded" as the end of the title flow. | The first framing focused on runtime execution rather than the full generation-to-adoption consumer path. | Trace generation, review, save/publish, later evidence, and improvement ownership before proposing implementation. |
 | Should correct | The Python CVE was initially experienced as a general development blocker. | Development eligibility and production-release eligibility were not separated early enough. | Classify security findings by affected lane, keep a dated release exception/watch, and continue only the lanes whose gates remain valid. |
 | Should correct | M4 `accepted` can disappear from the current status when a later candidate is dispatched. | A shared mutable preview was being read like a durable acceptance ledger. | Persist PR, revision, timestamp, focused smoke, and accepted fields in a dated record immediately after promotion. |
+| Should correct | The first UI label described an unmatched save as an edited save. | Product copy compressed a medium-confidence event into a stronger adoption claim. | Make metric labels carry the same confidence and limitation as the event contract, then lock the wording with a contract test. |
+| Should correct | Promoting clean `master` failed after the shared M4 database had already advanced to a migration present only in an unmerged candidate. | Source acceptance and mutable preview migration lineage temporarily diverged. | Fail closed, restore the exact migration-owning candidate, merge its source through protected Git, and only then promote current clean `master`; never downgrade or falsify the database revision for convenience. |
 | Suggested | A stale dirty Addon worktree looked like an unpublished implementation even though PR #57 was already merged. | Local worktree state was inspected before fully reconciling remote branches, all worktrees, and PR history. | Inventory `git worktree list`, `origin/master`, topic branches, and PR state before deciding that uncommitted files are missing delivery work. |
 | Suggested | Initial thresholds can look more authoritative than their evidence supports. | Numeric diagnostics are easy to mistake for product targets. | Label thresholds as initial candidates and require real-cohort calibration before tuning production behavior. |
 
@@ -340,6 +493,10 @@ through protected Git, CI, and M4 acceptance.
 - The implementation reused existing transport and storage instead of adding a
   new platform.
 - High- and medium-confidence outcomes stayed distinct.
+- Manual feedback buttons were omitted from the normal editor flow; local
+  save, publish, repeat, and expiry behavior supplied the silent evidence.
+- The existing diagnostics UI and cadence worker were extended instead of
+  deploying another analytics or scheduling platform.
 - The Addon and Cloud halves had separate focused contracts and rollback paths.
 - Dirty worktrees were preserved; clean worktrees carried reviewable changes.
 - Required GitHub checks, exact merged-revision CI, cross-repository gates, and
@@ -353,6 +510,8 @@ through protected Git, CI, and M4 acceptance.
 - validate event completeness and classification accuracy with a bounded real
   cohort;
 - compare local editor truth with emitted metadata without uploading content;
+- treat fewer than 50 sessions as instrumentation validation, 50–199 as
+  observation, and at least 200 as the first decision-grade stage;
 - calibrate diagnostic thresholds only after reviewing cross-site evidence;
 - send problem candidates to fixed-corpus evaluation before proposing prompt,
   provider, model, or routing changes;
@@ -445,9 +604,28 @@ to be visible in the first worktree.
 Running a larger test repeatedly does not replace choosing the correct evidence
 layer.
 
+### 6.9 Automate discovery, not conclusions
+
+A daily detector can reliably answer whether a bounded threshold was crossed,
+whether the same issue persisted, and how much evidence exists. It cannot
+decide why the issue occurred or which prompt, model, context, or UI behavior
+should change.
+
+The next automated action therefore remains a recommendation to prepare a
+fixed-corpus evaluation. Causal diagnosis, change selection, merge, rollout,
+and keep-or-revert decisions remain reviewed engineering work.
+
+### 6.10 Treat metric semantics as an API
+
+An event field, confidence label, chart label, and operator interpretation form
+one contract. Tests should block wording that implies stronger causality than
+the data supports. This matters more than visual polish because an evolution
+loop trained on an overstated metric will optimize the wrong behavior.
+
 ## 7. Recommended Next Stage
 
-The next stage should be instrumentation validation, not feature expansion.
+The next stage should be real-data instrumentation validation, not another
+round of feature expansion.
 
 Use a bounded first cohort:
 
@@ -474,12 +652,15 @@ Only after instrumentation is trustworthy should the team:
 
 1. establish a baseline for repeat, exact-save, unmatched-save, publish, and
    expiry rates;
-2. select one problem candidate with enough samples;
-3. reproduce it in Eval Lab with a fixed corpus;
-4. prepare one reviewed change;
-5. run a bounded rollout;
-6. compare the same metrics before and after;
-7. keep or revert the change based on evidence.
+2. allow the daily detector to identify repeated candidates across equal
+   windows;
+3. require a high-confidence sustained candidate before treating the signal as
+   decision-grade;
+4. reproduce one selected issue in Eval Lab with a fixed corpus;
+5. prepare one reviewed change;
+6. run a bounded rollout;
+7. compare the same metrics before and after;
+8. keep or revert the change based on evidence.
 
 Stop and investigate before tuning when event loss, duplicate sessions,
 cross-task correlation, unexpected content fields, or uncertain local truth is
@@ -500,9 +681,11 @@ This stage did not change product ownership:
 - the Python CVE remains governed by its own dated release decision and
   upstream watch.
 
-The implementation phase is closed. The next valid work is measured
-instrumentation acceptance, not another control surface or automatic
-self-modification layer.
+The v1.1 implementation phase is closed. The next valid work is data
+accumulation, measured instrumentation acceptance, and one evidence-backed
+evaluation candidate, not another control surface or automatic
+self-modification layer. During development, waiting for enough trustworthy
+events is part of the work; adding more machinery is not progress by itself.
 
 ## Related Records
 
@@ -511,5 +694,6 @@ self-modification layer.
 - [Cloud Agent Feedback Quality Gate v1](cloud-agent-feedback-quality-gate-v1.md)
 - [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
+- [Cloud Runtime Reference Notes](cloud-runtime-reference-notes-2026-07.md)
 - [Project Remediation and Development Retrospective — 2026-07-25](project-remediation-and-development-retrospective-2026-07-25.md)
 - [Python 3.14.6 Controlled Production Validation Risk Decision](python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md)
