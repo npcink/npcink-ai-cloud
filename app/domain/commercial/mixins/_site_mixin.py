@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
@@ -23,6 +24,8 @@ from app.core.models import (
     PORTAL_OAUTH_STATE_STATUS_EXPIRED,
     PORTAL_OAUTH_STATE_STATUS_PENDING,
     PRINCIPAL_STATUS_ACTIVE,
+    SITE_ACCOUNT_BINDING_STATUS_ACTIVE,
+    SITE_ACCOUNT_BINDING_STATUS_RELEASED,
     SITE_API_KEY_STATUS_ACTIVE,
     SITE_API_KEY_STATUS_EXPIRED,
     SITE_API_KEY_STATUS_REVOKED,
@@ -35,6 +38,7 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
     Site,
+    SiteAccountBinding,
     SiteApiKey,
 )
 from app.core.secrets import (
@@ -52,6 +56,7 @@ from app.domain.commercial.customer_api_keys import (
     validate_api_key_scopes_for_issue,
 )
 from app.domain.commercial.errors import (
+    CommercialConflictError,
     CommercialNotFoundError,
     CommercialPermissionError,
     CommercialValidationError,
@@ -70,6 +75,7 @@ from app.domain.commercial.service import (
     DEFAULT_PLAN_TIER_ID,
     PLAN_TIER_REGISTRY,
 )
+from app.domain.service_settings import resolve_site_relink_policy
 
 WORDPRESS_ADDON_CONNECTION_PROVIDER = "wordpress_addon_connection"
 WORDPRESS_ADDON_CONNECTION_TTL_SECONDS = 10 * 60
@@ -182,6 +188,12 @@ def _append_addon_return_query(return_url: str, *, code: str, state: str) -> str
     )
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 def _get_active_addon_subscription(
     repository: CommercialRepository,
     account_id: str,
@@ -196,6 +208,129 @@ def _get_active_addon_subscription(
 
 
 class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
+    def _assert_cross_account_relink_available(
+        self,
+        *,
+        site: Site,
+        account_id: str,
+        now: datetime,
+        policy: dict[str, Any],
+    ) -> bool:
+        current_account_id = str(site.account_id or "").strip()
+        if current_account_id == account_id:
+            return False
+        if (
+            str(site.status or "") != SITE_STATUS_ARCHIVED
+            or _as_utc(site.ownership_released_at) is None
+        ):
+            raise CommercialConflictError(
+                "service.portal_site_conflict",
+                f"site id '{site.site_id}' is already bound to another account",
+            )
+        if not bool(policy.get("enabled", True)):
+            raise CommercialConflictError(
+                "service.site_cross_account_relink_disabled",
+                "cross-account site relink is disabled",
+            )
+        cooldown_until = _as_utc(site.relink_cooldown_until)
+        if cooldown_until is None:
+            raise CommercialConflictError(
+                "service.site_relink_release_incomplete",
+                "site ownership release does not have a relink cooldown boundary",
+            )
+        if cooldown_until > now:
+            released_at = _as_utc(site.ownership_released_at)
+            effective_cooldown_days = int(policy.get("cooldown_days") or 0)
+            if released_at is not None:
+                effective_cooldown_days = max(
+                    0,
+                    ceil((cooldown_until - released_at).total_seconds() / 86400),
+                )
+            raise CommercialConflictError(
+                "service.site_relink_cooldown_active",
+                "site cannot be linked to another account until its cooldown expires",
+                data={
+                    "retry_after_at": self._serialize_datetime(cooldown_until),
+                    "cooldown_days": effective_cooldown_days,
+                },
+            )
+        return True
+
+    def _ensure_site_account_binding_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site: Site,
+        account_id: str,
+        now: datetime,
+        source: str,
+    ) -> SiteAccountBinding:
+        current = repository.get_current_site_account_binding(
+            site.site_id,
+            for_update=True,
+        )
+        if current is not None:
+            if str(current.account_id or "") != account_id:
+                raise CommercialConflictError(
+                    "service.site_account_binding_conflict",
+                    f"site '{site.site_id}' has another active account binding",
+                )
+            return current
+        return repository.create_site_account_binding(
+            binding_id=f"sab_{uuid4().hex}",
+            site_id=site.site_id,
+            account_id=account_id,
+            status=SITE_ACCOUNT_BINDING_STATUS_ACTIVE,
+            bound_at=now,
+            metadata_json={"source": source},
+        )
+
+    def _release_site_account_binding_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site: Site,
+        now: datetime,
+        cooldown_until: datetime,
+        reason: str,
+    ) -> SiteAccountBinding:
+        current = self._ensure_site_account_binding_in_session(
+            repository=repository,
+            site=site,
+            account_id=str(site.account_id or ""),
+            now=site.provisioned_at or site.created_at or now,
+            source="release_backfill",
+        )
+        current.status = SITE_ACCOUNT_BINDING_STATUS_RELEASED
+        current.released_at = now
+        current.cooldown_until = cooldown_until
+        current.release_reason = reason
+        current_metadata = dict(current.metadata_json or {})
+        current_metadata["released_via"] = reason
+        current.metadata_json = current_metadata
+        return current
+
+    def _bind_site_to_account_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site: Site,
+        account_id: str,
+        now: datetime,
+        source: str,
+    ) -> SiteAccountBinding:
+        binding = self._ensure_site_account_binding_in_session(
+            repository=repository,
+            site=site,
+            account_id=account_id,
+            now=now,
+            source=source,
+        )
+        site.account_id = account_id
+        site.ownership_released_at = None
+        site.relink_cooldown_until = None
+        return binding
+
     def _assert_default_free_site_capacity(
         self,
         *,
@@ -371,6 +506,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 else None
             )
             existing_site = repository.get_site(site_id)
+            if existing_site is not None and str(existing_site.account_id or "") != account_id:
+                raise CommercialConflictError(
+                    "service.site_account_binding_conflict",
+                    f"site '{site_id}' is already bound to another account",
+                )
             if existing_site is None and snapshot is not None:
                 cast(Any, self)._assert_account_site_capacity(
                     repository=repository,
@@ -386,6 +526,13 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 platform_kind=PLATFORM_KIND_WORDPRESS,
                 metadata_json=metadata_json,
                 provisioned_at=now,
+            )
+            self._bind_site_to_account_in_session(
+                repository=repository,
+                site=site,
+                account_id=account_id,
+                now=now,
+                source="internal_site_provision",
             )
             payload = self._serialize_site(site)
             self._record_service_audit_in_session(
@@ -479,9 +626,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         now = self.now_factory()
+        relink_policy = resolve_site_relink_policy(self.database_url)
+        cooldown_until = now + timedelta(days=int(relink_policy.get("cooldown_days") or 90))
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            site = repository.get_site(site_id)
+            site = repository.get_site_for_update(site_id)
             if site is None:
                 raise CommercialNotFoundError(
                     "service.site_not_found",
@@ -507,6 +656,15 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             metadata["portal_lifecycle"] = lifecycle
             site.metadata_json = metadata
             site.status = SITE_STATUS_ARCHIVED
+            site.ownership_released_at = now
+            site.relink_cooldown_until = cooldown_until
+            self._release_site_account_binding_in_session(
+                repository=repository,
+                site=site,
+                now=now,
+                cooldown_until=cooldown_until,
+                reason="portal_user_removed_site",
+            )
             revoked_key_ids: list[str] = []
             for api_key in repository.list_site_keys(site.site_id):
                 if str(api_key.status or "") != SITE_API_KEY_STATUS_ACTIVE:
@@ -542,6 +700,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 payload_json={
                     **payload,
                     "revoked_key_ids": revoked_key_ids,
+                    "cross_account_relink_policy": {
+                        "enabled": bool(relink_policy.get("enabled", True)),
+                        "cooldown_days": int(relink_policy.get("cooldown_days") or 90),
+                        "cooldown_until": self._serialize_datetime(cooldown_until),
+                    },
                 },
             )
             session.commit()
@@ -549,6 +712,93 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "site": payload,
                 "revoked_key_ids": revoked_key_ids,
             }
+
+    def update_site_relink_cooldown(
+        self,
+        site_id: str,
+        *,
+        action: str,
+        cooldown_until: datetime | None = None,
+        reason: str = "",
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        now = self.now_factory()
+        policy = resolve_site_relink_policy(self.database_url)
+        normalized_action = str(action or "").strip()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            site = repository.get_site_for_update(site_id)
+            if site is None:
+                raise CommercialNotFoundError(
+                    "service.site_not_found",
+                    f"site '{site_id}' was not found",
+                )
+            released_at = _as_utc(site.ownership_released_at)
+            if str(site.status or "") != SITE_STATUS_ARCHIVED or released_at is None:
+                raise CommercialConflictError(
+                    "service.site_relink_not_released",
+                    "site must be removed before its cross-account relink cooldown can change",
+                )
+            resolved_cooldown_until: datetime
+            if normalized_action == "clear":
+                resolved_cooldown_until = now
+            elif normalized_action == "reset":
+                resolved_cooldown_until = released_at + timedelta(
+                    days=int(policy.get("cooldown_days") or 90)
+                )
+            elif normalized_action == "set":
+                normalized_cooldown_until = _as_utc(cooldown_until)
+                if normalized_cooldown_until is None:
+                    raise CommercialValidationError(
+                        "service.site_relink_cooldown_until_required",
+                        "cooldown_until is required when setting a site relink cooldown",
+                    )
+                resolved_cooldown_until = normalized_cooldown_until
+            else:
+                raise CommercialValidationError(
+                    "service.site_relink_cooldown_action_invalid",
+                    "site relink cooldown action is invalid",
+                )
+
+            site.relink_cooldown_until = resolved_cooldown_until
+            released_binding = repository.get_latest_released_site_account_binding(
+                site.site_id
+            )
+            if released_binding is not None:
+                released_binding.cooldown_until = resolved_cooldown_until
+                binding_metadata = dict(released_binding.metadata_json or {})
+                binding_metadata["cooldown_override_action"] = normalized_action
+                binding_metadata["cooldown_override_reason"] = str(reason or "").strip()
+                released_binding.metadata_json = binding_metadata
+
+            result: dict[str, object] = {
+                "site_id": site.site_id,
+                "status": site.status,
+                "ownership_released_at": self._serialize_datetime(released_at),
+                "relink_cooldown_until": self._serialize_datetime(resolved_cooldown_until),
+                "cross_account_relink_ready": bool(
+                    policy.get("enabled", True) and resolved_cooldown_until <= now
+                ),
+                "policy_enabled": bool(policy.get("enabled", True)),
+                "default_cooldown_days": int(policy.get("cooldown_days") or 90),
+                "action": normalized_action,
+            }
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="site.relink_cooldown.update",
+                outcome="succeeded",
+                account_id=site.account_id,
+                site_id=site.site_id,
+                scope_kind="site",
+                scope_id=site.site_id,
+                payload_json={
+                    **result,
+                    "reason": str(reason or "").strip(),
+                },
+            )
+            session.commit()
+            return result
 
     def update_site_runtime_callbacks(
         self,
@@ -793,6 +1043,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         now = self.now_factory()
         connection_code = secrets.token_urlsafe(32)
         expires_at = now + timedelta(seconds=WORDPRESS_ADDON_CONNECTION_TTL_SECONDS)
+        relink_policy = resolve_site_relink_policy(self.database_url)
 
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -838,16 +1089,29 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         account_id=normalized_account_id,
                     )
             else:
-                if str(existing_site.account_id or "") != normalized_account_id:
-                    raise CommercialPermissionError(
-                        "service.portal_site_conflict",
-                        f"site id '{normalized_site_id}' is already bound to another account",
-                    )
+                cross_account_relink = self._assert_cross_account_relink_available(
+                    site=existing_site,
+                    account_id=normalized_account_id,
+                    now=now,
+                    policy=relink_policy,
+                )
                 if str(existing_site.status or "") == SITE_STATUS_SUSPENDED:
                     raise CommercialPermissionError(
                         "service.portal_site_not_connectable",
                         f"site '{normalized_site_id}' is not available for addon connection",
                     )
+                if cross_account_relink:
+                    if snapshot is not None:
+                        service._assert_account_site_capacity(
+                            repository=repository,
+                            account_id=normalized_account_id,
+                            snapshot=snapshot,
+                        )
+                    else:
+                        self._assert_default_free_site_capacity(
+                            repository=repository,
+                            account_id=normalized_account_id,
+                        )
             repository.create_portal_oauth_state(
                 state_id=f"wacs_{uuid4().hex}",
                 provider=WORDPRESS_ADDON_CONNECTION_PROVIDER,
@@ -924,6 +1188,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "wordpress addon connection code and state are required",
             )
         now = self.now_factory()
+        relink_policy = resolve_site_relink_policy(self.database_url)
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             row = repository.get_portal_oauth_state(
@@ -1037,8 +1302,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     f"account '{account_id}' does not have an active entitlement snapshot",
                 )
 
-            site = repository.get_site(site_id)
+            site = repository.get_site_for_update(site_id)
             site_created = site is None
+            site_transferred = False
+            previous_account_id = ""
             if site is None:
                 service._assert_account_site_capacity(
                     repository=repository,
@@ -1069,17 +1336,45 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     scope_id=site.site_id,
                     payload_json=self._serialize_site(site),
                 )
+                self._bind_site_to_account_in_session(
+                    repository=repository,
+                    site=site,
+                    account_id=account_id,
+                    now=now,
+                    source="wordpress_addon_connection",
+                )
             else:
-                if str(site.account_id or "") != account_id:
-                    raise CommercialPermissionError(
-                        "service.portal_site_conflict",
-                        f"site id '{site_id}' is already bound to another account",
-                    )
+                previous_account_id = str(site.account_id or "")
+                previous_ownership_released_at = site.ownership_released_at
+                previous_relink_cooldown_until = site.relink_cooldown_until
+                site_transferred = self._assert_cross_account_relink_available(
+                    site=site,
+                    account_id=account_id,
+                    now=now,
+                    policy=relink_policy,
+                )
                 if str(site.status or "") == SITE_STATUS_SUSPENDED:
                     raise CommercialPermissionError(
                         "service.portal_site_not_connectable",
                         f"site '{site_id}' is not available for addon connection",
                     )
+                if site_transferred:
+                    service._assert_account_site_capacity(
+                        repository=repository,
+                        account_id=account_id,
+                        snapshot=snapshot,
+                    )
+                self._bind_site_to_account_in_session(
+                    repository=repository,
+                    site=site,
+                    account_id=account_id,
+                    now=now,
+                    source=(
+                        "wordpress_addon_cross_account_relink"
+                        if site_transferred
+                        else "wordpress_addon_reconnect"
+                    ),
+                )
                 site.name = site_name or site.name or site_id
                 site.site_url = site_url
                 site.platform_kind = PLATFORM_KIND_WORDPRESS
@@ -1093,6 +1388,29 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         lifecycle["reconnected_at"] = self._serialize_datetime(now)
                         site_metadata["portal_lifecycle"] = lifecycle
                     site.metadata_json = site_metadata
+                if site_transferred:
+                    self._record_service_audit_in_session(
+                        repository=repository,
+                        audit_context=audit_context,
+                        event_kind="site.account_relink",
+                        outcome="succeeded",
+                        account_id=account_id,
+                        site_id=site.site_id,
+                        scope_kind="site",
+                        scope_id=site.site_id,
+                        payload_json={
+                            "site_id": site.site_id,
+                            "previous_account_id": previous_account_id,
+                            "account_id": account_id,
+                            "ownership_released_at": self._serialize_datetime(
+                                previous_ownership_released_at
+                            ),
+                            "relink_cooldown_until": self._serialize_datetime(
+                                previous_relink_cooldown_until
+                            ),
+                            "source": "wordpress_addon_connection",
+                        },
+                    )
 
             key_secret = f"sk_{secrets.token_urlsafe(24)}"
             key_id = f"key_{uuid4().hex}"
@@ -1165,6 +1483,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 "cloud_api_key": cloud_api_key,
                 "activation_state": "active",
                 "site_created": site_created,
+                "site_transferred": site_transferred,
                 "revoked_key_ids": revoked_key_ids,
                 "free_entitlement_activated": free_entitlement_activated,
                 "subscription_id": subscription.subscription_id,
@@ -1555,6 +1874,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         }
 
     def get_admin_site(self, site_id: str) -> dict[str, object]:
+        relink_policy = resolve_site_relink_policy(self.database_url)
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             site = repository.get_site(site_id)
@@ -1581,10 +1901,26 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             service.reconcile_billing_snapshot(site_id) if subscription is not None else None
         )
         commercial_policy = service.inspect_commercial_policy(site_id)
+        ownership_released_at = _as_utc(site.ownership_released_at)
+        relink_cooldown_until = _as_utc(site.relink_cooldown_until)
+        cross_account_relink_ready = bool(
+            relink_policy.get("enabled", True)
+            and site.status == SITE_STATUS_ARCHIVED
+            and ownership_released_at is not None
+            and relink_cooldown_until is not None
+            and relink_cooldown_until <= self.now_factory()
+        )
         return {
             "site": self._serialize_site(site),
             "account": service._serialize_account(account) if account is not None else None,
             "site_keys": [self._serialize_site_key(item) for item in keys],
+            "site_relink_policy": {
+                "enabled": bool(relink_policy.get("enabled", True)),
+                "default_cooldown_days": int(relink_policy.get("cooldown_days") or 90),
+                "ownership_released_at": self._serialize_datetime(site.ownership_released_at),
+                "cooldown_until": self._serialize_datetime(site.relink_cooldown_until),
+                "cross_account_relink_ready": cross_account_relink_ready,
+            },
             "subscription": (
                 service._serialize_subscription(subscription) if subscription is not None else None
             ),
@@ -1697,6 +2033,8 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             "activated_at": self._serialize_datetime(site.activated_at),
             "suspended_at": self._serialize_datetime(site.suspended_at),
             "suspension_reason": site.suspension_reason or "",
+            "ownership_released_at": self._serialize_datetime(site.ownership_released_at),
+            "relink_cooldown_until": self._serialize_datetime(site.relink_cooldown_until),
             "created_at": self._serialize_datetime(site.created_at),
             "updated_at": self._serialize_datetime(site.updated_at),
         }

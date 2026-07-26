@@ -20,7 +20,7 @@ import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { cn } from '@/lib/utils';
 
 type SettingStatus = 'ready' | 'disabled' | 'missing_config' | 'error' | string;
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment';
+type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'site-relink';
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
 type Translator = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -48,6 +48,7 @@ type ServiceSettingsData = {
     qq_login: ServiceSetting;
     portal_email: ServiceSetting;
     alipay_payment: ServiceSetting;
+    site_relink_policy: ServiceSetting;
   };
 };
 
@@ -96,11 +97,17 @@ type AlipayForm = {
   public_key: string;
 };
 
+type SiteRelinkPolicyForm = {
+  enabled: boolean;
+  cooldown_days: string;
+};
+
 type SavedServiceSettingsForms = {
   portal: PortalPublicForm;
   qq: QQForm;
   email: EmailForm;
   payment: AlipayForm;
+  siteRelink: SiteRelinkPolicyForm;
 };
 
 function stringValue(value: unknown): string {
@@ -344,6 +351,10 @@ export default function AdminServiceSettingsPage() {
     private_key: '',
     public_key: '',
   });
+  const [siteRelinkPolicyForm, setSiteRelinkPolicyForm] = useState<SiteRelinkPolicyForm>({
+    enabled: true,
+    cooldown_days: '90',
+  });
   const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
   const settingsMountedRef = useRef(false);
@@ -386,6 +397,7 @@ export default function AdminServiceSettingsPage() {
       const email = nextData.settings.portal_email;
       setEmailConfigExpanded(email.status === 'missing_config' || email.status === 'error');
       const alipay = nextData.settings.alipay_payment;
+      const siteRelinkPolicy = nextData.settings.site_relink_policy;
       const emailSmtpUsername = stringValue(email.config.smtp_username);
       const emailFromAddress = stringValue(email.config.from_email);
       const emailUsernameSameAsFromEmail =
@@ -422,11 +434,16 @@ export default function AdminServiceSettingsPage() {
         private_key: '',
         public_key: '',
       };
+      const nextSiteRelinkPolicyForm: SiteRelinkPolicyForm = {
+        enabled: siteRelinkPolicy.enabled,
+        cooldown_days: stringValue(siteRelinkPolicy.config.cooldown_days) || '90',
+      };
       const nextSavedForms = {
         portal: nextPortalForm,
         qq: nextQqForm,
         email: nextEmailForm,
         payment: nextAlipayForm,
+        siteRelink: nextSiteRelinkPolicyForm,
       };
       savedFormsRef.current = nextSavedForms;
       setSavedForms(nextSavedForms);
@@ -434,6 +451,7 @@ export default function AdminServiceSettingsPage() {
       setQqForm(nextQqForm);
       setEmailForm(nextEmailForm);
       setAlipayForm(nextAlipayForm);
+      setSiteRelinkPolicyForm(nextSiteRelinkPolicyForm);
     } catch (loadError) {
       if (settingsMountedRef.current && settingsRequestSequenceRef.current === requestSequence) {
         setError(serviceSettingsRequestErrorMessage(loadError, t('admin.service_settings.load_failed', {}, 'Failed to load service settings.'), t));
@@ -485,6 +503,16 @@ export default function AdminServiceSettingsPage() {
         label: t('admin.service_settings.metric_payment', {}, 'Payment'),
         value: statusLabel(settings?.alipay_payment.status || 'missing_config', t),
         toneClassName: statusTone(settings?.alipay_payment.status || 'missing_config'),
+        size: 'compact' as const,
+      },
+      {
+        label: t('admin.service_settings.metric_site_relink', {}, 'Site relink'),
+        value: settings?.site_relink_policy.enabled
+          ? `${stringValue(settings.site_relink_policy.config.cooldown_days) || '90'} ${t('common.days', {}, 'days')}`
+          : t('admin.service_settings.site_relink_disabled', {}, 'Cross-account disabled'),
+        toneClassName: settings?.site_relink_policy.enabled
+          ? 'text-emerald-700 dark:text-emerald-300'
+          : 'text-slate-500 dark:text-slate-400',
         size: 'compact' as const,
       },
     ];
@@ -644,6 +672,27 @@ export default function AdminServiceSettingsPage() {
     );
   }
 
+  function submitSiteRelinkPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setError(activeValidationIssues[0]);
+      return;
+    }
+    void saveJson(
+      '/api/admin/service-settings/site-relink-policy',
+      {
+        enabled: siteRelinkPolicyForm.enabled,
+        cooldown_days: Number(siteRelinkPolicyForm.cooldown_days),
+      },
+      'site-relink-policy',
+      t(
+        'admin.service_settings.site_relink_saved',
+        {},
+        'Site relink policy saved.'
+      )
+    );
+  }
+
   function submitQq(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
@@ -766,6 +815,9 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
     if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
     if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
+    if (activeTab === 'site-relink') {
+      return JSON.stringify(siteRelinkPolicyForm) !== JSON.stringify(savedForms.siteRelink);
+    }
     return JSON.stringify(alipayForm) !== JSON.stringify(savedForms.payment);
   })();
 
@@ -834,6 +886,22 @@ export default function AdminServiceSettingsPage() {
         issues.push(t('admin.service_settings.validation_payment_public_key', {}, 'Enter the Alipay public key.'));
       }
     }
+    if (activeTab === 'site-relink') {
+      const cooldownDays = Number(siteRelinkPolicyForm.cooldown_days);
+      if (
+        !Number.isInteger(cooldownDays) ||
+        cooldownDays < 90 ||
+        cooldownDays > 365
+      ) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_site_relink_days',
+            {},
+            'Enter a whole number from 90 to 365 days.'
+          )
+        );
+      }
+    }
     return issues;
   })();
 
@@ -844,6 +912,7 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'qq') setQqForm(saved.qq);
     if (activeTab === 'email') setEmailForm(saved.email);
     if (activeTab === 'payment') setAlipayForm(saved.payment);
+    if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
     setError('');
   }, [activeTab]);
 
@@ -925,6 +994,15 @@ export default function AdminServiceSettingsPage() {
       description: activeTab === 'payment' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
         : statusLabel(data?.settings.alipay_payment.status || 'missing_config', t),
+    },
+    {
+      id: 'site-relink',
+      label: t('admin.service_settings.tab_site_relink', {}, '站点重连'),
+      description: activeTab === 'site-relink' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : data?.settings.site_relink_policy.enabled
+          ? `${stringValue(data.settings.site_relink_policy.config.cooldown_days) || '90'} ${t('common.days', {}, 'days')}`
+          : t('admin.service_settings.site_relink_disabled', {}, 'Cross-account disabled'),
     },
   ];
 
@@ -1030,7 +1108,7 @@ export default function AdminServiceSettingsPage() {
       />
 
       <BackofficeSectionPanel className="p-2 md:p-2">
-        <div role="tablist" aria-label={t('admin.service_settings.tablist_label', {}, 'Service settings categories')} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div role="tablist" aria-label={t('admin.service_settings.tablist_label', {}, 'Service settings categories')} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {tabs.map((tab) => {
             const active = activeTab === tab.id;
             return (
@@ -1116,6 +1194,127 @@ export default function AdminServiceSettingsPage() {
                 </button>
               </div>
             </form>
+            </section>
+          </div>
+        </BackofficeSectionPanel>
+      ) : null}
+
+      {activeTab === 'site-relink' ? (
+        <BackofficeSectionPanel>
+          <div id="service-settings-site-relink" role="tabpanel">
+            <section className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Site ownership
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+                  {t(
+                    'admin.service_settings.site_relink_title',
+                    {},
+                    '跨账号站点重连'
+                  )}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {t(
+                    'admin.service_settings.site_relink_desc',
+                    {},
+                    'The cooldown starts only after the current account removes the site. Same-account reconnects remain available immediately, and Free entitlement stays account-owned.'
+                  )}
+                </p>
+              </div>
+              {activeStateNotice}
+              <form className="space-y-5" onSubmit={submitSiteRelinkPolicy}>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)]">
+                  <div className="rounded-xl border border-slate-200 px-4 py-4 dark:border-slate-800">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                          {t(
+                            'admin.service_settings.site_relink_enabled_label',
+                            {},
+                            'Allow cross-account relink after cooldown'
+                          )}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          {t(
+                            'admin.service_settings.site_relink_enabled_hint',
+                            {},
+                            'When disabled, a removed site remains unavailable to other accounts until this policy is enabled or an operator changes the site record.'
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-label={t(
+                          'admin.service_settings.site_relink_toggle_label',
+                          {},
+                          'Enable cross-account site relink'
+                        )}
+                        aria-checked={siteRelinkPolicyForm.enabled}
+                        className={switchButtonClassName(siteRelinkPolicyForm.enabled)}
+                        disabled={loading}
+                        onClick={() =>
+                          setSiteRelinkPolicyForm((current) => ({
+                            ...current,
+                            enabled: !current.enabled,
+                          }))
+                        }
+                      >
+                        <span className={switchKnobClassName(siteRelinkPolicyForm.enabled)} />
+                      </button>
+                    </div>
+                  </div>
+                  <label className={labelClassName()}>
+                    {t(
+                      'admin.service_settings.site_relink_days_label',
+                      {},
+                      'Default cooldown days'
+                    )}
+                    <input
+                      type="number"
+                      min={90}
+                      max={365}
+                      step={1}
+                      className={fieldClassName()}
+                      value={siteRelinkPolicyForm.cooldown_days}
+                      onChange={(event) =>
+                        setSiteRelinkPolicyForm((current) => ({
+                          ...current,
+                          cooldown_days: event.target.value,
+                        }))
+                      }
+                      disabled={loading}
+                    />
+                    <span className="mt-2 block text-xs font-normal text-slate-500 dark:text-slate-400">
+                      {t(
+                        'admin.service_settings.site_relink_days_hint',
+                        {},
+                        'Applies to future removals. Existing sites keep their stored unlock time until changed from site detail.'
+                      )}
+                    </span>
+                  </label>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={
+                      saving === 'site-relink-policy' ||
+                      !activeGroupDirty ||
+                      activeValidationIssues.length > 0
+                    }
+                  >
+                    {saving === 'site-relink-policy'
+                      ? t('admin.service_settings.saving', {}, 'Saving')
+                      : t(
+                          'admin.service_settings.save_site_relink',
+                          {},
+                          '保存重连策略'
+                        )}
+                  </button>
+                </div>
+              </form>
             </section>
           </div>
         </BackofficeSectionPanel>

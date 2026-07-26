@@ -157,6 +157,14 @@ class SiteStatusPayload(BaseModel):
     reason: str = ""
 
 
+class SiteRelinkCooldownPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["clear", "set", "reset"]
+    cooldown_until: datetime | None = None
+    reason: str = Field(default="", max_length=500)
+
+
 class AccountMemberAccessPayload(BaseModel):
     email: str
     status: str = "active"
@@ -392,6 +400,13 @@ class AlipayPaymentServiceSettingsPayload(BaseModel):
     public_key: str | None = Field(default=None, max_length=20000)
 
 
+class SiteRelinkPolicyServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    cooldown_days: int = Field(default=90, ge=90, le=365)
+
+
 class ServiceSettingsEmailTestPayload(BaseModel):
     recipient_email: str = Field(min_length=3, max_length=320)
 
@@ -501,6 +516,7 @@ def _service_error_response(
             status="error",
             error_code=error.error_code,
             message=error.message,
+            data=error.data,
             trace_id=(
                 extract_trace_id(request.headers.get("traceparent", ""))
                 if request is not None
@@ -3369,6 +3385,33 @@ async def get_admin_site(
     )
 
 
+@router.patch("/admin/sites/{site_id}/relink-cooldown")
+async def update_admin_site_relink_cooldown(
+    request: Request,
+    site_id: str,
+    payload: SiteRelinkCooldownPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).update_site_relink_cooldown(
+            site_id,
+            action=payload.action,
+            cooldown_until=payload.cooldown_until,
+            reason=payload.reason,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="site relink cooldown updated",
+        data=result,
+        revision="site-relink-v1",
+    )
+
+
 @router.get("/admin/subscriptions")
 async def list_admin_subscriptions(
     request: Request,
@@ -3853,6 +3896,53 @@ async def update_admin_portal_public_settings(
         message="portal public settings saved",
         data=result,
         revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/site-relink-policy")
+async def update_admin_site_relink_policy_settings(
+    request: Request,
+    payload: SiteRelinkPolicyServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_site_relink_policy(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="site_relink_policy",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="site-relink-v1",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="site_relink_policy",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="site relink policy settings saved",
+        data=result,
+        revision="site-relink-v1",
     )
 
 

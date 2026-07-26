@@ -18,6 +18,7 @@ import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusB
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
+import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -106,6 +107,13 @@ interface SiteDetail {
     next_step_kind?: string;
     next_step_ref?: string;
   }>;
+  site_relink_policy?: {
+    enabled?: boolean;
+    default_cooldown_days?: number;
+    ownership_released_at?: string;
+    cooldown_until?: string;
+    cross_account_relink_ready?: boolean;
+  };
 }
 
 interface SiteDetailApiPayload {
@@ -140,9 +148,18 @@ interface SiteDetailApiPayload {
   related_surfaces?: SiteDetail['related_surfaces'];
   commercial_follow_up?: SiteDetail['commercial_follow_up'];
   runtime_operator_explanations?: SiteDetail['runtime_operator_explanations'];
+  site_relink_policy?: SiteDetail['site_relink_policy'];
 }
 
 const siteDetailClient = createApiClient({ idempotencyPrefix: 'admin_site_detail' });
+
+function toDatetimeLocalValue(value: string): string {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const offsetMs = parsed.getTimezoneOffset() * 60_000;
+  return new Date(parsed.getTime() - offsetMs).toISOString().slice(0, 16);
+}
 
 function siteRuntimeExplanationText(
   value: string,
@@ -178,6 +195,9 @@ function SiteDetailContent() {
   const [siteActionError, setSiteActionError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [isActivatingSite, setIsActivatingSite] = useState(false);
+  const [isUpdatingRelinkCooldown, setIsUpdatingRelinkCooldown] = useState(false);
+  const [relinkCooldownInput, setRelinkCooldownInput] = useState('');
+  const [confirmRelinkClearOpen, setConfirmRelinkClearOpen] = useState(false);
 
   const handleActivateSite = async () => {
     if (!site) {
@@ -208,6 +228,53 @@ function SiteDetailContent() {
       ));
     } finally {
       setIsActivatingSite(false);
+    }
+  };
+
+  const handleRelinkCooldownUpdate = async (
+    action: 'clear' | 'set' | 'reset'
+  ) => {
+    if (!site) return;
+    setIsUpdatingRelinkCooldown(true);
+    setSiteActionError(null);
+    try {
+      const body: Record<string, unknown> = { action };
+      if (action === 'set') {
+        body.cooldown_until = new Date(relinkCooldownInput).toISOString();
+      }
+      await siteDetailClient.request<Record<string, unknown>>(
+        `/api/admin/sites/${encodeURIComponent(site.site_id)}/relink-cooldown`,
+        {
+          method: 'PATCH',
+          body,
+        }
+      );
+      toast.success(
+        t(
+          'admin.site_detail.relink_cooldown_update_success',
+          undefined,
+          'Cross-account relink cooldown updated.'
+        ),
+        t(
+          'admin.site_detail.relink_cooldown_update_success_title',
+          undefined,
+          'Relink policy updated'
+        )
+      );
+      setReloadKey((value) => value + 1);
+    } catch (err) {
+      setSiteActionError(
+        resolveUiErrorMessage(
+          err,
+          t(
+            'admin.site_detail.relink_cooldown_update_failed',
+            undefined,
+            'Failed to update the cross-account relink cooldown.'
+          )
+        )
+      );
+    } finally {
+      setIsUpdatingRelinkCooldown(false);
     }
   };
 
@@ -293,8 +360,17 @@ function SiteDetailContent() {
           runtime_operator_explanations: Array.isArray(payload.runtime_operator_explanations)
             ? payload.runtime_operator_explanations
             : [],
+          site_relink_policy:
+            payload.site_relink_policy && typeof payload.site_relink_policy === 'object'
+              ? payload.site_relink_policy
+              : {},
         };
         setSite(normalizedSite);
+        setRelinkCooldownInput(
+          toDatetimeLocalValue(
+            String(payload.site_relink_policy?.cooldown_until || '')
+          )
+        );
         await Promise.resolve();
       } catch (err) {
         setError(resolveUiErrorMessage(err, t('error.failed_load')));
@@ -632,6 +708,149 @@ function SiteDetailContent() {
           </BackofficeStackCard>
         </div>
 
+        <BackofficeStackCard>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                {t(
+                  'admin.site_detail.relink_policy_eyebrow',
+                  undefined,
+                  'Site ownership'
+                )}
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-gray-950 dark:text-white">
+                {t(
+                  'admin.site_detail.relink_policy_title',
+                  undefined,
+                  'Cross-account relink cooldown'
+                )}
+              </h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-600 dark:text-gray-300">
+                {site.status === 'archived' &&
+                site.site_relink_policy?.ownership_released_at
+                  ? t(
+                      'admin.site_detail.relink_policy_released_desc',
+                      undefined,
+                      'This site has been released by its current account. Same-account reconnect remains immediate; another account can connect only after the stored cooldown expires.'
+                    )
+                  : t(
+                      'admin.site_detail.relink_policy_bound_desc',
+                      undefined,
+                      'This site is still bound to its current account. Elapsed time alone never permits another account to take it over.'
+                    )}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <BackofficeStatusBadge
+                status={
+                  site.site_relink_policy?.cross_account_relink_ready
+                    ? 'ok'
+                    : site.status === 'archived'
+                      ? 'pending'
+                      : 'inactive'
+                }
+                label={
+                  site.site_relink_policy?.cross_account_relink_ready
+                    ? t(
+                        'admin.site_detail.relink_ready',
+                        undefined,
+                        'Cross-account ready'
+                      )
+                    : site.status === 'archived'
+                      ? t(
+                          'admin.site_detail.relink_cooling',
+                          undefined,
+                          'Cooling down'
+                        )
+                      : t(
+                          'admin.site_detail.relink_bound',
+                          undefined,
+                          'Bound'
+                        )
+                }
+              />
+              <BackofficeStatusBadge
+                status={site.site_relink_policy?.enabled ? 'ok' : 'inactive'}
+                label={
+                  site.site_relink_policy?.enabled
+                    ? `${site.site_relink_policy.default_cooldown_days || 90} ${t('common.days', {}, 'days')}`
+                    : t(
+                        'admin.site_detail.relink_disabled',
+                        undefined,
+                        'Cross-account disabled'
+                      )
+                }
+              />
+            </div>
+          </div>
+          {site.status === 'archived' &&
+          site.site_relink_policy?.ownership_released_at ? (
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                {t(
+                  'admin.site_detail.relink_unlock_at',
+                  undefined,
+                  'Cross-account unlock time'
+                )}
+                <input
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                  value={relinkCooldownInput}
+                  onChange={(event) => setRelinkCooldownInput(event.target.value)}
+                  disabled={isUpdatingRelinkCooldown}
+                />
+                <span className="mt-2 block text-xs font-normal text-gray-500 dark:text-gray-400">
+                  {t(
+                    'admin.site_detail.relink_unlock_hint',
+                    undefined,
+                    'Changing this date affects only this released site. It never changes Free entitlement or allows transfer without a verified Addon exchange.'
+                  )}
+                </span>
+              </label>
+              <div className="flex flex-wrap items-end justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isUpdatingRelinkCooldown}
+                  onClick={() => void handleRelinkCooldownUpdate('reset')}
+                >
+                  {t(
+                    'admin.site_detail.relink_reset_default',
+                    undefined,
+                    'Restore default'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isUpdatingRelinkCooldown}
+                  onClick={() => setConfirmRelinkClearOpen(true)}
+                >
+                  {t(
+                    'admin.site_detail.relink_clear_now',
+                    undefined,
+                    'Allow now'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isUpdatingRelinkCooldown || !relinkCooldownInput}
+                  onClick={() => void handleRelinkCooldownUpdate('set')}
+                >
+                  {isUpdatingRelinkCooldown
+                    ? t('common.saving')
+                    : t(
+                        'admin.site_detail.relink_save_date',
+                        undefined,
+                        'Save unlock time'
+                      )}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </BackofficeStackCard>
+
         <details className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">
           <summary className="cursor-pointer list-none text-sm font-medium text-slate-700 dark:text-slate-300">
             {t('admin.site_detail.audit_reveal', {}, 'Inspect audit follow-up')}
@@ -887,6 +1106,28 @@ function SiteDetailContent() {
         </BackofficeSectionPanel>
       </div>
       </BackofficeDisclosure>
+      <ConfirmModal
+        isOpen={confirmRelinkClearOpen}
+        title={t(
+          'admin.site_detail.relink_clear_confirm_title',
+          undefined,
+          'Allow cross-account relink now?'
+        )}
+        message={t(
+          'admin.site_detail.relink_clear_confirm_desc',
+          undefined,
+          'This removes the remaining cooldown for this released site. It does not transfer the site, but another account can complete a verified Addon exchange immediately.'
+        )}
+        confirmLabel={t(
+          'admin.site_detail.relink_clear_confirm_action',
+          undefined,
+          'Remove cooldown'
+        )}
+        cancelLabel={t('common.cancel', undefined, 'Cancel')}
+        variant="danger"
+        onClose={() => setConfirmRelinkClearOpen(false)}
+        onConfirm={() => void handleRelinkCooldownUpdate('clear')}
+      />
     </BackofficePageStack>
   );
 }

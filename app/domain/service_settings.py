@@ -19,12 +19,17 @@ SERVICE_SETTING_PORTAL_PUBLIC = "portal_public"
 SERVICE_SETTING_QQ_LOGIN = "portal_qq_login"
 SERVICE_SETTING_PORTAL_EMAIL = "portal_email"
 SERVICE_SETTING_PAYMENT_ALIPAY = "payment_alipay"
+SERVICE_SETTING_SITE_RELINK_POLICY = "site_relink_policy"
 
 SERVICE_SETTING_KIND_PORTAL = "portal"
+SERVICE_SETTING_KIND_COMMERCIAL = "commercial"
 SERVICE_SETTING_QQ_OPEN_CALLBACK_PATH = "/open/auth/qq/callback"
 SERVICE_SETTING_ALIPAY_NOTIFY_PATH = "/open/payments/alipay/notify"
 SERVICE_SETTING_ALIPAY_RETURN_PATH = "/open/payments/alipay/return"
 ALIPAY_PAGE_PAY_GATEWAY_URL = "https://openapi.alipay.com/gateway.do"
+DEFAULT_SITE_RELINK_COOLDOWN_DAYS = 90
+MIN_SITE_RELINK_COOLDOWN_DAYS = 90
+MAX_SITE_RELINK_COOLDOWN_DAYS = 365
 
 STATUS_READY = "ready"
 STATUS_DISABLED = "disabled"
@@ -57,6 +62,7 @@ class ServiceSettingsAdminService:
                                 SERVICE_SETTING_QQ_LOGIN,
                                 SERVICE_SETTING_PORTAL_EMAIL,
                                 SERVICE_SETTING_PAYMENT_ALIPAY,
+                                SERVICE_SETTING_SITE_RELINK_POLICY,
                             ]
                         )
                     )
@@ -81,6 +87,9 @@ class ServiceSettingsAdminService:
                     rows.get(SERVICE_SETTING_PAYMENT_ALIPAY),
                     setting_id=SERVICE_SETTING_PAYMENT_ALIPAY,
                 ),
+                "site_relink_policy": self._serialize_site_relink_policy(
+                    rows.get(SERVICE_SETTING_SITE_RELINK_POLICY),
+                ),
             },
             "env_fallback": "disabled",
             "boundary": _boundary(),
@@ -101,6 +110,37 @@ class ServiceSettingsAdminService:
             required_secret_keys=[],
         )
         return self._serialize(row)
+
+    def save_site_relink_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raw_cooldown_days = payload.get(
+            "cooldown_days",
+            DEFAULT_SITE_RELINK_COOLDOWN_DAYS,
+        )
+        if isinstance(raw_cooldown_days, bool):
+            cooldown_days = 0
+        else:
+            try:
+                cooldown_days = int(raw_cooldown_days)
+            except (TypeError, ValueError):
+                cooldown_days = 0
+        if not MIN_SITE_RELINK_COOLDOWN_DAYS <= cooldown_days <= MAX_SITE_RELINK_COOLDOWN_DAYS:
+            raise ServiceSettingsAdminError(
+                "service_settings.site_relink_cooldown_days_invalid",
+                (
+                    "site relink cooldown days must be between "
+                    f"{MIN_SITE_RELINK_COOLDOWN_DAYS} and "
+                    f"{MAX_SITE_RELINK_COOLDOWN_DAYS}"
+                ),
+            )
+        row = self._save(
+            setting_id=SERVICE_SETTING_SITE_RELINK_POLICY,
+            setting_kind=SERVICE_SETTING_KIND_COMMERCIAL,
+            config={"cooldown_days": cooldown_days},
+            secrets={},
+            enabled=bool(payload.get("enabled", True)),
+            required_secret_keys=[],
+        )
+        return self._serialize_site_relink_policy(row)
 
     def save_qq_login(self, payload: dict[str, Any]) -> dict[str, Any]:
         client_id = _string(payload.get("client_id"))
@@ -461,6 +501,7 @@ class ServiceSettingsAdminService:
         self,
         *,
         setting_id: str,
+        setting_kind: str = SERVICE_SETTING_KIND_PORTAL,
         config: dict[str, Any],
         secrets: dict[str, Any],
         enabled: bool,
@@ -472,7 +513,7 @@ class ServiceSettingsAdminService:
             if row is None:
                 row = ServiceSetting(
                     setting_id=setting_id,
-                    setting_kind=SERVICE_SETTING_KIND_PORTAL,
+                    setting_kind=setting_kind,
                     enabled=enabled,
                     config_json={},
                     secret_ciphertext_json={},
@@ -495,7 +536,7 @@ class ServiceSettingsAdminService:
                     )
                 else:
                     secret_ciphertexts.pop(key, None)
-            row.setting_kind = SERVICE_SETTING_KIND_PORTAL
+            row.setting_kind = setting_kind
             row.enabled = enabled
             row.config_json = config
             row.secret_ciphertext_json = secret_ciphertexts
@@ -568,6 +609,28 @@ class ServiceSettingsAdminService:
             "last_error_message": row.last_error_message or "",
             "credential_value_exposure": "none",
         }
+
+    def _serialize_site_relink_policy(
+        self,
+        row: ServiceSetting | None,
+    ) -> dict[str, Any]:
+        if row is None:
+            return {
+                "setting_id": SERVICE_SETTING_SITE_RELINK_POLICY,
+                "setting_kind": SERVICE_SETTING_KIND_COMMERCIAL,
+                "enabled": True,
+                "configured": True,
+                "status": STATUS_READY,
+                "config": {
+                    "cooldown_days": DEFAULT_SITE_RELINK_COOLDOWN_DAYS,
+                },
+                "secrets": {},
+                "last_tested_at": "",
+                "last_error_code": "",
+                "last_error_message": "",
+                "credential_value_exposure": "none",
+            }
+        return self._serialize(row)
 
 
 def resolve_portal_public_base_url(database_url: str, settings: Settings) -> str:
@@ -663,6 +726,28 @@ def resolve_alipay_payment_runtime_config(database_url: str, settings: Settings)
     }
 
 
+def resolve_site_relink_policy(database_url: str) -> dict[str, Any]:
+    row = _load_service_setting(database_url, SERVICE_SETTING_SITE_RELINK_POLICY)
+    if row is None:
+        return {
+            "enabled": True,
+            "cooldown_days": DEFAULT_SITE_RELINK_COOLDOWN_DAYS,
+        }
+    config = _dict(row.config_json)
+    cooldown_days = _positive_int(
+        config.get("cooldown_days"),
+        default=DEFAULT_SITE_RELINK_COOLDOWN_DAYS,
+    )
+    cooldown_days = min(
+        MAX_SITE_RELINK_COOLDOWN_DAYS,
+        max(MIN_SITE_RELINK_COOLDOWN_DAYS, cooldown_days),
+    )
+    return {
+        "enabled": bool(row.enabled),
+        "cooldown_days": cooldown_days,
+    }
+
+
 def _load_service_setting(database_url: str, setting_id: str) -> ServiceSetting | None:
     with get_session(database_url) as session:
         return session.get(ServiceSetting, setting_id)
@@ -708,6 +793,7 @@ def _boundary() -> dict[str, Any]:
             "portal_login_provider_config",
             "portal_email_delivery_config",
             "payment_gateway_config",
+            "site_account_relink_policy",
         ],
         "wordpress_control_plane": False,
         "ability_registry_truth": "wordpress_local",

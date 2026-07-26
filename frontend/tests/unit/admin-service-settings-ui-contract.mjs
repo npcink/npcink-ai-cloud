@@ -7,14 +7,26 @@ const source = readFileSync(pagePath, 'utf8');
 
 assert.match(
   source,
-  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment';/,
+  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment' \| 'site-relink';/,
   'service settings page must expose one independent configuration group per tab'
 );
 
 assert.match(
   source,
-  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)/,
+  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)/,
   'service settings group navigation must use task-specific Chinese operator labels'
+);
+
+assert.match(
+  source,
+  /\/api\/admin\/service-settings\/site-relink-policy[\s\S]*cooldown_days: Number\(siteRelinkPolicyForm\.cooldown_days\)/,
+  'site relink settings must save the bounded cooldown through the Cloud admin API'
+);
+
+assert.match(
+  source,
+  /min=\{90\}[\s\S]*max=\{365\}[\s\S]*Existing sites keep their stored unlock time until changed from site detail/,
+  'site relink settings must bound the default and explain prospective-only behavior'
 );
 
 assert.match(

@@ -38,6 +38,11 @@ Current repository status is a strong-contraction cleanup baseline:
   Free entitlement, creates or reconnects the site, and issues its
   system-managed runtime key after membership, host binding, replay, capacity,
   and site-ownership checks pass
+- Free entitlement remains account-owned: same-account site reconnect is
+  immediate, while a different account requires explicit site removal, the
+  site's stored 90-365 day cooldown, and a new verified Addon exchange; global
+  cooldown changes affect future removals unless an operator changes one
+  released site's unlock time
 - addon projection/repair surfaces are not part of this baseline; they remain
   deferred to a separate proposal with independent review
 
@@ -900,12 +905,18 @@ Portal member auth:
     entitlement/site capacity, it atomically creates or reconnects the site,
     activates the default Free entitlement for a never-subscribed account, and
     returns the customer-facing Cloud API key
+  - same-account reconnect has no cooldown; cross-account reconnect requires
+    explicit removal, the released site's stored cooldown expiry, and the same
+    verified host-bound exchange, without moving or regranting account Free
+    entitlement
 - production deploys should set:
   - `NPCINK_CLOUD_PORTAL_JWT_SECRET`
 - production deploys should configure in `/admin/service-settings`:
   - Portal public URL
   - QQ login, when enabled
   - SMTP sender settings for verification-code delivery
+  - cross-account site relink policy, including the 90-365 day default for
+    future site removals
 Platform admin key auth:
 
 - Cloud now assumes one non-self-serve `platform_admin`

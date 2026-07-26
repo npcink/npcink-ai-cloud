@@ -802,6 +802,34 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert (
         initial_response.json()["data"]["settings"]["alipay_payment"]["status"] == "missing_config"
     )
+    assert initial_response.json()["data"]["settings"]["site_relink_policy"] == {
+        "setting_id": "site_relink_policy",
+        "setting_kind": "commercial",
+        "enabled": True,
+        "configured": True,
+        "status": "ready",
+        "config": {"cooldown_days": 90},
+        "secrets": {},
+        "last_tested_at": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "credential_value_exposure": "none",
+    }
+
+    relink_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 180},
+        headers=build_internal_headers(idempotency_key="service-settings-relink-001"),
+    )
+    assert relink_response.status_code == 200, relink_response.text
+    assert relink_response.json()["data"]["setting_kind"] == "commercial"
+    assert relink_response.json()["data"]["config"] == {"cooldown_days": 180}
+    invalid_relink_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 89},
+        headers=build_internal_headers(idempotency_key="service-settings-relink-invalid"),
+    )
+    assert invalid_relink_response.status_code == 422
 
     public_response = client.patch(
         "/internal/service/admin/service-settings/portal-public",
@@ -885,9 +913,13 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
         qq_row = session.get(ServiceSetting, "portal_qq_login")
         email_row = session.get(ServiceSetting, "portal_email")
         alipay_row = session.get(ServiceSetting, "payment_alipay")
+        relink_row = session.get(ServiceSetting, "site_relink_policy")
         assert qq_row is not None
         assert email_row is not None
         assert alipay_row is not None
+        assert relink_row is not None
+        assert relink_row.setting_kind == "commercial"
+        assert relink_row.config_json == {"cooldown_days": 180}
         assert (
             decrypt_service_setting_secret(
                 str((qq_row.secret_ciphertext_json or {})["client_secret"]),
@@ -926,6 +958,7 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert data["settings"]["qq_login"]["configured"] is True
     assert data["settings"]["portal_email"]["configured"] is True
     assert data["settings"]["alipay_payment"]["configured"] is True
+    assert data["settings"]["site_relink_policy"]["config"]["cooldown_days"] == 180
     assert data["boundary"]["wordpress_control_plane"] is False
     assert "smtp-password" not in json.dumps(data)
     assert alipay_private_key not in json.dumps(data)

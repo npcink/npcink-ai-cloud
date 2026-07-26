@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -33,6 +34,8 @@ SITE_STATUS_INACTIVE = "inactive"
 SITE_STATUS_SUSPENDED = "suspended"
 SITE_STATUS_ARCHIVED = "archived"
 PLATFORM_KIND_WORDPRESS = "wordpress"
+SITE_ACCOUNT_BINDING_STATUS_ACTIVE = "active"
+SITE_ACCOUNT_BINDING_STATUS_RELEASED = "released"
 
 SITE_API_KEY_STATUS_ACTIVE = "active"
 SITE_API_KEY_STATUS_REVOKED = "revoked"
@@ -383,6 +386,53 @@ class Site(Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspension_reason: Mapped[str | None] = mapped_column(Text)
+    ownership_released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    relink_cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class SiteAccountBinding(Base):
+    __tablename__ = "site_account_bindings"
+    __table_args__ = (
+        Index(
+            "uq_site_account_bindings_current_site",
+            "site_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+            sqlite_where=text("released_at IS NULL"),
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    account_id: Mapped[str] = mapped_column(String(191), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=SITE_ACCOUNT_BINDING_STATUS_ACTIVE,
+        index=True,
+    )
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    release_reason: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
