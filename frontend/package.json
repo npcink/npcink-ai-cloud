@@ -19,6 +19,7 @@
     "test:admin-dev-autologin-contract": "node tests/unit/admin-dev-autologin-contract.mjs",
     "test:portal-proxy-contract": "node tests/unit/portal-proxy-contract.mjs",
     "test:portal-package-contract": "node tests/unit/portal-package-contract.mjs",
+    "test:public-entitlement-copy-contract": "node tests/unit/public-entitlement-copy-contract.mjs",
     "test:copy-surface": "node tests/unit/admin-portal-copy-surface-contract.mjs",
     "test:proxy-csp-contract": "node tests/unit/proxy-csp-contract.mjs",
     "guard:portal-boundary": "node tests/unit/portal-boundary-guard.mjs",
