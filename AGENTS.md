@@ -16,6 +16,13 @@ Every AI development session should start with:
 5. Briefly report the focused module, relevant Cloud boundary, and intended
    verification gate before editing.
 
+For any change under `frontend/src/app/admin/**` or
+`frontend/src/components/admin/**`, also read
+`docs/cloud-admin-ui-standard-v1.md` and inspect
+`frontend/admin-ui-manifest.json`. Before editing, report the route's declared
+page model, operator job, primary/secondary/destructive action hierarchy,
+shared primitives, low-frequency disclosure plan, and PC browser gate.
+
 ## Product Boundary
 
 Npcink AI Cloud is the hosted runtime enhancement layer. It may own runtime
@@ -116,6 +123,24 @@ pnpm run lint
 
 Before finishing a code session, run the narrowest useful gate and report
 exactly what passed or failed.
+
+Admin UI work must run:
+
+```bash
+pnpm run check:admin-ui
+```
+
+Material admin layout, table, dialog, or shared-primitive changes must also run:
+
+```bash
+pnpm run check:admin-ui:visual
+```
+
+Do not add an unclassified admin route, a route-local modal overlay, duplicated
+credential reveal behavior, or repeated admin geometry literals. Use the
+shared admin primitives and `--admin-*` tokens. Existing route-local dialogs
+are migration debt recorded in `frontend/admin-ui-manifest.json`; reduce that
+list over time and never grow it without an explicit reviewed exception.
 
 ## M4 Preview Completion Protocol
 

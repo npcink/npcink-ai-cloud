@@ -309,3 +309,54 @@ test('addon binding survives login and returns the complete payload to WordPress
     state: 'addon-state-001',
   });
 });
+
+test('public authentication entry keeps current desktop and mobile visual contracts', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+    window.localStorage.setItem('theme', 'light');
+  });
+  await installLoginFlowMocks(page);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/portal/login');
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expect(
+    page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-login-current.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+
+  await page.goto('/portal/register');
+  await expect(
+    page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
+  ).toBeVisible();
+  await expect(page.getByText(/activate Free service|激活 Free 服务/i).first()).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-register-current.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portal/login');
+  await expect(
+    page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-login-current-mobile.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+
+  await page.goto('/portal/register');
+  await expect(
+    page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-register-current-mobile.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+});

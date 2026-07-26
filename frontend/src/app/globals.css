@@ -18,6 +18,9 @@
   --brand-ink: #0f172a;
   --shadow-soft: 0 22px 60px rgba(15, 23, 42, 0.08);
   --shadow-card: 0 12px 30px rgba(15, 23, 42, 0.06);
+  --admin-sidebar-expanded: 13rem;
+  --admin-sidebar-collapsed: 4rem;
+  --admin-workbench-max-width: 72rem;
 }
 
 .dark {
@@ -133,10 +136,30 @@ h4,
 
 .admin-shell {
   --admin-header-height: 3rem;
-  --admin-sidebar-width: 15rem;
-  --admin-sidebar-icon-width: 4rem;
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.98) 100%);
+}
+
+.admin-sidebar {
+  width: var(--admin-sidebar-expanded);
+}
+
+.admin-shell-collapsed .admin-sidebar {
+  width: var(--admin-sidebar-collapsed);
+}
+
+.admin-workbench-dialog {
+  max-width: var(--admin-workbench-max-width);
+}
+
+@media (min-width: 1024px) {
+  .admin-shell-content {
+    padding-left: var(--admin-sidebar-expanded);
+  }
+
+  .admin-shell-collapsed .admin-shell-content {
+    padding-left: var(--admin-sidebar-collapsed);
+  }
 }
 
 .admin-route-transition {

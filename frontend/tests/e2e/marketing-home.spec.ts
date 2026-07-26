@@ -209,10 +209,168 @@ test('public status explains impact and offers a fresh check', async ({ page }) 
   await expect(page.getByRole('link', { name: /Sign in to view|登录后查看/i }).first()).toBeVisible();
 });
 
+test('public plan catalog failure disables stale package actions', async ({ page }) => {
+  await page.route('**/api/health', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'healthy',
+        checked_at: '2026-07-25T08:00:00Z',
+      }),
+    });
+  });
+  await page.route('**/open/plan-catalog', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        error_code: 'public.plan_catalog_unavailable',
+        message: 'public.plan_catalog_unavailable',
+        data: {},
+      }),
+    });
+  });
+
+  await page.goto('/');
+
+  const desktopPlans = page.locator('[data-plan-comparison="desktop"]');
+  for (const tierId of ['free', 'plus', 'pro']) {
+    const tier = desktopPlans.locator(`[data-plan-tier="${tierId}"]`);
+    await expect(tier.getByText(/Not available|暂未开放/i)).toHaveCount(2);
+    await expect(tier.getByRole('link')).toHaveCount(0);
+    await expect(tier.locator('[aria-disabled="true"]')).toBeVisible();
+  }
+  await expect(desktopPlans).not.toContainText('¥15');
+  await expect(desktopPlans).not.toContainText('¥29');
+  await expect(
+    desktopPlans.locator('[data-plan-tier="agency"]').getByRole('link', {
+      name: /Request a plan|申请方案/i,
+    })
+  ).toBeVisible();
+  await expect(page.locator('[data-home-pricing]')).toHaveScreenshot(
+    'marketing-home-pricing-unavailable.png',
+    {
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      maxDiffPixelRatio: 0.02,
+    }
+  );
+});
+
+test('public plan catalog keeps available tiers while disabling missing offers', async ({ page }) => {
+  await page.route('**/open/plan-catalog', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        data: {
+          tiers: [
+            {
+              tier_id: 'free',
+              label: 'Free',
+              availability: 'available',
+              monthly_points: 300,
+              site_limit: 1,
+              concurrency_limit: 1,
+              batch_item_limit: 5,
+              amount: 0,
+              currency: 'CNY',
+              billing_cycle: null,
+              purchase_mode: 'included',
+              trial_enabled: false,
+              trial_days: 0,
+              trial_requires_approval: false,
+            },
+            {
+              tier_id: 'plus',
+              label: 'Plus',
+              availability: 'unavailable',
+              monthly_points: null,
+              site_limit: null,
+              concurrency_limit: null,
+              batch_item_limit: null,
+              amount: null,
+              currency: 'CNY',
+              billing_cycle: null,
+              purchase_mode: 'self_serve',
+              trial_enabled: false,
+              trial_days: 0,
+              trial_requires_approval: false,
+            },
+            {
+              tier_id: 'agency',
+              label: 'Agency',
+              availability: 'available',
+              monthly_points: 150000,
+              site_limit: 25,
+              concurrency_limit: 10,
+              batch_item_limit: 100,
+              amount: null,
+              currency: 'CNY',
+              billing_cycle: null,
+              purchase_mode: 'quote',
+              trial_enabled: false,
+              trial_days: 0,
+              trial_requires_approval: true,
+            },
+          ],
+          shared_paid_trial: {
+            days: 14,
+            one_per_customer: true,
+            self_serve_tiers: ['plus', 'pro'],
+            approval_required_tiers: ['agency'],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto('/');
+
+  const desktopPlans = page.locator('[data-plan-comparison="desktop"]');
+  await expect(
+    desktopPlans.locator('[data-plan-tier="free"]').getByRole('link', {
+      name: /Start free|免费开始/i,
+    })
+  ).toBeVisible();
+  for (const tierId of ['plus', 'pro']) {
+    const tier = desktopPlans.locator(`[data-plan-tier="${tierId}"]`);
+    await expect(tier.locator('[aria-disabled="true"]')).toBeVisible();
+    await expect(tier.getByRole('link')).toHaveCount(0);
+  }
+  await expect(
+    desktopPlans.locator('[data-plan-tier="agency"]').getByRole('link', {
+      name: /Request a plan|申请方案/i,
+    })
+  ).toBeVisible();
+});
+
 test('public header keeps readable contrast in dark mode', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
   await page.addInitScript(() => {
     window.localStorage.setItem('theme', 'dark');
+  });
+  await page.route('**/api/health', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'unavailable' }),
+    });
+  });
+  await page.route('**/open/plan-catalog', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        error_code: 'public.plan_catalog_unavailable',
+        data: {},
+      }),
+    });
   });
 
   await page.goto('/');

@@ -156,3 +156,27 @@ mobile paths through the local preview tunnel, and inspect
 GitHub required checks remain the merge authority. M4 candidate validation does
 not become accepted runtime evidence until the merged PR is promoted from
 clean `master`.
+
+## Code closeout state
+
+The 2026-07-26 public-frontend code closeout adds browser evidence for:
+
+- a failed public plan catalog without stale prices or active Free, Plus, or
+  Pro package actions;
+- a partially available catalog that keeps valid tiers usable while missing or
+  retired tiers fail closed;
+- current login and registration layouts at desktop and 390 px mobile widths;
+- current Admin login-gate layout;
+- removal of obsolete Magick-era and unreachable authenticated Portal visual
+  baselines.
+
+These checks close frontend source and visual-regression gaps only. They do not
+replace:
+
+- operator publication of truthful compliance facts;
+- real email delivery and QQ callback validation on the review deployment;
+- clean merged-source M4 promotion;
+- production release smoke or external acceptance.
+
+See
+[Public Frontend Release Code Closeout — 2026-07-26](public-frontend-release-code-closeout-2026-07-26.md).
