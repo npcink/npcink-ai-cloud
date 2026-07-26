@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
-from app.core.models import CatalogInstance, RoutingBinding
+from app.core.models import CatalogInstance, RoutingBinding, RoutingProfile
 from app.domain.provider_connections.service import ProviderConnectionAdminService
 from app.domain.wordpress_ai_connector.routing_profiles import (
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
@@ -27,6 +27,7 @@ PROFILE_IDS = (
     WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
 )
 ALLOWED_ENVIRONMENTS = frozenset({"development", "dev", "test"})
+CLASSIFICATION_TIMEOUT_MS = 60_000
 
 
 def _connection_payload() -> dict[str, object]:
@@ -57,6 +58,12 @@ def _validate_environment(settings: Settings) -> None:
         raise RuntimeError("M4 Ollama preview configuration is development-only")
 
 
+def _apply_classification_timeout(profile: RoutingProfile) -> None:
+    policy = dict(profile.default_policy_json or {})
+    policy["timeout_ms"] = CLASSIFICATION_TIMEOUT_MS
+    profile.default_policy_json = policy
+
+
 def configure(settings: Settings) -> dict[str, object]:
     _validate_environment(settings)
     service = ProviderConnectionAdminService(settings.database_url, settings)
@@ -79,6 +86,13 @@ def configure(settings: Settings) -> dict[str, object]:
         if len(instances) != 1:
             raise RuntimeError("M4 Ollama qwen3.5:9b catalog instance is not unique")
         instance_id = instances[0].instance_id
+        classification_profile = session.get(
+            RoutingProfile,
+            WP_AI_CONNECTOR_CLASSIFICATION_PROFILE_ID,
+        )
+        if classification_profile is None:
+            raise RuntimeError("M4 Ollama classification routing profile is missing")
+        _apply_classification_timeout(classification_profile)
         repository = CatalogRepository(session)
         for profile_id in PROFILE_IDS:
             existing = session.get(RoutingBinding, profile_id)
@@ -97,6 +111,7 @@ def configure(settings: Settings) -> dict[str, object]:
         "provider_id": PROVIDER_ID,
         "model_id": MODEL_ID,
         "reasoning_effort": "none",
+        "classification_timeout_ms": CLASSIFICATION_TIMEOUT_MS,
         "profile_ids": list(PROFILE_IDS),
         "revision": revision,
         "secretless": True,
