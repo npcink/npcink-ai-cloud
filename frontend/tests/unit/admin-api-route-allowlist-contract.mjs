@@ -27,6 +27,12 @@ assert.doesNotMatch(
 
 assert.match(
   routeSource,
+  /editor-assist-quality[\s\S]*?requiredCapability: 'can_review_diagnostics'/,
+  'editor-assist quality must remain an explicit diagnostics-only GET route'
+);
+
+assert.match(
+  routeSource,
   /pattern: \/\^accounts\\\/\[\^\/\]\+\\\/\(\?:credit-ledger\|subscription\)\$\/[\s\S]*?namespace: 'admin'[\s\S]*?requiredCapability: 'can_manage_billing'/,
   'a normal dynamic account credit-ledger read must resolve to its explicit admin route policy'
 );

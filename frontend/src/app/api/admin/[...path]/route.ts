@@ -38,7 +38,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Operator and diagnostic reads.
   {
     methods: ['GET'],
-    pattern: /^(?:overview|plugin-observability|media-observability|vector-observability|agent-feedback|runtime-telemetry|agent-workflow-metadata)$/,
+    pattern: /^(?:overview|plugin-observability|media-observability|vector-observability|agent-feedback|editor-assist-quality|runtime-telemetry|agent-workflow-metadata)$/,
     namespace: 'admin',
     requiredCapability: 'can_review_diagnostics',
   },
