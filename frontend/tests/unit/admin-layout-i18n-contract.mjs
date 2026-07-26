@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fromFrontendRoot } from './_paths.mjs';
 
 const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
+const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'), 'utf8');
 const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 const zhStart = i18nSource.indexOf("'zh-CN': {");
 
@@ -54,8 +55,13 @@ assert.match(
 
 assert.match(
   layoutSource,
-  /ADMIN_SIDEBAR_STORAGE_KEY[\s\S]*sidebarCollapsed[\s\S]*w-16[\s\S]*w-60[\s\S]*lg:pl-16[\s\S]*lg:pl-60/,
+  /ADMIN_SIDEBAR_STORAGE_KEY[\s\S]*sidebarCollapsed[\s\S]*admin-sidebar[\s\S]*admin-shell-content/,
   'Admin layout must support a persistent collapsible desktop sidebar'
+);
+assert.match(
+  globalStylesSource,
+  /--admin-sidebar-expanded:\s*13rem[\s\S]*--admin-sidebar-collapsed:\s*4rem[\s\S]*admin-shell-collapsed \.admin-sidebar[\s\S]*admin-shell-collapsed \.admin-shell-content/,
+  'Admin sidebar geometry must use the shared 208px and 64px tokens'
 );
 
 assert.match(

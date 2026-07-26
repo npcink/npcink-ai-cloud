@@ -41,6 +41,27 @@
 - Residual risk:
 - Rollback plan:
 
+## Admin UI
+
+Complete when this PR changes `frontend/src/app/admin/**`,
+`frontend/src/components/admin/**`, or shared admin styling.
+
+- Page model:
+- Operator job:
+- Reference implementation:
+- Shared primitives reused:
+- Primary action:
+- Secondary action:
+- Destructive action and confirmation:
+- Low-frequency detail moved behind:
+- PC evidence:
+
+- [ ] The route remains classified in `frontend/admin-ui-manifest.json`.
+- [ ] Shared `--admin-*` geometry and admin primitives are reused.
+- [ ] No new route-local dialog or credential reveal implementation was added.
+- [ ] `pnpm run check:admin-ui` passed.
+- [ ] `pnpm run check:admin-ui:visual` passed when layout, tables, dialogs, or shared primitives changed.
+
 ## Deployment Impact
 
 - [ ] No production deployment impact.

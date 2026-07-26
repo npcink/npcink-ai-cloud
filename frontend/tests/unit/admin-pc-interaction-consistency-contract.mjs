@@ -9,6 +9,7 @@ const subscription = read('src/app/admin/subscriptions/[subscriptionId]/page.tsx
 const serviceSettings = read('src/app/admin/service-settings/page.tsx');
 const modal = read('src/components/ui/Modal.tsx');
 const providerDialog = read('src/components/admin/ProviderConnectionDialog.tsx');
+const workbenchDialog = read('src/components/admin/AdminWorkbenchDialog.tsx');
 const dialogHook = read('src/hooks/useDialogKeyboard.ts');
 const runtimeProfiles = read('src/app/admin/runtime-profiles/page.tsx');
 const aiResources = read('src/app/admin/ai-resources/page.tsx');
@@ -38,12 +39,18 @@ assert.match(serviceSettings, /pendingNavigationHref[\s\S]*<ConfirmModal[\s\S]*d
 
 for (const [name, source] of [
   ['shared modal', modal],
-  ['provider dialog', providerDialog],
+  ['shared admin workbench', workbenchDialog],
 ]) {
   assert.match(source, /event\.key === 'Escape'/, `${name} must support Escape`);
   assert.match(source, /event\.key !== 'Tab'/, `${name} must contain keyboard focus`);
   assert.match(source, /document\.body\.style\.overflow = 'hidden'/, `${name} must prevent background scroll`);
   assert.match(source, /previous(?:ActiveElementRef\.current|lyFocused)\?\.focus\(\)/, `${name} must restore focus to its trigger`);
 }
+
+assert.match(
+  providerDialog,
+  /AdminWorkbenchDialog[\s\S]*return <AdminWorkbenchDialog/,
+  'provider editing must reuse the shared admin workbench instead of duplicating modal behavior'
+);
 
 console.log('admin_pc_interaction_consistency_contract: ok');
