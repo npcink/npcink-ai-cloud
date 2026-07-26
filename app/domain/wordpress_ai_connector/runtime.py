@@ -196,6 +196,19 @@ class WordPressOperationRuntime:
                 "suggestion_only": True,
             },
         }
+        if "json_object" in constraints:
+            output_schema = self._dict_or_empty(task_contract.get("output_schema"))
+            provider_input["response_format"] = (
+                {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "wordpress_ability_output",
+                        "schema": output_schema,
+                    },
+                }
+                if output_schema
+                else {"type": "json_object"}
+            )
 
         default_max_tokens = {
             "alt_text_suggest": 48,

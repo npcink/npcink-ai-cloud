@@ -2987,6 +2987,70 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
     )
 
 
+def test_wordpress_ai_connector_runtime_enforces_ability_output_schema_for_comment_moderation(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "comment_moderation",
+            "request": {
+                "prompt": (
+                    "Comment by Local diagnostic:\n"
+                    '\"\"\"Thank you for the useful explanation.\"\"\"'
+                ),
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/comment-analysis",
+                    "task": "comment_moderation",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["source_grounded", "json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "toxicity_score": {"type": "number", "minimum": 0, "maximum": 1},
+                            "sentiment": {
+                                "type": "string",
+                                "enum": ["positive", "neutral", "negative"],
+                            },
+                        },
+                        "required": ["toxicity_score", "sentiment"],
+                        "additionalProperties": False,
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-comment-moderation-json")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "wordpress_ability_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "toxicity_score": {"type": "number", "minimum": 0, "maximum": 1},
+                    "sentiment": {
+                        "type": "string",
+                        "enum": ["positive", "neutral", "negative"],
+                    },
+                },
+                "required": ["toxicity_score", "sentiment"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    assert "Ability output schema" in provider_input["input"]
+    assert '"toxicity_score"' in provider_input["input"]
+
+
 def test_wordpress_ai_connector_runtime_preserves_existing_only_taxonomy_terms(
     tmp_path: Path,
 ) -> None:
