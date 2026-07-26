@@ -41,7 +41,10 @@ def _canonicalize_platform_admin_role_for_write(role: str) -> str:
     normalized_role = str(role or "").strip()
     if normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES:
         return PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
-    return PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
+    raise CommercialPermissionError(
+        "service.platform_admin_role_invalid",
+        f"unsupported platform admin role '{normalized_role}'",
+    )
 
 
 def resolve_principal_allowed_actions() -> list[str]:
@@ -71,7 +74,20 @@ def _new_principal_id() -> str:
 
 def _normalize_principal_email(email: str) -> str:
     normalized_email = str(email or "").strip().lower()
-    if not normalized_email or "@" not in normalized_email or " " in normalized_email:
+    local_part, separator, domain = normalized_email.partition("@")
+    if (
+        not normalized_email
+        or len(normalized_email) > 191
+        or not separator
+        or not local_part
+        or not domain
+        or "@" in domain
+        or any(character.isspace() for character in normalized_email)
+        or domain.startswith(".")
+        or domain.endswith(".")
+        or ".." in domain
+        or "." not in domain
+    ):
         raise CommercialPermissionError(
             "service.principal_email_invalid",
             "a valid user email is required",

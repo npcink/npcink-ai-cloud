@@ -355,7 +355,8 @@ function AccountPageContent() {
                     type="button"
                     className="btn btn-secondary"
                     onClick={() => void handleUnbindQq()}
-                    disabled={status === 'unbinding'}
+                    disabled={status === 'unbinding' || !contactEmail}
+                    title={!contactEmail ? t('portal.account.qq_unbind_requires_email', undefined, 'Set and verify an email login before unbinding QQ.') : undefined}
                   >
                     {status === 'unbinding'
                       ? t('portal.account.unbinding', undefined, 'Unbinding')
@@ -404,11 +405,15 @@ function AccountPageContent() {
                 {t(
                   'portal.account.contact_change_desc',
                   undefined,
-                  'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
+                  contactEmail
+                    ? 'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
+                    : 'Add and verify an email login before removing another sign-in method.'
                 )}
               </p>
               <button type="button" className="btn btn-secondary" onClick={() => setShowEmailChange(true)}>
-                {t('portal.account.contact_change_title', undefined, 'Change email')}
+                {contactEmail
+                  ? t('portal.account.contact_change_title', undefined, 'Change email')
+                  : t('portal.account.contact_add_title', undefined, 'Add email')}
               </button>
             </PortalCard>
           </PortalSection>
@@ -419,11 +424,15 @@ function AccountPageContent() {
         isOpen={showEmailChange}
         onClose={() => setShowEmailChange(false)}
         closeLabel={t('common.close', {}, 'Close')}
-        title={t('portal.account.contact_change_title', undefined, 'Change email')}
+        title={contactEmail
+          ? t('portal.account.contact_change_title', undefined, 'Change email')
+          : t('portal.account.contact_add_title', undefined, 'Add email')}
         description={t(
           'portal.account.contact_change_desc',
           undefined,
-          'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
+          contactEmail
+            ? 'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
+            : 'Add and verify an email login before removing another sign-in method.'
         )}
       >
         <div className="grid gap-3" data-portal-account="email-change-dialog">

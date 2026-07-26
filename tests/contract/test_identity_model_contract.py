@@ -13,7 +13,9 @@ from app.domain.commercial.identity import (
     PLATFORM_ADMIN_ALLOWED_ROLES,
     USER_ALLOWED_ACTION_PROVISION_SITES,
     USER_ALLOWED_ROLES,
+    _canonicalize_platform_admin_role_for_write,
     _new_principal_id,
+    _normalize_principal_email,
     normalize_user_role,
     resolve_principal_allowed_actions,
 )
@@ -45,6 +47,29 @@ def test_operator_role_is_not_accepted_before_the_role_is_launched() -> None:
         normalize_user_role("operator")
 
     assert error.value.error_code == "service.portal_user_role_invalid"
+
+
+@pytest.mark.parametrize("value", ["", "operator", "user", "unexpected"])
+def test_platform_admin_role_write_path_rejects_unlaunched_roles(value: str) -> None:
+    with pytest.raises(CommercialPermissionError) as error:
+        _canonicalize_platform_admin_role_for_write(value)
+
+    assert error.value.error_code == "service.platform_admin_role_invalid"
+
+
+@pytest.mark.parametrize("value", ["a@b", "foo@@bar", "a b@example.com", "a@b..com"])
+def test_principal_email_rejects_malformed_login_aliases(value: str) -> None:
+    with pytest.raises(CommercialPermissionError) as error:
+        _normalize_principal_email(value)
+
+    assert error.value.error_code == "service.principal_email_invalid"
+
+
+def test_principal_email_rejects_values_that_exceed_database_capacity() -> None:
+    with pytest.raises(CommercialPermissionError) as error:
+        _normalize_principal_email(f"{'a' * 180}@example.com")
+
+    assert error.value.error_code == "service.principal_email_invalid"
 
 
 def test_principal_ids_use_the_frozen_server_generated_format() -> None:

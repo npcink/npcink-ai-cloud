@@ -45,6 +45,10 @@ from app.domain.commercial.identity import (
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 
+PORTAL_LOGIN_CODE_PURPOSE_LOGIN = "portal_login"
+PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE = "portal_email_change"
+PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION = "portal_registration"
+
 
 def _normalize_identity_provider(provider: str) -> str:
     normalized = str(provider or "").strip().lower()
@@ -129,14 +133,14 @@ def _resolve_membership_allowed_actions(value: object) -> list[str]:
 
 def _portal_registration_code_metadata(value: object) -> dict[str, object]:
     metadata = value if isinstance(value, dict) else {}
-    if str(metadata.get("purpose") or "").strip() != "portal_registration":
+    if str(metadata.get("purpose") or "").strip() != PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION:
         return {}
     return metadata
 
 
 def _portal_email_change_code_metadata(value: object) -> dict[str, object]:
     metadata = value if isinstance(value, dict) else {}
-    if str(metadata.get("purpose") or "").strip() != "portal_email_change":
+    if str(metadata.get("purpose") or "").strip() != PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE:
         return {}
     return metadata
 
@@ -655,6 +659,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             row = repository.get_portal_oauth_state(
                 provider=normalized_provider,
                 state_hash=_hash_provider_subject(normalized_provider, normalized_state),
+                for_update=True,
             )
             if row is None:
                 raise CommercialPermissionError(
@@ -803,6 +808,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 raise CommercialPermissionError(
                     "service.principal_access_required",
                     f"principal '{principal_id}' is not active",
+                )
+            if not str(identity.email or "").strip():
+                raise CommercialValidationError(
+                    "service.identity_provider_binding_last_login_method",
+                    "set and verify an email login before unbinding the only identity provider",
                 )
             bindings = repository.list_identity_provider_bindings_for_principal(
                 principal_id=identity.principal_id,
@@ -1032,9 +1042,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             existing_codes = repository.list_portal_login_codes(
                 email=normalized_email,
                 principal_id=principal_id,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
                 active_only=True,
                 now=now,
                 limit=None,
+                for_update=True,
             )
             for existing in existing_codes:
                 existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
@@ -1044,6 +1056,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 email=normalized_email,
                 principal_id=principal_id,
                 code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
                 expires_at=expires_at,
                 metadata_json={"accounts": login.get("accounts") or []},
             )
@@ -1065,7 +1078,13 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         max_attempts: int,
         login_at: datetime | None = None,
     ) -> dict[str, object]:
-        normalized_email = str(email or "").strip().lower()
+        try:
+            normalized_email = _normalize_principal_email(email)
+        except CommercialPermissionError as error:
+            raise CommercialPermissionError(
+                "service.portal_email_invalid",
+                "a valid portal email is required",
+            ) from error
         normalized_code = str(code or "").strip()
         if not normalized_email or "@" not in normalized_email or " " in normalized_email:
             raise CommercialPermissionError(
@@ -1084,9 +1103,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             active_codes = repository.list_portal_login_codes(
                 email=normalized_email,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
                 active_only=True,
                 now=now,
                 limit=1,
+                for_update=True,
             )
             if not active_codes:
                 raise CommercialPermissionError(
@@ -1152,8 +1173,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{normalized_principal_id}' is not active",
                 )
-            current_email = _normalize_principal_email(str(identity.email or ""))
-            if normalized_new_email == current_email:
+            current_email = str(identity.email or "").strip().lower()
+            if current_email and normalized_new_email == current_email:
                 raise CommercialValidationError(
                     "service.portal_email_change_same_email",
                     "new email is already the current portal email",
@@ -1172,9 +1193,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             active_codes = repository.list_portal_login_codes(
                 email=normalized_new_email,
                 principal_id=normalized_principal_id,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                 active_only=True,
                 now=now,
                 limit=None,
+                for_update=True,
             )
             for active_code in active_codes:
                 metadata = _portal_email_change_code_metadata(active_code.metadata_json)
@@ -1186,9 +1209,10 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 email=normalized_new_email,
                 principal_id=normalized_principal_id,
                 code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                 expires_at=expires_at,
                 metadata_json={
-                    "purpose": "portal_email_change",
+                    "purpose": PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                     "old_email": current_email,
                     "new_email": normalized_new_email,
                 },
@@ -1233,13 +1257,15 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{normalized_principal_id}' is not active",
                 )
-            current_email = _normalize_principal_email(str(identity.email or ""))
+            current_email = str(identity.email or "").strip().lower()
             active_codes = repository.list_portal_login_codes(
                 email=normalized_new_email,
                 principal_id=normalized_principal_id,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                 active_only=True,
                 now=now,
                 limit=10,
+                for_update=True,
             )
             active_code = None
             active_metadata: dict[str, object] = {}
@@ -1307,6 +1333,41 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             session.commit()
         return payload
 
+    def revoke_portal_sessions(self, *, principal_id: str) -> dict[str, object]:
+        normalized_principal_id = str(principal_id or "").strip()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            identity = repository.get_principal_identity_by_ref(
+                principal_id=normalized_principal_id,
+            )
+            if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "principal is not active",
+                )
+            updated = repository.increment_principal_session_version(
+                principal_id=normalized_principal_id,
+            )
+            session.commit()
+        return {
+            "principal_id": normalized_principal_id,
+            "session_version": int(getattr(updated, "session_version", 1) or 1),
+        }
+
+    def cleanup_expired_portal_auth_evidence(
+        self,
+        *,
+        retention_days: int,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        current = now or self.now_factory()
+        before = current - timedelta(days=max(1, int(retention_days or 0)))
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            result = repository.purge_expired_portal_auth_evidence(before=before)
+            session.commit()
+        return result
+
     def issue_portal_registration_code(
         self,
         *,
@@ -1329,25 +1390,24 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
             existing_codes = repository.list_portal_login_codes(
                 email=normalized_email,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                 active_only=True,
                 now=now,
                 limit=None,
+                for_update=True,
             )
             for existing in existing_codes:
-                metadata = (
-                    existing.metadata_json if isinstance(existing.metadata_json, dict) else {}
-                )
-                if str(metadata.get("purpose") or "").strip() == "portal_registration":
-                    existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                    existing.consumed_at = now
+                existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
+                existing.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_email,
                 principal_id=principal_id,
                 code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                 expires_at=expires_at,
                 metadata_json={
-                    "purpose": "portal_registration",
+                    "purpose": PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                     "source": "portal_self_registration",
                     "account_id": account_id,
                 },
@@ -1388,9 +1448,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             active_codes = repository.list_portal_login_codes(
                 email=normalized_email,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                 active_only=True,
                 now=now,
                 limit=None,
+                for_update=True,
             )
             active_code = None
             registration_metadata: dict[str, object] = {}

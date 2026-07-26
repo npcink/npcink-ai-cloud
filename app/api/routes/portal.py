@@ -93,36 +93,46 @@ class PortalAddonConnectionExchangePayload(BaseModel):
 
 
 class PortalLoginCodeRequestPayload(BaseModel):
-    email: str = ""
-    locale: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalLoginCodeVerifyPayload(BaseModel):
-    email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
     remember_me: bool = False
 
 
 class PortalEmailChangeRequestPayload(BaseModel):
-    new_email: str = ""
-    locale: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalEmailChangeVerifyPayload(BaseModel):
-    new_email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
 
 
 class PortalRegistrationCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    email: str = ""
-    locale: str = ""
+    email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalRegistrationVerifyPayload(BaseModel):
-    email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
 
 
 class PortalQQBindPayload(BaseModel):
@@ -2472,7 +2482,7 @@ async def verify_portal_email_change_code(
         services.settings,
         database_url=services.settings.database_url,
     )
-    if email_sender is not None:
+    if email_sender is not None and str(changed.get("old_email") or "").strip():
         try:
             email_sender.send_email_changed_notice(
                 recipient_email=str(changed.get("old_email") or ""),
@@ -2724,6 +2734,19 @@ async def revoke_portal_session(request: Request) -> Any:
     same_origin = _portal_same_origin_guard(request, always=True)
     if same_origin is not None:
         return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        _get_commercial_service(request).revoke_portal_sessions(
+            principal_id=auth.principal_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
     return _portal_session_cleared_response()
 
 
