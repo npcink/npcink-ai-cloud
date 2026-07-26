@@ -147,6 +147,29 @@ def _normalize_model_metadata_overrides(
     return normalized
 
 
+def normalize_provider_image_output_hosts(value: Iterable[str]) -> tuple[str, ...]:
+    """Normalize exact provider-owned image hosts for the private fetch seam."""
+
+    normalized_hosts: list[str] = []
+    for raw_host in value:
+        host = str(raw_host or "").strip().rstrip(".").lower()
+        if (
+            not host
+            or any(character.isspace() for character in host)
+            or any(marker in host for marker in ("://", "/", "*", "@", "?", "#", ":"))
+        ):
+            raise ValueError("image_output_hosts must contain exact host names")
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError as error:
+            raise ValueError(
+                "image_output_hosts must contain valid exact host names"
+            ) from error
+        if host not in normalized_hosts:
+            normalized_hosts.append(host)
+    return tuple(normalized_hosts)
+
+
 class OpenAIProviderAdapter:
     provider_id = "openai"
     display_name = "OpenAI Compatible"
@@ -190,7 +213,7 @@ class OpenAIProviderAdapter:
         }
         self.model_namespace_prefix = str(model_namespace_prefix or "").strip().strip("/")
         self.provider_label = str(provider_label or "").strip()
-        self.image_output_hosts = self._normalize_image_output_hosts(image_output_hosts)
+        self.image_output_hosts = normalize_provider_image_output_hosts(image_output_hosts)
         normalized_image_response_format = str(image_response_format or "").strip().lower()
         if (
             normalized_image_response_format
@@ -1086,27 +1109,6 @@ class OpenAIProviderAdapter:
             and not isinstance(item, bool)
             and (not isinstance(item, float) or math.isfinite(item))
         }
-
-    @staticmethod
-    def _normalize_image_output_hosts(value: Iterable[str]) -> tuple[str, ...]:
-        normalized_hosts: list[str] = []
-        for raw_host in value:
-            host = str(raw_host or "").strip().rstrip(".").lower()
-            if (
-                not host
-                or any(character.isspace() for character in host)
-                or any(marker in host for marker in ("://", "/", "*", "@", "?", "#", ":"))
-            ):
-                raise ValueError("image_output_hosts must contain exact host names")
-            try:
-                host = host.encode("idna").decode("ascii")
-            except UnicodeError as error:
-                raise ValueError(
-                    "image_output_hosts must contain valid exact host names"
-                ) from error
-            if host not in normalized_hosts:
-                normalized_hosts.append(host)
-        return tuple(normalized_hosts)
 
     def _execute_sample(self, request: ProviderExecutionRequest) -> ProviderExecutionResult:
         source_text = self._collect_source_text(request.input_payload) or request.ability_name

@@ -145,6 +145,8 @@ type ProviderConnectionForm = {
   capabilityIds: string;
   runtimeProfileIds: string;
   modelIds: string;
+  imageResponseFormat: string;
+  imageOutputHosts: string;
   credential: string;
   enabled: boolean;
 };
@@ -160,6 +162,8 @@ const EMPTY_PROVIDER_CONNECTION_FORM: ProviderConnectionForm = {
   capabilityIds: 'text_generation, image_generation',
   runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
   modelIds: '',
+  imageResponseFormat: '',
+  imageOutputHosts: '',
   credential: '',
   enabled: true,
 };
@@ -497,6 +501,13 @@ function splitList(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function imageOutputHostsAreExact(hosts: string[]): boolean {
+  return hosts.every((host) => (
+    !Array.from(host).some((character) => /\s/.test(character))
+    && !['://', '/', '*', '@', '?', '#', ':'].some((marker) => host.includes(marker))
+  ));
 }
 
 function uniqueList(values: string[]): string[] {
@@ -966,7 +977,28 @@ function AiResourcesContent() {
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
-    const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
+    const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
+    if (providerConnectionForm.imageResponseFormat === 'url' && !imageOutputHosts.length) {
+      setError(aiText(
+        'error_image_output_hosts_required',
+        'Enter the exact image download host when the provider returns image URLs.'
+      ));
+      return;
+    }
+    if (!imageOutputHostsAreExact(imageOutputHosts)) {
+      setError(aiText(
+        'error_image_output_hosts_invalid',
+        'Use exact host names only, without schemes, paths, ports, or wildcards.'
+      ));
+      return;
+    }
+    const modelConfig = {
+      ...(modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {}),
+      ...(providerConnectionForm.imageResponseFormat
+        ? { image_response_format: providerConnectionForm.imageResponseFormat }
+        : {}),
+      ...(imageOutputHosts.length ? { image_output_hosts: imageOutputHosts } : {}),
+    };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
@@ -1094,7 +1126,28 @@ function AiResourcesContent() {
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
-    const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
+    const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
+    if (providerConnectionForm.imageResponseFormat === 'url' && !imageOutputHosts.length) {
+      setError(aiText(
+        'error_image_output_hosts_required',
+        'Enter the exact image download host when the provider returns image URLs.'
+      ));
+      return;
+    }
+    if (!imageOutputHostsAreExact(imageOutputHosts)) {
+      setError(aiText(
+        'error_image_output_hosts_invalid',
+        'Use exact host names only, without schemes, paths, ports, or wildcards.'
+      ));
+      return;
+    }
+    const modelConfig = {
+      ...(modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {}),
+      ...(providerConnectionForm.imageResponseFormat
+        ? { image_response_format: providerConnectionForm.imageResponseFormat }
+        : {}),
+      ...(imageOutputHosts.length ? { image_output_hosts: imageOutputHosts } : {}),
+    };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
@@ -1321,6 +1374,10 @@ function AiResourcesContent() {
       capabilityIds: connection.capability_ids.join(', '),
       runtimeProfileIds: connection.runtime_profile_ids.join(', '),
       modelIds: (connection.model_ids || []).join(', '),
+      imageResponseFormat: String(connection.config?.image_response_format || ''),
+      imageOutputHosts: Array.isArray(connection.config?.image_output_hosts)
+        ? connection.config.image_output_hosts.map(String).join(', ')
+        : '',
       credential: '',
       enabled: connection.enabled,
     });
@@ -1554,6 +1611,9 @@ function AiResourcesContent() {
 
   const referenceProviderCanBeChanged = canChooseReferenceProvider(providerConnectionForm.providerPreset);
   const providerUsesCustomRuntimeFields = providerConnectionForm.providerPreset === 'custom';
+  const providerUsesImageGeneration = splitList(
+    providerConnectionForm.capabilityIds
+  ).includes('image_generation');
   const providerFormExternalLinkItems = providerExternalLinkItems(
     providerReferenceLinksForForm(providerConnectionForm)
   );
@@ -1961,6 +2021,60 @@ function AiResourcesContent() {
                         {aiText('field_enabled_runtime', 'Enabled for runtime use')}
                       </label>
                     </div>
+
+                    {providerUsesImageGeneration ? (
+                      <div className="grid gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900 dark:bg-blue-950/20">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {aiText('image_delivery_title', 'Generated image delivery')}
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                            {aiText(
+                              'image_delivery_desc',
+                              'Cloud converts provider output into a temporary review artifact. URL output requires an exact provider-owned download host; schemes, paths, ports, and wildcards are rejected.'
+                            )}
+                          </p>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-[minmax(13rem,0.45fr)_minmax(0,1fr)]">
+                          <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {aiText('field_image_response_format', 'Provider image response')}
+                            <select
+                              className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              value={providerConnectionForm.imageResponseFormat}
+                              onChange={(event) => updateProviderConnectionForm({ imageResponseFormat: event.target.value })}
+                            >
+                              <option value="">{aiText('image_response_provider_default', 'Provider default')}</option>
+                              <option value="url">{aiText('image_response_url', 'Image URL')}</option>
+                              <option value="b64_json">{aiText('image_response_base64', 'Base64 image')}</option>
+                            </select>
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {aiText('field_image_output_hosts', 'Exact image download hosts')}
+                            <input
+                              className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              value={providerConnectionForm.imageOutputHosts}
+                              onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
+                              placeholder="images.provider.example, assets.provider.example"
+                              required={providerConnectionForm.imageResponseFormat === 'url'}
+                            />
+                          </label>
+                        </div>
+                        {!providerConnectionForm.imageResponseFormat && !splitList(providerConnectionForm.imageOutputHosts).length ? (
+                          <p className="text-xs font-medium leading-5 text-amber-700 dark:text-amber-300">
+                            {aiText(
+                              'image_delivery_unconfirmed',
+                              'Image generation is enabled, but its delivery format is not confirmed. A text/catalog connection test alone does not prove that generated images can be delivered.'
+                            )}
+                          </p>
+                        ) : null}
+                        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {aiText(
+                            'image_delivery_security_note',
+                            'Use Base64 only when the upstream explicitly supports it. For URL output, copy the exact asset hostname from the provider documentation; Cloud will still verify HTTPS, public DNS, MIME type, size, and image content.'
+                          )}
+                        </p>
+                      </div>
+                    ) : null}
 
                     <ProviderReferenceLinks
                       items={providerFormExternalLinkItems}
