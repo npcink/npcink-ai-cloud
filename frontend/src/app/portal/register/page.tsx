@@ -200,13 +200,13 @@ function RegisterFormContent() {
 
   return (
     <PortalAuthShell
-      eyebrow={t('portal.register.chip', undefined, 'Free signup')}
+      eyebrow={t('portal.register.chip', undefined, 'Account signup')}
       title={t('portal.register.title', undefined, 'Create your Portal account')}
       description={t(
         form.step === 'request' ? 'portal.register.request_desc' : 'portal.register.verify_desc',
         undefined,
         form.step === 'request'
-          ? 'Enter your email address to create a Free account.'
+          ? 'Enter your email address to create an account. No site or service credit is created at this step.'
           : 'Enter the code from your email to finish registration.'
       )}
       aside={(
@@ -234,7 +234,7 @@ function RegisterFormContent() {
                 : t(
                     'portal.register.desc',
                     undefined,
-                    'Use QQ to create a Free account directly, or continue with email verification.'
+                    'Use QQ or email verification to create your account, then connect the WordPress addon to activate Free service.'
                   )}
             </p>
           </PortalCard>

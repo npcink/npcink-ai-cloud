@@ -1104,11 +1104,7 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
 
     registration_request = client.post(
         "/portal/v1/register/code/request",
-        json={
-            "email": "web@example.com",
-            "site_name": "Web Site",
-            "site_url": "https://web.example.test",
-        },
+        json={"email": "web@example.com"},
     )
     assert registration_request.status_code == 200, registration_request.text
     registration_response = client.post(
@@ -1117,7 +1113,8 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
     )
     assert registration_response.status_code == 200, registration_response.text
     registration_data = registration_response.json()["data"]
-    site_id = str(registration_data["selected_context"]["site"]["site_id"])
+    assert registration_data["selected_context"] is None
+    assert registration_data["sites"] == []
     addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
     assert addon_accounts_response.status_code == 200
     account_id = str(addon_accounts_response.json()["data"]["items"][0]["account_id"])
@@ -1157,7 +1154,10 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
     )
     assert connection_response.status_code == 200, connection_response.text
     connection_data = connection_response.json()["data"]
-    assert connection_data["site_id"] == site_id
+    site_id = str(connection_data["site_id"])
+    assert site_id == "site_web-example-test"
+    assert connection_data["activation_state"] == "pending_exchange"
+    assert connection_data["site_created"] is True
     assert "cloud_api_key" not in connection_data
     redirect_query = parse_qs(urlsplit(str(connection_data["redirect_url"])).query)
 
@@ -1166,6 +1166,10 @@ def test_web_portal_email_code_and_addon_connection_with_jwt(tmp_path: Path) -> 
         json={"code": redirect_query["code"][0], "state": addon_state},
     )
     assert exchange_response.status_code == 200, exchange_response.text
-    assert exchange_response.json()["data"]["cloud_api_key"].startswith("mak1_")
+    exchange_data = exchange_response.json()["data"]
+    assert exchange_data["site_id"] == site_id
+    assert exchange_data["activation_state"] == "active"
+    assert exchange_data["free_entitlement_activated"] is True
+    assert exchange_data["cloud_api_key"].startswith("mak1_")
 
     dispose_engine(database_url)

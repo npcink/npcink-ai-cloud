@@ -338,17 +338,10 @@ def _request_portal_registration_code(
     client: TestClient,
     *,
     email: str,
-    site_url: str,
-    site_name: str = "",
 ) -> dict[str, object]:
     response = client.post(
         "/portal/v1/register/code/request",
-        json={
-            "email": email,
-            "site_url": site_url,
-            "site_name": site_name,
-            "use_case": "content generation",
-        },
+        json={"email": email},
         headers={
             "origin": "http://testserver",
             "referer": "http://testserver/",
@@ -551,8 +544,6 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     request_data = _request_portal_registration_code(
         client,
         email=email,
-        site_url="https://admin-portal-user.example.com",
-        site_name="Admin Portal User",
     )
     registration_data = _verify_portal_registration_code(
         client,
@@ -582,11 +573,10 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["principal_id"] == principal_id
     assert items[0]["email"] == email
     assert items[0]["source"] == "portal_self_registration"
-    assert items[0]["package_alias"] == "Free"
-    assert items[0]["plan_id"] == "free"
+    assert items[0]["package_alias"] == ""
+    assert items[0]["plan_id"] == ""
     assert items[0]["qq_bound"] is False
-    assert items[0]["site_id"] == "site_admin-portal-user-example-com"
-    site_id = str(items[0]["site_id"])
+    assert items[0]["site_id"] == ""
 
     principal_lookup_response = client.get(
         f"/internal/service/admin/portal-users?q={principal_id}",
@@ -624,10 +614,6 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     revoked_session_response = client.get("/portal/v1/session")
     assert revoked_session_response.status_code == 401
     assert revoked_session_response.json()["error_code"] == "auth.portal_session_revoked"
-
-    revoked_site_response = client.get(f"/portal/v1/sites/{site_id}/summary")
-    assert revoked_site_response.status_code == 401
-    assert revoked_site_response.json()["error_code"] == "auth.portal_session_revoked"
 
     audit_response = client.get(
         f"/internal/service/admin/portal-users/{principal_id}/audit",
@@ -681,15 +667,10 @@ def test_admin_portal_users_batch_disable_processes_each_principal(
     )
 
     principal_ids: list[str] = []
-    for email, site_url in (
-        ("batch-one@example.com", "https://batch-one.example.com"),
-        ("batch-two@example.com", "https://batch-two.example.com"),
-    ):
+    for email in ("batch-one@example.com", "batch-two@example.com"):
         request_data = _request_portal_registration_code(
             client,
             email=email,
-            site_url=site_url,
-            site_name=email.split("@")[0],
         )
         registration_data = _verify_portal_registration_code(
             client,

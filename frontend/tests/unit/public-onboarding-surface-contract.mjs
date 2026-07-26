@@ -29,7 +29,11 @@ for (const [name, source] of [
 
 assert.doesNotMatch(home, /<QqLoginButton/, 'home must keep one primary CTA instead of duplicating the login form');
 assert.match(home, /href="\/portal\/register"/, 'home must keep a clear registration CTA');
-assert.match(home, /注册页支持 QQ 快捷登录/, 'home must explain that registration supports QQ login');
+assert.match(
+  home,
+  /注册页支持 QQ 快捷登录[\s\S]*WordPress Addon[\s\S]*激活 Free 服务/,
+  'home must explain that registration creates the account before addon-verified Free activation'
+);
 assert.match(login, /<QqLoginButton/, 'login must expose the QQ login entry');
 assert.match(register, /<QqLoginButton/, 'registration must expose the QQ login entry');
 assert.match(proxy, /X-Robots-Tag[\s\S]*noindex/, 'admin responses must opt out of indexing');

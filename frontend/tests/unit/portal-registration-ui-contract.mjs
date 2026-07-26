@@ -21,8 +21,13 @@ assert.match(
 );
 assert.match(
   clientSource,
-  /site_url\?: string;/,
-  'portal registration request must not require a site URL for account creation'
+  /interface PortalRegistrationCodeRequest \{\s*email: string;\s*locale\?: 'en' \| 'zh-CN';\s*\}/,
+  'portal registration request must accept identity fields only'
+);
+assert.doesNotMatch(
+  clientSource,
+  /interface PortalRegistrationCodeRequest \{[^}]*site_url|interface PortalRegistrationCodeRequest \{[^}]*site_name|interface PortalRegistrationCodeRequest \{[^}]*use_case/,
+  'portal registration request must not retain site-provisioning fields'
 );
 
 assert.match(
@@ -51,7 +56,7 @@ assert.match(
 assert.match(
   loginSource,
   /<PortalAuthShell[\s\S]*portal\.login\.existing_label[\s\S]*href="\/portal\/register"[\s\S]*<form/,
-  'portal login page must put the email form and Free account entry in the shared authentication shell'
+  'portal login page must put the email form and account-registration entry in the shared authentication shell'
 );
 assert.doesNotMatch(
   loginSource,
@@ -110,7 +115,7 @@ assert.match(
 assert.match(
   registerSource,
   /<PortalAuthShell[\s\S]*portal\.register\.chip[\s\S]*portal\.register\.already_title[\s\S]*<form/,
-  'portal registration page must put the Free signup form and sign-in return path in the shared authentication shell'
+  'portal registration page must put the account signup form and sign-in return path in the shared authentication shell'
 );
 assert.match(loginSource, /PortalAuthShell/, 'portal login must use the shared authentication shell');
 assert.match(registerSource, /PortalAuthShell/, 'portal registration must use the shared authentication shell');

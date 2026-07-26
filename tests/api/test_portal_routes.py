@@ -502,8 +502,6 @@ def _request_portal_registration_code(
     client: TestClient,
     *,
     email: str,
-    site_url: str = "",
-    site_name: str = "",
     headers: dict[str, str] | None = None,
 ) -> dict[str, object]:
     request_headers = dict(headers or {})
@@ -512,14 +510,9 @@ def _request_portal_registration_code(
         and "x-npcink-dev-login-code" not in request_headers
     ):
         request_headers["x-npcink-dev-login-code"] = "1"
-    payload: dict[str, object] = {"email": email}
-    if site_url:
-        payload["site_url"] = site_url
-    if site_name:
-        payload["site_name"] = site_name
     response = client.post(
         "/portal/v1/register/code/request",
-        json=payload,
+        json={"email": email},
         headers=request_headers,
     )
     assert response.status_code == 200, response.text
@@ -531,6 +524,42 @@ def _request_portal_registration_code(
         "portal_site_id": data.get("site_id") or "",
     }
     return data
+
+
+def _connect_wordpress_addon(
+    client: TestClient,
+    *,
+    account_id: str,
+    site_url: str,
+    site_name: str,
+    state: str,
+    idempotency_key: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    return_url = (
+        f"{site_url}/wp-admin/admin-post.php"
+        f"?action=npcink_cloud_addon_complete_auth&state={state}"
+    )
+    issue_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": account_id,
+            "site_url": site_url,
+            "site_name": site_name,
+            "return_url": return_url,
+            "state": state,
+        },
+        headers={"Idempotency-Key": idempotency_key},
+    )
+    assert issue_response.status_code == 200, issue_response.text
+    issue_data = issue_response.json()["data"]
+    redirect_query = parse_qs(urlsplit(str(issue_data["redirect_url"])).query)
+    code = redirect_query["code"][0]
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={"code": code, "state": state},
+    )
+    assert exchange_response.status_code == 200, exchange_response.text
+    return issue_data, exchange_response.json()["data"]
 
 
 def _verify_portal_registration_code(
@@ -1156,8 +1185,6 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     registration_request = _request_portal_registration_code(
         client,
         email="addon-connect@example.com",
-        site_url="https://primary.example.com",
-        site_name="Primary Site",
         headers={
             "x-npcink-debug-portal-link": "1",
             "x-npcink-dev-login-code": "1",
@@ -1196,7 +1223,10 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert create_data["site_id"] == "site_primary-example-com"
     assert create_data["site_url"] == "https://primary.example.com"
     assert create_data["platform_kind"] == "wordpress"
-    assert create_data["site_created"] is False
+    assert create_data["site_created"] is True
+    assert create_data["activation_state"] == "pending_exchange"
+    assert "key_id" not in create_data
+    assert "cloud_api_key" not in create_data
     assert create_data["redirect_url"].startswith(
         "https://primary.example.com/wp-admin/admin-post.php?"
     )
@@ -1208,6 +1238,12 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert redirect_query["state"][0] == "addon-state-001"
     assert code
 
+    with get_session(database_url) as session:
+        assert session.get(Site, "site_primary-example-com") is None
+        assert list(session.scalars(select(AccountSubscription))) == []
+        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+        assert list(session.scalars(select(SiteApiKey))) == []
+
     exchange_response = client.post(
         "/portal/v1/addon-connections/exchange",
         json={"code": code, "state": "addon-state-001"},
@@ -1215,11 +1251,14 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert exchange_response.status_code == 200, exchange_response.text
     exchange_data = exchange_response.json()["data"]
     assert exchange_data["site_id"] == "site_primary-example-com"
-    assert exchange_data["key_id"] == create_data["key_id"]
+    assert exchange_data["activation_state"] == "active"
+    assert exchange_data["site_created"] is True
+    assert exchange_data["free_entitlement_activated"] is True
+    assert exchange_data["subscription_id"]
     assert exchange_data["cloud_api_key"].startswith("mak1_")
     decoded_key = _decode_customer_key(exchange_data["cloud_api_key"])
     assert decoded_key["site_id"] == "site_primary-example-com"
-    assert decoded_key["key_id"] == create_data["key_id"]
+    assert decoded_key["key_id"] == exchange_data["key_id"]
     assert decoded_key["secret"].startswith("sk_")
 
     replay_response = client.post(
@@ -1236,6 +1275,14 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         assert site.platform_kind == "wordpress"
         assert "site_url" not in (site.metadata_json or {})
         assert "url" not in (site.metadata_json or {})
+        subscription = session.scalar(select(AccountSubscription))
+        assert subscription is not None
+        assert subscription.status == "active"
+        assert subscription.plan_id == "free"
+        snapshot = session.scalar(select(AccountEntitlementSnapshot))
+        assert snapshot is not None
+        assert snapshot.status == "active"
+        assert snapshot.budgets_json["max_ai_credits_per_period"] == 300
 
     audit_response = client.get(
         "/internal/service/audit-events?site_id=site_primary-example-com&limit=20",
@@ -1259,8 +1306,6 @@ def test_portal_addon_connection_rejects_cross_account_membership_escalation(
     attacker_request = _request_portal_registration_code(
         client,
         email="cross-account-attacker@example.com",
-        site_url="https://cross-account-attacker.example.com",
-        site_name="Cross Account Attacker",
         headers=registration_headers,
     )
     attacker = _verify_portal_registration_code(
@@ -1271,8 +1316,6 @@ def test_portal_addon_connection_rejects_cross_account_membership_escalation(
     target_request = _request_portal_registration_code(
         client,
         email="cross-account-target@example.com",
-        site_url="https://cross-account-target.example.com",
-        site_name="Cross Account Target",
         headers=registration_headers,
     )
     target = _verify_portal_registration_code(
@@ -1342,8 +1385,6 @@ def test_portal_addon_connection_requires_provision_sites_action(
     registration_request = _request_portal_registration_code(
         client,
         email="provision-action@example.com",
-        site_url="https://provision-action-primary.example.com",
-        site_name="Provision Action Primary",
         headers={
             "x-npcink-debug-portal-link": "1",
             "x-npcink-dev-login-code": "1",
@@ -1409,6 +1450,74 @@ def test_portal_addon_connection_requires_provision_sites_action(
     dispose_engine(database_url)
 
 
+def test_portal_addon_exchange_revalidates_access_before_free_activation(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    registration_request = _request_portal_registration_code(
+        client,
+        email="exchange-revalidation@example.com",
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    registration = _verify_portal_registration_code(
+        client,
+        email="exchange-revalidation@example.com",
+        code=str(registration_request["code"]),
+    )
+    _assert_strict_portal_session(registration)
+    access = _ACCESS_BY_EMAIL["exchange-revalidation@example.com"]
+    account_id = str(access["account_id"])
+    principal_id = str(access["principal_id"])
+    state = "exchange-revalidation-state"
+    issue_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": account_id,
+            "site_url": "https://exchange-revalidation.example.com",
+            "site_name": "Exchange Revalidation",
+            "return_url": (
+                "https://exchange-revalidation.example.com/wp-admin/admin-post.php"
+                f"?action=npcink_cloud_addon_complete_auth&state={state}"
+            ),
+            "state": state,
+        },
+        headers={"Idempotency-Key": "exchange-revalidation-issue"},
+    )
+    assert issue_response.status_code == 200, issue_response.text
+    redirect_query = parse_qs(
+        urlsplit(str(issue_response.json()["data"]["redirect_url"])).query
+    )
+
+    with get_session(database_url) as session:
+        membership = session.scalar(
+            select(AccountUserMembership).where(
+                AccountUserMembership.principal_id == principal_id,
+                AccountUserMembership.account_id == account_id,
+            )
+        )
+        assert membership is not None
+        membership.allowed_actions_json = ["view_sites"]
+        session.commit()
+
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={"code": redirect_query["code"][0], "state": state},
+    )
+    assert exchange_response.status_code == 403
+    assert exchange_response.json()["error_code"] == "service.principal_access_required"
+
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(AccountSubscription))) == []
+        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+        assert list(session.scalars(select(Site))) == []
+        assert list(session.scalars(select(SiteApiKey))) == []
+
+    dispose_engine(database_url)
+
+
 def test_portal_addon_connection_accepts_loopback_alias_and_rejects_other_host(
     tmp_path: Path,
 ) -> None:
@@ -1416,8 +1525,6 @@ def test_portal_addon_connection_accepts_loopback_alias_and_rejects_other_host(
     registration_request = _request_portal_registration_code(
         client,
         email="addon-loopback@example.com",
-        site_url="http://localhost:8080",
-        site_name="Loopback Site",
         headers={
             "x-npcink-debug-portal-link": "1",
             "x-npcink-dev-login-code": "1",
@@ -1470,8 +1577,6 @@ def test_portal_addon_connection_allows_new_site_after_inactive_site_releases_ca
     registration_request = _request_portal_registration_code(
         client,
         email="addon-capacity@example.com",
-        site_url="https://primary.example.com",
-        site_name="Primary Site",
         headers={
             "x-npcink-debug-portal-link": "1",
             "x-npcink-dev-login-code": "1",
@@ -1484,6 +1589,14 @@ def test_portal_addon_connection_allows_new_site_after_inactive_site_releases_ca
     )
     _assert_strict_portal_session(registration)
     account_id = str(_ACCESS_BY_EMAIL["addon-capacity@example.com"]["account_id"])
+    _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://primary.example.com",
+        site_name="Primary Site",
+        state="addon-state-capacity-primary",
+        idempotency_key="portal-addon-capacity-primary",
+    )
 
     with get_session(database_url) as session:
         primary_site = session.get(Site, "site_primary-example-com")
@@ -1491,25 +1604,20 @@ def test_portal_addon_connection_allows_new_site_after_inactive_site_releases_ca
         primary_site.status = "inactive"
         session.commit()
 
-    return_url = (
-        "https://secondary.example.com/wp-admin/admin-post.php"
-        "?action=npcink_cloud_addon_complete_auth&state=addon-state-capacity"
+    create_data, exchange_data = _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://secondary.example.com",
+        site_name="Secondary Site",
+        state="addon-state-capacity",
+        idempotency_key="portal-addon-capacity-connect",
     )
-    create_response = client.post(
-        "/portal/v1/addon-connections",
-        json={
-            "account_id": account_id,
-            "site_url": "https://secondary.example.com",
-            "site_name": "Secondary Site",
-            "return_url": return_url,
-            "state": "addon-state-capacity",
-        },
-        headers={"Idempotency-Key": "portal-addon-capacity-connect"},
-    )
-    assert create_response.status_code == 200, create_response.text
-    create_data = create_response.json()["data"]
     assert create_data["site_id"] == "site_secondary-example-com"
     assert create_data["site_created"] is True
+    assert create_data["activation_state"] == "pending_exchange"
+    assert exchange_data["activation_state"] == "active"
+    assert exchange_data["site_created"] is True
+    assert exchange_data["free_entitlement_activated"] is False
 
     with get_session(database_url) as session:
         primary_site = session.get(Site, "site_primary-example-com")
@@ -1530,8 +1638,6 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
     registration_request = _request_portal_registration_code(
         client,
         email="addon-reactivate@example.com",
-        site_url="https://primary.example.com",
-        site_name="Primary Site",
         headers={
             "x-npcink-debug-portal-link": "1",
             "x-npcink-dev-login-code": "1",
@@ -1544,24 +1650,21 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
     )
     _assert_strict_portal_session(registration)
     account_id = str(_ACCESS_BY_EMAIL["addon-reactivate@example.com"]["account_id"])
+    _, initial_exchange = _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://primary.example.com",
+        site_name="Primary Site",
+        state="addon-state-reactivate-primary",
+        idempotency_key="portal-addon-reactivate-primary",
+    )
+    old_key_id = str(initial_exchange["key_id"])
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
         assert site is not None
         site.status = "inactive"
         site.site_url = ""
         session.commit()
-    old_key_response = client.post(
-        "/internal/service/sites/site_primary-example-com/keys",
-        json={
-            "key_id": "key_addon_reconnect_old",
-            "secret": "old-addon-reconnect-secret",
-            "scopes": ["runtime:execute", "runtime:read", "runtime:resolve", "stats:read"],
-            "label": "Old addon key",
-        },
-        headers=build_internal_headers(idempotency_key="portal-addon-reactivate-old-key"),
-    )
-    assert old_key_response.status_code == 200, old_key_response.text
-
     return_url = (
         "https://primary.example.com/wp-admin/admin-post.php"
         "?action=npcink_cloud_addon_complete_auth&state=addon-state-reactivate"
@@ -1581,7 +1684,20 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
     create_data = create_response.json()["data"]
     assert create_data["site_id"] == "site_primary-example-com"
     assert create_data["site_created"] is False
-    assert create_data["revoked_key_ids"] == ["key_addon_reconnect_old"]
+    assert create_data["activation_state"] == "pending_exchange"
+    assert "revoked_key_ids" not in create_data
+    redirect_query = parse_qs(urlsplit(str(create_data["redirect_url"])).query)
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={
+            "code": redirect_query["code"][0],
+            "state": "addon-state-reactivate",
+        },
+    )
+    assert exchange_response.status_code == 200, exchange_response.text
+    exchange_data = exchange_response.json()["data"]
+    assert exchange_data["activation_state"] == "active"
+    assert exchange_data["revoked_key_ids"] == [old_key_id]
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
@@ -1589,7 +1705,7 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
         assert site.status == "active"
         assert site.site_url == "https://primary.example.com"
         assert site.platform_kind == "wordpress"
-        old_key = session.get(SiteApiKey, "key_addon_reconnect_old")
+        old_key = session.get(SiteApiKey, old_key_id)
         assert old_key is not None
         assert old_key.status == "revoked"
         active_keys = [
@@ -1599,7 +1715,7 @@ def test_portal_addon_connection_reactivates_existing_inactive_site(
             )
             if item.status == "active"
         ]
-        assert [item.key_id for item in active_keys] == [create_data["key_id"]]
+        assert [item.key_id for item in active_keys] == [exchange_data["key_id"]]
 
     dispose_engine(database_url)
 
@@ -1612,8 +1728,6 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
     registration_request = _request_portal_registration_code(
         client,
         email="addon-archived-reactivate@example.com",
-        site_url="https://primary.example.com",
-        site_name="Primary Site",
         headers={
             "x-npcink-debug-portal-link": "1",
             "x-npcink-dev-login-code": "1",
@@ -1627,6 +1741,14 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
     _assert_strict_portal_session(registration)
     account_id = str(
         _ACCESS_BY_EMAIL["addon-archived-reactivate@example.com"]["account_id"]
+    )
+    _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://primary.example.com",
+        site_name="Primary Site",
+        state="addon-state-archived-primary",
+        idempotency_key="portal-addon-archived-primary",
     )
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
@@ -1661,6 +1783,18 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
     create_data = create_response.json()["data"]
     assert create_data["site_id"] == "site_primary-example-com"
     assert create_data["site_created"] is False
+    assert create_data["activation_state"] == "pending_exchange"
+    redirect_query = parse_qs(urlsplit(str(create_data["redirect_url"])).query)
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={
+            "code": redirect_query["code"][0],
+            "state": "addon-state-archived-reactivate",
+        },
+    )
+    assert exchange_response.status_code == 200, exchange_response.text
+    exchange_data = exchange_response.json()["data"]
+    assert exchange_data["activation_state"] == "active"
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
@@ -1677,7 +1811,7 @@ def test_portal_addon_connection_reactivates_existing_archived_site(
             )
             if item.status == "active"
         ]
-        assert [item.key_id for item in active_keys] == [create_data["key_id"]]
+        assert [item.key_id for item in active_keys] == [exchange_data["key_id"]]
 
     dispose_engine(database_url)
 
@@ -3358,8 +3492,7 @@ def test_portal_qq_callback_registers_first_time_user(
         assert binding.external_subject_hash != "qq-openid-unbound"
         assert membership is not None
         assert membership.principal_id == principal.principal_id
-        assert subscription is not None
-        assert subscription.account_id == membership.account_id
+        assert subscription is None
 
     logout_response = client.post("/portal/v1/logout")
     assert logout_response.status_code == 200
@@ -3530,8 +3663,6 @@ def test_portal_registration_code_request_uses_registration_sender(
     request_data = _request_portal_registration_code(
         client,
         email="registration-mail@example.com",
-        site_url="https://registration.example.com",
-        site_name="Registration Demo Site",
     )
 
     assert request_data["delivery"] == "email"
@@ -3539,8 +3670,8 @@ def test_portal_registration_code_request_uses_registration_sender(
     assert len(fake_sender.messages) == 1
     assert fake_sender.messages[0]["kind"] == "registration_code"
     assert fake_sender.messages[0]["recipient_email"] == "registration-mail@example.com"
-    assert fake_sender.messages[0]["site_name"] == "Registration Demo Site"
-    assert fake_sender.messages[0]["site_url"] == "https://registration.example.com"
+    assert fake_sender.messages[0]["site_name"] == ""
+    assert fake_sender.messages[0]["site_url"] == ""
 
     dispose_engine(database_url)
 
@@ -3569,6 +3700,23 @@ def test_portal_site_payloads_fail_closed_on_superseded_url_field(tmp_path: Path
     dispose_engine(database_url)
 
 
+def test_portal_registration_rejects_site_provisioning_fields(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    for field, value in (
+        ("site_url", "https://registration.example.com"),
+        ("site_name", "Registration Site"),
+        ("use_case", "content generation"),
+    ):
+        response = client.post(
+            "/portal/v1/register/code/request",
+            json={"email": "legacy-registration@example.com", field: value},
+        )
+        assert response.status_code == 422, (field, response.text)
+
+    dispose_engine(database_url)
+
+
 def test_portal_login_code_request_masks_missing_principal_access(
     tmp_path: Path,
 ) -> None:
@@ -3594,7 +3742,7 @@ def test_portal_login_code_request_masks_missing_principal_access(
     dispose_engine(database_url)
 
 
-def test_portal_self_registration_opens_free_account_and_session(
+def test_portal_self_registration_opens_account_without_free_entitlement(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(
@@ -3665,23 +3813,14 @@ def test_portal_self_registration_opens_free_account_and_session(
                 AccountSubscription.account_id == account_id
             )
         )
-        assert subscription is not None
-        assert subscription.plan_id == "free"
-        assert subscription.plan_version_id == "free_v1"
-        assert subscription.status == "active"
-        assert (subscription.metadata_json or {})["source"] == "production_default_free_bind_v1"
+        assert subscription is None
         entitlement_snapshot = session.scalar(
             select(AccountEntitlementSnapshot).where(
                 AccountEntitlementSnapshot.account_id == account_id,
                 AccountEntitlementSnapshot.status == "active",
             )
         )
-        assert entitlement_snapshot is not None
-        assert entitlement_snapshot.subscription_id == subscription.subscription_id
-        assert entitlement_snapshot.plan_version_id == "free_v1"
-        assert entitlement_snapshot.site_limit == 1
-        assert entitlement_snapshot.budgets_json["max_ai_credits_per_period"] == 300
-        assert entitlement_snapshot.concurrency_json["max_active_runs"] == 1
+        assert entitlement_snapshot is None
 
     second_request_data = _request_portal_registration_code(
         client,
@@ -3701,7 +3840,7 @@ def test_portal_self_registration_opens_free_account_and_session(
         site_count = len(list(session.scalars(select(Site))))
         subscription_count = len(list(session.scalars(select(AccountSubscription))))
     assert site_count == 0
-    assert subscription_count == 1
+    assert subscription_count == 0
 
     dispose_engine(database_url)
 
@@ -3730,18 +3869,16 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     registration_access = _ACCESS_BY_EMAIL["pro-trial-user@example.com"]
     account_id = str(registration_access["account_id"])
     principal_id = str(registration_access["principal_id"])
-    site_id = "site_portal_pro_trial_user"
-    site_response = client.post(
-        "/internal/service/sites",
-        json={
-            "site_id": site_id,
-            "account_id": account_id,
-            "name": "Pro Trial User Site",
-            "status": "active",
-        },
-        headers=build_internal_headers(idempotency_key="portal-pro-trial-site-001"),
+    _, addon_exchange = _connect_wordpress_addon(
+        client,
+        account_id=account_id,
+        site_url="https://pro-trial-user.example.com",
+        site_name="Pro Trial User Site",
+        state="portal-pro-trial-addon-state",
+        idempotency_key="portal-pro-trial-addon-001",
     )
-    assert site_response.status_code == 200, site_response.text
+    site_id = str(addon_exchange["site_id"])
+    assert addon_exchange["free_entitlement_activated"] is True
 
     offers_response = client.get(
         "/portal/v1/account/plan-offers",
