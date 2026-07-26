@@ -31,7 +31,7 @@ const connections = [
     configured: true,
     status: 'ready',
     base_url: 'https://new-api.example.test/v1',
-    capability_ids: ['text_generation'],
+    capability_ids: ['text_generation', 'image_generation'],
     runtime_profile_ids: ['text.ai'],
     model_ids: ['gpt-5.5', 'gpt-5.4-mini'],
     last_tested_at: '2026-07-12T00:25:00Z',
@@ -182,35 +182,40 @@ async function installProviderDirectoryHarness(page: Page) {
   return { getRequestCount: () => requestCount };
 }
 
-test('model supplier queue keeps URL-backed focus and removes fixed-width table behavior', async ({ page }, testInfo) => {
+test('model supplier table keeps PC operations and filters in one workspace', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   const harness = await installProviderDirectoryHarness(page);
   await page.goto('/admin/ai-resources');
 
   await expect(page.locator('[data-ui="supplier-summary-strip"]')).toBeVisible();
   await expect(page.locator('[data-ui="model-supplier-directory"] [data-connection-id]')).toHaveCount(3);
   await expect(page.locator('[data-connection-id="embedding_ready"]')).toHaveCount(0);
-  await expect(page.locator('table')).toHaveCount(0);
+  await expect(page.locator('[data-ui="model-supplier-table"]')).toBeVisible();
+  await expect(page.locator('[data-ui="supplier-inspector"]')).toHaveCount(0);
+  await expect(page.locator('aside.admin-sidebar')).toHaveCSS('width', '208px');
+  await expect(page.locator('[data-ui="model-supplier-directory"]')).toHaveScreenshot('admin-provider-table-pc.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    scale: 'css',
+    maxDiffPixelRatio: 0.015,
+  });
   expect(harness.getRequestCount()).toBe(1);
   await testInfo.attach('p4-e03-admin-provider-runtime', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
 
-  await page.locator('[data-connection-id="model_ready"]').click();
+  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: 'MQZJ' }).click();
   await expect(page).toHaveURL(/focus=model_ready/);
-  await expect(page.locator('[data-ui="supplier-inspector"]')).toContainText('MQZJ');
   await page.reload();
-  await expect(page.locator('[data-connection-id="model_ready"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-connection-id="model_ready"]')).toHaveAttribute('data-selected', 'true');
 
   await page.getByLabel(/^Status$|^状态$/i).selectOption('ready');
   await expect(page).toHaveURL(/status=ready/);
   await expect(page.locator('[data-ui="model-supplier-directory"] [data-connection-id]')).toHaveCount(1);
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(150);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
-  expect(await page.locator('[data-ui="model-supplier-directory"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(700);
+  await expect(page.locator('[data-connection-id="model_ready"]')).toBeVisible();
+  expect(await page.locator('[data-ui="model-supplier-directory"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(420);
 });
 
 test('model supplier workspace does not expose capability-service controls', async ({ page }) => {
@@ -225,21 +230,23 @@ test('model supplier workspace does not expose capability-service controls', asy
   await expect(page.locator('[data-connection-id="search_ready"]')).toHaveCount(0);
 });
 
-test('supplier inspector keeps test feedback and destructive confirmation beside the selected supplier', async ({ page }) => {
+test('supplier row keeps test feedback nearby and deletion under more actions', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installProviderDirectoryHarness(page);
   await page.goto('/admin/ai-resources?focus=model_ready');
 
-  const inspector = page.locator('[data-ui="supplier-inspector"]');
-  await inspector.getByRole('button', { name: /^Test$|^测试$/i }).click();
-  await expect(inspector.getByRole('status').filter({ hasText: /Test passed|连接测试通过/i })).toBeVisible();
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /^Test$|^测试$/i }).click();
+  const feedbackRow = page.locator('[data-feedback-for="model_ready"]');
+  await expect(feedbackRow.getByRole('status').filter({ hasText: /Test passed|连接测试通过/i })).toBeVisible();
 
-  await inspector.getByRole('button', { name: /^Delete$|^删除$/i }).click();
-  await expect(inspector.getByRole('alert').filter({ hasText: /removes this runtime connection|移除这条运行时连接/i })).toBeVisible();
-  await expect(inspector.getByRole('button', { name: /Confirm delete|确认删除/i })).toBeVisible();
-  await inspector.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
-  await expect(inspector.getByRole('button', { name: /Confirm delete|确认删除/i })).toHaveCount(0);
+  await supplierRow.locator('[data-ui="supplier-more-actions"] summary').click();
+  await supplierRow.getByRole('button', { name: /^Delete$|^删除$/i }).click();
+  await expect(feedbackRow.getByRole('alert').filter({ hasText: /removes this runtime connection|移除这条运行时连接/i })).toBeVisible();
+  await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toBeVisible();
+  await feedbackRow.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
+  await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toHaveCount(0);
 });
 
 test('failed supplier test keeps its canonical error and audit receipt', async ({ page }) => {
@@ -275,9 +282,10 @@ test('failed supplier test keeps its canonical error and audit receipt', async (
   });
   await page.goto('/admin/ai-resources?focus=model_attention');
 
-  const inspector = page.locator('[data-ui="supplier-inspector"]');
-  await inspector.getByRole('button', { name: /^Test$|^测试$/i }).click();
-  await expect(page.getByText('provider credential is missing').first()).toBeVisible();
+  const supplierRow = page.locator('[data-connection-id="model_attention"]');
+  await supplierRow.getByRole('button', { name: /^Test$|^测试$/i }).click();
+  await expect(page.locator('[data-feedback-for="model_attention"]').getByRole('alert')).toContainText(/provider credential is missing|供应商凭据缺失/i);
+  await expect(page.getByText(/provider credential is missing|供应商凭据缺失/i).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /Latest operation|最近操作/i })).toBeVisible();
 });
 
@@ -295,12 +303,54 @@ test('provider configuration dialog supports PC keyboard entry, focus loop, and 
   const closeButton = dialog.getByRole('button', { name: /^Close$|^关闭$/i });
   await expect(closeButton).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: /Save and test provider|保存并测试供应商/i })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: /Save and test(?: provider)?|保存并测试(?:供应商)?/i })).toBeFocused();
 
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(addButton).toBeFocused();
 
+});
+
+test('editing a provider prioritizes the model workbench and keeps low-frequency connection fields collapsed', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page);
+  await page.goto('/admin/ai-resources?focus=model_ready');
+
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.admin-workbench-dialog')).toHaveCSS('max-width', '1152px');
+  await expect(dialog.getByText(/Credential stays unchanged|凭据保持不变/i)).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: /Model visibility|模型可见性/i })).toBeVisible();
+  await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeVisible();
+  await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    scale: 'css',
+    maxDiffPixelRatio: 0.015,
+  });
+
+  const connectionSettings = dialog.locator('details[data-ui="provider-connection-settings"]');
+  await expect(connectionSettings).not.toHaveAttribute('open', '');
+  await connectionSettings.locator(':scope > summary').click();
+
+  const replaceCredentialButton = dialog.getByRole('button', { name: /Replace credential|替换凭据/i });
+  await expect(replaceCredentialButton).toBeVisible();
+  await expect(dialog.getByLabel(/API Key|Credential|凭据/i)).toHaveCount(0);
+  await replaceCredentialButton.click();
+  await expect(dialog.getByLabel(/API Key|Credential|凭据/i)).toBeVisible();
+
+  const imageDeliverySettings = dialog.locator('details[data-ui="image-delivery-settings"]');
+  await expect(imageDeliverySettings).toBeVisible();
+  await expect(imageDeliverySettings).not.toHaveAttribute('open', '');
+
+  await testInfo.attach('provider-workbench-dialog', {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  });
 });
 
 test('save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar', async ({ page }) => {
@@ -312,7 +362,7 @@ test('save and test closes the dialog, uses a compact toast, and keeps the recei
   await page.getByRole('button', { name: /Add model supplier|添加模型供应商/i }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel(/API Key|Credential|凭据/i).fill('test-secret');
-  await dialog.getByRole('button', { name: /Save and test provider|保存并测试供应商/i }).click();
+  await dialog.getByRole('button', { name: /Save and test(?: provider)?|保存并测试(?:供应商)?/i }).click();
 
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('status').filter({ hasText: /saved and tested|已保存并完成测试/i })).toBeVisible();

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "standard": "../docs/cloud-admin-ui-standard-v1.md",
+  "referenceRoute": "/admin/ai-resources",
+  "viewport": {
+    "width": 1440,
+    "height": 1050
+  },
+  "geometry": {
+    "sidebarExpandedPx": 208,
+    "sidebarCollapsedPx": 64,
+    "workbenchMaxWidthPx": 1152
+  },
+  "pageModels": [
+    "overview",
+    "queue",
+    "detail",
+    "configuration",
+    "diagnostic",
+    "authentication"
+  ],
+  "routes": {
+    "/admin": "overview",
+    "/admin/login": "authentication",
+    "/admin/accounts": "queue",
+    "/admin/accounts/[accountId]": "detail",
+    "/admin/sites/[siteId]": "detail",
+    "/admin/coverage": "queue",
+    "/admin/subscriptions": "queue",
+    "/admin/subscriptions/[subscriptionId]": "detail",
+    "/admin/support-requests": "queue",
+    "/admin/support-requests/[requestId]": "detail",
+    "/admin/plans": "queue",
+    "/admin/plans/[planId]": "detail",
+    "/admin/credit-packs": "configuration",
+    "/admin/portal-users": "queue",
+    "/admin/ai-resources": "queue",
+    "/admin/external-services": "configuration",
+    "/admin/vector-settings": "configuration",
+    "/admin/runtime-profiles": "configuration",
+    "/admin/troubleshooting": "diagnostic",
+    "/admin/plugin-observability": "diagnostic",
+    "/admin/media-observability": "diagnostic",
+    "/admin/vector-observability": "diagnostic",
+    "/admin/agent-feedback": "diagnostic",
+    "/admin/ai-advisor": "diagnostic",
+    "/admin/service-settings": "configuration",
+    "/admin/site-compliance": "configuration"
+  },
+  "legacyRouteLocalDialogs": [
+    "src/app/admin/layout.tsx",
+    "src/app/admin/plans/[planId]/page.tsx",
+    "src/app/admin/runtime-profiles/page.tsx",
+    "src/app/admin/service-settings/page.tsx"
+  ],
+  "legacyRouteLocalCredentials": [
+    "src/app/admin/external-services/page.tsx",
+    "src/app/admin/service-settings/page.tsx",
+    "src/app/admin/vector-settings/page.tsx"
+  ]
+}

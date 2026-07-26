@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
+  BackofficeLayer,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
@@ -12,6 +13,8 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
+import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
@@ -857,6 +860,7 @@ function AiResourcesContent() {
   const [providerFormOpen, setProviderFormOpen] = useState(false);
   const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
   const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(true);
+  const [credentialEditOpen, setCredentialEditOpen] = useState(true);
   const [providerConnectionForm, setProviderConnectionForm] = useState<ProviderConnectionForm>(
     EMPTY_PROVIDER_CONNECTION_FORM
   );
@@ -1334,6 +1338,7 @@ function AiResourcesContent() {
     setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
     setProviderFormMode('create');
     setConnectionDetailsOpen(true);
+    setCredentialEditOpen(true);
     setProviderFormOpen(true);
     setProviderCatalogPreview(null);
     setModelReferenceProviderId(defaultReferenceProviderId(EMPTY_PROVIDER_CONNECTION_FORM.providerId, EMPTY_PROVIDER_CONNECTION_FORM.providerPreset));
@@ -1350,9 +1355,7 @@ function AiResourcesContent() {
     setConfirmingDeleteConnectionId('');
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
-    setMessage(aiText('message_editing_connection', 'Editing {{name}}. Credential is left blank unless you replace it.', {
-      name: connection.display_name,
-    }));
+    setMessage('');
     setError('');
     setProviderCatalogPreview(storedCatalogPreview);
     setModelReferenceProviderId(referenceProviderForConnection(connection));
@@ -1363,6 +1366,7 @@ function AiResourcesContent() {
     setCustomModelInput('');
     setProviderFormMode('edit');
     setConnectionDetailsOpen(false);
+    setCredentialEditOpen(false);
     setProviderConnectionForm({
       providerPreset,
       connectionId: connection.connection_id,
@@ -1386,6 +1390,7 @@ function AiResourcesContent() {
 
   function closeProviderForm() {
     setProviderFormOpen(false);
+    setCredentialEditOpen(true);
     setMessage('');
     setError('');
   }
@@ -1872,7 +1877,7 @@ function AiResourcesContent() {
   ).length;
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficeLayer
         eyebrow={aiText('eyebrow', 'Runtime plane')}
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
@@ -1888,45 +1893,50 @@ function AiResourcesContent() {
           </div>
         )}
         actions={null}
-        contentClassName="py-4 md:py-4"
-      >
-        <SupplierSummaryCards
-          readyModelSupplierCount={readyModelSupplierCount}
-          modelSupplierCount={modelSupplierCount}
-          attentionSupplierCount={attentionSupplierCount}
-          translate={aiText}
-        />
-        <p className="border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          {aiText('workspace_boundary_notice', 'This page opens Cloud service-plane detail only. Local plugin prompts, routers, approval, and WordPress writes stay outside Cloud.')}
-        </p>
-      </BackofficePrimaryPanel>
+      />
 
-      <BackofficeSectionPanel>
-        <SupplierToolbar
-          connectionSearch={connectionSearch}
-          onConnectionSearchChange={handleConnectionSearchChange}
-          hasLatestOperation={Boolean(lastReceipt)}
-          onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
-          onAddModelSupplier={openNewProviderConnection}
-          translate={aiText}
-        />
+      <BackofficeSectionPanel className="p-4 md:p-4">
+        <div className="grid gap-3 xl:grid-cols-[19rem_minmax(0,1fr)] xl:items-center">
+          <SupplierSummaryCards
+            readyModelSupplierCount={readyModelSupplierCount}
+            modelSupplierCount={modelSupplierCount}
+            attentionSupplierCount={attentionSupplierCount}
+            translate={aiText}
+          />
+          <SupplierToolbar
+            connectionSearch={connectionSearch}
+            onConnectionSearchChange={handleConnectionSearchChange}
+            statusFilter={connectionStatusFilter}
+            onStatusFilterChange={handleConnectionStatusFilterChange}
+            hasLatestOperation={Boolean(lastReceipt)}
+            onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
+            onAddModelSupplier={openNewProviderConnection}
+            translate={aiText}
+          />
+        </div>
 
         <ProviderConnectionDialog
           open={providerFormOpen}
           title={providerDialogTitle}
           titleId="provider-channel-dialog-title"
+          headerAccessory={providerFormMode === 'edit' ? (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+              {aiText('credential_keep_hint', 'Credential stays unchanged unless you replace it')}
+            </span>
+          ) : null}
           message={message}
           error={error}
           saving={savingConnection}
           closeLabel={aiText('action_close_dialog', 'Close')}
           cancelLabel={aiText('action_cancel', 'Cancel')}
-          saveLabel={aiText('action_save_and_test_connection', 'Save and test provider')}
+          saveLabel={aiText('action_save_and_test_connection', 'Save and test')}
           savingLabel={aiText('saving', 'Saving...')}
           footerNotice={aiText('save_test_notice', 'Saving will immediately run a masked provider test. Secrets are never returned to the browser.')}
           onClose={closeProviderForm}
           onSubmit={() => void saveProviderConnection()}
         >
                 <details
+                  data-ui="provider-connection-settings"
                   className="group border-b border-slate-200 pb-3 dark:border-slate-800"
                   open={connectionDetailsOpen}
                   onToggle={(event) => setConnectionDetailsOpen(event.currentTarget.open)}
@@ -1990,16 +2000,22 @@ function AiResourcesContent() {
                           required
                         />
                       </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_credential', 'API Key')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          type="password"
-                          value={providerConnectionForm.credential}
-                          onChange={(event) => updateProviderConnectionForm({ credential: event.target.value })}
-                          placeholder={aiText('placeholder_keep_current_credential', 'leave blank to keep current')}
-                        />
-                      </label>
+                      <AdminCredentialField
+                        mode={providerFormMode}
+                        revealed={credentialEditOpen}
+                        value={providerConnectionForm.credential}
+                        label={aiText('field_credential', 'API Key')}
+                        unchangedLabel={aiText('credential_unchanged', 'Keep current credential')}
+                        replaceLabel={aiText('action_replace_credential', 'Replace credential')}
+                        cancelReplacementLabel={aiText('action_cancel_credential_replacement', 'Cancel replacement')}
+                        keepCurrentPlaceholder={aiText('placeholder_keep_current_credential', 'Leave blank to keep current')}
+                        onChange={(credential) => updateProviderConnectionForm({ credential })}
+                        onReveal={() => setCredentialEditOpen(true)}
+                        onCancelReplacement={() => {
+                          setCredentialEditOpen(false);
+                          updateProviderConnectionForm({ credential: '' });
+                        }}
+                      />
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
@@ -2023,18 +2039,27 @@ function AiResourcesContent() {
                     </div>
 
                     {providerUsesImageGeneration ? (
-                      <div className="grid gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900 dark:bg-blue-950/20">
-                        <div>
-                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {aiText('image_delivery_title', 'Generated image delivery')}
-                          </div>
-                          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
-                            {aiText(
-                              'image_delivery_desc',
-                              'Cloud converts provider output into a temporary review artifact. URL output requires an exact provider-owned download host; schemes, paths, ports, and wildcards are rejected.'
-                            )}
-                          </p>
-                        </div>
+                      <AdminSettingsDisclosure
+                        dataUi="image-delivery-settings"
+                        title={aiText('image_delivery_title', 'Generated image delivery')}
+                        description={providerConnectionForm.imageResponseFormat
+                          ? aiText('image_delivery_configured_compact', 'Configured: {{format}}', {
+                            format: providerConnectionForm.imageResponseFormat === 'b64_json'
+                              ? aiText('image_response_base64', 'Base64 image')
+                              : aiText('image_response_url', 'Image URL'),
+                          })
+                          : aiText('image_delivery_unconfirmed_compact', 'Delivery format not confirmed')}
+                        statusLabel={providerConnectionForm.imageResponseFormat
+                          ? aiText('status_configured', 'Configured')
+                          : aiText('status_needs_confirmation', 'Needs confirmation')}
+                        statusTone={providerConnectionForm.imageResponseFormat ? 'configured' : 'attention'}
+                      >
+                        <p className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+                          {aiText(
+                            'image_delivery_desc',
+                            'Cloud converts provider output into a temporary review artifact. URL output requires an exact provider-owned download host; schemes, paths, ports, and wildcards are rejected.'
+                          )}
+                        </p>
                         <div className="grid gap-3 md:grid-cols-[minmax(13rem,0.45fr)_minmax(0,1fr)]">
                           <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                             {aiText('field_image_response_format', 'Provider image response')}
@@ -2073,7 +2098,7 @@ function AiResourcesContent() {
                             'Use Base64 only when the upstream explicitly supports it. For URL output, copy the exact asset hostname from the provider documentation; Cloud will still verify HTTPS, public DNS, MIME type, size, and image content.'
                           )}
                         </p>
-                      </div>
+                      </AdminSettingsDisclosure>
                     ) : null}
 
                     <ProviderReferenceLinks
@@ -2120,6 +2145,18 @@ function AiResourcesContent() {
                           />
                         </label>
 
+                        <button
+                          type="button"
+                          data-ui="model-sync-primary"
+                          className="btn btn-secondary h-10 shrink-0 px-3"
+                          disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
+                          onClick={() => void fetchProviderCatalogPreview()}
+                        >
+                          {fetchingProviderCatalog || syncingModelReferences
+                            ? aiText('action_fetching_upstream_models', 'Syncing...')
+                            : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
+                        </button>
+
                         <details className="relative text-xs text-slate-600 dark:text-slate-300">
                           <summary className="flex h-10 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700">
                             {aiText('model_visibility_more_operations', 'More operations')}
@@ -2131,16 +2168,6 @@ function AiResourcesContent() {
                                   {aiText('model_visibility_operations_title', 'Actions')}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary h-9 px-3 py-1 text-xs"
-                                    disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
-                                    onClick={() => void fetchProviderCatalogPreview()}
-                                  >
-                                    {fetchingProviderCatalog || syncingModelReferences
-                                      ? aiText('action_fetching_upstream_models', 'Syncing...')
-                                      : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
-                                  </button>
                                   <button
                                     type="button"
                                     className="h-9 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700"
@@ -2256,7 +2283,7 @@ function AiResourcesContent() {
                           {aiText('loading_model_references', 'Loading model reference data...')}
                         </div>
                       ) : modelVisibilityRows.length ? (
-                        <div className="relative max-h-[22rem] overflow-auto border-t border-slate-200 dark:border-slate-800">
+                        <div className="relative max-h-[28rem] overflow-auto border-t border-slate-200 dark:border-slate-800">
                           <table className="w-full min-w-[50rem] text-left text-xs">
                             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_rgba(30,41,59,0.9)]">
                               <tr>
@@ -2497,8 +2524,6 @@ function AiResourcesContent() {
         </ProviderConnectionDialog>
         <ModelSupplierTable
           connections={aiSupplierConnections}
-          statusFilter={connectionStatusFilter}
-          onStatusFilterChange={handleConnectionStatusFilterChange}
           selectedConnectionId={selectedConnectionId}
           onSelectConnection={handleSelectConnection}
           testResults={connectionTestResults}
