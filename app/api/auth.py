@@ -4,6 +4,7 @@ import hmac
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -12,6 +13,7 @@ import jwt
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from jwt import InvalidTokenError
+from sqlalchemy import text
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.envelope import build_envelope
@@ -47,6 +49,12 @@ PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT = "portal_login_code_client"
 PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS = 15 * 60
 PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_EMAIL_WINDOW = 5
 PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_CLIENT_WINDOW = 10
+PORTAL_OAUTH_STATE_REQUEST_SCOPE_CLIENT = "portal_oauth_state_client"
+PORTAL_OAUTH_STATE_MAX_REQUESTS_PER_CLIENT_WINDOW = 10
+PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_PRINCIPAL = "portal_email_change_principal"
+PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_TARGET = "portal_email_change_target"
+PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_PRINCIPAL_WINDOW = 5
+PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_TARGET_WINDOW = 3
 PORTAL_SITE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,191}$")
 PORTAL_SESSION_ISSUER = "npcink-ai-cloud"
 PORTAL_SESSION_AUDIENCE = "npcink-ai-cloud-portal"
@@ -480,56 +488,52 @@ def validate_portal_principal_session(
             )
 
 
-def enforce_portal_login_code_request_rate_limit(
+def _enforce_portal_request_rate_limit(
     request: Request,
     *,
-    email: str,
+    scopes: tuple[tuple[str, str, int], ...],
+    error_code: str,
 ) -> None:
-    if _portal_local_debug_login_code_request(request):
-        return
     services = get_cloud_services(request)
-    normalized_email = email.strip().lower()
-    if not normalized_email:
+    bounded_scopes = tuple(
+        (scope_kind, scope_id.strip().lower(), max_requests)
+        for scope_kind, scope_id, max_requests in scopes
+        if scope_id.strip()
+    )
+    if not bounded_scopes:
         return
 
     now = datetime.now(UTC)
     trace_id = extract_trace_id(request.headers.get("traceparent", ""))
-    client_scope_id = resolve_client_scope_id(request)
     request_marker = f"req_{uuid4().hex}"
     try:
         with get_session(services.settings.database_url) as session:
-            _enforce_short_window_rate_limit(
-                session=session,
-                scope_kind=PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL,
-                scope_id=normalized_email,
-                now=now,
-                window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
-                max_requests=PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_EMAIL_WINDOW,
-            )
-            _enforce_short_window_rate_limit(
-                session=session,
-                scope_kind=PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT,
-                scope_id=client_scope_id,
-                now=now,
-                window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
-                max_requests=PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_CLIENT_WINDOW,
-            )
-            _reserve_replay_receipt(
-                session=session,
-                scope_kind=PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL,
-                scope_id=normalized_email,
-                replay_key=request_marker,
-                method=request.method,
-                path=request.url.path,
-                trace_id=trace_id,
-                now=now,
-                ttl_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
-            )
-            if client_scope_id:
+            if session.get_bind().dialect.name == "postgresql":
+                for scope_kind, scope_id, _max_requests in sorted(bounded_scopes):
+                    lock_material = f"{scope_kind}\0{scope_id}".encode()
+                    lock_key = int.from_bytes(
+                        sha256(lock_material).digest()[:8],
+                        "big",
+                        signed=True,
+                    )
+                    session.execute(
+                        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                        {"lock_key": lock_key},
+                    )
+            for scope_kind, scope_id, max_requests in bounded_scopes:
+                _enforce_short_window_rate_limit(
+                    session=session,
+                    scope_kind=scope_kind,
+                    scope_id=scope_id,
+                    now=now,
+                    window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
+                    max_requests=max_requests,
+                )
+            for scope_kind, scope_id, _max_requests in bounded_scopes:
                 _reserve_replay_receipt(
                     session=session,
-                    scope_kind=PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT,
-                    scope_id=client_scope_id,
+                    scope_kind=scope_kind,
+                    scope_id=scope_id,
                     replay_key=request_marker,
                     method=request.method,
                     path=request.url.path,
@@ -541,9 +545,72 @@ def enforce_portal_login_code_request_rate_limit(
     except RequestAuthError as error:
         raise PortalBearerTokenError(
             429,
-            "portal.login_code_rate_limited",
+            error_code,
             error.message,
         ) from error
+
+
+def enforce_portal_login_code_request_rate_limit(
+    request: Request,
+    *,
+    email: str,
+) -> None:
+    if _portal_local_debug_login_code_request(request):
+        return
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=(
+            (
+                PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL,
+                email,
+                PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_EMAIL_WINDOW,
+            ),
+            (
+                PORTAL_LOGIN_CODE_REQUEST_SCOPE_CLIENT,
+                resolve_client_scope_id(request),
+                PORTAL_LOGIN_CODE_MAX_REQUESTS_PER_CLIENT_WINDOW,
+            ),
+        ),
+        error_code="portal.login_code_rate_limited",
+    )
+
+
+def enforce_portal_oauth_state_request_rate_limit(request: Request) -> None:
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=(
+            (
+                PORTAL_OAUTH_STATE_REQUEST_SCOPE_CLIENT,
+                resolve_client_scope_id(request),
+                PORTAL_OAUTH_STATE_MAX_REQUESTS_PER_CLIENT_WINDOW,
+            ),
+        ),
+        error_code="portal.oauth_state_rate_limited",
+    )
+
+
+def enforce_portal_email_change_request_rate_limit(
+    request: Request,
+    *,
+    principal_id: str,
+    target_email: str,
+) -> None:
+    _enforce_portal_request_rate_limit(
+        request,
+        scopes=(
+            (
+                PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_PRINCIPAL,
+                principal_id,
+                PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_PRINCIPAL_WINDOW,
+            ),
+            (
+                PORTAL_EMAIL_CHANGE_REQUEST_SCOPE_TARGET,
+                target_email,
+                PORTAL_EMAIL_CHANGE_MAX_REQUESTS_PER_TARGET_WINDOW,
+            ),
+        ),
+        error_code="portal.email_change_rate_limited",
+    )
 
 
 async def authorize_public_request(

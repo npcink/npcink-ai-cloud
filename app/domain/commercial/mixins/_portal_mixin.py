@@ -1039,18 +1039,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
 
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            existing_codes = repository.list_portal_login_codes(
+            repository.expire_pending_portal_login_codes(
                 email=normalized_email,
-                principal_id=principal_id,
                 purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
-                active_only=True,
                 now=now,
-                limit=None,
-                for_update=True,
             )
-            for existing in existing_codes:
-                existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                existing.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_email,
@@ -1190,20 +1183,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.portal_email_change_email_in_use",
                     "new email is already used by another portal user",
                 )
-            active_codes = repository.list_portal_login_codes(
+            repository.expire_pending_portal_login_codes(
                 email=normalized_new_email,
-                principal_id=normalized_principal_id,
                 purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
-                active_only=True,
                 now=now,
-                limit=None,
-                for_update=True,
             )
-            for active_code in active_codes:
-                metadata = _portal_email_change_code_metadata(active_code.metadata_json)
-                if metadata:
-                    active_code.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                    active_code.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_new_email,
@@ -1316,6 +1300,12 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             active_code.status = PORTAL_LOGIN_CODE_STATUS_CONSUMED
             active_code.consumed_at = now
             identity.email = normalized_new_email
+            identity = (
+                repository.increment_principal_session_version(
+                    principal_id=normalized_principal_id,
+                )
+                or identity
+            )
             payload: dict[str, object] = {
                 "principal_id": normalized_principal_id,
                 "old_email": current_email,
@@ -1388,17 +1378,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             if existing_identity is not None:
                 principal_id = str(existing_identity.principal_id or "").strip() or principal_id
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
-            existing_codes = repository.list_portal_login_codes(
+            repository.expire_pending_portal_login_codes(
                 email=normalized_email,
                 purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
-                active_only=True,
                 now=now,
-                limit=None,
-                for_update=True,
             )
-            for existing in existing_codes:
-                existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                existing.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_email,

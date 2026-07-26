@@ -32,6 +32,8 @@ export function formatPortalErrorMessage(
   if (error instanceof ApiError) {
     switch (error.errorCode) {
       case 'portal.login_code_rate_limited':
+      case 'portal.oauth_state_rate_limited':
+      case 'portal.email_change_rate_limited':
         return appendErrorCode(
           t(
             'error.portal_rate_limited',

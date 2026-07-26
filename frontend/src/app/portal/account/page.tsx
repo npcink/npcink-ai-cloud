@@ -402,13 +402,17 @@ function AccountPageContent() {
                 {contactEmail || t('portal.account.contact_missing_desc', undefined, 'Email contact is not visible in this local session.')}
               </p>
               <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t(
-                  'portal.account.contact_change_desc',
-                  undefined,
-                  contactEmail
-                    ? 'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
-                    : 'Add and verify an email login before removing another sign-in method.'
-                )}
+                {contactEmail
+                  ? t(
+                      'portal.account.contact_change_desc',
+                      undefined,
+                      'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
+                    )
+                  : t(
+                      'portal.account.contact_add_desc',
+                      undefined,
+                      'Add and verify an email login before removing another sign-in method.'
+                    )}
               </p>
               <button type="button" className="btn btn-secondary" onClick={() => setShowEmailChange(true)}>
                 {contactEmail
@@ -427,13 +431,17 @@ function AccountPageContent() {
         title={contactEmail
           ? t('portal.account.contact_change_title', undefined, 'Change email')
           : t('portal.account.contact_add_title', undefined, 'Add email')}
-        description={t(
-          'portal.account.contact_change_desc',
-          undefined,
-          contactEmail
-            ? 'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
-            : 'Add and verify an email login before removing another sign-in method.'
-        )}
+        description={contactEmail
+          ? t(
+              'portal.account.contact_change_desc',
+              undefined,
+              'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.'
+            )
+          : t(
+              'portal.account.contact_add_desc',
+              undefined,
+              'Add and verify an email login before removing another sign-in method.'
+            )}
       >
         <div className="grid gap-3" data-portal-account="email-change-dialog">
           {message ? (

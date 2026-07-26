@@ -16,7 +16,9 @@ from app.adapters.notifications.smtp import build_portal_email_sender
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalBearerTokenError,
+    enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
+    enforce_portal_oauth_state_request_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
 )
@@ -1521,6 +1523,15 @@ async def start_portal_qq_login(
     config_error = _portal_qq_config_error(request)
     if config_error is not None:
         return config_error
+    try:
+        enforce_portal_oauth_state_request_rate_limit(request)
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     nonce = secrets.token_urlsafe(32)
     issued = _get_commercial_service(request).issue_portal_oauth_state(
         provider="qq",
@@ -2371,6 +2382,19 @@ async def request_portal_email_change_code(
             error_code="portal.email_change_invalid",
             message="new email is required",
         )
+    try:
+        enforce_portal_email_change_request_rate_limit(
+            request,
+            principal_id=auth.principal_id,
+            target_email=new_email,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     services = get_cloud_services(request)
     ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
     email_sender = services.portal_email_sender or build_portal_email_sender(
@@ -2451,6 +2475,13 @@ async def verify_portal_email_change_code(
             message="portal email change code and new email are required",
         )
     services = get_cloud_services(request)
+    renewed_session_metadata = build_new_portal_session_metadata(
+        request,
+        ttl_seconds=resolve_portal_login_session_ttl_seconds(
+            request,
+            remember_me=False,
+        ),
+    )
     try:
         changed = _get_commercial_service(request).verify_portal_email_change_code(
             principal_id=auth.principal_id,
@@ -2467,6 +2498,7 @@ async def verify_portal_email_change_code(
             principal_id=auth.principal_id,
             site_id=auth.site_id,
             strict_site=False,
+            session_metadata=renewed_session_metadata,
         )
     except CommercialServiceError as error:
         if error.error_code == "service.portal_email_change_code_invalid":
@@ -2493,14 +2525,24 @@ async def verify_portal_email_change_code(
             )
         except PortalEmailDeliveryError:
             pass
-    return _portal_route_envelope(
-        message="portal email changed",
-        data={
-            **data,
-            "old_email": str(changed.get("old_email") or ""),
-            "new_email": str(changed.get("new_email") or ""),
-        },
+    response = JSONResponse(
+        status_code=200,
+        content=_portal_route_envelope(
+            message="portal email changed",
+            data={
+                **data,
+                "old_email": str(changed.get("old_email") or ""),
+                "new_email": str(changed.get("new_email") or ""),
+            },
+        ),
     )
+    set_portal_session_cookies(
+        request,
+        response,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+    )
+    return response
 
 
 @router.post("/register/code/request")

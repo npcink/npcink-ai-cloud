@@ -11,7 +11,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.adapters.notifications.base import PortalEmailDeliveryError, PortalEmailSender
 from app.adapters.providers.base import (
@@ -3201,11 +3201,16 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
         email="old-email@example.com",
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    _verify_portal_login_code(
+    verified_login = _verify_portal_login_code(
         client,
         email="old-email@example.com",
         code=str(login_code["code"]),
     )
+    other_session_headers = build_portal_headers(
+        principal_id=str(verified_login["principal_id"]),
+        session_version=int(verified_login["session_version"]),
+    )
+    assert client.get("/portal/v1/session", headers=other_session_headers).status_code == 200
 
     request_response = client.post(
         "/portal/v1/account/email-change/request",
@@ -3246,6 +3251,10 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
     assert "principal_id" not in verify_data
     assert fake_sender.messages[-1]["kind"] == "email_changed_notice"
     assert fake_sender.messages[-1]["recipient_email"] == "old-email@example.com"
+    assert client.get("/portal/v1/session").status_code == 200
+    revoked_session = client.get("/portal/v1/session", headers=other_session_headers)
+    assert revoked_session.status_code == 401
+    assert revoked_session.json()["error_code"] == "auth.portal_session_revoked"
 
     with get_session(database_url) as session:
         assert (
@@ -4106,6 +4115,112 @@ def test_portal_session_revoke_invalidates_another_active_session(tmp_path: Path
     assert client.get("/portal/v1/session", headers=other_session_headers).status_code == 401
     assert client.get("/portal/v1/session", headers=other_session_headers).json()["error_code"] == (
         "auth.portal_session_revoked"
+    )
+    dispose_engine(database_url)
+
+
+def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    email = "expired-pending@example.com"
+    first = _request_portal_registration_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    assert first["code"]
+    with get_session(database_url) as session:
+        pending = session.scalar(
+            select(PortalLoginCode).where(
+                PortalLoginCode.email == email,
+                PortalLoginCode.status == "pending",
+            )
+        )
+        assert pending is not None
+        pending.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    second = _request_portal_registration_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+
+    assert second["code"] != first["code"]
+    with get_session(database_url) as session:
+        codes = list(
+            session.scalars(
+                select(PortalLoginCode)
+                .where(PortalLoginCode.email == email)
+                .order_by(PortalLoginCode.created_at.asc(), PortalLoginCode.code_id.asc())
+            )
+        )
+    assert [code.status for code in codes].count("pending") == 1
+    assert [code.status for code in codes].count("expired") == 1
+    dispose_engine(database_url)
+
+
+def test_portal_qq_oauth_start_is_rate_limited_per_client(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    _configure_portal_qq_settings(client, idempotency_prefix="qq-rate-limit")
+
+    responses = [client.get("/portal/v1/auth/qq/start") for _ in range(11)]
+
+    assert [response.status_code for response in responses[:10]] == [200] * 10
+    assert responses[10].status_code == 429
+    assert responses[10].json()["error_code"] == "portal.oauth_state_rate_limited"
+    with get_session(database_url) as session:
+        assert int(session.scalar(select(func.count()).select_from(PortalOAuthState)) or 0) == 10
+    dispose_engine(database_url)
+
+
+def test_portal_email_change_requests_are_rate_limited_by_target_and_principal(
+    tmp_path: Path,
+) -> None:
+    fake_sender = FakePortalEmailSender()
+    database_url, client = _build_client(tmp_path, portal_email_sender=fake_sender)
+    registered = _request_portal_registration_code(
+        client,
+        email="email-change-rate@example.com",
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    _verify_portal_registration_code(
+        client,
+        email="email-change-rate@example.com",
+        code=str(registered["code"]),
+    )
+
+    target_responses = [
+        client.post(
+            "/portal/v1/account/email-change/request",
+            json={"new_email": "same-target@example.com"},
+            headers={"Idempotency-Key": f"email-change-target-{index}"},
+        )
+        for index in range(4)
+    ]
+    assert [response.status_code for response in target_responses[:3]] == [200] * 3
+    assert target_responses[3].status_code == 429
+    assert target_responses[3].json()["error_code"] == "portal.email_change_rate_limited"
+
+    for index in range(2):
+        response = client.post(
+            "/portal/v1/account/email-change/request",
+            json={"new_email": f"other-target-{index}@example.com"},
+            headers={"Idempotency-Key": f"email-change-principal-{index}"},
+        )
+        assert response.status_code == 200, response.text
+    principal_limited = client.post(
+        "/portal/v1/account/email-change/request",
+        json={"new_email": "principal-limit@example.com"},
+        headers={"Idempotency-Key": "email-change-principal-limit"},
+    )
+    assert principal_limited.status_code == 429
+    assert principal_limited.json()["error_code"] == "portal.email_change_rate_limited"
+    assert (
+        len([message for message in fake_sender.messages if message["kind"] == "email_change_code"])
+        == 5
     )
     dispose_engine(database_url)
 

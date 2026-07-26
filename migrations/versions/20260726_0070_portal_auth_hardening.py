@@ -1,4 +1,4 @@
-"""harden Portal one-time authentication records and QQ identity bindings"""
+"""harden Portal one-time authentication records"""
 
 from __future__ import annotations
 
@@ -36,9 +36,39 @@ def upgrade() -> None:
         if purpose not in {"portal_login", "portal_email_change", "portal_registration"}:
             purpose = "portal_login"
         bind.execute(
+            sa.update(codes).where(codes.c.code_id == row["code_id"]).values(purpose=purpose)
+        )
+
+    bind.execute(
+        sa.update(codes)
+        .where(
+            codes.c.status == "pending",
+            codes.c.expires_at <= sa.func.now(),
+        )
+        .values(status="expired", consumed_at=sa.func.now())
+    )
+    pending_rows = list(
+        bind.execute(
+            sa.select(codes.c.code_id, codes.c.email, codes.c.purpose)
+            .where(codes.c.status == "pending")
+            .order_by(
+                codes.c.email.asc(),
+                codes.c.purpose.asc(),
+                codes.c.created_at.desc(),
+                codes.c.code_id.desc(),
+            )
+        ).mappings()
+    )
+    retained_scopes: set[tuple[str, str]] = set()
+    for row in pending_rows:
+        scope = (str(row["email"]).lower(), str(row["purpose"]))
+        if scope not in retained_scopes:
+            retained_scopes.add(scope)
+            continue
+        bind.execute(
             sa.update(codes)
             .where(codes.c.code_id == row["code_id"])
-            .values(purpose=purpose)
+            .values(status="expired", consumed_at=sa.func.now())
         )
 
     op.create_index(
@@ -50,29 +80,8 @@ def upgrade() -> None:
         sqlite_where=sa.text("status = 'pending'"),
     )
 
-    bindings = sa.Table("identity_provider_bindings", metadata, autoload_with=bind)
-    duplicate = bind.execute(
-        sa.select(bindings.c.provider, bindings.c.unionid_hash)
-        .where(bindings.c.unionid_hash.is_not(None))
-        .group_by(bindings.c.provider, bindings.c.unionid_hash)
-        .having(sa.func.count(bindings.c.binding_id) > 1)
-        .limit(1)
-    ).first()
-    if duplicate is not None:
-        raise RuntimeError("duplicate provider UnionID bindings require operator remediation")
-    with op.batch_alter_table("identity_provider_bindings") as batch:
-        batch.create_unique_constraint(
-            "uq_identity_provider_bindings_provider_unionid",
-            ["provider", "unionid_hash"],
-        )
-
 
 def downgrade() -> None:
-    with op.batch_alter_table("identity_provider_bindings") as batch:
-        batch.drop_constraint(
-            "uq_identity_provider_bindings_provider_unionid",
-            type_="unique",
-        )
     op.drop_index(
         "uq_portal_login_codes_pending_email_purpose",
         table_name="portal_login_codes",

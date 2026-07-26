@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import sha256
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import Integer, and_, case, func, or_, select
+from sqlalchemy import Integer, and_, case, func, or_, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -18,6 +19,7 @@ from app.core.models import (
     PAYMENT_ORDER_STATUS_CANCELED,
     PAYMENT_ORDER_STATUS_PENDING,
     PLATFORM_KIND_WORDPRESS,
+    PORTAL_LOGIN_CODE_STATUS_EXPIRED,
     PORTAL_LOGIN_CODE_STATUS_PENDING,
     PORTAL_OAUTH_STATE_STATUS_PENDING,
     PRINCIPAL_STATUS_ACTIVE,
@@ -438,6 +440,34 @@ class CommercialRepository:
         self.session.add(code)
         self.session.flush()
         return code
+
+    def expire_pending_portal_login_codes(
+        self,
+        *,
+        email: str,
+        purpose: str,
+        now: datetime,
+    ) -> int:
+        bind = self.session.get_bind()
+        if bind.dialect.name == "postgresql":
+            lock_material = f"{email.strip().lower()}\0{purpose}".encode()
+            lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
+            self.session.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": lock_key},
+            )
+        pending_codes = self.list_portal_login_codes(
+            email=email,
+            status=PORTAL_LOGIN_CODE_STATUS_PENDING,
+            purpose=purpose,
+            limit=None,
+            for_update=True,
+        )
+        for pending_code in pending_codes:
+            pending_code.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
+            pending_code.consumed_at = now
+        self.session.flush()
+        return len(pending_codes)
 
     def list_portal_login_codes(
         self,

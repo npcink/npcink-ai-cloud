@@ -6,6 +6,7 @@ from typing import Any, cast
 import pytest
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.core.models import IdentityProviderBinding
 from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_PLATFORM_ADMIN,
@@ -57,7 +58,20 @@ def test_platform_admin_role_write_path_rejects_unlaunched_roles(value: str) -> 
     assert error.value.error_code == "service.platform_admin_role_invalid"
 
 
-@pytest.mark.parametrize("value", ["a@b", "foo@@bar", "a b@example.com", "a@b..com"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a@b",
+        "foo@@bar",
+        "a b@example.com",
+        "a@b..com",
+        ".foo@example.com",
+        "foo.@example.com",
+        "foo..bar@example.com",
+        "a@-example.com",
+        "a@example-.com",
+    ],
+)
 def test_principal_email_rejects_malformed_login_aliases(value: str) -> None:
     with pytest.raises(CommercialPermissionError) as error:
         _normalize_principal_email(value)
@@ -78,6 +92,15 @@ def test_principal_ids_use_the_frozen_server_generated_format() -> None:
     assert principal_id.startswith("prn_")
     assert len(principal_id) == 36
     assert int(principal_id.removeprefix("prn_"), 16) >= 0
+
+
+def test_unionid_remains_a_service_invariant_without_a_global_database_constraint() -> None:
+    constraint_names = {
+        str(constraint.name or "") for constraint in IdentityProviderBinding.__table__.constraints
+    }
+
+    assert "uq_identity_provider_bindings_provider_subject" in constraint_names
+    assert "uq_identity_provider_bindings_provider_unionid" not in constraint_names
 
 
 def test_provider_binding_cannot_move_between_principals(monkeypatch: pytest.MonkeyPatch) -> None:

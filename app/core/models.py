@@ -749,11 +749,6 @@ class IdentityProviderBinding(Base):
             "external_subject_hash",
             name="uq_identity_provider_bindings_provider_subject",
         ),
-        UniqueConstraint(
-            "provider",
-            "unionid_hash",
-            name="uq_identity_provider_bindings_provider_unionid",
-        ),
     )
 
     binding_id: Mapped[str] = mapped_column(String(191), primary_key=True)
