@@ -35,6 +35,7 @@ from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.model_references import ModelReferenceError, ModelReferenceService
+from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
 from app.domain.provider_connections.model_allowlist import (
@@ -3555,6 +3556,32 @@ async def get_admin_plugin_observability(
     return build_envelope(
         status="ok",
         message="plugin observability admin summary loaded",
+        data=result,
+        revision="m6",
+    )
+
+
+@router.get("/admin/editor-assist-quality")
+async def get_admin_editor_assist_quality(
+    request: Request,
+    window_hours: int = Query(default=24, ge=1, le=168),
+    site_id: str = Query(default="", max_length=191),
+    task_key: str = Query(default="", max_length=64),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = EditorAssistQualityService(
+        services.settings.database_url
+    ).get_summary(
+        window_hours=window_hours,
+        site_id=site_id.strip(),
+        task_key=task_key.strip(),
+    )
+    return build_envelope(
+        status="ok",
+        message="editor assist quality summary loaded",
         data=result,
         revision="m6",
     )

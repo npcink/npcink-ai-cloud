@@ -40,6 +40,17 @@ ALLOWED_EVENT_FIELDS = {
     "blocked_count",
     "executed_count",
     "failed_count",
+    "quality_contract",
+    "quality_session_id",
+    "task_key",
+    "object_scope_hash",
+    "actor_scope_hash",
+    "outcome",
+    "outcome_confidence",
+    "save_kind",
+    "time_to_outcome_bucket",
+    "generation_sequence",
+    "content_storage",
 }
 
 EXPECTED_PLUGIN_SLUGS = (
