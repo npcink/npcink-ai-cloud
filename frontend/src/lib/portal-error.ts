@@ -1,4 +1,5 @@
 import { ApiError } from './errors';
+import { formatDate } from './utils';
 
 type PortalTranslator = (
   key: string,
@@ -13,6 +14,14 @@ function appendErrorCode(message: string, errorCode: string): string {
     return normalizedMessage;
   }
   return normalizedMessage ? `${normalizedMessage} [${normalizedCode}]` : `[${normalizedCode}]`;
+}
+
+function readErrorDetail(details: unknown, key: string): string {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) {
+    return '';
+  }
+  const value = (details as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 export function formatPortalErrorMessage(
@@ -78,6 +87,51 @@ export function formatPortalErrorMessage(
             'error.portal_same_origin_required',
             undefined,
             'This browser request was rejected by same-origin protection. Reload the local portal page and try again.'
+          ),
+          error.errorCode
+        );
+      case 'service.portal_site_conflict':
+      case 'service.site_account_binding_conflict':
+        return appendErrorCode(
+          t(
+            'error.portal_site_owned_by_another_account',
+            undefined,
+            'This site is still connected to another account. Remove it from that Cloud account before trying to connect it here.'
+          ),
+          error.errorCode
+        );
+      case 'service.site_relink_cooldown_active': {
+        const retryAfterAt = formatDate(readErrorDetail(error.details, 'retry_after_at'));
+        return appendErrorCode(
+          retryAfterAt
+            ? t(
+                'error.portal_site_relink_cooldown_active',
+                { date: retryAfterAt },
+                `This site cannot be connected to another account yet. Try again after ${retryAfterAt}. Free service and credits do not move with the site.`
+              )
+            : t(
+                'error.portal_site_relink_cooldown_active_no_date',
+                undefined,
+                'This site cannot be connected to another account until its Cloud cooldown ends. Free service and credits do not move with the site.'
+              ),
+          error.errorCode
+        );
+      }
+      case 'service.site_cross_account_relink_disabled':
+        return appendErrorCode(
+          t(
+            'error.portal_site_cross_account_relink_disabled',
+            undefined,
+            'Cross-account site connections are currently unavailable. The same account may still reconnect this site.'
+          ),
+          error.errorCode
+        );
+      case 'service.site_relink_release_incomplete':
+        return appendErrorCode(
+          t(
+            'error.portal_site_relink_release_incomplete',
+            undefined,
+            'Cloud could not confirm a complete site release. Reconnect with the previous account or contact support if the record looks wrong.'
           ),
           error.errorCode
         );

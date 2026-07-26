@@ -20,6 +20,10 @@ export default function TermsPage() {
       <DocumentSection title={zh ? '账号与安全' : 'Accounts and security'}>
         <p>{zh ? '您应妥善保护登录设备和已连接站点。不得绕过访问控制、干扰服务、批量滥用资源，或利用服务处理违法、有害或侵犯他人权益的内容。' : 'You must protect your login devices and connected sites. Do not bypass access controls, disrupt the service, abuse resources at scale, or use the service for unlawful, harmful, or infringing content.'}</p>
       </DocumentSection>
+      <DocumentSection title={zh ? '站点连接与 Free 权益' : 'Site connections and Free entitlement'}>
+        <p>{zh ? 'Free 套餐和额度属于 Cloud 账户，不属于 WordPress 站点。连接、断开、移除或更换站点不会转移或重复发放账户权益。注册只创建账号；首次可信 Addon 连接完成后，才会按当前规则激活 Free 服务。' : 'Free service and credits belong to the Cloud account, not the WordPress site. Connecting, disconnecting, removing, or changing a site does not transfer or regrant account entitlement. Registration creates the account only; Free service activates under the current rules after the first verified Addon connection.'}</p>
+        <p>{zh ? '同一账户可以重新连接已移除的站点。其他账户必须等待 Cloud 为该站点显示的冷却期结束，并且仍须完成可信 Addon 连接和当时适用的服务检查。冷却时长和跨账户可用性可能因安全与防滥用政策调整，以操作时 Cloud 显示的状态为准。' : 'The same account may reconnect a removed site. Another account must wait until the site cooldown shown by Cloud has ended and must still complete a verified Addon connection and the service checks then in effect. Cooldown duration and cross-account availability may change under security and abuse-prevention policy; the Cloud status shown at the time of the action controls.'}</p>
+      </DocumentSection>
       <DocumentSection title={zh ? 'AI 输出' : 'AI output'}>
         <p>{zh ? 'AI 输出可能不准确或不完整。您应在使用或发布前进行人工审查，并对最终内容和使用方式负责。' : 'AI output may be inaccurate or incomplete. You must review it before use or publication and remain responsible for the final content and how it is used.'}</p>
       </DocumentSection>

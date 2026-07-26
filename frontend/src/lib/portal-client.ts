@@ -56,10 +56,26 @@ export interface Site {
   site_url: string;
   platform_kind: string;
   status: string;
+  ownership_released_at?: string;
+  relink_cooldown_until?: string;
 }
 
 export interface PortalSiteDetail extends Site {
   created_at: string;
+}
+
+export interface PortalSiteRelinkPolicy {
+  enabled: boolean;
+  cooldown_days: number;
+  same_account_reconnect_allowed: boolean;
+}
+
+export interface PortalSiteRemovalResult {
+  site: Site;
+  revoked_key_ids: string[];
+  relink_policy: PortalSiteRelinkPolicy & {
+    relink_available_at: string;
+  };
 }
 
 export interface PortalLoginCodeRequest {
@@ -1019,6 +1035,8 @@ function normalizePortalSiteSummaryRecord(raw: unknown): PortalSiteSummaryRecord
       site_url: String(nestedSite.site_url || ''),
       platform_kind: String(nestedSite.platform_kind || ''),
       status: String(nestedSite.status || 'inactive'),
+      ownership_released_at: String(nestedSite.ownership_released_at || ''),
+      relink_cooldown_until: String(nestedSite.relink_cooldown_until || ''),
       created_at: String(nestedSite.created_at || ''),
     },
     package_alias:
@@ -1729,11 +1747,15 @@ export class PortalClient {
     return this.request('GET', '/addon-connection-accounts', undefined);
   }
 
+  async getSiteRelinkPolicy(): Promise<PortalEnvelope<PortalSiteRelinkPolicy>> {
+    return this.request('GET', '/site-relink-policy', undefined);
+  }
+
   async createAddonConnection(payload: CreateAddonConnectionRequest): Promise<PortalEnvelope<AddonConnectionResult>> {
     return this.request('POST', '/addon-connections', payload);
   }
 
-  async removeSite(siteId: string): Promise<PortalEnvelope<{ site: Site; revoked_key_ids: string[] }>> {
+  async removeSite(siteId: string): Promise<PortalEnvelope<PortalSiteRemovalResult>> {
     return this.request('POST', `/sites/${siteId}/remove`, {});
   }
 

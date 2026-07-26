@@ -80,6 +80,11 @@ assert.match(
   /useState\(''\)[\s\S]*accounts\.some\(\(account\) => account\.account_id === selectedAccountId\)[\s\S]*account_id: selectedAccountId/,
   'addon binding must require an explicit eligible account selection'
 );
+assert.match(
+  connectSource,
+  /portal\.connect_site_ownership_title[\s\S]*portal\.connect_site_ownership_desc/,
+  'addon binding must explain account-owned Free service and cross-account cooldown before submission'
+);
 assert.doesNotMatch(
   `${sitesSource}\n${connectSource}`,
   /(?:addonAccounts|accounts|candidates)\s*(?:\?\.)?\s*\[\s*0\s*\]|(?:addonAccounts|accounts|candidates)\.at\(\s*0\s*\)/,

@@ -145,6 +145,11 @@ export const translations: Record<Locale, TranslationMap> = {
     'error.invalid_email_format': 'Invalid email format.',
     'error.portal_rate_limited': 'Too many portal requests were sent in a short window. Wait about {{minutes}} minutes and try again.',
     'error.portal_sign_in_again': 'Your portal session is missing or expired. Sign in again and reload this page.',
+    'error.portal_site_owned_by_another_account': 'This site is still connected to another account. Remove it from that Cloud account before trying to connect it here.',
+    'error.portal_site_relink_cooldown_active': 'This site cannot be connected to another account yet. Try again after {{date}}. Free service and credits do not move with the site.',
+    'error.portal_site_relink_cooldown_active_no_date': 'This site cannot be connected to another account until its Cloud cooldown ends. Free service and credits do not move with the site.',
+    'error.portal_site_cross_account_relink_disabled': 'Cross-account site connections are currently unavailable. The same account may still reconnect this site.',
+    'error.portal_site_relink_release_incomplete': 'Cloud could not confirm a complete site release. Reconnect with the previous account or contact support if the record looks wrong.',
     'error.portal_same_origin_required': 'This browser request was rejected by same-origin protection. Reload the local portal page and try again.',
 
     'theme.light': 'Light',
@@ -429,6 +434,9 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.connect_site_addon_title': 'Finish WordPress connection',
     'portal.connect_site_addon_desc':
       'Confirm this site, then return to WordPress to finish setup.',
+    'portal.connect_site_ownership_title': 'Account and site ownership',
+    'portal.connect_site_ownership_desc':
+      'Free service and credits belong to the selected account, not this site. The same account may reconnect at any time; a different account requires the previous account to remove the site and wait for the Cloud cooldown to end.',
     'portal.connect_site_authorize_addon': 'Finish connection',
     'portal.connect_site_action': 'Finish connection',
     'portal.connect_site_return_to_workspace': 'Return to workspace',
@@ -3795,7 +3803,11 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.export_format_csv': 'CSV',
     'portal.export_format_json': 'JSON',
     'portal.remove_site_confirm':
-      'Remove this site? Cloud service will stop, active keys will be revoked, and the site will no longer be available in Portal. Cloud retains operational evidence under its retention policy.',
+      'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account must wait for the Cloud cooldown to end. Free service and credits stay with this account.',
+    'portal.remove_site_confirm_with_date':
+      'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately; another account may try after approximately {{date}}. Free service and credits stay with this account.',
+    'portal.remove_site_confirm_disabled_with_date':
+      'Remove this site? Cloud service will stop and active keys will be revoked. The same account may reconnect immediately. The cooldown is expected to end around {{date}}, but cross-account relinking is currently disabled. Free service and credits stay with this account.',
     'portal.activate_site_confirm': 'Enable this site? It will become the only active site that can use Cloud services.',
     'portal.deactivate_site_confirm': 'Disable Cloud services for this site? The site record, keys, usage, and security history will be kept.',
     'portal.remove_sites_confirm':
@@ -3806,6 +3818,10 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.site_deactivate_success': 'Site disabled. It can be enabled again later.',
     'portal.site_remove_success':
       'Site removed. Active keys were revoked; Cloud retains operational evidence for support and audit, but the site is no longer available in Portal.',
+    'portal.site_remove_success_with_date':
+      'Site removed. Active keys were revoked. The same account may reconnect at any time; another account may try after {{date}} if cross-account relinking is available. Free service and credits remain with this account.',
+    'portal.site_remove_success_no_date':
+      'Site removed. Active keys were revoked. The same account may reconnect at any time; another account must wait for the Cloud cooldown to end. Free service and credits remain with this account.',
     'portal.site_activate_failed': 'Failed to enable this site.',
     'portal.site_deactivate_failed': 'Failed to disable this site.',
     'portal.site_remove_batch_success': '{{count}} sites removed. Active keys were revoked and history was kept.',
@@ -4691,7 +4707,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.package.buy_plus_monthly': 'Buy Plus',
     'portal.package.buy_agency_quote': 'Pay Agency quote',
     'portal.package.custom_only': 'Custom',
-    'portal.package.free_desc': 'Included automatically after registration. No trial or payment required.',
+    'portal.package.free_desc': 'Activated after the account completes its first verified WordPress Addon connection. No trial or payment is required.',
     'portal.package.free_title': 'Free',
     'portal.package.pro_active': 'Pro active',
     'portal.package.pro_monthly_order_title': 'Pro monthly package',
@@ -5353,6 +5369,11 @@ export const translations: Record<Locale, TranslationMap> = {
     'error.invalid_email_format': '邮箱格式无效。',
     'error.portal_rate_limited': '短时间内发起了过多 portal 请求。请等待约 {{minutes}} 分钟后再试。',
     'error.portal_sign_in_again': '当前 portal 会话缺失或已过期。请重新登录后刷新页面。',
+    'error.portal_site_owned_by_another_account': '该站点仍连接到其他账户。请先使用原账户在 Cloud 中移除站点，再尝试连接到当前账户。',
+    'error.portal_site_relink_cooldown_active': '该站点暂时不能连接到其他账户，请在 {{date}} 后重试。Free 服务和额度不会随站点转移。',
+    'error.portal_site_relink_cooldown_active_no_date': '该站点必须等 Cloud 冷却期结束后才能连接到其他账户。Free 服务和额度不会随站点转移。',
+    'error.portal_site_cross_account_relink_disabled': '当前暂不开放跨账户站点连接；同一账户仍可重新连接该站点。',
+    'error.portal_site_relink_release_incomplete': 'Cloud 无法确认站点已完整释放。请使用原账户重新连接；如果记录有误，请联系支持。',
     'error.portal_same_origin_required': '这个浏览器请求被同源保护拒绝了。请重新加载本地 portal 页面后再试。',
 
     'theme.light': '浅色',
@@ -5630,6 +5651,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.connect_site_account_empty': '没有可用账号',
     'portal.connect_site_addon_title': '完成站点绑定',
     'portal.connect_site_addon_desc': '确认这个站点，然后回到 WordPress 完成设置。',
+    'portal.connect_site_ownership_title': '账户与站点归属',
+    'portal.connect_site_ownership_desc': 'Free 服务和额度属于所选账户，不属于站点。同一账户可随时重新连接；其他账户必须先由原账户在 Cloud 中移除站点，并等待 Cloud 冷却期结束。',
     'portal.connect_site_authorize_addon': '完成绑定',
     'portal.connect_site_action': '完成绑定',
     'portal.connect_site_return_to_workspace': '返回工作区',
@@ -9660,7 +9683,11 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.export_format_csv': 'CSV',
     'portal.export_format_json': 'JSON',
     'portal.remove_site_confirm':
-      '要移除这个站点吗？Cloud 服务会停止，启用中的密钥会被撤销，Portal 将不再提供该站点的访问；Cloud 会按保留策略留存运营证据。',
+      '要移除这个站点吗？Cloud 服务会停止，启用中的密钥会被撤销。同一账户可以立即重新连接；其他账户必须等待 Cloud 冷却期结束。Free 服务和额度仍归当前账户。',
+    'portal.remove_site_confirm_with_date':
+      '要移除这个站点吗？Cloud 服务会停止，启用中的密钥会被撤销。同一账户可以立即重新连接；其他账户预计在 {{date}} 后才能尝试连接。Free 服务和额度仍归当前账户。',
+    'portal.remove_site_confirm_disabled_with_date':
+      '要移除这个站点吗？Cloud 服务会停止，启用中的密钥会被撤销。同一账户可以立即重新连接。冷却期预计在 {{date}} 结束，但当前未开放跨账户重连。Free 服务和额度仍归当前账户。',
     'portal.activate_site_confirm': '要启用这个站点吗？它会成为唯一可以使用 Cloud 服务的启用站点。',
     'portal.deactivate_site_confirm': '要停用这个站点的 Cloud 服务吗？站点记录、密钥、用量和安全记录都会保留。',
     'portal.remove_sites_confirm': '要移除选中的 {{count}} 个站点吗？Cloud 服务会停止，启用中的密钥会被撤销，用量历史会继续保留。',
@@ -9670,6 +9697,10 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.site_deactivate_success': '站点已停用，之后可以重新启用。',
     'portal.site_remove_success':
       '站点已移除，启用中的密钥已撤销；Cloud 会保留支持与审计所需的运营证据，但 Portal 将不再提供该站点的访问。',
+    'portal.site_remove_success_with_date':
+      '站点已移除，启用中的密钥已撤销。同一账户可随时重新连接；如果届时开放跨账户重连，其他账户可在 {{date}} 后尝试连接。Free 服务和额度仍归当前账户。',
+    'portal.site_remove_success_no_date':
+      '站点已移除，启用中的密钥已撤销。同一账户可随时重新连接；其他账户必须等待 Cloud 冷却期结束。Free 服务和额度仍归当前账户。',
     'portal.site_activate_failed': '启用这个站点失败。',
     'portal.site_deactivate_failed': '停用这个站点失败。',
     'portal.site_remove_batch_success': '已移除 {{count}} 个站点，启用中的密钥已撤销，历史记录已保留。',
@@ -10108,7 +10139,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.package.buy_plus_monthly': '购买 Plus',
     'portal.package.buy_agency_quote': '支付 Agency 报价',
     'portal.package.custom_only': '定制',
-    'portal.package.free_desc': '注册后自动包含，无需试用或付款。',
+    'portal.package.free_desc': '账户首次完成可信 WordPress Addon 连接后激活，无需试用或付款。',
     'portal.package.free_title': 'Free',
     'portal.package.pro_active': 'Pro 已生效',
     'portal.package.pro_monthly_order_title': 'Pro 月付套餐',
