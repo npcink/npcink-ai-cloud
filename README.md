@@ -84,6 +84,7 @@ Evidence records (not target-contract completion proof):
 - [docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md](docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
 - [docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md](docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md)
 - [docs/public-frontend-development-retrospective-and-standard-2026-07-25.md](docs/public-frontend-development-retrospective-and-standard-2026-07-25.md)
+- [docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md](docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 
 Operational references:
