@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -139,8 +140,17 @@ def test_targeted_backend_gate_times_contracts_without_rerunning_changed_contrac
     assert "contract files are already covered" in source
 
 
-def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
+def test_pytest_weight_refresh_is_reproducible_and_fail_closed(
+    tmp_path: Path,
+) -> None:
     subprocess.run(["bash", "-n", str(WEIGHT_REFRESH)], cwd=ROOT, check=True)
+    dirname_binary = shutil.which("dirname")
+    assert dirname_binary is not None
+    (tmp_path / "dirname").symlink_to(dirname_binary)
+    environment_without_gh = {
+        **os.environ,
+        "PATH": str(tmp_path),
+    }
     help_result = subprocess.run(
         ["bash", str(WEIGHT_REFRESH), "--", "--help"],
         cwd=ROOT,
@@ -149,8 +159,17 @@ def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
         check=True,
     )
     too_few_result = subprocess.run(
-        ["bash", str(WEIGHT_REFRESH), "--", "123"],
+        ["/bin/bash", str(WEIGHT_REFRESH), "--", "123"],
         cwd=ROOT,
+        env=environment_without_gh,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    valid_args_without_gh_result = subprocess.run(
+        ["/bin/bash", str(WEIGHT_REFRESH), "--", "123", "456", "789"],
+        cwd=ROOT,
+        env=environment_without_gh,
         text=True,
         capture_output=True,
         check=False,
@@ -161,6 +180,8 @@ def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
     assert "ci:pytest:weights:refresh" in help_result.stdout
     assert too_few_result.returncode == 2
     assert "at least 3 run ids are required" in too_few_result.stderr
+    assert valid_args_without_gh_result.returncode == 1
+    assert "GitHub CLI (gh) is required" in valid_args_without_gh_result.stderr
     assert "EXPECTED_SHARDS=3" in source
     assert "MINIMUM_RUNS=3" in source
     assert "gh run download" in source
