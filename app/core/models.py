@@ -164,11 +164,22 @@ class Account(Base):
 
 class PortalLoginCode(Base):
     __tablename__ = "portal_login_codes"
+    __table_args__ = (
+        Index(
+            "uq_portal_login_codes_pending_email_purpose",
+            "email",
+            "purpose",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
 
     code_id: Mapped[str] = mapped_column(String(191), primary_key=True)
     email: Mapped[str] = mapped_column(String(191), index=True)
     principal_id: Mapped[str] = mapped_column(String(191), index=True)
     code_hash: Mapped[str] = mapped_column(String(191))
+    purpose: Mapped[str] = mapped_column(String(64), default="portal_login", index=True)
     status: Mapped[str] = mapped_column(
         String(32),
         default=PORTAL_LOGIN_CODE_STATUS_PENDING,

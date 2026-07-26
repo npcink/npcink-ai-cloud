@@ -4587,6 +4587,9 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.account.contact_change_desc':
       'Enter a new email and verify the code sent there. Your current email remains active until verification succeeds.',
     'portal.account.contact_change_title': 'Need to change contact?',
+    'portal.account.contact_add_desc':
+      'Add and verify an email login before removing another sign-in method.',
+    'portal.account.contact_add_title': 'Add email',
     'portal.account.contact_desc':
       'Change the email used for verification codes, service notices, and support follow-up.',
     'portal.account.contact_label': 'Contact',
@@ -4659,6 +4662,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.account.settings_eyebrow': 'Account settings',
     'portal.account.qq_unavailable_desc': 'QQ quick login is not available in the current environment. Email login remains available.',
     'portal.account.unbind_qq': 'Unbind QQ',
+    'portal.account.qq_unbind_requires_email':
+      'Set and verify an email login before unbinding QQ.',
     'portal.account.unbinding': 'Unbinding',
     'portal.account.unbound': 'Not bound',
     'portal.audit.all_record_types': 'All record types',
@@ -10031,6 +10036,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.account.bound': '已绑定',
     'portal.account.contact_change_desc': '填写新邮箱并验证发送到新邮箱的验证码。验证成功前，当前邮箱仍然有效。',
     'portal.account.contact_change_title': '需要修改联系方式？',
+    'portal.account.contact_add_desc': '请先添加并验证邮箱登录方式，然后再移除其他登录方式。',
+    'portal.account.contact_add_title': '添加邮箱',
     'portal.account.contact_desc': '修改用于接收登录验证码、服务通知和支持跟进的邮箱。',
     'portal.account.contact_label': '联系方式',
     'portal.account.contact_missing': '待补充',
@@ -10099,6 +10106,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.account.settings_eyebrow': '账户设置',
     'portal.account.qq_unavailable_desc': '当前环境暂未开放 QQ 快捷登录，邮箱登录仍可正常使用。',
     'portal.account.unbind_qq': '解绑 QQ',
+    'portal.account.qq_unbind_requires_email': '请先设置并验证邮箱登录方式，然后再解绑 QQ。',
     'portal.account.unbinding': '解绑中',
     'portal.account.unbound': '未绑定',
     'portal.audit.all_record_types': '全部记录类型',

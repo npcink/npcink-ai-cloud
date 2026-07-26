@@ -16,7 +16,9 @@ from app.adapters.notifications.smtp import build_portal_email_sender
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalBearerTokenError,
+    enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
+    enforce_portal_oauth_state_request_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
 )
@@ -93,36 +95,46 @@ class PortalAddonConnectionExchangePayload(BaseModel):
 
 
 class PortalLoginCodeRequestPayload(BaseModel):
-    email: str = ""
-    locale: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalLoginCodeVerifyPayload(BaseModel):
-    email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
     remember_me: bool = False
 
 
 class PortalEmailChangeRequestPayload(BaseModel):
-    new_email: str = ""
-    locale: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalEmailChangeVerifyPayload(BaseModel):
-    new_email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
 
 
 class PortalRegistrationCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    email: str = ""
-    locale: str = ""
+    email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalRegistrationVerifyPayload(BaseModel):
-    email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
 
 
 class PortalQQBindPayload(BaseModel):
@@ -1511,6 +1523,15 @@ async def start_portal_qq_login(
     config_error = _portal_qq_config_error(request)
     if config_error is not None:
         return config_error
+    try:
+        enforce_portal_oauth_state_request_rate_limit(request)
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     nonce = secrets.token_urlsafe(32)
     issued = _get_commercial_service(request).issue_portal_oauth_state(
         provider="qq",
@@ -2361,6 +2382,19 @@ async def request_portal_email_change_code(
             error_code="portal.email_change_invalid",
             message="new email is required",
         )
+    try:
+        enforce_portal_email_change_request_rate_limit(
+            request,
+            principal_id=auth.principal_id,
+            target_email=new_email,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     services = get_cloud_services(request)
     ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
     email_sender = services.portal_email_sender or build_portal_email_sender(
@@ -2441,6 +2475,13 @@ async def verify_portal_email_change_code(
             message="portal email change code and new email are required",
         )
     services = get_cloud_services(request)
+    renewed_session_metadata = build_new_portal_session_metadata(
+        request,
+        ttl_seconds=resolve_portal_login_session_ttl_seconds(
+            request,
+            remember_me=False,
+        ),
+    )
     try:
         changed = _get_commercial_service(request).verify_portal_email_change_code(
             principal_id=auth.principal_id,
@@ -2457,6 +2498,7 @@ async def verify_portal_email_change_code(
             principal_id=auth.principal_id,
             site_id=auth.site_id,
             strict_site=False,
+            session_metadata=renewed_session_metadata,
         )
     except CommercialServiceError as error:
         if error.error_code == "service.portal_email_change_code_invalid":
@@ -2472,7 +2514,7 @@ async def verify_portal_email_change_code(
         services.settings,
         database_url=services.settings.database_url,
     )
-    if email_sender is not None:
+    if email_sender is not None and str(changed.get("old_email") or "").strip():
         try:
             email_sender.send_email_changed_notice(
                 recipient_email=str(changed.get("old_email") or ""),
@@ -2483,14 +2525,24 @@ async def verify_portal_email_change_code(
             )
         except PortalEmailDeliveryError:
             pass
-    return _portal_route_envelope(
-        message="portal email changed",
-        data={
-            **data,
-            "old_email": str(changed.get("old_email") or ""),
-            "new_email": str(changed.get("new_email") or ""),
-        },
+    response = JSONResponse(
+        status_code=200,
+        content=_portal_route_envelope(
+            message="portal email changed",
+            data={
+                **data,
+                "old_email": str(changed.get("old_email") or ""),
+                "new_email": str(changed.get("new_email") or ""),
+            },
+        ),
     )
+    set_portal_session_cookies(
+        request,
+        response,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+    )
+    return response
 
 
 @router.post("/register/code/request")
@@ -2724,6 +2776,19 @@ async def revoke_portal_session(request: Request) -> Any:
     same_origin = _portal_same_origin_guard(request, always=True)
     if same_origin is not None:
         return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        _get_commercial_service(request).revoke_portal_sessions(
+            principal_id=auth.principal_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
     return _portal_session_cleared_response()
 
 

@@ -51,7 +51,13 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
         settings.database_url,
         settings=settings,
     ).cleanup_expired_run_results()
-    return {"purged_runs": purged_runs}
+    portal_auth = CommercialService(
+        settings.database_url,
+        settings=settings,
+    ).cleanup_expired_portal_auth_evidence(
+        retention_days=settings.portal_auth_retention_days,
+    )
+    return {"purged_runs": purged_runs, "portal_auth": portal_auth}
 
 
 def _run_plugin_observability_cleanup(settings: Settings) -> dict[str, object]:

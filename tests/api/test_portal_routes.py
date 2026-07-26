@@ -11,7 +11,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.adapters.notifications.base import PortalEmailDeliveryError, PortalEmailSender
 from app.adapters.providers.base import (
@@ -39,6 +39,7 @@ from app.core.models import (
     PaymentOrder,
     PlanVersion,
     PluginObservabilityEvent,
+    PortalLoginCode,
     PortalOAuthState,
     Principal,
     RunRecord,
@@ -50,6 +51,7 @@ from app.core.models import (
 )
 from app.core.services import CloudServices
 from app.domain.catalog.service import CatalogService
+from app.domain.commercial.service import CommercialService
 from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -3199,11 +3201,16 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
         email="old-email@example.com",
         headers={"x-npcink-debug-portal-link": "1"},
     )
-    _verify_portal_login_code(
+    verified_login = _verify_portal_login_code(
         client,
         email="old-email@example.com",
         code=str(login_code["code"]),
     )
+    other_session_headers = build_portal_headers(
+        principal_id=str(verified_login["principal_id"]),
+        session_version=int(verified_login["session_version"]),
+    )
+    assert client.get("/portal/v1/session", headers=other_session_headers).status_code == 200
 
     request_response = client.post(
         "/portal/v1/account/email-change/request",
@@ -3244,6 +3251,10 @@ def test_portal_account_email_change_verifies_new_email_before_switching(
     assert "principal_id" not in verify_data
     assert fake_sender.messages[-1]["kind"] == "email_changed_notice"
     assert fake_sender.messages[-1]["recipient_email"] == "old-email@example.com"
+    assert client.get("/portal/v1/session").status_code == 200
+    revoked_session = client.get("/portal/v1/session", headers=other_session_headers)
+    assert revoked_session.status_code == 401
+    assert revoked_session.json()["error_code"] == "auth.portal_session_revoked"
 
     with get_session(database_url) as session:
         assert (
@@ -4000,6 +4011,264 @@ def test_portal_qq_callback_registers_first_time_user(
     dispose_engine(database_url)
 
 
+def test_portal_qq_only_user_can_add_email_but_cannot_unbind_before_verification(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    _configure_portal_qq_settings(client, idempotency_prefix="portal-qq-first-email-settings")
+    monkeypatch.setattr(
+        portal_routes,
+        "_exchange_qq_code",
+        lambda request, *, code: {"access_token": "token-first-email"},
+    )
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_openid",
+        lambda request, *, access_token: {"openid": "qq-openid-first-email", "unionid": ""},
+    )
+    monkeypatch.setattr(
+        portal_routes,
+        "_fetch_qq_profile",
+        lambda request, *, access_token, openid: {},
+    )
+
+    started = client.get("/portal/v1/auth/qq/start")
+    assert started.status_code == 200
+    callback = client.get(
+        f"/open/auth/qq/callback?code=qq-first-email&state={started.json()['data']['state']}"
+    )
+    assert callback.status_code == 200, callback.text
+
+    blocked_unbind = client.post("/portal/v1/auth/qq/unbind", json={"provider": "qq"})
+    assert blocked_unbind.status_code == 400
+    assert blocked_unbind.json()["error_code"] == (
+        "service.identity_provider_binding_last_login_method"
+    )
+
+    request_email = client.post(
+        "/portal/v1/account/email-change/request",
+        json={"new_email": "qq-first-email@example.com"},
+        headers={
+            "Idempotency-Key": "qq-first-email-request",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    assert request_email.status_code == 200, request_email.text
+    code = request_email.json()["data"]["code"]
+    verify_email = client.post(
+        "/portal/v1/account/email-change/verify",
+        json={"new_email": "qq-first-email@example.com", "code": code},
+        headers={"Idempotency-Key": "qq-first-email-verify"},
+    )
+    assert verify_email.status_code == 200, verify_email.text
+    assert verify_email.json()["data"]["old_email"] == ""
+    assert verify_email.json()["data"]["new_email"] == "qq-first-email@example.com"
+
+    unbind = client.post("/portal/v1/auth/qq/unbind", json={"provider": "qq"})
+    assert unbind.status_code == 200, unbind.text
+    dispose_engine(database_url)
+
+
+def test_portal_session_revoke_invalidates_another_active_session(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": "acct_portal_revoke_all", "name": "Portal Revoke All"},
+        headers=build_internal_headers(idempotency_key="portal-revoke-all-account"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_revoke_all",
+            "account_id": "acct_portal_revoke_all",
+            "name": "Portal Revoke All Site",
+            "status": "provisioning",
+        },
+        headers=build_internal_headers(idempotency_key="portal-revoke-all-site"),
+    )
+    _grant_account_member_access(
+        client,
+        site_id="site_portal_revoke_all",
+        email="portal-revoke-all@example.com",
+        idempotency_key="portal-revoke-all-member",
+    )
+    requested = _request_portal_login_code(
+        client,
+        email="portal-revoke-all@example.com",
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    verified = _verify_portal_login_code(
+        client,
+        email="portal-revoke-all@example.com",
+        code=str(requested["code"]),
+    )
+    principal_id = str(verified["principal_id"])
+    other_session_headers = build_portal_headers(
+        principal_id=principal_id,
+        session_version=int(verified["session_version"]),
+    )
+    assert client.get("/portal/v1/session", headers=other_session_headers).status_code == 200
+
+    revoke = client.post("/portal/v1/session/revoke")
+    assert revoke.status_code == 200, revoke.text
+    assert client.get("/portal/v1/session", headers=other_session_headers).status_code == 401
+    assert client.get("/portal/v1/session", headers=other_session_headers).json()["error_code"] == (
+        "auth.portal_session_revoked"
+    )
+    dispose_engine(database_url)
+
+
+def test_expired_pending_registration_code_does_not_block_reissue(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    email = "expired-pending@example.com"
+    first = _request_portal_registration_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    assert first["code"]
+    with get_session(database_url) as session:
+        pending = session.scalar(
+            select(PortalLoginCode).where(
+                PortalLoginCode.email == email,
+                PortalLoginCode.status == "pending",
+            )
+        )
+        assert pending is not None
+        pending.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    second = _request_portal_registration_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+
+    assert second["code"] != first["code"]
+    with get_session(database_url) as session:
+        codes = list(
+            session.scalars(
+                select(PortalLoginCode)
+                .where(PortalLoginCode.email == email)
+                .order_by(PortalLoginCode.created_at.asc(), PortalLoginCode.code_id.asc())
+            )
+        )
+    assert [code.status for code in codes].count("pending") == 1
+    assert [code.status for code in codes].count("expired") == 1
+    dispose_engine(database_url)
+
+
+def test_portal_qq_oauth_start_is_rate_limited_per_client(tmp_path: Path) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    _configure_portal_qq_settings(client, idempotency_prefix="qq-rate-limit")
+
+    responses = [client.get("/portal/v1/auth/qq/start") for _ in range(11)]
+
+    assert [response.status_code for response in responses[:10]] == [200] * 10
+    assert responses[10].status_code == 429
+    assert responses[10].json()["error_code"] == "portal.oauth_state_rate_limited"
+    with get_session(database_url) as session:
+        assert int(session.scalar(select(func.count()).select_from(PortalOAuthState)) or 0) == 10
+    dispose_engine(database_url)
+
+
+def test_portal_email_change_requests_are_rate_limited_by_target_and_principal(
+    tmp_path: Path,
+) -> None:
+    fake_sender = FakePortalEmailSender()
+    database_url, client = _build_client(tmp_path, portal_email_sender=fake_sender)
+    registered = _request_portal_registration_code(
+        client,
+        email="email-change-rate@example.com",
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    _verify_portal_registration_code(
+        client,
+        email="email-change-rate@example.com",
+        code=str(registered["code"]),
+    )
+
+    target_responses = [
+        client.post(
+            "/portal/v1/account/email-change/request",
+            json={"new_email": "same-target@example.com"},
+            headers={"Idempotency-Key": f"email-change-target-{index}"},
+        )
+        for index in range(4)
+    ]
+    assert [response.status_code for response in target_responses[:3]] == [200] * 3
+    assert target_responses[3].status_code == 429
+    assert target_responses[3].json()["error_code"] == "portal.email_change_rate_limited"
+
+    for index in range(2):
+        response = client.post(
+            "/portal/v1/account/email-change/request",
+            json={"new_email": f"other-target-{index}@example.com"},
+            headers={"Idempotency-Key": f"email-change-principal-{index}"},
+        )
+        assert response.status_code == 200, response.text
+    principal_limited = client.post(
+        "/portal/v1/account/email-change/request",
+        json={"new_email": "principal-limit@example.com"},
+        headers={"Idempotency-Key": "email-change-principal-limit"},
+    )
+    assert principal_limited.status_code == 429
+    assert principal_limited.json()["error_code"] == "portal.email_change_rate_limited"
+    assert (
+        len([message for message in fake_sender.messages if message["kind"] == "email_change_code"])
+        == 5
+    )
+    dispose_engine(database_url)
+
+
+def test_portal_auth_payload_rejects_oversized_email_before_database_write(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    response = client.post(
+        "/portal/v1/register/code/request",
+        json={"email": f"{'a' * 180}@example.com"},
+    )
+    assert response.status_code == 422
+    dispose_engine(database_url)
+
+
+def test_portal_auth_retention_purges_expired_codes_and_oauth_state(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    now = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        repository.create_portal_login_code(
+            code_id="plc_expired_retention",
+            email="expired-retention@example.com",
+            principal_id="prn_expired_retention",
+            code_hash="hash",
+            purpose="portal_login",
+            expires_at=now - timedelta(days=8),
+        )
+        repository.create_portal_oauth_state(
+            state_id="poas_expired_retention",
+            provider="qq",
+            state_hash="state-hash",
+            return_to="/portal",
+            client_scope_id="scope",
+            expires_at=now - timedelta(days=8),
+        )
+        session.commit()
+
+    result = CommercialService(
+        database_url,
+        settings=client.app.state.services.settings,
+    ).cleanup_expired_portal_auth_evidence(retention_days=7, now=now)
+    assert result == {"portal_login_codes": 1, "portal_oauth_states": 1}
+    with get_session(database_url) as session:
+        assert session.get(PortalLoginCode, "plc_expired_retention") is None
+        assert session.get(PortalOAuthState, "poas_expired_retention") is None
+    dispose_engine(database_url)
+
+
 def test_portal_removed_obsolete_auth_routes_return_not_found(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -4025,11 +4294,8 @@ def test_portal_removed_obsolete_auth_routes_return_not_found(tmp_path: Path) ->
     assert removed_provider_callback.status_code == 404
 
     revoke_response = client.post("/portal/v1/session/revoke")
-    assert revoke_response.status_code == 200
-
-    revoked_session_response = client.get("/portal/v1/session")
-    assert revoked_session_response.status_code == 401
-    assert revoked_session_response.json()["error_code"] == "auth.portal_session_required"
+    assert revoke_response.status_code == 401
+    assert revoke_response.json()["error_code"] == "auth.portal_session_required"
 
     dispose_engine(database_url)
 

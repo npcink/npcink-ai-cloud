@@ -150,6 +150,7 @@ class Settings(BaseSettings):
     portal_login_code_ttl_seconds: int = Field(default=10 * 60)
     portal_login_code_max_attempts: int = Field(default=5)
     portal_oauth_state_ttl_seconds: int = Field(default=10 * 60)
+    portal_auth_retention_days: int = Field(default=7, ge=1, le=90)
     portal_idempotency_ttl_seconds: int = Field(
         default=24 * 60 * 60,
         ge=5 * 60,
