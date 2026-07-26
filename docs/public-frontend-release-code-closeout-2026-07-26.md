@@ -1,6 +1,7 @@
 # Public Frontend Release Code Closeout — 2026-07-26
 
-Status: frontend source closeout candidate.
+Status: merged frontend source closeout; runtime and production acceptance
+remain separate.
 
 ## Purpose
 
@@ -11,6 +12,18 @@ control plane.
 
 This record covers code and visual-regression evidence. It is not production,
 QQ review, legal, or GA approval.
+
+Merged evidence:
+
+- PR `#293`;
+- source commit `1b0339ed`;
+- protected `master` merge commit `2d7566a8`;
+- required Cloud CI, CodeQL, secret scan, PR-body, frontend, and targeted
+  backend gates passed before merge.
+
+The shared M4 lane was occupied by another dirty candidate at merge closeout,
+so current clean `master` was not promoted by this change. The source state is
+merged, but accepted M4, production, and external acceptance remain pending.
 
 ## Scope
 
@@ -122,3 +135,8 @@ Treat the current public and authentication frontend as frozen v1:
 - do not add new homepage sections, dashboards, CMS/page-builder machinery, or
   thick Portal control features without repeated real-user evidence and a new
   bounded proposal.
+
+The complete account, entitlement, relink, copy-protection, and frontend
+decision history is recorded in
+[Account, Entitlement, Site Relink, And Frontend Release Retrospective —
+2026-07-26](account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md).
