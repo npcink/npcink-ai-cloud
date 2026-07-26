@@ -141,6 +141,10 @@ def test_targeted_backend_gate_times_contracts_without_rerunning_changed_contrac
 
 def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
     subprocess.run(["bash", "-n", str(WEIGHT_REFRESH)], cwd=ROOT, check=True)
+    environment_without_gh = {
+        **os.environ,
+        "PATH": "/usr/bin:/bin",
+    }
     help_result = subprocess.run(
         ["bash", str(WEIGHT_REFRESH), "--", "--help"],
         cwd=ROOT,
@@ -151,6 +155,15 @@ def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
     too_few_result = subprocess.run(
         ["bash", str(WEIGHT_REFRESH), "--", "123"],
         cwd=ROOT,
+        env=environment_without_gh,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    valid_args_without_gh_result = subprocess.run(
+        ["bash", str(WEIGHT_REFRESH), "--", "123", "456", "789"],
+        cwd=ROOT,
+        env=environment_without_gh,
         text=True,
         capture_output=True,
         check=False,
@@ -161,6 +174,8 @@ def test_pytest_weight_refresh_is_reproducible_and_fail_closed() -> None:
     assert "ci:pytest:weights:refresh" in help_result.stdout
     assert too_few_result.returncode == 2
     assert "at least 3 run ids are required" in too_few_result.stderr
+    assert valid_args_without_gh_result.returncode == 1
+    assert "GitHub CLI (gh) is required" in valid_args_without_gh_result.stderr
     assert "EXPECTED_SHARDS=3" in source
     assert "MINIMUM_RUNS=3" in source
     assert "gh run download" in source

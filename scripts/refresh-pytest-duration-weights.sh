@@ -25,17 +25,6 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 	usage
 	exit 0
 fi
-if ! command -v gh >/dev/null 2>&1; then
-	echo "[error] GitHub CLI (gh) is required" >&2
-	exit 1
-fi
-
-PYTHON_BIN="${NPCINK_CLOUD_CI_PYTHON:-python3}"
-if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
-	echo "[error] Python executable is unavailable: ${PYTHON_BIN}" >&2
-	exit 1
-fi
-
 mode="explicit"
 recent_count=0
 if [ "${1:-}" = "--recent-master" ]; then
@@ -69,6 +58,17 @@ else
 		fi
 		seen_run_ids="${seen_run_ids}${run_id} "
 	done
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+	echo "[error] GitHub CLI (gh) is required" >&2
+	exit 1
+fi
+
+PYTHON_BIN="${NPCINK_CLOUD_CI_PYTHON:-python3}"
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+	echo "[error] Python executable is unavailable: ${PYTHON_BIN}" >&2
+	exit 1
 fi
 
 TEMP_ROOT="${TMPDIR:-/tmp}"
