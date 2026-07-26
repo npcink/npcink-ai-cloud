@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
@@ -29,6 +30,7 @@ from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
     CREDIT_LEDGER_EVENT_GRANT,
     PRINCIPAL_STATUS_ACTIVE,
+    Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
     AccountUserMembership,
@@ -1179,6 +1181,7 @@ def test_portal_remove_suspended_site_is_denied(tmp_path: Path) -> None:
 
 def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -1227,6 +1230,9 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert create_data["activation_state"] == "pending_exchange"
     assert "key_id" not in create_data
     assert "cloud_api_key" not in create_data
+    assert parse_qs(urlsplit(str(create_data["return_url"])).query) == {
+        "action": ["npcink_cloud_addon_complete_auth"]
+    }
     assert create_data["redirect_url"].startswith(
         "https://primary.example.com/wp-admin/admin-post.php?"
     )
@@ -1243,6 +1249,53 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         assert list(session.scalars(select(AccountSubscription))) == []
         assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
         assert list(session.scalars(select(SiteApiKey))) == []
+        oauth_state = session.scalar(
+            select(PortalOAuthState).where(
+                PortalOAuthState.provider == "wordpress_addon_connection"
+            )
+        )
+        assert oauth_state is not None
+        assert parse_qs(urlsplit(str(oauth_state.return_to or "")).query) == {
+            "action": ["npcink_cloud_addon_complete_auth"]
+        }
+
+    oauth_state_lock_flags: list[bool] = []
+    locked_account_ids: list[str] = []
+    original_get_portal_oauth_state = CommercialRepository.get_portal_oauth_state
+    original_get_account_for_update = CommercialRepository.get_account_for_update
+
+    def capture_portal_oauth_state_lock(
+        repository: CommercialRepository,
+        *,
+        provider: str,
+        state_hash: str,
+        for_update: bool = False,
+    ) -> PortalOAuthState | None:
+        oauth_state_lock_flags.append(for_update)
+        return original_get_portal_oauth_state(
+            repository,
+            provider=provider,
+            state_hash=state_hash,
+            for_update=for_update,
+        )
+
+    def capture_account_lock(
+        repository: CommercialRepository,
+        locked_account_id: str,
+    ) -> Account | None:
+        locked_account_ids.append(locked_account_id)
+        return original_get_account_for_update(repository, locked_account_id)
+
+    monkeypatch.setattr(
+        CommercialRepository,
+        "get_portal_oauth_state",
+        capture_portal_oauth_state_lock,
+    )
+    monkeypatch.setattr(
+        CommercialRepository,
+        "get_account_for_update",
+        capture_account_lock,
+    )
 
     exchange_response = client.post(
         "/portal/v1/addon-connections/exchange",
@@ -1260,12 +1313,16 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert decoded_key["site_id"] == "site_primary-example-com"
     assert decoded_key["key_id"] == exchange_data["key_id"]
     assert decoded_key["secret"].startswith("sk_")
+    assert oauth_state_lock_flags == [True]
+    assert locked_account_ids == [account_id]
 
     replay_response = client.post(
         "/portal/v1/addon-connections/exchange",
         json={"code": code, "state": "addon-state-001"},
     )
     assert replay_response.status_code != 200
+    assert oauth_state_lock_flags == [True, True]
+    assert locked_account_ids == [account_id]
 
     with get_session(database_url) as session:
         site = session.get(Site, "site_primary-example-com")
@@ -1291,6 +1348,14 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
     assert audit_response.status_code == 200
     audit_items = audit_response.json()["data"]["items"]
     assert any(item["event_kind"] == "wordpress_addon_connection.issue" for item in audit_items)
+    issue_event = next(
+        item
+        for item in audit_items
+        if item["event_kind"] == "wordpress_addon_connection.issue"
+    )
+    assert parse_qs(
+        urlsplit(str(issue_event["payload"]["return_url"])).query
+    ) == {"action": ["npcink_cloud_addon_complete_auth"]}
 
     dispose_engine(database_url)
 
@@ -1514,6 +1579,93 @@ def test_portal_addon_exchange_revalidates_access_before_free_activation(
         assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
         assert list(session.scalars(select(Site))) == []
         assert list(session.scalars(select(SiteApiKey))) == []
+
+    dispose_engine(database_url)
+
+
+def test_portal_addon_exchange_rejects_inactive_subscription_history_before_free_activation(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    registration_request = _request_portal_registration_code(
+        client,
+        email="addon-inactive-history@example.com",
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    _verify_portal_registration_code(
+        client,
+        email="addon-inactive-history@example.com",
+        code=str(registration_request["code"]),
+    )
+    addon_accounts_response = client.get("/portal/v1/addon-connection-accounts")
+    assert addon_accounts_response.status_code == 200, addon_accounts_response.text
+    addon_accounts = addon_accounts_response.json()["data"]["items"]
+    assert len(addon_accounts) == 1
+    account_id = str(addon_accounts[0]["account_id"])
+    state = "addon-inactive-history-state"
+    issue_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": account_id,
+            "site_url": "https://inactive-history.example.com",
+            "site_name": "Inactive History Site",
+            "return_url": (
+                "https://inactive-history.example.com/wp-admin/admin-post.php"
+                f"?action=npcink_cloud_addon_complete_auth&state={state}"
+            ),
+            "state": state,
+        },
+        headers={"Idempotency-Key": "portal-addon-inactive-history"},
+    )
+    assert issue_response.status_code == 200, issue_response.text
+    redirect_query = parse_qs(
+        urlsplit(str(issue_response.json()["data"]["redirect_url"])).query
+    )
+    code = redirect_query["code"][0]
+
+    with get_session(database_url) as session:
+        session.add(
+            AccountSubscription(
+                subscription_id=f"sub_{account_id}_canceled",
+                account_id=account_id,
+                plan_id="free",
+                plan_version_id="free_v1",
+                status="canceled",
+            )
+        )
+        session.commit()
+
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={"code": code, "state": state},
+    )
+    assert exchange_response.status_code == 403
+    assert exchange_response.json()["error_code"] == "service.subscription_required"
+
+    with get_session(database_url) as session:
+        subscriptions = list(
+            session.scalars(
+                select(AccountSubscription).where(
+                    AccountSubscription.account_id == account_id
+                )
+            )
+        )
+        assert len(subscriptions) == 1
+        assert subscriptions[0].status == "canceled"
+        assert list(session.scalars(select(AccountEntitlementSnapshot))) == []
+        assert list(session.scalars(select(Site))) == []
+        assert list(session.scalars(select(SiteApiKey))) == []
+        oauth_state = session.scalar(
+            select(PortalOAuthState).where(
+                PortalOAuthState.provider == "wordpress_addon_connection"
+            )
+        )
+        assert oauth_state is not None
+        assert oauth_state.status == "pending"
+        assert oauth_state.consumed_at is None
 
     dispose_engine(database_url)
 

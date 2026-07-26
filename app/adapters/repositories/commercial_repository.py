@@ -626,13 +626,15 @@ class CommercialRepository:
         *,
         provider: str,
         state_hash: str,
+        for_update: bool = False,
     ) -> PortalOAuthState | None:
-        return self.session.scalar(
-            select(PortalOAuthState).where(
-                PortalOAuthState.provider == provider,
-                PortalOAuthState.state_hash == state_hash,
-            )
+        statement = select(PortalOAuthState).where(
+            PortalOAuthState.provider == provider,
+            PortalOAuthState.state_hash == state_hash,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def create_portal_oauth_state(
         self,
