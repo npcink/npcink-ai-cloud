@@ -60,4 +60,15 @@ for (const key of [
   assert.equal(occurrences, 2, `${key} must exist in English and Simplified Chinese`);
 }
 
+assert.equal(
+  i18nSource.split("'admin.editor_quality.unmatched_rate'").length - 1,
+  2,
+  'the unmatched-save label must exist in both locale dictionaries'
+);
+assert.doesNotMatch(
+  `${panelSource}\n${i18nSource}`,
+  /Saved after edit|修改后保存率|admin\.editor_quality\.edited_rate/,
+  'an unmatched save must not be presented as proven edited adoption'
+);
+
 console.log('[ok] editor-assist quality Admin contract passed');
