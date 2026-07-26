@@ -31,6 +31,8 @@ from app.core.models import (
     SITE_STATUS_INACTIVE,
     SITE_STATUS_PROVISIONING,
     SITE_STATUS_SUSPENDED,
+    SUBSCRIPTION_STATUS_ACTIVE,
+    SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
     Site,
     SiteApiKey,
@@ -119,12 +121,37 @@ def _hash_addon_connection_value(value: str, *, prefix: str) -> str:
 def _normalize_addon_return_url(value: str) -> str:
     raw = str(value or "").strip()
     parsed = urlsplit(raw)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or bool(parsed.fragment)
+    ):
         raise CommercialValidationError(
             "service.wordpress_addon_return_url_invalid",
             "wordpress addon return_url must be an absolute http or https URL",
         )
-    return raw[:2048]
+    safe_query = [
+        (key, item)
+        for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in {"code", "state"}
+    ]
+    normalized = urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(safe_query),
+            parsed.fragment,
+        )
+    )
+    if len(normalized) > 2048:
+        raise CommercialValidationError(
+            "service.wordpress_addon_return_url_invalid",
+            "wordpress addon return_url is too long",
+        )
+    return normalized
 
 
 def _addon_host_key(value: str) -> str:
@@ -136,10 +163,14 @@ def _addon_host_key(value: str) -> str:
 
 def _append_addon_return_query(return_url: str, *, code: str, state: str) -> str:
     parsed = urlsplit(return_url)
-    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query["code"] = code
+    query = [
+        (key, item)
+        for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in {"code", "state"}
+    ]
+    query.append(("code", code))
     if state:
-        query["state"] = state
+        query.append(("state", state))
     return urlunsplit(
         (
             parsed.scheme,
@@ -149,6 +180,19 @@ def _append_addon_return_query(return_url: str, *, code: str, state: str) -> str
             parsed.fragment,
         )
     )
+
+
+def _get_active_addon_subscription(
+    repository: CommercialRepository,
+    account_id: str,
+) -> AccountSubscription | None:
+    subscription = repository.get_runtime_subscription(account_id)
+    if subscription is None or str(subscription.status or "") not in {
+        SUBSCRIPTION_STATUS_ACTIVE,
+        SUBSCRIPTION_STATUS_TRIALING,
+    }:
+        return None
+    return subscription
 
 
 class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
@@ -757,7 +801,10 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 account_id=normalized_account_id,
                 principal_id=normalized_principal_id,
             )
-            subscription = repository.get_runtime_subscription(normalized_account_id)
+            subscription = _get_active_addon_subscription(
+                repository,
+                normalized_account_id,
+            )
             snapshot = None
             if subscription is not None:
                 snapshot = repository.get_active_entitlement_snapshot(
@@ -882,6 +929,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
             row = repository.get_portal_oauth_state(
                 provider=WORDPRESS_ADDON_CONNECTION_PROVIDER,
                 state_hash=_hash_addon_connection_value(normalized_code, prefix="code"),
+                for_update=True,
             )
             if row is None:
                 raise CommercialPermissionError(
@@ -937,6 +985,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.wordpress_addon_connection_payload_invalid",
                     "wordpress addon connection payload is invalid",
                 )
+            if repository.get_account_for_update(account_id) is None:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal account access is required",
+                )
             _assert_portal_addon_connection_access(
                 repository=repository,
                 account_id=account_id,
@@ -947,7 +1000,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 audit_context.actor_ref = site_id
 
             service = cast(Any, self)
-            subscription = repository.get_runtime_subscription(account_id)
+            subscription = _get_active_addon_subscription(repository, account_id)
             free_entitlement_activated = False
             if subscription is None:
                 if repository.list_account_subscriptions(account_id):
@@ -968,7 +1021,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         f"account '{account_id}' could not activate its Free subscription",
                     )
                 free_entitlement_activated = True
-                subscription = repository.get_runtime_subscription(account_id)
+                subscription = _get_active_addon_subscription(repository, account_id)
             if subscription is None:
                 raise CommercialPermissionError(
                     "service.subscription_required",
