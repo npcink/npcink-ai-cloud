@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from hashlib import sha256
 from typing import Any, cast
 from uuid import uuid4
 
@@ -450,11 +449,13 @@ class CommercialRepository:
     ) -> int:
         bind = self.session.get_bind()
         if bind.dialect.name == "postgresql":
-            lock_material = f"{email.strip().lower()}\0{purpose}".encode()
-            lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
             self.session.execute(
-                text("SELECT pg_advisory_xact_lock(:lock_key)"),
-                {"lock_key": lock_key},
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtextextended(:lock_material, 0)"
+                    ")"
+                ),
+                {"lock_material": f"{email.strip().lower()}\0{purpose}"},
             )
         pending_codes = self.list_portal_login_codes(
             email=email,

@@ -4,7 +4,6 @@ import hmac
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -510,15 +509,13 @@ def _enforce_portal_request_rate_limit(
         with get_session(services.settings.database_url) as session:
             if session.get_bind().dialect.name == "postgresql":
                 for scope_kind, scope_id, _max_requests in sorted(bounded_scopes):
-                    lock_material = f"{scope_kind}\0{scope_id}".encode()
-                    lock_key = int.from_bytes(
-                        sha256(lock_material).digest()[:8],
-                        "big",
-                        signed=True,
-                    )
                     session.execute(
-                        text("SELECT pg_advisory_xact_lock(:lock_key)"),
-                        {"lock_key": lock_key},
+                        text(
+                            "SELECT pg_advisory_xact_lock("
+                            "hashtextextended(:lock_material, 0)"
+                            ")"
+                        ),
+                        {"lock_material": f"{scope_kind}\0{scope_id}"},
                     )
             for scope_kind, scope_id, max_requests in bounded_scopes:
                 _enforce_short_window_rate_limit(
