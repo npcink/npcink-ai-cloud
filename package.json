@@ -91,6 +91,7 @@
     "check:frontend-handoff": "node scripts/check-cloud-frontend-handoff.js",
     "check:frontend-scope": "node scripts/check-cloud-frontend-scope.js",
     "check:agent-feedback-quality": "bash scripts/check-agent-feedback-quality.sh",
+    "check:editor-assist-quality": "bash scripts/check-editor-assist-quality.sh",
     "check:runtime-stability-plan": "node scripts/check-runtime-stability-evidence-plan.js",
     "check:visual:frontend": "pnpm --dir frontend run test:visual",
     "check:e2e:deploy-bundle:smoke": "bash scripts/cloud-deploy-bundle-smoke-flow.sh",
