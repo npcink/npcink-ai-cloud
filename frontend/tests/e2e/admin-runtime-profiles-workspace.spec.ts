@@ -411,6 +411,21 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   const workbench = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
   await expect(workbench.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
   await expect(workbench.locator('[data-ui="runtime-profile-candidate-table"]')).toBeVisible();
+  const modelToolbar = workbench.locator('[data-ui="runtime-profile-model-toolbar"]');
+  const providerFilter = modelToolbar.getByRole('combobox', { name: /Supplier|供应商/i });
+  const modelSearch = modelToolbar.getByRole('searchbox', { name: /Search models|搜索模型/i });
+  const [toolbarBox, providerBox, searchBox] = await Promise.all([
+    modelToolbar.boundingBox(),
+    providerFilter.boundingBox(),
+    modelSearch.boundingBox(),
+  ]);
+  if (!toolbarBox || !providerBox || !searchBox) {
+    throw new Error('Compact model toolbar controls must be visible for geometry validation.');
+  }
+  expect(toolbarBox.height).toBeLessThanOrEqual(40);
+  expect(providerBox.height).toBe(32);
+  expect(searchBox.height).toBe(32);
+  expect(Math.abs(providerBox.y - searchBox.y)).toBeLessThanOrEqual(1);
   await expect(workbench.getByRole('radio')).toHaveCount(6);
   await expect(candidateRow(page, 'text.unavailable')).toContainText(/Unavailable|不可用/i);
   await expect(candidateRow(page, 'text.unavailable').getByRole('radio').first()).toBeDisabled();

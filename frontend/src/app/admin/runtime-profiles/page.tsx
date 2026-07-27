@@ -746,26 +746,26 @@ export default function RuntimeProfilesPage() {
               />
             </AdminConfigurationTable>
 
-            <section className="grid gap-2 pt-1">
-              <div className="flex items-baseline gap-3">
-                <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
-                  {copy('candidate_table_title', 'Candidate models')}
-                </h3>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}
-                </p>
-              </div>
-              <div data-ui="runtime-profile-model-toolbar" className="grid gap-2 sm:grid-cols-[17rem_minmax(0,1fr)]">
-                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {copy('provider_filter', 'Supplier')}
-                  <select className="input mt-1 w-full" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+            <section className="grid gap-1.5 pt-1">
+              <div data-ui="runtime-profile-model-toolbar" className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
+                    {copy('candidate_table_title', 'Candidate models')}
+                  </h3>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    {copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}
+                  </p>
+                </div>
+                <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  <span>{copy('provider_filter', 'Supplier')}</span>
+                  <select className="input w-44" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
                     <option value="">{copy('provider_all', 'All suppliers')}</option>
                     {providers.map(([providerId, label]) => <option key={providerId} value={providerId}>{label}</option>)}
                   </select>
                 </label>
-                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {copy('model_search', 'Search models')}
-                  <input className="input mt-1 w-full" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
+                <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  <span>{copy('model_search', 'Search models')}</span>
+                  <input className="input w-60" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
                 </label>
               </div>
               {candidates.length ? (
