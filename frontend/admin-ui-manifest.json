@@ -13,7 +13,8 @@
   "geometry": {
     "sidebarExpandedPx": 208,
     "sidebarCollapsedPx": 64,
-    "workbenchMaxWidthPx": 1152
+    "workbenchMaxWidthPx": 1152,
+    "workbenchCompactMaxWidthPx": 960
   },
   "pageModels": [
     "overview",

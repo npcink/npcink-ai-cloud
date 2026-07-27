@@ -115,7 +115,7 @@ test('fixed service directory uses a table and one configuration workbench', asy
   });
   await page.keyboard.press('Escape');
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-external-services-workbench-pc.png', {
+  await expect(dialog.locator('[data-width="compact"]')).toHaveScreenshot('admin-external-services-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
     scale: 'css',
@@ -157,7 +157,8 @@ test('stored credentials require explicit replacement and clearing needs confirm
   await dialog.getByRole('button', { name: /Cancel replacement|取消替换/i }).click();
   await expect(dialog.getByLabel(/API key|API Key|Token/i)).toHaveCount(0);
 
-  await dialog.locator('[data-ui="external-service-details"] summary').click();
+  await expect(dialog.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
+  await expect(dialog.locator('[data-configuration-row="service-url"]')).toContainText('https://api.tavily.com');
   await dialog.getByRole('button', { name: /Clear credential and disable|清除凭据并停用/i }).click();
   await expect(dialog.getByText(/Clear the credential for Tavily|确认清除 Tavily/i)).toBeVisible();
   await expect(dialog.getByRole('button', { name: /^Save$|^保存$/i })).toHaveCount(0);

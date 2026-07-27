@@ -40,9 +40,10 @@ still use the page model that matches their operator job.
 3. configure as the primary row action and connection test as the secondary
    row action;
 4. one shared workbench for the active service;
-5. explicit credential replacement and an object-specific confirmation before
+5. one dense semantic configuration table for setting, value, and action/note;
+6. explicit credential replacement and an object-specific confirmation before
    clearing a credential and disabling the service;
-6. row-associated save and test feedback.
+7. row-associated save and test feedback.
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
@@ -52,6 +53,7 @@ The executable projection of the route matrix and accepted dimensions lives in
 - Primary target: desktop operator use at 1280 CSS pixels and wider.
 - Expanded sidebar: `208px`; collapsed rail: `64px`.
 - Wide edit workbench: no more than `1152px`.
+- Compact configuration workbench: no more than `960px`.
 - Comparison-heavy queues use semantic tables.
 - The first working surface should begin within the first two desktop
   viewports.
@@ -120,6 +122,8 @@ new route-local table shell.
 - Put the main work object, such as model visibility, in the default view.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
+- Short, fixed service configuration uses `AdminConfigurationTable` instead of
+  stacked field cards or a low-frequency disclosure.
 
 ## 7. Credentials And Capability-Specific Settings
 
@@ -140,6 +144,7 @@ Prefer these shared surfaces:
 - `BackofficeLayer`, `BackofficeSummaryStrip`, and
   `BackofficeDiagnosticNotice`;
 - `AdminDataTableFrame`;
+- `AdminConfigurationTable`;
 - `AdminWorkbenchDialog`;
 - `AdminCredentialField`;
 - `AdminSettingsDisclosure`;

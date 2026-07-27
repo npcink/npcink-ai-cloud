@@ -17,6 +17,7 @@ export type AdminWorkbenchDialogProps = {
   savingLabel: string;
   footerNotice: string;
   hideFooterActions?: boolean;
+  width?: 'wide' | 'compact';
   onClose: () => void;
   onSubmit: () => void;
   children: ReactNode;
@@ -36,6 +37,7 @@ export function AdminWorkbenchDialog({
   savingLabel,
   footerNotice,
   hideFooterActions = false,
+  width = 'wide',
   onClose,
   onSubmit,
   children,
@@ -111,7 +113,8 @@ export function AdminWorkbenchDialog({
     >
       <div
         ref={dialogRef}
-        className="admin-workbench-dialog flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+        data-width={width}
+        className={`${width === 'compact' ? 'admin-workbench-dialog-compact rounded-xl' : 'admin-workbench-dialog rounded-2xl'} flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950`}
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
           <div className="flex min-w-0 flex-wrap items-center gap-2">

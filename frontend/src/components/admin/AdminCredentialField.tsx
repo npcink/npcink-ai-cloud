@@ -12,6 +12,8 @@ type AdminCredentialFieldProps = {
   onChange: (value: string) => void;
   onReveal: () => void;
   onCancelReplacement: () => void;
+  density?: 'default' | 'compact';
+  hideLabel?: boolean;
 };
 
 export function AdminCredentialField({
@@ -26,6 +28,8 @@ export function AdminCredentialField({
   onChange,
   onReveal,
   onCancelReplacement,
+  density = 'default',
+  hideLabel = false,
 }: AdminCredentialFieldProps) {
   const generatedId = useId();
   const inputId = `admin-credential-${generatedId.replace(/:/g, '')}`;
@@ -33,9 +37,16 @@ export function AdminCredentialField({
 
   if (!showInput) {
     return (
-      <div data-ui="admin-credential-field" className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-        <span>{label}</span>
-        <div className="flex h-11 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 dark:border-slate-800 dark:bg-slate-900/60">
+      <div
+        data-ui="admin-credential-field"
+        data-density={density}
+        className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200"
+      >
+        <span className={hideLabel ? 'sr-only' : undefined}>{label}</span>
+        <div className={density === 'compact'
+          ? 'flex min-h-9 items-center justify-between gap-3'
+          : 'flex h-11 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 dark:border-slate-800 dark:bg-slate-900/60'}
+        >
           <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
             {unchangedLabel}
           </span>
@@ -52,9 +63,13 @@ export function AdminCredentialField({
   }
 
   return (
-    <div data-ui="admin-credential-field" className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-      <span className="flex items-center justify-between gap-2">
-        <label htmlFor={inputId}>{label}</label>
+    <div
+      data-ui="admin-credential-field"
+      data-density={density}
+      className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200"
+    >
+      <span className={`items-center justify-between gap-2 ${hideLabel && mode !== 'edit' ? 'sr-only' : 'flex'}`}>
+        <label htmlFor={inputId} className={hideLabel ? 'sr-only' : undefined}>{label}</label>
         {mode === 'edit' ? (
           <button
             type="button"
@@ -67,7 +82,8 @@ export function AdminCredentialField({
       </span>
       <input
         id={inputId}
-        className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+        aria-label={hideLabel ? label : undefined}
+        className={`${density === 'compact' ? 'h-9' : 'h-11'} rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white`}
         type="password"
         value={value}
         onChange={(event) => onChange(event.target.value)}

@@ -14,6 +14,7 @@ const pullRequestTemplateSource = readFileSync(join(repositoryRoot, '.github/pul
 const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'), 'utf8');
 const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
 const workbenchSource = readFileSync(fromFrontendRoot('src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
+const configurationTableSource = readFileSync(fromFrontendRoot('src/components/admin/AdminConfigurationTable.tsx'), 'utf8');
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
 const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
@@ -83,12 +84,13 @@ assert.deepEqual(
     sidebarExpandedPx: 208,
     sidebarCollapsedPx: 64,
     workbenchMaxWidthPx: 1152,
+    workbenchCompactMaxWidthPx: 960,
   },
   'accepted PC geometry must change through a reviewed manifest update'
 );
 assert.match(
   globalStylesSource,
-  /--admin-sidebar-expanded:\s*13rem[\s\S]*--admin-sidebar-collapsed:\s*4rem[\s\S]*--admin-workbench-max-width:\s*72rem/,
+  /--admin-sidebar-expanded:\s*13rem[\s\S]*--admin-sidebar-collapsed:\s*4rem[\s\S]*--admin-workbench-max-width:\s*72rem[\s\S]*--admin-workbench-compact-max-width:\s*60rem/,
   'accepted PC dimensions must be implemented as shared CSS tokens'
 );
 assert.match(layoutSource, /admin-sidebar[\s\S]*admin-shell-content/, 'the admin shell must consume shared geometry classes');
@@ -104,11 +106,12 @@ assert.match(
 );
 assert.doesNotMatch(
   workbenchSource,
-  /max-w-(?:5xl|6xl)|max-w-\[1152px\]/,
+  /max-w-(?:4xl|5xl|6xl)|max-w-\[(?:960|1152)px\]/,
   'shared workbench width must come from the admin token'
 );
 
 for (const primitive of [
+  'AdminConfigurationTable',
   'AdminDataTableFrame',
   'AdminWorkbenchDialog',
   'AdminCredentialField',
@@ -136,8 +139,13 @@ assert.match(
 );
 assert.match(
   externalServicesPageSource,
-  /AdminWorkbenchDialog[\s\S]*AdminCredentialField[\s\S]*AdminSettingsDisclosure/,
-  'the reference configuration page must reuse workbench, credential, and disclosure primitives'
+  /AdminWorkbenchDialog[\s\S]*AdminConfigurationTable[\s\S]*AdminCredentialField/,
+  'the reference configuration page must reuse workbench, configuration-table, and credential primitives'
+);
+assert.match(
+  configurationTableSource,
+  /data-ui="admin-configuration-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
+  'the shared configuration table must retain semantic table structure'
 );
 
 const routeLocalDialogFiles = listFiles(adminRoot, (path) => path.endsWith('.tsx'))
