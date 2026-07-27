@@ -18,7 +18,7 @@ accessibility, preserve the stronger boundary first.
 
 ## 1. Reference Implementation
 
-`/admin/ai-resources` is the first accepted PC reference for a `queue` page:
+`/admin/ai-resources` is the accepted PC reference for a `queue` page:
 
 1. compact title and scope;
 2. one summary strip;
@@ -30,6 +30,19 @@ accessibility, preserve the stronger boundary first.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
+
+`/admin/external-services` is the accepted PC reference for a
+`configuration` page:
+
+1. one readiness summary and one active service category;
+2. one semantic table for scanning service role, state, credential readiness,
+   and runtime enablement;
+3. configure as the primary row action and connection test as the secondary
+   row action;
+4. one shared workbench for the active service;
+5. explicit credential replacement and an object-specific confirmation before
+   clearing a credential and disabling the service;
+6. row-associated save and test feedback.
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
@@ -177,9 +190,9 @@ pnpm run check:admin-ui:visual
 ```
 
 The structural gate verifies the route manifest, shared tokens, required
-primitives, documentation/AI entry points, and the bounded legacy-dialog
-allowlist. The visual gate verifies the accepted provider table and edit
-workbench at the fixed PC viewport.
+primitives, documentation/AI entry points, and the bounded legacy-dialog and
+credential allowlists. The visual gate verifies the accepted queue and
+configuration tables and edit workbenches at the fixed PC viewport.
 
 Also run type, lint, i18n, contract, M4, and repository gates required by the
 actual changed seam. A screenshot is supporting evidence, not proof of API,

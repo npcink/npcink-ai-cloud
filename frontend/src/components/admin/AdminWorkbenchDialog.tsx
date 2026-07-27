@@ -16,6 +16,7 @@ export type AdminWorkbenchDialogProps = {
   saveLabel: string;
   savingLabel: string;
   footerNotice: string;
+  hideFooterActions?: boolean;
   onClose: () => void;
   onSubmit: () => void;
   children: ReactNode;
@@ -34,6 +35,7 @@ export function AdminWorkbenchDialog({
   saveLabel,
   savingLabel,
   footerNotice,
+  hideFooterActions = false,
   onClose,
   onSubmit,
   children,
@@ -158,18 +160,20 @@ export function AdminWorkbenchDialog({
           </div>
           <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
             <span id={`${titleId}-workflow-notice`}>{footerNotice}</span>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>
-                {cancelLabel}
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="btn btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? savingLabel : saveLabel}
-              </button>
-            </div>
+            {hideFooterActions ? null : (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>
+                  {cancelLabel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? savingLabel : saveLabel}
+                </button>
+              </div>
+            )}
           </div>
         </form>
       </div>
