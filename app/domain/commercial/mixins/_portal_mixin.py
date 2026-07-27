@@ -145,6 +145,27 @@ def _portal_email_change_code_metadata(value: object) -> dict[str, object]:
     return metadata
 
 
+def _principal_registration_access_is_blocked(
+    repository: CommercialRepository,
+    *,
+    principal_id: str,
+    principal_status: str,
+) -> bool:
+    if principal_status != PRINCIPAL_STATUS_ACTIVE:
+        return True
+    memberships = repository.list_account_user_memberships(
+        principal_ids=[principal_id],
+        statuses=None,
+    )
+    if not memberships:
+        return False
+    active_accounts = repository.list_accounts_for_principal(
+        principal_id=principal_id,
+        membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
+    )
+    return not active_accounts
+
+
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
     def get_portal_current_subscription(
         self,
@@ -1377,6 +1398,15 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             existing_identity = repository.get_principal_identity_by_email(email=normalized_email)
             if existing_identity is not None:
                 principal_id = str(existing_identity.principal_id or "").strip() or principal_id
+                if _principal_registration_access_is_blocked(
+                    repository,
+                    principal_id=principal_id,
+                    principal_status=str(existing_identity.status or ""),
+                ):
+                    raise CommercialPermissionError(
+                        "service.principal_access_required",
+                        "portal registration is unavailable for this principal",
+                    )
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
             repository.expire_pending_portal_login_codes(
                 email=normalized_email,
@@ -1466,6 +1496,16 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             identity = repository.get_principal_identity_by_email(email=normalized_email)
             if identity is not None:
                 principal_id = str(identity.principal_id or "").strip()
+                if _principal_registration_access_is_blocked(
+                    repository,
+                    principal_id=principal_id,
+                    principal_status=str(identity.status or ""),
+                ):
+                    session.commit()
+                    raise CommercialPermissionError(
+                        "service.principal_access_required",
+                        "portal registration is unavailable for this principal",
+                    )
                 memberships = repository.list_accounts_for_principal(
                     principal_id=principal_id,
                     membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
@@ -1617,8 +1657,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         normalized_status = str(status or PRINCIPAL_STATUS_ACTIVE).strip().lower()
         if normalized_status not in {PRINCIPAL_STATUS_ACTIVE, PRINCIPAL_STATUS_DISABLED}:
             raise CommercialValidationError(
-                "service.principal_status_invalid",
-                "principal status must be active or disabled",
+                "service.account_membership_status_invalid",
+                "account membership status must be active or disabled",
             )
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -1631,24 +1671,51 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             existing_identity = repository.get_principal_identity_by_email(
                 email=normalized_email,
             )
-            principal_id = (
-                str(existing_identity.principal_id)
-                if existing_identity is not None
-                else _new_principal_id()
-            )
-            identity = repository.upsert_principal_identity(
-                principal_id=principal_id,
-                email=normalized_email,
-                status=normalized_status,
-                metadata_json=metadata_json,
-            )
-            if normalized_status == PRINCIPAL_STATUS_DISABLED:
-                identity = (
-                    repository.increment_principal_session_version(
-                        principal_id=identity.principal_id,
+            if existing_identity is None:
+                if normalized_status == PRINCIPAL_STATUS_DISABLED:
+                    raise CommercialNotFoundError(
+                        "service.account_membership_not_found",
+                        f"account membership for '{normalized_email}' was not found",
                     )
-                    or identity
+                principal_id = _new_principal_id()
+                identity = repository.upsert_principal_identity(
+                    principal_id=principal_id,
+                    email=normalized_email,
+                    status=PRINCIPAL_STATUS_ACTIVE,
+                    metadata_json={
+                        "source": "account_membership",
+                        "identity_type": IDENTITY_TYPE_USER,
+                    },
                 )
+            else:
+                identity = existing_identity
+                principal_id = str(identity.principal_id)
+            existing_membership_row = repository.get_account_user_membership(
+                principal_id=principal_id,
+                account_id=account_id,
+            )
+            existing_membership = (
+                existing_membership_row[2]
+                if existing_membership_row is not None
+                else None
+            )
+            if normalized_status == PRINCIPAL_STATUS_ACTIVE:
+                if str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE:
+                    raise CommercialPermissionError(
+                        "service.principal_access_required",
+                        f"principal '{principal_id}' is not active",
+                    )
+            elif existing_membership_row is None:
+                raise CommercialNotFoundError(
+                    "service.account_membership_not_found",
+                    f"account membership for '{normalized_email}' was not found",
+                )
+            existing_membership_metadata = (
+                dict(existing_membership.metadata_json or {})
+                if existing_membership is not None
+                else {}
+            )
+            requested_membership_metadata = dict(metadata_json or {})
             membership = repository.upsert_account_user_membership(
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
@@ -1659,10 +1726,19 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     if normalized_status == PRINCIPAL_STATUS_ACTIVE
                     else ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED
                 ),
-                allowed_actions_json=resolve_principal_allowed_actions(),
+                allowed_actions_json=(
+                    list(existing_membership.allowed_actions_json or [])
+                    if existing_membership is not None
+                    else resolve_principal_allowed_actions()
+                ),
                 metadata_json={
-                    **dict(metadata_json or {}),
-                    "source": str((metadata_json or {}).get("source") or "account_membership"),
+                    **existing_membership_metadata,
+                    **requested_membership_metadata,
+                    "source": str(
+                        requested_membership_metadata.get("source")
+                        or existing_membership_metadata.get("source")
+                        or "account_membership"
+                    ),
                 },
             )
             payload: dict[str, object] = {

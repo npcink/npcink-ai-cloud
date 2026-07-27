@@ -52,6 +52,7 @@ from app.domain.agent_workflow_metadata import (
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.errors import CommercialPermissionError, CommercialServiceError
 from app.domain.commercial.identity import (
+    USER_ALLOWED_ACTION_MANAGE_BILLING,
     USER_ALLOWED_ACTION_PROVISION_SITES,
     USER_ALLOWED_ACTION_REMOVE_SITES,
     USER_ALLOWED_ACTION_VIEW_AUDIT,
@@ -2842,7 +2843,7 @@ async def start_portal_account_plan_trial(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -2893,7 +2894,7 @@ async def create_portal_account_subscription_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -2938,7 +2939,7 @@ async def cancel_portal_account_subscription_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -2979,7 +2980,7 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3308,7 +3309,7 @@ async def create_portal_account_credit_pack_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3424,7 +3425,7 @@ async def cancel_portal_account_payment_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -4489,7 +4490,7 @@ async def create_portal_site_credit_pack_order(
         request,
         site_id=site_id,
         principal_id=auth.principal_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(access, JSONResponse):
         return access
