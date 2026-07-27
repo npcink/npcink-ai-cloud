@@ -93,6 +93,11 @@ assert.match(
   /--admin-sidebar-expanded:\s*13rem[\s\S]*--admin-sidebar-collapsed:\s*4rem[\s\S]*--admin-workbench-max-width:\s*72rem[\s\S]*--admin-workbench-compact-max-width:\s*60rem/,
   'accepted PC dimensions must be implemented as shared CSS tokens'
 );
+assert.match(
+  globalStylesSource,
+  /\[data-density="compact"\] \.input \{[\s\S]*height: var\(--admin-compact-control-height\)[\s\S]*border-radius: var\(--admin-compact-radius\)[\s\S]*padding-block: 0\.25rem[\s\S]*line-height: 1\.25rem[\s\S]*\[data-density="compact"\] select\.input \{[\s\S]*padding-right: 2rem[\s\S]*\[data-density="compact"\] \.input:focus \{[\s\S]*box-shadow: 0 0 0 1px/,
+  'compact controls must reduce height, padding, radius, select inset, and focus ring together'
+);
 assert.match(layoutSource, /admin-sidebar[\s\S]*admin-shell-content/, 'the admin shell must consume shared geometry classes');
 assert.doesNotMatch(
   layoutSource,

@@ -183,6 +183,18 @@ assert.doesNotMatch(
   'compact runtime profile tables must not spend a second line on routine labels or instance identifiers'
 );
 
+assert.match(
+  pageSource,
+  /runtime-profile-model-toolbar" className="grid gap-2 sm:grid-cols-\[17rem_minmax\(0,1fr\)\][\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
+  'compact candidate controls must reserve readable supplier and model widths without another table frame'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /runtime-profile-candidate-table" className="[^"]*\bborder\b/,
+  'the compact candidate table must not add an outer decorative border'
+);
+
 assert.doesNotMatch(pageSource, /createPortal|useDialogKeyboard/, 'runtime profile editing must not retain a route-local dialog implementation');
 
 assert.match(

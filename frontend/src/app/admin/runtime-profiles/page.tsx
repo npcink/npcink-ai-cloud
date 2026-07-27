@@ -704,7 +704,7 @@ export default function RuntimeProfilesPage() {
                     step={1000}
                     value={editingProfile.timeout_ms}
                     onChange={(event) => updateProfile(editingProfile.profile_id, { timeout_ms: Number(event.target.value) })}
-                    className="input h-8 w-36"
+                    className="input w-36"
                     aria-label={copy('timeout', 'Timeout')}
                   />
                 )}
@@ -738,7 +738,7 @@ export default function RuntimeProfilesPage() {
                     max={1}
                     value={editingProfile.max_retries}
                     onChange={(event) => updateProfile(editingProfile.profile_id, { max_retries: Number(event.target.value) })}
-                    className="input h-8 w-24"
+                    className="input w-24"
                     aria-label={copy('retries', 'Retries')}
                   />
                 )}
@@ -746,7 +746,7 @@ export default function RuntimeProfilesPage() {
               />
             </AdminConfigurationTable>
 
-            <section className="grid gap-2 border-t border-slate-200 pt-2 dark:border-slate-800">
+            <section className="grid gap-2 pt-1">
               <div className="flex items-baseline gap-3">
                 <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
                   {copy('candidate_table_title', 'Candidate models')}
@@ -755,26 +755,26 @@ export default function RuntimeProfilesPage() {
                   {copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}
                 </p>
               </div>
-              <div data-ui="runtime-profile-model-toolbar" className="grid gap-2 sm:grid-cols-[14rem_minmax(0,1fr)]">
+              <div data-ui="runtime-profile-model-toolbar" className="grid gap-2 sm:grid-cols-[17rem_minmax(0,1fr)]">
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                   {copy('provider_filter', 'Supplier')}
-                  <select className="input mt-1 h-8 w-full" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+                  <select className="input mt-1 w-full" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
                     <option value="">{copy('provider_all', 'All suppliers')}</option>
                     {providers.map(([providerId, label]) => <option key={providerId} value={providerId}>{label}</option>)}
                   </select>
                 </label>
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                   {copy('model_search', 'Search models')}
-                  <input className="input mt-1 h-8 w-full" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
+                  <input className="input mt-1 w-full" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
                 </label>
               </div>
               {candidates.length ? (
-                <div data-ui="runtime-profile-candidate-table" className="admin-compact-surface max-h-[25rem] overflow-auto border border-slate-200 dark:border-slate-800">
-                  <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+                <div data-ui="runtime-profile-candidate-table" className="max-h-[25rem] overflow-auto">
+                  <table className="w-full min-w-[960px] table-auto text-left text-sm">
                     <colgroup>
-                      <col className="w-[25%]" />
-                      <col className="w-[32%]" />
-                      <col className="w-[19%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[40%]" />
+                      <col className="w-[14%]" />
                       <col className="w-[12%]" />
                       <col className="w-[12%]" />
                     </colgroup>
@@ -787,7 +787,7 @@ export default function RuntimeProfilesPage() {
                         <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_fallback', 'Fallback')}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
                       {candidates.map((instance) => {
                         const primary = editingProfile.candidate_instance_ids[0] === instance.instance_id;
                         const fallback = editingProfile.candidate_instance_ids[1] === instance.instance_id;
@@ -795,17 +795,17 @@ export default function RuntimeProfilesPage() {
                         return (
                           <tr key={instance.instance_id} data-instance-id={instance.instance_id} className="bg-white dark:bg-slate-950">
                             <td className="px-3 py-2 align-middle">
-                              <span className="truncate font-medium text-slate-900 dark:text-white">
+                              <span className="whitespace-nowrap font-medium text-slate-900 dark:text-white">
                                 {instance.provider_display_name || instance.provider_id}
                               </span>
                               {instance.region ? (
-                                <span className="ml-2 truncate text-xs text-slate-500 dark:text-slate-400">
+                                <span className="ml-2 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
                                   {instance.region}
                                 </span>
                               ) : null}
                             </td>
                             <th className="px-3 py-2 align-middle" scope="row" title={instance.instance_id}>
-                              <span className="block truncate font-semibold text-slate-950 dark:text-white">{instance.model_id}</span>
+                              <span className="block whitespace-nowrap font-semibold text-slate-950 dark:text-white">{instance.model_id}</span>
                             </th>
                             <td className="px-3 py-2 align-middle">
                               <BackofficeStatusBadge

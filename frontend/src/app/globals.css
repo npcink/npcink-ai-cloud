@@ -169,7 +169,26 @@ h4,
 }
 
 [data-density="compact"] .input {
+  height: var(--admin-compact-control-height);
   min-height: var(--admin-compact-control-height);
+  border-radius: var(--admin-compact-radius);
+  padding-block: 0.25rem;
+  padding-inline: 0.75rem;
+  line-height: 1.25rem;
+}
+
+[data-density="compact"] select.input {
+  padding-right: 2rem;
+  background-position:
+    calc(100% - 1rem) 50%,
+    calc(100% - 0.72rem) 50%;
+  background-size:
+    0.3rem 0.3rem,
+    0.3rem 0.3rem;
+}
+
+[data-density="compact"] .input:focus {
+  box-shadow: 0 0 0 1px rgb(37 99 235 / 0.72);
 }
 
 .admin-compact-surface {
