@@ -285,6 +285,58 @@ def test_payment_service_verifies_gateway_callbacks(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
+def test_payment_callback_cannot_forge_order_ownership_subjects(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    service.upsert_account(account_id="acct_pay_other", name="Other payment account")
+    owned_order = service.create_payment_order(
+        account_id="acct_pay",
+        site_id="site_pay_owned",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("payment-forged-subject-owned-order"),
+    )
+    other_order = service.create_payment_order(
+        account_id="acct_pay_other",
+        site_id="site_pay_other",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("payment-forged-subject-other-order"),
+    )
+
+    processed = service.process_payment_gateway_callback(
+        provider="alipay",
+        raw_event={
+            "out_trade_no": owned_order["external_order_no"],
+            "trade_no": "202607270000000001",
+            "notify_id": "notify-forged-subject-001",
+            "total_amount": "199.00",
+            "trade_status": "TRADE_SUCCESS",
+            "account_id": "acct_pay_other",
+            "site_id": "site_pay_other",
+            "principal_id": "prn_forged",
+        },
+        audit_context=_audit("payment-forged-subject-callback"),
+    )
+
+    assert processed["mutation_applied"] is True
+    assert processed["payment"]["order"]["order_id"] == owned_order["order_id"]
+    assert processed["payment"]["order"]["account_id"] == "acct_pay"
+    assert processed["payment"]["order"]["site_id"] == "site_pay_owned"
+    with get_session(database_url) as session:
+        untouched = session.get(PaymentOrder, str(other_order["order_id"]))
+        assert untouched is not None
+        assert untouched.account_id == "acct_pay_other"
+        assert untouched.site_id == "site_pay_other"
+        assert untouched.status == PAYMENT_ORDER_STATUS_PENDING
+
+    dispose_engine(database_url)
+
+
 def test_pro_monthly_payment_replaces_free_or_trial_subscription(tmp_path: Path) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)

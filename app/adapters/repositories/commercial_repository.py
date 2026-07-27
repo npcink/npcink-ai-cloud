@@ -23,6 +23,7 @@ from app.core.models import (
     PORTAL_OAUTH_STATE_STATUS_PENDING,
     PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
     PRINCIPAL_STATUS_ACTIVE,
+    SITE_STATUS_ACTIVE,
     Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -856,6 +857,54 @@ class CommercialRepository:
             AccountUserMembership.membership_id.desc(),
         )
         return list(self.session.scalars(statement))
+
+    def count_active_account_principals(self, *, account_id: str) -> int:
+        statement = (
+            select(func.count(func.distinct(AccountUserMembership.principal_id)))
+            .join(
+                Principal,
+                Principal.principal_id == AccountUserMembership.principal_id,
+            )
+            .where(
+                AccountUserMembership.account_id == account_id,
+                AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                Principal.status == PRINCIPAL_STATUS_ACTIVE,
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def count_active_account_sites(self, *, account_id: str) -> int:
+        statement = select(func.count(Site.site_id)).where(
+            Site.account_id == account_id,
+            Site.status == SITE_STATUS_ACTIVE,
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def count_active_principal_bound_sites(
+        self,
+        *,
+        account_id: str,
+        principal_id: str,
+    ) -> int:
+        statement = (
+            select(func.count(func.distinct(Site.site_id)))
+            .join(
+                PrincipalSiteBinding,
+                and_(
+                    PrincipalSiteBinding.site_id == Site.site_id,
+                    PrincipalSiteBinding.account_id == Site.account_id,
+                    PrincipalSiteBinding.principal_id == principal_id,
+                    PrincipalSiteBinding.status
+                    == PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+                    PrincipalSiteBinding.released_at.is_(None),
+                ),
+            )
+            .where(
+                Site.account_id == account_id,
+                Site.status == SITE_STATUS_ACTIVE,
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
 
     def revoke_account_user_memberships(self, *, principal_id: str) -> int:
         memberships = self.list_account_user_memberships(
