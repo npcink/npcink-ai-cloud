@@ -16,6 +16,7 @@ const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 
 const workbenchSource = readFileSync(fromFrontendRoot('src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
+const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
 
 function listFiles(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -33,9 +34,17 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 1, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 2, 'admin UI manifest version must be explicit');
 assert.equal(manifest.referenceRoute, '/admin/ai-resources', 'the accepted provider queue must remain the reference route');
 assert.equal(manifest.routes[manifest.referenceRoute], 'queue', 'the reference route must remain a queue page');
+assert.deepEqual(
+  manifest.referenceRoutes,
+  {
+    queue: '/admin/ai-resources',
+    configuration: '/admin/external-services',
+  },
+  'accepted reference routes must cover the queue and configuration models'
+);
 assert.deepEqual(
   manifest.pageModels,
   ['overview', 'queue', 'detail', 'configuration', 'diagnostic', 'authentication'],
@@ -119,6 +128,16 @@ assert.match(
   providerTableSource,
   /AdminDataTableFrame[\s\S]*data-ui="model-supplier-table"[\s\S]*<thead[\s\S]*<tbody/,
   'the reference queue must reuse the shared semantic table frame'
+);
+assert.match(
+  externalServicesPageSource,
+  /AdminDataTableFrame[\s\S]*data-ui="external-service-table"[\s\S]*<thead[\s\S]*<tbody/,
+  'the reference configuration page must reuse the shared semantic table frame'
+);
+assert.match(
+  externalServicesPageSource,
+  /AdminWorkbenchDialog[\s\S]*AdminCredentialField[\s\S]*AdminSettingsDisclosure/,
+  'the reference configuration page must reuse workbench, credential, and disclosure primitives'
 );
 
 const routeLocalDialogFiles = listFiles(adminRoot, (path) => path.endsWith('.tsx'))

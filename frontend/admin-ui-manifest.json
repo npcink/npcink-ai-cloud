@@ -1,7 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
+  "referenceRoutes": {
+    "queue": "/admin/ai-resources",
+    "configuration": "/admin/external-services"
+  },
   "viewport": {
     "width": 1440,
     "height": 1050
@@ -54,7 +58,6 @@
     "src/app/admin/service-settings/page.tsx"
   ],
   "legacyRouteLocalCredentials": [
-    "src/app/admin/external-services/page.tsx",
     "src/app/admin/service-settings/page.tsx",
     "src/app/admin/vector-settings/page.tsx"
   ]
