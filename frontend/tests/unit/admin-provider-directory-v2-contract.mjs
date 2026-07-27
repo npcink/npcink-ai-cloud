@@ -115,8 +115,27 @@ assert.match(
 
 assert.match(
   pageSource,
-  /data-ui="model-sync-primary"[\s\S]*model_visibility_more_operations/,
-  'The primary model sync action must stay beside model search rather than inside the overflow panel'
+  /data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*field_feature_filter[\s\S]*field_show_deprecated_models[\s\S]*data-ui="model-sync-primary"/,
+  'Model search, filters, history visibility, and synchronization must stay in one stable toolbar'
+);
+
+assert.match(
+  pageSource,
+  /data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
+  'Reference source, manual additions, and bulk maintenance must use in-flow configuration rows'
+);
+
+assert.match(
+  pageSource,
+  /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/,
+  'Clearing every enabled model must require an impact-specific confirmation'
+);
+assert.match(pageSource, /data-ui="model-clear-all-request"/);
+
+assert.doesNotMatch(
+  pageSource,
+  /model_visibility_more_operations[\s\S]*sm:absolute sm:right-0 sm:z-30/,
+  'Model maintenance must not open a floating panel over the model table'
 );
 
 console.log('admin_provider_directory_v2_contract: ok');

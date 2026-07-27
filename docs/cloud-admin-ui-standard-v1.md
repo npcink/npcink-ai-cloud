@@ -28,7 +28,10 @@ accessibility, preserve the stronger boundary first.
 6. a wide edit workbench with one dense connection table above model
    visibility;
 7. explicit credential replacement instead of a prefilled secret field;
-8. low-frequency runtime metadata and uncommon model operations collapsed.
+8. one stable model toolbar for search, filters, history visibility, and
+   synchronization;
+9. one in-flow model-maintenance table for reference source, manual additions,
+   and confirmed bulk clearing; it must not float over the model data table.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
@@ -104,6 +107,10 @@ Do not change an API or data owner merely to make two routes look alike.
 - Identity, status, reason, and next action remain scannable in one pass.
 - Search and filters stay in one stable toolbar above the table.
 - Configure/apply is primary; test/refresh is secondary.
+- A table's filter, synchronization, maintenance, and status controls must not
+  open a floating panel that obscures the rows being operated on.
+- Recovery-only actions appear with the failed state instead of competing with
+  routine actions in the default toolbar.
 - Delete, debug, raw evidence, documentation, and low-frequency reference
   links stay behind an overflow or disclosure unless they block the task.
 - Transient feedback must not move the table or reset unrelated filters.
@@ -122,6 +129,9 @@ new route-local table shell.
 - Essential connection values use one dense configuration table during routine
   editing; only advanced runtime metadata starts collapsed.
 - Put the main work object, such as model visibility, in the default view.
+- Model maintenance uses concise in-flow configuration rows. Historical-model
+  visibility remains a filter, manual IDs remain a row-level add operation,
+  and clearing all enabled models requires an impact-specific confirmation.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
 - Short, fixed service configuration uses `AdminConfigurationTable` instead of

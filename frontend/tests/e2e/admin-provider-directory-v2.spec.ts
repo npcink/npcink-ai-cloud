@@ -323,7 +323,7 @@ test('editing a provider uses a dense connection table above the model workbench
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveCSS('max-width', '1152px');
-  const configurationTable = dialog.locator('[data-ui="admin-configuration-table"]');
+  const configurationTable = dialog.getByRole('table', { name: /MQZJ configuration|MQZJ 配置/i });
   await expect(configurationTable).toBeVisible();
   await expect(configurationTable.locator('tbody tr')).toHaveCount(7);
   await expect(dialog.locator('[data-configuration-row="image-response-format"]')).toBeVisible();
@@ -331,13 +331,24 @@ test('editing a provider uses a dense connection table above the model workbench
   await expect(dialog.locator('details[data-ui="provider-connection-settings"]')).toHaveCount(0);
   await expect(dialog.locator('details[data-ui="image-delivery-settings"]')).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: /Model visibility|模型可见性/i })).toBeVisible();
+  await expect(dialog.locator('[data-ui="model-visibility-toolbar"]')).toBeVisible();
   await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeVisible();
+  await expect(dialog.getByText(/^More operations$|^更多操作$/i)).toHaveCount(0);
+  const maintenanceTable = dialog.locator('[data-ui="model-maintenance-table"]').getByRole('table');
+  await expect(maintenanceTable).toBeVisible();
+  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(3);
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
     scale: 'css',
     maxDiffPixelRatio: 0.015,
   });
+
+  await dialog.locator('[data-ui="model-clear-all-request"]').click();
+  await expect(dialog.locator('[data-ui="model-clear-all-confirm"]')).toBeVisible();
+  await expect(dialog.getByText(/Disable all 2 currently enabled models|取消启用当前 2 个模型/i)).toBeVisible();
+  await maintenanceTable.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
+  await expect(dialog.locator('[data-ui="model-clear-all-request"]')).toBeVisible();
 
   const replaceCredentialButton = dialog.getByRole('button', { name: /Replace credential|替换凭据/i });
   await expect(replaceCredentialButton).toBeVisible();

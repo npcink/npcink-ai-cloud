@@ -849,6 +849,7 @@ function AiResourcesContent() {
   const [modelReferenceFeatureFilter, setModelReferenceFeatureFilter] = useState<ModelReferenceFeatureFilter>('all');
   const [modelReferenceVisibilityFilter, setModelReferenceVisibilityFilter] = useState<ModelReferenceVisibilityFilter>('all');
   const [modelReferenceShowDeprecated, setModelReferenceShowDeprecated] = useState(false);
+  const [confirmingClearModels, setConfirmingClearModels] = useState(false);
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
   const [providerFormOpen, setProviderFormOpen] = useState(false);
   const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
@@ -1337,6 +1338,7 @@ function AiResourcesContent() {
     setModelReferenceFeatureFilter('all');
     setModelReferenceVisibilityFilter('all');
     setModelReferenceShowDeprecated(true);
+    setConfirmingClearModels(false);
     setCustomModelInput('');
     setError('');
     setMessage('');
@@ -1354,6 +1356,7 @@ function AiResourcesContent() {
     setModelReferenceFeatureFilter('all');
     setModelReferenceVisibilityFilter('all');
     setModelReferenceShowDeprecated(true);
+    setConfirmingClearModels(false);
     setCustomModelInput('');
     setProviderFormMode('edit');
     setCredentialEditOpen(false);
@@ -1381,6 +1384,7 @@ function AiResourcesContent() {
   function closeProviderForm() {
     setProviderFormOpen(false);
     setCredentialEditOpen(true);
+    setConfirmingClearModels(false);
     setMessage('');
     setError('');
   }
@@ -1396,6 +1400,7 @@ function AiResourcesContent() {
   }
 
   function setProviderModelIds(modelIds: string[]) {
+    setConfirmingClearModels(false);
     const inferredReferenceProviderId = inferReferenceProviderFromModelIds(modelIds, modelReferenceProviderId);
     if (modelIds.length && inferredReferenceProviderId !== modelReferenceProviderId) {
       setModelReferenceProviderId(inferredReferenceProviderId);
@@ -1662,55 +1667,6 @@ function AiResourcesContent() {
     syncingModelReferences,
   ]);
 
-  const modelReferenceStatusText = useMemo(() => {
-    const providerLabel = referenceProviderLabel(modelReferenceProviderId);
-    if (autoSyncingModelReferences) {
-      return aiText('model_reference_status_auto_syncing', 'Reference intelligence: {{provider}} · syncing models.dev automatically...', {
-        provider: providerLabel,
-      });
-    }
-    if (loadingModelReferences) {
-      return aiText('model_reference_status_loading', 'Reference intelligence: {{provider}} · loading...', {
-        provider: providerLabel,
-      });
-    }
-    if (modelReferenceAutoSyncError && modelReferenceTotal <= 0) {
-      return aiText('model_reference_status_auto_sync_failed', 'Reference intelligence: {{provider}} · automatic sync failed: {{message}}', {
-        provider: providerLabel,
-        message: modelReferenceAutoSyncError,
-      });
-    }
-    if (modelReferenceTotal > 0) {
-      return aiText('model_reference_status_loaded', 'Reference intelligence: {{provider}} · {{count}} local records from models.dev.', {
-        provider: providerLabel,
-        count: String(modelReferenceTotal),
-      });
-    }
-    if (modelsDevReferenceSource?.status === 'error') {
-      return aiText('model_reference_status_error', 'Reference intelligence: {{provider}} · models.dev sync failed: {{message}}', {
-        provider: providerLabel,
-        message: modelsDevReferenceSource.last_error_message || modelsDevReferenceSource.last_error_code || aiText('unknown', 'unknown'),
-      });
-    }
-    if (modelsDevReferenceSource?.last_synced_at) {
-      return aiText('model_reference_status_empty_after_sync', 'Reference intelligence: {{provider}} · no local match after models.dev sync at {{time}}.', {
-        provider: providerLabel,
-        time: formatDate(modelsDevReferenceSource.last_synced_at),
-      });
-    }
-    return aiText('model_reference_status_not_synced', 'Reference intelligence: {{provider}} · not synced locally yet.', {
-      provider: providerLabel,
-    });
-  }, [
-    aiText,
-    autoSyncingModelReferences,
-    loadingModelReferences,
-    modelReferenceAutoSyncError,
-    modelReferenceProviderId,
-    modelReferenceTotal,
-    modelsDevReferenceSource,
-  ]);
-
   const modelReferenceCompactStatusText = useMemo(() => {
     if (autoSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
@@ -1733,6 +1689,9 @@ function AiResourcesContent() {
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
+  const modelReferenceHasSyncError = Boolean(
+    modelReferenceAutoSyncError || modelsDevReferenceSource?.status === 'error'
+  );
 
   const modelVisibilityRows = useMemo<ModelVisibilityRow[]>(() => {
     const rows = new Map<string, ModelVisibilityRow>();
@@ -2085,171 +2044,205 @@ function AiResourcesContent() {
 
                 <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
                   <div className="grid gap-3">
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
-                        <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
-                        </p>
-                        <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {aiText('model_visibility_compact_summary', 'Enabled {{enabled}} / available {{available}} · {{status}}', {
-                            enabled: String(splitList(providerConnectionForm.modelIds).length),
-                            available: String(availableModelCount),
-                            status: modelReferenceCompactStatusText,
-                          })}
-                          {selectedModelMetadataGapCount ? (
-                            <>
-                              {' '}
-                              {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
-                                count: String(selectedModelMetadataGapCount),
-                              })}
-                            </>
-                          ) : null}
-                        </p>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
+                      <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
+                        {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-slate-500 dark:text-slate-400">
+                        <span data-ui="model-visibility-status">
+                          {aiText(
+                            'model_visibility_operating_summary',
+                            'Enabled {{enabled}} / available {{available}} · upstream {{upstream}} · intelligence {{intelligence}} · {{provider}} · {{status}}',
+                            {
+                              enabled: String(selectedProviderModelIds.length),
+                              available: String(availableModelCount),
+                              upstream: providerCatalogPreview ? String(providerCatalogPreview.model_count) : '—',
+                              intelligence: String(modelReferenceTotal),
+                              provider: referenceProviderLabel(modelReferenceProviderId),
+                              status: modelReferenceCompactStatusText,
+                            }
+                          )}
+                        </span>
+                        {modelReferenceHasSyncError ? (
+                          <button
+                            type="button"
+                            data-ui="model-reference-retry"
+                            className="font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
+                            disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
+                            onClick={() => void syncModelReferences()}
+                          >
+                            {syncingModelReferences || autoSyncingModelReferences
+                              ? aiText('action_syncing_model_references', 'Syncing...')
+                              : aiText('action_sync_model_references', 'Retry intelligence only')}
+                          </button>
+                        ) : null}
                       </div>
+                      {selectedModelMetadataGapCount ? (
+                        <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                          {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
+                            count: String(selectedModelMetadataGapCount),
+                          })}
+                        </p>
+                      ) : null}
+                    </div>
 
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end xl:justify-end">
-                        <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300 sm:w-80">
-                          <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
-                          <input
-                            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            value={modelReferenceSearch}
-                            onChange={(event) => setModelReferenceSearch(event.target.value)}
-                            placeholder={aiText('placeholder_search_models', 'model, family, provider')}
+                    <div data-ui="model-visibility-toolbar" className="flex flex-wrap items-center gap-2">
+                      <label className="min-w-[16rem] flex-1">
+                        <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
+                        <input
+                          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          value={modelReferenceSearch}
+                          onChange={(event) => setModelReferenceSearch(event.target.value)}
+                          placeholder={aiText('placeholder_search_models', 'model, family, provider')}
+                        />
+                      </label>
+                      <select
+                        className="h-10 min-w-28 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                        value={modelReferenceVisibilityFilter}
+                        onChange={(event) => setModelReferenceVisibilityFilter(event.target.value as ModelReferenceVisibilityFilter)}
+                        aria-label={aiText('field_visibility_filter', 'Visibility')}
+                      >
+                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="enabled">{aiText('filter_enabled_models', 'Enabled')}</option>
+                        <option value="disabled">{aiText('filter_disabled_models', 'Disabled')}</option>
+                      </select>
+                      <select
+                        className="h-10 min-w-32 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                        value={modelReferenceFeatureFilter}
+                        onChange={(event) => setModelReferenceFeatureFilter(event.target.value as ModelReferenceFeatureFilter)}
+                        aria-label={aiText('field_feature_filter', 'Feature')}
+                      >
+                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
+                        <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
+                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
+                        <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
+                        <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
+                      </select>
+                      <label className="inline-flex h-10 shrink-0 items-center gap-2 px-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={modelReferenceShowDeprecated}
+                          onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
+                        />
+                        {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
+                      </label>
+                      <button
+                        type="button"
+                        data-ui="model-sync-primary"
+                        className="btn btn-secondary h-10 shrink-0 px-3"
+                        disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
+                        onClick={() => void fetchProviderCatalogPreview()}
+                      >
+                        {fetchingProviderCatalog || syncingModelReferences
+                          ? aiText('action_fetching_upstream_models', 'Syncing...')
+                          : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
+                      </button>
+                    </div>
+
+                    <div data-ui="model-maintenance-table">
+                      <AdminConfigurationTable
+                        ariaLabel={aiText('model_maintenance_table_label', 'Model maintenance')}
+                        itemHeading={aiText('configuration_item_heading', 'Setting')}
+                        valueHeading={aiText('configuration_value_heading', 'Current setting')}
+                        detailHeading={aiText('configuration_detail_heading', 'Action / note')}
+                      >
+                        {referenceProviderCanBeChanged ? (
+                          <AdminConfigurationRow
+                            rowId="model-reference-provider"
+                            label={aiText('field_reference_provider', 'Reference source')}
+                            value={(
+                              <select
+                                className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                value={modelReferenceProviderId}
+                                onChange={(event) => setModelReferenceProviderId(event.target.value)}
+                                aria-label={aiText('field_reference_provider', 'Reference source')}
+                              >
+                                {modelReferenceProviderOptions.map((providerId) => (
+                                  <option key={providerId} value={providerId}>
+                                    {referenceProviderLabel(providerId)}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            detail={aiText('reference_provider_desc', 'Only compatible or custom channels need this. Clear provider types automatically use their own reference intelligence.')}
                           />
-                        </label>
-
-                        <button
-                          type="button"
-                          data-ui="model-sync-primary"
-                          className="btn btn-secondary h-10 shrink-0 px-3"
-                          disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
-                          onClick={() => void fetchProviderCatalogPreview()}
-                        >
-                          {fetchingProviderCatalog || syncingModelReferences
-                            ? aiText('action_fetching_upstream_models', 'Syncing...')
-                            : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
-                        </button>
-
-                        <details className="relative text-xs text-slate-600 dark:text-slate-300">
-                          <summary className="flex h-10 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700">
-                            {aiText('model_visibility_more_operations', 'More operations')}
-                          </summary>
-                          <div className="mt-2 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:absolute sm:right-0 sm:z-30 sm:w-[42rem]">
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]">
-                              <div className="grid gap-2">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                                  {aiText('model_visibility_operations_title', 'Actions')}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className="h-9 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700"
-                                    disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
-                                    onClick={() => void syncModelReferences()}
-                                  >
-                                    {syncingModelReferences || autoSyncingModelReferences
-                                      ? aiText('action_syncing_model_references', 'Syncing...')
-                                      : aiText('action_sync_model_references', 'Retry intelligence only')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="h-9 rounded-full border border-transparent bg-transparent px-3 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                                    disabled={!splitList(providerConnectionForm.modelIds).length || savingConnection}
-                                    onClick={() => setProviderModelIds([])}
-                                  >
-                                    {aiText('action_clear_all_models', 'Clear all')}
-                                  </button>
-                                  <label className="flex h-9 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                    <input
-                                      type="checkbox"
-                                      checked={modelReferenceShowDeprecated}
-                                      onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
-                                    />
-                                    {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
-                                  </label>
-                                </div>
-                              </div>
-
-                              <div className="grid gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                                  {aiText('model_visibility_status_title', 'Status')}
-                                </div>
-                                <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                  <div>
-                                    {providerCatalogPreview
-                                      ? aiText('catalog_preview_loaded', 'Loaded {{count}} models from upstream.', {
-                                        count: String(providerCatalogPreview.model_count),
-                                      })
-                                      : aiText('model_catalog_empty_compact', 'Upstream catalog has not been synced yet.')}
-                                  </div>
-                                  <div>{modelReferenceStatusText}</div>
-                                </div>
-                              </div>
+                        ) : null}
+                        <AdminConfigurationRow
+                          rowId="manual-model-add"
+                          label={aiText('manual_model_add_title', 'Add model ID manually')}
+                          value={(
+                            <div className="flex items-center gap-2">
+                              <input
+                                className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                value={customModelInput}
+                                onChange={(event) => setCustomModelInput(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    addCustomProviderModels();
+                                  }
+                                }}
+                                placeholder={aiText('placeholder_add_custom_models', 'Add specified models, separated by commas')}
+                                aria-label={aiText('manual_model_add_title', 'Add model ID manually')}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-secondary h-9 shrink-0 px-3"
+                                disabled={!customModelInput.trim()}
+                                onClick={addCustomProviderModels}
+                              >
+                                {aiText('action_add_model', 'Add')}
+                              </button>
                             </div>
-
-                            {referenceProviderCanBeChanged ? (
-                              <details className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
-                                  {aiText('reference_provider_summary', 'Reference intelligence source: {{provider}}', {
-                                    provider: referenceProviderLabel(modelReferenceProviderId),
-                                  })}
-                                </summary>
-                                <label className="mt-3 grid max-w-sm gap-1 font-semibold">
-                                  {aiText('field_reference_provider', 'Reference source')}
-                                  <select
-                                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                                    value={modelReferenceProviderId}
-                                    onChange={(event) => setModelReferenceProviderId(event.target.value)}
-                                  >
-                                    {modelReferenceProviderOptions.map((providerId) => (
-                                      <option key={providerId} value={providerId}>
-                                        {referenceProviderLabel(providerId)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <p className="mt-2 leading-5 text-slate-500 dark:text-slate-400">
-                                  {aiText('reference_provider_desc', 'Only compatible or custom channels need this. Clear provider types automatically use their own reference intelligence.')}
-                                </p>
-                              </details>
-                            ) : null}
-
-                            <div className="grid gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                              <div>
-                                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                  {aiText('manual_model_add_title', 'Add model ID manually')}
-                                </div>
-                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                  {aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
-                                </p>
-                              </div>
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <input
-                                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                                  value={customModelInput}
-                                  onChange={(event) => setCustomModelInput(event.target.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                      event.preventDefault();
-                                      addCustomProviderModels();
-                                    }
-                                  }}
-                                  placeholder={aiText('placeholder_add_custom_models', 'Add specified models, separated by commas')}
-                                />
+                          )}
+                          detail={aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
+                        />
+                        <AdminConfigurationRow
+                          rowId="enabled-model-bulk-maintenance"
+                          label={aiText('enabled_models_maintenance_label', 'Enabled models')}
+                          value={aiText('model_catalog_enabled_count_short', '{{count}} models', {
+                            count: String(selectedProviderModelIds.length),
+                          })}
+                          detail={confirmingClearModels ? (
+                            <span className="grid gap-2">
+                              <span className="text-rose-700 dark:text-rose-300">
+                                {aiText('clear_all_models_confirmation', 'Disable all {{count}} currently enabled models?', {
+                                  count: String(selectedProviderModelIds.length),
+                                })}
+                              </span>
+                              <span className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  className="btn btn-secondary h-10 shrink-0"
-                                  disabled={!customModelInput.trim()}
-                                  onClick={addCustomProviderModels}
+                                  data-ui="model-clear-all-confirm"
+                                  className="font-semibold text-rose-700 hover:underline dark:text-rose-300"
+                                  onClick={() => setProviderModelIds([])}
                                 >
-                                  {aiText('action_add_model', 'Add')}
+                                  {aiText('action_confirm_clear_all_models', 'Confirm clear')}
                                 </button>
-                              </div>
-                            </div>
-                          </div>
-                        </details>
-                      </div>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
+                                  onClick={() => setConfirmingClearModels(false)}
+                                >
+                                  {aiText('action_cancel', 'Cancel')}
+                                </button>
+                              </span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              data-ui="model-clear-all-request"
+                              className="font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
+                              disabled={!selectedProviderModelIds.length || savingConnection}
+                              onClick={() => setConfirmingClearModels(true)}
+                            >
+                              {aiText('action_clear_all_models', 'Clear all')}
+                            </button>
+                          )}
+                        />
+                      </AdminConfigurationTable>
                     </div>
 
                     {loadingModelReferences ? (
@@ -2261,34 +2254,9 @@ function AiResourcesContent() {
                           <table className="w-full min-w-[50rem] text-left text-xs">
                             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_rgba(30,41,59,0.9)]">
                               <tr>
-                                <th className="px-3 py-2 font-semibold">
-                                  <select
-                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold normal-case tracking-normal text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-                                    value={modelReferenceVisibilityFilter}
-                                    onChange={(event) => setModelReferenceVisibilityFilter(event.target.value as ModelReferenceVisibilityFilter)}
-                                    aria-label={aiText('field_visibility_filter', 'Visibility')}
-                                  >
-                                    <option value="all">{aiText('filter_all', 'All')}</option>
-                                    <option value="enabled">{aiText('filter_enabled_models', 'Enabled')}</option>
-                                    <option value="disabled">{aiText('filter_disabled_models', 'Disabled')}</option>
-                                  </select>
-                                </th>
+                                <th className="px-3 py-2 font-semibold">{aiText('column_model_visibility', 'Visibility')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_model', 'Model')}</th>
-                                <th className="px-3 py-2 font-semibold">
-                                  <select
-                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold normal-case tracking-normal text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-                                    value={modelReferenceFeatureFilter}
-                                    onChange={(event) => setModelReferenceFeatureFilter(event.target.value as ModelReferenceFeatureFilter)}
-                                    aria-label={aiText('field_feature_filter', 'Feature')}
-                                  >
-                                    <option value="all">{aiText('filter_all', 'All')}</option>
-                                    <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
-                                    <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
-                                    <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
-                                    <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
-                                    <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
-                                  </select>
-                                </th>
+                                <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_feature', 'Feature')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('column_context_output', 'Context / output')}</th>
                                 <th className="px-3 py-2 font-semibold">
                                   <span>{aiText('column_reference_price', 'Reference price')}</span>
