@@ -109,6 +109,11 @@ assert.doesNotMatch(
   /max-w-(?:4xl|5xl|6xl)|max-w-\[(?:960|1152)px\]/,
   'shared workbench width must come from the admin token'
 );
+assert.match(
+  workbenchSource,
+  /grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto/,
+  'workbench sections must keep natural row height and scroll instead of overlapping under dense data'
+);
 
 for (const primitive of [
   'AdminConfigurationTable',
@@ -124,8 +129,8 @@ for (const primitive of [
 
 assert.match(
   providerPageSource,
-  /AdminCredentialField[\s\S]*AdminSettingsDisclosure[\s\S]*dataUi="image-delivery-settings"/,
-  'the reference provider editor must reuse credential and disclosure primitives'
+  /AdminConfigurationTable[\s\S]*AdminCredentialField[\s\S]*rowId="image-response-format"[\s\S]*rowId="image-output-hosts"/,
+  'the reference provider editor must reuse configuration-table and credential primitives'
 );
 assert.match(
   providerTableSource,

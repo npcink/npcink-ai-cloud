@@ -12,7 +12,6 @@ const adminLayoutSource = readFileSync(resolve(root, 'src/app/admin/layout.tsx')
 const globalStyleSource = readFileSync(resolve(root, 'src/app/globals.css'), 'utf8');
 const dialogSource = readFileSync(resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const credentialSource = readFileSync(resolve(root, 'src/components/admin/AdminCredentialField.tsx'), 'utf8');
-const disclosureSource = readFileSync(resolve(root, 'src/components/admin/AdminSettingsDisclosure.tsx'), 'utf8');
 
 assert.match(
   summarySource,
@@ -98,8 +97,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /headerAccessory=\{providerFormMode === 'edit'[\s\S]*credential_keep_hint[\s\S]*data-ui="provider-connection-settings"[\s\S]*AdminCredentialField[\s\S]*credentialEditOpen/,
-  'Editing an existing provider must use a neutral credential hint, collapsed connection settings, and explicit credential replacement'
+  /AdminConfigurationTable[\s\S]*rowId="credential"[\s\S]*AdminCredentialField[\s\S]*credentialEditOpen/,
+  'Editing an existing provider must use a dense configuration table and explicit credential replacement'
 );
 
 assert.match(
@@ -110,14 +109,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /AdminSettingsDisclosure[\s\S]*dataUi="image-delivery-settings"[\s\S]*image_delivery_unconfirmed_compact/,
-  'Image delivery must be a compact disclosure instead of a dominant always-open panel'
-);
-
-assert.match(
-  disclosureSource,
-  /<details[\s\S]*<summary[\s\S]*statusTone/,
-  'Low-frequency configuration must use the shared settings disclosure'
+  /rowId="image-response-format"[\s\S]*image_delivery_unconfirmed_compact[\s\S]*image_delivery_test_not_proof_compact[\s\S]*rowId="image-output-hosts"/,
+  'Image delivery must use concise configuration rows while retaining the separate-delivery-test boundary'
 );
 
 assert.match(

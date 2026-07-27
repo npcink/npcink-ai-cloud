@@ -59,8 +59,8 @@ assert.match(pageSource, /image_response_format: providerConnectionForm\.imageRe
 assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
 assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);
 assert.match(pageSource, /imageOutputHostsAreExact\(imageOutputHosts\)/);
-assert.match(pageSource, /URL output requires an exact provider-owned download host/);
-assert.match(pageSource, /schemes, paths, ports, and wildcards are rejected/);
+assert.match(pageSource, /Connection testing does not prove image delivery/);
+assert.match(pageSource, /URL mode accepts exact hosts only; no scheme, path, port, or wildcard/);
 assert.match(i18nSource, /'admin\.ai_resources\.field_image_output_hosts': '精确图片下载域名'/);
 assert.match(i18nSource, /文本或模型目录连接测试通过，不代表生成图片一定可以交付/);
 assert.match(i18nSource, /不能包含协议、路径、端口或通配符/);
