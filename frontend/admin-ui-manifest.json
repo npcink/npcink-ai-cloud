@@ -56,7 +56,5 @@
     "src/app/admin/layout.tsx",
     "src/app/admin/plans/[planId]/page.tsx"
   ],
-  "legacyRouteLocalCredentials": [
-    "src/app/admin/vector-settings/page.tsx"
-  ]
+  "legacyRouteLocalCredentials": []
 }
