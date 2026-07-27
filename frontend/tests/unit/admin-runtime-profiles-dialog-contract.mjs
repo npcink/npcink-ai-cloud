@@ -115,8 +115,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /disabled=\{primary \|\| !editingProfile\.candidate_instance_ids\[0\]\}/,
-  'a fallback cannot be selected before the primary candidate exists'
+  /disabled=\{tone === 'error'\}[\s\S]*disabled=\{tone === 'error' \|\| primary \|\| !editingProfile\.candidate_instance_ids\[0\]\}/,
+  'unavailable models must be disabled and a fallback cannot be selected before the primary candidate exists'
 );
 
 assert.match(
@@ -147,17 +147,25 @@ assert.match(
   'profile readiness must require an available and healthy primary model, block unhealthy, and warn on unknown health'
 );
 
-const dialogIndex = pageSource.indexOf('createPortal(');
+const dialogIndex = pageSource.indexOf('<AdminWorkbenchDialog');
 const candidateRowsIndex = pageSource.indexOf('candidates.map');
-assert.ok(dialogIndex >= 0, 'hosted runtime profile editing must use a bounded dialog');
+assert.ok(dialogIndex >= 0, 'hosted runtime profile editing must use the shared admin workbench');
 assert.ok(candidateRowsIndex > dialogIndex, 'model candidates must only render inside the edit dialog');
 assert.equal(pageSource.indexOf('candidates.map', candidateRowsIndex + 1), -1, 'model candidates must not be duplicated outside the dialog');
 
 assert.match(
   pageSource,
-  /const dialogRef = useDialogKeyboard<[\s\S]*ref=\{dialogRef\}/,
-  'the runtime profile dialog must keep Escape, focus containment, and trigger restoration'
+  /AdminDataTableFrame[\s\S]*dataUi="runtime-profile-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
+  'the runtime profile directory must use the shared semantic table frame'
 );
+
+assert.match(
+  pageSource,
+  /<AdminWorkbenchDialog[\s\S]*<AdminConfigurationTable[\s\S]*data-ui="runtime-profile-model-toolbar"[\s\S]*data-ui="runtime-profile-candidate-table"[\s\S]*type="radio"[\s\S]*name=\{`runtime-primary-[\s\S]*type="radio"[\s\S]*name=\{`runtime-fallback-/,
+  'the shared workbench must use configuration and candidate tables with primary and fallback radio columns'
+);
+
+assert.doesNotMatch(pageSource, /createPortal|useDialogKeyboard/, 'runtime profile editing must not retain a route-local dialog implementation');
 
 assert.match(
   pageSource,
