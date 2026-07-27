@@ -36,6 +36,8 @@ SITE_STATUS_ARCHIVED = "archived"
 PLATFORM_KIND_WORDPRESS = "wordpress"
 SITE_ACCOUNT_BINDING_STATUS_ACTIVE = "active"
 SITE_ACCOUNT_BINDING_STATUS_RELEASED = "released"
+PRINCIPAL_SITE_BINDING_STATUS_ACTIVE = "active"
+PRINCIPAL_SITE_BINDING_STATUS_RELEASED = "released"
 
 SITE_API_KEY_STATUS_ACTIVE = "active"
 SITE_API_KEY_STATUS_REVOKED = "revoked"
@@ -203,6 +205,10 @@ class PortalLoginCode(Base):
 class PlatformAdminGrant(Base):
     __tablename__ = "platform_admin_grants"
     __table_args__ = (
+        CheckConstraint(
+            "role IN ('platform_admin')",
+            name="ck_platform_admin_grants_role",
+        ),
         UniqueConstraint("principal_id", name="uq_platform_admin_grants_principal_id"),
     )
 
@@ -469,6 +475,61 @@ class Principal(Base):
     session_version: Mapped[int] = mapped_column(Integer, default=1)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PrincipalSiteBinding(Base):
+    __tablename__ = "principal_site_bindings"
+    __table_args__ = (
+        CheckConstraint(
+            "(status = 'active' AND released_at IS NULL) OR "
+            "(status = 'released' AND released_at IS NOT NULL)",
+            name="ck_principal_site_bindings_lifecycle",
+        ),
+        Index(
+            "uq_principal_site_bindings_current_site",
+            "site_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+            sqlite_where=text("released_at IS NULL"),
+        ),
+        Index(
+            "ix_principal_site_bindings_principal_status",
+            "principal_id",
+            "status",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(
+        ForeignKey("principals.principal_id"),
+        index=True,
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.account_id"),
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+        index=True,
+    )
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    release_reason: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

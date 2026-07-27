@@ -9,7 +9,7 @@ for arg in "$@"; do
 		continue
 	fi
 	if [ "${arg}" = "--member-email" ]; then
-		ARGS+=("--site-admin-email")
+		ARGS+=("--user-email")
 		continue
 	fi
 	ARGS+=("${arg}")

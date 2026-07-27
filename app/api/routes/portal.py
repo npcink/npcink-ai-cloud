@@ -3952,6 +3952,7 @@ async def remove_portal_site(request: Request, site_id: str) -> Any:
     try:
         result = _get_commercial_service(request).remove_portal_site(
             site_id,
+            principal_id=auth.principal_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:

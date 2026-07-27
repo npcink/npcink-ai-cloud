@@ -50,6 +50,7 @@ def _runtime_payload(ca_pem: str) -> dict[str, object]:
         },
         "security": {
             "internal_auth_token_file": "frontend/internal-auth-token",
+            "admin_principal_id": "prn_0123456789abcdef0123456789abcdef",
             "admin_key_sha256": "a" * 64,
             "admin_session_secret": "admin-session-secret-value-that-is-long-enough",
             "service_settings_secret": "U1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1M=",
@@ -93,6 +94,7 @@ def test_completed_runtime_config_loads_structured_rds_and_secret_projection(
     assert values["project_name"] == "Test Cloud"
     assert values["environment"] == "production"
     assert values["admin_key_sha256"] == "a" * 64
+    assert values["admin_principal_id"] == "prn_0123456789abcdef0123456789abcdef"
     assert values["internal_auth_token"].startswith("nca_internal_")
     database_url = make_url(str(values["database_url"]))
     assert database_url.host == "rm-test.pg.rds.aliyuncs.com"
@@ -109,6 +111,37 @@ def test_completed_runtime_config_loads_structured_rds_and_secret_projection(
     }
     assert (tmp_path / "runtime-config.json").stat().st_mode & 0o777 == 0o600
     assert (tmp_path / "frontend/internal-auth-token").stat().st_mode & 0o777 == 0o640
+
+
+def test_legacy_runtime_without_admin_principal_id_keeps_settings_fallback(
+    tmp_path: Path,
+) -> None:
+    store, payload = _complete_store(tmp_path)
+    security = payload["security"]
+    assert isinstance(security, dict)
+    security.pop("admin_principal_id")
+    store.write_runtime_config(payload)
+    store.mark_complete(config_digest=runtime_config_digest(payload))
+
+    values = load_runtime_settings_values(store.config_dir)
+
+    assert "admin_principal_id" not in values
+    assert Settings(**values).admin_principal_id == "platform:internal_root"
+
+
+def test_runtime_rejects_malformed_admin_principal_id(tmp_path: Path) -> None:
+    store, payload = _complete_store(tmp_path)
+    security = payload["security"]
+    assert isinstance(security, dict)
+    security["admin_principal_id"] = "platform:not-canonical"
+    store.write_runtime_config(payload)
+    store.mark_complete(config_digest=runtime_config_digest(payload))
+
+    with pytest.raises(
+        RuntimeConfigError,
+        match="runtime admin principal identity is invalid",
+    ):
+        load_runtime_settings_values(store.config_dir)
 
 
 @pytest.mark.parametrize("state_kind", ("pending", "missing", "corrupt"))

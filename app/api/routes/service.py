@@ -166,8 +166,11 @@ class SiteRelinkCooldownPayload(BaseModel):
 
 
 class AccountMemberAccessPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: str
     status: str = "active"
+    site_id: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1441,6 +1444,7 @@ async def upsert_account_member_access(
             account_id=account_id,
             email=payload.email,
             status=payload.status,
+            site_id=payload.site_id,
             metadata_json=payload.metadata,
             audit_context=audit_context,
         )

@@ -201,7 +201,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
     _post_internal(
         client,
         "/internal/service/accounts/acct_alpha_flow/members",
-        json_payload={"email": "alpha@example.com"},
+        json_payload={"email": "alpha@example.com", "site_id": site_id},
         idempotency_key="alpha-account-members-001",
     )
 

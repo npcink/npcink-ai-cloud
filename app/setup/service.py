@@ -8,6 +8,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from app.core.runtime_config import (
     FRONTEND_INTERNAL_TOKEN_FILE,
@@ -370,6 +371,7 @@ class SetupService:
             "database": database_config,
             "security": {
                 "internal_auth_token_file": FRONTEND_INTERNAL_TOKEN_FILE,
+                "admin_principal_id": f"prn_{uuid4().hex}",
                 "admin_key_sha256": sha256_text(admin_key),
                 "admin_session_secret": generate_prefixed_secret("nca_session_"),
                 "service_settings_secret": generate_root_secret(),

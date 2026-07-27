@@ -23,6 +23,8 @@ from app.core.models import (
     PORTAL_OAUTH_STATE_STATUS_CONSUMED,
     PORTAL_OAUTH_STATE_STATUS_EXPIRED,
     PORTAL_OAUTH_STATE_STATUS_PENDING,
+    PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+    PRINCIPAL_SITE_BINDING_STATUS_RELEASED,
     PRINCIPAL_STATUS_ACTIVE,
     SITE_ACCOUNT_BINDING_STATUS_ACTIVE,
     SITE_ACCOUNT_BINDING_STATUS_RELEASED,
@@ -37,6 +39,7 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
+    PrincipalSiteBinding,
     Site,
     SiteAccountBinding,
     SiteApiKey,
@@ -331,6 +334,66 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         site.relink_cooldown_until = None
         return binding
 
+    def _ensure_principal_site_binding_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site: Site,
+        principal_id: str,
+        account_id: str,
+        now: datetime,
+        source: str,
+    ) -> PrincipalSiteBinding:
+        current = repository.get_current_principal_site_binding(
+            site.site_id,
+            for_update=True,
+        )
+        if current is not None:
+            if (
+                str(current.principal_id or "") != principal_id
+                or str(current.account_id or "") != account_id
+            ):
+                raise CommercialConflictError(
+                    "service.site_user_binding_conflict",
+                    f"site '{site.site_id}' is already bound to another user",
+                )
+            return current
+        return repository.create_principal_site_binding(
+            binding_id=f"psb_{uuid4().hex}",
+            principal_id=principal_id,
+            site_id=site.site_id,
+            account_id=account_id,
+            status=PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+            bound_at=now,
+            metadata_json={"source": source},
+        )
+
+    def _release_principal_site_binding_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        site: Site,
+        principal_id: str,
+        now: datetime,
+        reason: str,
+    ) -> PrincipalSiteBinding:
+        current = repository.get_current_principal_site_binding(
+            site.site_id,
+            for_update=True,
+        )
+        if current is None or str(current.principal_id or "") != principal_id:
+            raise CommercialPermissionError(
+                "service.principal_site_access_required",
+                "portal user is not bound to this site",
+            )
+        current.status = PRINCIPAL_SITE_BINDING_STATUS_RELEASED
+        current.released_at = now
+        current.release_reason = reason
+        current_metadata = dict(current.metadata_json or {})
+        current_metadata["released_via"] = reason
+        current.metadata_json = current_metadata
+        return current
+
     def _assert_default_free_site_capacity(
         self,
         *,
@@ -623,6 +686,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
         self,
         site_id: str,
         *,
+        principal_id: str,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         now = self.now_factory()
@@ -636,6 +700,13 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.site_not_found",
                     f"site '{site_id}' was not found",
                 )
+            self._release_principal_site_binding_in_session(
+                repository=repository,
+                site=site,
+                principal_id=principal_id,
+                now=now,
+                reason="portal_user_removed_site",
+            )
             if str(site.status or "") == SITE_STATUS_SUSPENDED:
                 raise CommercialPermissionError(
                     "service.portal_site_not_removable",
@@ -1426,6 +1497,14 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                         },
                     )
 
+            self._ensure_principal_site_binding_in_session(
+                repository=repository,
+                site=site,
+                principal_id=principal_id,
+                account_id=account_id,
+                now=now,
+                source="wordpress_addon_connection",
+            )
             key_secret = f"sk_{secrets.token_urlsafe(24)}"
             key_id = f"key_{uuid4().hex}"
             revoked_key_ids = self._revoke_active_site_keys_in_session(
@@ -1721,7 +1800,7 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                     "service.site_not_found",
                     f"site '{site_id}' was not found",
                 )
-            site, account, identity, membership = access_row
+            site, account, identity, membership, site_binding = access_row
             if account is None or account.status != ACCOUNT_STATUS_ACTIVE:
                 raise CommercialPermissionError(
                     "service.portal_account_inactive",
@@ -1736,6 +1815,11 @@ class CommercialServiceSiteMixin(CommercialServiceAuditMixin):
                 raise CommercialPermissionError(
                     "service.principal_access_required",
                     f"principal '{principal_id}' is not active for account '{site.account_id}'",
+                )
+            if site_binding is None:
+                raise CommercialPermissionError(
+                    "service.principal_site_access_required",
+                    f"principal '{principal_id}' is not bound to site '{site_id}'",
                 )
             role = normalize_user_role(str(membership.role or USER_ROLE_USER))
             allowed_actions = [

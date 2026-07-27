@@ -131,8 +131,8 @@ export const IdempotencyKeys = {
   /**
    * Select site operation
    */
-  selectSite: (siteAdminRef: string, siteId: string): string =>
-    generateIdempotencyKey(`portal_select_site_${siteAdminRef}_${siteId}`),
+  selectSite: (userRef: string, siteId: string): string =>
+    generateIdempotencyKey(`portal_select_site_${userRef}_${siteId}`),
 
   /**
    * Logout operation
