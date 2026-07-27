@@ -412,20 +412,24 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   await expect(workbench.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
   await expect(workbench.locator('[data-ui="runtime-profile-candidate-table"]')).toBeVisible();
   const modelToolbar = workbench.locator('[data-ui="runtime-profile-model-toolbar"]');
+  const candidateTable = workbench.locator('[data-ui="runtime-profile-candidate-table"]');
   const providerFilter = modelToolbar.getByRole('combobox', { name: /Supplier|供应商/i });
   const modelSearch = modelToolbar.getByRole('searchbox', { name: /Search models|搜索模型/i });
-  const [toolbarBox, providerBox, searchBox] = await Promise.all([
+  const [toolbarBox, candidateTableBox, providerBox, searchBox] = await Promise.all([
     modelToolbar.boundingBox(),
+    candidateTable.boundingBox(),
     providerFilter.boundingBox(),
     modelSearch.boundingBox(),
   ]);
-  if (!toolbarBox || !providerBox || !searchBox) {
+  if (!toolbarBox || !candidateTableBox || !providerBox || !searchBox) {
     throw new Error('Compact model toolbar controls must be visible for geometry validation.');
   }
   expect(toolbarBox.height).toBeLessThanOrEqual(40);
   expect(providerBox.height).toBe(32);
   expect(searchBox.height).toBe(32);
   expect(Math.abs(providerBox.y - searchBox.y)).toBeLessThanOrEqual(1);
+  expect(candidateTableBox.y - (toolbarBox.y + toolbarBox.height)).toBeGreaterThanOrEqual(9);
+  expect(candidateTableBox.y - (toolbarBox.y + toolbarBox.height)).toBeLessThanOrEqual(11);
   await expect(workbench.getByRole('radio')).toHaveCount(6);
   await expect(candidateRow(page, 'text.unavailable')).toContainText(/Unavailable|不可用/i);
   await expect(candidateRow(page, 'text.unavailable').getByRole('radio').first()).toBeDisabled();

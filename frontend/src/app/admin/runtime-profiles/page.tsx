@@ -746,7 +746,7 @@ export default function RuntimeProfilesPage() {
               />
             </AdminConfigurationTable>
 
-            <section className="grid gap-1.5 pt-1">
+            <section className="grid gap-2.5 pt-1">
               <div data-ui="runtime-profile-model-toolbar" className="flex items-center gap-3">
                 <div className="flex min-w-0 flex-1 items-baseline gap-2">
                   <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
@@ -756,17 +756,25 @@ export default function RuntimeProfilesPage() {
                     {copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}
                   </p>
                 </div>
-                <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  <span>{copy('provider_filter', 'Supplier')}</span>
-                  <select className="input w-44" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+                <div className="flex shrink-0 items-center gap-2">
+                  <select
+                    className="input w-40"
+                    value={providerFilter}
+                    onChange={(event) => setProviderFilter(event.target.value)}
+                    aria-label={copy('provider_filter', 'Supplier')}
+                  >
                     <option value="">{copy('provider_all', 'All suppliers')}</option>
                     {providers.map(([providerId, label]) => <option key={providerId} value={providerId}>{label}</option>)}
                   </select>
-                </label>
-                <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  <span>{copy('model_search', 'Search models')}</span>
-                  <input className="input w-60" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
-                </label>
+                  <input
+                    className="input w-64"
+                    type="search"
+                    value={modelSearch}
+                    onChange={(event) => setModelSearch(event.target.value)}
+                    placeholder={copy('model_search_placeholder', 'Search supplier or model ID')}
+                    aria-label={copy('model_search', 'Search models')}
+                  />
+                </div>
               </div>
               {candidates.length ? (
                 <div data-ui="runtime-profile-candidate-table" className="max-h-[25rem] overflow-auto">
