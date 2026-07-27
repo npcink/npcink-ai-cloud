@@ -19,6 +19,7 @@ export type AdminWorkbenchDialogProps = {
   footerActions?: ReactNode;
   hideFooterActions?: boolean;
   width?: 'wide' | 'compact';
+  density?: 'standard' | 'compact';
   onClose: () => void;
   onSubmit: () => void;
   children: ReactNode;
@@ -40,6 +41,7 @@ export function AdminWorkbenchDialog({
   footerActions,
   hideFooterActions = false,
   width = 'wide',
+  density = 'standard',
   onClose,
   onSubmit,
   children,
@@ -107,7 +109,10 @@ export function AdminWorkbenchDialog({
   return createPortal(
     <div
       data-ui="admin-workbench-dialog"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 px-4 py-6 backdrop-blur-sm sm:py-10"
+      data-density={density}
+      className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 ${
+        density === 'compact' ? 'px-2 py-2 sm:px-4 sm:py-4' : 'px-4 py-6 backdrop-blur-sm sm:py-10'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -116,9 +121,15 @@ export function AdminWorkbenchDialog({
       <div
         ref={dialogRef}
         data-width={width}
-        className={`${width === 'compact' ? 'admin-workbench-dialog-compact rounded-xl' : 'admin-workbench-dialog rounded-2xl'} flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950`}
+        className={`${width === 'compact' ? 'admin-workbench-dialog-compact' : 'admin-workbench-dialog'} ${
+          density === 'compact'
+            ? 'admin-compact-surface max-h-[calc(100vh-2rem)] shadow-lg'
+            : `max-h-[calc(100vh-3rem)] ${width === 'compact' ? 'rounded-xl' : 'rounded-2xl'} shadow-2xl`
+        } flex w-full flex-col overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950`}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+        <div className={`flex items-center justify-between border-b border-slate-200 dark:border-slate-800 ${
+          density === 'compact' ? 'min-h-11 gap-2 px-4 py-2' : 'gap-3 px-5 py-3'
+        }`}>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h3 id={titleId} className="text-base font-semibold text-slate-950 dark:text-white">
               {title}
@@ -128,7 +139,11 @@ export function AdminWorkbenchDialog({
           <button
             ref={closeButtonRef}
             type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:text-white"
+            className={`inline-flex shrink-0 items-center justify-center text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white ${
+              density === 'compact'
+                ? 'h-8 w-8 rounded'
+                : 'h-9 w-9 rounded-full border border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700'
+            }`}
             disabled={saving}
             onClick={onClose}
             aria-label={closeLabel}
@@ -138,12 +153,14 @@ export function AdminWorkbenchDialog({
         </div>
 
         {message || error ? (
-          <div className="grid gap-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+          <div className={`grid gap-2 border-b border-slate-200 dark:border-slate-800 ${
+            density === 'compact' ? 'px-4 py-2' : 'px-5 py-3'
+          }`}>
             {message ? (
               <div
                 role="status"
                 aria-live="polite"
-                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/25 dark:text-emerald-200"
+                className={`${density === 'compact' ? 'border-l-2 px-2 py-1.5' : 'rounded-lg border px-3 py-2'} border-emerald-200 bg-emerald-50 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/25 dark:text-emerald-200`}
               >
                 {message}
               </div>
@@ -151,7 +168,7 @@ export function AdminWorkbenchDialog({
             {error ? (
               <div
                 role="alert"
-                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200"
+                className={`${density === 'compact' ? 'border-l-2 px-2 py-1.5' : 'rounded-lg border px-3 py-2'} border-rose-200 bg-rose-50 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200`}
               >
                 {error}
               </div>
@@ -160,10 +177,14 @@ export function AdminWorkbenchDialog({
         ) : null}
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-          <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto px-5 py-4">
+          <div className={`grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto ${
+            density === 'compact' ? '!gap-2 px-4 py-3' : 'px-5 py-4'
+          }`}>
             {children}
           </div>
-          <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+          <div className={`flex flex-col border-t border-slate-200 bg-white text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between ${
+            density === 'compact' ? 'gap-2 px-4 py-2' : 'gap-3 px-5 py-3'
+          }`}>
             <span id={`${titleId}-workflow-notice`}>{footerNotice}</span>
             {footerActions ?? (hideFooterActions ? null : (
               <div className="flex flex-wrap gap-2">

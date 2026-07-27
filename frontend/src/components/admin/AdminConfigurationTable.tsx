@@ -6,6 +6,7 @@ type AdminConfigurationTableProps = {
   valueHeading: string;
   detailHeading: string;
   children: ReactNode;
+  density?: 'standard' | 'compact';
 };
 
 type AdminConfigurationRowProps = {
@@ -21,11 +22,15 @@ export function AdminConfigurationTable({
   valueHeading,
   detailHeading,
   children,
+  density = 'standard',
 }: AdminConfigurationTableProps) {
   return (
     <div
       data-ui="admin-configuration-table"
-      className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800"
+      data-density={density}
+      className={`overflow-hidden border border-slate-200 dark:border-slate-800 ${
+        density === 'compact' ? 'admin-compact-surface' : 'rounded-lg'
+      }`}
     >
       <table className="w-full table-fixed text-left text-sm" aria-label={ariaLabel}>
         <colgroup>
@@ -35,12 +40,15 @@ export function AdminConfigurationTable({
         </colgroup>
         <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
           <tr>
-            <th className="px-4 py-2.5" scope="col">{itemHeading}</th>
-            <th className="px-4 py-2.5" scope="col">{valueHeading}</th>
-            <th className="px-4 py-2.5" scope="col">{detailHeading}</th>
+            <th className={density === 'compact' ? 'px-3 py-1.5' : 'px-4 py-2.5'} scope="col">{itemHeading}</th>
+            <th className={density === 'compact' ? 'px-3 py-1.5' : 'px-4 py-2.5'} scope="col">{valueHeading}</th>
+            <th className={density === 'compact' ? 'px-3 py-1.5' : 'px-4 py-2.5'} scope="col">{detailHeading}</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+        <tbody
+          data-density={density}
+          className="divide-y divide-slate-200 dark:divide-slate-800"
+        >
           {children}
         </tbody>
       </table>
@@ -55,7 +63,7 @@ export function AdminConfigurationRow({
   detail,
 }: AdminConfigurationRowProps) {
   return (
-    <tr data-configuration-row={rowId} className="bg-white dark:bg-slate-950">
+    <tr data-configuration-row={rowId} className="admin-configuration-row bg-white dark:bg-slate-950">
       <th className="px-4 py-3 align-middle font-medium text-slate-700 dark:text-slate-200" scope="row">
         {label}
       </th>

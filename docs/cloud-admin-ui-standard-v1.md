@@ -63,6 +63,12 @@ candidate-chain configuration page:
 7. contract identity, revision, and other low-frequency evidence outside the
    default working table.
 
+It is also the first compact-density reference. Its profile directory and edit
+workbench keep policy and candidate selection in continuous tables, show normal
+metadata inline, and reserve secondary identifiers for tooltips or
+low-frequency evidence. Other routes remain on standard density until their
+own operator workflow is reviewed and accepted.
+
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
 
@@ -77,6 +83,14 @@ The executable projection of the route matrix and accepted dimensions lives in
   viewports.
 - Use compact rows, one-line utility copy, dividers, and whitespace before
   adding another card.
+- Shared workbench primitives expose an opt-in `density="compact"` mode for
+  high-frequency PC configuration work. It uses `32px` controls, approximately
+  `40px` rows, `4px` corners, flat section headers, and one-line secondary
+  information. The default density remains unchanged so a pilot does not
+  silently restyle unrelated routes.
+- Compact density is an information-architecture choice, not a route-local
+  collection of reduced padding classes. Apply it consistently to the dialog,
+  configuration table, and primary data-table frame for the selected task.
 - Mobile remains accessible, but mobile-specific redesign is not required by
   a PC-only change unless the changed primitive breaks the core task.
 

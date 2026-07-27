@@ -12,7 +12,6 @@ import {
   BackofficeEmptyState,
   BackofficePageStack,
   BackofficePrimaryPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -469,11 +468,12 @@ export default function RuntimeProfilesPage() {
   }
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack className="space-y-3">
       <BackofficePrimaryPanel
         eyebrow={copy('eyebrow', 'Runtime plane')}
         title={copy('title', 'Runtime Profiles')}
         description={copy('description', 'Configure the Cloud-hosted candidate chain for WordPress connector tasks. This is runtime routing metadata, not local ability or workflow truth.')}
+        descriptionDisplay="hint"
         aside={(
           <div className="flex flex-wrap items-center gap-2">
             <Link href="/admin/ai-resources" className="btn btn-secondary">
@@ -489,9 +489,11 @@ export default function RuntimeProfilesPage() {
             </button>
           </div>
         )}
-        contentClassName="py-5 md:py-5"
+        className="rounded-md shadow-none backdrop-blur-none"
+        contentClassName="px-4 py-3 md:px-4 md:py-3"
       >
-        <BackofficeSummaryStrip items={[
+        <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-200 pt-2 text-xs dark:border-slate-800">
+          {[
           { label: copy('summary_platform', 'Platform'), value: 'WordPress' },
           { label: copy('summary_profiles', 'Profiles'), value: String(drafts.length) },
           { label: copy('summary_configured', 'Configured'), value: `${configuredCount}/${drafts.length}` },
@@ -501,10 +503,16 @@ export default function RuntimeProfilesPage() {
             value: dirty ? copy('unsaved_status', 'Unsaved') : t('common.saved'),
             toneClassName: dirty ? 'text-amber-700 dark:text-amber-300' : undefined,
           },
-        ]} />
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-          {copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
-        </p>
+          ].map((item) => (
+            <div key={item.label} className="flex items-baseline gap-1.5">
+              <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
+              <dd className={`font-semibold text-slate-900 dark:text-white ${item.toneClassName || ''}`}>{item.value}</dd>
+            </div>
+          ))}
+          <div className="min-w-0 flex-1 text-right text-slate-500 dark:text-slate-400">
+            {copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
+          </div>
+        </dl>
       </BackofficePrimaryPanel>
 
       {error ? (
@@ -529,6 +537,7 @@ export default function RuntimeProfilesPage() {
           title={copy('directory_title', 'Hosted profile directory')}
           resultLabel={copy('directory_description', 'Primary model, fallback, policy, status, and the next action are shown in one table.')}
           dataUi="runtime-profile-table"
+          density="compact"
         >
           <table className="w-full min-w-[1040px] table-fixed text-left text-sm">
             <colgroup>
@@ -542,13 +551,13 @@ export default function RuntimeProfilesPage() {
             </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-2.5" scope="col">{copy('column_profile', 'Profile')}</th>
-                <th className="px-4 py-2.5" scope="col">{copy('primary_model', 'Primary model')}</th>
-                <th className="px-4 py-2.5" scope="col">{copy('fallback_model', 'Fallback model')}</th>
-                <th className="px-4 py-2.5" scope="col">{copy('column_policy', 'Runtime policy')}</th>
-                <th className="px-4 py-2.5" scope="col">{t('common.status')}</th>
-                <th className="px-4 py-2.5" scope="col">{copy('column_updated', 'Updated')}</th>
-                <th className="px-4 py-2.5 text-right" scope="col">{copy('column_action', 'Action')}</th>
+                <th className="px-3 py-1.5" scope="col">{copy('column_profile', 'Profile')}</th>
+                <th className="px-3 py-1.5" scope="col">{copy('primary_model', 'Primary model')}</th>
+                <th className="px-3 py-1.5" scope="col">{copy('fallback_model', 'Fallback model')}</th>
+                <th className="px-3 py-1.5" scope="col">{copy('column_policy', 'Runtime policy')}</th>
+                <th className="px-3 py-1.5" scope="col">{t('common.status')}</th>
+                <th className="px-3 py-1.5" scope="col">{copy('column_updated', 'Updated')}</th>
+                <th className="px-3 py-1.5 text-right" scope="col">{copy('column_action', 'Action')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -562,36 +571,34 @@ export default function RuntimeProfilesPage() {
                     data-selected={active ? 'true' : 'false'}
                     className={active ? 'bg-blue-50/60 dark:bg-blue-950/15' : 'bg-white dark:bg-slate-950'}
                   >
-                    <th className="px-4 py-3 align-middle" scope="row">
-                      <span className="block truncate font-semibold text-slate-950 dark:text-white">
+                    <th className="px-3 py-2 align-middle" scope="row">
+                      <span className="truncate font-semibold text-slate-950 dark:text-white">
                         {profile.label || profile.routing_intent || profile.profile_id}
                       </span>
-                      <span className="mt-1 block truncate text-xs font-normal text-slate-500 dark:text-slate-400">
-                        {profile.routing_intent} · {profile.tasks.length} {copy('task_count_suffix', 'tasks')}
+                      <span className="ml-2 truncate text-xs font-normal text-slate-500 dark:text-slate-400">
+                        {profile.tasks.length} {copy('task_count_suffix', 'tasks')}
                       </span>
                     </th>
-                    <td className="px-4 py-3 align-middle text-slate-700 dark:text-slate-200">
-                      <span className="line-clamp-2">{instanceLabel(instancesById.get(profile.candidate_instance_ids[0] || ''))}</span>
+                    <td className="px-3 py-2 align-middle text-slate-700 dark:text-slate-200">
+                      <span className="block truncate">{instanceLabel(instancesById.get(profile.candidate_instance_ids[0] || ''))}</span>
                     </td>
-                    <td className="px-4 py-3 align-middle text-slate-700 dark:text-slate-200">
-                      <span className="line-clamp-2">{instanceLabel(instancesById.get(profile.candidate_instance_ids[1] || ''))}</span>
+                    <td className="px-3 py-2 align-middle text-slate-700 dark:text-slate-200">
+                      <span className="block truncate">{instanceLabel(instancesById.get(profile.candidate_instance_ids[1] || ''))}</span>
                     </td>
-                    <td className="px-4 py-3 align-middle text-xs leading-5 text-slate-600 dark:text-slate-300">
+                    <td className="px-3 py-2 align-middle text-xs text-slate-600 dark:text-slate-300">
                       {Math.round(profile.timeout_ms / 1000)}s · {profile.allow_fallback ? copy('fallback_enabled_short', 'Fallback on') : copy('fallback_disabled_short', 'Fallback off')}
-                      <span className="block text-slate-500 dark:text-slate-400">
-                        {copy('retry_count', '{{count}} retries', { count: String(profile.max_retries) })}
-                      </span>
+                      <span className="text-slate-500 dark:text-slate-400"> · {copy('retry_count', '{{count}} retries', { count: String(profile.max_retries) })}</span>
                     </td>
-                    <td className="px-4 py-3 align-middle">
+                    <td className="px-3 py-2 align-middle">
                       <BackofficeStatusBadge
                         label={tone === 'success' ? copy('status_ready', 'Ready') : tone === 'error' ? copy('status_error', 'Blocked') : copy('status_attention', 'Needs config')}
                         status={tone}
                       />
                     </td>
-                    <td className="px-4 py-3 align-middle text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                    <td className="px-3 py-2 align-middle text-xs tabular-nums text-slate-500 dark:text-slate-400">
                       {formatDate(profile.updated_at) || '—'}
                     </td>
-                    <td className="px-4 py-3 text-right align-middle">
+                    <td className="px-3 py-2 text-right align-middle">
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -638,10 +645,11 @@ export default function RuntimeProfilesPage() {
         savingLabel={copy('action_saving', 'Saving...')}
         footerNotice={copy('dialog_save_notice', 'Changes remain in the page draft until you use Save profiles.')}
         footerActions={(
-          <button type="button" className="btn btn-primary" onClick={() => setEditingProfileId('')}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setEditingProfileId('')}>
             {copy('action_done', 'Done')}
           </button>
         )}
+        density="compact"
         onClose={() => setEditingProfileId('')}
         onSubmit={() => setEditingProfileId('')}
       >
@@ -654,6 +662,7 @@ export default function RuntimeProfilesPage() {
               itemHeading={copy('configuration_item_heading', 'Setting')}
               valueHeading={copy('configuration_value_heading', 'Current value')}
               detailHeading={copy('configuration_detail_heading', 'Action / note')}
+              density="compact"
             >
               <AdminConfigurationRow
                 rowId="runtime-primary-model"
@@ -695,7 +704,7 @@ export default function RuntimeProfilesPage() {
                     step={1000}
                     value={editingProfile.timeout_ms}
                     onChange={(event) => updateProfile(editingProfile.profile_id, { timeout_ms: Number(event.target.value) })}
-                    className="input h-9 w-36"
+                    className="input h-8 w-36"
                     aria-label={copy('timeout', 'Timeout')}
                   />
                 )}
@@ -729,7 +738,7 @@ export default function RuntimeProfilesPage() {
                     max={1}
                     value={editingProfile.max_retries}
                     onChange={(event) => updateProfile(editingProfile.profile_id, { max_retries: Number(event.target.value) })}
-                    className="input h-9 w-24"
+                    className="input h-8 w-24"
                     aria-label={copy('retries', 'Retries')}
                   />
                 )}
@@ -737,30 +746,30 @@ export default function RuntimeProfilesPage() {
               />
             </AdminConfigurationTable>
 
-            <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+            <section className="grid gap-2 border-t border-slate-200 pt-2 dark:border-slate-800">
+              <div className="flex items-baseline gap-3">
+                <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
                   {copy('candidate_table_title', 'Candidate models')}
                 </h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                   {copy('candidate_table_description', 'Choose one primary model and, when needed, one fallback model.')}
                 </p>
               </div>
-              <div data-ui="runtime-profile-model-toolbar" className="grid gap-3 sm:grid-cols-[14rem_minmax(0,1fr)]">
+              <div data-ui="runtime-profile-model-toolbar" className="grid gap-2 sm:grid-cols-[14rem_minmax(0,1fr)]">
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                   {copy('provider_filter', 'Supplier')}
-                  <select className="input mt-1 w-full" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+                  <select className="input mt-1 h-8 w-full" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
                     <option value="">{copy('provider_all', 'All suppliers')}</option>
                     {providers.map(([providerId, label]) => <option key={providerId} value={providerId}>{label}</option>)}
                   </select>
                 </label>
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                   {copy('model_search', 'Search models')}
-                  <input className="input mt-1 w-full" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
+                  <input className="input mt-1 h-8 w-full" type="search" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder={copy('model_search_placeholder', 'Supplier or model ID')} />
                 </label>
               </div>
               {candidates.length ? (
-                <div data-ui="runtime-profile-candidate-table" className="max-h-[25rem] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
+                <div data-ui="runtime-profile-candidate-table" className="admin-compact-surface max-h-[25rem] overflow-auto border border-slate-200 dark:border-slate-800">
                   <table className="w-full min-w-[760px] table-fixed text-left text-sm">
                     <colgroup>
                       <col className="w-[25%]" />
@@ -771,11 +780,11 @@ export default function RuntimeProfilesPage() {
                     </colgroup>
                     <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                       <tr>
-                        <th className="px-4 py-2.5" scope="col">{copy('column_supplier', 'Supplier')}</th>
-                        <th className="px-4 py-2.5" scope="col">{copy('column_model', 'Model')}</th>
-                        <th className="px-4 py-2.5" scope="col">{t('common.status')}</th>
-                        <th className="px-4 py-2.5 text-center" scope="col">{copy('selected_primary', 'Primary')}</th>
-                        <th className="px-4 py-2.5 text-center" scope="col">{copy('selected_fallback', 'Fallback')}</th>
+                        <th className="px-3 py-1.5" scope="col">{copy('column_supplier', 'Supplier')}</th>
+                        <th className="px-3 py-1.5" scope="col">{copy('column_model', 'Model')}</th>
+                        <th className="px-3 py-1.5" scope="col">{t('common.status')}</th>
+                        <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_primary', 'Primary')}</th>
+                        <th className="px-3 py-1.5 text-center" scope="col">{copy('selected_fallback', 'Fallback')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -785,19 +794,20 @@ export default function RuntimeProfilesPage() {
                         const tone = instanceTone(instance);
                         return (
                           <tr key={instance.instance_id} data-instance-id={instance.instance_id} className="bg-white dark:bg-slate-950">
-                            <td className="px-4 py-3 align-middle">
-                              <span className="block truncate font-medium text-slate-900 dark:text-white">
+                            <td className="px-3 py-2 align-middle">
+                              <span className="truncate font-medium text-slate-900 dark:text-white">
                                 {instance.provider_display_name || instance.provider_id}
                               </span>
-                              <span className="mt-1 block truncate text-xs text-slate-500 dark:text-slate-400">
-                                {instance.region || '—'}
-                              </span>
+                              {instance.region ? (
+                                <span className="ml-2 truncate text-xs text-slate-500 dark:text-slate-400">
+                                  {instance.region}
+                                </span>
+                              ) : null}
                             </td>
-                            <th className="px-4 py-3 align-middle" scope="row">
+                            <th className="px-3 py-2 align-middle" scope="row" title={instance.instance_id}>
                               <span className="block truncate font-semibold text-slate-950 dark:text-white">{instance.model_id}</span>
-                              <span className="mt-1 block truncate font-mono text-[11px] font-normal text-slate-500 dark:text-slate-400">{instance.instance_id}</span>
                             </th>
-                            <td className="px-4 py-3 align-middle">
+                            <td className="px-3 py-2 align-middle">
                               <BackofficeStatusBadge
                                 label={tone === 'success'
                                   ? copy('candidate_status_ready', 'Ready')
@@ -807,7 +817,7 @@ export default function RuntimeProfilesPage() {
                                 status={tone}
                               />
                             </td>
-                            <td className="px-4 py-3 text-center align-middle">
+                            <td className="px-3 py-2 text-center align-middle">
                               <input
                                 type="radio"
                                 name={`runtime-primary-${editingProfile.profile_id}`}
@@ -817,7 +827,7 @@ export default function RuntimeProfilesPage() {
                                 aria-label={copy('select_primary_named', 'Use {{name}} as primary', { name: instance.model_id })}
                               />
                             </td>
-                            <td className="px-4 py-3 text-center align-middle">
+                            <td className="px-3 py-2 text-center align-middle">
                               <input
                                 type="radio"
                                 name={`runtime-fallback-${editingProfile.profile_id}`}
