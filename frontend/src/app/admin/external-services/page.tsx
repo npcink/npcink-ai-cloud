@@ -2,10 +2,13 @@
 
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AdminConfigurationRow,
+  AdminConfigurationTable,
+} from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
-import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import {
   BackofficeDiagnosticNotice,
@@ -361,12 +364,6 @@ export default function ExternalServicesPage() {
         open={Boolean(editingOption)}
         title={editingOption ? copy('admin.external_services.edit_title', `配置 ${editingOption.label}`, `Configure ${editingOption.label}`) : ''}
         titleId="external-service-workbench-title"
-        headerAccessory={editingOption ? (
-          <BackofficeStatusBadge
-            label={draftEnabled ? copy('common.enabled', '已启用', 'Enabled') : copy('common.disabled', '已停用', 'Disabled')}
-            status={draftEnabled ? 'success' : 'neutral'}
-          />
-        ) : null}
         error={dialogError}
         saving={busy.startsWith('save:') || busy.startsWith('clear:')}
         closeLabel={copy('common.close', '关闭', 'Close')}
@@ -375,87 +372,101 @@ export default function ExternalServicesPage() {
         savingLabel={copy('common.saving', '保存中…', 'Saving…')}
         footerNotice={copy('admin.external_services.footer_notice', '保存后仅更新当前服务；连接测试需单独执行。', 'Saving updates this service only; connection tests run separately.')}
         hideFooterActions={confirmingClear}
+        width="compact"
         onClose={closeEditor}
         onSubmit={() => { if (editingOption) void saveOption(editingOption, draftEnabled); }}
       >
         {editingOption ? (
-          <div className="grid gap-5">
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
-              <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                {copy('admin.external_services.service_url', '服务地址', 'Service URL')}
-                <input readOnly value={editingOption.baseUrl} className="h-11 rounded-lg border border-slate-200 bg-slate-100 px-3 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300" />
-              </label>
-              <label className="flex h-11 items-center gap-2 self-end rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 dark:border-slate-800 dark:text-slate-200">
-                <input type="checkbox" checked={draftEnabled} disabled={busy !== ''} onChange={(event) => setDraftEnabled(event.target.checked)} />
-                {copy('admin.external_services.enable_runtime', '启用于运行时调用', 'Enable for runtime calls')}
-              </label>
-            </div>
-
-            {!editingOption.secretless ? (
-              <AdminCredentialField
-                mode={editingConnection?.configured ? 'edit' : 'create'}
-                revealed={credentialRevealed}
-                value={draftCredential}
-                label={copy('admin.external_services.credential', 'API Key / Token', 'API key / token')}
-                unchangedLabel={copy('admin.external_services.credential_unchanged', '保留当前已保存凭据', 'Current saved credential remains unchanged')}
-                replaceLabel={copy('admin.external_services.replace_credential', '替换凭据', 'Replace credential')}
-                cancelReplacementLabel={copy('admin.external_services.cancel_replace', '取消替换', 'Cancel replacement')}
-                keepCurrentPlaceholder={copy('admin.external_services.new_credential', '输入新凭据', 'Enter a new credential')}
-                onChange={setDraftCredential}
-                onReveal={() => setCredentialRevealed(true)}
-                onCancelReplacement={() => {
-                  setCredentialRevealed(false);
-                  setDraftCredential('');
-                }}
-              />
-            ) : (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
-                {copy('admin.external_services.secretless_notice', '此服务无需凭据，可直接启用并保存。', 'This service does not require a credential; enable it and save directly.')}
-              </div>
-            )}
-
-            <AdminSettingsDisclosure
-              dataUi="external-service-details"
-              title={copy('admin.external_services.details', '角色、边界与高级操作', 'Role, boundary, and advanced actions')}
-              description={copy('admin.external_services.details_description', '低频说明和清除凭据操作。', 'Low-frequency context and credential removal.')}
-              statusLabel={editingOption.role === 'primary'
+          <AdminConfigurationTable
+            ariaLabel={copy('admin.external_services.configuration_table', `${editingOption.label} 配置`, `${editingOption.label} configuration`)}
+            itemHeading={copy('admin.external_services.configuration_item', '配置项', 'Setting')}
+            valueHeading={copy('admin.external_services.current_value', '当前设置', 'Current setting')}
+            detailHeading={copy('admin.external_services.action_or_note', '操作 / 说明', 'Action / note')}
+          >
+            <AdminConfigurationRow
+              rowId="service-role"
+              label={copy('admin.external_services.service_role', '服务角色', 'Service role')}
+              value={editingOption.role === 'primary'
                 ? copy('admin.external_services.role_primary', '主搜索', 'Primary search')
                 : editingOption.role === 'enhancer'
                   ? copy('admin.external_services.role_enhancer', 'Reader 增强', 'Reader enhancement')
                   : copy('admin.external_services.role_parallel', '并行来源', 'Parallel source')}
-            >
-              <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {editingOption.role === 'primary'
-                  ? copy('admin.external_services.primary_role', '主搜索候选；启用后替换其他主搜索服务。', 'Primary search candidate; enabling it replaces the other primary search service.')
-                  : editingOption.role === 'enhancer'
-                    ? copy('admin.external_services.enhancer_role', '独立增强项，可与主搜索服务同时启用。', 'Independent enhancement that can run alongside the primary search service.')
-                    : copy('admin.external_services.parallel_role', '独立来源，可与其他图库同时启用。', 'Independent source that can run alongside other image sources.')}
-              </p>
-              {editingConnection?.configured && !editingOption.secretless ? (
-                <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
-                  {!confirmingClear ? (
-                    <button type="button" className="text-sm font-semibold text-rose-700 hover:underline dark:text-rose-300" onClick={() => setConfirmingClear(true)}>
-                      {copy('admin.external_services.clear_credential', '清除凭据并停用', 'Clear credential and disable')}
+              detail={editingOption.role === 'primary'
+                ? copy('admin.external_services.primary_role', '启用后替换其他主搜索服务。', 'Enabling it replaces the other primary search service.')
+                : editingOption.role === 'enhancer'
+                  ? copy('admin.external_services.enhancer_role', '可与主搜索服务同时启用。', 'Can run alongside the primary search service.')
+                  : copy('admin.external_services.parallel_role', '可与其他图库同时启用。', 'Can run alongside other image sources.')}
+            />
+            <AdminConfigurationRow
+              rowId="service-url"
+              label={copy('admin.external_services.service_url', '服务地址', 'Service URL')}
+              value={<code className="break-all text-xs text-slate-700 dark:text-slate-200">{editingOption.baseUrl}</code>}
+              detail={copy('admin.external_services.fixed_value', '系统固定', 'System fixed')}
+            />
+            <AdminConfigurationRow
+              rowId="credential"
+              label={copy('admin.external_services.credential', 'API Key / Token', 'API key / token')}
+              value={!editingOption.secretless ? (
+                <AdminCredentialField
+                  mode={editingConnection?.configured ? 'edit' : 'create'}
+                  revealed={credentialRevealed}
+                  value={draftCredential}
+                  label={copy('admin.external_services.credential', 'API Key / Token', 'API key / token')}
+                  unchangedLabel={copy('admin.external_services.credential_unchanged', '保留当前已保存凭据', 'Current saved credential remains unchanged')}
+                  replaceLabel={copy('admin.external_services.replace_credential', '替换凭据', 'Replace credential')}
+                  cancelReplacementLabel={copy('admin.external_services.cancel_replace', '取消替换', 'Cancel replacement')}
+                  keepCurrentPlaceholder={copy('admin.external_services.new_credential', '输入新凭据', 'Enter a new credential')}
+                  density="compact"
+                  hideLabel
+                  onChange={setDraftCredential}
+                  onReveal={() => setCredentialRevealed(true)}
+                  onCancelReplacement={() => {
+                    setCredentialRevealed(false);
+                    setDraftCredential('');
+                  }}
+                />
+              ) : copy('admin.external_services.no_credential', '无需凭据', 'Not required')}
+              detail={editingOption.secretless
+                ? copy('admin.external_services.secretless_notice', '可直接启用并保存。', 'Enable and save directly.')
+                : editingConnection?.configured
+                  ? copy('admin.external_services.credential_saved', '已保存，不会显示原值', 'Saved; the original value is never shown')
+                  : copy('admin.external_services.credential_missing', '尚未配置', 'Not configured')}
+            />
+            <AdminConfigurationRow
+              rowId="runtime-enabled"
+              label={copy('admin.external_services.enable_runtime', '运行调用', 'Runtime calls')}
+              value={draftEnabled ? copy('common.enabled', '已启用', 'Enabled') : copy('common.disabled', '已停用', 'Disabled')}
+              detail={(
+                <label className="inline-flex cursor-pointer items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
+                  <input type="checkbox" checked={draftEnabled} disabled={busy !== ''} onChange={(event) => setDraftEnabled(event.target.checked)} />
+                  {copy('admin.external_services.enable_runtime_action', '启用于运行时调用', 'Enable for runtime calls')}
+                </label>
+              )}
+            />
+            {editingConnection?.configured && !editingOption.secretless ? (
+              <AdminConfigurationRow
+                rowId="credential-clear"
+                label={copy('admin.external_services.credential_action', '凭据操作', 'Credential action')}
+                value={confirmingClear
+                  ? copy('admin.external_services.clear_confirm', `确认清除 ${editingOption.label} 的凭据并立即停用该服务？`, `Clear the credential for ${editingOption.label} and disable this service now?`)
+                  : copy('admin.external_services.clear_effect', '清除凭据后立即停用服务', 'Clearing the credential disables the service immediately')}
+                detail={!confirmingClear ? (
+                  <button type="button" className="font-semibold text-rose-700 hover:underline dark:text-rose-300" onClick={() => setConfirmingClear(true)}>
+                    {copy('admin.external_services.clear_credential', '清除凭据并停用', 'Clear credential and disable')}
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmingClear(false)}>
+                      {copy('common.cancel', '取消', 'Cancel')}
                     </button>
-                  ) : (
-                    <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-900 dark:bg-rose-950/20">
-                      <p className="text-sm font-medium text-rose-800 dark:text-rose-200">
-                        {copy('admin.external_services.clear_confirm', `确认清除 ${editingOption.label} 的凭据并立即停用该服务？`, `Clear the credential for ${editingOption.label} and disable this service now?`)}
-                      </p>
-                      <div className="mt-3 flex gap-2">
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmingClear(false)}>
-                          {copy('common.cancel', '取消', 'Cancel')}
-                        </button>
-                        <button type="button" className="btn btn-danger btn-sm" disabled={busy !== ''} onClick={() => void saveOption(editingOption, false, true)}>
-                          {busy === `clear:${editingOption.id}` ? copy('common.saving', '处理中…', 'Working…') : copy('admin.external_services.confirm_clear', '确认清除并停用', 'Clear and disable')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </AdminSettingsDisclosure>
-          </div>
+                    <button type="button" className="btn btn-danger btn-sm" disabled={busy !== ''} onClick={() => void saveOption(editingOption, false, true)}>
+                      {busy === `clear:${editingOption.id}` ? copy('common.saving', '处理中…', 'Working…') : copy('admin.external_services.confirm_clear', '确认清除并停用', 'Clear and disable')}
+                    </button>
+                  </div>
+                )}
+              />
+            ) : null}
+          </AdminConfigurationTable>
         ) : null}
       </AdminWorkbenchDialog>
     </BackofficePageStack>
