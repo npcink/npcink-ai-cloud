@@ -133,6 +133,16 @@ assert.match(
   'the reference provider editor must reuse configuration-table and credential primitives'
 );
 assert.match(
+  providerPageSource,
+  /data-ui="model-visibility-toolbar"[\s\S]*data-ui="model-maintenance-table"[\s\S]*rowId="manual-model-add"[\s\S]*data-ui="model-clear-all-confirm"/,
+  'the reference provider editor must keep model controls in one stable toolbar and in-flow maintenance table'
+);
+assert.doesNotMatch(
+  providerPageSource,
+  /model_visibility_more_operations[\s\S]*sm:absolute sm:right-0 sm:z-30/,
+  'the reference provider editor must not cover model rows with a floating maintenance panel'
+);
+assert.match(
   providerTableSource,
   /AdminDataTableFrame[\s\S]*data-ui="model-supplier-table"[\s\S]*<thead[\s\S]*<tbody/,
   'the reference queue must reuse the shared semantic table frame'
