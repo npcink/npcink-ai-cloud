@@ -66,6 +66,7 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
 - [docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md](docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md)
 - [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
+- [docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md](docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md)
 
 Evidence records (not target-contract completion proof):
 
