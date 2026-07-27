@@ -56,6 +56,10 @@ Git, and run the narrowest relevant local gates plus CI. Before promoting
 - green CI for the exact `master` commit and an intentional release scope;
 - the applicable release checklist, exact-bundle evidence, known rollback
   boundary, and no direct server code edit as source truth;
+- before migrating existing user/site data or enabling real-user Portal access,
+  a read-only ownership inventory uses counts and opaque IDs only; ambiguous
+  multi-user sites remain unbound and fail closed, and their presence stops the
+  release rather than triggering inferred or automatic assignment;
 - protected server-side configuration and credentials absent from the release
   archive, GitHub logs, process arguments, and `.env.deploy`;
 - the production-promotion PR sentence

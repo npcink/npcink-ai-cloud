@@ -2,7 +2,7 @@
 
 > Status: canonical release gate
 >
-> Updated: 2026-07-22
+> Updated: 2026-07-27
 >
 > Scope: formal Cloud release execution, production environment verification,
 > smoke, and rollback readiness
@@ -72,6 +72,7 @@ Current open blockers:
 | real WordPress reconnect | smoke required | release operator | one production Addon reconnect issues a fresh key and revokes the previous active key |
 | formal release smoke | smoke required | release operator | configure the required GitHub smoke secrets and run the complete `deploy/release-smoke.sh` path without a conditional skip |
 | schema drift baseline | operator required | database owner | historical `alembic check` index-name differences are resolved or recorded as reviewed |
+| historical user-site ownership | operator required | database owner | read-only counts prove no ambiguous multi-user site ownership, or every ambiguous site remains unbound and the release stops before real-user access |
 | external OTLP sink | operator required | release operator | exporter and query URLs are explicit and a fresh Cloud trace is queryable in the configured production sink |
 | 24-hour observation | operator required | release operator | health, workers, cadence, SMTP, callback, and runtime remain stable for 24 hours |
 | QQ login, when enabled | service settings required | release operator | real QQ login and `/open/auth/qq/callback` pass; otherwise QQ remains disabled |
@@ -227,6 +228,34 @@ the unchecked evidence above is not authoritative for current deployment.
 - [x] one real mailbox received three consecutive messages from production SMTP
 
 ### 3.4 Production Guardrails
+
+#### User and site ownership inventory
+
+Complete these items before migrating an existing user/site dataset or enabling
+real-user Portal access. A fresh empty database may satisfy the inventory with
+zero-row counts. Follow the evidence boundary and rationale in
+[User Identity, Membership, and Site Authorization Closeout](../docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md#131-read-only-inventory-result-and-its-limit)
+and the normative ownership contract in
+[ADR-031](../docs/decisions/031-principal-owned-portal-site-authorization.md).
+
+- [ ] a read-only inventory recorded aggregate counts and opaque principal,
+  account, and site IDs only; it did not print or persist email addresses,
+  tokens, credentials, provider subjects, or secret values
+- [ ] every active site in an account with multiple user memberships has
+  exactly one lifecycle-valid active `principal_site_bindings` row for the
+  same current account, or remains unbound and inaccessible
+- [ ] invalid, duplicate, cross-account, released, archived, disabled-user, and
+  revoked-membership combinations retain no effective Portal access
+- [ ] no script, migration, or operator inferred ownership from account
+  membership, recent login, email, payment, usage, or other circumstantial
+  evidence
+- [ ] any ownership that cannot be proven by existing verified Addon evidence
+  remains fail closed; its presence stops production migration or real-user
+  enablement, and any later operator-reviewed assignment is a separately
+  authorized remediation rather than part of this inventory or release
+- [ ] legacy `platform:internal_root` remains unchanged unless a separately
+  approved rotation plan covers persisted grants, sessions, audit actors,
+  rollback, and operator recovery
 
 - [ ] the exact release canonical allowlist either no longer contains the three
   governed Python `3.14.6` entries, or the temporary bundle-external

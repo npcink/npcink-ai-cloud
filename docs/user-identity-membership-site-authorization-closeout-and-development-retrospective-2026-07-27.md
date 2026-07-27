@@ -4,6 +4,13 @@ Status: the underlying user-system remediation source was merged into
 `master`, and the then-current clean `master` was accepted on M4. Production
 deployment and real-user acceptance were not performed by this closeout.
 
+Follow-up status: the commercial authorization correction in PR `#308` and the
+disposable PostgreSQL two-user validation in PR `#311` were subsequently
+merged and accepted on M4. The latest evidence in this record is clean
+`master@d589a719dd693d2b3a8c8ff646066a729cefd63d`, promoted with
+`promotion_pr=311`. Production data, production deployment, and real-user
+acceptance remain outside this evidence.
+
 Scope: the July 2026 review and remediation of Cloud Portal user identity,
 authentication, account membership, site ownership, and the adjacent
 payment/feature-authorization seams.
@@ -395,6 +402,10 @@ real-user evidence remain separate.
 
 ## 9. Residual Risks and Next Validation Stage
 
+This section records the risks as they stood immediately after PR `#304`.
+Section 13 records which items were subsequently closed by PRs `#308` and
+`#311`, and which still require production or operator evidence.
+
 The source remediation can close, but these operational questions remain:
 
 1. Inventory existing multi-user accounts with unbound sites. Do not assign
@@ -476,6 +487,8 @@ Delivery:
 - PR `#299` — payment and refund integrity.
 - PR `#301` — Portal membership isolation.
 - PR `#304` — principal-owned site authorization and accepted M4 closeout.
+- PR `#308` — principal-owned commercial data isolation.
+- PR `#311` — disposable PostgreSQL two-user validation matrix.
 
 ## 12. Rollback and Document Maintenance
 
@@ -491,3 +504,294 @@ script. The exact code rollback remains:
 If the identity or ownership contract changes, write a new ADR that supersedes
 ADR-031 where necessary. Keep this retrospective intact and add a dated
 follow-up rather than rewriting historical evidence.
+
+## 13. Follow-up Validation and Final Closeout — 2026-07-27
+
+The post-PR-304 stage answered two different questions:
+
+1. Did account-shaped commercial routes still expose data outside the exact
+   principal-owned site?
+2. Could the complete two-user boundary be replayed on real PostgreSQL without
+   inventing or mutating historical ownership?
+
+These questions required different remedies. The first was a source defect and
+was fixed in PR `#308`. The second was an evidence gap and was closed with a
+disposable integration fixture in PR `#311`.
+
+### 13.1 Read-only inventory result and its limit
+
+The M4 inventory available during this stage contained no real multi-user
+account that could support a historical ownership decision. It contained one
+`seed_runtime` site without a principal binding. That row was left unchanged.
+
+This result means only:
+
+- the inspected M4 dataset did not contain a real ambiguous multi-user case;
+- no invalid historical owner could be confirmed from that dataset;
+- no assignment, deletion, bulk correction, or administrator rotation was
+  authorized or performed.
+
+It does not mean production history is clean. M4 is a preview dataset, not a
+production inventory mirror. Any production or long-lived historical
+multi-user account with an unbound site must still fail closed until verified
+Addon evidence or an operator-confirmed assignment identifies one owner.
+
+The legacy `platform:internal_root` identity was preserved. New installations
+use canonical `prn_<uuid4 hex>` principals, but rotating a persisted legacy
+actor remains a separate operation requiring grant, session, audit, rollback,
+and recovery analysis.
+
+### 13.2 Commercial boundary correction — PR #308
+
+PR `#304` correctly protected site-shaped routes, but the follow-up audit found
+that several account-shaped compatibility routes still treated account
+membership as sufficient commercial scope. In a shared account, that could
+expose another user's site payment or credit history even though direct site
+access was denied.
+
+PR `#308`, merged as
+`ad1c248f009cdf12bd42739de1f704ac0ed8e7f4`, corrected the seam:
+
+- account payment-order lists and detail are narrowed to the selected
+  principal-owned site;
+- account credit ledger, trend, event, and bucket reads use the same site
+  scope;
+- another site's order cannot be read, canceled, or reached through a replay;
+- new subscription and credit-pack orders persist the selected `site_id`;
+- shared-account package trial, change, downgrade, offer, and quota actions
+  fail closed unless one active user owns every active account site;
+- disabling or revoking another user does not transfer that user's commercial
+  history;
+- payment callbacks derive the subject from the verified provider order number
+  and persisted order, never callback-supplied `account_id`, `site_id`, or
+  `principal_id`.
+
+This exposed an important review rule: protecting the canonical resource route
+is not enough when compatibility routes project the same data at account
+scope. Every projection must reconstruct its result from the caller's
+authorized resource set.
+
+### 13.3 Disposable PostgreSQL two-user matrix — PR #311
+
+The lack of suitable historical M4 rows was not solved by editing the preview
+database. PR `#311`, merged as
+`d589a719dd693d2b3a8c8ff646066a729cefd63d`, added:
+
+- `tests/fixtures/runtime/portal_synthetic_multi_user_matrix_v1.json`;
+- `tests/integration/test_portal_synthetic_multi_user_matrix.py`;
+- the exact M4 command and lifecycle warning in
+  `tests/fixtures/runtime/README.md`.
+
+The fixture uses only reserved `example.com` identities and stable synthetic
+IDs. The integration test:
+
+1. accepts only PostgreSQL on an approved loopback or M4 Compose host;
+2. refuses an explicitly identified production environment;
+3. creates a uniquely named database;
+4. migrates it to Alembic head;
+5. creates one shared account, users A and B, a disabled user, sites A and B,
+   and one unbound claim-race site;
+6. inserts synthetic payment and credit rows for both users;
+7. exercises API authorization and direct PostgreSQL concurrency constraints;
+8. terminates remaining connections and drops the database in `finally`;
+9. confirms the database no longer exists after the scenario.
+
+The matrix proves:
+
+- each user sees only their own bound site through account usage projection;
+- user A receives `403` for user B's usage, plugin-observability,
+  media-observability, and audit paths;
+- account payment and credit reads contain only the caller's site rows;
+- another user's order detail fails closed;
+- both principals may use the same mutation idempotency key without sharing a
+  response or business row;
+- replay after membership revocation fails;
+- a disabled principal fails authentication;
+- concurrent attempts to claim one unbound site produce exactly one commit and
+  one uniqueness failure;
+- no synthetic business row remains in the long-lived M4 database.
+
+Synthetic evidence is deliberately narrower than production evidence. It
+proves the source contract and PostgreSQL constraints under a controlled
+dataset. It does not prove that production historical data is correctly
+classified or that real payment/provider traffic behaves as expected.
+
+## 14. Final Evidence Matrix
+
+| Layer | Final evidence | Status |
+| --- | --- | --- |
+| source contract | only `platform_admin` and `user`; exact principal-site authorization in ADR-031 | verified |
+| commercial correction | PR `#308` merged as `ad1c248f`; account-shaped payment, credit, entitlement, and package seams fail closed | verified |
+| focused Portal regression | same-account cross-site and support/idempotency regressions passed | verified |
+| broad local source gate | contract/domain: `1465 passed, 3 skipped`; Ruff, Mypy, and anti-drift passed | verified |
+| PostgreSQL controlled flow | disposable two-user matrix: `2 passed`; database cleanup confirmed | verified on M4 |
+| CI merge authority | PR `#311` required backend, frontend, CodeQL, secret, dependency, PostgreSQL, and image checks passed | verified |
+| integration truth | PR `#311` merged into `master` as `d589a719` | verified |
+| accepted M4 | `acceptance_state=accepted`, `promotion_pr=311`, `source_branch=master`, `source_dirty=false`, Alembic `20260727_0072 (head)` | verified |
+| historical M4 data | no real multi-user account available; one unbound `seed_runtime` site preserved | inspected, insufficient for ownership assignment |
+| production inventory | no production historical-data inspection in this stage | not verified |
+| production runtime | no production deployment or smoke authorized | not verified |
+| real-user/provider flow | no real-user, merchant, refund, or provider acceptance | not verified |
+
+The correct release language is therefore:
+
+- source verified;
+- merged into `master`;
+- accepted on M4;
+- not production validated.
+
+## 15. Development Experience and Reusable Method
+
+### 15.1 Separate a source defect from an evidence gap
+
+PR `#308` changed source because the account commercial projection was wrong.
+PR `#311` did not change runtime behavior because the remaining problem was the
+absence of a safe, repeatable PostgreSQL dataset. Treating both as "add more
+tests" would have left the leak open; treating both as "fix production data"
+would have invented ownership.
+
+### 15.2 Absence in a preview dataset is not proof of production absence
+
+An empty inventory result may be useful, but its scope must be named. The M4
+result justified not mutating M4. It did not justify claiming that production
+has no ambiguous accounts.
+
+### 15.3 A security fixture must be disposable by construction
+
+A useful synthetic fixture is more than fake rows:
+
+- use reserved identities and non-sensitive values;
+- create a unique database rather than inserting into a shared schema;
+- allow only an explicit safe host class;
+- migrate the database through the real Alembic chain;
+- clean up in `finally`, including failed assertions;
+- assert cleanup after the scenario;
+- never use the fixture to assign a historical row.
+
+### 15.4 A skipped integration test is not runtime evidence
+
+The first M4 execution collected the file but skipped the real PostgreSQL case
+because the M4 test runner intentionally removes `NPCINK_CLOUD_*` variables.
+The stage did not accept `1 passed, 1 skipped`. The test was adapted to the
+known M4 Compose environment with a bounded host check, resynchronized, and
+rerun until both tests executed and passed.
+
+### 15.5 Read the actual route contract before asserting a product surface
+
+The first matrix draft assumed `GET /portal/v1/sites` was the site-list
+surface. The route intentionally returns `404`; the supported projection for
+this proof is the account usage summary's authorized `site_ids`. The test was
+corrected to use the real contract rather than adding an endpoint to satisfy
+the test.
+
+### 15.6 Validate optional request fields by omission, not `null`
+
+The internal membership payload accepts an optional string `site_id`, not a
+nullable value. Sending JSON `null` produced `422`. Omitting the field correctly
+represented a membership without site assignment. This is a small example of a
+general contract rule: optional and nullable are different.
+
+### 15.7 Candidate source must be synchronized before M4 testing
+
+The first focused M4 command ran before the new untracked test file had been
+synchronized, so the container correctly reported that the path did not
+exist. Candidate sync is part of the test precondition, not an implementation
+detail.
+
+### 15.8 Protected merge state is mutable
+
+PR `#311` completed one green CI run but became behind `master` while another
+PR merged. The branch was rebased, the focused test rerun, the updated revision
+force-pushed with lease, and all required checks allowed to run again. A green
+check set for an obsolete revision is not merge authority for the new head.
+
+### 15.9 Preserve the evidence ladder
+
+The stage kept these claims separate:
+
+```text
+local source checks
+-> M4 candidate
+-> required GitHub checks
+-> merged master
+-> clean-master M4 promotion
+-> focused post-promotion test
+```
+
+Production was never inferred from M4 health or `acceptance_state=accepted`.
+
+## 16. Work Review Report
+
+### Original objective
+
+Audit historical identity/site data without exposing secrets or mutating
+ownership, validate a controlled two-user flow, close cross-user commercial
+and idempotency seams, publish reviewed fixes, and distinguish source, M4,
+master, and production evidence.
+
+### Completion
+
+- [x] The two-identity contract remained limited to `platform_admin` and
+  `user`.
+- [x] Ambiguous ownership stayed fail closed.
+- [x] The commercial account-projection defect was fixed and regression
+  tested.
+- [x] A disposable PostgreSQL two-user matrix was added and verified on M4.
+- [x] PRs `#308` and `#311` merged through required checks.
+- [x] Clean merged `master` was accepted on M4.
+- [x] Existing dirty work, `seed_runtime`, and legacy administrator identity
+  were preserved.
+- [ ] Production historical data was not inventoried because production access
+  and mutation were outside authorization.
+- [ ] Production runtime and real-user/provider behavior were not validated
+  because production deployment was not authorized.
+
+### Problems found during execution
+
+| Severity | Concrete problem | Root cause | Correction |
+| --- | --- | --- | --- |
+| must correct | The first M4 focused command could not find the new test file. | Candidate sync was not treated as an explicit precondition for an untracked file. | Run `m4:preview:sync` before the first focused runtime command for each coherent source checkpoint. |
+| must correct | The first synchronized M4 run reported `1 passed, 1 skipped`. | The fixture assumed the application database URL survived the M4 runner's environment scrub. | Inspect the runner, add a bounded M4 Compose fallback, and require the real PostgreSQL case to execute. |
+| must correct | The disabled-user membership payload returned `422` for `site_id: null`. | The draft confused an optional string with a nullable field. | Omit `site_id` when no site assignment is intended. |
+| must correct | The first site-list assertion called an intentionally absent `/portal/v1/sites` route. | The test assumed a UI concept mapped to a REST collection without checking the route contract. | Use the supported account usage projection and assert its authorized `site_ids`. |
+| should correct | A fully green PR revision became behind `master`, requiring a second CI cycle. | Concurrent merges can invalidate branch-up-to-date protection after checks start. | Rebase immediately before publication and monitor merge state as well as check state; rerun checks for the actual head when required. |
+| suggested improvement | The initial residual-risk wording grouped source defects, data inventory, and production acceptance together. | Evidence types were described as one backlog rather than separate questions. | Track each item by evidence layer and closure authority, as in section 14. |
+
+### What worked well
+
+- The audit began read-only and never printed credential values.
+- Confirmed defects were repaired at route, domain, repository, callback, and
+  constraint seams rather than only in UI copy.
+- Negative tests asserted denial, isolation, and absence of cross-principal
+  replay.
+- The disposable database converted an evidence gap into repeatable proof
+  without creating M4 cleanup debt.
+- Dirty work was isolated; exact files were staged and reviewed.
+- Required checks and clean-master promotion remained the merge and acceptance
+  authorities.
+
+### Next task focus
+
+- If authorized, run a read-only production inventory using counts and opaque
+  IDs only; do not assign ambiguous sites.
+- Keep `platform:internal_root` unchanged until an explicit rotation plan maps
+  every persisted grant, session, audit actor, rollback, and recovery path.
+- Run real merchant/provider and real-user validation only in a separately
+  approved production or sandbox stage.
+- For future user-system work, require both resource-shaped and account-shaped
+  projections in the authorization review matrix.
+
+## 17. Final Closure Decision
+
+The source and controlled-runtime user-system stage is closed.
+
+No confirmed source defect from this stage remains unresolved. The remaining
+items are intentionally different classes of work:
+
+- production historical-data inventory;
+- explicit handling of any ambiguous historical ownership found there;
+- legacy platform administrator rotation, if ever required;
+- production deployment and real-user/provider acceptance.
+
+None of those items may be inferred, automated, or executed from this
+retrospective. They require new authority and fresh evidence.
