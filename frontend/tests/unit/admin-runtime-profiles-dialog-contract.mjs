@@ -185,8 +185,8 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /runtime-profile-model-toolbar" className="grid gap-2 sm:grid-cols-\[17rem_minmax\(0,1fr\)\][\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
-  'compact candidate controls must reserve readable supplier and model widths without another table frame'
+  /runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select className="input w-44"[\s\S]*input className="input w-60"[\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
+  'candidate context and compact controls must share one line while preserving readable table widths'
 );
 
 assert.doesNotMatch(
