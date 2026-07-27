@@ -311,7 +311,7 @@ test('provider configuration dialog supports PC keyboard entry, focus loop, and 
 
 });
 
-test('editing a provider prioritizes the model workbench and keeps low-frequency connection fields collapsed', async ({ page }, testInfo) => {
+test('editing a provider uses a dense connection table above the model workbench', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installProviderDirectoryHarness(page);
@@ -323,7 +323,13 @@ test('editing a provider prioritizes the model workbench and keeps low-frequency
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveCSS('max-width', '1152px');
-  await expect(dialog.getByText(/Credential stays unchanged|凭据保持不变/i)).toBeVisible();
+  const configurationTable = dialog.locator('[data-ui="admin-configuration-table"]');
+  await expect(configurationTable).toBeVisible();
+  await expect(configurationTable.locator('tbody tr')).toHaveCount(7);
+  await expect(dialog.locator('[data-configuration-row="image-response-format"]')).toBeVisible();
+  await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
+  await expect(dialog.locator('details[data-ui="provider-connection-settings"]')).toHaveCount(0);
+  await expect(dialog.locator('details[data-ui="image-delivery-settings"]')).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: /Model visibility|模型可见性/i })).toBeVisible();
   await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeVisible();
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
@@ -333,19 +339,11 @@ test('editing a provider prioritizes the model workbench and keeps low-frequency
     maxDiffPixelRatio: 0.015,
   });
 
-  const connectionSettings = dialog.locator('details[data-ui="provider-connection-settings"]');
-  await expect(connectionSettings).not.toHaveAttribute('open', '');
-  await connectionSettings.locator(':scope > summary').click();
-
   const replaceCredentialButton = dialog.getByRole('button', { name: /Replace credential|替换凭据/i });
   await expect(replaceCredentialButton).toBeVisible();
   await expect(dialog.getByLabel(/API Key|Credential|凭据/i)).toHaveCount(0);
   await replaceCredentialButton.click();
   await expect(dialog.getByLabel(/API Key|Credential|凭据/i)).toBeVisible();
-
-  const imageDeliverySettings = dialog.locator('details[data-ui="image-delivery-settings"]');
-  await expect(imageDeliverySettings).toBeVisible();
-  await expect(imageDeliverySettings).not.toHaveAttribute('open', '');
 
   await testInfo.attach('provider-workbench-dialog', {
     body: await page.screenshot({ fullPage: true }),

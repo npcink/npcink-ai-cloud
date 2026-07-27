@@ -158,7 +158,7 @@ export function AdminWorkbenchDialog({
         ) : null}
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-          <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 py-4">
+          <div className="grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto px-5 py-4">
             {children}
           </div>
           <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">

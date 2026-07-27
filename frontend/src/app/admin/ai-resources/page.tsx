@@ -13,8 +13,11 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import {
+  AdminConfigurationRow,
+  AdminConfigurationTable,
+} from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
-import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
@@ -393,16 +396,6 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     modelIds: '',
   },
 ];
-
-function connectionHost(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return '-';
-  try {
-    return new URL(trimmed).host || trimmed;
-  } catch {
-    return trimmed.replace(/^https?:\/\//, '').split('/')[0] || trimmed;
-  }
-}
 
 function externalUrlValue(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -859,7 +852,6 @@ function AiResourcesContent() {
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
   const [providerFormOpen, setProviderFormOpen] = useState(false);
   const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
-  const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(true);
   const [credentialEditOpen, setCredentialEditOpen] = useState(true);
   const [providerConnectionForm, setProviderConnectionForm] = useState<ProviderConnectionForm>(
     EMPTY_PROVIDER_CONNECTION_FORM
@@ -1337,7 +1329,6 @@ function AiResourcesContent() {
     setConfirmingDeleteConnectionId('');
     setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
     setProviderFormMode('create');
-    setConnectionDetailsOpen(true);
     setCredentialEditOpen(true);
     setProviderFormOpen(true);
     setProviderCatalogPreview(null);
@@ -1365,7 +1356,6 @@ function AiResourcesContent() {
     setModelReferenceShowDeprecated(true);
     setCustomModelInput('');
     setProviderFormMode('edit');
-    setConnectionDetailsOpen(false);
     setCredentialEditOpen(false);
     setProviderConnectionForm({
       providerPreset,
@@ -1919,11 +1909,6 @@ function AiResourcesContent() {
           open={providerFormOpen}
           title={providerDialogTitle}
           titleId="provider-channel-dialog-title"
-          headerAccessory={providerFormMode === 'edit' ? (
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-              {aiText('credential_keep_hint', 'Credential stays unchanged unless you replace it')}
-            </span>
-          ) : null}
           message={message}
           error={error}
           saving={savingConnection}
@@ -1935,71 +1920,56 @@ function AiResourcesContent() {
           onClose={closeProviderForm}
           onSubmit={() => void saveProviderConnection()}
         >
-                <details
-                  data-ui="provider-connection-settings"
-                  className="group border-b border-slate-200 pb-3 dark:border-slate-800"
-                  open={connectionDetailsOpen}
-                  onToggle={(event) => setConnectionDetailsOpen(event.currentTarget.open)}
+                <AdminConfigurationTable
+                  ariaLabel={aiText('provider_configuration_table_label', '{{name}} configuration', { name: providerDialogName })}
+                  itemHeading={aiText('configuration_item_heading', 'Setting')}
+                  valueHeading={aiText('configuration_value_heading', 'Current setting')}
+                  detailHeading={aiText('configuration_detail_heading', 'Action / note')}
                 >
-                  <summary className="flex cursor-pointer list-none flex-col gap-2 rounded-lg px-1 py-1.5 transition hover:bg-slate-50 dark:hover:bg-slate-900/50 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
-                        <span className="mr-2 inline-block text-slate-400 transition group-open:rotate-90 dark:text-slate-500">›</span>
-                        {aiText('connection_section_title', 'Connection')}
-                      </h3>
-                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {providerConnectionForm.displayName || providerKindLabel(providerConnectionForm.kind)}
-                        <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
-                        {connectionHost(providerConnectionForm.baseUrl) || aiText('connection_summary_base_url_missing', 'No base URL')}
-                        <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
-                        {providerConnectionForm.enabled ? aiText('field_enabled', 'Enabled') : aiText('status_disabled_label', 'Disabled')}
-                        {providerFormExternalLinkItems.length ? (
-                          <>
-                            <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
-                            {aiText('provider_links_configured', 'Reference links configured')}
-                          </>
-                        ) : null}
-                      </p>
-                    </div>
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {aiText('connection_section_toggle_hint', 'Low-frequency settings')}
-                    </span>
-                  </summary>
-                  <div className="mt-3 grid gap-3 px-1">
-                    <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                      {aiText('connection_section_desc', 'Choose the service, name, base URL, and credential for this runtime channel.')}
-                    </p>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_provider_type', 'Provider type')}
-                        <select
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.providerPreset}
-                          onChange={(event) => applyProviderPreset(event.target.value)}
-                        >
-                          {PROVIDER_PRESETS.map((preset) => (
-                            <option key={preset.id} value={preset.id}>
-                              {preset.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_display_name', 'Display name')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.displayName}
-                          onChange={(event) => {
-                            const displayName = event.target.value;
-                            updateProviderConnectionForm({
-                              displayName,
-                              connectionId: providerConnectionForm.connectionId ? providerConnectionForm.connectionId : slugifyProviderValue(displayName),
-                            });
-                          }}
-                          placeholder="GPT-5.5 via NewAPI"
-                          required
-                        />
-                      </label>
+                  <AdminConfigurationRow
+                    rowId="provider-type"
+                    label={aiText('field_provider_type', 'Provider type')}
+                    value={(
+                      <select
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                        value={providerConnectionForm.providerPreset}
+                        onChange={(event) => applyProviderPreset(event.target.value)}
+                        aria-label={aiText('field_provider_type', 'Provider type')}
+                      >
+                        {PROVIDER_PRESETS.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    detail={providerKindLabel(providerConnectionForm.kind)}
+                  />
+                  <AdminConfigurationRow
+                    rowId="display-name"
+                    label={aiText('field_display_name', 'Display name')}
+                    value={(
+                      <input
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                        value={providerConnectionForm.displayName}
+                        onChange={(event) => {
+                          const displayName = event.target.value;
+                          updateProviderConnectionForm({
+                            displayName,
+                            connectionId: providerConnectionForm.connectionId ? providerConnectionForm.connectionId : slugifyProviderValue(displayName),
+                          });
+                        }}
+                        placeholder="GPT-5.5 via NewAPI"
+                        aria-label={aiText('field_display_name', 'Display name')}
+                        required
+                      />
+                    )}
+                    detail={aiText('display_name_note', 'Operator-facing name')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="credential"
+                    label={aiText('field_credential', 'API Key')}
+                    value={(
                       <AdminCredentialField
                         mode={providerFormMode}
                         revealed={credentialEditOpen}
@@ -2015,20 +1985,43 @@ function AiResourcesContent() {
                           setCredentialEditOpen(false);
                           updateProviderConnectionForm({ credential: '' });
                         }}
+                        density="compact"
+                        hideLabel
                       />
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_base_url', 'Base URL')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.baseUrl}
-                          onChange={(event) => updateProviderConnectionForm({ baseUrl: event.target.value })}
-                          placeholder="https://api.example.com/v1"
-                        />
-                      </label>
-                      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    )}
+                    detail={providerFormMode === 'edit'
+                      ? aiText('credential_keep_hint', 'Credential stays unchanged unless you replace it')
+                      : aiText('credential_create_hint', 'Stored securely after save')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="base-url"
+                    label={aiText('field_base_url', 'Base URL')}
+                    value={(
+                      <input
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                        value={providerConnectionForm.baseUrl}
+                        onChange={(event) => updateProviderConnectionForm({ baseUrl: event.target.value })}
+                        placeholder="https://api.example.com/v1"
+                        aria-label={aiText('field_base_url', 'Base URL')}
+                      />
+                    )}
+                    detail={providerFormExternalLinkItems.length ? (
+                      <ProviderReferenceLinks
+                        items={providerFormExternalLinkItems}
+                        label={aiText('provider_links_title', 'Reference links')}
+                        translate={aiText}
+                        variant="inline"
+                      />
+                    ) : aiText('provider_links_none', 'No reference links')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="runtime-enabled"
+                    label={aiText('runtime_use_label', 'Runtime use')}
+                    value={providerConnectionForm.enabled
+                      ? aiText('field_enabled', 'Enabled')
+                      : aiText('status_disabled_label', 'Disabled')}
+                    detail={(
+                      <label className="inline-flex min-h-9 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                         <input
                           type="checkbox"
                           checked={providerConnectionForm.enabled}
@@ -2036,78 +2029,59 @@ function AiResourcesContent() {
                         />
                         {aiText('field_enabled_runtime', 'Enabled for runtime use')}
                       </label>
-                    </div>
-
-                    {providerUsesImageGeneration ? (
-                      <AdminSettingsDisclosure
-                        dataUi="image-delivery-settings"
-                        title={aiText('image_delivery_title', 'Generated image delivery')}
-                        description={providerConnectionForm.imageResponseFormat
-                          ? aiText('image_delivery_configured_compact', 'Configured: {{format}}', {
-                            format: providerConnectionForm.imageResponseFormat === 'b64_json'
-                              ? aiText('image_response_base64', 'Base64 image')
-                              : aiText('image_response_url', 'Image URL'),
-                          })
-                          : aiText('image_delivery_unconfirmed_compact', 'Delivery format not confirmed')}
-                        statusLabel={providerConnectionForm.imageResponseFormat
-                          ? aiText('status_configured', 'Configured')
-                          : aiText('status_needs_confirmation', 'Needs confirmation')}
-                        statusTone={providerConnectionForm.imageResponseFormat ? 'configured' : 'attention'}
-                      >
-                        <p className="text-xs leading-5 text-slate-600 dark:text-slate-300">
-                          {aiText(
-                            'image_delivery_desc',
-                            'Cloud converts provider output into a temporary review artifact. URL output requires an exact provider-owned download host; schemes, paths, ports, and wildcards are rejected.'
-                          )}
-                        </p>
-                        <div className="grid gap-3 md:grid-cols-[minmax(13rem,0.45fr)_minmax(0,1fr)]">
-                          <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                            {aiText('field_image_response_format', 'Provider image response')}
-                            <select
-                              className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                              value={providerConnectionForm.imageResponseFormat}
-                              onChange={(event) => updateProviderConnectionForm({ imageResponseFormat: event.target.value })}
-                            >
-                              <option value="">{aiText('image_response_provider_default', 'Provider default')}</option>
-                              <option value="url">{aiText('image_response_url', 'Image URL')}</option>
-                              <option value="b64_json">{aiText('image_response_base64', 'Base64 image')}</option>
-                            </select>
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                            {aiText('field_image_output_hosts', 'Exact image download hosts')}
-                            <input
-                              className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                              value={providerConnectionForm.imageOutputHosts}
-                              onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
-                              placeholder="images.provider.example, assets.provider.example"
-                              required={providerConnectionForm.imageResponseFormat === 'url'}
-                            />
-                          </label>
-                        </div>
-                        {!providerConnectionForm.imageResponseFormat && !splitList(providerConnectionForm.imageOutputHosts).length ? (
-                          <p className="text-xs font-medium leading-5 text-amber-700 dark:text-amber-300">
-                            {aiText(
-                              'image_delivery_unconfirmed',
-                              'Image generation is enabled, but its delivery format is not confirmed. A text/catalog connection test alone does not prove that generated images can be delivered.'
+                    )}
+                  />
+                  {providerUsesImageGeneration ? (
+                    <>
+                      <AdminConfigurationRow
+                        rowId="image-response-format"
+                        label={aiText('image_delivery_row_label', 'Image delivery')}
+                        value={(
+                          <select
+                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            value={providerConnectionForm.imageResponseFormat}
+                            onChange={(event) => updateProviderConnectionForm({ imageResponseFormat: event.target.value })}
+                            aria-label={aiText('field_image_response_format', 'Provider image response')}
+                          >
+                            <option value="">{aiText('image_response_provider_default', 'Provider default')}</option>
+                            <option value="url">{aiText('image_response_url', 'Image URL')}</option>
+                            <option value="b64_json">{aiText('image_response_base64', 'Base64 image')}</option>
+                          </select>
+                        )}
+                        detail={(
+                          <span className="grid gap-0.5">
+                            {!providerConnectionForm.imageResponseFormat && !splitList(providerConnectionForm.imageOutputHosts).length ? (
+                              <span className="font-medium text-amber-700 dark:text-amber-300">
+                                {aiText('image_delivery_unconfirmed_compact', 'Delivery format not confirmed')}
+                              </span>
+                            ) : (
+                              <span>{aiText('status_configured', 'Configured')}</span>
                             )}
-                          </p>
-                        ) : null}
-                        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                          {aiText(
-                            'image_delivery_security_note',
-                            'Use Base64 only when the upstream explicitly supports it. For URL output, copy the exact asset hostname from the provider documentation; Cloud will still verify HTTPS, public DNS, MIME type, size, and image content.'
-                          )}
-                        </p>
-                      </AdminSettingsDisclosure>
-                    ) : null}
-
-                    <ProviderReferenceLinks
-                      items={providerFormExternalLinkItems}
-                      label={aiText('provider_links_title', 'Reference links')}
-                      translate={aiText}
-                    />
-                  </div>
-                </details>
+                            <span>{aiText('image_delivery_test_not_proof_compact', 'Connection testing does not prove image delivery.')}</span>
+                          </span>
+                        )}
+                      />
+                      <AdminConfigurationRow
+                        rowId="image-output-hosts"
+                        label={aiText('field_image_output_hosts', 'Image download hosts')}
+                        value={(
+                          <input
+                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            value={providerConnectionForm.imageOutputHosts}
+                            onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
+                            placeholder="images.provider.example, assets.provider.example"
+                            aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
+                            required={providerConnectionForm.imageResponseFormat === 'url'}
+                          />
+                        )}
+                        detail={aiText(
+                          'image_delivery_security_note_compact',
+                          'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
+                        )}
+                      />
+                    </>
+                  ) : null}
+                </AdminConfigurationTable>
 
                 <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
                   <div className="grid gap-3">

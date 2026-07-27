@@ -25,8 +25,10 @@ accessibility, preserve the stronger boundary first.
 3. search, status filter, latest operation, and one create action;
 4. one semantic comparison table;
 5. frequent row actions before one overflow entry;
-6. a wide edit workbench with low-frequency settings collapsed;
-7. explicit credential replacement instead of a prefilled secret field.
+6. a wide edit workbench with one dense connection table above model
+   visibility;
+7. explicit credential replacement instead of a prefilled secret field;
+8. low-frequency runtime metadata and uncommon model operations collapsed.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
@@ -117,8 +119,8 @@ new route-local table shell.
   overlay.
 - The dialog must trap focus, close with `Escape` when safe, and return focus
   to the meaningful trigger.
-- Connection and other low-frequency settings start collapsed during routine
-  editing.
+- Essential connection values use one dense configuration table during routine
+  editing; only advanced runtime metadata starts collapsed.
 - Put the main work object, such as model visibility, in the default view.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
@@ -133,7 +135,9 @@ new route-local table shell.
   action.
 - Cancelling replacement clears the unsaved value.
 - Capability-specific fields appear only when the capability is active.
-- Image delivery remains collapsed unless the operator opens it.
+- When image generation is active, its response format and exact download hosts
+  appear as concise configuration rows; explanatory detail must not become a
+  dominant card.
 - Text/catalog connectivity must not be presented as proof that image delivery
   works.
 
