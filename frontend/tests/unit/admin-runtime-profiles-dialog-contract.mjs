@@ -165,6 +165,24 @@ assert.match(
   'the shared workbench must use configuration and candidate tables with primary and fallback radio columns'
 );
 
+assert.match(
+  pageSource,
+  /<AdminDataTableFrame[\s\S]*dataUi="runtime-profile-table"[\s\S]*density="compact"/,
+  'the runtime profile directory must opt into the shared compact table density'
+);
+
+assert.match(
+  pageSource,
+  /<AdminWorkbenchDialog[\s\S]*density="compact"[\s\S]*<AdminConfigurationTable[\s\S]*density="compact"/,
+  'the runtime profile workbench and policy table must use one compact density'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /line-clamp-2|mt-1 block truncate font-mono text-\[11px\]/,
+  'compact runtime profile tables must not spend a second line on routine labels or instance identifiers'
+);
+
 assert.doesNotMatch(pageSource, /createPortal|useDialogKeyboard/, 'runtime profile editing must not retain a route-local dialog implementation');
 
 assert.match(

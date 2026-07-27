@@ -22,6 +22,9 @@
   --admin-sidebar-collapsed: 4rem;
   --admin-workbench-max-width: 72rem;
   --admin-workbench-compact-max-width: 60rem;
+  --admin-compact-control-height: 2rem;
+  --admin-compact-row-height: 2.5rem;
+  --admin-compact-radius: 0.25rem;
 }
 
 .dark {
@@ -155,6 +158,22 @@ h4,
 
 .admin-workbench-dialog-compact {
   max-width: var(--admin-workbench-compact-max-width);
+}
+
+[data-ui="admin-configuration-table"] tbody[data-density="compact"] .admin-configuration-row {
+  height: var(--admin-compact-row-height);
+}
+
+[data-ui="admin-configuration-table"] tbody[data-density="compact"] .admin-configuration-row > * {
+  padding: 0.5rem 0.75rem;
+}
+
+[data-density="compact"] .input {
+  min-height: var(--admin-compact-control-height);
+}
+
+.admin-compact-surface {
+  border-radius: var(--admin-compact-radius);
 }
 
 @media (min-width: 1024px) {
