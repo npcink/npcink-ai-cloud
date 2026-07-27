@@ -55,7 +55,6 @@
   "legacyRouteLocalDialogs": [
     "src/app/admin/layout.tsx",
     "src/app/admin/plans/[planId]/page.tsx",
-    "src/app/admin/runtime-profiles/page.tsx",
     "src/app/admin/service-settings/page.tsx"
   ],
   "legacyRouteLocalCredentials": [

@@ -66,6 +66,7 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
 - [docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md](docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md)
 - [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
+- [docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md](docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md)
 
 Evidence records (not target-contract completion proof):
 
@@ -85,6 +86,7 @@ Evidence records (not target-contract completion proof):
 - [docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md](docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md)
 - [docs/public-frontend-development-retrospective-and-standard-2026-07-25.md](docs/public-frontend-development-retrospective-and-standard-2026-07-25.md)
 - [docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md](docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
+- [docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md](docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 
 Operational references:

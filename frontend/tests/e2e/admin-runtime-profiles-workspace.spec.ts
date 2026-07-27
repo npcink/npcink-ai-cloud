@@ -25,6 +25,17 @@ const fallbackInstance = {
   weight: 90,
 };
 
+const unavailableInstance = {
+  ...primaryInstance,
+  instance_id: 'text.unavailable',
+  provider_id: 'provider_retired',
+  provider_display_name: 'Retired Provider',
+  model_id: 'text-model-retired',
+  health_status: 'unknown',
+  model_status: 'disabled',
+  weight: 0,
+};
+
 const initialProfiles = [
   {
     platform_kind: 'wordpress',
@@ -92,7 +103,7 @@ function projection(profiles: typeof initialProfiles, receipt?: Record<string, u
     connector_id: 'wordpress_ai_connector',
     operation_contract_version: 'wordpress_operation.v1',
     available_instances: {
-      text: [primaryInstance, fallbackInstance],
+      text: [primaryInstance, fallbackInstance, unavailableInstance],
       vision: [],
       image_generation: [],
       audio_generation: [],
@@ -174,23 +185,32 @@ async function installRuntimeProfilesHarness(page: Page) {
   return writes;
 }
 
+function profileRow(page: Page, profileId: string) {
+  return page.locator(`[data-profile-id="${profileId}"]`);
+}
+
+function candidateRow(page: Page, instanceId: string) {
+  return page.locator(`[data-instance-id="${instanceId}"]`);
+}
+
 test('hosted runtime profiles are URL-backed, boundary-focused, and mobile safe', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installRuntimeProfilesHarness(page);
   await page.goto('/admin/runtime-profiles');
 
   await expect(page.getByRole('heading', { name: /Runtime Profiles|运行配置/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Short text suggestions|短文本建议/i })).toBeVisible();
+  await expect(profileRow(page, 'route.short_text')).toBeVisible();
   await expect(page.getByText('Text Provider / text-model-v1').first()).toBeVisible();
   await expect(page.locator('main input')).toHaveCount(0);
   await page.getByText(/Hosted runtime contract details|托管运行合同详情/i).click();
   await expect(page.getByText(/Operation contract|操作合同/i)).toBeVisible();
   await expect(page.getByText('wordpress_operation.v1')).toBeVisible();
 
-  await page.getByRole('button', { name: /Content classification|内容分类/i }).click();
+  await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i }).click();
   await expect(page).toHaveURL(/profile=route\.classification/);
+  await page.keyboard.press('Escape');
   await page.reload();
-  await expect(page.getByRole('button', { name: /Content classification|内容分类/i })).toHaveAttribute('aria-pressed', 'true');
+  await expect(profileRow(page, 'route.classification')).toHaveAttribute('data-selected', 'true');
 
   await expect(page.getByText(/Cloud runtime dependencies|Cloud 运行依赖/i)).toHaveCount(0);
   await expect(page.getByText(/embedding|向量模型/i)).toHaveCount(0);
@@ -230,11 +250,11 @@ test('runtime profile readiness fails closed for unknown and unhealthy primary m
   });
   await page.goto('/admin/runtime-profiles');
 
-  const unknownProfile = page.getByRole('button', { name: /Short text suggestions|短文本建议/i });
+  const unknownProfile = profileRow(page, 'route.short_text');
   await expect(unknownProfile).toContainText(/Needs config|待配置/i);
   await expect(unknownProfile).not.toContainText(/Ready|就绪/i);
 
-  const unhealthyProfile = page.getByRole('button', { name: /Content classification|内容分类/i });
+  const unhealthyProfile = profileRow(page, 'route.classification');
   await expect(unhealthyProfile).toContainText(/Blocked|已阻断/i);
 });
 
@@ -244,14 +264,16 @@ test('candidate editing is dialog-bounded and PUT saves an auditable receipt', a
   await expect(page.locator('main input')).toHaveCount(0);
   await expect(page.getByText('Text Backup / text-model-v2')).toHaveCount(0);
 
-  const configureButton = page.getByRole('button', { name: /Configure candidate chain|配置候选链/i });
+  const configureButton = profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i });
   await configureButton.click();
   const dialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
   await expect(dialog).toBeVisible();
+  const backupRow = candidateRow(page, 'text.backup');
+  await expect(backupRow).toContainText('Text Backup');
+  await expect(backupRow).toContainText('text-model-v2');
+  await backupRow.getByRole('radio', { name: /Use text-model-v2 as fallback|将 text-model-v2 设为兜底模型/i }).check();
   await expect(dialog.getByText('Text Backup / text-model-v2')).toBeVisible();
-  const backupRow = dialog.getByText('Text Backup / text-model-v2').locator('..').locator('..');
-  await backupRow.getByRole('button', { name: /Set fallback|设为兜底/i }).click();
-  await expect(dialog.getByText('Text Backup / text-model-v2')).toHaveCount(2);
+  await expect(backupRow.getByRole('radio', { name: /Use text-model-v2 as fallback|将 text-model-v2 设为兜底模型/i })).toBeChecked();
 
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
@@ -280,7 +302,7 @@ test('candidate editing can save an explicit empty fail-closed chain', async ({ 
   const writes = await installRuntimeProfilesHarness(page);
   await page.goto('/admin/runtime-profiles?profile=route.classification');
 
-  await page.getByRole('button', { name: /Configure candidate chain|配置候选链/i }).click();
+  await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i }).click();
   const dialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
   await dialog.getByRole('button', { name: /Clear candidate chain|清空候选链/i }).click();
   await page.keyboard.press('Escape');
@@ -343,11 +365,11 @@ test('dirty profile drafts require confirmation before leaving for model supplie
   await installRuntimeProfilesHarness(page);
   await page.goto('/admin/runtime-profiles?profile=route.classification');
 
-  const configureButton = page.getByRole('button', { name: /Configure candidate chain|配置候选链/i });
+  const configureButton = profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i });
   await configureButton.click();
   let profileDialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
-  const backupRow = profileDialog.getByText('Text Backup / text-model-v2').locator('..').locator('..');
-  await backupRow.getByRole('button', { name: /Set fallback|设为兜底/i }).click();
+  const backupRow = candidateRow(page, 'text.backup');
+  await backupRow.getByRole('radio', { name: /Use text-model-v2 as fallback|将 text-model-v2 设为兜底模型/i }).check();
   await page.keyboard.press('Escape');
 
   const suppliersLink = page.getByRole('main').getByRole('link', { name: /Model suppliers|模型供应商/i });
@@ -360,11 +382,43 @@ test('dirty profile drafts require confirmation before leaving for model supplie
   await expect(leaveDialog).toHaveCount(0);
   await configureButton.click();
   profileDialog = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
-  await expect(profileDialog.getByText('Text Backup / text-model-v2')).toHaveCount(2);
+  await expect(profileDialog.getByText('Text Backup / text-model-v2')).toBeVisible();
+  await expect(candidateRow(page, 'text.backup').getByRole('radio', { name: /Use text-model-v2 as fallback|将 text-model-v2 设为兜底模型/i })).toBeChecked();
   await page.keyboard.press('Escape');
 
   await suppliersLink.click();
   leaveDialog = page.getByRole('dialog', { name: /Leave with unsaved changes|放弃未保存的更改并离开/i });
   await leaveDialog.getByRole('button', { name: /Discard and leave|放弃并离开/i }).click();
   await expect(page).toHaveURL(/\/admin\/ai-resources$/);
+});
+
+test('runtime profile table and workbench keep the accepted PC density', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installRuntimeProfilesHarness(page);
+  await page.goto('/admin/runtime-profiles?profile=route.classification');
+
+  const profileTable = page.locator('[data-ui="runtime-profile-table"]');
+  await expect(profileTable).toBeVisible();
+  await expect(profileTable.getByRole('columnheader')).toHaveCount(7);
+  await expect(profileTable).toHaveScreenshot('admin-runtime-profiles-table-pc.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    maxDiffPixelRatio: 0.015,
+  });
+
+  await profileRow(page, 'route.classification').getByRole('button', { name: /^Configure$|^配置$/i }).click();
+  const workbench = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
+  await expect(workbench.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
+  await expect(workbench.locator('[data-ui="runtime-profile-candidate-table"]')).toBeVisible();
+  await expect(workbench.getByRole('radio')).toHaveCount(6);
+  await expect(candidateRow(page, 'text.unavailable')).toContainText(/Unavailable|不可用/i);
+  await expect(candidateRow(page, 'text.unavailable').getByRole('radio').first()).toBeDisabled();
+  await expect(candidateRow(page, 'text.unavailable').getByRole('radio').last()).toBeDisabled();
+  await expect(workbench.locator('.admin-workbench-dialog')).toHaveCSS('max-width', '1152px');
+  await expect(workbench.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-runtime-profiles-workbench-pc.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    maxDiffPixelRatio: 0.015,
+  });
 });

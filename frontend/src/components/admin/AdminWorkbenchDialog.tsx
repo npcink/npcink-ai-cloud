@@ -16,6 +16,7 @@ export type AdminWorkbenchDialogProps = {
   saveLabel: string;
   savingLabel: string;
   footerNotice: string;
+  footerActions?: ReactNode;
   hideFooterActions?: boolean;
   width?: 'wide' | 'compact';
   onClose: () => void;
@@ -36,6 +37,7 @@ export function AdminWorkbenchDialog({
   saveLabel,
   savingLabel,
   footerNotice,
+  footerActions,
   hideFooterActions = false,
   width = 'wide',
   onClose,
@@ -163,7 +165,7 @@ export function AdminWorkbenchDialog({
           </div>
           <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
             <span id={`${titleId}-workflow-notice`}>{footerNotice}</span>
-            {hideFooterActions ? null : (
+            {footerActions ?? (hideFooterActions ? null : (
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>
                   {cancelLabel}
@@ -176,7 +178,7 @@ export function AdminWorkbenchDialog({
                   {saving ? savingLabel : saveLabel}
                 </button>
               </div>
-            )}
+            ))}
           </div>
         </form>
       </div>

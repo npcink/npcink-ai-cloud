@@ -50,6 +50,19 @@ still use the page model that matches their operator job.
    clearing a credential and disabling the service;
 7. row-associated save and test feedback.
 
+`/admin/runtime-profiles` is the accepted PC reference for a
+candidate-chain configuration page:
+
+1. one semantic profile table showing primary model, fallback model, policy,
+   state, update time, and one configure action;
+2. one shared wide workbench instead of a route-local dialog;
+3. one dense policy table above the candidate list;
+4. one stable supplier/search toolbar;
+5. one semantic candidate table with radio columns for primary and fallback;
+6. page-level draft state and one explicit final save;
+7. contract identity, revision, and other low-frequency evidence outside the
+   default working table.
+
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
 
