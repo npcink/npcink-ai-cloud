@@ -11,6 +11,7 @@ from app.api.portal_session import (
     get_commercial_service,
 )
 from app.core.models import PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
+from app.domain.commercial.identity import IDENTITY_TYPE_PLATFORM_ADMIN
 from app.setup.security import sha256_text
 
 
@@ -69,6 +70,7 @@ class ResolvedAdminSession:
         return {
             "grant_id": self.grant_id,
             "principal_id": self.principal_id,
+            "identity_type": IDENTITY_TYPE_PLATFORM_ADMIN,
             "role": self.role,
             "auth_mode": self.auth_mode,
             "transport": "cookie",

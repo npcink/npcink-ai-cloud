@@ -309,7 +309,7 @@ def _grant_account_member_access(client: TestClient, *, site_id: str, email: str
     assert account_id
     response = client.post(
         f"/internal/service/accounts/{account_id}/members",
-        json={"email": email},
+        json={"email": email, "site_id": site_id},
         headers=build_internal_headers(idempotency_key=f"{site_id}-{safe_email}-account-members"),
     )
     assert response.status_code == 200, response.text
@@ -404,6 +404,7 @@ def test_web_admin_key_json_login_is_fixed_to_server_principal(tmp_path: Path) -
     )
     assert response.status_code == 200
     assert response.json()["data"]["principal_id"] == "platform:founder"
+    assert response.json()["data"]["identity_type"] == "platform_admin"
     assert response.json()["data"]["auth_mode"] == "admin_key"
     assert "npcink_admin_session_token" in response.headers["set-cookie"]
     assert response.headers["cache-control"] == "no-store"

@@ -44,6 +44,7 @@ from app.core.models import (
     PortalLoginCode,
     PortalOAuthState,
     Principal,
+    PrincipalSiteBinding,
     RunRecord,
     ServiceAuditEvent,
     Site,
@@ -624,7 +625,7 @@ def _grant_account_member_access(
     assert account_id
     response = client.post(
         f"/internal/service/accounts/{account_id}/members",
-        json={"email": email, "status": status},
+        json={"email": email, "status": status, "site_id": site_id},
         headers=build_internal_headers(idempotency_key=idempotency_key),
     )
     assert response.status_code == 200, response.text
@@ -1156,12 +1157,10 @@ def test_portal_remove_site_soft_removes_record_and_revokes_active_keys(
         "/portal/v1/sites/site_portal_remove/remove",
         headers=build_portal_headers(idempotency_key="portal-remove-site-again"),
     )
-    assert idempotent_response.status_code == 200, idempotent_response.text
-    assert idempotent_response.json()["data"]["site"]["status"] == "archived"
-    assert idempotent_response.json()["data"]["revoked_key_ids"] == []
+    assert idempotent_response.status_code == 403, idempotent_response.text
     assert (
-        idempotent_response.json()["data"]["relink_policy"]["relink_available_at"]
-        == remove_data["relink_policy"]["relink_available_at"]
+        idempotent_response.json()["error_code"]
+        == "service.principal_site_access_required"
     )
 
     dispose_engine(database_url)
@@ -1368,6 +1367,16 @@ def test_portal_wordpress_addon_connection_issues_one_time_exchange_code(
         assert snapshot is not None
         assert snapshot.status == "active"
         assert snapshot.budgets_json["max_ai_credits_per_period"] == 300
+        site_binding = session.scalar(
+            select(PrincipalSiteBinding).where(
+                PrincipalSiteBinding.site_id == "site_primary-example-com",
+                PrincipalSiteBinding.released_at.is_(None),
+            )
+        )
+        assert site_binding is not None
+        assert site_binding.principal_id == str(
+            _ACCESS_BY_EMAIL["addon-connect@example.com"]["principal_id"]
+        )
 
     audit_response = client.get(
         "/internal/service/audit-events?site_id=site_primary-example-com&limit=20",
@@ -1467,6 +1476,88 @@ def test_portal_addon_connection_rejects_cross_account_membership_escalation(
                 )
             )
         ) == []
+
+    dispose_engine(database_url)
+
+
+def test_portal_addon_exchange_cannot_take_another_users_bound_site(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    account_id = "acct_portal_bound_owner"
+    site_id = "site_owned-example-com"
+    client.post(
+        "/internal/service/accounts",
+        json={"account_id": account_id, "name": "Bound Owner Account"},
+        headers=build_internal_headers(idempotency_key="bound-owner-account-001"),
+    )
+    site_response = client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": site_id,
+            "account_id": account_id,
+            "name": "Owned Site",
+            "status": "active",
+            "site_url": "https://owned.example.com",
+        },
+        headers=build_internal_headers(idempotency_key="bound-owner-site-001"),
+    )
+    assert site_response.status_code == 200, site_response.text
+    owner = _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email="bound-owner@example.com",
+        idempotency_key="bound-owner-membership-001",
+    )
+    second_user_response = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": "bound-second@example.com"},
+        headers=build_internal_headers(idempotency_key="bound-second-membership-001"),
+    )
+    assert second_user_response.status_code == 200, second_user_response.text
+    second_user = second_user_response.json()["data"]
+
+    create_response = client.post(
+        "/portal/v1/addon-connections",
+        json={
+            "account_id": account_id,
+            "site_url": "https://owned.example.com",
+            "site_name": "Owned Site",
+            "return_url": (
+                "https://owned.example.com/wp-admin/admin-post.php"
+                "?action=npcink_cloud_addon_complete_auth"
+            ),
+            "state": "bound-second-state",
+        },
+        headers={
+            **_portal_headers_for_access(second_user),
+            "Idempotency-Key": "bound-second-addon-001",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    redirect_query = parse_qs(
+        urlsplit(str(create_response.json()["data"]["redirect_url"])).query
+    )
+    exchange_response = client.post(
+        "/portal/v1/addon-connections/exchange",
+        json={
+            "code": redirect_query["code"][0],
+            "state": "bound-second-state",
+        },
+    )
+    assert exchange_response.status_code == 409, exchange_response.text
+    assert exchange_response.json()["error_code"] == "service.site_user_binding_conflict"
+
+    with get_session(database_url) as session:
+        binding = session.scalar(
+            select(PrincipalSiteBinding).where(
+                PrincipalSiteBinding.site_id == site_id,
+                PrincipalSiteBinding.released_at.is_(None),
+            )
+        )
+        assert binding is not None
+        assert binding.principal_id == str(owner["principal_id"])
+        assert list(session.scalars(select(AccountSubscription))) == []
 
     dispose_engine(database_url)
 
@@ -2400,7 +2491,9 @@ def test_portal_revoked_account_membership_blocks_site_access(tmp_path: Path) ->
     dispose_engine(database_url)
 
 
-def test_portal_account_member_can_access_every_site_in_account(tmp_path: Path) -> None:
+def test_portal_user_cannot_access_another_users_site_in_same_account(
+    tmp_path: Path,
+) -> None:
     database_url, client = _build_client(tmp_path)
 
     client.post(
@@ -2435,12 +2528,24 @@ def test_portal_account_member_can_access_every_site_in_account(tmp_path: Path) 
         headers=build_internal_headers(idempotency_key="portal-shared-secondary-site-001"),
     )
     assert second_site_response.status_code == 200
+    second_user = _grant_account_member_access(
+        client,
+        site_id="site_portal_shared_secondary",
+        email="portal-shared-secondary@example.com",
+        idempotency_key="portal-shared-secondary-account-members-001",
+    )
 
     response = client.get(
         "/portal/v1/sites/site_portal_shared_secondary/summary",
         headers=_portal_headers_for_access(grant),
     )
-    assert response.status_code == 200
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "service.principal_site_access_required"
+    owner_response = client.get(
+        "/portal/v1/sites/site_portal_shared_secondary/summary",
+        headers=_portal_headers_for_access(second_user),
+    )
+    assert owner_response.status_code == 200
     sites_response = client.get("/portal/v1/sites", headers=_portal_headers_for_access(grant))
     assert sites_response.status_code == 404
 
@@ -5115,6 +5220,12 @@ def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> 
         headers=build_internal_headers(idempotency_key="portal-shared-trial-site-001"),
     )
     assert site_response.status_code == 200, site_response.text
+    _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email="shared-paid-trial@example.com",
+        idempotency_key="portal-shared-trial-site-binding-001",
+    )
 
     plus_trial = client.post(
         "/portal/v1/account/plan-trials",
@@ -5248,6 +5359,12 @@ def test_open_alipay_notify_marks_pro_monthly_order_paid(
         headers=build_internal_headers(idempotency_key="portal-real-alipay-site-001"),
     )
     assert site_response.status_code == 200, site_response.text
+    _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email="alipay-paid-pro-user@example.com",
+        idempotency_key="portal-real-alipay-site-binding-001",
+    )
     trial_response = client.post(
         "/portal/v1/account/plan-trials",
         json={"tier_id": "pro"},
@@ -5360,6 +5477,12 @@ def test_portal_session_falls_back_to_free_after_pro_trial_expires(
         headers=build_internal_headers(idempotency_key="portal-pro-trial-expiry-site-001"),
     )
     assert site_response.status_code == 200, site_response.text
+    _grant_account_member_access(
+        client,
+        site_id=site_id,
+        email="expired-pro-trial-user@example.com",
+        idempotency_key="portal-pro-trial-expiry-site-binding-001",
+    )
 
     trial_response = client.post(
         "/portal/v1/account/plan-trials",

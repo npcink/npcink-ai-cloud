@@ -612,7 +612,7 @@ function SiteDetailContent() {
             <BackofficeMetricStrip
               items={[
                 {
-                  label: t('admin.account_detail.site_admin_workspace_metric', undefined, 'Site admin workspace'),
+                  label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
                   value: t('common.enabled', undefined, 'Enabled'),
                 },
                 { label: t('common.keys'), value: formatInteger(site.key_count) },
@@ -1075,16 +1075,16 @@ function SiteDetailContent() {
         <BackofficeSectionPanel>
           <div className="border-b border-gray-200 px-6 py-5 dark:border-gray-800">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.site_admin_workspace_eyebrow', undefined, 'Site admin workspace')}
+              {t('admin.user_site_workspace_eyebrow', undefined, 'User site workspace')}
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('admin.site_admin_workspace_title', undefined, 'Workspace access')}
+              {t('admin.user_site_workspace_title', undefined, 'Workspace access')}
             </h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
               {t(
-                'admin.site_admin_workspace_desc',
+                'admin.user_site_workspace_desc',
                 undefined,
-                'Site administrators use the Cloud site workspace for this site. Access is bound per site and audited through the service API.'
+                'Users access only Cloud site workspaces explicitly bound to their identity. Each binding is audited through the service API.'
               )}
             </p>
           </div>
@@ -1093,8 +1093,8 @@ function SiteDetailContent() {
               columnsClassName="md:grid-cols-2"
               items={[
                 {
-                  label: t('admin.site_admin_access_scope', undefined, 'Access scope'),
-                  value: t('admin.site_admin_access_scope_site', undefined, 'This site'),
+                  label: t('admin.user_site_access_scope', undefined, 'Access scope'),
+                  value: t('admin.user_site_access_scope_site', undefined, 'This site'),
                 },
                 {
                   label: t('common.status'),

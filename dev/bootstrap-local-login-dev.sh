@@ -24,6 +24,6 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose -f docker-compose.
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}" docker compose -f docker-compose.dev.yml run --rm api \
 	python -m app.dev.bootstrap_portal_site \
 		--site-id "${SITE_ID}" \
-		--site-admin-email "${MEMBER_EMAIL}" \
+		--user-email "${MEMBER_EMAIL}" \
 		--public-base-url "${PUBLIC_BASE_URL}" \
 		--skip-billing-rebuild

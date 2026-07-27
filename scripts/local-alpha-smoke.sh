@@ -444,7 +444,7 @@ ok "Bootstrapping portal membership and billing snapshot"
 docker compose -f "${ROOT_DIR}/docker-compose.dev.yml" run --rm api \
 	python -m app.dev.bootstrap_portal_site \
 		--site-id "${SITE_ID}" \
-		--site-admin-email "${MEMBER_EMAIL}" \
+		--user-email "${MEMBER_EMAIL}" \
 		--public-base-url "${BASE_URL}" >/dev/null
 
 http_request "GET" "${BASE_URL%/}/health/live" "${PORTAL_COOKIE_JAR}" ""

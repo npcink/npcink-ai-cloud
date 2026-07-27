@@ -5452,7 +5452,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     )
     client.post(
         "/internal/service/accounts/acct_admin/members",
-        json={"email": "admin@example.com"},
+        json={"email": "admin@example.com", "site_id": "site_primary"},
         headers=build_internal_headers(idempotency_key="svc-admin-account-members-001"),
     )
     client.post(

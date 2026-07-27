@@ -26,7 +26,6 @@ interface AdminOverview {
   generatedAt: string;
   totals: {
     accounts: number;
-    siteAdmins: number;
     sites: number;
     sitesActive: number;
     subscriptions: number;
@@ -124,7 +123,6 @@ function normalizeOverview(raw: any): AdminOverview {
     generatedAt: String(raw?.generated_at ?? ''),
     totals: {
       accounts: Number(counts.accounts_total ?? 0),
-      siteAdmins: Number(counts.site_admins_active ?? 0),
       sites: Number(counts.sites_total ?? 0),
       sitesActive: Number(counts.sites_active ?? 0),
       subscriptions: Number(counts.subscriptions_total ?? 0),

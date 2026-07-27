@@ -2794,7 +2794,7 @@ function AccountDetailContent() {
                 items={[
                   { label: t('admin.active_sites'), value: formatInteger(siteOptions.length) },
                   {
-                    label: t('admin.account_detail.site_admin_workspace_metric', undefined, 'Site admin workspace'),
+                    label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
                     value: t('common.enabled', undefined, 'Enabled'),
                   },
                 ]}

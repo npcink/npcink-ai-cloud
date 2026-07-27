@@ -1181,7 +1181,7 @@ raise SystemExit(64)
     assert "bootstrap-secret-sentinel" not in docker_argv
     assert "--env\tNPCINK_CLOUD_SEED_RUNTIME_SECRET" in docker_argv
     assert "--env\tNPCINK_CLOUD_BOOTSTRAP_SITE_SECRET" in docker_argv
-    assert "--site-admin-email\tmember@example.test" in docker_argv
+    assert "--user-email\tmember@example.test" in docker_argv
     assert "--member-role" not in docker_argv
 
     operational_environment = base_environment.copy()

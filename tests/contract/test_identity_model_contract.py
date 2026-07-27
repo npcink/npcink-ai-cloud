@@ -6,7 +6,7 @@ from typing import Any, cast
 import pytest
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
-from app.core.models import IdentityProviderBinding
+from app.core.models import IdentityProviderBinding, PlatformAdminGrant
 from app.domain.commercial.errors import CommercialPermissionError
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_PLATFORM_ADMIN,
@@ -57,6 +57,15 @@ def test_platform_admin_role_write_path_rejects_unlaunched_roles(value: str) -> 
         _canonicalize_platform_admin_role_for_write(value)
 
     assert error.value.error_code == "service.platform_admin_role_invalid"
+
+
+def test_platform_admin_role_is_locked_to_canonical_database_value() -> None:
+    constraint_names = {
+        str(constraint.name or "")
+        for constraint in PlatformAdminGrant.__table__.constraints
+    }
+
+    assert "ck_platform_admin_grants_role" in constraint_names
 
 
 @pytest.mark.parametrize(

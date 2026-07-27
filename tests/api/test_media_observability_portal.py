@@ -46,6 +46,7 @@ def _build_client(tmp_path: Path) -> tuple[str, TestClient]:
         CommercialService(database_url).upsert_account_member_access(
             account_id="acct_site-media-portal-001",
             email="portal-admin@example.com",
+            site_id="site-media-portal-001",
             metadata_json={"source": "test"},
         )
     )

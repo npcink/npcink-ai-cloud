@@ -1607,13 +1607,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 principal_id=principal_id,
                 membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
             )
-            membership_account_ids = [
-                str(getattr(account, "account_id", "") or "")
-                for account, _identity, _membership in memberships
-                if str(getattr(account, "account_id", "") or "").strip()
-            ]
             sites_by_account: defaultdict[str, list[Site]] = defaultdict(list)
-            for site in repository.list_sites(account_ids=membership_account_ids, limit=None):
+            for site, _identity, _membership in repository.list_sites_for_principal(
+                principal_id=principal_id,
+                membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
+            ):
                 if site.account_id:
                     sites_by_account[site.account_id].append(site)
             account_items: list[dict[str, object]] = []
@@ -1650,11 +1648,13 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         account_id: str,
         email: str,
         status: str = PRINCIPAL_STATUS_ACTIVE,
+        site_id: str = "",
         metadata_json: dict[str, object] | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         normalized_email = _normalize_principal_email(email)
         normalized_status = str(status or PRINCIPAL_STATUS_ACTIVE).strip().lower()
+        normalized_site_id = str(site_id or "").strip()
         if normalized_status not in {PRINCIPAL_STATUS_ACTIVE, PRINCIPAL_STATUS_DISABLED}:
             raise CommercialValidationError(
                 "service.account_membership_status_invalid",
@@ -1741,6 +1741,22 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     ),
                 },
             )
+            if normalized_site_id and normalized_status == PRINCIPAL_STATUS_ACTIVE:
+                site = repository.get_site_for_update(normalized_site_id)
+                if site is None or str(site.account_id or "") != account_id:
+                    raise CommercialNotFoundError(
+                        "service.site_not_found",
+                        f"site '{normalized_site_id}' was not found for account '{account_id}'",
+                    )
+                service = cast(Any, self)
+                service._ensure_principal_site_binding_in_session(
+                    repository=repository,
+                    site=site,
+                    principal_id=str(identity.principal_id),
+                    account_id=account_id,
+                    now=self.now_factory(),
+                    source="account_membership",
+                )
             payload: dict[str, object] = {
                 "principal_id": identity.principal_id,
                 "email": identity.email,
@@ -1750,6 +1766,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "membership_id": membership.membership_id,
                 "membership_status": membership.status,
             }
+            if normalized_site_id:
+                payload["site_id"] = normalized_site_id
             self._record_service_audit_in_session(
                 repository=repository,
                 audit_context=audit_context,
