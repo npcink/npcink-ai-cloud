@@ -185,8 +185,14 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select className="input w-44"[\s\S]*input className="input w-60"[\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
-  'candidate context and compact controls must share one line while preserving readable table widths'
+  /section className="grid gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
+  'candidate context and self-labelled compact controls must share one balanced toolbar above readable table widths'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /<span>\{copy\('(provider_filter|model_search)'/,
+  'compact filter controls must not repeat visible labels already expressed by their value and placeholder'
 );
 
 assert.doesNotMatch(
