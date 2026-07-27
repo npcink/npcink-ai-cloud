@@ -243,6 +243,82 @@ def test_real_alipay_gateway_closes_order(monkeypatch: pytest.MonkeyPatch) -> No
     assert captured["data"]["method"] == "alipay.trade.close"  # type: ignore[index]
 
 
+def test_real_alipay_gateway_submits_and_verifies_refund(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key, private_pem, public_pem = _alipay_test_keys()
+    config = {
+        "configured": True,
+        "enabled": True,
+        "app_id": "2026000000000001",
+        "private_key": private_pem,
+        "public_key": public_pem,
+        "gateway_url": "https://openapi.alipay.com/gateway.do",
+    }
+    captured: dict[str, object] = {}
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            refund_payload = {
+                "code": "10000",
+                "msg": "Success",
+                "trade_no": "202607270000000001",
+                "out_trade_no": "pay_refund_001",
+                "refund_fee": "29.00",
+                "fund_change": "Y",
+            }
+            signed_content = json.dumps(
+                refund_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            signature = private_key.sign(  # type: ignore[attr-defined]
+                signed_content.encode("utf-8"),
+                padding.PKCS1v15(),
+                hashes.SHA256(),
+            )
+            return {
+                "alipay_trade_refund_response": refund_payload,
+                "sign": base64.b64encode(signature).decode("ascii"),
+            }
+
+    def _post(url: str, *, data: dict[str, str], timeout: float) -> _Response:
+        captured.update({"url": url, "data": data, "timeout": timeout})
+        return _Response()
+
+    monkeypatch.setattr("app.domain.commercial.payment_gateways.httpx.post", _post)
+    gateway = get_payment_gateway_provider("alipay", config=config)
+    result = gateway.create_refund(
+        PaymentGatewayRefundRequest(
+            provider="alipay",
+            refund_id="ref_real_alipay_001",
+            order_id="pay_refund_001",
+            amount=29.0,
+            currency="CNY",
+            reason="customer requested refund",
+            metadata={},
+        )
+    )
+
+    assert captured["url"] == "https://openapi.alipay.com/gateway.do"
+    assert captured["timeout"] == 10.0
+    assert captured["data"]["method"] == "alipay.trade.refund"  # type: ignore[index]
+    biz_content = json.loads(captured["data"]["biz_content"])  # type: ignore[index]
+    assert biz_content == {
+        "out_trade_no": "pay_refund_001",
+        "refund_amount": "29.00",
+        "out_request_no": "ref_real_alipay_001",
+        "refund_reason": "customer requested refund",
+    }
+    assert result.external_refund_no == "ref_real_alipay_001"
+    assert result.provider_payload["gateway_mode"] == "alipay_trade_refund"
+    assert result.provider_payload["refund_status"] == "succeeded"
+    assert result.provider_payload["provider_refund_no"] == "202607270000000001"
+
+
 def test_real_alipay_gateway_accepts_bare_pkcs1_private_key() -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_pkcs1_pem = private_key.private_bytes(

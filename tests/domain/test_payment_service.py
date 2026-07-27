@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
+from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
@@ -28,6 +29,10 @@ from app.core.models import (
     PaymentRefund,
 )
 from app.domain.commercial.errors import CommercialConflictError, CommercialValidationError
+from app.domain.commercial.payment_gateways import (
+    PaymentGatewayRefundRequest,
+    PaymentGatewayRefundResult,
+)
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
@@ -496,6 +501,76 @@ def test_full_refund_success_cancels_subscription_and_supersedes_entitlement(
     dispose_engine(database_url)
 
 
+def test_verified_synchronous_refund_success_updates_entitlement_atomically(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("sync-refund-success-order"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="sync-refund-success-paid",
+        amount=199.0,
+        audit_context=_audit("sync-refund-success-paid"),
+    )
+
+    class _VerifiedRefundGateway:
+        def create_refund(
+            self,
+            request: PaymentGatewayRefundRequest,
+        ) -> PaymentGatewayRefundResult:
+            refund_id = request.refund_id
+            return PaymentGatewayRefundResult(
+                provider="alipay",
+                external_refund_no=refund_id,
+                provider_payload={
+                    "contract_version": "payment-gateway-contract-v1",
+                    "provider": "alipay",
+                    "gateway_mode": "alipay_trade_refund",
+                    "refund_status": "succeeded",
+                    "provider_refund_no": "202607270000000002",
+                    "response_verified": True,
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.domain.commercial.mixins._payment_mixin.get_payment_gateway_provider",
+        lambda *args, **kwargs: _VerifiedRefundGateway(),
+    )
+    refund = service.request_payment_refund(
+        order_id=str(order["order_id"]),
+        amount=199.0,
+        reason="verified synchronous refund",
+        audit_context=_audit("sync-refund-success-request"),
+    )
+
+    assert refund["status"] == PAYMENT_REFUND_STATUS_SUCCEEDED
+    assert refund["provider_refund_no"] == "202607270000000002"
+    with get_session(database_url) as session:
+        payment_order = session.get(PaymentOrder, str(order["order_id"]))
+        subscription = session.scalar(select(AccountSubscription))
+        events = list(session.scalars(select(PaymentEvent)))
+        assert payment_order is not None
+        assert subscription is not None
+        assert payment_order.status == PAYMENT_ORDER_STATUS_REFUNDED
+        assert subscription.status == SUBSCRIPTION_STATUS_CANCELED
+        assert [event.event_kind for event in events] == [
+            "payment.succeeded",
+            "refund.succeeded",
+        ]
+
+    dispose_engine(database_url)
+
+
 def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)
@@ -762,6 +837,85 @@ def test_pending_payment_orders_expire_before_late_payment_confirmation(tmp_path
     dispose_engine(database_url)
 
 
+def test_payment_completed_before_deadline_survives_delayed_confirmation(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("payment-order-delayed-confirmation-create"),
+    )
+    created_at = datetime.now(UTC) - timedelta(minutes=31)
+    paid_at = created_at + timedelta(minutes=29)
+    with get_session(database_url) as session:
+        payment_order = session.get(PaymentOrder, str(order["order_id"]))
+        assert payment_order is not None
+        payment_order.created_at = created_at
+        session.commit()
+    listed = service.list_account_payment_orders("acct_pay", limit=10)
+    expired = next(item for item in listed["items"] if item["order_id"] == order["order_id"])
+    assert expired["status"] == PAYMENT_ORDER_STATUS_CANCELED
+
+    paid = service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        paid_at=paid_at,
+        provider_event_id="delayed-valid-provider-confirmation",
+        amount=199.0,
+        audit_context=_audit("payment-order-delayed-confirmation-paid"),
+    )
+
+    assert paid["order"]["status"] == PAYMENT_ORDER_STATUS_PAID
+    assert paid["order"]["paid_at"] == paid_at.isoformat()
+    assert paid["order"]["canceled_at"] is None
+    assert paid["order"]["metadata"]["late_payment_reconciliation"]["provider_paid_at"] == (
+        paid_at.isoformat()
+    )
+
+    dispose_engine(database_url)
+
+
+def test_expired_refund_window_rejects_refund_request(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("expired-refund-window-order"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="expired-refund-window-paid",
+        amount=199.0,
+        audit_context=_audit("expired-refund-window-paid"),
+    )
+    with get_session(database_url) as session:
+        payment_order = session.get(PaymentOrder, str(order["order_id"]))
+        assert payment_order is not None
+        payment_order.refund_window_end_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+    with pytest.raises(CommercialConflictError) as exc_info:
+        service.request_payment_refund(
+            order_id=str(order["order_id"]),
+            amount=199.0,
+            audit_context=_audit("expired-refund-window-request"),
+        )
+
+    assert exc_info.value.error_code == "service.payment_refund_window_expired"
+    with get_session(database_url) as session:
+        assert session.scalar(select(PaymentRefund)) is None
+
+    dispose_engine(database_url)
+
+
 def test_portal_payment_order_groups_hide_old_canceled_orders_without_deleting(
     tmp_path: Path,
 ) -> None:
@@ -965,5 +1119,146 @@ def test_credit_pack_refund_reverses_credit_grant_without_canceling_subscription
         assert subscription.status == SUBSCRIPTION_STATUS_ACTIVE
         entries = list(session.scalars(select(CreditLedgerEntry)))
         assert sorted(entry.credit_delta for entry in entries) == [-10000.0, 10000.0]
+
+    dispose_engine(database_url)
+
+
+def test_credit_pack_requires_active_or_trialing_subscription(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    package_order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("inactive-credit-pack-base-order"),
+    )
+    paid = service.mark_payment_order_paid(
+        order_id=str(package_order["order_id"]),
+        provider_event_id="inactive-credit-pack-base-paid",
+        amount=199.0,
+        audit_context=_audit("inactive-credit-pack-base-paid"),
+    )
+    with get_session(database_url) as session:
+        subscription = session.get(
+            AccountSubscription,
+            str(paid["subscription"]["subscription_id"]),
+        )
+        assert subscription is not None
+        subscription.status = SUBSCRIPTION_STATUS_CANCELED
+        session.commit()
+
+    with pytest.raises(CommercialConflictError) as exc_info:
+        service.create_credit_pack_payment_order(
+            account_id="acct_pay",
+            pack_id="pack_small",
+            audit_context=_audit("inactive-credit-pack-order"),
+        )
+
+    assert exc_info.value.error_code == "service.credit_pack_subscription_inactive"
+
+    dispose_engine(database_url)
+
+
+def test_credit_pack_payment_rechecks_subscription_status(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    package_order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("credit-pack-payment-status-base-order"),
+    )
+    paid = service.mark_payment_order_paid(
+        order_id=str(package_order["order_id"]),
+        provider_event_id="credit-pack-payment-status-base-paid",
+        amount=199.0,
+        audit_context=_audit("credit-pack-payment-status-base-paid"),
+    )
+    order = service.create_credit_pack_payment_order(
+        account_id="acct_pay",
+        pack_id="pack_small",
+        audit_context=_audit("credit-pack-payment-status-order"),
+    )
+    with get_session(database_url) as session:
+        subscription = session.get(
+            AccountSubscription,
+            str(paid["subscription"]["subscription_id"]),
+        )
+        assert subscription is not None
+        subscription.status = SUBSCRIPTION_STATUS_CANCELED
+        session.commit()
+
+    with pytest.raises(CommercialConflictError) as exc_info:
+        service.mark_payment_order_paid(
+            order_id=str(order["order_id"]),
+            provider_event_id="credit-pack-payment-status-paid",
+            amount=99.0,
+            audit_context=_audit("credit-pack-payment-status-paid"),
+        )
+
+    assert exc_info.value.error_code == "service.credit_pack_subscription_inactive"
+    with get_session(database_url) as session:
+        payment_order = session.get(PaymentOrder, str(order["order_id"]))
+        assert payment_order is not None
+        assert payment_order.status == PAYMENT_ORDER_STATUS_PENDING
+        assert session.scalar(select(PaidCreditGrant)) is None
+
+    dispose_engine(database_url)
+
+
+def test_consumed_credit_pack_rejects_refund_request(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _seed_account_and_plan(service)
+    package_order = service.create_payment_order(
+        account_id="acct_pay",
+        plan_id="plan_pro",
+        plan_version_id="plan_pro_v1",
+        amount=199.0,
+        audit_context=_audit("consumed-credit-pack-base-order"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(package_order["order_id"]),
+        provider_event_id="consumed-credit-pack-base-paid",
+        amount=199.0,
+        audit_context=_audit("consumed-credit-pack-base-paid"),
+    )
+    order = service.create_credit_pack_payment_order(
+        account_id="acct_pay",
+        pack_id="pack_small",
+        audit_context=_audit("consumed-credit-pack-order"),
+    )
+    service.mark_payment_order_paid(
+        order_id=str(order["order_id"]),
+        provider_event_id="consumed-credit-pack-paid",
+        amount=99.0,
+        audit_context=_audit("consumed-credit-pack-paid"),
+    )
+    with get_session(database_url) as session:
+        consumed = CommercialRepository(session).consume_paid_credit_grants(
+            account_id="acct_pay",
+            credits=1.0,
+            now=datetime.now(UTC),
+        )
+        session.commit()
+    assert consumed == 1.0
+
+    with pytest.raises(CommercialConflictError) as exc_info:
+        service.request_payment_refund(
+            order_id=str(order["order_id"]),
+            amount=99.0,
+            audit_context=_audit("consumed-credit-pack-refund"),
+        )
+
+    assert exc_info.value.error_code == "service.credit_pack_refund_credits_consumed"
+    with get_session(database_url) as session:
+        assert session.scalar(select(PaymentRefund)) is None
 
     dispose_engine(database_url)

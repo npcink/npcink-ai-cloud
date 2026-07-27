@@ -357,6 +357,104 @@ class AlipayPaymentGatewayProvider(SimulatedPaymentGatewayProvider):
         self._verify_callback_signature(payload)
         return super().verify_payment_callback(payload)
 
+    def create_refund(self, request: PaymentGatewayRefundRequest) -> PaymentGatewayRefundResult:
+        if not self._real_gateway_enabled():
+            return super().create_refund(request)
+        self._assert_provider(request.provider)
+        if str(request.currency or "").strip().upper() != "CNY":
+            raise CommercialValidationError(
+                "service.payment_currency_unsupported",
+                "Alipay refunds require CNY",
+            )
+        config = self._require_config()
+        timestamp = datetime.now(ALIPAY_GATEWAY_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
+        biz_content = {
+            "out_trade_no": request.order_id,
+            "refund_amount": _format_cny_amount(request.amount),
+            "out_request_no": request.refund_id,
+        }
+        reason = str(request.reason or "").strip()
+        if reason:
+            biz_content["refund_reason"] = reason[:256]
+        params: dict[str, str] = {
+            "app_id": _config_text(config, "app_id"),
+            "method": "alipay.trade.refund",
+            "format": "JSON",
+            "charset": "utf-8",
+            "sign_type": "RSA2",
+            "timestamp": timestamp,
+            "version": "1.0",
+            "biz_content": json.dumps(biz_content, ensure_ascii=False, separators=(",", ":")),
+        }
+        params["sign"] = self._sign_params(params)
+        try:
+            response = httpx.post(
+                _config_text(config, "gateway_url"),
+                data=params,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            response_payload = response.json()
+        except (httpx.HTTPError, ValueError) as error:
+            raise CommercialValidationError(
+                "service.alipay_refund_status_unknown",
+                (
+                    "Alipay did not return a verifiable refund result; reconcile the stable "
+                    "out_request_no before retrying"
+                ),
+            ) from error
+        if not isinstance(response_payload, dict):
+            raise CommercialValidationError(
+                "service.alipay_refund_status_unknown",
+                "Alipay returned an invalid refund response",
+            )
+        refund_payload = response_payload.get("alipay_trade_refund_response", {})
+        if not isinstance(refund_payload, dict):
+            raise CommercialValidationError(
+                "service.alipay_refund_status_unknown",
+                "Alipay returned an invalid refund response",
+            )
+        self._verify_response_signature(
+            refund_payload,
+            str(response_payload.get("sign") or ""),
+        )
+        if str(refund_payload.get("code") or "") != "10000":
+            raise CommercialValidationError(
+                "service.alipay_refund_failed",
+                "Alipay rejected the refund request",
+            )
+        response_order_id = str(refund_payload.get("out_trade_no") or "").strip()
+        if response_order_id and response_order_id != request.order_id:
+            raise CommercialValidationError(
+                "service.alipay_refund_response_mismatch",
+                "Alipay refund response does not match the payment order",
+            )
+        response_amount = _first_float(refund_payload, "refund_fee")
+        if response_amount is not None and _format_cny_amount(
+            response_amount
+        ) != _format_cny_amount(request.amount):
+            raise CommercialValidationError(
+                "service.alipay_refund_response_mismatch",
+                "Alipay refund response amount does not match the requested amount",
+            )
+        provider_refund_no = str(refund_payload.get("trade_no") or "").strip()
+        return PaymentGatewayRefundResult(
+            provider=self.provider,
+            external_refund_no=request.refund_id,
+            provider_payload={
+                "contract_version": PAYMENT_GATEWAY_CONTRACT_VERSION,
+                "provider": self.provider,
+                "gateway_mode": "alipay_trade_refund",
+                "refund_status": "succeeded",
+                "method": "alipay.trade.refund",
+                "sign_type": "RSA2",
+                "provider_refund_no": provider_refund_no,
+                "fund_change": str(refund_payload.get("fund_change") or "").strip(),
+                "code": "10000",
+                "response_verified": True,
+            },
+        )
+
     def close_order(self, request: PaymentGatewayCloseRequest) -> PaymentGatewayCloseResult:
         if not self._real_gateway_enabled():
             return super().close_order(request)

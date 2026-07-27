@@ -2786,10 +2786,18 @@ class CommercialRepository:
             )
         return list(totals.values())
 
-    def get_paid_credit_grant_by_order(self, payment_order_id: str) -> PaidCreditGrant | None:
-        return self.session.scalar(
-            select(PaidCreditGrant).where(PaidCreditGrant.payment_order_id == payment_order_id)
+    def get_paid_credit_grant_by_order(
+        self,
+        payment_order_id: str,
+        *,
+        for_update: bool = False,
+    ) -> PaidCreditGrant | None:
+        statement = select(PaidCreditGrant).where(
+            PaidCreditGrant.payment_order_id == payment_order_id
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def upsert_paid_credit_grant(
         self,

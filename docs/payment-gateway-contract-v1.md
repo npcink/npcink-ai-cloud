@@ -73,6 +73,13 @@ Real provider integration must stay behind this contract. It must not change
 the payment order, credit pack, subscription, entitlement, or credit ledger
 state machine.
 
+Real Alipay refunds use `alipay.trade.refund` with a stable
+`out_request_no`. Cloud verifies the signed synchronous response, payment
+order number, and refund amount before recording provider success or changing
+entitlement. A timeout or malformed response is an unknown result, not a
+failed refund: the same stable refund number must be reconciled before any
+retry.
+
 Provider timestamps without an explicit offset must be interpreted in the
 provider's documented business timezone. Alipay `gmt_*` values are interpreted
 as Asia/Shanghai and normalized to UTC before persistence.
@@ -109,6 +116,11 @@ The browser return URL is not payment evidence. Portal resolves
 `GET /portal/v1/account/payment-orders/{order_id}` for the exact internal order
 and may poll while it remains pending. Only the persisted, verified order state
 may produce a success message or trigger refreshed entitlement and quota data.
+
+Payment timeliness is determined by the verified provider payment timestamp,
+not callback delivery time. A payment completed inside the 30-minute checkout
+window remains valid when its verified callback arrives late. Customer-canceled
+orders and payments completed after the checkout deadline remain closed.
 
 ## Package Price and Cost Budget
 
