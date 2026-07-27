@@ -27,7 +27,8 @@ for (const [name, source] of [
 }
 
 assert.match(dialogHook, /event\.key === 'Escape'[\s\S]*event\.key !== 'Tab'[\s\S]*previouslyFocused\?\.focus\(\)/, 'custom admin dialogs must share Escape, focus containment, and trigger restoration');
-assert.match(runtimeProfiles, /const dialogRef = useDialogKeyboard<[\s\S]*ref=\{dialogRef\}/, 'hosted runtime profile editing must use the shared keyboard behavior');
+assert.match(runtimeProfiles, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'hosted runtime profile editing must reuse the shared admin workbench');
+assert.doesNotMatch(runtimeProfiles, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'hosted runtime profiles must not keep route-local modal behavior');
 assert.doesNotMatch(runtimeProfiles, /cloudBindingDialogRef|runtime-binding|embedding/i, 'hosted runtime profiles must not retain the removed Cloud dependency dialog');
 assert.doesNotMatch(aiResources, /capabilityAddDialogRef|capabilityAddDialogOpen/, 'model supplier management must not keep the retired capability supplier dialog');
 assert.match(planDetail, /editorDialogRef = useDialogKeyboard[\s\S]*ref=\{editorDialogRef\}/, 'package editor must use shared keyboard behavior');
