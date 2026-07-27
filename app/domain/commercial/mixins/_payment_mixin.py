@@ -412,7 +412,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     f"payment order '{order_id}' was not found",
                 )
             if order.account_id != account_id or (
-                site_id and order.site_id and order.site_id != site_id
+                site_id and order.site_id != site_id
             ):
                 raise CommercialNotFoundError(
                     "service.payment_order_not_found",
@@ -430,6 +430,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         order_id: str,
+        site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -442,7 +443,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     f"account '{account_id}' was not found",
                 )
             order = repository.get_payment_order_for_update(order_id)
-            if order is None or order.account_id != account_id:
+            if (
+                order is None
+                or order.account_id != account_id
+                or (site_id and order.site_id != site_id)
+            ):
                 raise CommercialNotFoundError(
                     "service.payment_order_not_found",
                     f"payment order '{order_id}' was not found",

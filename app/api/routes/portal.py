@@ -50,7 +50,11 @@ from app.domain.agent_workflow_metadata import (
     get_workflow_metadata,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
-from app.domain.commercial.errors import CommercialPermissionError, CommercialServiceError
+from app.domain.commercial.errors import (
+    CommercialConflictError,
+    CommercialPermissionError,
+    CommercialServiceError,
+)
 from app.domain.commercial.identity import (
     USER_ALLOWED_ACTION_MANAGE_BILLING,
     USER_ALLOWED_ACTION_PROVISION_SITES,
@@ -2038,6 +2042,43 @@ def _resolve_selected_portal_account_access(
     return access
 
 
+def _resolve_portal_account_commercial_site_scope(
+    request: Request,
+    *,
+    principal_id: str,
+    account_id: str,
+    selected_site_id: str,
+    require_exclusive: bool = False,
+    allow_exclusive_account_scope: bool = False,
+) -> str | JSONResponse:
+    try:
+        scope = _get_commercial_service(request).resolve_portal_account_principal_scope(
+            account_id=account_id,
+            principal_id=principal_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    if require_exclusive and not bool(scope.get("is_exclusive")):
+        return _service_error_response(
+            CommercialConflictError(
+                "service.portal_shared_account_commercial_scope_ambiguous",
+                "account package changes require exclusive principal-owned site authority",
+            ),
+            request=request,
+        )
+    if allow_exclusive_account_scope and bool(scope.get("is_exclusive")):
+        return ""
+    normalized_site_id = str(selected_site_id or "").strip()
+    if not normalized_site_id:
+        return portal_json_error(
+            request,
+            status_code=409,
+            error_code="portal.site_selection_required",
+            message="portal site selection is required",
+        )
+    return normalized_site_id
+
+
 def _resolve_portal_addon_account_access(
     request: Request,
     *,
@@ -2811,6 +2852,15 @@ async def list_portal_account_plan_offers(request: Request) -> Any:
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     try:
         offers = _get_commercial_service(request).list_account_plan_offers(account_id=account_id)
     except CommercialServiceError as error:
@@ -2847,10 +2897,19 @@ async def start_portal_account_plan_trial(
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).start_account_plan_trial(
             account_id=account_id,
@@ -2898,15 +2957,25 @@ async def create_portal_account_subscription_order(
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).create_account_subscription_payment_order(
             account_id=account_id,
             offer_id=payload.offer_id,
             provider=payload.provider,
+            site_id=auth.site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -2943,14 +3012,24 @@ async def cancel_portal_account_subscription_order(
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).cancel_account_subscription_payment_order(
             account_id=account_id,
             subscription_order_id=subscription_order_id,
+            site_id=auth.site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -2984,10 +3063,19 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).schedule_account_free_downgrade(
             account_id=account_id,
@@ -3019,6 +3107,15 @@ async def get_portal_account_entitlements(request: Request) -> Any:
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     try:
         quota_summary = _get_commercial_service(request).get_portal_account_quota_summary(
             account_id
@@ -3096,11 +3193,20 @@ async def get_portal_account_credit_ledger(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         ledger = _get_commercial_service(request).get_portal_account_credit_ledger(
             account_id,
             limit=limit,
             offset=offset,
+            site_id=commercial_site_scope or None,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3132,11 +3238,19 @@ async def get_portal_account_credit_trend(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     resolved_site_id = _validate_portal_account_site_filter(
         request,
         principal_id=auth.principal_id,
         account_id=account_id,
-        site_id=site_id,
+        site_id=site_id or commercial_site_scope,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(resolved_site_id, JSONResponse):
@@ -3182,11 +3296,19 @@ async def get_portal_account_credit_events(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     resolved_site_id = _validate_portal_account_site_filter(
         request,
         principal_id=auth.principal_id,
         account_id=account_id,
-        site_id=site_id,
+        site_id=site_id or commercial_site_scope,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(resolved_site_id, JSONResponse):
@@ -3236,11 +3358,19 @@ async def get_portal_account_credit_event_buckets(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     resolved_site_id = _validate_portal_account_site_filter(
         request,
         principal_id=auth.principal_id,
         account_id=account_id,
-        site_id=site_id,
+        site_id=site_id or commercial_site_scope,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(resolved_site_id, JSONResponse):
@@ -3322,6 +3452,7 @@ async def create_portal_account_credit_pack_order(
             account_id=account_id,
             pack_id=payload.pack_id,
             provider=payload.provider,
+            site_id=auth.site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -3357,9 +3488,18 @@ async def list_portal_account_payment_orders(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         result = _get_commercial_service(request).list_account_payment_orders(
             account_id,
+            site_id=commercial_site_scope or None,
             status_group=status_group,
             limit=limit,
             offset=offset,
@@ -3390,10 +3530,19 @@ async def get_portal_account_payment_order(request: Request, order_id: str) -> A
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         order = _get_commercial_service(request).get_account_payment_order(
             account_id=account_id,
             order_id=order_id,
+            site_id=commercial_site_scope or None,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3429,14 +3578,23 @@ async def cancel_portal_account_payment_order(
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).cancel_account_payment_order(
             account_id=account_id,
             order_id=order_id,
+            site_id=commercial_site_scope or None,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -4336,11 +4494,23 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
     )
     if isinstance(access, JSONResponse):
         return access
+    account_id = str(access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=site_id,
+        allow_exclusive_account_scope=True,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         commercial_service = _get_commercial_service(request)
         policy = commercial_service.inspect_commercial_policy(site_id)
-        quota_summary = commercial_service.get_portal_account_quota_summary(
-            str(access.get("account_id") or "")
+        quota_summary = (
+            commercial_service.get_portal_account_quota_summary(account_id)
+            if not commercial_site_scope
+            else {}
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)

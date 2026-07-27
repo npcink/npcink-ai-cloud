@@ -167,6 +167,56 @@ def _principal_registration_access_is_blocked(
 
 
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
+    def resolve_portal_account_principal_scope(
+        self,
+        *,
+        account_id: str,
+        principal_id: str,
+    ) -> dict[str, object]:
+        normalized_account_id = str(account_id or "").strip()
+        normalized_principal_id = str(principal_id or "").strip()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            membership_row = repository.get_account_user_membership(
+                principal_id=normalized_principal_id,
+                account_id=normalized_account_id,
+            )
+            if membership_row is None:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal account access is required",
+                )
+            account, identity, membership = membership_row
+            if (
+                account.status != ACCOUNT_STATUS_ACTIVE
+                or identity.status != PRINCIPAL_STATUS_ACTIVE
+                or membership.status != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal account access is required",
+                )
+            active_principal_count = repository.count_active_account_principals(
+                account_id=normalized_account_id
+            )
+            active_site_count = repository.count_active_account_sites(
+                account_id=normalized_account_id
+            )
+            principal_bound_site_count = repository.count_active_principal_bound_sites(
+                account_id=normalized_account_id,
+                principal_id=normalized_principal_id,
+            )
+            return {
+                "active_principal_count": active_principal_count,
+                "active_site_count": active_site_count,
+                "principal_bound_site_count": principal_bound_site_count,
+                "is_exclusive": (
+                    active_principal_count == 1
+                    and active_site_count > 0
+                    and principal_bound_site_count == active_site_count
+                ),
+            }
+
     def get_portal_current_subscription(
         self,
         *,

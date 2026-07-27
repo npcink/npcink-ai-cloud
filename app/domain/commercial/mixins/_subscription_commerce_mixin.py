@@ -341,6 +341,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         account_id: str,
         offer_id: str,
         provider: str = "alipay",
+        site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -481,7 +482,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             payment_order = repository.create_payment_order(
                 order_id=payment_order_id,
                 account_id=account_id,
-                site_id=None,
+                site_id=str(site_id or "").strip() or None,
                 subscription_id=(current.subscription_id if current is not None else None),
                 plan_id=offer.plan_id,
                 plan_version_id=offer.plan_version_id,
@@ -540,6 +541,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         subscription_order_id: str,
+        site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -567,6 +569,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 if subscription_order.payment_order_id
                 else None
             )
+            if site_id and (payment_order is None or payment_order.site_id != site_id):
+                raise CommercialNotFoundError(
+                    "service.subscription_order_not_found",
+                    f"subscription order '{subscription_order_id}' was not found",
+                )
             if subscription_order.status == SUBSCRIPTION_ORDER_STATUS_CANCELED:
                 payload = {
                     "order": service._serialize_payment_order(payment_order)

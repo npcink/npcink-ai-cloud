@@ -50,6 +50,25 @@ Neither relation changes WordPress user, role, approval, or write truth.
 7. Product copy uses only `platform_admin` and `user`. WordPress-local
    administrator terminology may remain only where it describes WordPress
    ownership rather than a Cloud product identity.
+8. Account-shaped Portal commercial routes do not restore account-wide access:
+   - payment orders, credit ledger entries, credit trends, and credit events
+     are always restricted to the selected principal-owned site;
+   - newly created subscription and credit-pack payment orders record the
+     selected `site_id`;
+   - disabling or revoking another user cannot make that user's site history
+     visible to the remaining user.
+9. Package trial, subscription change, Free downgrade, personalized package
+   offers, and account quota summary remain account-wide commercial actions.
+   Those routes are available only when the account has one active user and
+   every active account site is explicitly bound to that user. Otherwise they
+   fail closed because the current two-identity contract has no separate
+   account-owner authority.
+   Site-scoped entitlement detail remains available to each bound user, but it
+   omits the account-wide quota summary and exposes only that site's commercial
+   policy when the account is shared.
+10. Payment callbacks derive ownership only from the verified provider order
+    number and the persisted order. Callback-supplied `account_id`, `site_id`,
+    or `principal_id` values never select or reassign the commercial subject.
 
 ## Alternatives Considered
 
@@ -79,6 +98,10 @@ which user connected a legacy site. Ambiguous authorization must fail closed.
 
 - A user sees only explicitly bound sites, even when another user belongs to
   the same account.
+- A user cannot list, read, cancel, or replay another bound user's site payment
+  order or credit history through account-shaped compatibility routes.
+- Shared-account package mutations remain unavailable until a future explicit
+  account authority is designed without adding a third product identity.
 - Membership actions continue to control what an owner may do; site binding
   does not create new roles or capabilities.
 - An archived/removed site is no longer manageable through Portal after its
@@ -95,6 +118,11 @@ which user connected a legacy site. Ambiguous authorization must fail closed.
   fail-closed behavior, uniqueness, lifecycle constraints, and downgrade.
 - Portal tests prove user A cannot access user B's site in the same account
   while user B can.
+- Commercial boundary tests prove account payment/credit compatibility routes
+  narrow to the caller's selected site, other-site order detail/cancellation
+  fail closed, and shared-account package mutations return a conflict.
+- Payment tests prove forged callback subject fields cannot change the
+  persisted order's account or site.
 - Addon tests cover same-owner reconnect and conflicting-owner rejection.
 - Portal route, session, billing, usage, audit, support, and removal tests run
   through the same principal-site authorization resolver.

@@ -2552,6 +2552,240 @@ def test_portal_user_cannot_access_another_users_site_in_same_account(
     dispose_engine(database_url)
 
 
+def test_same_account_users_cannot_cross_site_commercial_boundaries(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    account_id = "acct_portal_shared_commercial"
+    site_a_id = "site_portal_shared_commercial_a"
+    site_b_id = "site_portal_shared_commercial_b"
+
+    assert client.post(
+        "/internal/service/accounts",
+        json={"account_id": account_id, "name": "Portal Shared Commercial"},
+        headers=build_internal_headers(
+            idempotency_key="portal-shared-commercial-account-001"
+        ),
+    ).status_code == 200
+    for suffix, site_id in (("a", site_a_id), ("b", site_b_id)):
+        assert client.post(
+            "/internal/service/sites",
+            json={
+                "site_id": site_id,
+                "account_id": account_id,
+                "name": f"Portal Shared Commercial {suffix.upper()}",
+                "status": "active",
+            },
+            headers=build_internal_headers(
+                idempotency_key=f"portal-shared-commercial-site-{suffix}-001"
+            ),
+        ).status_code == 200
+
+    user_a = _grant_account_member_access(
+        client,
+        site_id=site_a_id,
+        email="portal-shared-commercial-a@example.com",
+        idempotency_key="portal-shared-commercial-member-a-001",
+    )
+    user_b = _grant_account_member_access(
+        client,
+        site_id=site_b_id,
+        email="portal-shared-commercial-b@example.com",
+        idempotency_key="portal-shared-commercial-member-b-001",
+    )
+    with get_session(database_url) as session:
+        for suffix, site_id in (("a", site_a_id), ("b", site_b_id)):
+            session.add(
+                PaymentOrder(
+                    order_id=f"pay_portal_shared_commercial_{suffix}",
+                    account_id=account_id,
+                    site_id=site_id,
+                    subscription_id=None,
+                    plan_id="credit_pack",
+                    plan_version_id=f"credit_pack_{suffix}",
+                    provider="manual",
+                    external_order_no=f"external_portal_shared_commercial_{suffix}",
+                    provider_trade_no=None,
+                    status="pending",
+                    amount=1.0,
+                    currency="CNY",
+                    subject="Npcink AI Cloud test order",
+                    checkout_url=None,
+                    refund_window_end_at=None,
+                    paid_at=None,
+                    canceled_at=None,
+                    refunded_at=None,
+                    idempotency_key=f"payment-shared-commercial-{suffix}",
+                    metadata_json={"purchase_kind": "credit_pack"},
+                )
+            )
+            session.add(
+                CreditLedgerEntry(
+                    ledger_entry_id=f"credit_portal_shared_commercial_{suffix}",
+                    account_id=account_id,
+                    site_id=site_id,
+                    subscription_id=None,
+                    plan_version_id=None,
+                    run_id=None,
+                    provider_call_id=None,
+                    event_type="grant",
+                    source_type="test",
+                    source_id=f"source_portal_shared_commercial_{suffix}",
+                    credit_delta=10.0,
+                    quantity=10.0,
+                    unit="credit",
+                    rate=1.0,
+                    rate_unit="credit",
+                    rate_version="v1",
+                    idempotency_key=f"credit-shared-commercial-{suffix}",
+                    metadata_json={},
+                )
+            )
+        session.commit()
+
+    user_a_headers = _portal_headers_for_access(user_a, site_id=site_a_id)
+    session_response = client.get("/portal/v1/session", headers=user_a_headers)
+    assert session_response.status_code == 200, session_response.text
+    assert [item["site_id"] for item in session_response.json()["data"]["sites"]] == [
+        site_a_id
+    ]
+
+    support_request_ids: dict[str, str] = {}
+    for suffix, site_id, user in (
+        ("a", site_a_id, user_a),
+        ("b", site_b_id, user_b),
+    ):
+        support_response = client.post(
+            "/portal/v1/support-requests",
+            json={
+                "topic": "billing",
+                "title": f"Shared commercial support {suffix.upper()}",
+                "description": "Verify principal-owned support request isolation.",
+                "site_id": site_id,
+                "source_path": "/portal/billing",
+            },
+            headers=_portal_headers_for_access(
+                user,
+                site_id=site_id,
+                idempotency_key=f"portal-shared-commercial-support-{suffix}-001",
+            ),
+        )
+        assert support_response.status_code == 200, support_response.text
+        support_request_ids[suffix] = str(
+            support_response.json()["data"]["request"]["request_id"]
+        )
+    support_list = client.get("/portal/v1/support-requests", headers=user_a_headers)
+    assert support_list.status_code == 200, support_list.text
+    assert [
+        item["request_id"] for item in support_list.json()["data"]["items"]
+    ] == [support_request_ids["a"]]
+    other_support = client.get(
+        f"/portal/v1/support-requests/{support_request_ids['b']}",
+        headers=user_a_headers,
+    )
+    assert other_support.status_code == 404
+    assert other_support.json()["error_code"] == "service.support_request_not_found"
+
+    payment_orders = client.get(
+        "/portal/v1/account/payment-orders",
+        headers=user_a_headers,
+    )
+    assert payment_orders.status_code == 200, payment_orders.text
+    assert payment_orders.json()["data"]["pagination"]["total"] == 1
+    assert payment_orders.json()["data"]["items"][0]["order_id"].endswith("_a")
+
+    other_order = client.get(
+        "/portal/v1/account/payment-orders/pay_portal_shared_commercial_b",
+        headers=user_a_headers,
+    )
+    assert other_order.status_code == 404
+    assert other_order.json()["error_code"] == "service.payment_order_not_found"
+
+    cancel_other = client.post(
+        "/portal/v1/account/payment-orders/pay_portal_shared_commercial_b/cancellation",
+        headers=_portal_headers_for_access(
+            user_a,
+            site_id=site_a_id,
+            idempotency_key="portal-shared-commercial-cancel-b-001",
+        ),
+    )
+    assert cancel_other.status_code == 404
+    assert cancel_other.json()["error_code"] == "service.payment_order_not_found"
+
+    credit_ledger = client.get(
+        "/portal/v1/account/credit-ledger",
+        headers=user_a_headers,
+    )
+    assert credit_ledger.status_code == 200, credit_ledger.text
+    assert credit_ledger.json()["data"]["pagination"]["total"] == 1
+
+    site_entitlements = client.get(
+        f"/portal/v1/sites/{site_a_id}/entitlements",
+        headers=user_a_headers,
+    )
+    assert site_entitlements.status_code == 200, site_entitlements.text
+    assert site_entitlements.json()["data"]["site_id"] == site_a_id
+    assert site_entitlements.json()["data"]["quota_summary"] == {
+        "generated_at": "",
+        "period_start_at": "",
+        "period_end_at": "",
+        "status": "",
+        "credit": {},
+        "credit_ledger_summary": {},
+        "credit_policy": {},
+        "resource_limits": [],
+        "breakdown": [],
+        "credit_usage_detail": {},
+    }
+
+    with get_session(database_url) as session:
+        disabled_user_b = session.get(Principal, str(user_b["principal_id"]))
+        assert disabled_user_b is not None
+        disabled_user_b.status = PRINCIPAL_STATUS_DISABLED
+        session.commit()
+
+    payment_orders_after_other_user_disabled = client.get(
+        "/portal/v1/account/payment-orders",
+        headers=user_a_headers,
+    )
+    assert payment_orders_after_other_user_disabled.status_code == 200
+    assert (
+        payment_orders_after_other_user_disabled.json()["data"]["pagination"]["total"]
+        == 1
+    )
+
+    plan_offers = client.get(
+        "/portal/v1/account/plan-offers",
+        headers=user_a_headers,
+    )
+    assert plan_offers.status_code == 409
+    assert (
+        plan_offers.json()["error_code"]
+        == "service.portal_shared_account_commercial_scope_ambiguous"
+    )
+    start_trial = client.post(
+        "/portal/v1/account/plan-trials",
+        json={"tier_id": "pro"},
+        headers=_portal_headers_for_access(
+            user_a,
+            site_id=site_a_id,
+            idempotency_key="portal-shared-commercial-trial-001",
+        ),
+    )
+    assert start_trial.status_code == 409
+    assert (
+        start_trial.json()["error_code"]
+        == "service.portal_shared_account_commercial_scope_ambiguous"
+    )
+
+    with get_session(database_url) as session:
+        other_order_row = session.get(PaymentOrder, "pay_portal_shared_commercial_b")
+        assert other_order_row is not None
+        assert other_order_row.status == "pending"
+
+    dispose_engine(database_url)
+
+
 def test_portal_routes_fail_closed_without_portal_auth(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 
@@ -5104,7 +5338,7 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     assert listed_order["amount"] == 29.0
     assert listed_order["currency"] == "CNY"
     assert listed_order["purchase_kind"] == "subscription_plan"
-    assert listed_order["site_id"] == ""
+    assert listed_order["site_id"] == site_id
     assert listed_order["status"] == "pending"
     assert listed_order["target_tier_id"] == "pro"
     assert listed_order["expires_at"]
@@ -6813,11 +7047,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_credit_ledger_response.status_code == 200
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(account_credit_ledger_data)
-    assert account_credit_ledger_data["summary"]["total_credits"] == 5.0
-    assert account_credit_ledger_data["pagination"]["total"] == 4
+    assert account_credit_ledger_data["summary"]["total_credits"] == 4.0
+    assert account_credit_ledger_data["pagination"]["total"] == 3
     assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
-        "site_portal_reads",
-        "site_other_portal_reads",
+        "site_portal_reads"
     }
 
     with get_session(database_url) as session:
@@ -6842,10 +7075,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         session.commit()
 
     expected_trends = {
-        "1h": {"points": 12, "credits": 5.0, "entries": 4},
-        "24h": {"points": 24, "credits": 5.0, "entries": 4},
-        "7d": {"points": 7, "credits": 7.0, "entries": 5},
-        "30d": {"points": 30, "credits": 7.0, "entries": 5},
+        "1h": {"points": 12, "credits": 4.0, "entries": 3},
+        "24h": {"points": 24, "credits": 4.0, "entries": 3},
+        "7d": {"points": 7, "credits": 4.0, "entries": 3},
+        "30d": {"points": 30, "credits": 4.0, "entries": 3},
     }
     for trend_window, expectation in expected_trends.items():
         trend_response = client.get(
@@ -6924,7 +7157,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_events_data = credit_events_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(credit_events_data)
     assert credit_events_data["contract_version"] == "portal-credit-events-v1"
-    assert credit_events_data["pagination"]["total"] == 4
+    assert credit_events_data["pagination"]["total"] == 3
     assert all(item["direction"] == "consumed" for item in credit_events_data["items"])
     grouped_event = next(
         item
@@ -6984,9 +7217,9 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert recent_bucket_response.status_code == 200
     recent_bucket_data = recent_bucket_response.json()["data"]
-    assert recent_bucket_data["summary"]["consumed_credits"] == (
-        bucket_data["summary"]["consumed_credits"] + 2.0
-    )
+    assert recent_bucket_data["summary"]["consumed_credits"] == bucket_data["summary"][
+        "consumed_credits"
+    ]
     assert all(item["start_at"] < item["end_at"] for item in recent_bucket_data["items"])
 
     # Keep the remainder of this long scenario focused on the payment grant it creates below.
