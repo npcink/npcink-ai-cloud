@@ -63,6 +63,20 @@ candidate-chain configuration page:
 7. contract identity, revision, and other low-frequency evidence outside the
    default working table.
 
+`/admin/service-settings` is the accepted PC reference for a compact
+multi-group settings page:
+
+1. one compact status summary without decorative metric pills;
+2. one shared settings workbench with a stable group directory and one active
+   configuration panel;
+3. selected groups use a quiet background and status dot instead of a heavy
+   dark card;
+4. simple settings use the semantic three-column configuration table;
+5. stored credentials remain concealed until the operator explicitly chooses
+   replacement;
+6. email preview uses the shared workbench dialog instead of route-local modal
+   focus and geometry code.
+
 It is also the first compact-density reference. Its profile directory and edit
 workbench keep policy and candidate selection in continuous tables, show normal
 metadata inline, and reserve secondary identifiers for tooltips or
@@ -195,6 +209,7 @@ Prefer these shared surfaces:
 - `AdminConfigurationTable`;
 - `AdminWorkbenchDialog`;
 - `AdminCredentialField`;
+- `AdminSettingsWorkbench`;
 - `AdminSettingsDisclosure`;
 - `BackofficeStatusBadge`;
 - the global Toast and latest-operation receipt surfaces.

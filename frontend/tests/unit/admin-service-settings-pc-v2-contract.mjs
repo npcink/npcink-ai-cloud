@@ -1,18 +1,31 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fromFrontendRoot } from './_paths.mjs';
 
-const page = readFileSync(resolve(process.cwd(), 'src/app/admin/service-settings/page.tsx'), 'utf8');
-const i18n = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
+const page = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
+const i18n = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 
 assert.match(page, /const activeStateNotice = \(activeGroupDirty \|\| activeValidationIssues\.length > 0 \|\| error\)/, 'dirty, validation, and failure state must share one active-group notice');
 for (const panel of ['portal', 'qq', 'email', 'payment']) {
   const start = page.indexOf(`id="service-settings-${panel}"`);
   assert.ok(start >= 0, `${panel} panel must exist`);
-  const end = page.indexOf('</BackofficeSectionPanel>', start);
+  const nextPanel = page.indexOf('{activeTab ===', start);
+  const workbenchEnd = page.indexOf('</AdminSettingsWorkbench>', start);
+  const end = nextPanel >= 0 && nextPanel < workbenchEnd ? nextPanel : workbenchEnd;
   const panelSource = page.slice(start, end);
   assert.match(panelSource, /\{activeStateNotice\}/, `${panel} feedback must stay inside its active panel`);
 }
+
+assert.match(
+  page,
+  /AdminSettingsWorkbench[\s\S]*AdminConfigurationTable[\s\S]*density="compact"/,
+  'service settings must use the shared compact settings directory and semantic configuration table'
+);
+assert.match(
+  page,
+  /AdminCredentialField[\s\S]*qqCredentialRevealed[\s\S]*emailCredentialRevealed[\s\S]*alipayPrivateKeyRevealed/,
+  'stored service credentials must use explicit shared replacement fields'
+);
 
 assert.match(page, /activeTab === 'portal' && activeGroupDirty[\s\S]*unsaved_short[\s\S]*activeTab === 'payment' && activeGroupDirty/, 'the active category tab must expose unsaved state');
 assert.match(page, /onClick=\{restoreActiveGroup\}[\s\S]*restore_saved_values/, 'the local rollback action must clearly restore saved values');

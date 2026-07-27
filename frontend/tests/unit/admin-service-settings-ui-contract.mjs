@@ -152,8 +152,8 @@ assert.match(
 
 assert.match(
   source,
-  /role="dialog"[\s\S]*aria-modal="true"[\s\S]*email-preview-drawer-title/,
-  'email template preview must render as a modal drawer instead of always occupying the settings page'
+  /AdminWorkbenchDialog[\s\S]*open=\{emailPreviewOpen\}[\s\S]*titleId="email-preview-drawer-title"[\s\S]*density="compact"/,
+  'email template preview must reuse the compact shared workbench instead of route-local dialog code'
 );
 
 assert.match(

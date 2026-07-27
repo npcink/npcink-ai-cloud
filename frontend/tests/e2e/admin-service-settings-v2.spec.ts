@@ -76,6 +76,9 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
               private_key: { configured: false, display: '' },
               public_key: { configured: false, display: '' },
             }),
+            site_relink_policy: setting('site_relink_policy', 'ready', {
+              cooldown_days: 90,
+            }),
           },
         })),
       });
@@ -105,9 +108,31 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
 
   await page.goto('/admin/service-settings');
   await expect(page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(4);
+  await expect(page.getByRole('tab')).toHaveCount(5);
   await expect(page.locator('form:visible')).toHaveCount(1);
   expect(settingsReadCount).toBe(1);
+  const compactGeometry = await page.evaluate(() => {
+    const workbench = document.querySelector<HTMLElement>('[data-ui="admin-settings-workbench"]');
+    const directory = workbench?.querySelector<HTMLElement>('[role="tablist"]');
+    const input = workbench?.querySelector<HTMLElement>('.input');
+    const firstRow = workbench?.querySelector<HTMLElement>('[data-configuration-row]');
+    return {
+      workbenchDensity: workbench?.dataset.density,
+      directoryWidth: Math.round(directory?.getBoundingClientRect().width || 0),
+      inputHeight: Math.round(input?.getBoundingClientRect().height || 0),
+      rowHeight: Math.round(firstRow?.getBoundingClientRect().height || 0),
+    };
+  });
+  expect(compactGeometry).toEqual({
+    workbenchDensity: 'compact',
+    directoryWidth: 192,
+    inputHeight: 32,
+    rowHeight: 49,
+  });
+  await expect(page).toHaveScreenshot('admin-service-settings-workbench-pc.png', {
+    animations: 'disabled',
+    fullPage: true,
+  });
 
   const baseUrlInput = page.getByRole('textbox', { name: /Base URL|基础 URL/i });
   const saveBaseUrl = page.getByRole('button', { name: /Save base URL|保存基础地址/i });
