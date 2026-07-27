@@ -14,6 +14,7 @@ type AdminCredentialFieldProps = {
   onCancelReplacement: () => void;
   density?: 'default' | 'compact';
   hideLabel?: boolean;
+  multiline?: boolean;
 };
 
 export function AdminCredentialField({
@@ -30,6 +31,7 @@ export function AdminCredentialField({
   onCancelReplacement,
   density = 'default',
   hideLabel = false,
+  multiline = false,
 }: AdminCredentialFieldProps) {
   const generatedId = useId();
   const inputId = `admin-credential-${generatedId.replace(/:/g, '')}`;
@@ -80,16 +82,28 @@ export function AdminCredentialField({
           </button>
         ) : null}
       </span>
-      <input
-        id={inputId}
-        aria-label={hideLabel ? label : undefined}
-        className={`${density === 'compact' ? 'h-9' : 'h-11'} rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white`}
-        type="password"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={mode === 'edit' ? keepCurrentPlaceholder : undefined}
-        autoComplete="new-password"
-      />
+      {multiline ? (
+        <textarea
+          id={inputId}
+          aria-label={hideLabel ? label : undefined}
+          className="min-h-24 resize-y rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={mode === 'edit' ? keepCurrentPlaceholder : undefined}
+          autoComplete="new-password"
+        />
+      ) : (
+        <input
+          id={inputId}
+          aria-label={hideLabel ? label : undefined}
+          className={`${density === 'compact' ? 'h-9' : 'h-11'} rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white`}
+          type="password"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={mode === 'edit' ? keepCurrentPlaceholder : undefined}
+          autoComplete="new-password"
+        />
+      )}
     </div>
   );
 }

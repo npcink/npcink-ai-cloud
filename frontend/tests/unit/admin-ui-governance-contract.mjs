@@ -18,6 +18,7 @@ const configurationTableSource = readFileSync(fromFrontendRoot('src/components/a
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
 const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
+const serviceSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
 
 function listFiles(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -125,6 +126,7 @@ for (const primitive of [
   'AdminDataTableFrame',
   'AdminWorkbenchDialog',
   'AdminCredentialField',
+  'AdminSettingsWorkbench',
   'AdminSettingsDisclosure',
 ]) {
   const primitivePath = fromFrontendRoot(`src/components/admin/${primitive}.tsx`);
@@ -156,6 +158,11 @@ assert.match(
   externalServicesPageSource,
   /AdminDataTableFrame[\s\S]*data-ui="external-service-table"[\s\S]*<thead[\s\S]*<tbody/,
   'the reference configuration page must reuse the shared semantic table frame'
+);
+assert.match(
+  serviceSettingsPageSource,
+  /AdminSettingsWorkbench[\s\S]*AdminConfigurationTable[\s\S]*AdminCredentialField[\s\S]*AdminWorkbenchDialog/,
+  'the compact service settings reference must reuse directory, table, credential, and workbench primitives'
 );
 assert.match(
   externalServicesPageSource,

@@ -32,7 +32,8 @@ assert.doesNotMatch(runtimeProfiles, /createPortal|useDialogKeyboard|role="dialo
 assert.doesNotMatch(runtimeProfiles, /cloudBindingDialogRef|runtime-binding|embedding/i, 'hosted runtime profiles must not retain the removed Cloud dependency dialog');
 assert.doesNotMatch(aiResources, /capabilityAddDialogRef|capabilityAddDialogOpen/, 'model supplier management must not keep the retired capability supplier dialog');
 assert.match(planDetail, /editorDialogRef = useDialogKeyboard[\s\S]*ref=\{editorDialogRef\}/, 'package editor must use shared keyboard behavior');
-assert.match(serviceSettings, /emailPreviewDialogRef = useDialogKeyboard[\s\S]*ref=\{emailPreviewDialogRef\}/, 'email preview drawer must use shared keyboard behavior');
+assert.match(serviceSettings, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'email preview must reuse the shared admin workbench');
+assert.doesNotMatch(serviceSettings, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'email preview must not keep route-local modal behavior');
 assert.match(layout, /commandDialogRef = useDialogKeyboard[\s\S]*ref=\{commandDialogRef\}/, 'quick switcher must use shared keyboard behavior');
 
 assert.doesNotMatch(serviceSettings, /window\.confirm/, 'internal unsaved navigation must not use a browser-native confirmation');
