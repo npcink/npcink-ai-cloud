@@ -27,9 +27,11 @@ from app.api.routes import portal as portal_routes
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
+    ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
     CREDIT_LEDGER_EVENT_GRANT,
     PRINCIPAL_STATUS_ACTIVE,
+    PRINCIPAL_STATUS_DISABLED,
     Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -2877,9 +2879,20 @@ def test_disabled_principal_cannot_read_or_write(tmp_path: Path) -> None:
         client,
         site_id="site_portal_disabled",
         email="portal-disabled@example.com",
-        status="disabled",
         idempotency_key="portal-disabled-account-members-001",
     )
+    with get_session(database_url) as session:
+        identity = session.scalar(
+            select(Principal).where(Principal.email == "portal-disabled@example.com")
+        )
+        assert identity is not None
+        principal_id = str(identity.principal_id)
+    disable_response = client.post(
+        f"/internal/service/admin/portal-users/{principal_id}/disable",
+        json={"reason": "security review"},
+        headers=build_internal_headers(idempotency_key="portal-disabled-principal-001"),
+    )
+    assert disable_response.status_code == 200, disable_response.text
 
     read_response = client.get(
         "/portal/v1/sites/site_portal_disabled/summary",
@@ -2900,6 +2913,77 @@ def test_disabled_principal_cannot_read_or_write(tmp_path: Path) -> None:
 
     sites_response = client.get("/portal/v1/sites")
     assert sites_response.status_code == 404
+
+    dispose_engine(database_url)
+
+
+def test_disabled_principal_cannot_reactivate_through_registration(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    email = "portal-registration-disabled@example.com"
+    account_id = "acct_portal_registration_disabled"
+    assert client.post(
+        "/internal/service/accounts",
+        json={"account_id": account_id, "name": "Registration Disabled"},
+        headers=build_internal_headers(
+            idempotency_key="portal-registration-disabled-account-001"
+        ),
+    ).status_code == 200
+    membership_response = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": email},
+        headers=build_internal_headers(
+            idempotency_key="portal-registration-disabled-member-001"
+        ),
+    )
+    assert membership_response.status_code == 200, membership_response.text
+    principal_id = str(membership_response.json()["data"]["principal_id"])
+
+    issued = _request_portal_registration_code(
+        client,
+        email=email,
+        headers={"x-npcink-debug-portal-link": "1"},
+    )
+    disable_response = client.post(
+        f"/internal/service/admin/portal-users/{principal_id}/disable",
+        json={"reason": "abuse review"},
+        headers=build_internal_headers(
+            idempotency_key="portal-registration-disabled-global-001"
+        ),
+    )
+    assert disable_response.status_code == 200, disable_response.text
+
+    rejected_request = client.post(
+        "/portal/v1/register/code/request",
+        json={"email": email},
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    assert rejected_request.status_code == 403
+    assert rejected_request.json()["error_code"] == "service.principal_access_required"
+
+    rejected_verify = client.post(
+        "/portal/v1/register/verify",
+        json={"email": email, "code": str(issued["code"])},
+    )
+    assert rejected_verify.status_code == 403
+    assert rejected_verify.json()["error_code"] == "service.principal_access_required"
+
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership).where(
+                    AccountUserMembership.principal_id == principal_id
+                )
+            )
+        )
+        assert identity is not None
+        assert identity.status == PRINCIPAL_STATUS_DISABLED
+        assert [(item.account_id, item.status) for item in memberships] == [
+            (account_id, ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED)
+        ]
 
     dispose_engine(database_url)
 
@@ -3159,6 +3243,181 @@ def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path)
             "acct_multi_principal_alpha",
             "acct_multi_principal_beta",
         }
+
+    dispose_engine(database_url)
+
+
+def test_account_membership_changes_preserve_global_principal_state(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
+    )
+    email = "membership-isolation@example.com"
+    account_ids = ("acct_membership_isolation_alpha", "acct_membership_isolation_beta")
+    for account_id in account_ids:
+        assert client.post(
+            "/internal/service/accounts",
+            json={"account_id": account_id, "name": account_id},
+            headers=build_internal_headers(
+                idempotency_key=f"{account_id}-create"
+            ),
+        ).status_code == 200
+        member_response = client.post(
+            f"/internal/service/accounts/{account_id}/members",
+            json={"email": email, "metadata": {"account_note": account_id}},
+            headers=build_internal_headers(
+                idempotency_key=f"{account_id}-member"
+            ),
+        )
+        assert member_response.status_code == 200, member_response.text
+
+    principal_id = str(member_response.json()["data"]["principal_id"])
+    principal_metadata = {
+        "source": "portal_self_registration",
+        "profile": {
+            "display_name": "Membership Isolation",
+            "avatar_url": "https://example.com/avatar.png",
+        },
+    }
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        assert identity is not None
+        identity.metadata_json = principal_metadata
+        restricted_membership = session.scalar(
+            select(AccountUserMembership).where(
+                AccountUserMembership.principal_id == principal_id,
+                AccountUserMembership.account_id == account_ids[0],
+            )
+        )
+        assert restricted_membership is not None
+        restricted_membership.allowed_actions_json = ["view_sites"]
+        initial_session_version = int(identity.session_version or 1)
+        session.commit()
+
+    revoke_response = client.post(
+        f"/internal/service/accounts/{account_ids[0]}/members",
+        json={
+            "email": email,
+            "status": "disabled",
+            "metadata": {"account_note": "revoke alpha only"},
+        },
+        headers=build_internal_headers(
+            idempotency_key="membership-isolation-revoke-alpha"
+        ),
+    )
+    assert revoke_response.status_code == 200, revoke_response.text
+    assert revoke_response.json()["data"]["status"] == PRINCIPAL_STATUS_ACTIVE
+    assert (
+        revoke_response.json()["data"]["membership_status"]
+        == ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED
+    )
+
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership)
+                .where(AccountUserMembership.principal_id == principal_id)
+                .order_by(AccountUserMembership.account_id)
+            )
+        )
+        assert identity is not None
+        assert identity.status == PRINCIPAL_STATUS_ACTIVE
+        assert int(identity.session_version or 1) == initial_session_version
+        assert identity.metadata_json == principal_metadata
+        assert [(item.account_id, item.status) for item in memberships] == [
+            (account_ids[0], ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED),
+            (account_ids[1], ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE),
+        ]
+        assert memberships[0].allowed_actions_json == ["view_sites"]
+        assert memberships[0].metadata_json == {
+            "source": "account_membership",
+            "account_note": "revoke alpha only",
+        }
+
+    disable_response = client.post(
+        f"/internal/service/admin/portal-users/{principal_id}/disable",
+        json={"reason": "global block"},
+        headers=build_internal_headers(
+            idempotency_key="membership-isolation-global-disable"
+        ),
+    )
+    assert disable_response.status_code == 200, disable_response.text
+    rejected_reactivation = client.post(
+        f"/internal/service/accounts/{account_ids[0]}/members",
+        json={"email": email, "status": "active"},
+        headers=build_internal_headers(
+            idempotency_key="membership-isolation-reject-reactivation"
+        ),
+    )
+    assert rejected_reactivation.status_code == 403
+    assert (
+        rejected_reactivation.json()["error_code"]
+        == "service.principal_access_required"
+    )
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        assert identity is not None
+        assert identity.status == PRINCIPAL_STATUS_DISABLED
+
+    dispose_engine(database_url)
+
+
+def test_revoked_membership_cannot_reactivate_through_registration(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    email = "portal-registration-revoked@example.com"
+    account_id = "acct_portal_registration_revoked"
+    assert client.post(
+        "/internal/service/accounts",
+        json={"account_id": account_id, "name": "Registration Revoked"},
+        headers=build_internal_headers(
+            idempotency_key="portal-registration-revoked-account-001"
+        ),
+    ).status_code == 200
+    member_response = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": email},
+        headers=build_internal_headers(
+            idempotency_key="portal-registration-revoked-member-001"
+        ),
+    )
+    assert member_response.status_code == 200, member_response.text
+    principal_id = str(member_response.json()["data"]["principal_id"])
+    revoke_response = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": email, "status": "disabled"},
+        headers=build_internal_headers(
+            idempotency_key="portal-registration-revoked-access-001"
+        ),
+    )
+    assert revoke_response.status_code == 200, revoke_response.text
+
+    rejected_request = client.post(
+        "/portal/v1/register/code/request",
+        json={"email": email},
+        headers={
+            "x-npcink-debug-portal-link": "1",
+            "x-npcink-dev-login-code": "1",
+        },
+    )
+    assert rejected_request.status_code == 403
+    assert rejected_request.json()["error_code"] == "service.principal_access_required"
+    with get_session(database_url) as session:
+        identity = session.get(Principal, principal_id)
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership).where(
+                    AccountUserMembership.principal_id == principal_id
+                )
+            )
+        )
+        assert identity is not None
+        assert identity.status == PRINCIPAL_STATUS_ACTIVE
+        assert [(item.account_id, item.status) for item in memberships] == [
+            (account_id, ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED)
+        ]
 
     dispose_engine(database_url)
 
@@ -5894,6 +6153,26 @@ def test_portal_selected_site_context_is_order_independent_and_fail_closed(
     }
 
     with get_session(database_url) as session:
+        membership = session.scalar(
+            select(AccountUserMembership).where(
+                AccountUserMembership.principal_id == principal_id,
+                AccountUserMembership.account_id == "acct_portal_context_alpha",
+            )
+        )
+        assert membership is not None
+        membership.allowed_actions_json = ["view_billing"]
+        session.commit()
+    allowed_read = client.get("/portal/v1/account/entitlements")
+    assert allowed_read.status_code == 200, allowed_read.text
+    denied_write = client.post(
+        "/portal/v1/account/credit-pack-orders",
+        json={"pack_id": "pack_small"},
+        headers=_portal_cookie_headers(idempotency_key="view-billing-cannot-order"),
+    )
+    assert denied_write.status_code == 403
+    assert denied_write.json()["error_code"] == "service.portal_action_forbidden"
+    with get_session(database_url) as session:
+        assert list(session.scalars(select(PaymentOrder))) == []
         membership = session.scalar(
             select(AccountUserMembership).where(
                 AccountUserMembership.principal_id == principal_id,
