@@ -28,8 +28,10 @@ export function AdminConfigurationTable({
     <div
       data-ui="admin-configuration-table"
       data-density={density}
-      className={`overflow-hidden border border-slate-200 dark:border-slate-800 ${
-        density === 'compact' ? 'admin-compact-surface' : 'rounded-lg'
+      className={`overflow-hidden ${
+        density === 'compact'
+          ? 'admin-compact-surface'
+          : 'rounded-lg border border-slate-200 dark:border-slate-800'
       }`}
     >
       <table className="w-full table-fixed text-left text-sm" aria-label={ariaLabel}>
@@ -47,7 +49,11 @@ export function AdminConfigurationTable({
         </thead>
         <tbody
           data-density={density}
-          className="divide-y divide-slate-200 dark:divide-slate-800"
+          className={`divide-y ${
+            density === 'compact'
+              ? 'divide-slate-100 dark:divide-slate-800/70'
+              : 'divide-slate-200 dark:divide-slate-800'
+          }`}
         >
           {children}
         </tbody>

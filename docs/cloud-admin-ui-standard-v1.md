@@ -91,6 +91,13 @@ The executable projection of the route matrix and accepted dimensions lives in
 - Compact density is an information-architecture choice, not a route-local
   collection of reduced padding classes. Apply it consistently to the dialog,
   configuration table, and primary data-table frame for the selected task.
+- Compact controls must reduce height, vertical padding, line height, corner
+  radius, and focus treatment together. Do not place the standard `44px`
+  control padding inside a forced `32px` height; clipped labels are a failed
+  density implementation.
+- Compact tables use one structural boundary at a time. Prefer a quiet header
+  and low-contrast row dividers over an outer rounded frame plus equally strong
+  inner lines. Interactive controls keep their own visible boundary.
 - Mobile remains accessible, but mobile-specific redesign is not required by
   a PC-only change unless the changed primitive breaks the core task.
 
