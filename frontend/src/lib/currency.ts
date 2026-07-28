@@ -9,12 +9,6 @@ export type SupportedCurrency = 'CNY' | 'USD' | 'HKD';
 export const DEFAULT_CURRENCY: SupportedCurrency = 'CNY';
 export const MULTI_CURRENCY_ENABLED = false;
 
-const DISPLAY_CURRENCY_PER_USD: Record<SupportedCurrency, number> = {
-  USD: 1,
-  CNY: 7.2,
-  HKD: 7.8,
-};
-
 // ============================================
 // Core currency utilities
 // ============================================
@@ -45,8 +39,9 @@ export function convertCurrencyAmount(
   if (from === to) {
     return value;
   }
-  const valueInUsd = value / DISPLAY_CURRENCY_PER_USD[from];
-  return valueInUsd * DISPLAY_CURRENCY_PER_USD[to];
+  throw new Error(
+    `Client-side currency conversion is disabled (${from} -> ${to}); use a server-snapshotted accounting amount.`
+  );
 }
 
 export function formatCurrencyValue(

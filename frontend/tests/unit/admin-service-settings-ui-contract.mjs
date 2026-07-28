@@ -7,13 +7,13 @@ const source = readFileSync(pagePath, 'utf8');
 
 assert.match(
   source,
-  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment' \| 'site-relink';/,
+  /type ServiceSettingsTab = 'portal' \| 'qq' \| 'email' \| 'payment' \| 'accounting' \| 'site-relink';/,
   'service settings page must expose one independent configuration group per tab'
 );
 
 assert.match(
   source,
-  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)/,
+  /label: t\('admin\.service_settings\.tab_portal', \{\}, '门户地址'\)[\s\S]*label: t\('admin\.service_settings\.tab_qq', \{\}, 'QQ 登录'\)[\s\S]*label: t\('admin\.service_settings\.tab_email', \{\}, '邮件配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_payment', \{\}, '支付配置'\)[\s\S]*label: t\('admin\.service_settings\.tab_accounting', \{\}, '成本核算'\)[\s\S]*label: t\('admin\.service_settings\.tab_site_relink', \{\}, '站点重连'\)/,
   'service settings group navigation must use task-specific Chinese operator labels'
 );
 
@@ -21,6 +21,18 @@ assert.match(
   source,
   /\/api\/admin\/service-settings\/site-relink-policy[\s\S]*cooldown_days: Number\(siteRelinkPolicyForm\.cooldown_days\)/,
   'site relink settings must save the bounded cooldown through the Cloud admin API'
+);
+
+assert.match(
+  source,
+  /\/api\/admin\/service-settings\/accounting-fx[\s\S]*usd_cny_rate: Number\(accountingFxForm\.usd_cny_rate\)[\s\S]*effective_at:/,
+  'accounting settings must save the versioned USD/CNY rate through the Cloud admin API'
+);
+
+assert.match(
+  source,
+  /accounting_fx_fallback[\s\S]*accounting_fx_snapshot_note/,
+  'accounting settings must distinguish the fallback rate and explain event snapshots'
 );
 
 assert.match(

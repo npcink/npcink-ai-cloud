@@ -24,7 +24,7 @@ import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { cn } from '@/lib/utils';
 
 type SettingStatus = 'ready' | 'disabled' | 'missing_config' | 'error' | string;
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'site-relink';
+type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'site-relink';
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
 type Translator = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -52,6 +52,7 @@ type ServiceSettingsData = {
     qq_login: ServiceSetting;
     portal_email: ServiceSetting;
     alipay_payment: ServiceSetting;
+    accounting_fx: ServiceSetting;
     site_relink_policy: ServiceSetting;
   };
 };
@@ -106,11 +107,19 @@ type SiteRelinkPolicyForm = {
   cooldown_days: string;
 };
 
+type AccountingFxForm = {
+  usd_cny_rate: string;
+  effective_date: string;
+  source: string;
+  note: string;
+};
+
 type SavedServiceSettingsForms = {
   portal: PortalPublicForm;
   qq: QQForm;
   email: EmailForm;
   payment: AlipayForm;
+  accounting: AccountingFxForm;
   siteRelink: SiteRelinkPolicyForm;
 };
 
@@ -362,6 +371,12 @@ export default function AdminServiceSettingsPage() {
     enabled: true,
     cooldown_days: '90',
   });
+  const [accountingFxForm, setAccountingFxForm] = useState<AccountingFxForm>({
+    usd_cny_rate: '7.200000',
+    effective_date: '2026-07-01',
+    source: 'operator_approved',
+    note: '',
+  });
   const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
   const settingsMountedRef = useRef(false);
@@ -404,6 +419,7 @@ export default function AdminServiceSettingsPage() {
       const email = nextData.settings.portal_email;
       setEmailConfigExpanded(email.status === 'missing_config' || email.status === 'error');
       const alipay = nextData.settings.alipay_payment;
+      const accountingFx = nextData.settings.accounting_fx;
       const siteRelinkPolicy = nextData.settings.site_relink_policy;
       const emailSmtpUsername = stringValue(email.config.smtp_username);
       const emailFromAddress = stringValue(email.config.from_email);
@@ -445,11 +461,19 @@ export default function AdminServiceSettingsPage() {
         enabled: siteRelinkPolicy.enabled,
         cooldown_days: stringValue(siteRelinkPolicy.config.cooldown_days) || '90',
       };
+      const nextAccountingFxForm: AccountingFxForm = {
+        usd_cny_rate: stringValue(accountingFx.config.usd_cny_rate) || '7.200000',
+        effective_date:
+          stringValue(accountingFx.config.effective_at).slice(0, 10) || '2026-07-01',
+        source: stringValue(accountingFx.config.source) || 'operator_approved',
+        note: stringValue(accountingFx.config.note),
+      };
       const nextSavedForms = {
         portal: nextPortalForm,
         qq: nextQqForm,
         email: nextEmailForm,
         payment: nextAlipayForm,
+        accounting: nextAccountingFxForm,
         siteRelink: nextSiteRelinkPolicyForm,
       };
       savedFormsRef.current = nextSavedForms;
@@ -458,6 +482,7 @@ export default function AdminServiceSettingsPage() {
       setQqForm(nextQqForm);
       setEmailForm(nextEmailForm);
       setAlipayForm(nextAlipayForm);
+      setAccountingFxForm(nextAccountingFxForm);
       setSiteRelinkPolicyForm(nextSiteRelinkPolicyForm);
       setQqCredentialRevealed(false);
       setEmailCredentialRevealed(false);
@@ -514,6 +539,12 @@ export default function AdminServiceSettingsPage() {
         label: t('admin.service_settings.metric_payment', {}, 'Payment'),
         value: statusLabel(settings?.alipay_payment.status || 'missing_config', t),
         toneClassName: statusTone(settings?.alipay_payment.status || 'missing_config'),
+        size: 'compact' as const,
+      },
+      {
+        label: t('admin.service_settings.metric_accounting_fx', {}, 'Accounting FX'),
+        value: `${stringValue(settings?.accounting_fx.config.usd_cny_rate) || '7.200000'} CNY/USD`,
+        toneClassName: statusTone(settings?.accounting_fx.status || 'missing_config'),
         size: 'compact' as const,
       },
       {
@@ -704,6 +735,25 @@ export default function AdminServiceSettingsPage() {
     );
   }
 
+  function submitAccountingFx(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setError(activeValidationIssues[0]);
+      return;
+    }
+    void saveJson(
+      '/api/admin/service-settings/accounting-fx',
+      {
+        usd_cny_rate: Number(accountingFxForm.usd_cny_rate),
+        effective_at: `${accountingFxForm.effective_date}T00:00:00Z`,
+        source: accountingFxForm.source,
+        note: accountingFxForm.note,
+      },
+      'accounting-fx',
+      t('admin.service_settings.accounting_fx_saved', {}, 'Accounting FX rate saved.')
+    );
+  }
+
   function submitQq(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
@@ -829,6 +879,9 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'site-relink') {
       return JSON.stringify(siteRelinkPolicyForm) !== JSON.stringify(savedForms.siteRelink);
     }
+    if (activeTab === 'accounting') {
+      return JSON.stringify(accountingFxForm) !== JSON.stringify(savedForms.accounting);
+    }
     return JSON.stringify(alipayForm) !== JSON.stringify(savedForms.payment);
   })();
 
@@ -913,6 +966,36 @@ export default function AdminServiceSettingsPage() {
         );
       }
     }
+    if (activeTab === 'accounting') {
+      const rate = Number(accountingFxForm.usd_cny_rate);
+      if (!Number.isFinite(rate) || rate <= 0 || rate > 20) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_accounting_fx_rate',
+            {},
+            'Enter a USD/CNY rate greater than 0 and no greater than 20.'
+          )
+        );
+      }
+      if (!accountingFxForm.effective_date) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_accounting_fx_date',
+            {},
+            'Select the accounting rate effective date.'
+          )
+        );
+      }
+      if (!accountingFxForm.source.trim()) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_accounting_fx_source',
+            {},
+            'Enter the accounting rate source.'
+          )
+        );
+      }
+    }
     return issues;
   })();
 
@@ -924,6 +1007,7 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'email') setEmailForm(saved.email);
     if (activeTab === 'payment') setAlipayForm(saved.payment);
     if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
+    if (activeTab === 'accounting') setAccountingFxForm(saved.accounting);
     if (activeTab === 'qq') setQqCredentialRevealed(false);
     if (activeTab === 'email') setEmailCredentialRevealed(false);
     if (activeTab === 'payment') {
@@ -1028,6 +1112,16 @@ export default function AdminServiceSettingsPage() {
       tone: activeTab === 'payment' && activeGroupDirty
         ? 'attention'
         : settingTone(data?.settings.alipay_payment.status || 'missing_config'),
+    },
+    {
+      id: 'accounting',
+      label: t('admin.service_settings.tab_accounting', {}, '成本核算'),
+      description: activeTab === 'accounting' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : `${stringValue(data?.settings.accounting_fx.config.usd_cny_rate) || '7.200000'} CNY/USD`,
+      tone: activeTab === 'accounting' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.accounting_fx.status || 'missing_config'),
     },
     {
       id: 'site-relink',
@@ -1226,6 +1320,126 @@ export default function AdminServiceSettingsPage() {
                   {saving === 'portal-public'
                     ? t('admin.service_settings.saving', {}, 'Saving')
                     : t('admin.service_settings.save_base_url', {}, '保存基础地址')}
+                </button>
+              </div>
+            </form>
+          </div>
+      ) : null}
+
+      {activeTab === 'accounting' ? (
+          <div id="service-settings-accounting" className="grid gap-3" role="tabpanel">
+            <div className="flex min-w-0 items-baseline gap-3">
+              <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
+                {t('admin.service_settings.accounting_fx_title', {}, 'USD/CNY accounting rate')}
+              </h2>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'admin.service_settings.accounting_fx_desc',
+                  {},
+                  'Provider costs remain in USD; Cloud snapshots the approved rate and the converted CNY amount for operator accounting.'
+                )}
+              </p>
+            </div>
+            {activeStateNotice}
+            <form className="grid gap-3" onSubmit={submitAccountingFx}>
+              <AdminConfigurationTable
+                ariaLabel={t('admin.service_settings.accounting_fx_title', {}, 'USD/CNY accounting rate')}
+                itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
+                valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
+                detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
+                density="compact"
+              >
+                <AdminConfigurationRow
+                  rowId="accounting-fx-rate"
+                  label={t('admin.service_settings.accounting_fx_rate_label', {}, 'CNY per USD')}
+                  value={<input
+                    className="input w-full"
+                    type="number"
+                    min="0.000001"
+                    max="20"
+                    step="0.000001"
+                    value={accountingFxForm.usd_cny_rate}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      usd_cny_rate: event.target.value,
+                    }))}
+                  />}
+                  detail={t(
+                    'admin.service_settings.accounting_fx_rate_detail',
+                    {},
+                    'One global operator-approved rate. It is not a customer currency selector.'
+                  )}
+                />
+                <AdminConfigurationRow
+                  rowId="accounting-fx-effective-date"
+                  label={t('admin.service_settings.accounting_fx_effective_label', {}, 'Effective date')}
+                  value={<input
+                    className="input w-full"
+                    type="date"
+                    value={accountingFxForm.effective_date}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      effective_date: event.target.value,
+                    }))}
+                  />}
+                  detail={stringValue(data.settings.accounting_fx.config.rate_version)}
+                />
+                <AdminConfigurationRow
+                  rowId="accounting-fx-source"
+                  label={t('admin.service_settings.accounting_fx_source_label', {}, 'Source')}
+                  value={<input
+                    className="input w-full"
+                    maxLength={128}
+                    value={accountingFxForm.source}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      source: event.target.value,
+                    }))}
+                  />}
+                  detail={t(
+                    'admin.service_settings.accounting_fx_source_detail',
+                    {},
+                    'For example: operator-approved monthly accounting rate.'
+                  )}
+                />
+                <AdminConfigurationRow
+                  rowId="accounting-fx-note"
+                  label={t('admin.service_settings.accounting_fx_note_label', {}, 'Note')}
+                  value={<input
+                    className="input w-full"
+                    maxLength={500}
+                    value={accountingFxForm.note}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      note: event.target.value,
+                    }))}
+                  />}
+                  detail={data.settings.accounting_fx.config.is_fallback
+                    ? t(
+                        'admin.service_settings.accounting_fx_fallback',
+                        {},
+                        'The fallback rate is active. Save an operator-approved rate before relying on CNY margin reporting.'
+                      )
+                    : t(
+                        'admin.service_settings.accounting_fx_snapshot_note',
+                        {},
+                        'New provider-cost events snapshot this rate version; historical snapshots are not rewritten.'
+                      )}
+                />
+              </AdminConfigurationTable>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={
+                    saving === 'accounting-fx' ||
+                    !activeGroupDirty ||
+                    activeValidationIssues.length > 0
+                  }
+                >
+                  {saving === 'accounting-fx'
+                    ? t('admin.service_settings.saving', {}, 'Saving')
+                    : t('admin.service_settings.save_accounting_fx', {}, 'Save accounting rate')}
                 </button>
               </div>
             </form>

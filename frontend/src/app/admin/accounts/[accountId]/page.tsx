@@ -290,6 +290,7 @@ type SiteRuntimeApiPayload = {
   commercial_policy?: {
     usage_totals?: {
       cost_usd?: number;
+      cost_cny?: number;
       tokens_total?: number;
       provider_calls?: number;
     };
@@ -637,7 +638,7 @@ function AccountDetailContent() {
             costEstimate: Number(
               budgetState.cost?.current_total ??
                 usageSummary.cost_estimate ??
-                policyUsageTotals.cost_usd ??
+                policyUsageTotals.cost_cny ??
                 0
             ),
             tokensTotal: Number(
@@ -1144,7 +1145,7 @@ function AccountDetailContent() {
           ai_credits_increment: pack.ai_credits_increment,
           runs_increment: pack.runs_increment,
           tokens_increment: pack.tokens_increment,
-          cost_increment: pack.cost_increment,
+          cost_cny_increment: pack.cost_increment,
           reason: 'operator_overage_buffer',
           note: `Applied ${pack.pack_id} from account coverage screen.`,
         },
@@ -1517,7 +1518,7 @@ function AccountDetailContent() {
   ].filter(Boolean);
   const unlimitedLabel = t('common.unlimited', {}, 'Unlimited');
   const formatQuotaMetricValue = (metric: AccountQuotaMetric): string => {
-    if (metric.unit === 'usd') {
+    if (metric.unit === 'cny') {
       return formatAdminCurrency(metric.used);
     }
     return formatInteger(Math.round(Number(metric.used || 0)));
@@ -1526,7 +1527,7 @@ function AccountDetailContent() {
     if (metric.unlimited) {
       return unlimitedLabel;
     }
-    if (metric.unit === 'usd') {
+    if (metric.unit === 'cny') {
       return formatAdminCurrency(metric.limit);
     }
     return formatInteger(Math.round(Number(metric.limit || 0)));

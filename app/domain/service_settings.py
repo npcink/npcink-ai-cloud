@@ -14,6 +14,12 @@ from app.core.secrets import (
     decrypt_service_setting_secret,
     encrypt_service_setting_secret,
 )
+from app.domain.commercial.currency import (
+    SERVICE_SETTING_ACCOUNTING_FX,
+    AccountingFxValidationError,
+    build_accounting_fx_config,
+    resolve_accounting_fx_rate,
+)
 
 SERVICE_SETTING_PORTAL_PUBLIC = "portal_public"
 SERVICE_SETTING_QQ_LOGIN = "portal_qq_login"
@@ -63,6 +69,7 @@ class ServiceSettingsAdminService:
                                 SERVICE_SETTING_PORTAL_EMAIL,
                                 SERVICE_SETTING_PAYMENT_ALIPAY,
                                 SERVICE_SETTING_SITE_RELINK_POLICY,
+                                SERVICE_SETTING_ACCOUNTING_FX,
                             ]
                         )
                     )
@@ -89,6 +96,9 @@ class ServiceSettingsAdminService:
                 ),
                 "site_relink_policy": self._serialize_site_relink_policy(
                     rows.get(SERVICE_SETTING_SITE_RELINK_POLICY),
+                ),
+                "accounting_fx": self._serialize_accounting_fx(
+                    rows.get(SERVICE_SETTING_ACCOUNTING_FX),
                 ),
             },
             "env_fallback": "disabled",
@@ -141,6 +151,29 @@ class ServiceSettingsAdminService:
             required_secret_keys=[],
         )
         return self._serialize_site_relink_policy(row)
+
+    def save_accounting_fx(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            config = build_accounting_fx_config(
+                usd_cny_rate=payload.get("usd_cny_rate"),
+                effective_at=payload.get("effective_at"),
+                source=payload.get("source"),
+                note=payload.get("note"),
+            )
+        except AccountingFxValidationError as error:
+            raise ServiceSettingsAdminError(
+                "service_settings.accounting_fx_invalid",
+                str(error),
+            ) from error
+        row = self._save(
+            setting_id=SERVICE_SETTING_ACCOUNTING_FX,
+            setting_kind=SERVICE_SETTING_KIND_COMMERCIAL,
+            config=config,
+            secrets={},
+            enabled=True,
+            required_secret_keys=[],
+        )
+        return self._serialize_accounting_fx(row)
 
     def save_qq_login(self, payload: dict[str, Any]) -> dict[str, Any]:
         client_id = _string(payload.get("client_id"))
@@ -631,6 +664,27 @@ class ServiceSettingsAdminService:
                 "credential_value_exposure": "none",
             }
         return self._serialize(row)
+
+    def _serialize_accounting_fx(
+        self,
+        row: ServiceSetting | None,
+    ) -> dict[str, Any]:
+        rate = resolve_accounting_fx_rate(
+            row.config_json if row is not None and row.enabled else None
+        )
+        return {
+            "setting_id": SERVICE_SETTING_ACCOUNTING_FX,
+            "setting_kind": SERVICE_SETTING_KIND_COMMERCIAL,
+            "enabled": True,
+            "configured": not rate.is_fallback,
+            "status": STATUS_READY if not rate.is_fallback else STATUS_MISSING_CONFIG,
+            "config": rate.as_dict(),
+            "secrets": {},
+            "last_tested_at": "",
+            "last_error_code": "",
+            "last_error_message": "",
+            "credential_value_exposure": "none",
+        }
 
 
 def resolve_portal_public_base_url(database_url: str, settings: Settings) -> str:

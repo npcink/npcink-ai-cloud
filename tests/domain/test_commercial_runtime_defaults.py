@@ -14,6 +14,7 @@ from app.core.models import (
     AccountSubscription,
     CreditLedgerEntry,
     PaidCreditGrant,
+    ServiceSetting,
     UsageMeterEvent,
 )
 from app.domain.commercial.service import CommercialService
@@ -87,6 +88,7 @@ def test_authorize_runtime_request_uses_free_ai_credit_package_defaults(
         "max_runs_per_period": 0.0,
         "max_tokens_per_period": 0.0,
         "max_cost_per_period": 0.0,
+        "max_cost_cny_per_period": 0.0,
     }
     assert decision["concurrency"] == {
         "max_active_runs": 1,
@@ -139,6 +141,27 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
     service = CommercialService(database_url)
 
     with get_session(database_url) as session:
+        session.add(
+            ServiceSetting(
+                setting_id="commercial_accounting_fx",
+                setting_kind="commercial",
+                enabled=True,
+                config_json={
+                    "usd_cny_rate": "7.100000",
+                    "effective_at": "2026-07-01T00:00:00+00:00",
+                    "source": "test-approved",
+                    "note": "",
+                    "rate_version": "usd-cny-20260701T000000Z-7_100000",
+                },
+                secret_ciphertext_json={},
+                status="ready",
+                last_tested_at=None,
+                last_error_code="",
+                last_error_message="",
+                metadata_json={},
+            )
+        )
+        session.flush()
         subscription = session.scalar(select(AccountSubscription))
         assert subscription is not None
         runtime_repository = RuntimeRepository(session)
@@ -205,6 +228,8 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
             event for event in events if event.meter_key == "provider_calls"
         )
         provider_payload = dict(provider_event.payload_json or {})
+        cost_usd_event = next(event for event in events if event.meter_key == "cost")
+        cost_cny_event = next(event for event in events if event.meter_key == "cost_cny")
         credit_source_types = set(
             session.scalars(
                 select(CreditLedgerEntry.source_type).where(
@@ -220,12 +245,20 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
         "tokens_out": 50.0,
         "tokens_total": 1050.0,
         "cost": 0.004,
+        "cost_cny": 0.0284,
         "input_tokens_uncached": 100.0,
         "cache_read_tokens": 800.0,
         "cache_write_tokens": 100.0,
     }
     assert provider_payload["cache_hit_ratio"] == 0.8
     assert provider_payload["cost_estimate_mode"] == "cache_rates"
+    assert cost_usd_event.currency == "USD"
+    assert cost_cny_event.currency == "CNY"
+    assert cost_usd_event.payload_json["accounting_fx"]["rate_version"] == (
+        "usd-cny-20260701T000000Z-7_100000"
+    )
+    assert cost_cny_event.payload_json["cost_usd"] == 0.004
+    assert cost_cny_event.payload_json["cost_cny"] == 0.0284
     assert credit_source_types == {"tokens_total"}
     dispose_engine(database_url)
 

@@ -24,8 +24,10 @@ budget using a currency label that made it look like the customer price.
 3. The package editor exposes two separate commercial values:
    - **Sales price (CNY):** the amount charged to the customer and snapshotted
      onto a new payment order.
-   - **Model cost budget (USD):** an internal provider-cost guardrail for one
-     package period. It is not a customer price or wallet balance.
+   - **Model cost budget (CNY):** an internal accounting guardrail for one
+     package period. It is not a customer price or wallet balance. Provider
+     cost evidence remains in its original USD amount and is converted through
+     the versioned accounting-rate contract in ADR-033.
 4. Publishing a paid package version synchronizes its standard Portal offer.
    New checkouts use that offer; existing orders keep their purchase-time
    amount and subject snapshots.
@@ -48,8 +50,8 @@ budget using a currency label that made it look like the customer price.
   WordPress write/control-plane responsibility moves into Cloud.
 - Refund handling can reduce only unspent paid-credit balance. Accounting and
   audit evidence is retained even when Portal history hides old closed orders.
-- Sales price and model cost budget may intentionally use different currencies
-  because they answer different business questions.
+- Sales price and model cost budget use CNY for consistent product and operator
+  decisions. Raw provider USD cost remains separately available as evidence.
 
 ## Rollback
 

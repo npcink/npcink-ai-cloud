@@ -225,6 +225,7 @@ class SubscriptionTopUpPayload(BaseModel):
     ai_credits_increment: float = 0.0
     runs_increment: float = 0.0
     tokens_increment: float = 0.0
+    cost_cny_increment: float | None = None
     cost_increment: float = 0.0
     reason: str = ""
     note: str = ""
@@ -408,6 +409,15 @@ class SiteRelinkPolicyServiceSettingsPayload(BaseModel):
 
     enabled: bool = True
     cooldown_days: int = Field(default=90, ge=90, le=365)
+
+
+class AccountingFxServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    usd_cny_rate: float = Field(gt=0, le=20)
+    effective_at: datetime
+    source: str = Field(min_length=1, max_length=128)
+    note: str = Field(default="", max_length=500)
 
 
 class ServiceSettingsEmailTestPayload(BaseModel):
@@ -1907,6 +1917,7 @@ async def apply_subscription_topup(
             ai_credits_increment=payload.ai_credits_increment,
             runs_increment=payload.runs_increment,
             tokens_increment=payload.tokens_increment,
+            cost_cny_increment=payload.cost_cny_increment,
             cost_increment=payload.cost_increment,
             reason=payload.reason,
             note=payload.note,
@@ -3947,6 +3958,53 @@ async def update_admin_site_relink_policy_settings(
         message="site relink policy settings saved",
         data=result,
         revision="site-relink-v1",
+    )
+
+
+@router.patch("/admin/service-settings/accounting-fx")
+async def update_admin_accounting_fx_settings(
+    request: Request,
+    payload: AccountingFxServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_accounting_fx(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="commercial_accounting_fx",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="accounting-fx-v1",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="commercial_accounting_fx",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="accounting FX settings saved",
+        data=result,
+        revision="accounting-fx-v1",
     )
 
 

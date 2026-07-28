@@ -212,9 +212,15 @@ def test_site_monitoring_overview_prioritizes_actions_and_quota(tmp_path: Path) 
         )
         session.commit()
 
+    commercial_policy = _policy(database_url, site_id)
+    legacy_cost_budget = commercial_policy["budget_state"]["cost"]
+    assert legacy_cost_budget["limit"] == 36.0
+    assert legacy_cost_budget["currency"] == "CNY"
+    assert legacy_cost_budget["budget_source"] == "legacy_max_cost_per_period_converted"
+
     summary = SiteMonitoringOverviewService(database_url).get_summary(
         site_id=site_id,
-        commercial_policy=_policy(database_url, site_id),
+        commercial_policy=commercial_policy,
         window_hours=24,
         now=now,
     )

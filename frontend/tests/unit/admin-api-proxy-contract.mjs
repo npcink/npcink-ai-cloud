@@ -69,7 +69,7 @@ assert.match(
 
 assert.match(
   source,
-  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:portal-public\|qq-login\|email\|alipay-payment\|site-relink-policy\)\$\/[\s\S]*?methods: \['POST'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:qq-login\\\/test\|email\\\/test\|email\\\/preview\|alipay-payment\\\/test\)\$\//,
+  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:portal-public\|qq-login\|email\|alipay-payment\|site-relink-policy\|accounting-fx\)\$\/[\s\S]*?methods: \['POST'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:qq-login\\\/test\|email\\\/test\|email\\\/preview\|alipay-payment\\\/test\)\$\//,
   'admin service-settings writes must enumerate the supported method for each subpath'
 );
 

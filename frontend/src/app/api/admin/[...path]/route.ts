@@ -265,7 +265,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['PATCH'],
-    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy)$/,
+    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy|accounting-fx)$/,
     namespace: 'admin',
   },
   {
