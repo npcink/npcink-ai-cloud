@@ -413,13 +413,36 @@ export default function AdminServiceSettingsPage() {
       if (!settingsMountedRef.current || settingsRequestSequenceRef.current !== requestSequence) {
         return;
       }
-      setData(nextData);
       const portalPublic = nextData.settings.portal_public;
       const qq = nextData.settings.qq_login;
       const email = nextData.settings.portal_email;
       setEmailConfigExpanded(email.status === 'missing_config' || email.status === 'error');
       const alipay = nextData.settings.alipay_payment;
-      const accountingFx = nextData.settings.accounting_fx;
+      const accountingFx = nextData.settings.accounting_fx || {
+        setting_id: 'commercial_accounting_fx',
+        enabled: true,
+        configured: false,
+        status: 'missing_config',
+        config: {
+          usd_cny_rate: '7.200000',
+          effective_at: '2026-07-01T00:00:00Z',
+          source: 'platform_default',
+          note: '',
+          rate_version: 'usd-cny-20260701T000000Z-7_200000',
+          is_fallback: true,
+        },
+        secrets: {},
+        last_tested_at: '',
+        last_error_code: '',
+        last_error_message: '',
+      };
+      setData({
+        ...nextData,
+        settings: {
+          ...nextData.settings,
+          accounting_fx: accountingFx,
+        },
+      });
       const siteRelinkPolicy = nextData.settings.site_relink_policy;
       const emailSmtpUsername = stringValue(email.config.smtp_username);
       const emailFromAddress = stringValue(email.config.from_email);
@@ -1118,7 +1141,7 @@ export default function AdminServiceSettingsPage() {
       label: t('admin.service_settings.tab_accounting', {}, '成本核算'),
       description: activeTab === 'accounting' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
-        : `${stringValue(data?.settings.accounting_fx.config.usd_cny_rate) || '7.200000'} CNY/USD`,
+        : statusLabel(data?.settings.accounting_fx.status || 'missing_config', t),
       tone: activeTab === 'accounting' && activeGroupDirty
         ? 'attention'
         : settingTone(data?.settings.accounting_fx.status || 'missing_config'),
