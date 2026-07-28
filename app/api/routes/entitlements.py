@@ -189,7 +189,7 @@ def _resolve_pro_cloud_runtime(policy: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _resolve_credit_usage_detail(request: Request, account_id: str) -> dict[str, object]:
+def _resolve_ai_credit_usage_detail(request: Request, account_id: str) -> dict[str, object]:
     if not account_id:
         return {}
     try:
@@ -198,12 +198,12 @@ def _resolve_credit_usage_detail(request: Request, account_id: str) -> dict[str,
         )
     except CommercialServiceError:
         return {}
-    credit_usage_detail = quota_summary.get("credit_usage_detail")
-    if not isinstance(credit_usage_detail, dict):
+    ai_credit_usage_detail = quota_summary.get("ai_credit_usage_detail")
+    if not isinstance(ai_credit_usage_detail, dict):
         return {}
     return {
         key: value
-        for key, value in credit_usage_detail.items()
+        for key, value in ai_credit_usage_detail.items()
         if key != "recent_items"
     }
 
@@ -243,7 +243,7 @@ def _build_entitlement_payload(
             "pro_cloud_runtime": _resolve_pro_cloud_runtime(policy),
         },
         "quota_summary": {
-            "credit_usage_detail": _resolve_credit_usage_detail(request, account_id),
+            "ai_credit_usage_detail": _resolve_ai_credit_usage_detail(request, account_id),
         },
     }
 

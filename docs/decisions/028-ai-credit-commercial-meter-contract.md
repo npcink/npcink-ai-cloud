@@ -37,10 +37,10 @@ limit.
 - Site count, concurrency, vector capacity, and batch size remain separate
   resource limits; they are never represented as AI credits.
 
-The stable `/credit-ledger` paths and the Addon-facing
-`credit_usage_detail` read-only wrapper remain unchanged in this migration.
-They are route/projection compatibility names, not a second meter. Its unit is
-now `ai_credits`; the Addon remains a read-only summary and link surface.
+The stable `/credit-ledger` paths remain unchanged. The Addon-facing read-only
+projection is `ai_credit_usage_detail`; it accepts only the `ai_credits` unit.
+The Addon remains a read-only summary and link surface, without a legacy
+wrapper or generic-credit fallback.
 
 ## Consequences
 

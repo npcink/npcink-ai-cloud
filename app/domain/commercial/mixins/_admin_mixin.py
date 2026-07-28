@@ -2320,7 +2320,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ),
             "resource_limits": resource_limits,
             "breakdown": breakdown,
-            "credit_usage_detail": self._build_portal_credit_usage_detail(
+            "ai_credit_usage_detail": self._build_portal_ai_credit_usage_detail(
                 credit=credit,
                 breakdown=breakdown,
                 recent_items=[],
@@ -2363,7 +2363,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "rate_version": ledger.get("rate_version"),
             "pagination": ledger.get("pagination"),
             "summary": summary,
-            "usage_detail": self._build_portal_credit_usage_detail(
+            "ai_credit_usage_detail": self._build_portal_ai_credit_usage_detail(
                 credit={},
                 breakdown=breakdown,
                 recent_items=items,
@@ -2433,7 +2433,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "entry_count": len(entries),
         }
 
-    def _build_portal_credit_usage_detail(
+    def _build_portal_ai_credit_usage_detail(
         self,
         *,
         credit: dict[str, object],
@@ -2448,7 +2448,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         used = service._coerce_float(credit.get("used")) if credit else 0.0
         remaining = max(0.0, limit - used) if limit > 0 else None
         return {
-            "surface": "portal_personal_credit_usage",
+            "surface": "portal_personal_ai_credit_usage",
             "default_visibility": "cloud_portal_only",
             "local_addon_policy": "summary_and_link_only",
             "generated_at": generated_at,
@@ -2480,8 +2480,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 for key, label in AI_CREDIT_LEDGER_CATEGORY_LABELS.items()
             ],
             "portal_paths": {
-                "credit_usage": "/portal/usage",
-                "credit_ledger": "/portal/usage/credits",
+                "ai_credit_usage": "/portal/usage",
+                "ai_credit_ledger": "/portal/usage/credits",
             },
         }
 

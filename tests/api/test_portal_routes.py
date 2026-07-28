@@ -2735,7 +2735,7 @@ def test_same_account_users_cannot_cross_site_commercial_boundaries(
         "ai_credit_policy": {},
         "resource_limits": [],
         "breakdown": [],
-        "credit_usage_detail": {},
+        "ai_credit_usage_detail": {},
     }
 
     with get_session(database_url) as session:
@@ -6952,17 +6952,19 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert quota_summary["ai_credit_policy"]["topup_policy"] == (
         "operator_topups_apply_to_target_period_only"
     )
-    credit_usage_detail = quota_summary["credit_usage_detail"]
-    assert credit_usage_detail["default_visibility"] == "cloud_portal_only"
-    assert credit_usage_detail["local_addon_policy"] == "summary_and_link_only"
-    assert credit_usage_detail["portal_paths"]["credit_ledger"] == "/portal/usage/credits"
-    assert {item["key"] for item in credit_usage_detail["breakdown"]} >= {
+    ai_credit_usage_detail = quota_summary["ai_credit_usage_detail"]
+    assert ai_credit_usage_detail["default_visibility"] == "cloud_portal_only"
+    assert ai_credit_usage_detail["local_addon_policy"] == "summary_and_link_only"
+    assert ai_credit_usage_detail["portal_paths"]["ai_credit_ledger"] == "/portal/usage/credits"
+    assert {item["key"] for item in ai_credit_usage_detail["breakdown"]} >= {
         "tokens_total",
         "zhihu_hot_topics",
     }
     assert (
         next(
-            item for item in credit_usage_detail["breakdown"] if item["key"] == "zhihu_hot_topics"
+            item
+            for item in ai_credit_usage_detail["breakdown"]
+            if item["key"] == "zhihu_hot_topics"
         )["capability_group"]
         == "zhihu_open_platform"
     )
@@ -7029,19 +7031,22 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         credit_ledger_data["summary"]["category_totals"]["ai_usage"]["net_ai_credit_delta"]
         == -4.0
     )
-    assert credit_ledger_data["usage_detail"]["surface"] == "portal_personal_credit_usage"
-    assert {item["category"] for item in credit_ledger_data["usage_detail"]["legend"]} >= {
+    assert (
+        credit_ledger_data["ai_credit_usage_detail"]["surface"]
+        == "portal_personal_ai_credit_usage"
+    )
+    assert {item["category"] for item in credit_ledger_data["ai_credit_usage_detail"]["legend"]} >= {
         "ai_usage",
         "credit_pack_purchase",
         "refund_adjustment",
         "operator_adjustment",
     }
-    assert {item["key"] for item in credit_ledger_data["usage_detail"]["breakdown"]} >= {
+    assert {item["key"] for item in credit_ledger_data["ai_credit_usage_detail"]["breakdown"]} >= {
         "runs",
         "tokens_total",
         "zhihu_hot_topics",
     }
-    assert len(credit_ledger_data["usage_detail"]["recent_items"]) == 3
+    assert len(credit_ledger_data["ai_credit_usage_detail"]["recent_items"]) == 3
 
     account_credit_ledger_response = client.get(
         "/portal/v1/account/credit-ledger?limit=10",

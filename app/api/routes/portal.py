@@ -326,7 +326,7 @@ def _portal_public_quota_summary_data(value: object) -> dict[str, object]:
         "ai_credit_policy": _dict_value(summary.get("ai_credit_policy")),
         "resource_limits": _object_list(summary.get("resource_limits")),
         "breakdown": _object_list(summary.get("breakdown")),
-        "credit_usage_detail": _dict_value(summary.get("credit_usage_detail")),
+        "ai_credit_usage_detail": _dict_value(summary.get("ai_credit_usage_detail")),
     }
 
 
@@ -694,7 +694,7 @@ def _portal_credit_summary_data(value: object) -> dict[str, object]:
     }
 
 
-def _portal_credit_usage_detail_data(value: object) -> dict[str, object]:
+def _portal_ai_credit_usage_detail_data(value: object) -> dict[str, object]:
     detail = _dict_value(value)
     period = _dict_value(detail.get("period"))
     summary = _dict_value(detail.get("summary"))
@@ -738,8 +738,8 @@ def _portal_credit_usage_detail_data(value: object) -> dict[str, object]:
             for item in _object_list(detail.get("legend"))
         ],
         "portal_paths": {
-            "credit_usage": str(paths.get("credit_usage") or ""),
-            "credit_ledger": str(paths.get("credit_ledger") or ""),
+            "ai_credit_usage": str(paths.get("ai_credit_usage") or ""),
+            "ai_credit_ledger": str(paths.get("ai_credit_ledger") or ""),
         },
     }
 
@@ -757,7 +757,9 @@ def _portal_credit_ledger_data(
         "rate_version": str(ledger.get("rate_version") or ""),
         "pagination": _portal_pagination_data(ledger.get("pagination")),
         "summary": _portal_credit_summary_data(ledger.get("summary")),
-        "usage_detail": _portal_credit_usage_detail_data(ledger.get("usage_detail")),
+        "ai_credit_usage_detail": _portal_ai_credit_usage_detail_data(
+            ledger.get("ai_credit_usage_detail")
+        ),
         "items": [
             _portal_credit_ledger_entry_data(item)
             for item in _object_list(ledger.get("items"))

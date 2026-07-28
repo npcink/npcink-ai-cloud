@@ -1430,7 +1430,7 @@ export interface PortalCreditLedgerPayload {
       ai_credits?: number;
     }>;
   };
-  usage_detail?: {
+  ai_credit_usage_detail?: {
     surface?: string;
     default_visibility?: string;
     local_addon_policy?: string;
