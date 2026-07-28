@@ -4,11 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   BackofficeDiagnosticNotice,
+  BackofficeLayer,
   BackofficePageStack,
-  BackofficePrimaryPanel,
   BackofficeSectionPanel,
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
+import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -120,19 +121,28 @@ type ComplianceWorkspace = {
   };
 };
 
+type ComplianceSection =
+  | 'operator'
+  | 'refund'
+  | 'retention'
+  | 'third_parties'
+  | 'review'
+  | 'checks'
+  | 'versions';
+
 const siteComplianceClient = createApiClient({
   cache: 'no-store',
   idempotencyPrefix: 'admin_site_compliance',
 });
 
 const inputClassName =
-  'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950';
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950';
 const labelClassName = 'text-sm font-semibold text-slate-800 dark:text-slate-200';
 const hintClassName = 'mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400';
 const secondaryButtonClassName =
-  'rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
+  'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
 const primaryButtonClassName =
-  'rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50';
+  'rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50';
 
 function clonePayload(payload: CompliancePayload): CompliancePayload {
   return JSON.parse(JSON.stringify(payload)) as CompliancePayload;
@@ -162,6 +172,19 @@ function formatTime(value: string | undefined, zh: boolean): string {
   }).format(parsed);
 }
 
+function formatValidationArea(field: string, zh: boolean): string {
+  const labels: Record<string, [string, string]> = {
+    operator: ['运营主体', 'Operator'],
+    contact: ['联系方式', 'Contact'],
+    refund: ['退款说明', 'Refund'],
+    retention: ['数据保留', 'Retention'],
+    third_parties: ['第三方服务', 'Third parties'],
+    review: ['发布确认', 'Publication review'],
+  };
+  const [zhLabel, enLabel] = labels[field.split('.')[0] || ''] || ['合规资料', 'Compliance'];
+  return zh ? zhLabel : enLabel;
+}
+
 export default function AdminSiteCompliancePage() {
   const router = useRouter();
   const { locale } = useLocale();
@@ -175,6 +198,7 @@ export default function AdminSiteCompliancePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pendingNavigationHref, setPendingNavigationHref] = useState('');
+  const [activeSection, setActiveSection] = useState<ComplianceSection>('operator');
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
@@ -250,6 +274,59 @@ export default function AdminSiteCompliancePage() {
       (candidate) => candidate.in_use && !known.has(candidate.service_id)
     );
   }, [payload, workspace]);
+  const complianceSections: Array<{
+    id: ComplianceSection;
+    label: string;
+    detail: string;
+  }> = [
+    {
+      id: 'operator',
+      label: copy('主体与联系方式', 'Operator and contact'),
+      detail: copy('主体、品牌、支持渠道', 'Identity, brand, support'),
+    },
+    {
+      id: 'refund',
+      label: copy('退款说明', 'Refund disclosure'),
+      detail: copy('窗口、时限、申请路径', 'Window, timing, request path'),
+    },
+    {
+      id: 'retention',
+      label: copy('数据保留', 'Retention and deletion'),
+      detail: copy(`${payload?.retention.length ?? 0} 类记录`, `${payload?.retention.length ?? 0} record types`),
+    },
+    {
+      id: 'third_parties',
+      label: copy('第三方服务', 'Third-party services'),
+      detail: missingCandidates.length
+        ? copy(`${missingCandidates.length} 个待补齐`, `${missingCandidates.length} missing`)
+        : copy(`${payload?.third_parties.length ?? 0} 个已登记`, `${payload?.third_parties.length ?? 0} registered`),
+    },
+    {
+      id: 'review',
+      label: copy('发布确认', 'Publication review'),
+      detail: copy('运营事实与法律审核', 'Operating facts and legal review'),
+    },
+    {
+      id: 'checks',
+      label: copy('发布检查', 'Publish checks'),
+      detail: validation?.ready_to_publish
+        ? copy('检查通过', 'Ready')
+        : copy(`${validation?.blockers.length ?? 0} 个阻塞项`, `${validation?.blockers.length ?? 0} blockers`),
+    },
+    {
+      id: 'versions',
+      label: copy('版本记录', 'Version history'),
+      detail: copy(`${workspace?.history.length ?? 0} 个历史版本`, `${workspace?.history.length ?? 0} historical versions`),
+    },
+  ];
+  const publishCheckRows = [
+    ...(validation?.blockers ?? []).map((item) => ({ ...item, tone: 'blocker' as const })),
+    ...(validation?.warnings ?? []).map((item) => ({ ...item, tone: 'warning' as const })),
+  ];
+  const versionRows = [published, ...(workspace?.history ?? [])].reduce<VersionRecord[]>((records, item) => {
+    if (item && !records.some((record) => record.version_id === item.version_id)) records.push(item);
+    return records;
+  }, []);
 
   function updatePayload(mutator: (next: CompliancePayload) => void) {
     setPayload((current) => {
@@ -352,24 +429,16 @@ export default function AdminSiteCompliancePage() {
   }
 
   return (
-    <BackofficePageStack>
-      <BackofficePrimaryPanel
+    <BackofficePageStack className="min-w-0 space-y-5">
+      <BackofficeLayer
         eyebrow={copy('网站与审核资料', 'Public site and review')}
         title={copy('网站合规资料', 'Site compliance')}
         description={copy(
-          '把现有运行事实整理成可发布资料。只有已发布版本会进入公开页面；草稿、检查结果和凭据不会公开。',
-          'Turn runtime facts into publishable disclosures. Only the published version reaches public pages; drafts, checks, and credentials stay private.'
+          '维护一份版本化的 Cloud 公开资料；草稿保存后重新检查，只有已发布版本进入公开页面。',
+          'Maintain one versioned Cloud disclosure. Saving revalidates the draft; only a published version reaches public pages.'
         )}
-        actions={
+        actions={(
           <>
-            <button
-              type="button"
-              className={primaryButtonClassName}
-              disabled={!dirty || Boolean(action)}
-              onClick={() => void saveDraft()}
-            >
-              {action === 'save' ? copy('保存中…', 'Saving…') : copy('保存草稿', 'Save draft')}
-            </button>
             <button
               type="button"
               className={secondaryButtonClassName}
@@ -382,57 +451,107 @@ export default function AdminSiteCompliancePage() {
             >
               {action === 'publish' ? copy('发布中…', 'Publishing…') : copy('发布到公开页面', 'Publish')}
             </button>
+            <button
+              type="button"
+              className={primaryButtonClassName}
+              disabled={!dirty || Boolean(action)}
+              onClick={() => void saveDraft()}
+            >
+              {action === 'save' ? copy('保存中…', 'Saving…') : copy('保存草稿', 'Save draft')}
+            </button>
           </>
-        }
-        summary={
-          <BackofficeSummaryStrip
-            items={[
-              {
-                label: copy('草稿状态', 'Draft'),
-                value: dirty ? copy('有未保存修改', 'Unsaved') : copy('已保存', 'Saved'),
-                size: 'compact',
-                toneClassName: dirty
-                  ? 'text-amber-700 dark:text-amber-300'
-                  : 'text-emerald-700 dark:text-emerald-300',
-              },
-              {
-                label: copy('发布门槛', 'Publish gate'),
-                value: validation?.ready_to_publish
-                  ? copy('可发布', 'Ready')
-                  : copy(`${validation?.blockers.length ?? 0} 个阻塞项`, `${validation?.blockers.length ?? 0} blockers`),
-                size: 'compact',
-              },
-              {
-                label: copy('当前公开版本', 'Published version'),
-                value: published?.version_number ? `v${published.version_number}` : '—',
-                detail: formatTime(published?.effective_at, zh),
-                size: 'compact',
-              },
-              {
-                label: copy('QQ 审核准备', 'QQ review'),
-                value: workspace.qq_review.status === 'ready' ? copy('已就绪', 'Ready') : copy('待补充', 'Blocked'),
-                size: 'compact',
-              },
-            ]}
-          />
-        }
-      >
-        {error ? (
-          <BackofficeDiagnosticNotice
-            message={error}
-            onRetry={() => void loadWorkspace()}
-            retryLabel={copy('重新加载', 'Reload')}
-          />
-        ) : null}
-        {notice ? (
-          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-            {notice}
-          </p>
-        ) : null}
-      </BackofficePrimaryPanel>
+        )}
+      />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="space-y-6">
+      {error ? (
+        <BackofficeDiagnosticNotice
+          message={error}
+          onRetry={() => void loadWorkspace()}
+          retryLabel={copy('重新加载', 'Reload')}
+        />
+      ) : null}
+      {notice ? (
+        <p role="status" aria-live="polite" className="border-l-2 border-emerald-400 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+          {notice}
+        </p>
+      ) : null}
+
+      <BackofficeSummaryStrip
+        items={[
+          {
+            label: copy('草稿状态', 'Draft'),
+            value: dirty ? copy('有未保存修改', 'Unsaved') : copy('已保存', 'Saved'),
+            size: 'compact',
+            toneClassName: dirty
+              ? 'text-amber-700 dark:text-amber-300'
+              : 'text-emerald-700 dark:text-emerald-300',
+          },
+          {
+            label: copy('发布门槛', 'Publish gate'),
+            value: validation?.ready_to_publish
+              ? copy('可发布', 'Ready')
+              : copy(`${validation?.blockers.length ?? 0} 个阻塞项`, `${validation?.blockers.length ?? 0} blockers`),
+            size: 'compact',
+          },
+          {
+            label: copy('当前公开版本', 'Published version'),
+            value: published?.version_number ? `v${published.version_number}` : '—',
+            detail: formatTime(published?.effective_at, zh),
+            size: 'compact',
+          },
+          {
+            label: copy('QQ 审核准备', 'QQ review'),
+            value: workspace.qq_review.status === 'ready' ? copy('已就绪', 'Ready') : copy('待补充', 'Blocked'),
+            size: 'compact',
+          },
+        ]}
+      />
+
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
+        <aside className="xl:sticky xl:top-24" data-ui="site-compliance-directory">
+          <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 xl:hidden">
+            {copy('当前设置区', 'Current section')}
+            <select
+              className={inputClassName}
+              value={activeSection}
+              onChange={(event) => setActiveSection(event.target.value as ComplianceSection)}
+            >
+              {complianceSections.map((section) => (
+                <option key={section.id} value={section.id}>{section.label}</option>
+              ))}
+            </select>
+          </label>
+          <nav className="hidden overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 xl:block" aria-label={copy('合规资料目录', 'Compliance sections')}>
+            <p className="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              {copy('设置目录', 'Sections')}
+            </p>
+            {complianceSections.map((section) => {
+              const selected = activeSection === section.id;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  aria-current={selected ? 'page' : undefined}
+                  className={`block w-full cursor-pointer border-b border-slate-200 px-3 py-2 text-left last:border-b-0 dark:border-slate-800 ${
+                    selected
+                      ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/25 dark:text-blue-200'
+                      : 'bg-white text-slate-800 hover:bg-slate-50 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900'
+                  }`}
+                  onClick={() => setActiveSection(section.id)}
+                >
+                  <span className="block text-sm font-semibold">{section.label}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{section.detail}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <p className="mt-3 hidden text-xs leading-5 text-slate-500 dark:text-slate-400 xl:block">
+            {copy('切换区域不会丢失当前草稿；离开页面时仍会保护未保存修改。', 'Switching sections keeps the draft; leaving the page still protects unsaved changes.')}
+          </p>
+        </aside>
+
+        <div className="min-w-0" data-ui="site-compliance-active-panel">
+          {activeSection === 'operator' ? (
           <BackofficeSectionPanel>
             <SectionTitle
               title={copy('运营主体与联系方式', 'Operator and contact')}
@@ -542,7 +661,9 @@ export default function AdminSiteCompliancePage() {
               </Field>
             </div>
           </BackofficeSectionPanel>
+          ) : null}
 
+          {activeSection === 'refund' ? (
           <BackofficeSectionPanel>
             <SectionTitle
               title={copy('退款说明', 'Refund disclosure')}
@@ -627,7 +748,9 @@ export default function AdminSiteCompliancePage() {
               {copy('当前套餐存在自动续费', 'Current plans auto-renew')}
             </label>
           </BackofficeSectionPanel>
+          ) : null}
 
+          {activeSection === 'retention' ? (
           <BackofficeSectionPanel>
             <SectionTitle
               title={copy('数据保留与清理', 'Retention and deletion')}
@@ -672,7 +795,9 @@ export default function AdminSiteCompliancePage() {
               ))}
             </div>
           </BackofficeSectionPanel>
+          ) : null}
 
+          {activeSection === 'third_parties' ? (
           <BackofficeSectionPanel>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <SectionTitle
@@ -795,7 +920,9 @@ export default function AdminSiteCompliancePage() {
               )}
             </div>
           </BackofficeSectionPanel>
+          ) : null}
 
+          {activeSection === 'review' ? (
           <BackofficeSectionPanel>
             <SectionTitle
               title={copy('发布确认', 'Publication review')}
@@ -854,89 +981,197 @@ export default function AdminSiteCompliancePage() {
               </span>
             </label>
           </BackofficeSectionPanel>
+          ) : null}
+
+          {activeSection === 'checks' ? (
+            <div className="space-y-4">
+              <SectionTitle
+                title={copy('发布检查', 'Publish checks')}
+                description={
+                  dirty
+                    ? copy('当前结果对应最近一次保存；先保存草稿，系统才会重新检查本次修改。', 'These results reflect the latest save. Save the draft to revalidate current edits.')
+                    : copy('以下结果来自最近一次保存。', 'Results are from the latest save.')
+                }
+              />
+              <AdminDataTableFrame
+                title={copy('合规检查结果', 'Compliance results')}
+                resultLabel={publishCheckRows.length
+                  ? copy(`${publishCheckRows.length} 个结果`, `${publishCheckRows.length} results`)
+                  : copy('全部通过', 'All clear')}
+                dataUi="site-compliance-validation-table"
+                density="compact"
+              >
+                <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+                  <colgroup>
+                    <col className="w-[16%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[60%]" />
+                  </colgroup>
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3 py-1.5" scope="col">{copy('状态', 'Status')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('检查项', 'Check')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('说明 / 下一步', 'Detail / next step')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {publishCheckRows.length ? publishCheckRows.map((item, index) => (
+                      <tr key={`${item.code}-${item.field}-${index}`}>
+                        <td className="px-3 py-2 align-top">
+                          <span className={`inline-flex rounded px-2 py-0.5 text-xs font-semibold ${
+                            item.tone === 'blocker'
+                              ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-200'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200'
+                          }`}>
+                            {item.tone === 'blocker' ? copy('阻塞', 'Blocked') : copy('提醒', 'Warning')}
+                          </span>
+                        </td>
+                        <th className="px-3 py-2 align-top font-semibold text-slate-900 dark:text-white" scope="row">{formatValidationArea(item.field, zh)}</th>
+                        <td className="break-words px-3 py-2 align-top text-slate-600 dark:text-slate-300">{item.message}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td className="px-3 py-3" colSpan={3}>
+                          <span className="font-semibold text-emerald-700 dark:text-emerald-300">{copy('没有阻塞项或提醒。', 'No blockers or warnings.')}</span>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </AdminDataTableFrame>
+
+              <AdminDataTableFrame
+                title={copy('QQ 登录审核清单', 'QQ login review')}
+                resultLabel={workspace.qq_review.status === 'ready' ? copy('已就绪', 'Ready') : copy('待补充', 'Blocked')}
+                dataUi="site-compliance-qq-review-table"
+                density="compact"
+              >
+                <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+                  <colgroup>
+                    <col className="w-[18%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[54%]" />
+                  </colgroup>
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3 py-1.5" scope="col">{copy('状态', 'Status')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('检查项', 'Check')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('说明', 'Detail')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {workspace.qq_review.items.map((item) => (
+                      <tr key={item.code}>
+                        <td className="px-3 py-2 align-top">
+                          <span className={`inline-flex rounded px-2 py-0.5 text-xs font-semibold ${
+                            item.ready
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-200'
+                          }`}>
+                            {item.ready ? copy('通过', 'Ready') : copy('待补充', 'Blocked')}
+                          </span>
+                        </td>
+                        <th className="px-3 py-2 align-top font-semibold text-slate-900 dark:text-white" scope="row">{item.label}</th>
+                        <td className="break-all px-3 py-2 align-top text-slate-600 dark:text-slate-300">{item.detail || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </AdminDataTableFrame>
+
+              {publishCheckRows.length ? (
+                <details className="border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950">
+                  <summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-200">
+                    {copy('检查技术详情', 'Check technical details')}
+                  </summary>
+                  <ul className="mt-2 space-y-1 text-xs text-slate-500 dark:text-slate-400">
+                    {publishCheckRows.map((item, index) => (
+                      <li key={`${item.code}-${item.field}-${index}`} className="break-all">
+                        <code>{item.code}</code> · <code>{item.field || '—'}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+
+              <details className="border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950">
+                <summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-200">
+                  {copy('QQ 外部提交步骤', 'QQ external submission steps')}
+                </summary>
+                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {copy('这里只记录外部操作说明；主体资质和开放平台提交仍在 QQ 互联控制台完成。', 'This is guidance only; qualifications and submission remain in QQ Connect.')}
+                </p>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-slate-600 dark:text-slate-400">
+                  {workspace.qq_review.manual_external_steps.map((step) => <li key={step}>{step}</li>)}
+                </ol>
+              </details>
+            </div>
+          ) : null}
+
+          {activeSection === 'versions' ? (
+            <div className="space-y-4">
+              <SectionTitle
+                title={copy('版本记录', 'Version history')}
+                description={copy('公开页面只读取当前已发布版本；历史版本保持只读。', 'Public pages read only the current published version; history remains read-only.')}
+              />
+              <AdminDataTableFrame
+                title={copy('合规资料版本', 'Compliance versions')}
+                resultLabel={copy(`${versionRows.length} 个版本`, `${versionRows.length} versions`)}
+                dataUi="site-compliance-version-table"
+                density="compact"
+              >
+                <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+                  <colgroup>
+                    <col className="w-[18%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[34%]" />
+                    <col className="w-[28%]" />
+                  </colgroup>
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3 py-1.5" scope="col">{copy('版本', 'Version')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('状态', 'Status')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('生效 / 更新时间', 'Effective / updated')}</th>
+                      <th className="px-3 py-1.5" scope="col">{copy('发布检查', 'Publish checks')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {versionRows.length ? versionRows.map((version) => {
+                      const isPublished = published?.version_id === version.version_id;
+                      return (
+                        <tr key={version.version_id}>
+                          <th className="px-3 py-2 align-top font-semibold text-slate-900 dark:text-white" scope="row">
+                            <span className="block">{version.version_number ? `v${version.version_number}` : '—'}</span>
+                            <span className="mt-0.5 block truncate font-mono text-xs font-normal text-slate-500">{version.version_id}</span>
+                          </th>
+                          <td className="px-3 py-2 align-top">
+                            <span className={`inline-flex rounded px-2 py-0.5 text-xs font-semibold ${
+                              isPublished
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300'
+                            }`}>
+                              {isPublished ? copy('当前公开', 'Published') : copy('历史', 'Historical')}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">{formatTime(version.effective_at || version.updated_at, zh)}</td>
+                          <td className="px-3 py-2 align-top">
+                            <span className={version.validation.ready_to_publish ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}>
+                              {version.validation.ready_to_publish
+                                ? copy('通过', 'Ready')
+                                : copy(`${version.validation.blockers.length} 个阻塞项`, `${version.validation.blockers.length} blockers`)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr><td className="px-3 py-3 text-slate-500" colSpan={4}>{copy('尚无版本记录。', 'No versions yet.')}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </AdminDataTableFrame>
+            </div>
+          ) : null}
         </div>
-
-        <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">
-          <BackofficeSectionPanel>
-            <SectionTitle
-              title={copy('发布检查', 'Publish checks')}
-              description={
-                dirty
-                  ? copy('先保存草稿，系统才会按最新内容重新检查。', 'Save the draft to revalidate current content.')
-                  : copy('以下结果来自最近一次保存。', 'Results are from the latest save.')
-              }
-            />
-            <ValidationList
-              title={copy('阻塞项', 'Blockers')}
-              empty={copy('没有阻塞项。', 'No blockers.')}
-              items={validation?.blockers ?? []}
-              tone="error"
-            />
-            <ValidationList
-              title={copy('待确认提醒', 'Warnings')}
-              empty={copy('没有提醒。', 'No warnings.')}
-              items={validation?.warnings ?? []}
-              tone="warning"
-            />
-          </BackofficeSectionPanel>
-
-          <BackofficeSectionPanel>
-            <SectionTitle
-              title={copy('QQ 登录审核清单', 'QQ login review')}
-              description={copy(
-                '这里检查站内可证明项；主体资质与开放平台提交仍需在 QQ互联 控制台完成。',
-                'This checks in-product evidence. Submit qualifications in QQ Connect separately.'
-              )}
-            />
-            <ul className="mt-4 space-y-3">
-              {workspace.qq_review.items.map((item) => (
-                <li key={item.code} className="flex gap-3 text-sm">
-                  <span
-                    aria-hidden="true"
-                    className={item.ready ? 'text-emerald-600' : 'text-amber-600'}
-                  >
-                    {item.ready ? '●' : '○'}
-                  </span>
-                  <span>
-                    <strong className="block text-slate-900 dark:text-white">{item.label}</strong>
-                    <span className="mt-0.5 block break-all text-xs leading-5 text-slate-500">
-                      {item.detail || '—'}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <ol className="mt-5 list-decimal space-y-2 border-t border-slate-200 pt-5 pl-5 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              {workspace.qq_review.manual_external_steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          </BackofficeSectionPanel>
-
-          <BackofficeSectionPanel>
-            <SectionTitle title={copy('版本记录', 'Version history')} />
-            <dl className="mt-4 space-y-3 text-sm">
-              <div>
-                <dt className="text-slate-500">{copy('当前版本', 'Current')}</dt>
-                <dd className="mt-1 font-semibold text-slate-950 dark:text-white">
-                  {published?.version_number ? `v${published.version_number}` : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">{copy('生效时间', 'Effective')}</dt>
-                <dd className="mt-1 text-slate-700 dark:text-slate-300">
-                  {formatTime(published?.effective_at, zh)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">{copy('历史版本', 'History')}</dt>
-                <dd className="mt-1 text-slate-700 dark:text-slate-300">
-                  {workspace.history.length}
-                </dd>
-              </div>
-            </dl>
-          </BackofficeSectionPanel>
-        </aside>
       </div>
 
       <ConfirmModal
@@ -993,43 +1228,5 @@ function Field({
       {label}
       {children}
     </label>
-  );
-}
-
-function ValidationList({
-  title,
-  empty,
-  items,
-  tone,
-}: {
-  title: string;
-  empty: string;
-  items: ValidationItem[];
-  tone: 'error' | 'warning';
-}) {
-  return (
-    <div className="mt-5">
-      <h3 className="text-sm font-bold text-slate-950 dark:text-white">
-        {title} · {items.length}
-      </h3>
-      {items.length ? (
-        <ul className="mt-2 space-y-2">
-          {items.map((item, index) => (
-            <li
-              key={`${item.code}-${item.field}-${index}`}
-              className={
-                tone === 'error'
-                  ? 'rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200'
-                  : 'rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-200'
-              }
-            >
-              {item.message}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{empty}</p>
-      )}
-    </div>
   );
 }

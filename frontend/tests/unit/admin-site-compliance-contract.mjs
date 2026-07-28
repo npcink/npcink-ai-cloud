@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { frontendRoot } from './_paths.mjs';
 
 const page = readFileSync(
-  resolve(process.cwd(), 'src/app/admin/site-compliance/page.tsx'),
+  resolve(frontendRoot, 'src/app/admin/site-compliance/page.tsx'),
   'utf8'
 );
-const layout = readFileSync(resolve(process.cwd(), 'src/app/admin/layout.tsx'), 'utf8');
+const layout = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
 
 assert.match(
   layout,
@@ -36,6 +37,30 @@ assert.match(
   page,
   /dirty \|\|[\s\S]*?!validation\?\.ready_to_publish/,
   'publication must remain disabled for unsaved or blocked drafts'
+);
+
+assert.match(
+  page,
+  /<BackofficeLayer[\s\S]*?<BackofficeSummaryStrip[\s\S]*?data-ui="site-compliance-directory"[\s\S]*?data-ui="site-compliance-active-panel"/,
+  'site compliance must use a compact header, summary strip, section directory, and one active work area'
+);
+
+assert.match(
+  page,
+  /activeSection === 'operator'[\s\S]*?activeSection === 'refund'[\s\S]*?activeSection === 'retention'[\s\S]*?activeSection === 'third_parties'[\s\S]*?activeSection === 'review'/,
+  'long-form compliance editors must render as mutually exclusive working sections'
+);
+
+assert.match(
+  page,
+  /dataUi="site-compliance-validation-table"[\s\S]*?dataUi="site-compliance-qq-review-table"[\s\S]*?Check technical details[\s\S]*?QQ external submission steps[\s\S]*?dataUi="site-compliance-version-table"/,
+  'publish checks, QQ readiness, low-frequency external steps, and version history must use explicit compact surfaces'
+);
+
+assert.doesNotMatch(
+  page,
+  /<BackofficePrimaryPanel/,
+  'site compliance must not regress to a large hero-like primary panel'
 );
 
 assert.match(
