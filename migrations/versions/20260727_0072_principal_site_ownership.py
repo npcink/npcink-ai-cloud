@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from uuid import NAMESPACE_URL, uuid5
-
 import sqlalchemy as sa
 from alembic import op
 
@@ -12,10 +9,6 @@ revision = "20260727_0072"
 down_revision = "20260727_0071"
 branch_labels = None
 depends_on = None
-
-
-def _binding_id(site_id: str, principal_id: str) -> str:
-    return f"psb_{uuid5(NAMESPACE_URL, f'{site_id}:{principal_id}').hex}"
 
 
 def upgrade() -> None:
@@ -118,76 +111,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("released_at IS NULL"),
         sqlite_where=sa.text("released_at IS NULL"),
     )
-
-    metadata = sa.MetaData()
-    sites = sa.Table("sites", metadata, autoload_with=bind)
-    principals = sa.Table("principals", metadata, autoload_with=bind)
-    memberships = sa.Table(
-        "account_user_memberships",
-        metadata,
-        autoload_with=bind,
-    )
-    bindings = sa.Table(
-        "principal_site_bindings",
-        metadata,
-        autoload_with=bind,
-    )
-    active_membership_rows = bind.execute(
-        sa.select(
-            memberships.c.account_id,
-            memberships.c.principal_id,
-        )
-        .join(
-            principals,
-            principals.c.principal_id == memberships.c.principal_id,
-        )
-        .where(
-            memberships.c.status == "active",
-            principals.c.status == "active",
-        )
-        .order_by(
-            memberships.c.account_id,
-            memberships.c.principal_id,
-        )
-    ).mappings()
-    principals_by_account: dict[str, list[str]] = {}
-    for row in active_membership_rows:
-        account_id = str(row.get("account_id") or "").strip()
-        principal_id = str(row.get("principal_id") or "").strip()
-        if account_id and principal_id:
-            principals_by_account.setdefault(account_id, []).append(principal_id)
-
-    site_rows = bind.execute(
-        sa.select(
-            sites.c.site_id,
-            sites.c.account_id,
-            sites.c.provisioned_at,
-            sites.c.created_at,
-        ).where(
-            sites.c.account_id.is_not(None),
-            sites.c.ownership_released_at.is_(None),
-            sites.c.status != "archived",
-        )
-    ).mappings()
-    for row in site_rows:
-        site_id = str(row.get("site_id") or "").strip()
-        account_id = str(row.get("account_id") or "").strip()
-        account_principals = principals_by_account.get(account_id, [])
-        if not site_id or len(account_principals) != 1:
-            continue
-        principal_id = account_principals[0]
-        bound_at = row.get("provisioned_at") or row.get("created_at") or datetime.now(UTC)
-        bind.execute(
-            sa.insert(bindings).values(
-                binding_id=_binding_id(site_id, principal_id),
-                principal_id=principal_id,
-                site_id=site_id,
-                account_id=account_id,
-                status="active",
-                bound_at=bound_at,
-                metadata_json={"source": "migration_0072_single_member_backfill"},
-            )
-        )
 
 
 def downgrade() -> None:

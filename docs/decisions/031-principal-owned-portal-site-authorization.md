@@ -3,6 +3,8 @@
 ## Status
 
 Accepted. Supersedes the account-wide site-authorization portion of ADR-016.
+Decision 6 is superseded by
+[ADR-034](034-fail-closed-principal-site-ownership-bootstrap.md).
 
 ## Date
 
@@ -44,9 +46,8 @@ Neither relation changes WordPress user, role, approval, or write truth.
 5. The internal account-membership operation may accept an optional `site_id`
    so bounded operator/bootstrap workflows can explicitly assign an existing
    site. Creating membership alone does not grant access to every account site.
-6. Migration backfill assigns an existing site only when its account has
-   exactly one active user. Multi-user and otherwise ambiguous accounts remain
-   unbound and fail closed until an explicit verified or operator binding.
+6. Superseded by ADR-034. The original decision allowed migration backfill for
+   a single-active-user account.
 7. Product copy uses only `platform_admin` and `user`. WordPress-local
    administrator terminology may remain only where it describes WordPress
    ownership rather than a Cloud product identity.
@@ -114,8 +115,8 @@ which user connected a legacy site. Ambiguous authorization must fail closed.
 
 ## Verification
 
-- Migration tests cover single-member backfill, ambiguous multi-member
-  fail-closed behavior, uniqueness, lifecycle constraints, and downgrade.
+- Migration tests cover fail-closed empty bootstrap, uniqueness, lifecycle
+  constraints, and downgrade.
 - Portal tests prove user A cannot access user B's site in the same account
   while user B can.
 - Commercial boundary tests prove account payment/credit compatibility routes

@@ -79,7 +79,7 @@ def _create_legacy_schema(engine: sa.Engine) -> None:
     metadata.create_all(engine)
 
 
-def test_0072_backfills_only_unambiguous_single_member_site_owners() -> None:
+def test_0072_leaves_all_existing_sites_unbound() -> None:
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
     _create_legacy_schema(engine)
     migration = _load()
@@ -174,11 +174,20 @@ def test_0072_backfills_only_unambiguous_single_member_site_owners() -> None:
             autoload_with=connection,
         )
         rows = connection.execute(sa.select(bindings)).mappings().all()
-        assert len(rows) == 1
-        assert rows[0]["site_id"] == "site_single"
-        assert rows[0]["principal_id"] == "prn_single"
-        assert rows[0]["status"] == "active"
-        assert rows[0]["released_at"] is None
+        assert rows == []
+
+        connection.execute(
+            bindings.insert(),
+            {
+                "binding_id": "psb_verified",
+                "principal_id": "prn_single",
+                "site_id": "site_single",
+                "account_id": "acct_single",
+                "status": "active",
+                "bound_at": created_at,
+                "metadata_json": {"source": "verified_addon_exchange"},
+            },
+        )
         with (
             connection.begin_nested(),
             pytest.raises(sa.exc.IntegrityError),
