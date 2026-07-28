@@ -457,7 +457,7 @@ function PortalUsageContent() {
           description={t(
             'portal.site_selection_required_desc',
             {},
-            'Choose a current site before viewing package, points, or payment details.'
+            'Choose a current site before viewing package, AI credits, or payment details.'
           )}
           actionLabel={t('portal.select_site_action', {}, 'Select site')}
           actionHref="/portal#sites"
@@ -489,16 +489,16 @@ function PortalUsageContent() {
   const selectedContext = session.selected_context;
   const contextSite = selectedContext.site;
   const currentSubscription = selectedContext.current_subscription;
-  const availableCredits = Number(quotaSummary?.credit?.total_remaining ?? 0);
+  const availableCredits = Number(quotaSummary?.ai_credits?.total_remaining ?? 0);
   const creditEventCount = Number(creditEventBuckets?.pagination?.total ?? 0);
-  const filteredConsumedCredits = Number(creditEventBuckets?.summary?.consumed_credits ?? 0);
+  const filteredConsumedCredits = Number(creditEventBuckets?.summary?.consumed_ai_credits ?? 0);
   const usedCredits = Number(
-    quotaSummary?.credit_ledger_summary?.consumed_credits
-    ?? quotaSummary?.credit?.used
+    quotaSummary?.ai_credit_ledger_summary?.consumed_ai_credits
+    ?? quotaSummary?.ai_credits?.used
     ?? 0
   );
-  const paidCredits = Number(quotaSummary?.credit?.paid_remaining ?? 0);
-  const nextPaidCreditExpiry = String(quotaSummary?.credit?.paid_next_expires_at || '');
+  const paidCredits = Number(quotaSummary?.ai_credits?.paid_remaining ?? 0);
+  const nextPaidCreditExpiry = String(quotaSummary?.ai_credits?.paid_next_expires_at || '');
   const currentPeriodStart =
     currentSubscription?.current_period_start_at ||
     entitlements?.period_start_at ||
@@ -519,7 +519,7 @@ function PortalUsageContent() {
     ? formatUsageUpdatedAt(creditEventBuckets.generated_at, locale)
     : '';
   const formatCreditPoints = (value: number) =>
-    t('portal.usage.credit_points_value', { count: formatNumber(Math.abs(Math.round(value))) }, '{{count}} points');
+    t('portal.usage.credit_points_value', { count: formatNumber(Math.abs(Math.round(value))) }, '{{count}} AI credits');
   const eventFeatureText = (entry: PortalCreditEvent, field: 'title' | 'detail') =>
     t(
       `portal.usage.credit_ledger_feature_${entry.feature_key}_${field}`,
@@ -532,7 +532,7 @@ function PortalUsageContent() {
       : t('common.not_available', {}, 'Not available');
   };
 
-  const creditStatus = quotaSummary?.credit?.status;
+  const creditStatus = quotaSummary?.ai_credits?.status;
   const usageStatusLabel = quotaStatusTone(creditStatus) === 'error' || overBudget
     ? t('portal.home.service_status_attention', {}, 'Needs attention')
     : quotaStatusTone(creditStatus) === 'warning'
@@ -541,7 +541,7 @@ function PortalUsageContent() {
   const usageHeaderDescription = t(
     'portal.usage.summary_desc',
     {},
-    "Review this period's account point use, records, and trends."
+    "Review this period's account AI credit usage, records, and trends."
   );
   const usageHeaderInfo = updatedAt
     ? `${usageHeaderDescription} · ${t(
@@ -554,7 +554,7 @@ function PortalUsageContent() {
     {
       label: t('common.status'),
       value: usageStatusLabel,
-      detail: t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more points.'),
+      detail: t('portal.usage.status_plain_detail', {}, 'Use the numbers below to decide whether you need more AI credits.'),
     },
     {
       label: t('portal.usage.period_label', {}, 'Period'),
@@ -573,17 +573,17 @@ function PortalUsageContent() {
     {
       label: t('portal.usage.total_remaining_label', {}, 'Total available'),
       value: formatQuotaValue(availableCredits),
-      detail: t('portal.usage.overview_available_detail', {}, 'Package and paid points available now.'),
+      detail: t('portal.usage.overview_available_detail', {}, 'Package and paid AI credits available now.'),
     },
     {
-      label: t('portal.usage.period_used_label', {}, 'Points deducted this period'),
+      label: t('portal.usage.period_used_label', {}, 'AI credits deducted this period'),
       value: formatQuotaValue(usedCredits),
       detail: t('portal.usage.trend_points_detail', {}, 'Actual service deductions in the current package period.'),
     },
     {
       label: t('portal.usage.paid_remaining_label', {}, 'Paid credits'),
       value: formatQuotaValue(paidCredits),
-      detail: t('portal.usage.overview_paid_detail', {}, 'Purchased points that remain available.'),
+      detail: t('portal.usage.overview_paid_detail', {}, 'Purchased AI credits that remain available.'),
     },
     {
       label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
@@ -613,7 +613,7 @@ function PortalUsageContent() {
               {t('portal.usage.overview_title', {}, 'This period')}
             </h2>
             <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
-              {t('portal.usage.overview_desc', {}, 'See what is available, what was used, and whether paid points are nearing expiry.')}
+              {t('portal.usage.overview_desc', {}, 'See what is available, what was used, and whether paid AI credits are nearing expiry.')}
             </p>
           </div>
           <PortalMetricStrip items={usageOverviewMetrics} columnsClassName="md:grid-cols-2 xl:grid-cols-4" />
@@ -628,7 +628,7 @@ function PortalUsageContent() {
         >
           {([
             { value: 'trend', label: t('portal.usage.view_tab_trend', {}, 'Trend') },
-            { value: 'records', label: t('portal.usage.view_tab_records', {}, 'Point records') },
+            { value: 'records', label: t('portal.usage.view_tab_records', {}, 'AI credit records') },
           ] as Array<{ value: PortalUsageView; label: string }>).map((view) => (
             <button
               key={view.value}
@@ -683,7 +683,7 @@ function PortalUsageContent() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-                {t('portal.usage.credit_events_title', {}, 'Point records')}
+                {t('portal.usage.credit_events_title', {}, 'AI credit records')}
               </h2>
               <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
                 {t(
@@ -692,7 +692,7 @@ function PortalUsageContent() {
                     credits: formatQuotaValue(filteredConsumedCredits),
                     count: formatQuotaValue(creditEventCount),
                   },
-                  '{{credits}} points used across {{count}} time periods.'
+                  '{{credits}} AI credits used across {{count}} time periods.'
                 )}
                 {creditRecordsUpdatedAt
                   ? ` · ${t('portal.usage.updated_at_inline', { time: creditRecordsUpdatedAt }, 'Updated {{time}}')}`
@@ -700,7 +700,7 @@ function PortalUsageContent() {
               </p>
             </div>
           </div>
-          <div className="grid gap-3 lg:grid-cols-3" aria-label={t('portal.usage.credit_events_filters', {}, 'Point record filters')}>
+          <div className="grid gap-3 lg:grid-cols-3" aria-label={t('portal.usage.credit_events_filters', {}, 'AI credit record filters')}>
             <label className="space-y-2 text-sm font-medium text-slate-700 dark:text-slate-200">
               <span>{t('portal.usage.credit_events_window_label', {}, 'Time range')}</span>
               <select className="input" value={creditEventWindow} disabled={creditEventLoading} onChange={(event) => { setCreditEventWindow(event.target.value as PortalCreditEventWindow); setCreditEventOffset(0); }}>
@@ -738,7 +738,7 @@ function PortalUsageContent() {
             <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
               <div className="hidden grid-cols-[1.2fr_0.55fr_0.55fr_0.8fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
                 <span>{t('portal.usage.credit_buckets_time_column', {}, 'Time period')}</span>
-                <span className="text-right">{t('portal.usage.credit_events_points_column', {}, 'Points')}</span>
+                <span className="text-right">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</span>
                 <span className="text-right">{t('portal.usage.credit_buckets_events_column', {}, 'Services')}</span>
                 <span className="text-right">{t('portal.usage.credit_buckets_top_service_column', {}, 'Main service')}</span>
               </div>
@@ -752,7 +752,7 @@ function PortalUsageContent() {
                   >
                     <p className="font-medium text-slate-950 dark:text-white">{formatCreditBucketRange(bucket.start_at, bucket.end_at, locale)}</p>
                     <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
-                      {formatCreditPoints(bucket.consumed_credits)}
+                      {formatCreditPoints(bucket.consumed_ai_credits)}
                     </p>
                     <p className="text-slate-600 dark:text-slate-300 sm:text-right">{t('portal.usage.credit_buckets_event_count', { count: formatQuotaValue(bucket.event_count) }, '{{count}} services')}</p>
                     <p className="text-slate-500 dark:text-slate-400 sm:text-right">{bucket.top_feature_key ? t(`portal.usage.credit_ledger_feature_${bucket.top_feature_key}_title`) : '-'}</p>
@@ -765,7 +765,7 @@ function PortalUsageContent() {
               {t(
                 'portal.usage.credit_ledger_empty',
                 {},
-                'No package point records are available for the current period.'
+                'No package AI credit records are available for the current period.'
               )}
             </div>
           )}
@@ -788,7 +788,7 @@ function PortalUsageContent() {
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
               <div>
                 <h2 id="credit-bucket-detail-title" className="text-xl font-semibold text-slate-950 dark:text-white">{formatCreditBucketRange(selectedCreditBucket.start_at, selectedCreditBucket.end_at, locale)}</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t('portal.usage.credit_buckets_detail_summary', { credits: formatQuotaValue(selectedCreditBucket.consumed_credits), count: formatQuotaValue(selectedCreditBucket.event_count) }, '{{count}} services used {{credits}} points.')}</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t('portal.usage.credit_buckets_detail_summary', { credits: formatQuotaValue(selectedCreditBucket.consumed_ai_credits), count: formatQuotaValue(selectedCreditBucket.event_count) }, '{{count}} services used {{credits}} AI credits.')}</p>
               </div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedCreditBucket(null)}>{t('common.close')}</button>
             </div>
@@ -802,7 +802,7 @@ function PortalUsageContent() {
                   {creditEventItems.map((entry) => (
                     <button type="button" key={entry.event_id} onClick={() => { setSelectedCreditBucket(null); setSelectedCreditEvent(entry); }} className="grid w-full gap-1 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-900/50 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-4">
                       <span><strong className="block text-slate-950 dark:text-white">{eventFeatureText(entry, 'title')}</strong><span className="mt-1 block text-xs text-slate-500">{eventSiteLabel(entry)} | {formatCreditEventTime(entry.created_at, locale)}</span></span>
-                      <strong className="text-slate-950 dark:text-white">{formatCreditPoints(entry.consumed_credits)}</strong>
+                      <strong className="text-slate-950 dark:text-white">{formatCreditPoints(entry.consumed_ai_credits)}</strong>
                     </button>
                   ))}
                 </div>
@@ -822,10 +822,10 @@ function PortalUsageContent() {
             </div>
             <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
               <dl className="grid gap-4 sm:grid-cols-2">
-                <div><dt className="text-xs text-slate-500">{t('portal.usage.credit_events_points_column', {}, 'Points')}</dt><dd className="mt-1 text-lg font-semibold">{formatCreditPoints(selectedCreditEvent.consumed_credits || selectedCreditEvent.net_credit_delta)}</dd></div>
+                <div><dt className="text-xs text-slate-500">{t('portal.usage.credit_events_points_column', {}, 'AI credits')}</dt><dd className="mt-1 text-lg font-semibold">{formatCreditPoints(selectedCreditEvent.consumed_ai_credits || selectedCreditEvent.net_ai_credit_delta)}</dd></div>
                 <div><dt className="text-xs text-slate-500">{t('portal.usage.credit_ledger_time', {}, 'Time')}</dt><dd className="mt-1 font-medium">{formatUsagePeriodEnd(selectedCreditEvent.created_at, locale)}</dd></div>
               </dl>
-              <section><h3 className="font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'Point breakdown')}</h3><div className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">{selectedCreditEvent.components.map((component) => <div key={component.key} className="flex justify-between gap-4 px-4 py-3 text-sm"><span>{t(`portal.usage.credit_events_component_${component.key}`)}</span><strong>{formatCreditPoints(component.credits)}</strong></div>)}</div>{selectedCreditEvent.component_count > 1 ? <p className="mt-2 text-xs text-slate-500">{t('portal.usage.credit_events_grouped_hint', { count: String(selectedCreditEvent.component_count) }, '{{count}} billing entries were combined into this service event.')}</p> : null}</section>
+              <section><h3 className="font-semibold">{t('portal.usage.credit_events_breakdown_title', {}, 'AI credit breakdown')}</h3><div className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">{selectedCreditEvent.components.map((component) => <div key={component.key} className="flex justify-between gap-4 px-4 py-3 text-sm"><span>{t(`portal.usage.credit_events_component_${component.key}`)}</span><strong>{formatCreditPoints(component.ai_credits)}</strong></div>)}</div>{selectedCreditEvent.component_count > 1 ? <p className="mt-2 text-xs text-slate-500">{t('portal.usage.credit_events_grouped_hint', { count: String(selectedCreditEvent.component_count) }, '{{count}} billing entries were combined into this service event.')}</p> : null}</section>
               <details className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800"><summary className="cursor-pointer font-medium">{t('portal.support_information', {}, 'Support information')}</summary><p className="mt-3 break-all text-sm text-slate-500">{t('portal.usage.credit_events_support_reference', {}, 'Reference')}: {selectedCreditEvent.support_reference}</p></details>
             </div>
           </aside>

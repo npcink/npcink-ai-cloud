@@ -132,7 +132,7 @@ def test_current_entitlement_returns_site_scoped_public_contract(tmp_path: Path)
     credit_usage_detail = data["quota_summary"]["credit_usage_detail"]
     assert credit_usage_detail["default_visibility"] == "cloud_portal_only"
     assert credit_usage_detail["local_addon_policy"] == "summary_and_link_only"
-    assert credit_usage_detail["summary"]["unit"] == "credit"
+    assert credit_usage_detail["summary"]["unit"] == "ai_credits"
     assert credit_usage_detail["portal_paths"] == {
         "credit_usage": "/portal/usage",
         "credit_ledger": "/portal/usage/credits",

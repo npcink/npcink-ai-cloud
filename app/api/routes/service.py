@@ -232,7 +232,7 @@ class SubscriptionTopUpPayload(BaseModel):
 
 class AccountCreditAdjustmentPayload(BaseModel):
     event_type: str = "adjustment"
-    credit_delta: float
+    ai_credit_delta: float
     reason: str = ""
     note: str = ""
 
@@ -261,13 +261,13 @@ class AgencyQuotePayload(BaseModel):
     amount_cny: float = Field(gt=0, le=9_999_999_999.99)
     valid_days: int = Field(default=7, ge=1, le=30)
     trial_enabled: bool = True
-    trial_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
+    trial_ai_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
 
 
 class AgencyTrialApprovalPayload(BaseModel):
     principal_id: str = Field(default="", max_length=191)
     site_domain: str = Field(default="", max_length=255)
-    trial_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
+    trial_ai_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
 
 
 class CreditPackCatalogItemPayload(BaseModel):
@@ -2991,7 +2991,7 @@ async def create_admin_account_agency_quote(
             amount_cny=payload.amount_cny,
             valid_days=payload.valid_days,
             trial_enabled=payload.trial_enabled,
-            trial_credit_limit=payload.trial_credit_limit,
+            trial_ai_credit_limit=payload.trial_ai_credit_limit,
             audit_context=_build_audit_context(request),
         )
     except CommercialServiceError as error:
@@ -3021,7 +3021,7 @@ async def approve_admin_account_agency_trial(
             principal_id=payload.principal_id,
             site_domain=payload.site_domain,
             approved_by_principal_id=audit_context.actor_ref,
-            trial_credit_limit=payload.trial_credit_limit,
+            trial_ai_credit_limit=payload.trial_ai_credit_limit,
             audit_context=audit_context,
         )
     except CommercialServiceError as error:
@@ -3228,7 +3228,7 @@ async def apply_admin_account_credit_adjustment(
         result = service.apply_admin_account_credit_adjustment(
             account_id=account_id,
             event_type=payload.event_type,
-            credit_delta=payload.credit_delta,
+            ai_credit_delta=payload.ai_credit_delta,
             reason=payload.reason,
             note=payload.note,
             audit_context=audit_context,
@@ -3258,7 +3258,7 @@ async def apply_admin_account_credit_adjustment(
                 effective_summary=(
                     f"Account {account_id} AI credit ledger received "
                     f"{entry.get('event_type') or payload.event_type} "
-                    f"delta {entry.get('credit_delta') or payload.credit_delta}."
+                    f"delta {entry.get('ai_credit_delta') or payload.ai_credit_delta}."
                 ),
                 account_id=account_id,
             ),

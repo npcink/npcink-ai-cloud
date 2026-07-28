@@ -171,7 +171,7 @@ def test_paid_trial_is_shared_and_only_moves_upward(tmp_path: Path) -> None:
 
     assert pro["subscription"]["subscription_id"] == plus["subscription"]["subscription_id"]
     assert pro["trial"]["trial_ends_at"] == plus["trial"]["trial_ends_at"]
-    assert pro["trial"]["credit_limit"] == 5_000
+    assert pro["trial"]["ai_credit_limit"] == 5_000
     pro_active = service.list_account_plan_offers(account_id="acct_trial_shared")["trial"]
     assert pro_active["state"] == "active"
     assert pro_active["allowed_tiers"] == []
@@ -323,7 +323,7 @@ def test_legacy_account_scoped_standard_offer_cannot_override_public_price(
             status="active",
             trial_enabled=True,
             trial_days=14,
-            trial_credit_limit=3_000,
+            trial_ai_credit_limit=3_000,
             trial_requires_approval=False,
             valid_from_at=None,
             valid_until_at=None,
@@ -523,7 +523,7 @@ def test_agency_requires_account_quote_and_approved_trial(tmp_path: Path) -> Non
         account_id="acct_agency",
         amount_cny=499,
         valid_days=7,
-        trial_credit_limit=12_000,
+        trial_ai_credit_limit=12_000,
         audit_context=_audit("agency-quote"),
     )
     offers = service.list_account_plan_offers(account_id="acct_agency")
@@ -539,11 +539,11 @@ def test_agency_requires_account_quote_and_approved_trial(tmp_path: Path) -> Non
         account_id="acct_agency",
         tier_id="agency",
         approved_by_principal_id="platform_admin",
-        trial_credit_limit=12_000,
+        trial_ai_credit_limit=12_000,
         audit_context=_audit("agency-trial-approved"),
     )
     assert trial["subscription"]["plan_id"] == "agency"
-    assert trial["trial"]["credit_limit"] == 12_000
+    assert trial["trial"]["ai_credit_limit"] == 12_000
     dispose_engine(database_url)
 
 

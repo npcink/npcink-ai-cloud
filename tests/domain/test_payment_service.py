@@ -695,7 +695,7 @@ def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> N
     assert paid["credit_ledger_entry"]["category"] == "credit_pack_purchase"
     assert paid["credit_ledger_entry"]["direction"] == "credit_in"
     assert "Credit pack payment added" in paid["credit_ledger_entry"]["explanation"]
-    assert paid["credit_ledger_entry"]["credit_delta"] == 10000.0
+    assert paid["credit_ledger_entry"]["ai_credit_delta"] == 10000.0
     assert paid["credit_ledger_entry"]["metadata"]["validity_days"] == 365
     assert paid["credit_ledger_entry"]["metadata"]["expiry_policy"] == (
         "paid_at_plus_validity_days"
@@ -731,16 +731,16 @@ def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> N
         assert len(list(session.scalars(select(AccountSubscription)))) == 1
         entries = list(session.scalars(select(CreditLedgerEntry)))
         assert len(entries) == 1
-        assert entries[0].credit_delta == 10000.0
+        assert entries[0].ai_credit_delta == 10000.0
         grant = session.scalar(select(PaidCreditGrant))
         assert grant is not None
         assert grant.payment_order_id == order["order_id"]
-        assert grant.remaining_credits == 10000.0
+        assert grant.remaining_ai_credits == 10000.0
 
     quota = service.get_portal_account_quota_summary("acct_pay")
-    assert quota["credit"]["package_remaining"] == 200.0
-    assert quota["credit"]["paid_remaining"] == 10000.0
-    assert quota["credit"]["total_remaining"] == 10200.0
+    assert quota["ai_credits"]["package_remaining"] == 200.0
+    assert quota["ai_credits"]["paid_remaining"] == 10000.0
+    assert quota["ai_credits"]["total_remaining"] == 10200.0
 
     with get_session(database_url) as session:
         subscription = session.scalar(select(AccountSubscription))
@@ -753,7 +753,7 @@ def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> N
         session.commit()
 
     next_period_quota = service.get_portal_account_quota_summary("acct_pay")
-    assert next_period_quota["credit"]["paid_remaining"] == 10000.0
+    assert next_period_quota["ai_credits"]["paid_remaining"] == 10000.0
 
     with get_session(database_url) as session:
         grant = session.scalar(select(PaidCreditGrant))
@@ -761,7 +761,7 @@ def test_credit_pack_payment_success_grants_ai_credits_once(tmp_path: Path) -> N
         grant.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         session.commit()
     expired_quota = service.get_portal_account_quota_summary("acct_pay")
-    assert expired_quota["credit"]["paid_remaining"] == 0.0
+    assert expired_quota["ai_credits"]["paid_remaining"] == 0.0
 
     dispose_engine(database_url)
 
@@ -1164,13 +1164,13 @@ def test_credit_pack_refund_reverses_credit_grant_without_canceling_subscription
     assert result["credit_ledger_entry"]["source_type"] == "credit_pack_refund"
     assert result["credit_ledger_entry"]["category"] == "refund_adjustment"
     assert result["credit_ledger_entry"]["direction"] == "credit_out"
-    assert result["credit_ledger_entry"]["credit_delta"] == -10000.0
+    assert result["credit_ledger_entry"]["ai_credit_delta"] == -10000.0
     with get_session(database_url) as session:
         subscription = session.scalar(select(AccountSubscription))
         assert subscription is not None
         assert subscription.status == SUBSCRIPTION_STATUS_ACTIVE
         entries = list(session.scalars(select(CreditLedgerEntry)))
-        assert sorted(entry.credit_delta for entry in entries) == [-10000.0, 10000.0]
+        assert sorted(entry.ai_credit_delta for entry in entries) == [-10000.0, 10000.0]
 
     dispose_engine(database_url)
 
@@ -1296,7 +1296,7 @@ def test_consumed_credit_pack_rejects_refund_request(tmp_path: Path) -> None:
     with get_session(database_url) as session:
         consumed = CommercialRepository(session).consume_paid_credit_grants(
             account_id="acct_pay",
-            credits=1.0,
+            ai_credits=1.0,
             now=datetime.now(UTC),
         )
         session.commit()

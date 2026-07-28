@@ -972,16 +972,16 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                         "service.credit_pack_refund_grant_missing",
                         "credit pack refund requires its paid credit grant",
                     )
-                consumed_credits = round(
+                consumed_ai_credits = round(
                     max(
                         0.0,
-                        float(grant.original_credits or 0.0)
-                        - float(grant.remaining_credits or 0.0)
-                        - float(grant.refunded_credits or 0.0),
+                        float(grant.original_ai_credits or 0.0)
+                        - float(grant.remaining_ai_credits or 0.0)
+                        - float(grant.refunded_ai_credits or 0.0),
                     ),
                     6,
                 )
-                if consumed_credits > 0:
+                if consumed_ai_credits > 0:
                     raise CommercialConflictError(
                         "service.credit_pack_refund_credits_consumed",
                         "credit packs cannot be refunded after any purchased credits are consumed",
@@ -1349,11 +1349,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             event_type=CREDIT_LEDGER_EVENT_GRANT,
             source_type="credit_pack_purchase",
             source_id=order.order_id,
-            credit_delta=ai_credits,
+            ai_credit_delta=ai_credits,
             quantity=ai_credits,
-            unit="credit",
+            unit="ai_credits",
             rate=round(float(order.amount or 0.0) / max(1.0, ai_credits), 8),
-            rate_unit="payment_amount_per_credit",
+            rate_unit="payment_amount_per_ai_credit",
             rate_version=AI_CREDIT_RATE_VERSION,
             idempotency_key=f"credit_pack_grant:{order.order_id}",
             metadata_json={
@@ -1375,7 +1375,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         repository.upsert_paid_credit_grant(
             account_id=order.account_id,
             payment_order_id=order.order_id,
-            original_credits=ai_credits,
+            original_ai_credits=ai_credits,
             expires_at=grant_expires_at,
             metadata_json={
                 "pack_id": str(pack["pack_id"]),
@@ -1446,7 +1446,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             1.0,
             max(0.0, round(float(refund.amount or 0.0), 6) / round(float(order.amount), 6)),
         )
-        refunded_credits = round(ai_credits * refunded_ratio, 6)
+        refunded_ai_credits = round(ai_credits * refunded_ratio, 6)
         ledger_entry = repository.record_credit_ledger_entry(
             account_id=order.account_id,
             site_id=order.site_id,
@@ -1457,11 +1457,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             event_type=CREDIT_LEDGER_EVENT_ADJUSTMENT,
             source_type="credit_pack_refund",
             source_id=refund.refund_id,
-            credit_delta=-refunded_credits,
-            quantity=refunded_credits,
-            unit="credit",
-            rate=round(float(refund.amount or 0.0) / max(1.0, refunded_credits), 8),
-            rate_unit="payment_refund_amount_per_credit",
+            ai_credit_delta=-refunded_ai_credits,
+            quantity=refunded_ai_credits,
+            unit="ai_credits",
+            rate=round(float(refund.amount or 0.0) / max(1.0, refunded_ai_credits), 8),
+            rate_unit="payment_refund_amount_per_ai_credit",
             rate_version=AI_CREDIT_RATE_VERSION,
             idempotency_key=f"credit_pack_refund:{refund.refund_id}",
             metadata_json={
@@ -1477,7 +1477,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         )
         repository.refund_paid_credit_grant(
             payment_order_id=order.order_id,
-            credits=refunded_credits,
+            ai_credits=refunded_ai_credits,
         )
         payload = {
             "order": self._serialize_credit_pack_payment_order(order),
@@ -1531,7 +1531,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             repository.upsert_paid_credit_grant(
                 account_id=account_id,
                 payment_order_id=payment_order_id,
-                original_credits=max(0.0, float(entry.credit_delta or 0.0)),
+                original_ai_credits=max(0.0, float(entry.ai_credit_delta or 0.0)),
                 expires_at=service._normalize_datetime(expires_at),
                 metadata_json={
                     "pack_id": str(metadata.get("pack_id") or ""),
@@ -1554,20 +1554,20 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 continue
             refund_totals[payment_order_id] = round(
                 refund_totals.get(payment_order_id, 0.0)
-                + max(0.0, -float(entry.credit_delta or 0.0)),
+                + max(0.0, -float(entry.ai_credit_delta or 0.0)),
                 6,
             )
-        for payment_order_id, refunded_credits in refund_totals.items():
+        for payment_order_id, refunded_ai_credits in refund_totals.items():
             grant = repository.get_paid_credit_grant_by_order(payment_order_id)
             if grant is None:
                 continue
-            already_refunded = max(0.0, float(grant.refunded_credits or 0.0))
-            increment = max(0.0, refunded_credits - already_refunded)
+            already_refunded = max(0.0, float(grant.refunded_ai_credits or 0.0))
+            increment = max(0.0, refunded_ai_credits - already_refunded)
             if increment <= 0:
                 continue
             repository.refund_paid_credit_grant(
                 payment_order_id=payment_order_id,
-                credits=increment,
+                ai_credits=increment,
             )
 
     def _paid_credit_balance_in_session(
@@ -1588,7 +1588,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         )
         return {
             "remaining": round(
-                sum(max(0.0, float(grant.remaining_credits or 0.0)) for grant in grants),
+                sum(max(0.0, float(grant.remaining_ai_credits or 0.0)) for grant in grants),
                 6,
             ),
             "grant_count": len(grants),

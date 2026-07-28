@@ -85,12 +85,12 @@ function resolvePackageStatusDetail(
   packageLabel: string,
   t: TranslateFn
 ): string {
-  const credit = quotaSummary?.credit;
+  const credit = quotaSummary?.ai_credits;
   if (credit?.status === 'limited') {
     return t(
       'portal.billing.package_status_credit_limited',
       {},
-      'The package has no points remaining. Buy points or change the package to continue.'
+      'The package has no AI credits remaining. Buy AI credits or change the package to continue.'
     );
   }
   const limitedResource = quotaSummary?.resource_limits?.find((resource) => (
@@ -118,7 +118,7 @@ function resolvePackageStatusDetail(
       `Knowledge usage is ${formatNumber(Number(limitedResource.used || 0))} of ${formatNumber(Number(limitedResource.limit || 0))}.`
     );
   }
-  return t('portal.billing.package_status_detail', {}, 'Use this page to handle package or point needs.');
+  return t('portal.billing.package_status_detail', {}, 'Use this page to handle package or AI credit needs.');
 }
 
 function PortalBillingContent() {
@@ -320,7 +320,7 @@ function PortalBillingContent() {
           description={t(
             'portal.site_selection_required_desc',
             {},
-            'Choose a current site before viewing package, points, or payment details.'
+            'Choose a current site before viewing package, AI credits, or payment details.'
           )}
           actionLabel={t('portal.select_site_action', {}, 'Select site')}
           actionHref="/portal#sites"
@@ -611,7 +611,7 @@ function PortalBillingContent() {
                 {t('portal.billing.manage_title', {}, 'Manage package')}
               </h2>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {t('portal.billing.manage_desc', {}, 'Open an option only when you need to change the package, add points, or review trial eligibility.')}
+                {t('portal.billing.manage_desc', {}, 'Open an option only when you need to change the package, add AI credits, or review trial eligibility.')}
               </p>
               <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                 {trialStatusTitle}

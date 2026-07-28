@@ -6186,16 +6186,16 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["account_id"] == "acct_site_quota"
-    assert data["credit"]["key"] == "ai_credits"
-    assert data["credit"]["used"] == 9.0
-    assert data["credit"]["limit"] == 20.0
-    assert data["credit"]["remaining"] == 11.0
-    assert data["credit"]["status"] == "ok"
-    assert data["credit"]["estimated"] is True
-    assert data["credit"]["rate_version"] == "ai-credit-estimate-v2"
-    assert data["credit_policy"]["rate_version"] == "ai-credit-ledger-v2"
-    assert data["credit_policy"]["renewal_policy"] == "monthly_plan_grant_resets_each_period"
-    assert {item["key"]: item["credits"] for item in data["breakdown"]} == {
+    assert data["ai_credits"]["key"] == "ai_credits"
+    assert data["ai_credits"]["used"] == 9.0
+    assert data["ai_credits"]["limit"] == 20.0
+    assert data["ai_credits"]["remaining"] == 11.0
+    assert data["ai_credits"]["status"] == "ok"
+    assert data["ai_credits"]["estimated"] is True
+    assert data["ai_credits"]["rate_version"] == "ai-credit-estimate-v2"
+    assert data["ai_credit_policy"]["rate_version"] == "ai-credit-ledger-v2"
+    assert data["ai_credit_policy"]["renewal_policy"] == "monthly_plan_grant_resets_each_period"
+    assert {item["key"]: item["ai_credits"] for item in data["breakdown"]} == {
         "runs": 2.0,
         "tokens_total": 2,
         "web_search": 5.0,
@@ -6247,9 +6247,9 @@ def test_account_quota_summary_shares_ai_credits_across_sites(tmp_path: Path) ->
                 event_type="consume",
                 source_type="tokens_total",
                 source_id=f"{site_id}:tokens",
-                credit_delta=delta,
+                ai_credit_delta=delta,
                 quantity=abs(delta),
-                unit="credit",
+                unit="ai_credits",
                 rate=1.0,
                 rate_unit=None,
                 rate_version="ai-credit-ledger-v2",
@@ -6266,11 +6266,11 @@ def test_account_quota_summary_shares_ai_credits_across_sites(tmp_path: Path) ->
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["credit"]["used"] == 7.0
-    assert data["credit"]["limit"] == 20.0
-    assert data["credit"]["remaining"] == 13.0
-    assert data["credit"]["source"] == "ledger"
-    assert data["credit_ledger_summary"]["net_used_credits"] == 7.0
+    assert data["ai_credits"]["used"] == 7.0
+    assert data["ai_credits"]["limit"] == 20.0
+    assert data["ai_credits"]["remaining"] == 13.0
+    assert data["ai_credits"]["source"] == "ledger"
+    assert data["ai_credit_ledger_summary"]["net_used_ai_credits"] == 7.0
 
 
 def test_admin_account_credit_ledger_lists_current_period_entries(
@@ -6301,7 +6301,7 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
             provider_call_id=None,
             source_type="tokens_total",
             source_id="run-credit-ledger-1:tokens",
-            credit_delta=-2,
+            ai_credit_delta=-2,
             quantity=1500,
             unit="token",
             rate=1,
@@ -6319,7 +6319,7 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
             provider_call_id=None,
             source_type="vector_chunks",
             source_id="run-credit-ledger-1:chunks",
-            credit_delta=-2,
+            ai_credit_delta=-2,
             quantity=11,
             unit="chunk",
             rate=1,
@@ -6343,9 +6343,9 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
     data = response.json()["data"]
     assert data["account_id"] == "acct_site_credit_ledger"
     assert data["rate_version"] == "ai-credit-ledger-v2"
-    assert data["summary"]["total_credits"] == 4.0
+    assert data["summary"]["total_ai_credits"] == 4.0
     assert data["summary"]["entry_count"] == 2
-    assert {item["key"]: item["credits"] for item in data["summary"]["breakdown"]} == {
+    assert {item["key"]: item["ai_credits"] for item in data["summary"]["breakdown"]} == {
         "tokens_total": 2.0,
         "vector_chunks": 2.0,
     }
@@ -6357,8 +6357,8 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
     }
     assert len(data["items"]) == 1
     assert data["items"][0]["source_type"] == "vector_chunks"
-    assert data["items"][0]["credit_delta"] == -2.0
-    assert data["items"][0]["consumed_credits"] == 2.0
+    assert data["items"][0]["ai_credit_delta"] == -2.0
+    assert data["items"][0]["consumed_ai_credits"] == 2.0
 
     dispose_engine(database_url)
 
@@ -6391,7 +6391,7 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
             provider_call_id=None,
             source_type="tokens_total",
             source_id="run-credit-adjustment-1:tokens",
-            credit_delta=-12,
+            ai_credit_delta=-12,
             quantity=12000,
             unit="token",
             rate=1,
@@ -6407,7 +6407,7 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
         headers=build_internal_headers(idempotency_key="svc-credit-adjustment-001"),
         json={
             "event_type": "grant",
-            "credit_delta": 5,
+            "ai_credit_delta": 5,
             "reason": "billing_correction",
             "note": "restore manually purchased credits",
         },
@@ -6415,7 +6415,7 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
     missing_reason = client.post(
         "/internal/service/admin/accounts/acct_site_credit_adjustment/credit-ledger/adjustments",
         headers=build_internal_headers(idempotency_key="svc-credit-adjustment-002"),
-        json={"event_type": "grant", "credit_delta": 1, "reason": ""},
+        json={"event_type": "grant", "ai_credit_delta": 1, "reason": ""},
     )
     quota_response = client.get(
         "/internal/service/admin/accounts/acct_site_credit_adjustment/quota-summary",
@@ -6430,28 +6430,28 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
     payload = response.json()["data"]
     assert payload["receipt"]["event_kind"] == "credit_ledger.adjustment"
     assert payload["entry"]["event_type"] == "grant"
-    assert payload["entry"]["credit_delta"] == 5.0
-    assert payload["entry"]["granted_credits"] == 5.0
+    assert payload["entry"]["ai_credit_delta"] == 5.0
+    assert payload["entry"]["granted_ai_credits"] == 5.0
     assert payload["entry"]["metadata"]["reason"] == "billing_correction"
-    assert payload["summary"]["consumed_credits"] == 12.0
-    assert payload["summary"]["granted_credits"] == 5.0
-    assert payload["summary"]["net_credit_delta"] == -7.0
-    assert payload["summary"]["net_used_credits"] == 7.0
+    assert payload["summary"]["consumed_ai_credits"] == 12.0
+    assert payload["summary"]["granted_ai_credits"] == 5.0
+    assert payload["summary"]["net_ai_credit_delta"] == -7.0
+    assert payload["summary"]["net_used_ai_credits"] == 7.0
     assert missing_reason.status_code == 400
 
     assert quota_response.status_code == 200
     quota = quota_response.json()["data"]
-    assert quota["credit"]["used"] == 7.0
-    assert quota["credit"]["remaining"] == 13.0
-    assert quota["credit"]["estimated"] is False
-    assert quota["credit_ledger_summary"]["net_used_credits"] == 7.0
+    assert quota["ai_credits"]["used"] == 7.0
+    assert quota["ai_credits"]["remaining"] == 13.0
+    assert quota["ai_credits"]["estimated"] is False
+    assert quota["ai_credit_ledger_summary"]["net_used_ai_credits"] == 7.0
 
     assert ledger_response.status_code == 200
     ledger = ledger_response.json()["data"]
     assert ledger["summary"]["entry_count"] == 2
-    assert ledger["summary"]["consumed_credits"] == 12.0
-    assert ledger["summary"]["granted_credits"] == 5.0
-    assert ledger["summary"]["net_used_credits"] == 7.0
+    assert ledger["summary"]["consumed_ai_credits"] == 12.0
+    assert ledger["summary"]["granted_ai_credits"] == 5.0
+    assert ledger["summary"]["net_used_ai_credits"] == 7.0
     assert {item["event_type"] for item in ledger["items"]} == {"consume", "grant"}
 
     dispose_engine(database_url)
@@ -6473,7 +6473,7 @@ def test_admin_account_credit_grant_expands_current_period_available_balance(
         headers=build_internal_headers(idempotency_key="svc-credit-grant-headroom-001"),
         json={
             "event_type": "grant",
-            "credit_delta": 1000,
+            "ai_credit_delta": 1000,
             "reason": "operator_test_grant",
             "note": "expand current-period available balance",
         },
@@ -6485,7 +6485,7 @@ def test_admin_account_credit_grant_expands_current_period_available_balance(
 
     assert response.status_code == 200
     assert quota_response.status_code == 200
-    credit = quota_response.json()["data"]["credit"]
+    credit = quota_response.json()["data"]["ai_credits"]
     assert credit["used"] == 0.0
     assert credit["limit"] == 1300.0
     assert credit["remaining"] == 1300.0
@@ -6524,7 +6524,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
                 provider_call_id=None,
                 source_type="tokens_total",
                 source_id="run-credit-integer-1:tokens",
-                credit_delta=-1.25,
+                ai_credit_delta=-1.25,
                 quantity=1250,
                 unit="token",
                 rate=1,
@@ -6535,7 +6535,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
         except ValueError as error:
             assert "integer credit unit" in str(error)
         else:
-            raise AssertionError("non-integer consume credit_delta should be rejected")
+            raise AssertionError("non-integer consume ai_credit_delta should be rejected")
         session.rollback()
 
         entry = repository.record_credit_ledger_entry(
@@ -6547,7 +6547,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
             provider_call_id=None,
             source_type="vector_chunks",
             source_id="run-credit-integer-2:chunks",
-            credit_delta=-2.0,
+            ai_credit_delta=-2.0,
             quantity=11,
             unit="chunk",
             rate=1,
@@ -6555,7 +6555,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
             rate_version="ai-credit-ledger-v2",
             idempotency_key="credit-integer-valid-001",
         )
-        assert entry.credit_delta == -2.0
+        assert entry.ai_credit_delta == -2.0
         session.commit()
 
     dispose_engine(database_url)

@@ -40,7 +40,7 @@ assert.match(source, /operationSummaryItems\s*=\s*\[/);
 assert.match(source, /<PortalMetricStrip items=\{operationSummaryItems\}/);
 assert.match(
   source,
-  /accountEntitlements\?\.quota_summary\?\.credit\?\.remaining/,
+  /accountEntitlements\?\.quota_summary\?\.ai_credits\?\.remaining/,
   'Portal home must use the one account entitlement response for remaining credits'
 );
 assert.match(

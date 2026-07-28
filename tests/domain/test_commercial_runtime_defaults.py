@@ -44,11 +44,11 @@ def _record_existing_credit_usage(
             provider_call_id=None,
             source_type="runs",
             source_id=f"{site_id}_existing_usage",
-            credit_delta=-credits,
+            ai_credit_delta=-credits,
             quantity=credits,
-            unit="credit",
+            unit="ai_credits",
             rate=1,
-            rate_unit="credit",
+            rate_unit="ai_credits",
             rate_version="ai-credit-ledger-v2",
             idempotency_key=f"{site_id}-existing-usage",
         )
@@ -270,7 +270,7 @@ def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
         repository.upsert_paid_credit_grant(
             account_id=subscription.account_id,
             payment_order_id="pay_runtime_paid_grant",
-            original_credits=10_000,
+            original_ai_credits=10_000,
             expires_at=now + timedelta(days=365),
         )
         repository.record_credit_ledger_entry(
@@ -282,11 +282,11 @@ def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
             provider_call_id=None,
             source_type="runs",
             source_id="base_allowance_consumed",
-            credit_delta=-300,
+            ai_credit_delta=-300,
             quantity=300,
-            unit="credit",
+            unit="ai_credits",
             rate=1,
-            rate_unit="credit",
+            rate_unit="ai_credits",
             rate_version="ai-credit-ledger-v2",
             idempotency_key="base-allowance-consumed",
             created_at=now,
@@ -359,7 +359,7 @@ def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
         )
         session.commit()
     assert grant is not None
-    assert grant.remaining_credits == 9999.0
+    assert grant.remaining_ai_credits == 9999.0
     assert paid_consume is not None
     assert paid_consume.metadata_json["paid_credit_consumed"] == 1.0
     dispose_engine(database_url)
@@ -394,9 +394,9 @@ def test_authorize_runtime_request_adds_operator_grants_to_package_headroom(
             event_type="grant",
             source_type="operator_credit_adjustment",
             source_id="operator-credit-grant-headroom",
-            credit_delta=1000,
+            ai_credit_delta=1000,
             quantity=1000,
-            unit="credit",
+            unit="ai_credits",
             rate=1,
             rate_unit=None,
             rate_version="ai-credit-ledger-v2",
@@ -524,7 +524,7 @@ def test_zero_credit_limit_does_not_consume_paid_grants_after_acceptance(
         repository.upsert_paid_credit_grant(
             account_id=subscription.account_id,
             payment_order_id="pay_unlimited_runtime_grant",
-            original_credits=10,
+            original_ai_credits=10,
             expires_at=now + timedelta(days=365),
         )
         run = RuntimeRepository(session).create_run(
@@ -564,7 +564,7 @@ def test_zero_credit_limit_does_not_consume_paid_grants_after_acceptance(
         session.commit()
 
     assert grant is not None
-    assert grant.remaining_credits == 10.0
+    assert grant.remaining_ai_credits == 10.0
     assert consume is not None
     assert consume.metadata_json["paid_credit_consumed"] == 0.0
     assert consume.metadata_json["package_credit_consumed"] == 1.0

@@ -617,7 +617,7 @@ function PlanDetailContent() {
         <BackofficeMetricStrip
           items={[
             {
-              label: t('admin.included_points', {}, 'Package points'),
+              label: t('admin.included_points', {}, 'Package AI credits'),
               value: formatInteger(effectivePackagePoints),
               detail: t('admin.included_points_detail', {}, 'Current-period package points shared by all sites on this account.'),
             },
@@ -744,7 +744,7 @@ function PlanDetailContent() {
               <BackofficeMetricStrip
                 items={[
                   {
-                    label: t('admin.included_points', {}, 'Package points'),
+                    label: t('admin.included_points', {}, 'Package AI credits'),
                     value: formatInteger(Number(tierSummary?.monthly_included_points || 0)),
                     detail: t('admin.included_points_detail', {}, 'Current-period package points shared by all sites on this account.'),
                   },
@@ -935,7 +935,7 @@ function PlanDetailContent() {
                       </span>
                     </label>
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.included_points', {}, 'Package points')}</span>
+                      <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.included_points', {}, 'Package AI credits')}</span>
                       <input value={form.monthly_included_points} onChange={(e) => setForm((c) => ({ ...c, monthly_included_points: e.target.value }))} className="input w-full" type="number" min="0" step="1" />
                     </label>
                     <label className="text-sm">

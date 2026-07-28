@@ -69,11 +69,11 @@ export function PortalCreditPackDialog({
       isOpen={isOpen}
       onClose={onClose}
       closeLabel={t('common.close', {}, 'Close')}
-      title={t('portal.usage.credit_packs_title', {}, 'Credit packs')}
+      title={t('portal.usage.credit_packs_title', {}, 'AI credit packs')}
       description={t(
         'portal.usage.credit_packs_desc',
         {},
-        'Add points without changing your package. Each pack shows its validity after payment.'
+        'Add AI credits without changing your package. Each pack shows its validity after payment.'
       )}
       size="xl"
       className="portal-commercial-dialog max-w-4xl rounded-[18px] shadow-[0_16px_44px_rgba(15,23,42,0.14)]"
@@ -82,7 +82,7 @@ export function PortalCreditPackDialog({
         <div
           className="grid gap-3 md:grid-cols-3"
           role="radiogroup"
-          aria-label={t('portal.usage.credit_packs_title', {}, 'Credit packs')}
+          aria-label={t('portal.usage.credit_packs_title', {}, 'AI credit packs')}
         >
           {packs.map((pack) => (
             <button
@@ -126,7 +126,7 @@ export function PortalCreditPackDialog({
             <p className="text-sm font-semibold text-slate-950 dark:text-white">
               {selectedPack
                 ? t(`portal.usage.credit_pack_${selectedPack.pack_id}`, {}, selectedPack.label)
-                : t('portal.usage.credit_pack_select_hint', {}, 'Select a credit pack above to continue.')}
+                : t('portal.usage.credit_pack_select_hint', {}, 'Select a AI credit pack above to continue.')}
             </p>
             {selectedPack ? (
               <div className="mt-1 space-y-1 text-sm text-slate-600 dark:text-slate-300">
@@ -134,7 +134,7 @@ export function PortalCreditPackDialog({
                   {t(
                     'portal.usage.credit_pack_selection_summary',
                     { points: formatPoints(selectedPack.ai_credits), amount: selectedAmount },
-                    `${formatPoints(selectedPack.ai_credits)} points for ${selectedAmount}`
+                    `${formatPoints(selectedPack.ai_credits)} AI credits for ${selectedAmount}`
                   )}
                 </p>
                 <p>

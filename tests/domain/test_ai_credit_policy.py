@@ -159,7 +159,7 @@ def test_cache_usage_meters_do_not_discount_token_credit_component() -> None:
     assert token_component is not None
     assert token_component["source_type"] == "tokens_total"
     assert token_component["quantity"] == 4233
-    assert token_component["credits"] == 5
+    assert token_component["ai_credits"] == 5
     assert cache_components == [None, None, None, None]
 
 
@@ -169,7 +169,7 @@ def test_record_credit_ledger_component_is_idempotent(tmp_path: Path) -> None:
     component = {
         **AI_CREDIT_COMPONENT_POLICY_REGISTRY["runs"],
         "quantity": 2.0,
-        "credits": 2.0,
+        "ai_credits": 2.0,
     }
     with get_session(database_url) as session:
         repository = CommercialRepository(session)
@@ -204,7 +204,7 @@ def test_record_credit_ledger_component_is_idempotent(tmp_path: Path) -> None:
     assert first is not None
     assert second is not None
     assert first.ledger_entry_id == second.ledger_entry_id
-    assert first.credit_delta == -2.0
+    assert first.ai_credit_delta == -2.0
     assert first.rate_version == AI_CREDIT_RATE_VERSION
     dispose_engine(database_url)
 
@@ -246,9 +246,9 @@ def test_admin_credit_estimate_excludes_site_knowledge_index_maintenance(
     )
     by_key = {str(item["key"]): item for item in breakdown}
 
-    assert by_key["runs"]["credits"] == 1.0
+    assert by_key["runs"]["ai_credits"] == 1.0
     assert by_key["tokens_total"]["quantity"] == 500.0
-    assert by_key["tokens_total"]["credits"] == 1
-    assert by_key["vector_documents"]["credits"] == 0.0
-    assert by_key["vector_chunks"]["credits"] == 0.0
+    assert by_key["tokens_total"]["ai_credits"] == 1
+    assert by_key["vector_documents"]["ai_credits"] == 0.0
+    assert by_key["vector_chunks"]["ai_credits"] == 0.0
     assert "provider_calls_other" not in by_key
