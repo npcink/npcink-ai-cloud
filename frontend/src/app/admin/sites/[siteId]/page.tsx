@@ -30,6 +30,7 @@ import { formatAdminCurrency } from '@/lib/currency';
 import {
   cn,
   formatDate,
+  formatCurrency,
   formatNumber as formatInteger,
 } from '@/lib/utils';
 
@@ -52,6 +53,11 @@ interface SiteDetail {
     requests_total: number;
     tokens_total: number;
     cost_estimate: number;
+    cost_usd: number;
+    accounting_fx?: {
+      usd_cny_rate?: string;
+      rate_version?: string;
+    };
   };
   billing_summary?: {
     total_snapshots: number;
@@ -129,7 +135,7 @@ interface SiteDetailApiPayload {
   billing_reconciliation?: {
     reconciliation?: {
       in_sync?: boolean;
-      deltas?: { cost?: number };
+      deltas?: { cost?: number; cost_cny?: number };
     };
     snapshot?: Record<string, unknown> | null;
   };
@@ -138,6 +144,11 @@ interface SiteDetailApiPayload {
       requests?: number;
       tokens?: number;
       cost_usd?: number;
+      cost_cny?: number;
+    };
+    accounting_fx?: {
+      usd_cny_rate?: string;
+      rate_version?: string;
     };
   };
   billing_snapshots?: { items?: Array<Record<string, unknown>> };
@@ -300,6 +311,10 @@ function SiteDetailContent() {
           ? payload.billing_snapshots.items
           : [];
         const latestSnapshot = billingItems[0] || payload.billing_reconciliation?.snapshot || null;
+        const latestSnapshotTotals =
+          latestSnapshot?.totals && typeof latestSnapshot.totals === 'object'
+            ? (latestSnapshot.totals as Record<string, unknown>)
+            : {};
         const normalizedSite: SiteDetail = {
           site_id: String(rawSite.site_id || siteId),
           account_id: String(rawSite.account_id || rawAccount.account_id || ''),
@@ -320,7 +335,9 @@ function SiteDetailContent() {
           usage_summary: {
             requests_total: Number(usageTotals.requests || 0),
             tokens_total: Number(usageTotals.tokens || 0),
-            cost_estimate: Number(usageTotals.cost_usd || 0),
+            cost_estimate: Number(usageTotals.cost_cny || 0),
+            cost_usd: Number(usageTotals.cost_usd || 0),
+            accounting_fx: payload.usage_meter?.accounting_fx,
           },
           billing_summary: {
             total_snapshots: billingItems.length,
@@ -328,7 +345,7 @@ function SiteDetailContent() {
               ? {
                   snapshot_id: String(latestSnapshot.snapshot_id || ''),
                   status: String(latestSnapshot.status || 'unknown'),
-                  cost: Number(latestSnapshot.total_cost_usd || latestSnapshot.cost_usd || 0),
+                  cost: Number(latestSnapshotTotals.cost_cny || 0),
                 }
               : undefined,
           },
@@ -347,7 +364,11 @@ function SiteDetailContent() {
             subscriptionGrace && typeof subscriptionGrace === 'object' ? subscriptionGrace : {},
           billing_reconciliation: {
             in_sync: Boolean(billingReconciliation?.reconciliation?.in_sync),
-            delta_cost: Number(billingReconciliation?.reconciliation?.deltas?.cost || 0),
+            delta_cost: Number(
+              billingReconciliation?.reconciliation?.deltas?.cost_cny ||
+                billingReconciliation?.reconciliation?.deltas?.cost ||
+                0
+            ),
           },
           related_surfaces:
             payload.related_surfaces && typeof payload.related_surfaces === 'object'
@@ -534,9 +555,13 @@ function SiteDetailContent() {
     {
       label: t('common.cost'),
       value: formatAdminCurrency(Number(costBudget.current_total || site.usage_summary?.cost_estimate || 0)),
-      detail: billingMismatch
-        ? t('admin.site_detail.billing_delta_desc', undefined, 'Billing reconciliation is not fully aligned yet, so treat commercial evidence as active follow-up.')
-        : t('admin.site_detail.billing_aligned_desc', undefined, 'Billing evidence is aligned closely enough for normal operator follow-up.'),
+      detail: site.usage_summary?.cost_usd
+        ? `${formatCurrency(site.usage_summary.cost_usd, 'USD')} × ${
+            site.usage_summary.accounting_fx?.usd_cny_rate || '—'
+          } · ${site.usage_summary.accounting_fx?.rate_version || ''}`
+        : billingMismatch
+          ? t('admin.site_detail.billing_delta_desc', undefined, 'Billing reconciliation is not fully aligned yet, so treat commercial evidence as active follow-up.')
+          : t('admin.site_detail.billing_aligned_desc', undefined, 'Billing evidence is aligned closely enough for normal operator follow-up.'),
       toneClassName: billingMismatch ? 'text-amber-700 dark:text-amber-300' : undefined,
     },
   ];
@@ -1035,7 +1060,15 @@ function SiteDetailContent() {
             items={[
               { label: t('common.requests'), value: formatInteger(site.usage_summary?.requests_total || 0) },
               { label: t('common.tokens'), value: formatInteger(site.usage_summary?.tokens_total || 0) },
-              { label: t('admin.est_cost'), value: formatAdminCurrency(site.usage_summary?.cost_estimate || 0) },
+              {
+                label: t('admin.est_cost'),
+                value: formatAdminCurrency(site.usage_summary?.cost_estimate || 0),
+                detail: site.usage_summary?.cost_usd
+                  ? `${formatCurrency(site.usage_summary.cost_usd, 'USD')} × ${
+                      site.usage_summary.accounting_fx?.usd_cny_rate || '—'
+                    }`
+                  : undefined,
+              },
             ]}
           />
         </BackofficeSectionPanel>

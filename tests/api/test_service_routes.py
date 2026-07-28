@@ -799,6 +799,11 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert initial_response.status_code == 200
     assert initial_response.json()["data"]["env_fallback"] == "disabled"
     assert initial_response.json()["data"]["settings"]["portal_email"]["status"] == "missing_config"
+    accounting_fx = initial_response.json()["data"]["settings"]["accounting_fx"]
+    assert accounting_fx["status"] == "missing_config"
+    assert accounting_fx["configured"] is False
+    assert accounting_fx["config"]["usd_cny_rate"] == "7.200000"
+    assert accounting_fx["config"]["is_fallback"] is True
     assert (
         initial_response.json()["data"]["settings"]["alipay_payment"]["status"] == "missing_config"
     )
@@ -830,6 +835,40 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
         headers=build_internal_headers(idempotency_key="service-settings-relink-invalid"),
     )
     assert invalid_relink_response.status_code == 422
+
+    accounting_response = client.patch(
+        "/internal/service/admin/service-settings/accounting-fx",
+        json={
+            "usd_cny_rate": 7.1234567,
+            "effective_at": "2026-07-28T08:00:00+08:00",
+            "source": "operator-approved monthly rate",
+            "note": "July accounting close",
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-accounting-fx-001"),
+    )
+    assert accounting_response.status_code == 200, accounting_response.text
+    assert accounting_response.json()["data"]["setting_kind"] == "commercial"
+    assert accounting_response.json()["data"]["config"]["usd_cny_rate"] == "7.123457"
+    assert accounting_response.json()["data"]["config"]["effective_at"] == (
+        "2026-07-28T00:00:00+00:00"
+    )
+    assert accounting_response.json()["data"]["config"]["rate_version"] == (
+        "usd-cny-20260728T000000Z-7_123457"
+    )
+    assert accounting_response.json()["data"]["config"]["is_fallback"] is False
+
+    invalid_accounting_response = client.patch(
+        "/internal/service/admin/service-settings/accounting-fx",
+        json={
+            "usd_cny_rate": 0,
+            "effective_at": "2026-07-28T00:00:00Z",
+            "source": "operator",
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-accounting-fx-invalid"
+        ),
+    )
+    assert invalid_accounting_response.status_code == 422
 
     public_response = client.patch(
         "/internal/service/admin/service-settings/portal-public",
@@ -914,10 +953,14 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
         email_row = session.get(ServiceSetting, "portal_email")
         alipay_row = session.get(ServiceSetting, "payment_alipay")
         relink_row = session.get(ServiceSetting, "site_relink_policy")
+        accounting_row = session.get(ServiceSetting, "commercial_accounting_fx")
         assert qq_row is not None
         assert email_row is not None
         assert alipay_row is not None
         assert relink_row is not None
+        assert accounting_row is not None
+        assert accounting_row.setting_kind == "commercial"
+        assert accounting_row.config_json["usd_cny_rate"] == "7.123457"
         assert relink_row.setting_kind == "commercial"
         assert relink_row.config_json == {"cooldown_days": 180}
         assert (
@@ -5182,7 +5225,7 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
             "ai_credits_increment": 10000,
             "runs_increment": 10000,
             "tokens_increment": 2000000,
-            "cost_increment": 99,
+            "cost_cny_increment": 99,
             "reason": "operator_overage_buffer",
             "note": "Customer needs temporary headroom before tier review.",
         },
@@ -5214,12 +5257,13 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_ai_credits_per_period"] == 10000.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_runs_per_period"] == 10010.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_tokens_per_period"] == 2005000.0
-    assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_per_period"] == 99.0
+    assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_per_period"] == 0.0
+    assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_cny_per_period"] == 99.0
     assert topup_payload["topup_summary"]["current_period_count"] == 1
     assert topup_payload["topup_summary"]["current_period_totals"]["ai_credits"] == 10000.0
     assert topup_payload["topup_summary"]["current_period_totals"]["runs"] == 10000.0
     assert topup_payload["topup_summary"]["current_period_totals"]["tokens"] == 2000000.0
-    assert topup_payload["topup_summary"]["current_period_totals"]["cost"] == 99.0
+    assert topup_payload["topup_summary"]["current_period_totals"]["cost_cny"] == 99.0
     assert topup_payload["billing_snapshot_refresh"]["status"] == "refreshed"
     assert topup_payload["billing_snapshot_refresh"]["site_count"] == 1
     assert topup_payload["billing_snapshot_refresh"]["snapshots"][0]["site_id"] == "site_billing"
@@ -5236,15 +5280,18 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert admin_subscription["topup_summary"]["latest"]["pack_id"] == ""
     assert admin_subscription["topup_summary"]["latest"]["reason"] == "operator_overage_buffer"
     assert admin_subscription["topup_summary"]["current_period_totals"]["ai_credits"] == 10000.0
-    assert admin_subscription["topup_summary"]["current_period_totals"]["cost"] == 99.0
+    assert admin_subscription["topup_summary"]["current_period_totals"]["cost_cny"] == 99.0
     assert admin_subscription["budget_headroom"]["base_budget"]["ai_credits"] == 0.0
     assert admin_subscription["budget_headroom"]["base_budget"]["runs"] == 10.0
     assert (
         admin_subscription["budget_headroom"]["current_period_topup_delta"]["ai_credits"] == 10000.0
     )
     assert admin_subscription["budget_headroom"]["current_period_topup_delta"]["runs"] == 10000.0
+    assert admin_subscription["budget_headroom"]["current_period_topup_delta"]["cost"] == 99.0
     assert admin_subscription["budget_headroom"]["effective_budget"]["ai_credits"] == 10000.0
     assert admin_subscription["budget_headroom"]["effective_budget"]["runs"] == 10010.0
+    assert admin_subscription["budget_headroom"]["effective_budget"]["cost"] == 99.0
+    assert admin_subscription["budget_headroom"]["cost_currency"] == "CNY"
     assert admin_subscription["billing_snapshot_status"]["status"] == "fresh"
     assert admin_subscription["billing_snapshot_status"]["fresh_site_count"] == 1
     assert admin_subscription["billing_snapshot_status"]["next_action"] is None
@@ -5266,6 +5313,30 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert rebuild_payload["billing_snapshot_refresh"]["site_count"] == 1
     assert rebuild_payload["billing_snapshot_status"]["status"] == "fresh"
     assert rebuild_payload["billing_snapshot_status"]["next_action"] is None
+
+    legacy_cost_topup_response = client.post(
+        "/internal/service/subscriptions/sub_pro_topup/topup",
+        json={
+            "target_period_start_at": subscription_response.json()["data"]["subscription"][
+                "current_period_start_at"
+            ],
+            "target_period_end_at": subscription_response.json()["data"]["subscription"][
+                "current_period_end_at"
+            ],
+            "cost_increment": 1,
+            "reason": "legacy_api_compatibility",
+        },
+        headers=build_internal_headers(idempotency_key="svc-subscription-topup-legacy-cost"),
+    )
+    assert legacy_cost_topup_response.status_code == 200
+    legacy_cost_topup = legacy_cost_topup_response.json()["data"]
+    assert legacy_cost_topup["topup"]["increments"]["legacy_cost_usd"] == 1.0
+    assert legacy_cost_topup["topup"]["increments"]["cost_cny"] == 7.2
+    assert legacy_cost_topup["topup"]["increments"]["accounting_fx"]["is_fallback"] is True
+    assert (
+        legacy_cost_topup["entitlement_snapshot"]["budgets"]["max_cost_cny_per_period"]
+        == 106.2
+    )
 
     execute_payload = {
         "site_id": "site_billing",

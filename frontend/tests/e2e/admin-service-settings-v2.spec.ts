@@ -76,6 +76,14 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
               private_key: { configured: false, display: '' },
               public_key: { configured: false, display: '' },
             }),
+            accounting_fx: setting('commercial_accounting_fx', 'ready', {
+              usd_cny_rate: '7.200000',
+              effective_at: '2026-07-01T00:00:00Z',
+              source: 'operator-approved test rate',
+              note: '',
+              rate_version: 'usd-cny-20260701T000000Z-7_200000',
+              is_fallback: false,
+            }),
             site_relink_policy: setting('site_relink_policy', 'ready', {
               cooldown_days: 90,
             }),
@@ -108,7 +116,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
 
   await page.goto('/admin/service-settings');
   await expect(page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i })).toBeVisible();
-  await expect(page.getByRole('tab')).toHaveCount(5);
+  await expect(page.getByRole('tab')).toHaveCount(6);
   await expect(page.locator('form:visible')).toHaveCount(1);
   expect(settingsReadCount).toBe(1);
   const compactGeometry = await page.evaluate(() => {

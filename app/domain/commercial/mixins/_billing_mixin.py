@@ -21,7 +21,14 @@ from app.core.models import (
     AccountSubscription,
     BillingSnapshot,
     PlanVersion,
+    ServiceSetting,
     Site,
+)
+from app.domain.commercial.currency import (
+    SERVICE_SETTING_ACCOUNTING_FX,
+    AccountingFxRate,
+    convert_usd_to_cny,
+    resolve_accounting_fx_rate,
 )
 from app.domain.commercial.errors import (
     CommercialConflictError,
@@ -54,6 +61,7 @@ DEFAULT_RUNTIME_BUDGETS: dict[str, object] = {
     "max_runs_per_period": 0,
     "max_tokens_per_period": 0,
     "max_cost_per_period": 0.0,
+    "max_cost_cny_per_period": 0.0,
 }
 DEFAULT_RUNTIME_CONCURRENCY: dict[str, object] = {
     "max_active_runs": 0,
@@ -151,6 +159,7 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
             "max_cost_per_period": 0.0,
+            "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 1},
         "site_limit": 1,
@@ -185,6 +194,7 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
             "max_cost_per_period": 0.0,
+            "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 2},
         "site_limit": 3,
@@ -219,6 +229,7 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
             "max_cost_per_period": 0.0,
+            "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 3},
         "site_limit": 5,
@@ -253,6 +264,7 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
             "max_cost_per_period": 0.0,
+            "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 10},
         "site_limit": 25,
@@ -549,6 +561,11 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             totals = self._aggregate_meter_events(meter_events)
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
+            totals.update(self._aggregate_accounting_costs(meter_events, accounting_fx))
             budgets = self._resolve_effective_subscription_budgets(
                 plan_version=plan_version,
                 subscription=subscription,
@@ -625,6 +642,13 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             ledger_totals = self._aggregate_meter_events(meter_events)
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
+            ledger_totals.update(
+                self._aggregate_accounting_costs(meter_events, accounting_fx)
+            )
             snapshots = repository.list_billing_snapshots(site_id)
             current_snapshot = next(
                 (
@@ -747,6 +771,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         ai_credits_increment: float = 0.0,
         runs_increment: float = 0.0,
         tokens_increment: float = 0.0,
+        cost_cny_increment: float | None = None,
         cost_increment: float = 0.0,
         reason: str = "",
         note: str = "",
@@ -771,6 +796,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 ai_credits_increment=ai_credits_increment,
                 runs_increment=runs_increment,
                 tokens_increment=tokens_increment,
+                cost_cny_increment=cost_cny_increment,
                 cost_increment=cost_increment,
                 reason=normalized_reason,
                 note=normalized_note,
@@ -923,6 +949,10 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 account.account_id: account
                 for account in repository.list_accounts(account_ids=account_ids, limit=None)
             }
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
         serialized_versions = [self._serialize_plan_version(version) for version in versions]
         tier_summary = self._build_plan_tier_summary(plan, serialized_versions)
         latest_version = self._select_latest_plan_version(serialized_versions)
@@ -946,6 +976,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "package_fit_cues": self._build_plan_package_fit_cues(
                 tier_summary=tier_summary,
                 latest_version=latest_version,
+                accounting_fx=accounting_fx,
             ),
             "subscriptions": [
                 {
@@ -1104,6 +1135,13 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 )
             ]
             usage_totals = self._aggregate_meter_events(meter_events)
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
+            usage_totals.update(
+                self._aggregate_accounting_costs(meter_events, accounting_fx)
+            )
             budget_state = self._build_budget_policy_state(
                 repository=repository,
                 subscription=subscription,
@@ -1151,6 +1189,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 plan_version=plan_version,
                 effective_budgets=budgets,
                 topup_summary=topup_summary,
+                accounting_fx=accounting_fx,
             ),
             "budget_state": budget_state,
             "subscription_grace": self._build_subscription_grace_state(
@@ -1174,20 +1213,27 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 )
             subscription = repository.get_latest_account_subscription(site.account_id or "")
             period_start_at, period_end_at = self._resolve_period(subscription, self.now_factory())
-            events = repository.list_usage_meter_events(
+            all_events = repository.list_usage_meter_events(
                 site_id,
                 subscription_id=subscription.subscription_id if subscription else None,
                 period_start_at=period_start_at,
                 period_end_at=period_end_at,
-                limit=limit,
+                limit=None,
             )
-            totals = self._aggregate_meter_events(events)
+            events = all_events[: max(1, limit)]
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
+            totals = self._aggregate_meter_events(all_events)
+            totals.update(self._aggregate_accounting_costs(all_events, accounting_fx))
             return {
                 "site_id": site_id,
                 "subscription_id": subscription.subscription_id if subscription else "",
                 "period_start_at": self._serialize_datetime(period_start_at),
                 "period_end_at": self._serialize_datetime(period_end_at),
                 "totals": totals,
+                "accounting_fx": accounting_fx.as_dict(),
                 "items": [self._serialize_meter_event(event) for event in events],
             }
 
@@ -1357,6 +1403,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         ai_credits_increment: float = 0.0,
         runs_increment: float = 0.0,
         tokens_increment: float = 0.0,
+        cost_cny_increment: float | None = None,
         cost_increment: float = 0.0,
         reason: str,
         note: str = "",
@@ -1378,13 +1425,24 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         pack_cost_increment = (
             self._coerce_float(selected_pack.get("cost_increment")) if selected_pack else 0.0
         )
+        legacy_cost_usd = max(0.0, self._coerce_float(cost_increment))
+        rate_row = repository.session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+        accounting_fx = resolve_accounting_fx_rate(
+            rate_row.config_json if rate_row is not None and rate_row.enabled else None
+        )
+        legacy_cost_cny = float(convert_usd_to_cny(legacy_cost_usd, accounting_fx))
         normalized_ai_credits = max(
             0.0,
             pack_ai_credits_increment + self._coerce_float(ai_credits_increment),
         )
         normalized_runs = max(0.0, pack_runs_increment + self._coerce_float(runs_increment))
         normalized_tokens = max(0.0, pack_tokens_increment + self._coerce_float(tokens_increment))
-        normalized_cost = max(0.0, pack_cost_increment + self._coerce_float(cost_increment))
+        normalized_cost = max(
+            0.0,
+            pack_cost_increment
+            + self._coerce_float(cost_cny_increment)
+            + legacy_cost_cny,
+        )
         if (
             normalized_ai_credits <= 0
             and normalized_runs <= 0
@@ -1437,7 +1495,15 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "ai_credits": round(normalized_ai_credits, 6),
             "runs": round(normalized_runs, 6),
             "tokens": round(normalized_tokens, 6),
-            "cost": round(normalized_cost, 6),
+            "cost_cny": round(normalized_cost, 6),
+            **(
+                {
+                    "legacy_cost_usd": round(legacy_cost_usd, 6),
+                    "accounting_fx": accounting_fx.as_dict(),
+                }
+                if legacy_cost_usd > 0
+                else {}
+            ),
         }
         updated_budgets = {
             "max_ai_credits_per_period": round(
@@ -1454,7 +1520,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 6,
             ),
             "max_cost_per_period": round(
-                self._coerce_float(base_budgets.get("max_cost_per_period")) + normalized_cost,
+                self._coerce_float(base_budgets.get("max_cost_per_period")),
+                6,
+            ),
+            "max_cost_cny_per_period": round(
+                self._coerce_float(base_budgets.get("max_cost_cny_per_period"))
+                + normalized_cost,
                 6,
             ),
         }
@@ -1521,10 +1592,10 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 ),
                 6,
             ),
-            "cost": round(
+            "cost_cny": round(
                 sum(
                     self._coerce_float(
-                        item.get("increments", {}).get("cost")
+                        item.get("increments", {}).get("cost_cny")
                         if isinstance(item.get("increments"), dict)
                         else 0.0
                     )
@@ -1682,6 +1753,9 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "max_runs_per_period": self._coerce_float(raw.get("max_runs_per_period")),
             "max_tokens_per_period": self._coerce_float(raw.get("max_tokens_per_period")),
             "max_cost_per_period": self._coerce_float(raw.get("max_cost_per_period")),
+            "max_cost_cny_per_period": self._coerce_float(
+                raw.get("max_cost_cny_per_period")
+            ),
         }
 
     def _normalize_concurrency(self, raw: dict[str, object] | None) -> dict[str, object]:
@@ -1877,6 +1951,37 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 continue
             totals[meter_key] += float(getattr(event, "quantity", 0.0) or 0.0)
         return {key: round(value, 6) for key, value in sorted(totals.items())}
+
+    def _aggregate_accounting_costs(
+        self,
+        events: Sequence[object],
+        accounting_fx: AccountingFxRate,
+    ) -> dict[str, float]:
+        snapshotted_provider_calls = {
+            int(getattr(event, "provider_call_id", 0) or 0)
+            for event in events
+            if str(getattr(event, "meter_key", "") or "") == "cost_cny"
+            and int(getattr(event, "provider_call_id", 0) or 0) > 0
+        }
+        cost_usd = 0.0
+        snapshotted_cost_cny = 0.0
+        legacy_cost_usd = 0.0
+        for event in events:
+            meter_key = str(getattr(event, "meter_key", "") or "")
+            quantity = max(0.0, float(getattr(event, "quantity", 0.0) or 0.0))
+            provider_call_id = int(getattr(event, "provider_call_id", 0) or 0)
+            if meter_key == "cost":
+                cost_usd += quantity
+                if provider_call_id not in snapshotted_provider_calls:
+                    legacy_cost_usd += quantity
+            elif meter_key == "cost_cny":
+                snapshotted_cost_cny += quantity
+        converted_legacy_cost = float(convert_usd_to_cny(legacy_cost_usd, accounting_fx))
+        return {
+            "cost_usd": round(cost_usd, 6),
+            "cost_cny": round(snapshotted_cost_cny + converted_legacy_cost, 6),
+            "legacy_cost_usd_converted": round(legacy_cost_usd, 6),
+        }
 
     def _aggregate_meter_breakdown(self, events: Sequence[object]) -> dict[str, object]:
         by_family: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -2169,6 +2274,13 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             metadata.get("current_period_topup_totals") if isinstance(metadata, dict) else None
         )
         topup_totals = topup_totals if isinstance(topup_totals, dict) else {}
+        snapshot_metadata = getattr(snapshot, "metadata_json", None)
+        if (
+            snapshot is not None
+            and isinstance(snapshot_metadata, dict)
+            and snapshot_metadata.get("source") == "subscription_topup"
+        ):
+            topup_totals = {}
         return {
             "max_ai_credits_per_period": round(
                 self._coerce_float(budgets.get("max_ai_credits_per_period"))
@@ -2186,8 +2298,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 6,
             ),
             "max_cost_per_period": round(
-                self._coerce_float(budgets.get("max_cost_per_period"))
-                + self._coerce_float(topup_totals.get("cost")),
+                self._coerce_float(budgets.get("max_cost_per_period")),
+                6,
+            ),
+            "max_cost_cny_per_period": round(
+                self._coerce_float(budgets.get("max_cost_cny_per_period"))
+                + self._coerce_float(topup_totals.get("cost_cny")),
                 6,
             ),
         }
@@ -2354,6 +2470,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         *,
         tier_summary: dict[str, object],
         latest_version: dict[str, object] | None,
+        accounting_fx: AccountingFxRate,
     ) -> list[dict[str, object]]:
         cues: list[dict[str, object]] = []
         if latest_version is None:
@@ -2373,24 +2490,52 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         )
         latest_concurrency = self._sanitize_payload_dict(latest_version.get("concurrency")) or {}
 
-        max_cost = self._coerce_float(latest_budgets.get("max_cost_per_period"))
+        template_cost_cny = self._coerce_float(
+            tier_budgets.get("max_cost_cny_per_period")
+        ) + float(
+            convert_usd_to_cny(
+                self._coerce_float(tier_budgets.get("max_cost_per_period")),
+                accounting_fx,
+            )
+        )
+        max_cost = self._coerce_float(
+            latest_budgets.get("max_cost_cny_per_period")
+        ) + float(
+            convert_usd_to_cny(
+                self._coerce_float(latest_budgets.get("max_cost_per_period")),
+                accounting_fx,
+            )
+        )
         if max_cost <= 0:
             cues.append(
                 {
                     "code": "package_fit.cost_ceiling_missing",
                     "severity": "warning",
                     "title": "Cost ceiling is not frozen",
-                    "detail": "This plan version still lacks `max_cost_per_period`, so operator package review remains too manual.",
+                    "detail": "This plan version still lacks `max_cost_cny_per_period`, so operator package review remains too manual.",
                 }
             )
 
-        for key, label in (
-            ("max_runs_per_period", "runs"),
-            ("max_tokens_per_period", "tokens"),
-            ("max_cost_per_period", "cost"),
+        for key, label, template_value, current_value in (
+            (
+                "max_runs_per_period",
+                "runs",
+                self._coerce_float(tier_budgets.get("max_runs_per_period")),
+                self._coerce_float(latest_budgets.get("max_runs_per_period")),
+            ),
+            (
+                "max_tokens_per_period",
+                "tokens",
+                self._coerce_float(tier_budgets.get("max_tokens_per_period")),
+                self._coerce_float(latest_budgets.get("max_tokens_per_period")),
+            ),
+            (
+                "max_cost_cny_per_period",
+                "cost",
+                template_cost_cny,
+                max_cost,
+            ),
         ):
-            template_value = self._coerce_float(tier_budgets.get(key))
-            current_value = self._coerce_float(latest_budgets.get(key))
             if template_value <= 0 or current_value <= 0:
                 continue
             if current_value < template_value * 0.5:
@@ -2730,6 +2875,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         plan_version: object | None,
         effective_budgets: dict[str, object],
         topup_summary: dict[str, object] | None,
+        accounting_fx: AccountingFxRate,
     ) -> dict[str, object]:
         base_budgets = self._normalize_budgets(
             getattr(plan_version, "budgets_json", None) if plan_version is not None else None
@@ -2747,8 +2893,25 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "ai_credits": round(self._coerce_float(topup_totals.get("ai_credits")), 6),
             "runs": round(self._coerce_float(topup_totals.get("runs")), 6),
             "tokens": round(self._coerce_float(topup_totals.get("tokens")), 6),
-            "cost": round(self._coerce_float(topup_totals.get("cost")), 6),
+            "cost": round(self._coerce_float(topup_totals.get("cost_cny")), 6),
+            "legacy_cost_usd": round(self._coerce_float(topup_totals.get("cost")), 6),
         }
+        base_cost_cny = self._coerce_float(
+            base_budgets.get("max_cost_cny_per_period")
+        ) + float(
+            convert_usd_to_cny(
+                self._coerce_float(base_budgets.get("max_cost_per_period")),
+                accounting_fx,
+            )
+        )
+        effective_cost_cny = self._coerce_float(
+            effective.get("max_cost_cny_per_period")
+        ) + float(
+            convert_usd_to_cny(
+                self._coerce_float(effective.get("max_cost_per_period")),
+                accounting_fx,
+            )
+        )
         return {
             "base_budget": {
                 "ai_credits": round(
@@ -2757,7 +2920,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 ),
                 "runs": round(self._coerce_float(base_budgets.get("max_runs_per_period")), 6),
                 "tokens": round(self._coerce_float(base_budgets.get("max_tokens_per_period")), 6),
-                "cost": round(self._coerce_float(base_budgets.get("max_cost_per_period")), 6),
+                "cost": round(base_cost_cny, 6),
             },
             "current_period_topup_delta": current_period_delta,
             "effective_budget": {
@@ -2767,8 +2930,10 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 ),
                 "runs": round(self._coerce_float(effective.get("max_runs_per_period")), 6),
                 "tokens": round(self._coerce_float(effective.get("max_tokens_per_period")), 6),
-                "cost": round(self._coerce_float(effective.get("max_cost_per_period")), 6),
+                "cost": round(effective_cost_cny, 6),
             },
+            "cost_currency": "CNY",
+            "accounting_fx": accounting_fx.as_dict(),
         }
 
     def _build_billing_mismatch(
@@ -2779,7 +2944,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         tolerance: dict[str, float],
         snapshot_present: bool,
     ) -> dict[str, object]:
-        comparable_keys = ("runs", "provider_calls", "tokens_total", "cost")
+        comparable_keys = ("runs", "provider_calls", "tokens_total", "cost", "cost_cny")
         deltas: dict[str, float] = {}
         mismatches: dict[str, dict[str, float]] = {}
         for key in comparable_keys:
@@ -2822,6 +2987,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         )
         totals = self._aggregate_meter_events(events)
         breakdown = self._aggregate_meter_breakdown(events)
+        rate_row = repository.session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+        accounting_fx = resolve_accounting_fx_rate(
+            rate_row.config_json if rate_row is not None and rate_row.enabled else None
+        )
+        totals.update(self._aggregate_accounting_costs(events, accounting_fx))
+        breakdown["accounting_fx"] = accounting_fx.as_dict()
         return repository.upsert_billing_snapshot(
             snapshot_id=self._build_billing_snapshot_id(
                 site_id,

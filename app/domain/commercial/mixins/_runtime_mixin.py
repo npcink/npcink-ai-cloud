@@ -26,6 +26,7 @@ from app.core.models import (
     AccountSubscription,
     ProviderCallRecord,
     RunRecord,
+    ServiceSetting,
 )
 from app.core.secrets import encrypt_site_api_signing_secret
 from app.core.security import build_secret_hash
@@ -36,6 +37,13 @@ from app.domain.commercial.credits import (
     package_credit_used_from_net_delta,
     record_credit_ledger_component,
     usage_meter_credit_component,
+)
+from app.domain.commercial.currency import (
+    ACCOUNTING_CURRENCY,
+    PROVIDER_COST_CURRENCY,
+    SERVICE_SETTING_ACCOUNTING_FX,
+    cost_snapshot,
+    resolve_accounting_fx_rate,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.mixins._billing_mixin import (
@@ -101,7 +109,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                     plan_id=plan_id,
                     version_label="v1",
                     status=PLAN_VERSION_STATUS_PUBLISHED,
-                    currency="USD",
+                    currency="CNY",
                     entitlements_json=cast(dict[str, object], DEFAULT_RUNTIME_ENTITLEMENTS),
                     budgets_json=DEFAULT_RUNTIME_BUDGETS,
                     concurrency_json=DEFAULT_RUNTIME_CONCURRENCY,
@@ -687,7 +695,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             execution_kind=run.execution_kind,
             execution_tier=run.execution_tier,
             data_classification=run.data_classification,
-            currency="USD",
+            currency=None,
             dedupe_key=f"run:{run.run_id}:runs",
             payload_json=self._runtime_usage_meter_context(run, {"status": run.status}),
         )
@@ -735,17 +743,41 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             execution_kind=run.execution_kind,
             execution_tier=run.execution_tier,
             data_classification=run.data_classification,
-            currency="USD",
+            currency=None,
             dedupe_key=f"provider_call:{provider_call.id}:provider_calls",
             payload_json=base_payload,
         )
         self._record_credit_for_usage_meter_event(repository=repository, event=event)
         normalized_usage_context = usage_context if isinstance(usage_context, dict) else {}
+        provider_cost_usd = max(0.0, float(provider_call.cost))
+        fx_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+        fx_rate = resolve_accounting_fx_rate(
+            fx_row.config_json if fx_row is not None and fx_row.enabled else None
+        )
+        provider_cost_snapshot = cost_snapshot(
+            cost_usd=provider_cost_usd,
+            rate=fx_rate,
+        )
+        cost_payload = {
+            **base_payload,
+            **provider_cost_snapshot,
+        }
         metric_rows = (
-            ("tokens_in", float(provider_call.tokens_in)),
-            ("tokens_out", float(provider_call.tokens_out)),
-            ("tokens_total", float(provider_call.tokens_in + provider_call.tokens_out)),
-            ("cost", float(provider_call.cost)),
+            ("tokens_in", float(provider_call.tokens_in), None, base_payload),
+            ("tokens_out", float(provider_call.tokens_out), None, base_payload),
+            (
+                "tokens_total",
+                float(provider_call.tokens_in + provider_call.tokens_out),
+                None,
+                base_payload,
+            ),
+            ("cost", provider_cost_usd, PROVIDER_COST_CURRENCY, cost_payload),
+            (
+                "cost_cny",
+                float(provider_cost_snapshot["cost_cny"]),
+                ACCOUNTING_CURRENCY,
+                cost_payload,
+            ),
             (
                 "input_tokens_uncached",
                 max(
@@ -754,6 +786,8 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                         normalized_usage_context.get("input_tokens_uncached")
                     ),
                 ),
+                None,
+                base_payload,
             ),
             (
                 "cache_read_tokens",
@@ -763,6 +797,8 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                         normalized_usage_context.get("cache_read_tokens")
                     ),
                 ),
+                None,
+                base_payload,
             ),
             (
                 "cache_write_tokens",
@@ -772,9 +808,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                         normalized_usage_context.get("cache_write_tokens")
                     ),
                 ),
+                None,
+                base_payload,
             ),
         )
-        for meter_key, quantity in metric_rows:
+        for meter_key, quantity, currency, event_payload in metric_rows:
             if quantity <= 0:
                 continue
             event = repository.record_usage_meter_event(
@@ -792,9 +830,9 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 execution_kind=run.execution_kind,
                 execution_tier=run.execution_tier,
                 data_classification=run.data_classification,
-                currency="USD",
+                currency=currency,
                 dedupe_key=f"provider_call:{provider_call.id}:{meter_key}",
-                payload_json=base_payload,
+                payload_json=event_payload,
             )
             self._record_credit_for_usage_meter_event(repository=repository, event=event)
 
