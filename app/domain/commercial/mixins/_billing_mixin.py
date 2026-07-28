@@ -949,6 +949,10 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 account.account_id: account
                 for account in repository.list_accounts(account_ids=account_ids, limit=None)
             }
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
         serialized_versions = [self._serialize_plan_version(version) for version in versions]
         tier_summary = self._build_plan_tier_summary(plan, serialized_versions)
         latest_version = self._select_latest_plan_version(serialized_versions)
@@ -972,6 +976,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "package_fit_cues": self._build_plan_package_fit_cues(
                 tier_summary=tier_summary,
                 latest_version=latest_version,
+                accounting_fx=accounting_fx,
             ),
             "subscriptions": [
                 {
@@ -2465,6 +2470,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         *,
         tier_summary: dict[str, object],
         latest_version: dict[str, object] | None,
+        accounting_fx: AccountingFxRate,
     ) -> list[dict[str, object]]:
         cues: list[dict[str, object]] = []
         if latest_version is None:
@@ -2484,7 +2490,22 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         )
         latest_concurrency = self._sanitize_payload_dict(latest_version.get("concurrency")) or {}
 
-        max_cost = self._coerce_float(latest_budgets.get("max_cost_cny_per_period"))
+        template_cost_cny = self._coerce_float(
+            tier_budgets.get("max_cost_cny_per_period")
+        ) + float(
+            convert_usd_to_cny(
+                self._coerce_float(tier_budgets.get("max_cost_per_period")),
+                accounting_fx,
+            )
+        )
+        max_cost = self._coerce_float(
+            latest_budgets.get("max_cost_cny_per_period")
+        ) + float(
+            convert_usd_to_cny(
+                self._coerce_float(latest_budgets.get("max_cost_per_period")),
+                accounting_fx,
+            )
+        )
         if max_cost <= 0:
             cues.append(
                 {
@@ -2495,13 +2516,26 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 }
             )
 
-        for key, label in (
-            ("max_runs_per_period", "runs"),
-            ("max_tokens_per_period", "tokens"),
-            ("max_cost_cny_per_period", "cost"),
+        for key, label, template_value, current_value in (
+            (
+                "max_runs_per_period",
+                "runs",
+                self._coerce_float(tier_budgets.get("max_runs_per_period")),
+                self._coerce_float(latest_budgets.get("max_runs_per_period")),
+            ),
+            (
+                "max_tokens_per_period",
+                "tokens",
+                self._coerce_float(tier_budgets.get("max_tokens_per_period")),
+                self._coerce_float(latest_budgets.get("max_tokens_per_period")),
+            ),
+            (
+                "max_cost_cny_per_period",
+                "cost",
+                template_cost_cny,
+                max_cost,
+            ),
         ):
-            template_value = self._coerce_float(tier_budgets.get(key))
-            current_value = self._coerce_float(latest_budgets.get(key))
             if template_value <= 0 or current_value <= 0:
                 continue
             if current_value < template_value * 0.5:
