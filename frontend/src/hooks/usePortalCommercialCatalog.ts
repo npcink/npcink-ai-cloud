@@ -7,6 +7,8 @@ import {
   type PortalCreditPackCatalogPayload,
   type PortalPlanOfferListPayload,
 } from '@/lib/portal-client';
+import { ApiError } from '@/lib/errors';
+import { formatPortalErrorMessage } from '@/lib/portal-error';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
@@ -26,6 +28,7 @@ export function usePortalCommercialCatalog({
   const [planOffers, setPlanOffers] = useState<PortalPlanOfferListPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState('');
   const normalizedContextSiteId = String(contextSiteId || '').trim();
   const contextSiteIdRef = useRef(normalizedContextSiteId);
   const requestVersionRef = useRef(0);
@@ -39,11 +42,13 @@ export function usePortalCommercialCatalog({
       setPlanOffers(null);
       setIsLoading(false);
       setError(null);
+      setErrorCode('');
       return;
     }
     const requestVersion = ++requestVersionRef.current;
     setIsLoading(true);
     setError(null);
+    setErrorCode('');
     try {
       const bundle = await portalClient.getAccountCommercialBundle();
       if (
@@ -58,7 +63,8 @@ export function usePortalCommercialCatalog({
         requestVersion !== requestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
       ) return;
-      setError(loadError instanceof Error ? loadError.message : t('error.failed_load', {}, 'Failed to load.'));
+      setError(formatPortalErrorMessage(loadError, t, t('error.failed_load', {}, 'Failed to load.')));
+      setErrorCode(loadError instanceof ApiError ? loadError.errorCode : '');
       setEntitlements(null);
       setCreditPacks(null);
       setPlanOffers(null);
@@ -77,6 +83,7 @@ export function usePortalCommercialCatalog({
     setCreditPacks(null);
     setPlanOffers(null);
     setError(null);
+    setErrorCode('');
     setIsLoading(Boolean(isAuthenticated && normalizedContextSiteId));
   }, [isAuthenticated, normalizedContextSiteId]);
 
@@ -93,6 +100,7 @@ export function usePortalCommercialCatalog({
     planOffers,
     isLoading,
     error,
+    errorCode,
     load,
   };
 }

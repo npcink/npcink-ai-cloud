@@ -39,9 +39,16 @@ assert.match(register, /<QqLoginButton/, 'registration must expose the QQ login 
 assert.match(proxy, /X-Robots-Tag[\s\S]*noindex/, 'admin responses must opt out of indexing');
 
 assert.match(health, /status: 'healthy'/, 'machine health must retain a stable status field');
+assert.match(
+  health,
+  /fetch\(buildBackendUrl\('\/health\/live'\)[\s\S]*AbortSignal\.timeout\(3_000\)/,
+  'public health must verify the Cloud API entry with a bounded probe'
+);
+assert.match(health, /status: 'degraded'/, 'public health must fail visibly when the Cloud API entry is unavailable');
 assert.match(health, /checked_at:/, 'machine health must expose its check time');
 assert.match(home, /<PublicStatusSummary/, 'home must expose a public service-status summary');
 assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the minimal public health endpoint');
+assert.match(publicStatus, /AbortSignal\.timeout\(5_000\)/, 'home status must not remain checking forever');
 assert.match(publicStatus, /href="\/status"/, 'home status must link to the full status page');
 assert.match(publicStatus, /aria-busy=/, 'home status must expose its checking state without changing layout');
 assert.match(publicNavigation, /href: '\/status'/, 'public navigation must link to the full status page');

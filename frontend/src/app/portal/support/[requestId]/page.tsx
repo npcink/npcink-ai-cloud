@@ -10,7 +10,6 @@ import {
 } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
-  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -93,7 +92,7 @@ export default function PortalSupportRequestDetailPage() {
   const loadDetail = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId || !capturedRequestId) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     const contextRequestVersion = contextRequestVersionRef.current;
     const detailRequestVersion = ++detailRequestVersionRef.current;
     setIsDetailLoading(true);
@@ -147,7 +146,7 @@ export default function PortalSupportRequestDetailPage() {
     setFeedbackResolved(true);
     setFeedbackRating(5);
     setFeedbackComment('');
-    setIsDetailLoading(Boolean(isAuthenticated && contextSiteId && requestId));
+    setIsDetailLoading(Boolean(isAuthenticated && requestId));
     setIsSubmitting(false);
     setIsUploadingAttachment(false);
     setIsSubmittingFeedback(false);
@@ -156,7 +155,7 @@ export default function PortalSupportRequestDetailPage() {
   }, [contextSiteId, isAuthenticated, requestId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId || !requestId) return;
+    if (!isAuthenticated || !requestId) return;
     void loadDetail();
     return () => {
       detailRequestVersionRef.current += 1;
@@ -167,12 +166,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     const body = reply.trim();
     if (!body) return;
     setIsSubmitting(true);
@@ -209,12 +203,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     if (!attachmentFile) return;
     setIsUploadingAttachment(true);
     setError('');
@@ -260,12 +249,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     setError('');
     try {
       const response = await portalClient.getSupportRequestAttachment(
@@ -292,12 +276,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     setIsSubmittingFeedback(true);
     setError('');
     setNotice('');
@@ -345,28 +324,6 @@ export default function PortalSupportRequestDetailPage() {
     );
   }
 
-  if (!contextSiteId || !session.selected_context) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          eyebrow={t('portal.support_requests_title', {}, 'Tickets')}
-          title={t('portal.support_request_detail_title', {}, 'Ticket detail')}
-          currentPage="support"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing this support ticket.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
-    );
-  }
-
   if (isDetailLoading) {
     return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
   }
@@ -389,7 +346,7 @@ export default function PortalSupportRequestDetailPage() {
         title={supportRequest?.title || t('portal.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
         currentPage="support"
-        sites={[session.selected_context.site]}
+        sites={session.selected_context ? [session.selected_context.site] : []}
         actions={
           <Link className="btn btn-secondary" href="/portal/support">
             {t('common.back', {}, 'Back')}
