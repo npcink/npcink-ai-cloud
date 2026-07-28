@@ -260,6 +260,13 @@ function LoginFormContent() {
                     id="email"
                     type="email"
                     autoComplete="email"
+                    required
+                    aria-invalid={form.status === 'error' && form.step === 'request'}
+                    aria-describedby={
+                      form.message && form.step === 'request'
+                        ? 'portal-login-form-message'
+                        : undefined
+                    }
                     value={form.email}
                     onChange={(event) =>
                       setForm((prev) => ({
@@ -285,6 +292,13 @@ function LoginFormContent() {
                       type="text"
                       inputMode="numeric"
                       autoComplete="one-time-code"
+                      required
+                      aria-invalid={form.status === 'error' && form.step === 'verify'}
+                      aria-describedby={
+                        form.message && form.step === 'verify'
+                          ? 'portal-login-form-message'
+                          : undefined
+                      }
                       value={form.code}
                       onChange={(event) =>
                         setForm((prev) => ({
@@ -328,6 +342,9 @@ function LoginFormContent() {
 
             {form.message ? (
               <div
+                id="portal-login-form-message"
+                role={form.status === 'error' ? 'alert' : 'status'}
+                aria-live={form.status === 'error' ? 'assertive' : 'polite'}
                 className={cn(
                       'rounded-2xl px-3 py-2 text-sm',
                       form.status === 'error'

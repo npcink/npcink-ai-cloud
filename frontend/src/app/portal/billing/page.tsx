@@ -39,7 +39,10 @@ import {
   type PortalPlanOffer,
 } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import {
+  formatPortalErrorMessage,
+  formatPortalWriteErrorMessage,
+} from '@/lib/portal-error';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -211,7 +214,7 @@ function PortalBillingContent() {
       await loadBilling();
       setActiveCommercialDialog(null);
     } catch (err) {
-      setPackageError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setPackagePending(null);
     }
@@ -240,7 +243,7 @@ function PortalBillingContent() {
       }
     } catch (err) {
       closePreparedPaymentWindow(paymentWindow);
-      setPackageError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setPackagePending(null);
     }
@@ -255,7 +258,7 @@ function PortalBillingContent() {
       await loadBilling();
       setActiveCommercialDialog(null);
     } catch (err) {
-      setPackageError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setPackagePending(null);
     }
@@ -284,7 +287,7 @@ function PortalBillingContent() {
       }
     } catch (err) {
       closePreparedPaymentWindow(paymentWindow);
-      setCreditPackError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setCreditPackError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setCreditPackPending(null);
     }

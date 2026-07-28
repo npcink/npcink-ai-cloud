@@ -22,6 +22,24 @@ export function formatPortalErrorReference(error: unknown): string {
   return String(error.traceId || error.errorCode || '').trim();
 }
 
+export function formatPortalWriteErrorMessage(
+  error: unknown,
+  t: PortalTranslator,
+  fallbackMessage: string
+): string {
+  if (
+    error instanceof ApiError
+    && (error.statusCode === 0 || error.errorCode.startsWith('client.'))
+  ) {
+    return t(
+      'error.portal_write_outcome_unknown',
+      undefined,
+      'Cloud could not confirm whether this change completed. Check the current record before trying again.'
+    );
+  }
+  return formatPortalErrorMessage(error, t, fallbackMessage);
+}
+
 export function formatPortalErrorMessage(
   error: unknown,
   t: PortalTranslator,

@@ -24,7 +24,10 @@ import {
   type PortalSupportRequestFeedback,
   type PortalSupportRequestMessage,
 } from '@/lib/portal-client';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import {
+  formatPortalErrorMessage,
+  formatPortalWriteErrorMessage,
+} from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
 function statusTone(status: string): 'ok' | 'warning' | 'neutral' | 'danger' {
@@ -189,7 +192,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
         contextRequestVersion === contextRequestVersionRef.current
@@ -235,7 +238,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
         contextRequestVersion === contextRequestVersionRef.current
@@ -300,7 +303,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
         contextRequestVersion === contextRequestVersionRef.current
@@ -355,12 +358,12 @@ export default function PortalSupportRequestDetailPage() {
       />
 
       {notice ? (
-        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
+        <div role="status" className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
           {notice}
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
+        <div role="alert" className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
           {error}
         </div>
       ) : null}

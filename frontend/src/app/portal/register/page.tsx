@@ -275,6 +275,13 @@ function RegisterFormContent() {
                     id="email"
                     type="email"
                     autoComplete="email"
+                    required
+                    aria-invalid={form.status === 'error' && form.step === 'request'}
+                    aria-describedby={
+                      form.message && form.step === 'request'
+                        ? 'portal-register-form-message'
+                        : undefined
+                    }
                     value={form.email}
                     onChange={(event) => setField('email', event.target.value)}
                     placeholder={t('auth.email_placeholder')}
@@ -295,6 +302,13 @@ function RegisterFormContent() {
                       type="text"
                       inputMode="numeric"
                       autoComplete="one-time-code"
+                      required
+                      aria-invalid={form.status === 'error' && form.step === 'verify'}
+                      aria-describedby={
+                        form.message && form.step === 'verify'
+                          ? 'portal-register-form-message'
+                          : undefined
+                      }
                       value={form.code}
                       onChange={(event) => setField('code', event.target.value)}
                       placeholder={t('auth.verification_code_placeholder', undefined, 'Enter the 6-digit code')}
@@ -306,6 +320,9 @@ function RegisterFormContent() {
 
                 {form.message ? (
                   <div
+                    id="portal-register-form-message"
+                    role={form.status === 'error' ? 'alert' : 'status'}
+                    aria-live={form.status === 'error' ? 'assertive' : 'polite'}
                     className={cn(
                       'rounded-2xl px-3 py-2 text-sm',
                       form.status === 'error'
