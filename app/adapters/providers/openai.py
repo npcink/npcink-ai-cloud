@@ -1443,6 +1443,14 @@ class OpenAIProviderAdapter:
 
     def _normalize_responses_text_format(self, value: object) -> dict[str, Any] | None:
         if isinstance(value, dict) and value:
+            if value.get("type") == "json_schema" and isinstance(
+                value.get("json_schema"),
+                dict,
+            ):
+                return {
+                    **value["json_schema"],
+                    "type": "json_schema",
+                }
             return value
         if isinstance(value, str) and value.strip():
             return {"type": value.strip()}

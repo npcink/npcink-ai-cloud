@@ -203,7 +203,8 @@ class WordPressOperationRuntime:
                 "type": "json_schema",
                 "json_schema": {
                     "name": "wordpress_title_generation_output",
-                    "schema": title_output_schema,
+                    "schema": self._provider_title_output_schema(title_output_schema),
+                    "strict": True,
                 },
             }
         elif "json_object" in constraints:
@@ -522,6 +523,20 @@ class WordPressOperationRuntime:
         if not isinstance(title, dict) or title.get("type") != "string":
             return {}
         return output_schema
+
+    @staticmethod
+    def _provider_title_output_schema(
+        output_schema: dict[str, object],
+    ) -> dict[str, object]:
+        """Build a strict Provider copy without replacing Ability-owned schema truth."""
+        properties = output_schema.get("properties")
+        title = properties.get("title") if isinstance(properties, dict) else {}
+        return {
+            "type": "object",
+            "properties": {"title": title},
+            "required": ["title"],
+            "additionalProperties": False,
+        }
 
     @staticmethod
     def _extract_title_schema_output(*, output_text: str, output_schema: dict[str, object]) -> str:
