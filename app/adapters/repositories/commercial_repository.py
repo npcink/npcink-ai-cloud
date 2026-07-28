@@ -1644,7 +1644,7 @@ class CommercialRepository:
         status: str,
         trial_enabled: bool,
         trial_days: int,
-        trial_credit_limit: int,
+        trial_ai_credit_limit: int,
         trial_requires_approval: bool,
         valid_from_at: datetime | None,
         valid_until_at: datetime | None,
@@ -1663,7 +1663,7 @@ class CommercialRepository:
             "status": status,
             "trial_enabled": trial_enabled,
             "trial_days": trial_days,
-            "trial_credit_limit": trial_credit_limit,
+            "trial_ai_credit_limit": trial_ai_credit_limit,
             "trial_requires_approval": trial_requires_approval,
             "valid_from_at": valid_from_at,
             "valid_until_at": valid_until_at,
@@ -1929,7 +1929,7 @@ class CommercialRepository:
         tier_id: str,
         highest_tier_id: str,
         status: str,
-        credit_limit: int,
+        ai_credit_limit: int,
         started_at: datetime,
         ends_at: datetime,
         approved_by_principal_id: str | None,
@@ -1945,7 +1945,7 @@ class CommercialRepository:
             tier_id=tier_id,
             highest_tier_id=highest_tier_id,
             status=status,
-            credit_limit=credit_limit,
+            ai_credit_limit=ai_credit_limit,
             started_at=started_at,
             ends_at=ends_at,
             approved_by_principal_id=approved_by_principal_id,
@@ -2221,7 +2221,7 @@ class CommercialRepository:
         order_kind: str,
         status: str,
         list_amount: Decimal,
-        credit_amount: Decimal,
+        ai_credit_amount: Decimal,
         payable_amount: Decimal,
         currency: str,
         effective_at: datetime | None,
@@ -2240,7 +2240,7 @@ class CommercialRepository:
             order_kind=order_kind,
             status=status,
             list_amount=list_amount,
-            credit_amount=credit_amount,
+            ai_credit_amount=ai_credit_amount,
             payable_amount=payable_amount,
             currency=currency,
             effective_at=effective_at,
@@ -2535,7 +2535,7 @@ class CommercialRepository:
         event_type: str = CREDIT_LEDGER_EVENT_CONSUME,
         source_type: str,
         source_id: str,
-        credit_delta: float,
+        ai_credit_delta: float,
         quantity: float,
         unit: str,
         rate: float,
@@ -2551,12 +2551,12 @@ class CommercialRepository:
         if existing is not None:
             return existing
 
-        normalized_credit_delta = round(float(credit_delta or 0.0), 6)
+        normalized_credit_delta = round(float(ai_credit_delta or 0.0), 6)
         if (
             event_type == CREDIT_LEDGER_EVENT_CONSUME
             and not float(normalized_credit_delta).is_integer()
         ):
-            raise ValueError("consume credit_delta must be an integer credit unit")
+            raise ValueError("consume ai_credit_delta must be an integer credit unit")
         if event_type == CREDIT_LEDGER_EVENT_CONSUME:
             normalized_credit_delta = float(int(normalized_credit_delta))
 
@@ -2571,7 +2571,7 @@ class CommercialRepository:
             event_type=event_type,
             source_type=source_type,
             source_id=source_id,
-            credit_delta=normalized_credit_delta,
+            ai_credit_delta=normalized_credit_delta,
             quantity=round(float(quantity or 0.0), 6),
             unit=unit,
             rate=round(float(rate or 0.0), 6),
@@ -2656,13 +2656,13 @@ class CommercialRepository:
         statement = (
             select(
                 bucket_expression,
-                func.sum(-CreditLedgerEntry.credit_delta).label("consumed_credits"),
+                func.sum(-CreditLedgerEntry.ai_credit_delta).label("consumed_ai_credits"),
                 func.count(CreditLedgerEntry.ledger_entry_id).label("entry_count"),
             )
             .where(
                 CreditLedgerEntry.account_id == account_id,
                 CreditLedgerEntry.event_type == CREDIT_LEDGER_EVENT_CONSUME,
-                CreditLedgerEntry.credit_delta < 0,
+                CreditLedgerEntry.ai_credit_delta < 0,
                 CreditLedgerEntry.created_at >= buckets[0][0],
                 CreditLedgerEntry.created_at < buckets[-1][1],
             )
@@ -2674,10 +2674,10 @@ class CommercialRepository:
             statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
         return {
             int(bucket_index): {
-                "credits": round(float(consumed_credits or 0.0), 6),
+                "ai_credits": round(float(consumed_ai_credits or 0.0), 6),
                 "entry_count": int(entry_count or 0),
             }
-            for bucket_index, consumed_credits, entry_count in self.session.execute(statement)
+            for bucket_index, consumed_ai_credits, entry_count in self.session.execute(statement)
             if bucket_index is not None
         }
 
@@ -2730,7 +2730,7 @@ class CommercialRepository:
                 CreditLedgerEntry.site_id.label("site_id"),
                 feature_expression,
                 func.max(CreditLedgerEntry.created_at).label("created_at"),
-                func.sum(CreditLedgerEntry.credit_delta).label("net_credit_delta"),
+                func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
                 func.count(CreditLedgerEntry.ledger_entry_id).label("component_count"),
             )
             .select_from(CreditLedgerEntry)
@@ -2760,8 +2760,8 @@ class CommercialRepository:
                 func.sum(
                     case(
                         (
-                            grouped_subquery.c.net_credit_delta < 0,
-                            -grouped_subquery.c.net_credit_delta,
+                            grouped_subquery.c.net_ai_credit_delta < 0,
+                            -grouped_subquery.c.net_ai_credit_delta,
                         ),
                         else_=0,
                     )
@@ -2860,7 +2860,7 @@ class CommercialRepository:
             select(
                 bucket_index,
                 feature_expression,
-                func.sum(CreditLedgerEntry.credit_delta).label("net_credit_delta"),
+                func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
                 func.count(func.distinct(group_id)).label("event_count"),
                 func.count(func.distinct(CreditLedgerEntry.site_id)).label("site_count"),
             )
@@ -2885,7 +2885,7 @@ class CommercialRepository:
         total_statement = (
             select(
                 bucket_index,
-                func.sum(CreditLedgerEntry.credit_delta).label("net_credit_delta"),
+                func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
                 func.count(func.distinct(group_id)).label("event_count"),
                 func.count(func.distinct(CreditLedgerEntry.site_id)).label("site_count"),
             )
@@ -2920,7 +2920,7 @@ class CommercialRepository:
             cast(list[dict[str, Any]], features).append(
                 {
                     "feature_key": str(row["feature_key"] or "content_generation"),
-                    "net_credit_delta": float(row["net_credit_delta"] or 0.0),
+                    "net_ai_credit_delta": float(row["net_ai_credit_delta"] or 0.0),
                     "event_count": int(row["event_count"] or 0),
                 }
             )
@@ -2944,21 +2944,21 @@ class CommercialRepository:
         *,
         account_id: str,
         payment_order_id: str,
-        original_credits: float,
+        original_ai_credits: float,
         expires_at: datetime,
         metadata_json: dict[str, object] | None = None,
     ) -> PaidCreditGrant:
         existing = self.get_paid_credit_grant_by_order(payment_order_id)
         if existing is not None:
             return existing
-        normalized_credits = round(max(0.0, float(original_credits or 0.0)), 6)
+        normalized_credits = round(max(0.0, float(original_ai_credits or 0.0)), 6)
         grant = PaidCreditGrant(
             grant_id=f"pcg_{uuid4().hex}",
             account_id=account_id,
             payment_order_id=payment_order_id,
-            original_credits=normalized_credits,
-            remaining_credits=normalized_credits,
-            refunded_credits=0.0,
+            original_ai_credits=normalized_credits,
+            remaining_ai_credits=normalized_credits,
+            refunded_ai_credits=0.0,
             expires_at=expires_at,
             metadata_json=metadata_json or {},
             created_at=datetime.now(UTC),
@@ -2978,7 +2978,7 @@ class CommercialRepository:
             select(PaidCreditGrant)
             .where(
                 PaidCreditGrant.account_id == account_id,
-                PaidCreditGrant.remaining_credits > 0,
+                PaidCreditGrant.remaining_ai_credits > 0,
                 PaidCreditGrant.expires_at > now,
             )
             .order_by(PaidCreditGrant.expires_at.asc(), PaidCreditGrant.created_at.asc())
@@ -2991,10 +2991,10 @@ class CommercialRepository:
         self,
         *,
         account_id: str,
-        credits: float,
+        ai_credits: float,
         now: datetime,
     ) -> float:
-        remaining = round(max(0.0, float(credits or 0.0)), 6)
+        remaining = round(max(0.0, float(ai_credits or 0.0)), 6)
         consumed = 0.0
         for grant in self.list_available_paid_credit_grants(
             account_id=account_id,
@@ -3003,8 +3003,8 @@ class CommercialRepository:
         ):
             if remaining <= 0:
                 break
-            amount = min(remaining, max(0.0, float(grant.remaining_credits or 0.0)))
-            grant.remaining_credits = round(float(grant.remaining_credits) - amount, 6)
+            amount = min(remaining, max(0.0, float(grant.remaining_ai_credits or 0.0)))
+            grant.remaining_ai_credits = round(float(grant.remaining_ai_credits) - amount, 6)
             consumed += amount
             remaining -= amount
         self.session.flush()
@@ -3014,7 +3014,7 @@ class CommercialRepository:
         self,
         *,
         payment_order_id: str,
-        credits: float,
+        ai_credits: float,
     ) -> PaidCreditGrant | None:
         grant = self.session.scalar(
             select(PaidCreditGrant)
@@ -3023,13 +3023,13 @@ class CommercialRepository:
         )
         if grant is None:
             return None
-        normalized = round(max(0.0, float(credits or 0.0)), 6)
-        already_refunded = max(0.0, float(grant.refunded_credits or 0.0))
-        target_refunded = min(float(grant.original_credits), already_refunded + normalized)
+        normalized = round(max(0.0, float(ai_credits or 0.0)), 6)
+        already_refunded = max(0.0, float(grant.refunded_ai_credits or 0.0))
+        target_refunded = min(float(grant.original_ai_credits), already_refunded + normalized)
         increment = max(0.0, target_refunded - already_refunded)
-        grant.refunded_credits = round(target_refunded, 6)
-        grant.remaining_credits = round(
-            max(0.0, float(grant.remaining_credits or 0.0) - increment),
+        grant.refunded_ai_credits = round(target_refunded, 6)
+        grant.remaining_ai_credits = round(
+            max(0.0, float(grant.remaining_ai_credits or 0.0) - increment),
             6,
         )
         self.session.flush()

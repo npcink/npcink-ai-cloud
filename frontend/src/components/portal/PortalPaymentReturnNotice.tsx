@@ -132,7 +132,7 @@ export function PortalPaymentReturnNotice({
   const paid = status === 'paid';
   const closed = ['canceled', 'cancelled', 'failed', 'refunded'].includes(status);
   const credits = Number(order?.credit_pack?.ai_credits || 0);
-  const creditQuota = entitlements?.quota_summary?.credit;
+  const creditQuota = entitlements?.quota_summary?.ai_credits;
   const totalAvailableValue = creditQuota?.total_remaining;
   const totalAvailable = totalAvailableValue == null ? null : Number(totalAvailableValue);
   const nextExpiry = String(creditQuota?.paid_next_expires_at || '');

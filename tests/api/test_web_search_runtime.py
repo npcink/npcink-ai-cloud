@@ -680,7 +680,7 @@ def test_zhihu_direct_answer_records_lane_credit_component(
             )
         )
         assert credit_entry is not None
-        assert credit_entry.credit_delta == -5.0
+        assert credit_entry.ai_credit_delta == -5.0
         assert credit_entry.metadata_json["credit_component"] == "zhihu_direct_answer_deep"
         assert credit_entry.metadata_json["source_type"] == "zhida_deep"
 

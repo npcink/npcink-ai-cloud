@@ -310,7 +310,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     )
                 query_start_at = max(query_start_at, range_start_at)
                 query_end_at = min(query_end_at, range_end_at)
-            group_rows, total, consumed_credits = repository.list_portal_credit_event_groups(
+            group_rows, total, consumed_ai_credits = repository.list_portal_credit_event_groups(
                 account_id=account_id,
                 subscription_id=(
                     primary_subscription.subscription_id
@@ -360,7 +360,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     else "other"
                 )
                 components_by_group[group_id][component_key] += abs(
-                    float(getattr(entry, "credit_delta", 0.0) or 0.0)
+                    float(getattr(entry, "ai_credit_delta", 0.0) or 0.0)
                 )
 
         feature_copy = {
@@ -392,7 +392,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             run_id = str(row.get("run_id") or "")
             feature_key = str(row.get("feature_key") or "content_generation")
             feature_label, feature_detail = feature_copy[feature_key]
-            net_delta = round(float(row.get("net_credit_delta") or 0.0), 6)
+            net_delta = round(float(row.get("net_ai_credit_delta") or 0.0), 6)
             components = components_by_group[group_id]
             events.append(
                 {
@@ -403,12 +403,12 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "feature_label": feature_label,
                     "feature_detail": feature_detail,
                     "created_at": self._serialize_datetime(row.get("created_at")),
-                    "net_credit_delta": net_delta,
-                    "consumed_credits": round(max(0.0, -net_delta), 6),
+                    "net_ai_credit_delta": net_delta,
+                    "consumed_ai_credits": round(max(0.0, -net_delta), 6),
                     "direction": "consumed" if net_delta < 0 else "added",
                     "component_count": int(row.get("component_count") or 0),
                     "components": [
-                        {"key": key, "credits": round(value, 6)}
+                        {"key": key, "ai_credits": round(value, 6)}
                         for key, value in sorted(components.items())
                     ],
                 }
@@ -428,7 +428,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             },
             "summary": {
                 "event_count": total,
-                "consumed_credits": consumed_credits,
+                "consumed_ai_credits": consumed_ai_credits,
             },
             "pagination": {
                 "limit": normalized_limit,
@@ -532,8 +532,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             feature_totals = [
                 {
                     "feature_key": str(item.get("feature_key") or "content_generation"),
-                    "consumed_credits": round(
-                        max(0.0, -float(item.get("net_credit_delta") or 0.0)),
+                    "consumed_ai_credits": round(
+                        max(0.0, -float(item.get("net_ai_credit_delta") or 0.0)),
                         6,
                     ),
                     "event_count": int(item.get("event_count") or 0),
@@ -541,16 +541,16 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 for item in features
             ]
             feature_totals.sort(
-                key=lambda item: service._coerce_float(item.get("consumed_credits")),
+                key=lambda item: service._coerce_float(item.get("consumed_ai_credits")),
                 reverse=True,
             )
-            net_delta = round(float(row.get("net_credit_delta") or 0.0), 6)
+            net_delta = round(float(row.get("net_ai_credit_delta") or 0.0), 6)
             items.append(
                 {
                     "bucket_id": f"{normalized_bucket}:{bucket_index}",
                     "start_at": self._serialize_datetime(bucket_start_at),
                     "end_at": self._serialize_datetime(bucket_end_at),
-                    "consumed_credits": round(max(0.0, -net_delta), 6),
+                    "consumed_ai_credits": round(max(0.0, -net_delta), 6),
                     "event_count": int(row.get("event_count") or 0),
                     "site_count": int(row.get("site_count") or 0),
                     "top_feature_key": (
@@ -560,8 +560,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 }
             )
         total = len(items)
-        consumed_credits = round(
-            sum(service._coerce_float(item.get("consumed_credits")) for item in items),
+        consumed_ai_credits = round(
+            sum(service._coerce_float(item.get("consumed_ai_credits")) for item in items),
             6,
         )
         paged_items = items[normalized_offset : normalized_offset + normalized_limit]
@@ -581,7 +581,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             },
             "summary": {
                 "bucket_count": total,
-                "consumed_credits": consumed_credits,
+                "consumed_ai_credits": consumed_ai_credits,
             },
             "pagination": {
                 "limit": normalized_limit,
@@ -639,15 +639,15 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             {
                 "start_at": self._serialize_datetime(bucket_start),
                 "end_at": self._serialize_datetime(bucket_end),
-                "credits": float(summaries.get(index, {}).get("credits", 0.0)),
+                "ai_credits": float(summaries.get(index, {}).get("ai_credits", 0.0)),
                 "entry_count": int(summaries.get(index, {}).get("entry_count", 0)),
             }
             for index, (bucket_start, bucket_end) in enumerate(buckets)
         ]
-        total_credits = 0.0
+        total_ai_credits = 0.0
         entry_count = 0
         for summary in summaries.values():
-            total_credits += float(summary.get("credits", 0.0))
+            total_ai_credits += float(summary.get("ai_credits", 0.0))
             entry_count += int(summary.get("entry_count", 0))
         return {
             "contract_version": "portal-credit-trend-v1",
@@ -658,7 +658,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "bucket_seconds": int(bucket_size.total_seconds()),
             "start_at": self._serialize_datetime(start_at),
             "end_at": self._serialize_datetime(end_at),
-            "total_credits": round(total_credits, 6),
+            "total_ai_credits": round(total_ai_credits, 6),
             "entry_count": entry_count,
             "points": points,
         }

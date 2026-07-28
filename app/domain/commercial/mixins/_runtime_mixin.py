@@ -884,7 +884,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         package_limit = self._coerce_float(budgets.get("max_ai_credits_per_period"))
         current_credits = max(
             0.0,
-            -self._coerce_float(getattr(entry, "credit_delta", 0.0)),
+            -self._coerce_float(getattr(entry, "ai_credit_delta", 0.0)),
         )
         if package_limit <= 0:
             entry_metadata["paid_credit_consumed"] = 0.0
@@ -919,7 +919,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         )
         allocated = repository.consume_paid_credit_grants(
             account_id=str(entry.account_id),
-            credits=paid_credits,
+            ai_credits=paid_credits,
             now=now,
         )
         entry_metadata["paid_credit_consumed"] = round(allocated, 6)

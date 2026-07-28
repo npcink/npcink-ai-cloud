@@ -261,7 +261,7 @@ export function PortalPaymentOrderHistory({
                           {t(
                             'portal.usage.payment_order_credit_snapshot',
                             { credits: formatNumber(Number(order.credit_pack?.ai_credits || 0)) },
-                            `${formatNumber(Number(order.credit_pack?.ai_credits || 0))} points in this order`
+                            `${formatNumber(Number(order.credit_pack?.ai_credits || 0))} AI credits in this order`
                           )}
                         </p>
                       ) : null}

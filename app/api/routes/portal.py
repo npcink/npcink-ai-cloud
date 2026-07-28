@@ -321,9 +321,9 @@ def _portal_public_quota_summary_data(value: object) -> dict[str, object]:
         "period_start_at": str(summary.get("period_start_at") or ""),
         "period_end_at": str(summary.get("period_end_at") or ""),
         "status": str(summary.get("status") or ""),
-        "credit": _dict_value(summary.get("credit")),
-        "credit_ledger_summary": _dict_value(summary.get("credit_ledger_summary")),
-        "credit_policy": _dict_value(summary.get("credit_policy")),
+        "ai_credits": _dict_value(summary.get("ai_credits")),
+        "ai_credit_ledger_summary": _dict_value(summary.get("ai_credit_ledger_summary")),
+        "ai_credit_policy": _dict_value(summary.get("ai_credit_policy")),
         "resource_limits": _object_list(summary.get("resource_limits")),
         "breakdown": _object_list(summary.get("breakdown")),
         "credit_usage_detail": _dict_value(summary.get("credit_usage_detail")),
@@ -395,7 +395,7 @@ def _portal_plan_offer_data(value: object) -> dict[str, object]:
         "status": str(offer.get("status") or ""),
         "trial_enabled": bool(offer.get("trial_enabled")),
         "trial_days": int(offer.get("trial_days") or 0),
-        "trial_credit_limit": int(offer.get("trial_credit_limit") or 0),
+        "trial_ai_credit_limit": int(offer.get("trial_ai_credit_limit") or 0),
         "trial_requires_approval": bool(offer.get("trial_requires_approval")),
         "valid_from_at": str(offer.get("valid_from_at") or ""),
         "valid_until_at": str(offer.get("valid_until_at") or ""),
@@ -454,7 +454,7 @@ def _portal_plan_offer_trial_data(value: object) -> dict[str, object]:
         "tier_id": str(trial.get("tier_id") or ""),
         "highest_tier_id": str(trial.get("highest_tier_id") or ""),
         "trial_days": int(trial.get("trial_days") or 0),
-        "credit_limit": int(trial.get("credit_limit") or 0),
+        "ai_credit_limit": int(trial.get("ai_credit_limit") or 0),
         "trial_started_at": str(trial.get("trial_started_at") or ""),
         "trial_ends_at": str(trial.get("trial_ends_at") or ""),
     }
@@ -467,7 +467,7 @@ def _portal_started_trial_data(value: object) -> dict[str, object]:
         "status": str(trial.get("status") or ""),
         "tier_id": str(trial.get("tier_id") or ""),
         "trial_days": int(trial.get("trial_days") or 0),
-        "credit_limit": int(trial.get("credit_limit") or 0),
+        "ai_credit_limit": int(trial.get("ai_credit_limit") or 0),
         "trial_started_at": str(trial.get("trial_started_at") or ""),
         "trial_ends_at": str(trial.get("trial_ends_at") or ""),
         "monthly_price_cny": float(trial.get("monthly_price_cny") or 0),
@@ -500,7 +500,7 @@ def _portal_subscription_order_data(value: object) -> dict[str, object]:
         "order_kind": str(order.get("order_kind") or ""),
         "status": str(order.get("status") or ""),
         "list_amount": float(order.get("list_amount") or 0),
-        "credit_amount": float(order.get("credit_amount") or 0),
+        "ai_credit_amount": float(order.get("ai_credit_amount") or 0),
         "payable_amount": float(order.get("payable_amount") or 0),
         "currency": str(order.get("currency") or ""),
         "effective_at": str(order.get("effective_at") or ""),
@@ -634,10 +634,10 @@ def _portal_credit_ledger_entry_data(value: object) -> dict[str, object]:
             "explanation",
             "source_id",
             "run_id",
-            "credit_delta",
-            "consumed_credits",
-            "granted_credits",
-            "net_credit_delta",
+            "ai_credit_delta",
+            "consumed_ai_credits",
+            "granted_ai_credits",
+            "net_ai_credit_delta",
             "quantity",
             "unit",
             "rate",
@@ -660,7 +660,7 @@ def _portal_credit_breakdown_item_data(value: object) -> dict[str, object]:
             "unit",
             "rate",
             "rate_unit",
-            "credits",
+            "ai_credits",
             "capability_group",
         )
     }
@@ -670,19 +670,19 @@ def _portal_credit_summary_data(value: object) -> dict[str, object]:
     summary = _dict_value(value)
     category_totals = _dict_value(summary.get("category_totals"))
     return {
-        "total_credits": float(summary.get("total_credits") or 0),
-        "consumed_credits": float(summary.get("consumed_credits") or 0),
-        "granted_credits": float(summary.get("granted_credits") or 0),
-        "adjustment_credits": float(summary.get("adjustment_credits") or 0),
-        "refund_credits": float(summary.get("refund_credits") or 0),
-        "net_credit_delta": float(summary.get("net_credit_delta") or 0),
-        "net_used_credits": float(summary.get("net_used_credits") or 0),
+        "total_ai_credits": float(summary.get("total_ai_credits") or 0),
+        "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0),
+        "granted_ai_credits": float(summary.get("granted_ai_credits") or 0),
+        "adjustment_ai_credits": float(summary.get("adjustment_ai_credits") or 0),
+        "refund_ai_credits": float(summary.get("refund_ai_credits") or 0),
+        "net_ai_credit_delta": float(summary.get("net_ai_credit_delta") or 0),
+        "net_used_ai_credits": float(summary.get("net_used_ai_credits") or 0),
         "entry_count": int(summary.get("entry_count") or 0),
         "category_totals": {
             str(key): {
                 "label": str(_dict_value(item).get("label") or ""),
-                "net_credit_delta": float(
-                    _dict_value(item).get("net_credit_delta") or 0
+                "net_ai_credit_delta": float(
+                    _dict_value(item).get("net_ai_credit_delta") or 0
                 ),
             }
             for key, item in category_totals.items()
@@ -778,13 +778,13 @@ def _portal_credit_trend_data(value: object) -> dict[str, object]:
         "bucket_seconds": int(trend.get("bucket_seconds") or 0),
         "start_at": str(trend.get("start_at") or ""),
         "end_at": str(trend.get("end_at") or ""),
-        "total_credits": float(trend.get("total_credits") or 0),
+        "total_ai_credits": float(trend.get("total_ai_credits") or 0),
         "entry_count": int(trend.get("entry_count") or 0),
         "points": [
             {
                 "start_at": str(_dict_value(item).get("start_at") or ""),
                 "end_at": str(_dict_value(item).get("end_at") or ""),
-                "credits": float(_dict_value(item).get("credits") or 0),
+                "ai_credits": float(_dict_value(item).get("ai_credits") or 0),
                 "entry_count": int(_dict_value(item).get("entry_count") or 0),
             }
             for item in _object_list(trend.get("points"))
@@ -808,7 +808,7 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
         },
         "summary": {
             "event_count": int(summary.get("event_count") or 0),
-            "consumed_credits": float(summary.get("consumed_credits") or 0),
+            "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0),
         },
         "pagination": _portal_pagination_data(events.get("pagination")),
         "items": [
@@ -822,8 +822,8 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
                     "feature_label",
                     "feature_detail",
                     "created_at",
-                    "net_credit_delta",
-                    "consumed_credits",
+                    "net_ai_credit_delta",
+                    "consumed_ai_credits",
                     "direction",
                     "component_count",
                 )
@@ -832,7 +832,7 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
                 "components": [
                     {
                         "key": str(_dict_value(component).get("key") or ""),
-                        "credits": float(_dict_value(component).get("credits") or 0),
+                        "ai_credits": float(_dict_value(component).get("ai_credits") or 0),
                     }
                     for component in _object_list(_dict_value(item).get("components"))
                 ]
@@ -861,7 +861,7 @@ def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
         },
         "summary": {
             "bucket_count": int(summary.get("bucket_count") or 0),
-            "consumed_credits": float(summary.get("consumed_credits") or 0),
+            "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0),
         },
         "pagination": _portal_pagination_data(buckets.get("pagination")),
         "items": [
@@ -871,7 +871,7 @@ def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
                     "bucket_id",
                     "start_at",
                     "end_at",
-                    "consumed_credits",
+                    "consumed_ai_credits",
                     "event_count",
                     "site_count",
                     "top_feature_key",
@@ -883,8 +883,8 @@ def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
                         "feature_key": str(
                             _dict_value(total).get("feature_key") or ""
                         ),
-                        "consumed_credits": float(
-                            _dict_value(total).get("consumed_credits") or 0
+                        "consumed_ai_credits": float(
+                            _dict_value(total).get("consumed_ai_credits") or 0
                         ),
                         "event_count": int(
                             _dict_value(total).get("event_count") or 0

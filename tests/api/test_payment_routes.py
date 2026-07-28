@@ -129,7 +129,7 @@ def test_internal_payment_routes_open_and_revoke_entitlement(tmp_path: Path) -> 
     )
     assert credit_pack_paid_response.status_code == 200, credit_pack_paid_response.text
     assert (
-        credit_pack_paid_response.json()["data"]["credit_ledger_entry"]["credit_delta"]
+        credit_pack_paid_response.json()["data"]["credit_ledger_entry"]["ai_credit_delta"]
         == 10000.0
     )
     with get_session(database_url) as session:

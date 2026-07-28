@@ -195,7 +195,7 @@ type AccountCreditBreakdownItem = {
   unit: string;
   rate: number;
   rate_unit?: string;
-  credits: number;
+  ai_credits: number;
 };
 
 type AccountQuotaSummary = {
@@ -203,14 +203,14 @@ type AccountQuotaSummary = {
   generated_at?: string;
   period_start_at?: string;
   period_end_at?: string;
-  credit: AccountQuotaMetric;
-  credit_ledger_summary?: {
-    consumed_credits?: number;
-    granted_credits?: number;
-    adjustment_credits?: number;
-    refund_credits?: number;
-    net_credit_delta?: number;
-    net_used_credits?: number;
+  ai_credits: AccountQuotaMetric;
+  ai_credit_ledger_summary?: {
+    consumed_ai_credits?: number;
+    granted_ai_credits?: number;
+    adjustment_ai_credits?: number;
+    refund_ai_credits?: number;
+    net_ai_credit_delta?: number;
+    net_used_ai_credits?: number;
   };
   resource_limits: AccountQuotaMetric[];
   internal_limits: AccountQuotaMetric[];
@@ -225,10 +225,10 @@ type AccountCreditLedgerEntry = {
   source_type: string;
   source_id?: string;
   run_id?: string;
-  credit_delta: number;
-  consumed_credits: number;
-  granted_credits?: number;
-  net_credit_delta?: number;
+  ai_credit_delta: number;
+  consumed_ai_credits: number;
+  granted_ai_credits?: number;
+  net_ai_credit_delta?: number;
   quantity: number;
   unit: string;
   rate?: number;
@@ -250,13 +250,13 @@ type AccountCreditLedger = {
     has_more?: boolean;
   };
   summary?: {
-    total_credits?: number;
-    consumed_credits?: number;
-    granted_credits?: number;
-    adjustment_credits?: number;
-    refund_credits?: number;
-    net_credit_delta?: number;
-    net_used_credits?: number;
+    total_ai_credits?: number;
+    consumed_ai_credits?: number;
+    granted_ai_credits?: number;
+    adjustment_ai_credits?: number;
+    refund_ai_credits?: number;
+    net_ai_credit_delta?: number;
+    net_used_ai_credits?: number;
     entry_count?: number;
     breakdown?: AccountCreditBreakdownItem[];
   };
@@ -557,14 +557,14 @@ function AccountDetailContent() {
   const [agencyForm, setAgencyForm] = useState({
     amount_cny: '499',
     valid_days: '7',
-    trial_credit_limit: '20000',
+    trial_ai_credit_limit: '20000',
   });
   const [agencyActionPending, setAgencyActionPending] = useState<'quote' | 'trial' | null>(null);
   const [agencyActionNotice, setAgencyActionNotice] = useState<string | null>(null);
   const [agencyActionError, setAgencyActionError] = useState<string | null>(null);
   const [creditAdjustmentForm, setCreditAdjustmentForm] = useState({
     event_type: 'grant',
-    credit_delta: '',
+    ai_credit_delta: '',
     reason: '',
     note: '',
   });
@@ -687,7 +687,7 @@ function AccountDetailContent() {
       const payload = (await accountDetailClient.request<AccountQuotaSummaryPayload>(
         `/api/admin/accounts/${encodeURIComponent(accountId)}/quota-summary`
       )).data;
-      if (!payload.credit) {
+      if (!payload.ai_credits) {
         quotaSummaryRequestedRef.current = false;
         setQuotaSummary(null);
         return;
@@ -697,10 +697,10 @@ function AccountDetailContent() {
         generated_at: String(payload.generated_at || ''),
         period_start_at: String(payload.period_start_at || ''),
         period_end_at: String(payload.period_end_at || ''),
-        credit: payload.credit as AccountQuotaMetric,
-        credit_ledger_summary:
-          payload.credit_ledger_summary && typeof payload.credit_ledger_summary === 'object'
-            ? (payload.credit_ledger_summary as AccountQuotaSummary['credit_ledger_summary'])
+        ai_credits: payload.ai_credits as AccountQuotaMetric,
+        ai_credit_ledger_summary:
+          payload.ai_credit_ledger_summary && typeof payload.ai_credit_ledger_summary === 'object'
+            ? (payload.ai_credit_ledger_summary as AccountQuotaSummary['ai_credit_ledger_summary'])
             : undefined,
         resource_limits: Array.isArray(payload.resource_limits)
           ? (payload.resource_limits as AccountQuotaMetric[])
@@ -1039,10 +1039,10 @@ function AccountDetailContent() {
             amount_cny: Number(agencyForm.amount_cny),
             valid_days: Number(agencyForm.valid_days),
             trial_enabled: true,
-            trial_credit_limit: Number(agencyForm.trial_credit_limit),
+            trial_ai_credit_limit: Number(agencyForm.trial_ai_credit_limit),
           }
         : {
-            trial_credit_limit: Number(agencyForm.trial_credit_limit),
+            trial_ai_credit_limit: Number(agencyForm.trial_ai_credit_limit),
           };
       await accountDetailClient.request<Record<string, unknown>>(
         `/api/admin/accounts/${encodeURIComponent(accountId)}/${endpoint}`,
@@ -1173,7 +1173,7 @@ function AccountDetailContent() {
   };
 
   const handleApplyCreditAdjustment = async () => {
-    const creditDelta = Number(creditAdjustmentForm.credit_delta);
+    const creditDelta = Number(creditAdjustmentForm.ai_credit_delta);
     if (!Number.isFinite(creditDelta) || creditDelta === 0) {
       setPackageActionError(
         t(
@@ -1208,7 +1208,7 @@ function AccountDetailContent() {
           method: 'POST',
           body: {
             event_type: creditAdjustmentForm.event_type,
-            credit_delta: creditDelta,
+            ai_credit_delta: creditDelta,
             reason: creditAdjustmentForm.reason.trim(),
             note: creditAdjustmentForm.note.trim(),
           },
@@ -1224,7 +1224,7 @@ function AccountDetailContent() {
       );
       setCreditAdjustmentForm((current) => ({
         event_type: current.event_type,
-        credit_delta: '',
+        ai_credit_delta: '',
         reason: '',
         note: '',
       }));
@@ -1356,7 +1356,7 @@ function AccountDetailContent() {
     : [];
   const siteRuntimeItems = Object.values(siteRuntimeData);
   const resourceMetricByKey = new Map((quotaSummary?.resource_limits || []).map((item) => [item.key, item]));
-  const creditMetric = quotaSummary?.credit || null;
+  const creditMetric = quotaSummary?.ai_credits || null;
   const runBudgetSummary = creditMetric ? metricToBudgetSummary(creditMetric) : summarizeBudget(siteRuntimeData, 'runs');
   const activeKeySiteCount = siteRuntimeItems.filter((item) => item.activeKeyCount > 0).length;
   const boundSitesMetric = resourceMetricByKey.get('bound_sites') || null;
@@ -1553,13 +1553,13 @@ function AccountDetailContent() {
   const internalLimitRows = quotaSummary?.internal_limits || [];
   const creditLedgerItems = creditLedger?.items || [];
   const creditLedgerNetUsed = Number(
-    creditLedger?.summary?.net_used_credits ??
-      quotaSummary?.credit_ledger_summary?.net_used_credits ??
-      creditLedger?.summary?.total_credits ??
+    creditLedger?.summary?.net_used_ai_credits ??
+      quotaSummary?.ai_credit_ledger_summary?.net_used_ai_credits ??
+      creditLedger?.summary?.total_ai_credits ??
       0
   );
   const creditLedgerGranted = Number(
-    creditLedger?.summary?.granted_credits ?? quotaSummary?.credit_ledger_summary?.granted_credits ?? 0
+    creditLedger?.summary?.granted_ai_credits ?? quotaSummary?.ai_credit_ledger_summary?.granted_ai_credits ?? 0
   );
   const creditLedgerCount = Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0);
   const siteLimitLabel = siteLimitUnlimited ? unlimitedLabel : formatInteger(accountSiteLimit);
@@ -2046,8 +2046,8 @@ function AccountDetailContent() {
                     min="0"
                     max="20000"
                     step="100"
-                    value={agencyForm.trial_credit_limit}
-                    onChange={(event) => setAgencyForm((current) => ({ ...current, trial_credit_limit: event.target.value }))}
+                    value={agencyForm.trial_ai_credit_limit}
+                    onChange={(event) => setAgencyForm((current) => ({ ...current, trial_ai_credit_limit: event.target.value }))}
                     className="input w-full"
                   />
                 </label>
@@ -2179,9 +2179,9 @@ function AccountDetailContent() {
                   <input
                     type="number"
                     step="1"
-                    value={creditAdjustmentForm.credit_delta}
+                    value={creditAdjustmentForm.ai_credit_delta}
                     onChange={(event) =>
-                      setCreditAdjustmentForm((current) => ({ ...current, credit_delta: event.target.value }))
+                      setCreditAdjustmentForm((current) => ({ ...current, ai_credit_delta: event.target.value }))
                     }
                     className="input"
                     placeholder="+1000"
@@ -2593,7 +2593,7 @@ function AccountDetailContent() {
                           </p>
                         </div>
                         <p className="text-right text-sm font-semibold text-gray-950 dark:text-white">
-                          {formatInteger(Math.round(Number(item.credits || 0)))}
+                          {formatInteger(Math.round(Number(item.ai_credits || 0)))}
                         </p>
                       </div>
                     ))}
@@ -2652,7 +2652,7 @@ function AccountDetailContent() {
                               quantity: entry.quantity,
                               unit: entry.unit,
                               rate: Number(entry.rate || 0),
-                              credits: Math.abs(Number(entry.net_credit_delta ?? entry.credit_delta ?? 0)),
+                              ai_credits: Math.abs(Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0)),
                             },
                             t
                           )}
@@ -2665,7 +2665,7 @@ function AccountDetailContent() {
                         {formatInteger(Math.round(Number(entry.quantity || 0)))} {entry.unit}
                       </p>
                       <p className="font-semibold text-slate-950 dark:text-white sm:text-right">
-                        {formatSignedCreditDelta(Number(entry.net_credit_delta ?? entry.credit_delta ?? 0))}
+                        {formatSignedCreditDelta(Number(entry.net_ai_credit_delta ?? entry.ai_credit_delta ?? 0))}
                       </p>
                       <p className="text-slate-500 dark:text-slate-400 sm:text-right">
                         {entry.created_at ? formatDate(entry.created_at) : '-'}

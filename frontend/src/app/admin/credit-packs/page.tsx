@@ -181,8 +181,8 @@ export default function AdminCreditPacksPage() {
       setLoadedAt(new Date());
       setDraft(null);
       toast.success(
-        t('admin.credit_packs_saved_notice', {}, 'Credit pack catalog saved.'),
-        t('admin.credit_packs_saved_title', {}, 'Credit pack updated')
+        t('admin.credit_packs_saved_notice', {}, 'AI credit pack catalog saved.'),
+        t('admin.credit_packs_saved_title', {}, 'AI credit pack updated')
       );
     } catch (err) {
       setError(resolveUiErrorMessage(err, t('error.failed_save')));
@@ -197,7 +197,7 @@ export default function AdminCreditPacksPage() {
     return (
       <BackofficePageStack>
         <BackofficeEmptyState
-          title={t('admin.credit_packs_unavailable_title', {}, 'Credit pack catalog unavailable')}
+          title={t('admin.credit_packs_unavailable_title', {}, 'AI credit pack catalog unavailable')}
           description={error || t('error.failed_load')}
           action={<button type="button" className="btn btn-primary" onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>}
         />
@@ -209,7 +209,7 @@ export default function AdminCreditPacksPage() {
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
         eyebrow={t('admin.credit_packs_eyebrow', {}, 'Commercial catalog')}
-        title={t('admin.credit_packs_title', {}, 'Credit packs')}
+        title={t('admin.credit_packs_title', {}, 'AI credit packs')}
         description={t(
           'admin.credit_packs_directory_desc',
           {},
@@ -227,7 +227,7 @@ export default function AdminCreditPacksPage() {
 
       {error ? (
         <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
-          <span>{error}{items.length > 0 ? <span className="mt-1 block text-xs">{t('admin.credit_packs_retained_notice', {}, 'Showing the last successfully loaded credit pack catalog.')}</span> : null}</span>
+          <span>{error}{items.length > 0 ? <span className="mt-1 block text-xs">{t('admin.credit_packs_retained_notice', {}, 'Showing the last successfully loaded AI credit pack catalog.')}</span> : null}</span>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>
         </div>
       ) : null}
@@ -244,7 +244,7 @@ export default function AdminCreditPacksPage() {
           <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">{t('admin.credit_packs_directory_title', {}, 'Credit pack catalog')}</h2>
+                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">{t('admin.credit_packs_directory_title', {}, 'AI credit pack catalog')}</h2>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.credit_packs_directory_hint', {}, 'Compare purchase value and visibility, then inspect one pack before editing.')}</p>
               </div>
               <p role="status" className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('admin.credit_packs_result_count', { visible: String(filteredItems.length), total: String(items.length) }, '{{visible}} visible · {{total}} total')}</p>
@@ -270,7 +270,7 @@ export default function AdminCreditPacksPage() {
           </div>
 
           {filteredItems.length ? (
-            <div role="list" aria-label={t('admin.credit_packs_list_label', {}, 'Credit pack list')}>
+            <div role="list" aria-label={t('admin.credit_packs_list_label', {}, 'AI credit pack list')}>
               {filteredItems.map((item) => {
                 const selected = selectedItem?.pack_id === item.pack_id;
                 return (

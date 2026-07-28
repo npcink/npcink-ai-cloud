@@ -2631,11 +2631,11 @@ def test_same_account_users_cannot_cross_site_commercial_boundaries(
                     event_type="grant",
                     source_type="test",
                     source_id=f"source_portal_shared_commercial_{suffix}",
-                    credit_delta=10.0,
+                    ai_credit_delta=10.0,
                     quantity=10.0,
-                    unit="credit",
+                    unit="ai_credits",
                     rate=1.0,
-                    rate_unit="credit",
+                    rate_unit="ai_credits",
                     rate_version="v1",
                     idempotency_key=f"credit-shared-commercial-{suffix}",
                     metadata_json={},
@@ -2730,9 +2730,9 @@ def test_same_account_users_cannot_cross_site_commercial_boundaries(
         "period_start_at": "",
         "period_end_at": "",
         "status": "",
-        "credit": {},
-        "credit_ledger_summary": {},
-        "credit_policy": {},
+        "ai_credits": {},
+        "ai_credit_ledger_summary": {},
+        "ai_credit_policy": {},
         "resource_limits": [],
         "breakdown": [],
         "credit_usage_detail": {},
@@ -5485,7 +5485,7 @@ def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> 
         pro_trial.json()["data"]["trial"]["trial_ends_at"]
         == (plus_trial.json()["data"]["trial"]["trial_ends_at"])
     )
-    assert pro_trial.json()["data"]["trial"]["credit_limit"] == 5_000
+    assert pro_trial.json()["data"]["trial"]["ai_credit_limit"] == 5_000
 
     agency_denied = client.post(
         "/portal/v1/account/plan-trials",
@@ -5504,7 +5504,7 @@ def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> 
             "amount_cny": 499,
             "valid_days": 7,
             "trial_enabled": True,
-            "trial_credit_limit": 12_000,
+            "trial_ai_credit_limit": 12_000,
         },
         headers=build_internal_headers(idempotency_key="admin-agency-quote-001"),
     )
@@ -5513,7 +5513,7 @@ def test_portal_shared_trial_and_admin_agency_quote_contract(tmp_path: Path) -> 
 
     agency_trial = client.post(
         f"/internal/service/admin/accounts/{account_id}/agency-trial",
-        json={"principal_id": principal_id, "trial_credit_limit": 12_000},
+        json={"principal_id": principal_id, "trial_ai_credit_limit": 12_000},
         headers=build_internal_headers(idempotency_key="admin-agency-trial-001"),
     )
     assert agency_trial.status_code == 200, agency_trial.text
@@ -6463,7 +6463,7 @@ def test_portal_selected_site_context_is_order_independent_and_fail_closed(
                 provider_call_id=None,
                 source_type="runs",
                 source_id=f"context-{suffix}",
-                credit_delta=credits,
+                ai_credit_delta=credits,
                 quantity=1,
                 unit="run",
                 rate=abs(credits),
@@ -6481,7 +6481,7 @@ def test_portal_selected_site_context_is_order_independent_and_fail_closed(
         )
         ledger_response = client.get("/portal/v1/account/credit-ledger")
         assert ledger_response.status_code == 200, ledger_response.text
-        assert ledger_response.json()["data"]["summary"]["consumed_credits"] == expected
+        assert ledger_response.json()["data"]["summary"]["consumed_ai_credits"] == expected
 
     _set_portal_cookie_session(
         client,
@@ -6744,7 +6744,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             provider_call_id=None,
             source_type="tokens_total",
             source_id="run-portal-ledger-1:tokens",
-            credit_delta=-2,
+            ai_credit_delta=-2,
             quantity=1500,
             unit="token",
             rate=1,
@@ -6761,7 +6761,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             provider_call_id=None,
             source_type="zhihu_hot_topics",
             source_id="run-portal-ledger-zhihu-hot:provider-call",
-            credit_delta=-1,
+            ai_credit_delta=-1,
             quantity=1,
             unit="call",
             rate=1,
@@ -6783,7 +6783,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             provider_call_id=None,
             source_type="runs",
             source_id="run-portal-ledger-component-only:run",
-            credit_delta=-1,
+            ai_credit_delta=-1,
             quantity=1,
             unit="run",
             rate=1,
@@ -6800,7 +6800,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             provider_call_id=None,
             source_type="runs",
             source_id="site-other-portal-ledger-run",
-            credit_delta=-1,
+            ai_credit_delta=-1,
             quantity=1,
             unit="run",
             rate=1,
@@ -6945,11 +6945,11 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     _assert_no_bounded_portal_internal_fields(entitlements_data)
     assert entitlements_data["policy"]["subscription"]["grace_period_days"] == 0
     quota_summary = entitlements_data["quota_summary"]
-    assert quota_summary["credit"]["key"] == "ai_credits"
-    assert quota_summary["credit"]["limit"] == 2000.0
-    assert quota_summary["credit"]["estimated"] is False
-    assert quota_summary["credit_policy"]["rate_version"] == "ai-credit-ledger-v2"
-    assert quota_summary["credit_policy"]["topup_policy"] == (
+    assert quota_summary["ai_credits"]["key"] == "ai_credits"
+    assert quota_summary["ai_credits"]["limit"] == 2000.0
+    assert quota_summary["ai_credits"]["estimated"] is False
+    assert quota_summary["ai_credit_policy"]["rate_version"] == "ai-credit-ledger-v2"
+    assert quota_summary["ai_credit_policy"]["topup_policy"] == (
         "operator_topups_apply_to_target_period_only"
     )
     credit_usage_detail = quota_summary["credit_usage_detail"]
@@ -6988,11 +6988,11 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     account_entitlements_data = account_entitlements_response.json()["data"]
     _assert_no_portal_identity_wrapper(account_entitlements_data)
     _assert_no_portal_commercial_internal_fields(account_entitlements_data)
-    assert account_entitlements_data["quota_summary"]["credit"]["key"] == "ai_credits"
-    assert account_entitlements_data["quota_summary"]["credit"]["limit"] == 2000.0
+    assert account_entitlements_data["quota_summary"]["ai_credits"]["key"] == "ai_credits"
+    assert account_entitlements_data["quota_summary"]["ai_credits"]["limit"] == 2000.0
     assert (
-        account_entitlements_data["quota_summary"]["credit_ledger_summary"][
-            "consumed_credits"
+        account_entitlements_data["quota_summary"]["ai_credit_ledger_summary"][
+            "consumed_ai_credits"
         ]
         == 5.0
     )
@@ -7005,7 +7005,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     credit_ledger_data = credit_ledger_response.json()["data"]
     assert credit_ledger_data["site_id"] == "site_portal_reads"
     _assert_no_portal_identity_wrapper(credit_ledger_data)
-    assert credit_ledger_data["summary"]["total_credits"] == 4.0
+    assert credit_ledger_data["summary"]["total_ai_credits"] == 4.0
     assert credit_ledger_data["pagination"]["total"] == 3
     assert {item["source_type"] for item in credit_ledger_data["items"]} == {
         "runs",
@@ -7025,7 +7025,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert "ai_assistance" not in {
         str(item.get("feature_key") or "") for item in credit_ledger_data["items"]
     }
-    assert credit_ledger_data["summary"]["category_totals"]["ai_usage"]["net_credit_delta"] == -4.0
+    assert credit_ledger_data["summary"]["category_totals"]["ai_usage"]["net_ai_credit_delta"] == -4.0
     assert credit_ledger_data["usage_detail"]["surface"] == "portal_personal_credit_usage"
     assert {item["category"] for item in credit_ledger_data["usage_detail"]["legend"]} >= {
         "ai_usage",
@@ -7047,7 +7047,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert account_credit_ledger_response.status_code == 200
     account_credit_ledger_data = account_credit_ledger_response.json()["data"]
     _assert_no_portal_commercial_internal_fields(account_credit_ledger_data)
-    assert account_credit_ledger_data["summary"]["total_credits"] == 4.0
+    assert account_credit_ledger_data["summary"]["total_ai_credits"] == 4.0
     assert account_credit_ledger_data["pagination"]["total"] == 3
     assert {item["site_id"] for item in account_credit_ledger_data["items"]} == {
         "site_portal_reads"
@@ -7063,7 +7063,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             provider_call_id=None,
             source_type="runs",
             source_id="historical-other-site-run",
-            credit_delta=-2,
+            ai_credit_delta=-2,
             quantity=1,
             unit="run",
             rate=2,
@@ -7075,10 +7075,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         session.commit()
 
     expected_trends = {
-        "1h": {"points": 12, "credits": 4.0, "entries": 3},
-        "24h": {"points": 24, "credits": 4.0, "entries": 3},
-        "7d": {"points": 7, "credits": 4.0, "entries": 3},
-        "30d": {"points": 30, "credits": 4.0, "entries": 3},
+        "1h": {"points": 12, "ai_credits": 4.0, "entries": 3},
+        "24h": {"points": 24, "ai_credits": 4.0, "entries": 3},
+        "7d": {"points": 7, "ai_credits": 4.0, "entries": 3},
+        "30d": {"points": 30, "ai_credits": 4.0, "entries": 3},
     }
     for trend_window, expectation in expected_trends.items():
         trend_response = client.get(
@@ -7092,7 +7092,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         assert trend_data["generated_at"] == trend_data["end_at"]
         assert trend_data["window"] == trend_window
         assert len(trend_data["points"]) == expectation["points"]
-        assert trend_data["total_credits"] == expectation["credits"]
+        assert trend_data["total_ai_credits"] == expectation["ai_credits"]
         assert trend_data["entry_count"] == expectation["entries"]
 
     site_trend_response = client.get(
@@ -7102,7 +7102,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert site_trend_response.status_code == 200
     site_trend_data = site_trend_response.json()["data"]
     assert site_trend_data["site_id"] == "site_portal_reads"
-    assert site_trend_data["total_credits"] == 4.0
+    assert site_trend_data["total_ai_credits"] == 4.0
     assert site_trend_data["entry_count"] == 3
 
     invalid_trend_response = client.get(
@@ -7121,7 +7121,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             provider_call_id=None,
             source_type="runs",
             source_id="run-portal-ledger-1:request",
-            credit_delta=-3,
+            ai_credit_delta=-3,
             quantity=1,
             unit="run",
             rate=3,
@@ -7139,9 +7139,9 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
             event_type=CREDIT_LEDGER_EVENT_GRANT,
             source_type="credit_pack",
             source_id="grant-not-a-service-event",
-            credit_delta=100,
+            ai_credit_delta=100,
             quantity=100,
-            unit="credit",
+            unit="ai_credits",
             rate=1,
             rate_unit=None,
             rate_version="ai-credit-ledger-v2",
@@ -7165,7 +7165,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         if item["support_reference"] == "run-portal-ledger-1"
     )
     assert grouped_event["component_count"] == 2
-    assert grouped_event["consumed_credits"] == 5.0
+    assert grouped_event["consumed_ai_credits"] == 5.0
     assert {item["key"] for item in grouped_event["components"]} == {
         "model_processing",
         "request",
@@ -7195,7 +7195,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert all(item["start_at"] < item["end_at"] for item in bucket_data["items"])
     latest_bucket = bucket_data["items"][0]
     assert latest_bucket["event_count"] >= 1
-    assert latest_bucket["consumed_credits"] >= 1
+    assert latest_bucket["consumed_ai_credits"] >= 1
     assert latest_bucket["top_feature_key"]
 
     bucket_detail_response = client.get(
@@ -7217,8 +7217,8 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert recent_bucket_response.status_code == 200
     recent_bucket_data = recent_bucket_response.json()["data"]
-    assert recent_bucket_data["summary"]["consumed_credits"] == bucket_data["summary"][
-        "consumed_credits"
+    assert recent_bucket_data["summary"]["consumed_ai_credits"] == bucket_data["summary"][
+        "consumed_ai_credits"
     ]
     assert all(item["start_at"] < item["end_at"] for item in recent_bucket_data["items"])
 
@@ -7305,7 +7305,7 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         headers=build_internal_headers(idempotency_key="portal-credit-pack-paid-001"),
     )
     assert mark_paid_response.status_code == 200, mark_paid_response.text
-    assert mark_paid_response.json()["data"]["credit_ledger_entry"]["credit_delta"] == 10000.0
+    assert mark_paid_response.json()["data"]["credit_ledger_entry"]["ai_credit_delta"] == 10000.0
     assert mark_paid_response.json()["data"]["credit_ledger_entry"]["category"] == (
         "credit_pack_purchase"
     )
@@ -7325,10 +7325,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     )
     assert refreshed_credit_ledger_response.status_code == 200
     refreshed_ledger = refreshed_credit_ledger_response.json()["data"]
-    assert refreshed_ledger["summary"]["granted_credits"] == 10000.0
-    assert refreshed_ledger["summary"]["net_used_credits"] == 0.0
+    assert refreshed_ledger["summary"]["granted_ai_credits"] == 10000.0
+    assert refreshed_ledger["summary"]["net_used_ai_credits"] == 0.0
     assert (
-        refreshed_ledger["summary"]["category_totals"]["credit_pack_purchase"]["net_credit_delta"]
+        refreshed_ledger["summary"]["category_totals"]["credit_pack_purchase"]["net_ai_credit_delta"]
         == 10000.0
     )
     assert "credit_pack_purchase" in {item["source_type"] for item in refreshed_ledger["items"]}

@@ -217,7 +217,7 @@ export interface PortalAccountEntitlements {
     generated_at?: string;
     period_start_at?: string;
     period_end_at?: string;
-    credit?: {
+    ai_credits?: {
       key?: string;
       used?: number;
       limit?: number;
@@ -236,21 +236,21 @@ export interface PortalAccountEntitlements {
       paid_next_expires_at?: string;
       total_remaining?: number;
     };
-    credit_ledger_summary?: {
-      consumed_credits?: number;
-      granted_credits?: number;
-      adjustment_credits?: number;
-      refund_credits?: number;
-      net_credit_delta?: number;
-      net_used_credits?: number;
+    ai_credit_ledger_summary?: {
+      consumed_ai_credits?: number;
+      granted_ai_credits?: number;
+      adjustment_ai_credits?: number;
+      refund_ai_credits?: number;
+      net_ai_credit_delta?: number;
+      net_used_ai_credits?: number;
       entry_count?: number;
     };
-    credit_policy?: {
+    ai_credit_policy?: {
       rate_version?: string;
       period_policy?: string;
       renewal_policy?: string;
       topup_policy?: string;
-      paid_credit_policy?: string;
+      paid_ai_credit_policy?: string;
     };
     resource_limits?: Array<{
       key?: string;
@@ -267,7 +267,7 @@ export interface PortalAccountEntitlements {
       label?: string;
       quantity?: number;
       unit?: string;
-      credits?: number;
+      ai_credits?: number;
     }>;
   };
   generated_at: string;
@@ -1096,10 +1096,10 @@ export interface PortalCreditLedgerEntry {
   explanation?: string;
   source_id?: string;
   run_id?: string;
-  credit_delta: number;
-  consumed_credits: number;
-  granted_credits?: number;
-  net_credit_delta?: number;
+  ai_credit_delta: number;
+  consumed_ai_credits: number;
+  granted_ai_credits?: number;
+  net_ai_credit_delta?: number;
   quantity: number;
   unit: string;
   rate?: number;
@@ -1184,7 +1184,7 @@ export interface PortalPlanOffer {
   status: string;
   trial_enabled: boolean;
   trial_days: number;
-  trial_credit_limit: number;
+  trial_ai_credit_limit: number;
   trial_requires_approval: boolean;
   valid_from_at?: string;
   valid_until_at?: string;
@@ -1236,7 +1236,7 @@ export interface PortalPlanOfferListPayload {
     tier_id?: string;
     highest_tier_id?: string;
     trial_days?: number;
-    credit_limit?: number;
+    ai_credit_limit?: number;
     trial_started_at?: string;
     trial_ends_at?: string;
   };
@@ -1250,7 +1250,7 @@ export interface PortalPlanTrialPayload {
     status?: string;
     tier_id?: string;
     trial_days?: number;
-    credit_limit?: number;
+    ai_credit_limit?: number;
     trial_started_at?: string;
     trial_ends_at?: string;
     monthly_price_cny?: number;
@@ -1268,7 +1268,7 @@ export interface PortalSubscriptionOrder {
   order_kind: 'purchase' | 'upgrade' | 'renewal' | 'downgrade';
   status: string;
   list_amount: number;
-  credit_amount: number;
+  ai_credit_amount: number;
   payable_amount: number;
   currency: 'CNY';
   effective_at?: string;
@@ -1407,19 +1407,19 @@ export interface PortalCreditLedgerPayload {
     has_more?: boolean;
   };
   summary?: {
-    total_credits?: number;
-    consumed_credits?: number;
-    granted_credits?: number;
-    adjustment_credits?: number;
-    refund_credits?: number;
-    net_credit_delta?: number;
-    net_used_credits?: number;
+    total_ai_credits?: number;
+    consumed_ai_credits?: number;
+    granted_ai_credits?: number;
+    adjustment_ai_credits?: number;
+    refund_ai_credits?: number;
+    net_ai_credit_delta?: number;
+    net_used_ai_credits?: number;
     entry_count?: number;
     category_totals?: Record<
       string,
       {
         label?: string;
-        net_credit_delta?: number;
+        net_ai_credit_delta?: number;
       }
     >;
     breakdown?: Array<{
@@ -1427,7 +1427,7 @@ export interface PortalCreditLedgerPayload {
       label?: string;
       quantity?: number;
       unit?: string;
-      credits?: number;
+      ai_credits?: number;
     }>;
   };
   usage_detail?: {
@@ -1454,7 +1454,7 @@ export interface PortalCreditLedgerPayload {
       unit?: string;
       rate?: number;
       rate_unit?: string;
-      credits?: number;
+      ai_credits?: number;
       capability_group?: string;
     }>;
     recent_items?: PortalCreditLedgerEntry[];
@@ -1477,7 +1477,7 @@ export type PortalCreditTrendWindow = '1h' | '24h' | '7d' | '30d';
 export interface PortalCreditTrendPoint {
   start_at: string;
   end_at: string;
-  credits: number;
+  ai_credits: number;
   entry_count: number;
 }
 
@@ -1489,7 +1489,7 @@ export interface PortalCreditTrendPayload {
   bucket_seconds: number;
   start_at: string;
   end_at: string;
-  total_credits: number;
+  total_ai_credits: number;
   entry_count: number;
   points: PortalCreditTrendPoint[];
 }
@@ -1512,11 +1512,11 @@ export interface PortalCreditEvent {
   feature_label: string;
   feature_detail: string;
   created_at: string;
-  net_credit_delta: number;
-  consumed_credits: number;
+  net_ai_credit_delta: number;
+  consumed_ai_credits: number;
   direction: 'consumed' | 'added';
   component_count: number;
-  components: Array<{ key: string; credits: number }>;
+  components: Array<{ key: string; ai_credits: number }>;
 }
 
 export interface PortalCreditEventsPayload {
@@ -1525,7 +1525,7 @@ export interface PortalCreditEventsPayload {
   period_start_at: string;
   period_end_at: string;
   filters: { window: PortalCreditEventWindow; site_id: string; feature: string };
-  summary: { event_count: number; consumed_credits: number };
+  summary: { event_count: number; consumed_ai_credits: number };
   pagination: { limit: number; offset: number; total: number; has_more: boolean };
   items: PortalCreditEvent[];
 }
@@ -1535,11 +1535,11 @@ export interface PortalCreditEventBucket {
   bucket_id: string;
   start_at: string;
   end_at: string;
-  consumed_credits: number;
+  consumed_ai_credits: number;
   event_count: number;
   site_count: number;
   top_feature_key: string;
-  feature_totals: Array<{ feature_key: string; consumed_credits: number; event_count: number }>;
+  feature_totals: Array<{ feature_key: string; consumed_ai_credits: number; event_count: number }>;
 }
 export interface PortalCreditEventBucketsPayload {
   contract_version: 'portal-credit-event-buckets-v1';
@@ -1550,7 +1550,7 @@ export interface PortalCreditEventBucketsPayload {
   bucket_seconds: number;
   timezone: string;
   filters: { window: PortalCreditEventWindow; site_id: string; feature: string };
-  summary: { bucket_count: number; consumed_credits: number };
+  summary: { bucket_count: number; consumed_ai_credits: number };
   pagination: { limit: number; offset: number; total: number; has_more: boolean };
   items: PortalCreditEventBucket[];
 }
@@ -1903,7 +1903,7 @@ export class PortalClient {
   }
 
   /**
-   * 获取本期积分账本明细
+   * 获取本期 AI 积分账本明细
    * GET /portal/v1/sites/{siteId}/credit-ledger
    */
   async getCreditLedger(
