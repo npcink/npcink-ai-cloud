@@ -122,5 +122,10 @@ assert.match(
   /portalClient\.unbindQqLogin/,
   'account center must support QQ unbinding through the shared client'
 );
+assert.match(
+  accountSource,
+  /await refresh\(\);\s*setStatus\('idle'\);\s*\} catch \(error\) \{\s*setStatus\('error'\)/,
+  'QQ unbind must retain its error tone instead of resetting it in a finally block'
+);
 
 console.log('portal_account_ui_contract: ok');

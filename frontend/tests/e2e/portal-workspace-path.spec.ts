@@ -18,6 +18,20 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
+async function fulfillError(route: Route, errorCode: string) {
+  await route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      status: 'error',
+      error_code: errorCode,
+      message: 'internal backend detail',
+      data: {},
+      meta: { trace_id: 'portal-workspace-error-trace', revision: 'm6' },
+    }),
+  });
+}
+
 function buildPortalSession(selectedSiteId: string) {
   const sites = [
     {
@@ -102,6 +116,8 @@ async function installPortalMocks(
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
     delayInitialEntitlements?: boolean;
+    zeroEntitlements?: boolean;
+    failInitialEntitlements?: boolean;
   } = {}
 ) {
   let selectedSiteId = 'site_attention';
@@ -111,6 +127,7 @@ async function installPortalMocks(
   let accountRequestCount = 0;
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
+  let initialEntitlementsFailed = false;
   let releaseInitialEntitlementsGate: (() => void) | null = null;
   const initialEntitlementsGate = new Promise<void>((resolve) => {
     releaseInitialEntitlementsGate = resolve;
@@ -205,6 +222,11 @@ async function installPortalMocks(
 
     if (pathname === '/account/entitlements') {
       const requestSiteId = selectedSiteId;
+      if (options.failInitialEntitlements && !initialEntitlementsFailed) {
+        initialEntitlementsFailed = true;
+        await fulfillError(route, 'service.entitlements_temporarily_unavailable');
+        return;
+      }
       const shouldDelayThisResponse = Boolean(
         options.delayInitialEntitlements
         && !initialEntitlementsDelayed
@@ -217,7 +239,7 @@ async function installPortalMocks(
       const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
       const packageRemaining = options.delayInitialEntitlements
         ? requestSiteId === 'site_attention' ? 987654 : 4242
-        : 2419;
+        : options.zeroEntitlements ? 0 : 2419;
       const totalRemaining = packageRemaining + paidRemaining;
       await fulfillJson(route, {
         site_id: '',
@@ -294,7 +316,7 @@ async function installPortalMocks(
           period_start_at: '2026-04-01T00:00:00Z',
           period_end_at: '2026-04-30T00:00:00Z',
           generated_at: '2026-04-07T10:00:00Z',
-          credit: {
+          ai_credits: {
             key: 'ai_credits',
             used: 581,
             limit: 581 + totalRemaining,
@@ -308,13 +330,13 @@ async function installPortalMocks(
             paid_next_expires_at: paidRemaining > 0 ? '2027-04-07T10:00:00Z' : '',
             total_remaining: totalRemaining,
           },
-          credit_ledger_summary: {
-            consumed_credits: 612,
-            granted_credits: 0,
-            adjustment_credits: 0,
-            refund_credits: 0,
-            net_credit_delta: -612,
-            net_used_credits: 612,
+          ai_credit_ledger_summary: {
+            consumed_ai_credits: 612,
+            granted_ai_credits: 0,
+            adjustment_ai_credits: 0,
+            refund_ai_credits: 0,
+            net_ai_credit_delta: -612,
+            net_used_ai_credits: 612,
             entry_count: 24,
           },
           resource_limits: [
@@ -350,7 +372,7 @@ async function installPortalMocks(
       const points = Array.from({ length: pointCount }, (_, index) => {
         const pointEnd = endAt - (pointCount - index - 1) * bucketSeconds * 1000;
         const pointStart = pointEnd - bucketSeconds * 1000;
-        const credits = options.emptyCreditTrend
+        const aiCredits = options.emptyCreditTrend
           ? 0
           : index === pointCount - 1
             ? 18
@@ -360,8 +382,8 @@ async function installPortalMocks(
         return {
           start_at: new Date(pointStart).toISOString(),
           end_at: new Date(pointEnd).toISOString(),
-          credits,
-          entry_count: credits > 0 ? 1 : 0,
+          ai_credits: aiCredits,
+          entry_count: aiCredits > 0 ? 1 : 0,
         };
       });
       await fulfillJson(route, {
@@ -373,7 +395,7 @@ async function installPortalMocks(
         bucket_seconds: bucketSeconds,
         start_at: points[0]?.start_at || '',
         end_at: points.at(-1)?.end_at || '',
-        total_credits: points.reduce((total, point) => total + point.credits, 0),
+        total_ai_credits: points.reduce((total, point) => total + point.ai_credits, 0),
         entry_count: points.reduce((total, point) => total + point.entry_count, 0),
         points,
       });
@@ -395,10 +417,10 @@ async function installPortalMocks(
           has_more: false,
         },
         summary: {
-          total_credits: 3000,
-          consumed_credits: 581,
-          granted_credits: 3000,
-          net_used_credits: 581,
+          total_ai_credits: 3000,
+          consumed_ai_credits: 581,
+          granted_ai_credits: 3000,
+          net_used_ai_credits: 581,
           entry_count: 1,
         },
         items: [
@@ -409,9 +431,9 @@ async function installPortalMocks(
             category: 'hosted_runtime',
             category_label: 'AI usage',
             explanation: 'Runtime execution credits',
-            credit_delta: -18,
-            consumed_credits: 18,
-            net_credit_delta: -18,
+            ai_credit_delta: -18,
+            consumed_ai_credits: 18,
+            net_ai_credit_delta: -18,
             quantity: 21,
             unit: 'run',
             rate: 1,
@@ -436,7 +458,7 @@ async function installPortalMocks(
           site_id: url.searchParams.get('site_id') || '',
           feature: url.searchParams.get('feature') || '',
         },
-        summary: { event_count: 1, consumed_credits: 18 },
+        summary: { event_count: 1, consumed_ai_credits: 18 },
         pagination: { limit: 20, offset: 0, total: 1, has_more: false },
         items: [{
           event_id: 'run:run_portal_001',
@@ -446,13 +468,13 @@ async function installPortalMocks(
           feature_label: 'Content writing',
           feature_detail: 'The site used AI to draft, revise, or organize content.',
           created_at: '2026-04-07T10:00:00Z',
-          net_credit_delta: -18,
-          consumed_credits: 18,
+          net_ai_credit_delta: -18,
+          consumed_ai_credits: 18,
           direction: 'consumed',
           component_count: 2,
           components: [
-            { key: 'request', credits: 3 },
-            { key: 'model_processing', credits: 15 },
+            { key: 'request', ai_credits: 3 },
+            { key: 'model_processing', ai_credits: 15 },
           ],
         }],
       });
@@ -474,17 +496,17 @@ async function installPortalMocks(
           site_id: url.searchParams.get('site_id') || '',
           feature: url.searchParams.get('feature') || '',
         },
-        summary: { bucket_count: 1, consumed_credits: 18 },
+        summary: { bucket_count: 1, consumed_ai_credits: 18 },
         pagination: { limit: 20, offset: 0, total: 1, has_more: false },
         items: [{
           bucket_id: '30m:986594',
           start_at: '2026-04-07T09:30:00Z',
           end_at: '2026-04-07T10:00:00Z',
-          consumed_credits: 18,
+          consumed_ai_credits: 18,
           event_count: 1,
           site_count: 1,
           top_feature_key: 'content_generation',
-          feature_totals: [{ feature_key: 'content_generation', consumed_credits: 18, event_count: 1 }],
+          feature_totals: [{ feature_key: 'content_generation', consumed_ai_credits: 18, event_count: 1 }],
         }],
       });
       return;
@@ -1379,10 +1401,10 @@ async function installPortalMocks(
           has_more: false,
         },
         summary: {
-          total_credits: 120,
-          consumed_credits: 18,
-          granted_credits: 120,
-          net_used_credits: 18,
+          total_ai_credits: 120,
+          consumed_ai_credits: 18,
+          granted_ai_credits: 120,
+          net_used_ai_credits: 18,
           entry_count: 1,
         },
         items: [
@@ -1393,9 +1415,9 @@ async function installPortalMocks(
             category: 'hosted_runtime',
             category_label: 'Hosted runtime',
             explanation: 'Runtime execution credits',
-            credit_delta: -18,
-            consumed_credits: 18,
-            net_credit_delta: -18,
+            ai_credit_delta: -18,
+            consumed_ai_credits: 18,
+            net_ai_credit_delta: -18,
             quantity: 21,
             unit: 'run',
             rate: 1,
@@ -1530,7 +1552,7 @@ test('portal workspace interaction path: account overview to site detail and ser
   const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
   await expect(trendPanel.getByRole('tab', { name: /24 hours|最近 24 小时/i })).toHaveAttribute('aria-selected', 'true');
   await expect(trendPanel.locator('[data-trend-window="24h"]')).toHaveAttribute('data-trend-points', '24');
-  await expect(trendPanel.getByText(/24 points used|共使用 24 点/i)).toBeVisible();
+  await expect(trendPanel.getByText(/24 AI credits used|共使用 24 AI 积分/i)).toBeVisible();
   await testInfo.attach('p4-e03-portal-usage', {
     body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
@@ -1543,9 +1565,9 @@ test('portal workspace interaction path: account overview to site detail and ser
     await trendPanel.getByRole('tab', { name: range.name }).click();
     await expect(trendPanel.locator(`[data-trend-window="${range.value}"]`)).toHaveAttribute('data-trend-points', range.points);
   }
-  await usageViewTabs.getByRole('tab', { name: /Point records|点数记录/i }).click();
+  await usageViewTabs.getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page).toHaveURL(/\/portal\/usage\?view=records$/);
-  await expect(page.getByRole('heading', { level: 2, name: /^Point records$|^点数记录$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
   await expect(page.locator('main').getByRole('combobox')).toHaveCount(3);
   await expect(page.getByRole('combobox', { name: /Summary interval|汇总粒度/i })).toHaveValue('30m');
   const creditBucketRow = page.getByRole('button', { name: /18.*Content writing|18.*内容生成/i }).first();
@@ -1556,12 +1578,12 @@ test('portal workspace interaction path: account overview to site detail and ser
   const creditEventRow = creditBucketDialog.getByRole('button', { name: /Content writing|内容生成/i });
   await creditEventRow.click();
   const creditEventDialog = page.getByRole('dialog', { name: /Content writing|内容生成/i });
-  await expect(creditEventDialog.getByText(/Point breakdown|点数构成/i)).toBeVisible();
+  await expect(creditEventDialog.getByText(/AI credit breakdown|AI 积分构成/i)).toBeVisible();
   await creditEventDialog.getByText(/Support information|支持信息/i).click();
   await expect(creditEventDialog.getByText(/run_portal_001/i)).toBeVisible();
   await creditEventDialog.getByRole('button', { name: /Close|关闭/i }).click();
   await page.reload();
-  const reloadedRecordsTab = page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /Point records|点数记录/i });
+  const reloadedRecordsTab = page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i });
   await expect(reloadedRecordsTab).toHaveAttribute('aria-selected', 'true');
   await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /^Trend$|^趋势$/i }).click();
   await expect(page).toHaveURL(/\/portal\/usage$/);
@@ -1594,24 +1616,24 @@ test('portal workspace interaction path: account overview to site detail and ser
   await expect(page.getByRole('link', { name: /Continue payment|继续支付/i })).toBeVisible();
   await expect(page.getByText(/Complete payment before|前完成支付/i).first()).toBeVisible();
   const paymentPopupPromise = page.waitForEvent('popup');
-  await page.getByRole('button', { name: /Buy credits|购买积分/i }).click();
-  const creditDialog = page.getByRole('dialog', { name: /Credit packs|积分包/i });
+  await page.getByRole('button', { name: /Buy credits|购买 AI 积分/i }).click();
+  const creditDialog = page.getByRole('dialog', { name: /AI credit packs|AI 积分包/i });
   await expect(creditDialog.getByText(/Valid for 180 days|支付后 180 天内有效/i).first()).toBeVisible();
-  await creditDialog.getByRole('radio', { name: /Small credit pack|小积分包/i }).click();
-  await creditDialog.getByRole('button', { name: /Buy credits|购买积分/i }).click();
+  await creditDialog.getByRole('radio', { name: /Small AI credit pack|小 AI 积分包/i }).click();
+  await creditDialog.getByRole('button', { name: /Buy credits|购买 AI 积分/i }).click();
   const paymentPopup = await paymentPopupPromise;
   await paymentPopup.waitForURL('https://pay.example.com/pay_credit_pack_new_tab');
   await expect(page.getByText(/Alipay opened in a new tab|支付宝已在新标签页打开/i)).toBeVisible();
   await paymentPopup.close();
   const creditPackOrder = page.locator('[data-payment-order-id="pay_pending_visible"]');
-  await expect(creditPackOrder.getByText(/Small credit pack|小积分包|小積分包/i)).toBeVisible();
+  await expect(creditPackOrder.getByText(/Small AI credit pack|小 AI 积分包/i)).toBeVisible();
   await expect(creditPackOrder.getByText(/Waiting for payment confirmation|等待支付确认/i)).toHaveCount(1);
   await creditPackOrder.getByRole('button', { name: /Cancel|取消订单/i }).click();
   await creditPackOrder.getByRole('button', { name: /Confirm cancel|确认取消/i }).click();
   await expect(page.locator('[data-payment-order-id="pay_pending_visible"]')).toHaveCount(0);
   await page.getByRole('tab', { name: /Closed|已关闭/i }).click();
   await expect(page.locator('[data-payment-order-id="pay_pending_visible"]')).toContainText(/Canceled|已取消/i);
-  await expect(page.getByText(/Medium credit pack|中积分包|中積分包/i)).toBeVisible();
+  await expect(page.getByText(/Medium AI credit pack|中 AI 积分包/i)).toBeVisible();
 });
 
 test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
@@ -1698,12 +1720,12 @@ test('portal support owns customer feedback and status expectations', async ({ p
   await page.keyboard.press('Escape');
 });
 
-test('portal point trend shows an explicit empty state instead of a blank chart', async ({ page }) => {
+test('portal AI credit trend shows an explicit empty state instead of a blank chart', async ({ page }) => {
   await installPortalMocks(page, { emptyCreditTrend: true });
 
   await page.goto('/portal/usage');
   const trendPanel = page.locator('[data-portal-usage="primary-trend"]');
-  await expect(trendPanel.getByText(/No point usage in this range|该时间范围内暂无点数使用/i)).toBeVisible();
+  await expect(trendPanel.getByText(/No AI credit usage in this range|该时间范围内暂无AI 积分使用/i)).toBeVisible();
   await expect(trendPanel.getByRole('img')).toHaveCount(0);
 });
 
@@ -1742,7 +1764,26 @@ test('late account entitlements cannot overwrite a newly selected site context',
   await expect(page.getByText(/^4,242$|^4,242 点$/i).first()).toBeVisible();
 });
 
-test('portal usage and workspace stay usable on mobile viewport', async ({ page }) => {
+test('portal home renders a real zero entitlement balance', async ({ page }) => {
+  await installPortalMocks(page, { zeroEntitlements: true });
+  await page.goto('/portal');
+
+  const remainingMetric = page.getByText(/^Remaining$|^剩余$/i).first().locator('../..');
+  await expect(remainingMetric.getByText(/^0$/)).toBeVisible();
+  await expect(remainingMetric.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
+});
+
+test('portal home exposes a safe retry when entitlements fail', async ({ page }) => {
+  await installPortalMocks(page, { failInitialEntitlements: true });
+  await page.goto('/portal');
+  const retryButton = page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i });
+  await expect(retryButton).toBeVisible();
+  await expect(page.getByText(/internal backend detail/i)).toHaveCount(0);
+  await retryButton.click();
+  await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+});
+
+test('portal purchase and support tasks stay usable on a 390px viewport', async ({ page }) => {
   await installPortalMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -1752,6 +1793,21 @@ test('portal usage and workspace stay usable on mobile viewport', async ({ page 
 
   await page.goto('/portal/usage');
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
-  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /Point records|点数记录/i }).click();
-  await expect(page.getByRole('heading', { level: 2, name: /^Point records$|^点数记录$/i })).toBeVisible();
+  await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
+  await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
+
+  await page.goto('/portal/billing');
+  await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
+  const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
+  await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /Tickets|工单/i })).toBeVisible();
+  await expect(packageDialog).toBeInViewport();
+  await page.keyboard.press('Escape');
+
+  await page.goto('/portal/support');
+  await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
+  await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeInViewport();
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

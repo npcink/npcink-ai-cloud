@@ -66,11 +66,14 @@
 - [x] API Keys member seam
   - `/api/portal/sites/[siteId]/keys`
   - Portal key management remains scoped under site detail surfaces.
-- [x] Notifications preview
-  - `/api/portal/sites/[siteId]/notifications`
-  - `/portal/notifications`
-  - `/api/portal/sites/[siteId]/webhooks`
-  - `/api/portal/sites/[siteId]/integrations`
+- [x] Support and recovery
+  - `/portal/support`
+  - `/portal/support/[requestId]`
+  - site detail and recent activity use the authenticated ticket path for
+    customer follow-up
+- [ ] Notifications and third-party integrations
+  - customer pages are intentionally not exposed in the current bounded Portal
+  - historical backend seams do not count as a shipped customer experience
 
 ### ✅ Operator/admin surfaces
 
@@ -158,12 +161,13 @@
 #### P1-2: 错误处理优化
 - [x] 统一错误提示组件
 - [x] 添加错误边界 (Error Boundary)
-- [ ] 优化重试机制
+- [x] 首页套餐用量失败与首次绑定账户加载支持显式重试
+- [ ] 继续按真实失败样本补充页面级恢复动作，不新增全局自动重试
 
 #### P1-3: 响应式优化
-- [ ] 优化移动端导航体验
-- [ ] 添加移动端专用组件
-- [ ] 优化触摸交互
+- [x] Portal 响应式导航与 44px 主要触控目标
+- [x] 390px 登录、注册、WordPress 绑定、套餐、用量与工单任务覆盖
+- [ ] 根据真实设备反馈继续修复键盘、支付 App 返回和浏览器差异
 
 #### P1-4: 性能优化
 - [ ] 实现数据缓存
@@ -181,17 +185,24 @@
 - [x] 创建折线图组件
 - [x] 创建饼图组件
 - [x] 创建统计卡片组件
-- [ ] 在 Usage 页面集成图表
-- [ ] 按天使用量趋势图
-- [ ] 按模型使用量分布图
+- [x] Usage 页面集成 AI 额度趋势
+- [x] 支持 1h / 24h / 7d / 30d 时间窗口
+- [x] 明确空趋势状态和可下钻的额度记录
+- [ ] 按模型使用量分布图（只有出现明确客户任务时再做）
 - [ ] 导出使用量报告
 
-#### P2-4: 集成能力（后端保留，前端页面已下线）
-- [x] Webhooks 配置 API (`/api/portal/sites/[siteId]/webhooks`)
-- [x] 集成配置 API (`/api/portal/sites/[siteId]/integrations`)
-- [x] Webhook 管理（创建、编辑、删除、启用/禁用）
-- [x] 第三方集成卡片展示（Slack、Discord、Datadog、Grafana、Zapier）
-- [x] API 文档链接区域
+#### P2-4: 集成能力（当前不作为用户体验交付）
+- [ ] 不恢复已下线的 Webhook、通知或第三方集成页面，除非有新的边界评审和真实用户任务证据
+
+### ⛔ 外部验收阻塞项
+
+- [ ] 3–5 位非开发用户完成
+  `安装/启用 Addon → 注册/登录 → 绑定 → Free 激活 → WordPress AI 首次成功`
+- [ ] 记录无需提示完成率、完成时间、卡点、错误恢复率和用户原话
+- [ ] 真实商户或批准沙箱完成支付、延迟回调、失败、取消、退款申请和工单接管
+- [ ] 运营主体、公开联系渠道、退款处理周期、保留期限及第三方清单完成审批
+
+Mock E2E、HTTP `200`、M4 候选或绿色 CI 均不能替代上述真实用户和外部验收。
 
 ## 明确不在当前 TODO 中推进的事项
 

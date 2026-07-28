@@ -3,6 +3,15 @@ import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
 
 const source = readFileSync(fromFrontendRoot('src/components/ui/Modal.tsx'), 'utf8');
+const dialogHookSource = readFileSync(
+  fromFrontendRoot('src/hooks/useDialogFocusManagement.ts'),
+  'utf8'
+);
+const siteDrawerSource = readFileSync(
+  fromFrontendRoot('src/components/portal/PortalSiteInspectorDrawer.tsx'),
+  'utf8'
+);
+const usageSource = readFileSync(fromFrontendRoot('src/app/portal/usage/page.tsx'), 'utf8');
 
 assert.match(source, /previousActiveElementRef/, 'modal must remember the trigger that held focus');
 assert.match(
@@ -17,5 +26,9 @@ assert.match(source, /aria-modal="true"/, 'modal must remain exposed as an ARIA 
 assert.match(source, /tabIndex=\{-1\}/, 'modal container must be programmatically focusable');
 assert.match(source, /const titleId = useId\(\)/, 'modal titles must use instance-safe IDs');
 assert.match(source, /previousOverflow[\s\S]*document\.body\.style\.overflow = previousOverflow/, 'modal must restore the prior scroll state');
+assert.match(dialogHookSource, /previousFocus\?\.focus\(\)/, 'custom dialogs must restore trigger focus');
+assert.match(dialogHookSource, /event\.key !== 'Tab'/, 'custom dialogs must contain Tab focus');
+assert.match(siteDrawerSource, /useDialogFocusManagement/, 'site inspector must use shared focus management');
+assert.match(usageSource, /creditBucketDrawerRef[\s\S]*creditEventDrawerRef/, 'usage detail drawers must use shared focus management');
 
 console.log('modal_keyboard_accessibility_contract: ok');

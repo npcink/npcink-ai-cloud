@@ -34,7 +34,8 @@ afterEach(() => {
 
 describe('ApiClient', () => {
   it('returns a validated success envelope and forwards cookie, headers, and signal', async () => {
-    const signal = new AbortController().signal;
+    const controller = new AbortController();
+    const signal = controller.signal;
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse(successEnvelope({ account_id: 'acct_1' }))
     );
@@ -57,7 +58,10 @@ describe('ApiClient', () => {
     expect(url).toBe('/api/portal/session');
     expect(init.credentials).toBe('include');
     expect(init.cache).toBe('no-store');
-    expect(init.signal).toBe(signal);
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal).not.toBe(signal);
+    controller.abort();
+    expect(init.signal?.aborted).toBe(true);
     expect(headers.get('x-client')).toBe('portal');
     expect(headers.get('x-request')).toBe('session');
   });

@@ -44,6 +44,16 @@ const paymentOrdersHookSource = readFileSync(paymentOrdersHookPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const entitlementComponentPath = resolve(root, 'src/components/portal/PortalEntitlementUsage.tsx');
 const entitlementComponentSource = readFileSync(entitlementComponentPath, 'utf8');
+assert.match(
+  packagePanelSource,
+  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
+  'Portal package changes must expose terms, privacy, and billing support before payment'
+);
+assert.match(
+  creditPackDialogSource,
+  /portal\.billing\.purchase_readiness_notice[\s\S]*href="\/terms"[\s\S]*href="\/privacy"[\s\S]*\/portal\/support\?new=1&topic=billing/,
+  'Portal credit purchases must expose terms, privacy, and billing support before payment'
+);
 const billingMetricStart = billingPageSource.indexOf('<PortalMetricStrip');
 const billingMetricStrip = billingPageSource.slice(
   billingMetricStart,

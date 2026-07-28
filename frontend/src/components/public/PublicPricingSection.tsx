@@ -282,7 +282,7 @@ export function PublicPricingSection() {
       try {
         const response = await fetch('/open/plan-catalog', {
           headers: { Accept: 'application/json' },
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]),
         });
         if (!response.ok) {
           throw new Error('public plan catalog request failed');

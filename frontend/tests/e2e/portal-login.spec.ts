@@ -290,14 +290,13 @@ test('addon binding survives login and returns the complete payload to WordPress
 
   await expect(page).toHaveURL(`${BASE_URL}${bindingPath}`);
   await expect(page.getByRole('heading', { name: /Finish WordPress connection|完成站点绑定/i }).first()).toBeVisible();
-  const accountSelect = page.getByLabel(/Customer account|客户账号/i);
+  const accountChoice = page.getByRole('radio', { name: /Portal Login E2E/i });
   const submitButton = page.getByRole('button', { name: /Finish connection|完成绑定/i });
-  await expect(accountSelect).toHaveValue('');
-  await expect(accountSelect.locator('option')).toHaveCount(2);
+  await expect(accountChoice).not.toBeChecked();
   await expect(submitButton).toBeDisabled();
   expect(calls.addonConnectionPayload()).toBeNull();
 
-  await accountSelect.selectOption('acct_portal_login_e2e');
+  await accountChoice.check();
   await expect(submitButton).toBeEnabled();
   await submitButton.click();
   await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-state-001/);
@@ -308,6 +307,34 @@ test('addon binding survives login and returns the complete payload to WordPress
     return_url: returnUrl,
     state: 'addon-state-001',
   });
+});
+
+test('mobile email login preserves the WordPress binding and explicit ownership confirmation', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bindingPath = `/portal?${new URLSearchParams({
+    connect: 'wordpress-addon',
+    site_url: 'https://mobile.example.com',
+    site_name: 'Mobile Site',
+    return_url: 'https://mobile.example.com/wp-admin/admin-post.php?action=npcink_cloud_addon_complete_auth',
+    state: 'addon-mobile-001',
+  }).toString()}`;
+
+  await page.goto(bindingPath);
+  await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+  await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
+  await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
+
+  const connectionDialog = page.getByRole('dialog', { name: /Finish WordPress connection|完成站点绑定/i });
+  await expect(connectionDialog).toBeInViewport();
+  const accountChoice = connectionDialog.getByRole('radio', { name: /Portal Login E2E/i });
+  await expect(accountChoice).not.toBeChecked();
+  await accountChoice.check();
+  await connectionDialog.getByRole('button', { name: /Finish connection|完成绑定/i }).click();
+
+  await expect(page).toHaveURL(/\/wordpress-addon-return\?code=exchange-code&state=addon-mobile-001/);
+  expect(calls.addonConnectionPayload()?.account_id).toBe('acct_portal_login_e2e');
 });
 
 test('public authentication entry keeps current desktop and mobile visual contracts', async ({ page }) => {
