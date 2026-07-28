@@ -6,7 +6,6 @@ import { frontendRoot } from './_paths.mjs';
 const root = frontendRoot;
 const pageSource = readFileSync(resolve(root, 'src/app/admin/ai-resources/page.tsx'), 'utf8');
 const directorySource = readFileSync(resolve(root, 'src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
-const summarySource = readFileSync(resolve(root, 'src/components/admin/SupplierSummaryCards.tsx'), 'utf8');
 const toolbarSource = readFileSync(resolve(root, 'src/components/admin/SupplierToolbar.tsx'), 'utf8');
 const adminLayoutSource = readFileSync(resolve(root, 'src/app/admin/layout.tsx'), 'utf8');
 const globalStyleSource = readFileSync(resolve(root, 'src/app/globals.css'), 'utf8');
@@ -14,9 +13,9 @@ const dialogSource = readFileSync(resolve(root, 'src/components/admin/AdminWorkb
 const credentialSource = readFileSync(resolve(root, 'src/components/admin/AdminCredentialField.tsx'), 'utf8');
 
 assert.match(
-  summarySource,
-  /data-ui="supplier-summary-strip"[\s\S]*grid-cols-2[\s\S]*divide-x/,
-  'Provider readiness must use one compact summary strip at every viewport'
+  pageSource,
+  /data-ui="supplier-summary-strip"[\s\S]*BackofficeSummaryStrip[\s\S]*density="compact"/,
+  'Provider readiness must remain in the compact operational header'
 );
 
 assert.match(
@@ -61,14 +60,20 @@ assert.match(
 
 assert.match(
   toolbarSource,
-  /field_search_connections[\s\S]*status_filter_label[\s\S]*action_add_model_supplier/,
-  'The toolbar must expose search, status filtering, and the bounded add action'
+  /field_search_connections[\s\S]*status_filter_label/,
+  'The directory toolbar must expose search and status filtering'
 );
 
 assert.doesNotMatch(
   toolbarSource,
-  /supplierTypeFilter|action_add_capability_supplier/,
-  'The model supplier toolbar must not duplicate capability-service controls'
+  /supplierTypeFilter|action_add_capability_supplier|action_add_model_supplier|onAddModelSupplier/,
+  'The directory toolbar must not duplicate supplier creation or capability-service controls'
+);
+
+assert.match(
+  pageSource,
+  /openNewProviderConnection[\s\S]*action_add_model_supplier[\s\S]*actionPlacement="header"/,
+  'Adding a model supplier must remain the sole header primary action'
 );
 
 assert.match(
