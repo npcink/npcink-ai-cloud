@@ -34,9 +34,9 @@ export const PUBLIC_HEADER_NAV_ITEMS = [
     labels: { en: 'Plans', 'zh-CN': '套餐' },
   },
   {
-    id: 'status',
-    href: '/status',
-    labels: { en: 'Service status', 'zh-CN': '服务状态' },
+    id: 'help',
+    href: '/help',
+    labels: { en: 'Help', 'zh-CN': '帮助' },
   },
 ] as const satisfies readonly PublicNavigationItem[];
 
@@ -52,9 +52,9 @@ export const PUBLIC_FOOTER_NAV_ITEMS = [
     labels: { en: 'Terms', 'zh-CN': '服务条款' },
   },
   {
-    id: 'help',
-    href: '/help',
-    labels: { en: 'Help', 'zh-CN': '帮助中心' },
+    id: 'status',
+    href: '/status',
+    labels: { en: 'Status', 'zh-CN': '服务状态' },
   },
 ] as const satisfies readonly PublicNavigationItem[];
 

@@ -50,10 +50,10 @@ assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the
 assert.match(publicStatus, /href="\/status"/, 'home status must link to the full status page');
 assert.match(publicStatus, /aria-busy=/, 'home status must expose its checking state without changing layout');
 assert.match(publicNavigation, /href: '\/status'/, 'public navigation must link to the full status page');
-assert.match(publicHeaderNavigation, /href: '\/status'/, 'header navigation must retain the operational status link');
-assert.doesNotMatch(publicHeaderNavigation, /href: '\/help'/, 'header navigation must leave secondary help in the footer');
-assert.match(publicFooterNavigation, /href: '\/help'/, 'footer navigation must retain the help link');
-assert.doesNotMatch(publicFooterNavigation, /href: '\/status'/, 'footer navigation must not duplicate the header status link');
+assert.match(publicHeaderNavigation, /href: '\/help'/, 'header navigation must retain the frequently used help link');
+assert.doesNotMatch(publicHeaderNavigation, /href: '\/status'/, 'header navigation must leave secondary status in the footer');
+assert.match(publicFooterNavigation, /href: '\/status'/, 'footer navigation must retain the operational status link');
+assert.doesNotMatch(publicFooterNavigation, /href: '\/help'/, 'footer navigation must not duplicate the header help link');
 assert.match(help, /<details key=\{item\.question\}/, 'help FAQs must use native disclosure semantics');
 assert.match(help, /<summary[\s\S]*item\.question/, 'each FAQ question must be the full disclosure trigger');
 assert.doesNotMatch(help, /<details[^>]* open/, 'help FAQs must be collapsed by default');
