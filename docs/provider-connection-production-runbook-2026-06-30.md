@@ -53,6 +53,7 @@ Minimum field mapping:
 | --- | --- | --- | --- | --- | --- |
 | Generic web search | `search_tavily` | `tavily` | `web_search_provider` | `https://api.tavily.com` | `web-search.managed` |
 | Chinese/general web search | `search_bocha` | `bocha` | `web_search_provider` | `https://api.bochaai.com/v1` | `web-search.managed` |
+| Doubao Search Custom | `search_doubao_search` | `doubao_search` | `web_search_provider` | `https://open.feedcoopapi.com` | `web-search.managed` |
 | Actor-backed web search | `search_apify` | `apify` | `web_search_provider` | `https://api.apify.com/v2` | `web-search.managed` |
 | Zhihu search | `search_zhihu` | `zhihu` | `web_search_provider` | `https://developer.zhihu.com` | `web-search.managed` |
 | URL reader enhancement | `search_jina_reader` | `jina_reader` | `web_search_provider` | `https://r.jina.ai` | `web-search.reader` |
@@ -64,7 +65,7 @@ Minimum field mapping:
 
 Use at least one configured provider for each required capability. For search,
 the supported primary providers are `search_tavily`, `search_bocha`,
-`search_apify`, and `search_zhihu`; they all project to `web_search`, while
+`search_doubao_search`, `search_apify`, and `search_zhihu`; they all project to `web_search`, while
 provider-specific requests can still select the matching provider. `search_jina_reader`
 is optional URL reader enhancement and should not be counted as the primary
 search provider.
@@ -91,6 +92,17 @@ Bocha:
   "provider_mode": "auto",
   "timeout_seconds": 15,
   "cost_per_query": 0
+}
+```
+
+Doubao Search Custom:
+
+```json
+{
+  "provider_mode": "auto",
+  "search_path": "/search_api/web_search",
+  "timeout_seconds": 15,
+  "cost_per_query": 0.02
 }
 ```
 
