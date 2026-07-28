@@ -2,12 +2,14 @@
 
 import { createContext, createElement, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { portalClient, type PortalSession, type Site } from '@/lib/portal-client';
+import { ApiError } from '@/lib/errors';
 
 export interface SessionState {
   session: PortalSession | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   error: Error | null;
+  sessionInvalid: boolean;
 }
 
 export interface UseSessionReturn extends SessionState {
@@ -30,12 +32,19 @@ function useSessionController(): UseSessionReturn {
     isLoading: true,
     isAuthenticated: false,
     error: null,
+    sessionInvalid: false,
   });
 
   /**
    * 加载 Session
    */
   const loadSession = useCallback(async () => {
+    setState((previous) => ({
+      ...previous,
+      isLoading: true,
+      error: null,
+      sessionInvalid: false,
+    }));
     try {
       const response = await portalClient.getSession();
       let nextSession = response.data;
@@ -55,13 +64,21 @@ function useSessionController(): UseSessionReturn {
         isLoading: false,
         isAuthenticated: true,
         error: null,
+        sessionInvalid: false,
       });
     } catch (error) {
+      const sessionInvalid = error instanceof ApiError && (
+        error.statusCode === 401
+        || error.errorCode === 'auth.portal_session_required'
+        || error.errorCode === 'auth.portal_session_expired'
+        || error.errorCode === 'auth.portal_token_required'
+      );
       setState({
         session: null,
         isLoading: false,
         isAuthenticated: false,
         error: error instanceof Error ? error : new Error('Failed to load session'),
+        sessionInvalid,
       });
     }
   }, []);
@@ -110,6 +127,7 @@ function useSessionController(): UseSessionReturn {
       isLoading: false,
       isAuthenticated: false,
       error: null,
+      sessionInvalid: false,
     });
   }, []);
 

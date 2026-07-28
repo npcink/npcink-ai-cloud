@@ -9,6 +9,7 @@ import {
   type PortalPaymentOrderStatusGroup,
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { ApiError } from '@/lib/errors';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
@@ -28,6 +29,7 @@ export function usePortalPaymentOrders({
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState('');
   const [cancelPendingOrderId, setCancelPendingOrderId] = useState<string | null>(null);
   const [cancelConfirmOrderId, setCancelConfirmOrderId] = useState<string | null>(null);
   const tabInitialized = useRef(false);
@@ -47,6 +49,7 @@ export function usePortalPaymentOrders({
       const requestVersion = ++loadRequestVersionRef.current;
       setIsLoading(true);
       setError(null);
+      setErrorCode('');
       try {
         const response = await portalClient.listAccountPaymentOrders({
           statusGroup: nextStatusGroup,
@@ -72,6 +75,7 @@ export function usePortalPaymentOrders({
           || requestContextSiteId !== contextSiteIdRef.current
         ) return;
         setError(formatPortalErrorMessage(loadError, t, t('error.failed_load')));
+        setErrorCode(loadError instanceof ApiError ? loadError.errorCode : '');
       } finally {
         if (
           requestVersion === loadRequestVersionRef.current
@@ -92,6 +96,7 @@ export function usePortalPaymentOrders({
     setOffset(0);
     setIsLoading(Boolean(isAuthenticated && normalizedContextSiteId));
     setError(null);
+    setErrorCode('');
     setCancelPendingOrderId(null);
     setCancelConfirmOrderId(null);
   }, [isAuthenticated, normalizedContextSiteId]);
@@ -122,6 +127,7 @@ export function usePortalPaymentOrders({
     setCancelPendingOrderId(order.order_id);
     setCancelConfirmOrderId(null);
     setError(null);
+    setErrorCode('');
     try {
       await portalClient.cancelAccountPaymentOrder(order.order_id);
       if (
@@ -135,6 +141,7 @@ export function usePortalPaymentOrders({
         || requestContextSiteId !== contextSiteIdRef.current
       ) return;
       setError(formatPortalErrorMessage(cancelError, t, t('error.failed_save')));
+      setErrorCode(cancelError instanceof ApiError ? cancelError.errorCode : '');
     } finally {
       if (
         requestVersion === cancelRequestVersionRef.current
@@ -149,6 +156,7 @@ export function usePortalPaymentOrders({
     offset,
     isLoading,
     error,
+    errorCode,
     cancelPendingOrderId,
     cancelConfirmOrderId,
     load,

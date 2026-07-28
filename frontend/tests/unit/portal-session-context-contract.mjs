@@ -202,8 +202,6 @@ assert.doesNotMatch(
 for (const [name, source] of [
   ['usage', usageSource],
   ['audit', auditSource],
-  ['support list', supportListSource],
-  ['support detail', supportDetailSource],
 ]) {
   assert.match(source, /contextSiteId/, `${name} must derive an explicit context site id`);
   assert.match(
@@ -216,6 +214,27 @@ for (const [name, source] of [
 }
 
 assert.match(
+  supportListSource,
+  /if \(!isAuthenticated\) return;[\s\S]*portalClient\.listSupportRequests/,
+  'the support list must allow a signed-in account to load tickets without a selected site'
+);
+assert.doesNotMatch(
+  supportListSource,
+  /if \(!contextSiteId \|\| !selectedContextSite\)[\s\S]*PortalEmptyState/,
+  'the support workspace must not dead-end users who have an account but no connected site'
+);
+assert.match(
+  supportDetailSource,
+  /if \(!isAuthenticated \|\| !capturedRequestId\) return;[\s\S]*portalClient\.getSupportRequest/,
+  'account-level ticket details must load without requiring a selected site'
+);
+assert.doesNotMatch(
+  supportDetailSource,
+  /if \(!contextSiteId \|\| !session\.selected_context\)[\s\S]*PortalEmptyState/,
+  'account-level ticket details must not dead-end before messages and attachments'
+);
+
+assert.match(
   homeSource,
   /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*useLayoutEffect\([\s\S]*accountEntitlementsRequestVersionRef[\s\S]*setAccountEntitlements\(null\)[\s\S]*if \(!isAuthenticated \|\| !contextSiteId\) return/,
   'Portal home account projection must synchronously clear, invalidate stale responses, and fail closed without selected context'
@@ -224,6 +243,21 @@ assert.match(
   billingSource,
   /const contextSiteId = session\?\.selected_context\?\.site\.site_id \|\| ''[\s\S]*contextSiteId,[\s\S]*siteSelectionRequired = !contextSiteId/,
   'billing must pass selected context to its account hooks and expose a missing-context state'
+);
+assert.match(
+  billingSource,
+  /errorCode === 'portal\.site_selection_required'[\s\S]*paymentOrderErrorCode === 'portal\.site_selection_required'/,
+  'billing recovery must branch on structured error codes instead of rendered copy'
+);
+assert.doesNotMatch(
+  billingSource,
+  /String\(message \|\| ''\)\.includes\('portal\.site_selection_required'\)/,
+  'billing must not parse a localized error message to recover site context'
+);
+assert.match(
+  billingSource,
+  /connect_before_upgrade_desc[\s\S]*\/portal\/billing\?plan=\$\{requestedUpgradePlan\}&action=upgrade/,
+  'a no-site paid-plan journey must preserve its upgrade intent while the addon is connected'
 );
 for (const [name, source] of [
   ['commercial catalog', commercialCatalogSource],

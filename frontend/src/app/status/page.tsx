@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PublicSiteShell } from '@/components/public/PublicSiteShell';
 import { useLocale } from '@/contexts/LocaleContext';
 
@@ -12,22 +12,28 @@ export default function StatusPage() {
   const zh = locale === 'zh-CN';
   const [state, setState] = useState<HealthState>('checking');
   const [checkedAt, setCheckedAt] = useState('');
+  const requestRef = useRef<AbortController | null>(null);
 
   const checkHealth = useCallback(() => {
-    let active = true;
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setState('checking');
-    fetch('/api/health', { cache: 'no-store' })
+    fetch('/api/health', {
+      cache: 'no-store',
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)]),
+    })
       .then(async (response) => {
         const payload = await response.json() as { status?: string; checked_at?: string };
-        if (!active) return;
+        if (controller.signal.aborted) return;
         setState(response.ok && payload.status === 'healthy' ? 'healthy' : 'unavailable');
         setCheckedAt(String(payload.checked_at || ''));
       })
       .catch(() => {
-        if (active) setState('unavailable');
+        if (!controller.signal.aborted) setState('unavailable');
       });
     return () => {
-      active = false;
+      controller.abort();
     };
   }, []);
 
@@ -45,10 +51,10 @@ export default function StatusPage() {
         </p>
         <h1 className="mt-5 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
           {state === 'checking'
-            ? (zh ? '正在检查公开入口…' : 'Checking public entry…')
+              ? (zh ? '正在检查官网与服务中心 API…' : 'Checking website and Portal API…')
             : healthy
-              ? (zh ? '公开入口运行正常' : 'Public entry is operational')
-              : (zh ? '公开入口暂时不可用' : 'Public entry is unavailable')}
+              ? (zh ? '官网与服务中心 API 入口正常' : 'Website and Portal API entry are operational')
+              : (zh ? '官网或服务中心 API 入口异常' : 'Website or Portal API entry is unavailable')}
         </h1>
         <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-slate-300">
           {zh
@@ -74,8 +80,8 @@ export default function StatusPage() {
         <div className="mt-12 border-t border-slate-300 dark:border-white/15">
           <div className="grid items-center gap-4 border-b border-slate-300 py-7 dark:border-white/15 sm:grid-cols-[1fr_auto]">
             <div>
-              <h2 className="text-lg font-bold">{zh ? '官网与服务中心入口' : 'Website and Portal entry'}</h2>
-              <p className="mt-1 text-sm text-slate-500">{zh ? '页面访问和登录入口' : 'Page delivery and sign-in entry'}</p>
+              <h2 className="text-lg font-bold">{zh ? '官网与服务中心 API 入口' : 'Website and Portal API entry'}</h2>
+              <p className="mt-1 text-sm text-slate-500">{zh ? '前端页面与 Cloud API 存活性' : 'Frontend delivery and Cloud API liveness'}</p>
             </div>
             <span className={`inline-flex w-fit items-center gap-2 text-sm font-bold ${healthy ? 'text-emerald-700 dark:text-emerald-400' : state === 'checking' ? 'text-slate-500' : 'text-red-700 dark:text-red-400'}`}>
               <span className={`h-2.5 w-2.5 rounded-full ${healthy ? 'bg-emerald-500' : state === 'checking' ? 'bg-slate-400' : 'bg-red-500'}`} />
@@ -105,7 +111,7 @@ export default function StatusPage() {
               {new Date(checkedAt).toLocaleString(zh ? 'zh-CN' : 'en-US')}
             </p>
           ) : null}
-          <button type="button" className="font-bold text-[#2357ff] hover:underline" onClick={() => checkHealth()}>
+          <button type="button" className="font-bold text-[#2357ff] hover:underline disabled:cursor-wait disabled:opacity-60" disabled={state === 'checking'} onClick={() => checkHealth()}>
             {zh ? '重新检查' : 'Check again'}
           </button>
         </div>

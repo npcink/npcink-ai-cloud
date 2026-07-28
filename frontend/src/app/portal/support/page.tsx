@@ -74,7 +74,7 @@ function PortalSupportContent() {
 
   const loadRequests = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    if (!isAuthenticated) return;
     const requestVersion = ++requestVersionRef.current;
     setIsListLoading(true);
     setError('');
@@ -114,11 +114,10 @@ function PortalSupportContent() {
     setStatusFilter('');
     setError('');
     setNotice('');
-    setIsListLoading(Boolean(isAuthenticated && contextSiteId));
+    setIsListLoading(Boolean(isAuthenticated));
     setIsSubmitting(false);
     setShowForm(Boolean(
-      contextSiteId
-      && shouldOpenForm
+      shouldOpenForm
       && (!previousContextSiteId || previousContextSiteId === contextSiteId)
     ));
     setTopic(
@@ -132,7 +131,7 @@ function PortalSupportContent() {
   }, [contextSiteId, initialSiteId, initialTopic, isAuthenticated, shouldOpenForm]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) return;
+    if (!isAuthenticated) return;
     void loadRequests();
     return () => {
       requestVersionRef.current += 1;
@@ -173,31 +172,9 @@ function PortalSupportContent() {
     );
   }
 
-  if (!contextSiteId || !selectedContextSite) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          eyebrow={t('portal.support_request_list_title', {}, 'Recent tickets')}
-          title={t('portal.support_requests_title', {}, 'Tickets')}
-          currentPage="support"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing or creating support tickets.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
-    );
-  }
-
   const handleSubmit = async () => {
     const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    if (!isAuthenticated) return;
     setIsSubmitting(true);
     setError('');
     setNotice('');
