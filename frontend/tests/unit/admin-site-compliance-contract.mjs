@@ -41,8 +41,8 @@ assert.match(
 
 assert.match(
   page,
-  /<BackofficeLayer[\s\S]*?<BackofficeSummaryStrip[\s\S]*?data-ui="site-compliance-directory"[\s\S]*?data-ui="site-compliance-active-panel"/,
-  'site compliance must use a compact header, summary strip, section directory, and one active work area'
+  /<BackofficePrimaryPanel[\s\S]*?descriptionDisplay="hint"[\s\S]*?<BackofficeSummaryStrip[\s\S]*?density="compact"[\s\S]*?data-ui="site-compliance-workbench"[\s\S]*?data-ui="site-compliance-directory"[\s\S]*?data-ui="site-compliance-active-panel"/,
+  'site compliance must use a short header, flat summary strip, and one continuous directory/workbench surface'
 );
 
 assert.match(
@@ -57,10 +57,10 @@ assert.match(
   'publish checks, QQ readiness, low-frequency external steps, and version history must use explicit compact surfaces'
 );
 
-assert.doesNotMatch(
+assert.match(
   page,
-  /<BackofficePrimaryPanel/,
-  'site compliance must not regress to a large hero-like primary panel'
+  /data-ui="site-compliance-publish-row"[\s\S]*?className=\{secondaryButtonClassName\}[\s\S]*?data-ui="site-compliance-save-row"[\s\S]*?className=\{primaryButtonClassName\}/,
+  'publication must remain a secondary action in checks while save is the editable workbench primary action'
 );
 
 assert.match(

@@ -4,9 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   BackofficeDiagnosticNotice,
-  BackofficeLayer,
   BackofficePageStack,
-  BackofficeSectionPanel,
+  BackofficePrimaryPanel,
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
@@ -185,6 +184,16 @@ function formatValidationArea(field: string, zh: boolean): string {
   return zh ? zhLabel : enLabel;
 }
 
+function validationSection(field: string): ComplianceSection | null {
+  const root = field.split('.')[0] || '';
+  if (root === 'operator' || root === 'contact') return 'operator';
+  if (root === 'refund') return 'refund';
+  if (root === 'retention') return 'retention';
+  if (root === 'third_parties') return 'third_parties';
+  if (root === 'review') return 'review';
+  return null;
+}
+
 export default function AdminSiteCompliancePage() {
   const router = useRouter();
   const { locale } = useLocale();
@@ -323,6 +332,10 @@ export default function AdminSiteCompliancePage() {
     ...(validation?.blockers ?? []).map((item) => ({ ...item, tone: 'blocker' as const })),
     ...(validation?.warnings ?? []).map((item) => ({ ...item, tone: 'warning' as const })),
   ];
+  const editableSection = !['checks', 'versions'].includes(activeSection);
+  const activeSectionChecks = publishCheckRows.filter(
+    (item) => validationSection(item.field) === activeSection
+  );
   const versionRows = [published, ...(workspace?.history ?? [])].reduce<VersionRecord[]>((records, item) => {
     if (item && !records.some((record) => record.version_id === item.version_id)) records.push(item);
     return records;
@@ -429,37 +442,50 @@ export default function AdminSiteCompliancePage() {
   }
 
   return (
-    <BackofficePageStack className="min-w-0 space-y-5">
-      <BackofficeLayer
+    <BackofficePageStack className="min-w-0 space-y-3">
+      <BackofficePrimaryPanel
         eyebrow={copy('网站与审核资料', 'Public site and review')}
         title={copy('网站合规资料', 'Site compliance')}
         description={copy(
           '维护一份版本化的 Cloud 公开资料；草稿保存后重新检查，只有已发布版本进入公开页面。',
           'Maintain one versioned Cloud disclosure. Saving revalidates the draft; only a published version reaches public pages.'
         )}
-        actions={(
-          <>
-            <button
-              type="button"
-              className={secondaryButtonClassName}
-              disabled={
-                dirty ||
-                Boolean(action) ||
-                !validation?.ready_to_publish
-              }
-              onClick={() => void publish()}
-            >
-              {action === 'publish' ? copy('发布中…', 'Publishing…') : copy('发布到公开页面', 'Publish')}
-            </button>
-            <button
-              type="button"
-              className={primaryButtonClassName}
-              disabled={!dirty || Boolean(action)}
-              onClick={() => void saveDraft()}
-            >
-              {action === 'save' ? copy('保存中…', 'Saving…') : copy('保存草稿', 'Save draft')}
-            </button>
-          </>
+        descriptionDisplay="hint"
+        contentClassName="px-5 py-4 md:px-7 md:py-5"
+        summaryClassName="px-5 py-2.5 md:px-7 md:py-2.5"
+        summary={(
+          <BackofficeSummaryStrip
+            density="compact"
+            items={[
+              {
+                label: copy('草稿状态', 'Draft'),
+                value: dirty ? copy('有未保存修改', 'Unsaved') : copy('已保存', 'Saved'),
+                size: 'compact',
+                toneClassName: dirty
+                  ? 'text-amber-700 dark:text-amber-300'
+                  : 'text-emerald-700 dark:text-emerald-300',
+              },
+              {
+                label: copy('发布门槛', 'Publish gate'),
+                value: validation?.ready_to_publish
+                  ? copy('可发布', 'Ready')
+                  : copy(`${validation?.blockers.length ?? 0} 个阻塞项`, `${validation?.blockers.length ?? 0} blockers`),
+                size: 'compact',
+              },
+              {
+                label: copy('当前公开版本', 'Published version'),
+                value: published?.version_number ? `v${published.version_number}` : '—',
+                detail: formatTime(published?.effective_at, zh),
+                detailDisplay: 'hint',
+                size: 'compact',
+              },
+              {
+                label: copy('QQ 审核准备', 'QQ review'),
+                value: workspace.qq_review.status === 'ready' ? copy('已就绪', 'Ready') : copy('待补充', 'Blocked'),
+                size: 'compact',
+              },
+            ]}
+          />
         )}
       />
 
@@ -476,39 +502,12 @@ export default function AdminSiteCompliancePage() {
         </p>
       ) : null}
 
-      <BackofficeSummaryStrip
-        items={[
-          {
-            label: copy('草稿状态', 'Draft'),
-            value: dirty ? copy('有未保存修改', 'Unsaved') : copy('已保存', 'Saved'),
-            size: 'compact',
-            toneClassName: dirty
-              ? 'text-amber-700 dark:text-amber-300'
-              : 'text-emerald-700 dark:text-emerald-300',
-          },
-          {
-            label: copy('发布门槛', 'Publish gate'),
-            value: validation?.ready_to_publish
-              ? copy('可发布', 'Ready')
-              : copy(`${validation?.blockers.length ?? 0} 个阻塞项`, `${validation?.blockers.length ?? 0} blockers`),
-            size: 'compact',
-          },
-          {
-            label: copy('当前公开版本', 'Published version'),
-            value: published?.version_number ? `v${published.version_number}` : '—',
-            detail: formatTime(published?.effective_at, zh),
-            size: 'compact',
-          },
-          {
-            label: copy('QQ 审核准备', 'QQ review'),
-            value: workspace.qq_review.status === 'ready' ? copy('已就绪', 'Ready') : copy('待补充', 'Blocked'),
-            size: 'compact',
-          },
-        ]}
-      />
-
-      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[14rem_minmax(0,1fr)]">
-        <aside className="xl:sticky xl:top-24" data-ui="site-compliance-directory">
+      <section
+        className="admin-compact-surface min-w-0 overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
+        data-ui="site-compliance-workbench"
+      >
+        <div className="grid min-w-0 items-start xl:grid-cols-[14rem_minmax(0,1fr)]">
+        <aside className="border-b border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/60 xl:min-h-full xl:border-b-0 xl:border-r" data-ui="site-compliance-directory">
           <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 xl:hidden">
             {copy('当前设置区', 'Current section')}
             <select
@@ -521,8 +520,8 @@ export default function AdminSiteCompliancePage() {
               ))}
             </select>
           </label>
-          <nav className="hidden overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 xl:block" aria-label={copy('合规资料目录', 'Compliance sections')}>
-            <p className="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <nav className="hidden xl:block" aria-label={copy('合规资料目录', 'Compliance sections')}>
+            <p className="px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
               {copy('设置目录', 'Sections')}
             </p>
             {complianceSections.map((section) => {
@@ -532,10 +531,10 @@ export default function AdminSiteCompliancePage() {
                   key={section.id}
                   type="button"
                   aria-current={selected ? 'page' : undefined}
-                  className={`block w-full cursor-pointer border-b border-slate-200 px-3 py-2 text-left last:border-b-0 dark:border-slate-800 ${
+                  className={`mb-1 block w-full cursor-pointer rounded-lg px-3 py-2 text-left last:mb-0 ${
                     selected
-                      ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/25 dark:text-blue-200'
-                      : 'bg-white text-slate-800 hover:bg-slate-50 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900'
+                      ? 'bg-white text-blue-800 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:text-blue-200 dark:ring-slate-800'
+                      : 'text-slate-800 hover:bg-white/80 dark:text-slate-200 dark:hover:bg-slate-900/80'
                   }`}
                   onClick={() => setActiveSection(section.id)}
                 >
@@ -550,9 +549,24 @@ export default function AdminSiteCompliancePage() {
           </p>
         </aside>
 
-        <div className="min-w-0" data-ui="site-compliance-active-panel">
+        <div className="min-w-0 p-4 md:p-5" data-ui="site-compliance-active-panel">
+          {editableSection && activeSectionChecks.length ? (
+            <div className="mb-4 border-l-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:bg-rose-950/25 dark:text-rose-200" data-ui="site-compliance-section-validation">
+              <p className="font-semibold">
+                {copy(
+                  `保存前请处理此区域的 ${activeSectionChecks.length} 个检查项`,
+                  `Resolve ${activeSectionChecks.length} checks in this section before publishing`
+                )}
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {activeSectionChecks.map((item, index) => (
+                  <li key={`${item.code}-${item.field}-${index}`}>{item.message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {activeSection === 'operator' ? (
-          <BackofficeSectionPanel>
+          <section>
             <SectionTitle
               title={copy('运营主体与联系方式', 'Operator and contact')}
               description={copy(
@@ -660,11 +674,11 @@ export default function AdminSiteCompliancePage() {
                 />
               </Field>
             </div>
-          </BackofficeSectionPanel>
+          </section>
           ) : null}
 
           {activeSection === 'refund' ? (
-          <BackofficeSectionPanel>
+          <section>
             <SectionTitle
               title={copy('退款说明', 'Refund disclosure')}
               description={copy(
@@ -747,11 +761,11 @@ export default function AdminSiteCompliancePage() {
               />
               {copy('当前套餐存在自动续费', 'Current plans auto-renew')}
             </label>
-          </BackofficeSectionPanel>
+          </section>
           ) : null}
 
           {activeSection === 'retention' ? (
-          <BackofficeSectionPanel>
+          <section>
             <SectionTitle
               title={copy('数据保留与清理', 'Retention and deletion')}
               description={copy(
@@ -794,11 +808,11 @@ export default function AdminSiteCompliancePage() {
                 </div>
               ))}
             </div>
-          </BackofficeSectionPanel>
+          </section>
           ) : null}
 
           {activeSection === 'third_parties' ? (
-          <BackofficeSectionPanel>
+          <section>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <SectionTitle
                 title={copy('第三方服务清单', 'Third-party services')}
@@ -919,11 +933,11 @@ export default function AdminSiteCompliancePage() {
                 </p>
               )}
             </div>
-          </BackofficeSectionPanel>
+          </section>
           ) : null}
 
           {activeSection === 'review' ? (
-          <BackofficeSectionPanel>
+          <section>
             <SectionTitle
               title={copy('发布确认', 'Publication review')}
               description={copy(
@@ -980,7 +994,7 @@ export default function AdminSiteCompliancePage() {
                 </span>
               </span>
             </label>
-          </BackofficeSectionPanel>
+          </section>
           ) : null}
 
           {activeSection === 'checks' ? (
@@ -1105,6 +1119,24 @@ export default function AdminSiteCompliancePage() {
                   {workspace.qq_review.manual_external_steps.map((step) => <li key={step}>{step}</li>)}
                 </ol>
               </details>
+
+              <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between" data-ui="site-compliance-publish-row">
+                <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  {dirty
+                    ? copy('先保存当前草稿，系统会重新执行发布检查。', 'Save the current draft to rerun publication checks.')
+                    : validation?.ready_to_publish
+                      ? copy('检查已通过，可将当前草稿发布到公开页面。', 'Checks passed. The current draft can be published.')
+                      : copy(`仍有 ${validation?.blockers.length ?? 0} 个阻塞项，发布暂不可用。`, `${validation?.blockers.length ?? 0} blockers remain; publication is unavailable.`)}
+                </p>
+                <button
+                  type="button"
+                  className={secondaryButtonClassName}
+                  disabled={dirty || Boolean(action) || !validation?.ready_to_publish}
+                  onClick={() => void publish()}
+                >
+                  {action === 'publish' ? copy('发布中…', 'Publishing…') : copy('发布到公开页面', 'Publish')}
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -1171,8 +1203,27 @@ export default function AdminSiteCompliancePage() {
               </AdminDataTableFrame>
             </div>
           ) : null}
+
+          {editableSection ? (
+            <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between" data-ui="site-compliance-save-row">
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {dirty
+                  ? copy('当前草稿有未保存修改；保存后会重新执行发布检查。', 'This draft has unsaved changes. Saving reruns publication checks.')
+                  : copy('当前编辑区已保存。切换区域不会丢失草稿。', 'This section is saved. Switching sections keeps the draft.')}
+              </p>
+              <button
+                type="button"
+                className={primaryButtonClassName}
+                disabled={!dirty || Boolean(action)}
+                onClick={() => void saveDraft()}
+              >
+                {action === 'save' ? copy('保存中…', 'Saving…') : copy('保存草稿', 'Save draft')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
+      </section>
 
       <ConfirmModal
         isOpen={Boolean(pendingNavigationHref)}

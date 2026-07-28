@@ -151,11 +151,12 @@ test('site compliance keeps one active editor, preserves draft state, and separa
   await expect(page.getByRole('heading', { name: /运营主体与联系方式|Operator and contact/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /退款说明|Refund disclosure/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /保存草稿|Save draft/i })).toBeDisabled();
-  await expect(page.getByRole('button', { name: /发布到公开页面|Publish/i })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /发布到公开页面|Publish/i })).toHaveCount(0);
 
   await page.getByRole('button', { name: /发布检查|Publish checks/i }).click();
   await expect(page.locator('[data-ui="site-compliance-validation-table"]')).toContainText(/请确认备案号或登记信息|registration/i);
   await expect(page.locator('[data-ui="site-compliance-qq-review-table"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: /发布到公开页面|Publish/i })).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
   expect(await page.evaluate(() => window.scrollX)).toBe(0);
 
@@ -163,7 +164,7 @@ test('site compliance keeps one active editor, preserves draft state, and separa
   const refundWindow = page.getByLabel(/退款申请窗口|Refund window/i);
   await refundWindow.fill('30');
   await expect(page.getByRole('button', { name: /保存草稿|Save draft/i })).toBeEnabled();
-  await expect(page.getByRole('button', { name: /发布到公开页面|Publish/i })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /发布到公开页面|Publish/i })).toHaveCount(0);
 
   await page.getByRole('button', { name: /主体与联系方式|Operator and contact/i }).click();
   await expect(refundWindow).toHaveCount(0);
@@ -172,6 +173,7 @@ test('site compliance keeps one active editor, preserves draft state, and separa
 
   await page.getByRole('button', { name: /保存草稿|Save draft/i }).click();
   await expect(page.getByText(/草稿已保存并重新检查|Draft saved and revalidated/i)).toBeVisible();
+  await page.getByRole('button', { name: /发布检查|Publish checks/i }).click();
   await expect(page.getByRole('button', { name: /发布到公开页面|Publish/i })).toBeEnabled();
   expect(harness.getPutCount()).toBe(1);
   expect(harness.getPublishCount()).toBe(0);
