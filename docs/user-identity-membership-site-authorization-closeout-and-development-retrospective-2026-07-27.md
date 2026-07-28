@@ -183,6 +183,19 @@ Migration `20260727_0072`:
 - backfills only accounts with exactly one active principal;
 - leaves multi-user and otherwise ambiguous accounts unbound.
 
+#### Pre-release ownership-bootstrap correction
+
+On 2026-07-28, before production release and while there were no users or
+compatibility requirements, ADR-034 superseded the single-member backfill
+decision. Migration `0072` now inserts no ownership rows. Existing sites remain
+unbound until a verified Addon exchange or a separately authorized explicit
+operator assignment creates the binding.
+
+This correction aligns the implementation with the later production rule that
+account membership is never ownership evidence. The earlier single-member
+backfill description above remains as development history, not the active
+contract.
+
 Existing installations that explicitly use `platform:internal_root` remain
 compatible. Automatic identity rotation was rejected because it could orphan
 persisted grants and split audit history.
