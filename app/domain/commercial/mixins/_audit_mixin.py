@@ -12,14 +12,8 @@ from app.core.models import (
     AccountSubscription,
     CommercialDecisionEvent,
     ServiceAuditEvent,
-    ServiceSetting,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
-from app.domain.commercial.currency import (
-    SERVICE_SETTING_ACCOUNTING_FX,
-    convert_usd_to_cny,
-    resolve_accounting_fx_rate,
-)
 
 MAX_AUDIT_PAYLOAD_DEPTH = 8
 MAX_AUDIT_PAYLOAD_ITEMS = 100
@@ -279,29 +273,8 @@ class CommercialServiceAuditMixin:
         normalized_policy = policy.get("budgets")
         normalized_policy = normalized_policy if isinstance(normalized_policy, dict) else {}
         cny_cost_limit = self._coerce_float(budgets.get("max_cost_cny_per_period"))
-        legacy_usd_cost_limit = self._coerce_float(budgets.get("max_cost_per_period"))
         cost_total = self._coerce_float(totals.get("cost_cny"))
         cost_budget_source = "max_cost_cny_per_period"
-        if legacy_usd_cost_limit > 0:
-            rate_row = repository.session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
-            cny_cost_limit += float(
-                convert_usd_to_cny(legacy_usd_cost_limit, accounting_fx)
-            )
-            if cost_total <= 0:
-                cost_total = float(
-                    convert_usd_to_cny(
-                        self._coerce_float(totals.get("cost")),
-                        accounting_fx,
-                    )
-                )
-            cost_budget_source = (
-                "cny_plus_legacy_usd_converted"
-                if self._coerce_float(budgets.get("max_cost_cny_per_period")) > 0
-                else "legacy_max_cost_per_period_converted"
-            )
         for meter_key, budget_key, totals_key in (
             ("runs", "max_runs_per_period", "runs"),
             ("tokens", "max_tokens_per_period", "tokens_total"),

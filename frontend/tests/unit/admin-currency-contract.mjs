@@ -35,6 +35,6 @@ assert.match(
 
 assert.match(
   accountSource,
-  /cost_cny_increment: pack\.cost_increment/,
+  /cost_cny_increment: pack\.cost_cny_increment/,
   'new operator top-ups must send an explicitly CNY-denominated cost increment'
 );

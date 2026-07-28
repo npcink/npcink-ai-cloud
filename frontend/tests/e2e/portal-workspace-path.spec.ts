@@ -240,7 +240,7 @@ async function installPortalMocks(
             max_ai_credits_per_period: 3000,
             max_runs_per_period: 1000,
             max_tokens_per_period: 50000,
-            max_cost_per_period: 250,
+            max_cost_cny_per_period: 250,
           },
         },
         entitlement_snapshot: {
@@ -252,7 +252,7 @@ async function installPortalMocks(
           },
           budgets: {
             max_ai_credits_per_period: 3000,
-            max_cost_per_period: 250,
+            max_cost_cny_per_period: 250,
           },
         },
         policy: {},
@@ -1315,7 +1315,7 @@ async function installPortalMocks(
           budgets: {
             max_runs_per_period: 1000,
             max_tokens_per_period: 50000,
-            max_cost_per_period: 250,
+            max_cost_cny_per_period: 250,
           },
         },
         entitlement_snapshot: {
@@ -1325,7 +1325,7 @@ async function installPortalMocks(
             portal: ['usage', 'billing'],
           },
           budgets: {
-            max_cost_per_period: 250,
+            max_cost_cny_per_period: 250,
           },
         },
         policy: {},

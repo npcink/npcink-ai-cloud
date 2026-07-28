@@ -22,7 +22,6 @@ DEFAULT_RUNTIME_BUDGETS: dict[str, object] = {
     "max_ai_credits_per_period": 0.0,
     "max_runs_per_period": 0,
     "max_tokens_per_period": 0,
-    "max_cost_per_period": 0.0,
     "max_cost_cny_per_period": 0.0,
 }
 DEFAULT_RUNTIME_CONCURRENCY: dict[str, object] = {
@@ -120,7 +119,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 300,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 1},
@@ -154,7 +152,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 3_000,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 2},
@@ -188,7 +185,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 10_000,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 3},
@@ -222,7 +218,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 150_000,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 10},
@@ -265,7 +260,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "active": True,
         "runs_increment": 10_000,
         "tokens_increment": 2_000_000,
-        "cost_increment": 99.0,
+        "cost_cny_increment": 99.0,
         "operator_note": "Use when the current billing period needs basic-tier-sized budget headroom without rebinding the subscription.",
     },
     "pack_medium": {
@@ -279,7 +274,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "active": True,
         "runs_increment": 35_000,
         "tokens_increment": 7_000_000,
-        "cost_increment": 349.0,
+        "cost_cny_increment": 349.0,
         "operator_note": "Use when sustained workflow pressure needs materially higher current-period headroom before a package review.",
     },
     "pack_large": {
@@ -293,7 +288,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "active": True,
         "runs_increment": 150_000,
         "tokens_increment": 30_000_000,
-        "cost_increment": 1_499.0,
+        "cost_cny_increment": 1_499.0,
         "operator_note": "Use when an operator needs a high-headroom current-period top-up without introducing a wallet or self-serve flow.",
     },
 }

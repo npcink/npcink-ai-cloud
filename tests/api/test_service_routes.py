@@ -5257,7 +5257,6 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_ai_credits_per_period"] == 10000.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_runs_per_period"] == 10010.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_tokens_per_period"] == 2005000.0
-    assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_per_period"] == 0.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_cny_per_period"] == 99.0
     assert topup_payload["topup_summary"]["current_period_count"] == 1
     assert topup_payload["topup_summary"]["current_period_totals"]["ai_credits"] == 10000.0
@@ -5314,7 +5313,7 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert rebuild_payload["billing_snapshot_status"]["status"] == "fresh"
     assert rebuild_payload["billing_snapshot_status"]["next_action"] is None
 
-    legacy_cost_topup_response = client.post(
+    removed_cost_topup_response = client.post(
         "/internal/service/subscriptions/sub_pro_topup/topup",
         json={
             "target_period_start_at": subscription_response.json()["data"]["subscription"][
@@ -5324,18 +5323,14 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
                 "current_period_end_at"
             ],
             "cost_increment": 1,
-            "reason": "legacy_api_compatibility",
+            "reason": "removed_api_field",
         },
-        headers=build_internal_headers(idempotency_key="svc-subscription-topup-legacy-cost"),
+        headers=build_internal_headers(idempotency_key="svc-subscription-topup-removed-cost"),
     )
-    assert legacy_cost_topup_response.status_code == 200
-    legacy_cost_topup = legacy_cost_topup_response.json()["data"]
-    assert legacy_cost_topup["topup"]["increments"]["legacy_cost_usd"] == 1.0
-    assert legacy_cost_topup["topup"]["increments"]["cost_cny"] == 7.2
-    assert legacy_cost_topup["topup"]["increments"]["accounting_fx"]["is_fallback"] is True
-    assert (
-        legacy_cost_topup["entitlement_snapshot"]["budgets"]["max_cost_cny_per_period"]
-        == 106.2
+    assert removed_cost_topup_response.status_code == 422
+    assert any(
+        detail["loc"][-1] == "cost_increment" and detail["type"] == "extra_forbidden"
+        for detail in removed_cost_topup_response.json()["detail"]
     )
 
     execute_payload = {
@@ -6010,7 +6005,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "budgets": {
                     "max_runs_per_period": 8_000,
                     "max_tokens_per_period": 6_000_000,
-                    "max_cost_per_period": 220,
+                    "max_cost_cny_per_period": 220,
                 },
                 "concurrency": {"max_active_runs": 12},
                 "metadata": {"tier_id": "agency"},
@@ -6025,7 +6020,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "budgets": {
                     "max_runs_per_period": 12_000,
                     "max_tokens_per_period": 9_000_000,
-                    "max_cost_per_period": 260,
+                    "max_cost_cny_per_period": 260,
                 },
                 "concurrency": {"max_active_runs": 18},
             },
@@ -6039,7 +6034,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "budgets": {
                     "max_runs_per_period": 10_000,
                     "max_tokens_per_period": 2_000_000,
-                    "max_cost_per_period": 99,
+                    "max_cost_cny_per_period": 99,
                 },
                 "concurrency": {"max_active_runs": 2},
             },
@@ -6121,6 +6116,21 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
     assert default_tier_detail["tier_summary"]["api_enabled"] is True
     assert default_tier_detail["tier_summary"]["openclaw_enabled"] is True
     assert default_tier_detail["package_fit_cues"][0]["code"] == "package_fit.within_band"
+
+    removed_budget_response = client.post(
+        "/internal/service/plans/general_ops/versions",
+        json={
+            "plan_version_id": "general_ops_removed_usd_budget",
+            "version_label": "removed-usd-budget",
+            "budgets": {"max_cost_per_period": 99},
+        },
+        headers=build_internal_headers(idempotency_key="svc-tier-version-removed-usd-budget"),
+    )
+    assert removed_budget_response.status_code == 400
+    assert (
+        removed_budget_response.json()["error_code"]
+        == "service.plan_budget_legacy_cost_field_removed"
+    )
 
     dispose_engine(database_url)
 

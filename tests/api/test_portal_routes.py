@@ -7035,7 +7035,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
         credit_ledger_data["ai_credit_usage_detail"]["surface"]
         == "portal_personal_ai_credit_usage"
     )
-    assert {item["category"] for item in credit_ledger_data["ai_credit_usage_detail"]["legend"]} >= {
+    legend_categories = {
+        item["category"] for item in credit_ledger_data["ai_credit_usage_detail"]["legend"]
+    }
+    assert legend_categories >= {
         "ai_usage",
         "credit_pack_purchase",
         "refund_adjustment",

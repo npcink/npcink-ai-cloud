@@ -286,6 +286,7 @@ def test_cloud_managed_web_search_executes_and_records_provider_usage(
             "runs",
             "provider_calls",
             "cost",
+            "cost_cny",
         ]
         assert all(event.ability_family == "knowledge" for event in meter_events)
 

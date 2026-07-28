@@ -60,7 +60,6 @@ DEFAULT_RUNTIME_BUDGETS: dict[str, object] = {
     "max_ai_credits_per_period": 0.0,
     "max_runs_per_period": 0,
     "max_tokens_per_period": 0,
-    "max_cost_per_period": 0.0,
     "max_cost_cny_per_period": 0.0,
 }
 DEFAULT_RUNTIME_CONCURRENCY: dict[str, object] = {
@@ -158,7 +157,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 300,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 1},
@@ -193,7 +191,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 3_000,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 2},
@@ -228,7 +225,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 10_000,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 3},
@@ -263,7 +259,6 @@ PLAN_TIER_REGISTRY: dict[str, dict[str, object]] = {
             "max_ai_credits_per_period": 150_000,
             "max_runs_per_period": 0,
             "max_tokens_per_period": 0,
-            "max_cost_per_period": 0.0,
             "max_cost_cny_per_period": 0.0,
         },
         "concurrency_template": {"max_active_runs": 10},
@@ -307,7 +302,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "active": True,
         "runs_increment": 10_000,
         "tokens_increment": 2_000_000,
-        "cost_increment": 99.0,
+        "cost_cny_increment": 99.0,
         "operator_note": "Use when the current billing period needs basic-tier-sized budget headroom without rebinding the subscription.",
     },
     "pack_medium": {
@@ -321,7 +316,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "active": True,
         "runs_increment": 35_000,
         "tokens_increment": 7_000_000,
-        "cost_increment": 349.0,
+        "cost_cny_increment": 349.0,
         "operator_note": "Use when sustained workflow pressure needs materially higher current-period headroom before a package review.",
     },
     "pack_large": {
@@ -335,7 +330,7 @@ OPERATOR_MANAGED_POINTS_PACK_REGISTRY: dict[str, dict[str, object]] = {
         "active": True,
         "runs_increment": 150_000,
         "tokens_increment": 30_000_000,
-        "cost_increment": 1_499.0,
+        "cost_cny_increment": 1_499.0,
         "operator_note": "Use when an operator needs a high-headroom current-period top-up without introducing a wallet or self-serve flow.",
     },
 }
@@ -727,8 +722,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                     float(self._coerce_float(merged.get("tokens_increment"))),
                     6,
                 ),
-                "cost_increment": round(
-                    float(self._coerce_float(merged.get("cost_increment"))),
+                "cost_cny_increment": round(
+                    float(self._coerce_float(merged.get("cost_cny_increment"))),
                     6,
                 ),
                 "operator_note": str(merged.get("operator_note") or ""),
@@ -771,8 +766,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         ai_credits_increment: float = 0.0,
         runs_increment: float = 0.0,
         tokens_increment: float = 0.0,
-        cost_cny_increment: float | None = None,
-        cost_increment: float = 0.0,
+        cost_cny_increment: float = 0.0,
         reason: str = "",
         note: str = "",
         target_period_start_at: datetime | None = None,
@@ -797,7 +791,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 runs_increment=runs_increment,
                 tokens_increment=tokens_increment,
                 cost_cny_increment=cost_cny_increment,
-                cost_increment=cost_increment,
                 reason=normalized_reason,
                 note=normalized_note,
                 target_period_start_at=target_period_start_at,
@@ -949,10 +942,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 account.account_id: account
                 for account in repository.list_accounts(account_ids=account_ids, limit=None)
             }
-            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
         serialized_versions = [self._serialize_plan_version(version) for version in versions]
         tier_summary = self._build_plan_tier_summary(plan, serialized_versions)
         latest_version = self._select_latest_plan_version(serialized_versions)
@@ -976,7 +965,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "package_fit_cues": self._build_plan_package_fit_cues(
                 tier_summary=tier_summary,
                 latest_version=latest_version,
-                accounting_fx=accounting_fx,
             ),
             "subscriptions": [
                 {
@@ -1403,8 +1391,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         ai_credits_increment: float = 0.0,
         runs_increment: float = 0.0,
         tokens_increment: float = 0.0,
-        cost_cny_increment: float | None = None,
-        cost_increment: float = 0.0,
+        cost_cny_increment: float = 0.0,
         reason: str,
         note: str = "",
         target_period_start_at: datetime | None = None,
@@ -1422,15 +1409,11 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         pack_tokens_increment = (
             self._coerce_float(selected_pack.get("tokens_increment")) if selected_pack else 0.0
         )
-        pack_cost_increment = (
-            self._coerce_float(selected_pack.get("cost_increment")) if selected_pack else 0.0
+        pack_cost_cny_increment = (
+            self._coerce_float(selected_pack.get("cost_cny_increment"))
+            if selected_pack
+            else 0.0
         )
-        legacy_cost_usd = max(0.0, self._coerce_float(cost_increment))
-        rate_row = repository.session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-        accounting_fx = resolve_accounting_fx_rate(
-            rate_row.config_json if rate_row is not None and rate_row.enabled else None
-        )
-        legacy_cost_cny = float(convert_usd_to_cny(legacy_cost_usd, accounting_fx))
         normalized_ai_credits = max(
             0.0,
             pack_ai_credits_increment + self._coerce_float(ai_credits_increment),
@@ -1439,9 +1422,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         normalized_tokens = max(0.0, pack_tokens_increment + self._coerce_float(tokens_increment))
         normalized_cost = max(
             0.0,
-            pack_cost_increment
-            + self._coerce_float(cost_cny_increment)
-            + legacy_cost_cny,
+            pack_cost_cny_increment + self._coerce_float(cost_cny_increment),
         )
         if (
             normalized_ai_credits <= 0
@@ -1496,14 +1477,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "runs": round(normalized_runs, 6),
             "tokens": round(normalized_tokens, 6),
             "cost_cny": round(normalized_cost, 6),
-            **(
-                {
-                    "legacy_cost_usd": round(legacy_cost_usd, 6),
-                    "accounting_fx": accounting_fx.as_dict(),
-                }
-                if legacy_cost_usd > 0
-                else {}
-            ),
         }
         updated_budgets = {
             "max_ai_credits_per_period": round(
@@ -1517,10 +1490,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             ),
             "max_tokens_per_period": round(
                 self._coerce_float(base_budgets.get("max_tokens_per_period")) + normalized_tokens,
-                6,
-            ),
-            "max_cost_per_period": round(
-                self._coerce_float(base_budgets.get("max_cost_per_period")),
                 6,
             ),
             "max_cost_cny_per_period": round(
@@ -1748,11 +1717,15 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
 
     def _normalize_budgets(self, raw: dict[str, object] | None) -> dict[str, object]:
         raw = raw if isinstance(raw, dict) else {}
+        if "max_cost_per_period" in raw:
+            raise CommercialValidationError(
+                "service.plan_budget_legacy_cost_field_removed",
+                "use 'max_cost_cny_per_period'; 'max_cost_per_period' is not supported",
+            )
         return {
             "max_ai_credits_per_period": self._coerce_float(raw.get("max_ai_credits_per_period")),
             "max_runs_per_period": self._coerce_float(raw.get("max_runs_per_period")),
             "max_tokens_per_period": self._coerce_float(raw.get("max_tokens_per_period")),
-            "max_cost_per_period": self._coerce_float(raw.get("max_cost_per_period")),
             "max_cost_cny_per_period": self._coerce_float(
                 raw.get("max_cost_cny_per_period")
             ),
@@ -1921,7 +1894,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "ai_credits": 0.0,
             "runs": 0.0,
             "tokens": 0.0,
-            "cost": 0.0,
+            "cost_cny": 0.0,
         }
 
         renewed, snapshot = self._bind_subscription_in_session(
@@ -2297,10 +2270,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 + self._coerce_float(topup_totals.get("tokens")),
                 6,
             ),
-            "max_cost_per_period": round(
-                self._coerce_float(budgets.get("max_cost_per_period")),
-                6,
-            ),
             "max_cost_cny_per_period": round(
                 self._coerce_float(budgets.get("max_cost_cny_per_period"))
                 + self._coerce_float(topup_totals.get("cost_cny")),
@@ -2470,7 +2439,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         *,
         tier_summary: dict[str, object],
         latest_version: dict[str, object] | None,
-        accounting_fx: AccountingFxRate,
     ) -> list[dict[str, object]]:
         cues: list[dict[str, object]] = []
         if latest_version is None:
@@ -2492,20 +2460,8 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
 
         template_cost_cny = self._coerce_float(
             tier_budgets.get("max_cost_cny_per_period")
-        ) + float(
-            convert_usd_to_cny(
-                self._coerce_float(tier_budgets.get("max_cost_per_period")),
-                accounting_fx,
-            )
         )
-        max_cost = self._coerce_float(
-            latest_budgets.get("max_cost_cny_per_period")
-        ) + float(
-            convert_usd_to_cny(
-                self._coerce_float(latest_budgets.get("max_cost_per_period")),
-                accounting_fx,
-            )
-        )
+        max_cost = self._coerce_float(latest_budgets.get("max_cost_cny_per_period"))
         if max_cost <= 0:
             cues.append(
                 {
@@ -2894,23 +2850,10 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             "runs": round(self._coerce_float(topup_totals.get("runs")), 6),
             "tokens": round(self._coerce_float(topup_totals.get("tokens")), 6),
             "cost": round(self._coerce_float(topup_totals.get("cost_cny")), 6),
-            "legacy_cost_usd": round(self._coerce_float(topup_totals.get("cost")), 6),
         }
-        base_cost_cny = self._coerce_float(
-            base_budgets.get("max_cost_cny_per_period")
-        ) + float(
-            convert_usd_to_cny(
-                self._coerce_float(base_budgets.get("max_cost_per_period")),
-                accounting_fx,
-            )
-        )
+        base_cost_cny = self._coerce_float(base_budgets.get("max_cost_cny_per_period"))
         effective_cost_cny = self._coerce_float(
             effective.get("max_cost_cny_per_period")
-        ) + float(
-            convert_usd_to_cny(
-                self._coerce_float(effective.get("max_cost_per_period")),
-                accounting_fx,
-            )
         )
         return {
             "base_budget": {

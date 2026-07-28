@@ -87,7 +87,6 @@ def test_authorize_runtime_request_uses_free_ai_credit_package_defaults(
         "max_ai_credits_per_period": 300.0,
         "max_runs_per_period": 0.0,
         "max_tokens_per_period": 0.0,
-        "max_cost_per_period": 0.0,
         "max_cost_cny_per_period": 0.0,
     }
     assert decision["concurrency"] == {

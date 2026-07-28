@@ -102,7 +102,7 @@ type TopUpPackOption = {
   ai_credits_increment: number;
   runs_increment: number;
   tokens_increment: number;
-  cost_increment: number;
+  cost_cny_increment: number;
   recommended_for_tiers: Array<'free' | 'pro' | 'plus' | 'agency'>;
 };
 
@@ -115,7 +115,7 @@ const TOPUP_PACK_OPTIONS: TopUpPackOption[] = [
     ai_credits_increment: 10000,
     runs_increment: 10000,
     tokens_increment: 2000000,
-    cost_increment: 99,
+    cost_cny_increment: 99,
     recommended_for_tiers: ['free', 'plus'],
   },
   {
@@ -126,7 +126,7 @@ const TOPUP_PACK_OPTIONS: TopUpPackOption[] = [
     ai_credits_increment: 35000,
     runs_increment: 35000,
     tokens_increment: 7000000,
-    cost_increment: 349,
+    cost_cny_increment: 349,
     recommended_for_tiers: ['pro', 'agency'],
   },
   {
@@ -137,7 +137,7 @@ const TOPUP_PACK_OPTIONS: TopUpPackOption[] = [
     ai_credits_increment: 150000,
     runs_increment: 150000,
     tokens_increment: 30000000,
-    cost_increment: 1499,
+    cost_cny_increment: 1499,
     recommended_for_tiers: ['agency'],
   },
 ];
@@ -1145,7 +1145,7 @@ function AccountDetailContent() {
           ai_credits_increment: pack.ai_credits_increment,
           runs_increment: pack.runs_increment,
           tokens_increment: pack.tokens_increment,
-          cost_cny_increment: pack.cost_increment,
+          cost_cny_increment: pack.cost_cny_increment,
           reason: 'operator_overage_buffer',
           note: `Applied ${pack.pack_id} from account coverage screen.`,
         },
