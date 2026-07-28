@@ -8,11 +8,15 @@ import {
   BackofficeEmptyState,
   BackofficeLayer,
   BackofficePageStack,
-  BackofficeSectionPanel,
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
+import {
+  AdminConfigurationRow,
+  AdminConfigurationTable,
+} from '@/components/admin/AdminConfigurationTable';
+import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -95,6 +99,7 @@ export default function AdminCreditPacksPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editorError, setEditorError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const requestActiveRef = useRef(false);
   const requestSequenceRef = useRef(0);
@@ -151,12 +156,16 @@ export default function AdminCreditPacksPage() {
   const isDraftDirty = Boolean(draft && savedItemForDraft && JSON.stringify(normalizeItem(draft)) !== JSON.stringify(normalizeItem(savedItemForDraft)));
 
   const openEditor = (item: CreditPackItem) => {
-    setError(null);
+    updateCatalogUrl({ focus: item.pack_id });
+    setEditorError(null);
     setDraft(normalizeItem({ ...item, recommended_for_tiers: [...item.recommended_for_tiers] }));
   };
 
   const closeEditor = () => {
-    if (!isSaving) setDraft(null);
+    if (!isSaving) {
+      setEditorError(null);
+      setDraft(null);
+    }
   };
 
   const toggleDraftTier = (tier: string) => {
@@ -172,7 +181,7 @@ export default function AdminCreditPacksPage() {
   const handleSaveDraft = async () => {
     if (!draft || !isDraftDirty) return;
     setIsSaving(true);
-    setError(null);
+    setEditorError(null);
     try {
       const nextItems = items.map((item) => item.pack_id === draft.pack_id ? normalizeItem(draft) : normalizeItem(item));
       const payload = await saveCatalog(nextItems);
@@ -185,7 +194,7 @@ export default function AdminCreditPacksPage() {
         t('admin.credit_packs_saved_title', {}, 'AI credit pack updated')
       );
     } catch (err) {
-      setError(resolveUiErrorMessage(err, t('error.failed_save')));
+      setEditorError(resolveUiErrorMessage(err, t('error.failed_save')));
     } finally {
       setIsSaving(false);
     }
@@ -239,111 +248,174 @@ export default function AdminCreditPacksPage() {
         { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
       ]} />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(19rem,0.72fr)]">
-        <BackofficeSectionPanel className="overflow-hidden p-0">
-          <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">{t('admin.credit_packs_directory_title', {}, 'AI credit pack catalog')}</h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.credit_packs_directory_hint', {}, 'Compare purchase value and visibility, then inspect one pack before editing.')}</p>
-              </div>
-              <p role="status" className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('admin.credit_packs_result_count', { visible: String(filteredItems.length), total: String(items.length) }, '{{visible}} visible · {{total}} total')}</p>
-            </div>
-            <div className="flex flex-wrap gap-2" aria-label={t('admin.credit_packs_status_filter', {}, 'Pack visibility')}>
-              {(['all', 'active', 'inactive'] as PackStatusFilter[]).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  aria-pressed={statusFilter === status}
-                  className={cn(
-                    'cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition',
-                    statusFilter === status
-                      ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200'
-                      : 'border-slate-200/80 bg-white/80 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-slate-600'
-                  )}
-                  onClick={() => updateCatalogUrl({ status, focus: null })}
-                >
-                  {status === 'all' ? t('common.all', {}, 'All') : status === 'active' ? t('common.active', {}, 'Active') : t('common.inactive', {}, 'Inactive')}
-                </button>
-              ))}
-            </div>
+      <p role="status" aria-live="polite" className="sr-only">
+        {t('admin.credit_packs_result_count', { visible: String(filteredItems.length), total: String(items.length) }, '{{visible}} visible · {{total}} total')}
+      </p>
+
+      <AdminDataTableFrame
+        title={t('admin.credit_packs_directory_title', {}, 'AI credit pack catalog')}
+        resultLabel={t('admin.credit_packs_result_count', { visible: String(filteredItems.length), total: String(items.length) }, '{{visible}} visible · {{total}} total')}
+        dataUi="credit-pack-directory-table"
+        density="compact"
+        headerActions={(
+          <div className="flex flex-wrap items-center gap-2" aria-label={t('admin.credit_packs_status_filter', {}, 'Pack visibility')}>
+            {(['all', 'active', 'inactive'] as PackStatusFilter[]).map((status) => (
+              <button
+                key={status}
+                type="button"
+                aria-pressed={statusFilter === status}
+                className={cn(
+                  'cursor-pointer rounded border px-2.5 py-1 text-xs font-medium transition',
+                  statusFilter === status
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-600'
+                )}
+                onClick={() => updateCatalogUrl({ status, focus: null })}
+              >
+                {status === 'all' ? t('common.all', {}, 'All') : status === 'active' ? t('common.active', {}, 'Active') : t('common.inactive', {}, 'Inactive')}
+              </button>
+            ))}
           </div>
-
-          {filteredItems.length ? (
-            <div role="list" aria-label={t('admin.credit_packs_list_label', {}, 'AI credit pack list')}>
-              {filteredItems.map((item) => {
-                const selected = selectedItem?.pack_id === item.pack_id;
-                return (
-                  <article key={item.pack_id} role="listitem" data-ui="credit-pack-directory-item" data-pack-id={item.pack_id} className={cn('border-b border-slate-200/80 last:border-b-0 dark:border-slate-800', selected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
-                    <button type="button" aria-pressed={selected} className="grid w-full cursor-pointer gap-3 px-5 py-4 text-left transition md:grid-cols-[minmax(11rem,1fr)_minmax(8rem,0.6fr)_minmax(8rem,0.7fr)_auto] md:items-center md:px-6" onClick={() => updateCatalogUrl({ focus: item.pack_id })}>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2"><span className="truncate font-semibold text-slate-950 dark:text-white">{item.label}</span><BackofficeStatusBadge status={item.active ? 'published' : 'draft'} label={t(item.active ? 'common.active' : 'common.inactive', {}, item.active ? 'Active' : 'Inactive')} /></div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.pack_id}</p>
-                      </div>
-                      <div><p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.credit_packs_amount_label', {}, 'Amount')}</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatPackAmount(item)}</p></div>
-                      <div><p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.credit_packs_credits_label', {}, 'Credits')}</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatNumber(item.ai_credits)}</p></div>
-                      <div className="flex flex-wrap gap-1.5 md:justify-end">{item.recommended_for_tiers.map((tier) => <span key={tier} className="rounded-full border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">{tier}</span>)}</div>
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <BackofficeEmptyState title={t('admin.credit_packs_empty_title', {}, 'No packs in this view')} description={t('admin.credit_packs_empty_desc', {}, 'Clear the visibility filter to inspect the full catalog.')} />
-          )}
-        </BackofficeSectionPanel>
-
-        <aside id="credit-pack-inspector" className="xl:sticky xl:top-24" aria-live="polite">
-          <BackofficeSectionPanel className="space-y-5">
-            <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t('admin.credit_packs_inspector_eyebrow', {}, 'Selected pack')}</p><h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{selectedItem?.label || t('admin.credit_packs_inspector_empty', {}, 'No pack selected')}</h2>{selectedItem ? <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{selectedItem.pack_id}</p> : null}</div>
-            {selectedItem ? (
-              <>
-                <dl className="grid gap-2 text-sm">
-                  {[
-                    [t('common.status'), t(selectedItem.active ? 'common.active' : 'common.inactive', {}, selectedItem.active ? 'Active' : 'Inactive')],
-                    [t('admin.credit_packs_amount_label', {}, 'Amount'), formatPackAmount(selectedItem)],
-                    [t('admin.credit_packs_credits_label', {}, 'Credits'), formatNumber(selectedItem.ai_credits)],
-                    [t('admin.credit_packs_validity_label', {}, 'Validity'), t('admin.credit_packs_validity_days_value', { days: String(selectedItem.validity_days) }, `${selectedItem.validity_days} days`)],
-                    [t('admin.credit_packs_recommended_tiers_label', {}, 'Recommended'), selectedItem.recommended_for_tiers.join(' · ') || t('admin.credit_packs_no_recommended_tiers', {}, 'None')],
-                  ].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800"><dt className="text-slate-500 dark:text-slate-400">{label}</dt><dd className="text-right font-semibold text-slate-950 dark:text-white">{value}</dd></div>)}
-                </dl>
-                <button type="button" className="btn btn-primary w-full" onClick={() => openEditor(selectedItem)}>{t('admin.credit_packs_edit_action', {}, 'Edit selected pack')}</button>
-                <p className="border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">{t('admin.credit_packs_inspector_boundary', {}, 'Changes update the Cloud purchase catalog only. Existing payment orders keep their purchase-time snapshot; package entitlement and WordPress control do not change here.')}</p>
-              </>
-            ) : null}
-          </BackofficeSectionPanel>
-        </aside>
-      </div>
-
-      <Modal
-        isOpen={Boolean(draft)}
-        onClose={closeEditor}
-        size="lg"
-        title={draft ? t('admin.credit_packs_edit_title', { name: draft.label }, 'Edit {{name}}') : undefined}
-        description={t('admin.credit_packs_edit_desc', {}, 'Save one pack at a time. The service still validates and stores the complete catalog atomically.')}
-        closeOnOverlay={!isSaving}
-        footer={(
-          <>
-            <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={closeEditor}>{t('common.cancel', {}, 'Cancel')}</button>
-            <button type="button" className="btn btn-primary" disabled={isSaving || !isDraftDirty} onClick={() => void handleSaveDraft()}>{isSaving ? t('common.saving', {}, 'Saving...') : t('admin.credit_packs_save_pack_action', {}, 'Save pack')}</button>
-          </>
         )}
       >
-        {draft ? (
-          <div className="space-y-5">
-            {error ? <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error}</div> : null}
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200"><span>{t('admin.credit_packs_pack_label', {}, 'Pack')}</span><input className="input w-full" value={draft.label} onChange={(event) => setDraft((current) => current ? { ...current, label: event.target.value } : current)} /></label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200"><span>{t('admin.credit_packs_credits_label', {}, 'Credits')}</span><input className="input w-full" type="number" min={1} step={100} value={draft.ai_credits} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, ai_credits: Number(event.target.value) }) : current)} /></label>
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200"><span>{t('admin.credit_packs_amount_label', {}, 'Amount')} · {t('admin.credit_packs_currency_fixed_cny', {}, 'RMB pricing')}</span><input className="input w-full" type="number" min={0.01} step={1} value={draft.amount} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, amount: Number(event.target.value) }) : current)} /></label>
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200"><span>{t('admin.credit_packs_validity_label', {}, 'Validity')}</span><input className="input w-full" type="number" min={1} max={1095} step={1} value={draft.validity_days} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, validity_days: Number(event.target.value) }) : current)} /></label>
-              <label className="flex items-center gap-2 self-end rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 dark:border-slate-800 dark:text-slate-200"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => current ? { ...current, active: event.target.checked } : current)} /><span>{t('admin.credit_packs_visibility_toggle', {}, 'Visible to customer package page')}</span></label>
-            </div>
-            <fieldset><legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{t('admin.credit_packs_recommended_tiers_label', {}, 'Recommended')}</legend><div className="mt-2 flex flex-wrap gap-2">{MANAGED_TIERS.map((tier) => <label key={tier} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-200"><input type="checkbox" checked={draft.recommended_for_tiers.includes(tier)} onChange={() => toggleDraftTier(tier)} /><span>{tier}</span></label>)}</div></fieldset>
-            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.credit_packs_edit_boundary', {}, 'This edit changes future customer purchases only. It does not rewrite existing payment orders, grant a stored balance, or change package entitlement.')}</p>
+        {filteredItems.length ? (
+          <table className="w-full min-w-[960px] table-fixed text-left text-sm" aria-label={t('admin.credit_packs_list_label', {}, 'AI credit pack list')}>
+            <colgroup>
+              <col className="w-[23%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[11%]" />
+              <col className="w-[21%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+            </colgroup>
+            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
+              <tr>
+                <th className="sticky left-0 z-10 bg-slate-50 px-3 py-1.5 dark:bg-slate-900" scope="col">{t('admin.credit_packs_pack_label', {}, 'Pack')}</th>
+                <th className="px-3 py-1.5" scope="col">{t('admin.credit_packs_credits_label', {}, 'Credits')}</th>
+                <th className="px-3 py-1.5" scope="col">{t('admin.credit_packs_amount_label', {}, 'Amount')}</th>
+                <th className="px-3 py-1.5" scope="col">{t('admin.credit_packs_validity_label', {}, 'Validity')}</th>
+                <th className="px-3 py-1.5" scope="col">{t('admin.credit_packs_recommended_tiers_label', {}, 'Recommended')}</th>
+                <th className="px-3 py-1.5" scope="col">{t('admin.credit_packs_visibility_toggle', {}, 'Customer visible')}</th>
+                <th className="sticky right-0 z-10 bg-slate-50 px-3 py-1.5 text-right dark:bg-slate-900" scope="col">{t('common.actions', {}, 'Actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              {filteredItems.map((item) => {
+                const selected = selectedItem?.pack_id === item.pack_id;
+                const cellBackground = selected
+                  ? 'bg-blue-50/70 dark:bg-blue-950/20'
+                  : 'bg-white dark:bg-slate-950';
+                return (
+                  <tr
+                    key={item.pack_id}
+                    data-ui="credit-pack-directory-row"
+                    data-pack-id={item.pack_id}
+                    data-selected={selected ? 'true' : 'false'}
+                    className={selected ? 'bg-blue-50/70 dark:bg-blue-950/20' : 'bg-white hover:bg-slate-50/70 dark:bg-slate-950 dark:hover:bg-slate-900/40'}
+                  >
+                    <th className={`sticky left-0 z-[5] px-3 py-2 align-middle ${cellBackground}`} scope="row">
+                      <span className="block truncate font-semibold text-slate-950 dark:text-white">{item.label}</span>
+                      <span className="mt-0.5 block truncate text-xs font-normal text-slate-500 dark:text-slate-400">{item.pack_id}</span>
+                    </th>
+                    <td className="px-3 py-2 align-middle font-semibold tabular-nums text-slate-950 dark:text-white">{formatNumber(item.ai_credits)}</td>
+                    <td className="px-3 py-2 align-middle font-semibold tabular-nums text-slate-950 dark:text-white">{formatPackAmount(item)}</td>
+                    <td className="px-3 py-2 align-middle text-slate-700 dark:text-slate-200">{t('admin.credit_packs_validity_days_value', { days: String(item.validity_days) }, `${item.validity_days} days`)}</td>
+                    <td className="px-3 py-2 align-middle">
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.recommended_for_tiers.length
+                          ? item.recommended_for_tiers.map((tier) => <span key={tier} className="rounded border border-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">{tier}</span>)
+                          : <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.credit_packs_no_recommended_tiers', {}, 'None')}</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-middle">
+                      <BackofficeStatusBadge status={item.active ? 'published' : 'draft'} label={t(item.active ? 'common.active' : 'common.inactive', {}, item.active ? 'Active' : 'Inactive')} />
+                    </td>
+                    <td className={`sticky right-0 z-[5] px-3 py-2 text-right align-middle ${cellBackground}`}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => openEditor(item)}>
+                        {t('admin.credit_packs_edit_action', {}, 'Edit')}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <BackofficeEmptyState title={t('admin.credit_packs_empty_title', {}, 'No packs in this view')} description={t('admin.credit_packs_empty_desc', {}, 'Clear the visibility filter to inspect the full catalog.')} />
+        )}
+      </AdminDataTableFrame>
+
+      <AdminWorkbenchDialog
+        open={Boolean(draft)}
+        title={draft ? t('admin.credit_packs_edit_title', { name: draft.label }, 'Edit {{name}}') : ''}
+        titleId="credit-pack-workbench-title"
+        headerAccessory={draft ? <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{draft.pack_id}</span> : null}
+        error={editorError || undefined}
+        saving={isSaving}
+        closeLabel={t('common.close', {}, 'Close')}
+        cancelLabel={t('common.cancel', {}, 'Cancel')}
+        saveLabel={t('admin.credit_packs_save_pack_action', {}, 'Save pack')}
+        savingLabel={t('common.saving', {}, 'Saving...')}
+        footerNotice={t('admin.credit_packs_edit_boundary', {}, 'This edit changes future customer purchases only. Existing payment orders and package entitlement remain unchanged.')}
+        footerActions={(
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-secondary btn-sm" disabled={isSaving} onClick={closeEditor}>{t('common.cancel', {}, 'Cancel')}</button>
+            <button type="button" className="btn btn-primary btn-sm" disabled={isSaving || !isDraftDirty} onClick={() => void handleSaveDraft()}>{isSaving ? t('common.saving', {}, 'Saving...') : t('admin.credit_packs_save_pack_action', {}, 'Save pack')}</button>
           </div>
+        )}
+        width="compact"
+        density="compact"
+        onClose={closeEditor}
+        onSubmit={() => void handleSaveDraft()}
+      >
+        {draft ? (
+          <AdminConfigurationTable
+            ariaLabel={t('admin.credit_packs_edit_title', { name: draft.label }, 'Edit {{name}}')}
+            itemHeading={t('admin.credit_packs_configuration_item', {}, 'Setting')}
+            valueHeading={t('admin.credit_packs_configuration_value', {}, 'Current value')}
+            detailHeading={t('admin.credit_packs_configuration_detail', {}, 'Action / note')}
+            density="compact"
+          >
+            <AdminConfigurationRow
+              rowId="credit-pack-label"
+              label={t('admin.credit_packs_pack_label', {}, 'Pack')}
+              value={<input aria-label={t('admin.credit_packs_pack_label', {}, 'Pack')} className="input w-full" value={draft.label} onChange={(event) => setDraft((current) => current ? { ...current, label: event.target.value } : current)} />}
+              detail={t('admin.credit_packs_label_note', {}, 'Customer-facing catalog name.')}
+            />
+            <AdminConfigurationRow
+              rowId="credit-pack-credits"
+              label={t('admin.credit_packs_credits_label', {}, 'Credits')}
+              value={<input aria-label={t('admin.credit_packs_credits_label', {}, 'Credits')} className="input w-36" type="number" min={1} step={100} value={draft.ai_credits} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, ai_credits: Number(event.target.value) }) : current)} />}
+              detail={t('admin.credit_packs_credits_note', {}, 'Granted after a successful future purchase.')}
+            />
+            <AdminConfigurationRow
+              rowId="credit-pack-amount"
+              label={t('admin.credit_packs_amount_label', {}, 'Amount')}
+              value={<input aria-label={t('admin.credit_packs_amount_label', {}, 'Amount')} className="input w-36" type="number" min={0.01} step={1} value={draft.amount} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, amount: Number(event.target.value) }) : current)} />}
+              detail={t('admin.credit_packs_currency_fixed_cny', {}, 'RMB pricing is fixed.')}
+            />
+            <AdminConfigurationRow
+              rowId="credit-pack-validity"
+              label={t('admin.credit_packs_validity_label', {}, 'Validity')}
+              value={<input aria-label={t('admin.credit_packs_validity_label', {}, 'Validity')} className="input w-36" type="number" min={1} max={1095} step={1} value={draft.validity_days} onChange={(event) => setDraft((current) => current ? normalizeItem({ ...current, validity_days: Number(event.target.value) }) : current)} />}
+              detail={t('admin.credit_packs_validity_note', {}, 'Days after the payment order is completed.')}
+            />
+            <AdminConfigurationRow
+              rowId="credit-pack-visibility"
+              label={t('admin.credit_packs_visibility_toggle', {}, 'Customer visible')}
+              value={<label className="inline-flex cursor-pointer items-center gap-2"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft((current) => current ? { ...current, active: event.target.checked } : current)} /><span>{t(draft.active ? 'common.active' : 'common.inactive', {}, draft.active ? 'Active' : 'Inactive')}</span></label>}
+              detail={t('admin.credit_packs_visibility_note', {}, 'Controls future customer catalog visibility only.')}
+            />
+            <AdminConfigurationRow
+              rowId="credit-pack-recommended-tiers"
+              label={t('admin.credit_packs_recommended_tiers_label', {}, 'Recommended')}
+              value={<div className="flex flex-wrap gap-1.5">{MANAGED_TIERS.map((tier) => <label key={tier} className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"><input type="checkbox" checked={draft.recommended_for_tiers.includes(tier)} onChange={() => toggleDraftTier(tier)} /><span>{tier}</span></label>)}</div>}
+              detail={t('admin.credit_packs_recommended_note', {}, 'Presentation guidance; package entitlement does not change.')}
+            />
+          </AdminConfigurationTable>
         ) : null}
-      </Modal>
+      </AdminWorkbenchDialog>
     </BackofficePageStack>
   );
 }

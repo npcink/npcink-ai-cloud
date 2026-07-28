@@ -19,13 +19,13 @@ assert.match(
 );
 assert.match(
   pageSource,
-  /data-ui="credit-pack-directory-item"[\s\S]*id="credit-pack-inspector"[\s\S]*<Modal/,
-  'Admin credit pack page must render a read-first directory, contextual inspector, and one-pack editor'
+  /dataUi="credit-pack-directory-table"[\s\S]*data-ui="credit-pack-directory-row"[\s\S]*<AdminWorkbenchDialog/,
+  'Admin credit pack page must render a compact comparison table and shared one-pack workbench'
 );
-assert.doesNotMatch(
+assert.match(
   pageSource,
-  /overflow-x-auto[\s\S]*min-w-\[980px\]|grid-cols-\[1\.2fr_0\.8fr_0\.8fr_0\.7fr_1\.2fr_0\.4fr\]/,
-  'Admin credit pack page must not regress to the wide horizontal table layout'
+  /min-w-\[960px\][\s\S]*sticky left-0[\s\S]*sticky right-0/,
+  'Admin credit pack comparison table must keep identity and action discoverable while secondary columns scroll'
 );
 assert.match(
   pageSource,
