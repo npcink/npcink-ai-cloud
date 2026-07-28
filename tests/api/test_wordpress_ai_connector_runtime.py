@@ -867,7 +867,13 @@ def test_wordpress_ai_connector_title_generation_enforces_its_ability_output_sch
         "type": "json_schema",
         "json_schema": {
             "name": "wordpress_title_generation_output",
-            "schema": title_schema,
+            "schema": {
+                "type": "object",
+                "properties": {"title": {"type": "string"}},
+                "required": ["title"],
+                "additionalProperties": False,
+            },
+            "strict": True,
         },
     }
     assert provider_input["metadata"]["ability_output_schema"] == title_schema

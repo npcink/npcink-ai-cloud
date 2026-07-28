@@ -1271,7 +1271,9 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
         assert payload["max_output_tokens"] == 256
         assert payload["text"]["format"] == {
             "type": "json_schema",
-            "json_schema": {"name": "vision_payload", "schema": {"type": "object"}},
+            "name": "vision_payload",
+            "schema": {"type": "object"},
+            "strict": True,
         }
         assert payload["tools"] == [
             {
@@ -1318,6 +1320,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
                         "json_schema": {
                             "name": "vision_payload",
                             "schema": {"type": "object"},
+                            "strict": True,
                         },
                     },
                 },
