@@ -9,6 +9,10 @@ const register = read('src/app/portal/register/page.tsx');
 const health = read('src/app/api/health/route.ts');
 const publicShell = read('src/components/public/PublicSiteShell.tsx');
 const publicNavigation = read('src/lib/public-navigation.ts');
+const publicHeaderNavigation = publicNavigation
+  .split('export const PUBLIC_HEADER_NAV_ITEMS = ')[1]
+  .split('export const PUBLIC_FOOTER_NAV_ITEMS = ')[0];
+const publicFooterNavigation = publicNavigation.split('export const PUBLIC_FOOTER_NAV_ITEMS = ')[1];
 const publicStatus = read('src/components/public/PublicStatusSummary.tsx');
 const legacyFooter = read('src/components/ui/Footer.tsx');
 const legacyNavbar = read('src/components/ui/Navbar.tsx');
@@ -45,6 +49,13 @@ assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the
 assert.match(publicStatus, /href="\/status"/, 'home status must link to the full status page');
 assert.match(publicStatus, /aria-busy=/, 'home status must expose its checking state without changing layout');
 assert.match(publicNavigation, /href: '\/status'/, 'public navigation must link to the full status page');
+assert.doesNotMatch(
+  publicHeaderNavigation,
+  /href: '\/(?:help|status)'/,
+  'header navigation must keep secondary help and status links in the footer'
+);
+assert.match(publicFooterNavigation, /href: '\/help'/, 'footer navigation must retain the help link');
+assert.match(publicFooterNavigation, /href: '\/status'/, 'footer navigation must retain the status link');
 assert.match(publicShell, /PUBLIC_HEADER_NAV_ITEMS/, 'desktop and mobile navigation must use the shared header config');
 assert.match(publicShell, /PUBLIC_FOOTER_NAV_ITEMS/, 'footer navigation must use the shared footer config');
 assert.doesNotMatch(publicShell, /const navItems =/, 'public navigation must not drift into a page-local menu');

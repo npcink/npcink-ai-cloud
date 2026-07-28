@@ -51,7 +51,7 @@ export default function HelpPage() {
         </div>
         <div>
           <h3 className="font-bold text-slate-950 dark:text-white">{zh ? '可以把站点连接到另一个账户吗？' : 'Can I connect a site to another account?'}</h3>
-          <p>{zh ? '可以，但必须先由原账户在 Cloud 中移除站点。同一账户可以随时重新连接；其他账户只能在站点显示的冷却期结束后、且跨账户重连开放时，通过已验证的 Addon 完成连接。冷却结束后由系统在新的可信连接中自动校验，无需单独提交人工审核；具体可连接时间以 Cloud 页面显示为准。套餐和额度不会随站点转移。' : 'Yes, but the previous account must remove the site in Cloud first. The same account may reconnect at any time; another account can connect through a verified Addon only after the site cooldown ends and cross-account relinking is available. Cloud checks the new verified connection automatically after the cooldown, so no separate manual review request is required; use the availability time shown by Cloud. Plans and credits do not move with the site.'}</p>
+          <p>{zh ? '可以。请先由原账户移除站点。原账户可随时重新连接；更换账户时，需要等待 Cloud 显示的冷却期结束，并通过已验证的 Addon 重新连接。是否可以连接以及具体时间，以 Cloud 页面显示为准，无需人工审核。套餐和额度不会转移。' : 'Yes. The previous account must remove the site first. That account may reconnect at any time. To use another account, wait until the cooldown shown by Cloud ends, then reconnect through a verified Addon. Cloud shows whether and when the site can be connected; no manual review is required. Plans and credits do not transfer.'}</p>
         </div>
       </DocumentSection>
       <PublicComplianceDetails surface="help" />
