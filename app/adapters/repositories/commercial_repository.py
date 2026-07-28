@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import Integer, and_, case, func, or_, select
+from sqlalchemy import Integer, and_, case, func, or_, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -18,9 +18,12 @@ from app.core.models import (
     PAYMENT_ORDER_STATUS_CANCELED,
     PAYMENT_ORDER_STATUS_PENDING,
     PLATFORM_KIND_WORDPRESS,
+    PORTAL_LOGIN_CODE_STATUS_EXPIRED,
     PORTAL_LOGIN_CODE_STATUS_PENDING,
     PORTAL_OAUTH_STATE_STATUS_PENDING,
+    PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
     PRINCIPAL_STATUS_ACTIVE,
+    SITE_STATUS_ACTIVE,
     Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -40,10 +43,12 @@ from app.core.models import (
     PortalLoginCode,
     PortalOAuthState,
     Principal,
+    PrincipalSiteBinding,
     ProviderCallRecord,
     RunRecord,
     ServiceAuditEvent,
     Site,
+    SiteAccountBinding,
     SiteApiKey,
     SiteKnowledgeChunk,
     SiteKnowledgeDocument,
@@ -418,6 +423,7 @@ class CommercialRepository:
         email: str,
         principal_id: str,
         code_hash: str,
+        purpose: str = "portal_login",
         expires_at: datetime,
         metadata_json: dict[str, object] | None = None,
     ) -> PortalLoginCode:
@@ -426,6 +432,7 @@ class CommercialRepository:
             email=email,
             principal_id=principal_id,
             code_hash=code_hash,
+            purpose=purpose,
             status=PORTAL_LOGIN_CODE_STATUS_PENDING,
             expires_at=expires_at,
             consumed_at=None,
@@ -436,15 +443,47 @@ class CommercialRepository:
         self.session.flush()
         return code
 
+    def expire_pending_portal_login_codes(
+        self,
+        *,
+        email: str,
+        purpose: str,
+        now: datetime,
+    ) -> int:
+        bind = self.session.get_bind()
+        if bind.dialect.name == "postgresql":
+            self.session.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtextextended(:lock_material, 0)"
+                    ")"
+                ),
+                {"lock_material": f"{email.strip().lower()}\0{purpose}"},
+            )
+        pending_codes = self.list_portal_login_codes(
+            email=email,
+            status=PORTAL_LOGIN_CODE_STATUS_PENDING,
+            purpose=purpose,
+            limit=None,
+            for_update=True,
+        )
+        for pending_code in pending_codes:
+            pending_code.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
+            pending_code.consumed_at = now
+        self.session.flush()
+        return len(pending_codes)
+
     def list_portal_login_codes(
         self,
         *,
         email: str | None = None,
         principal_id: str | None = None,
         status: str | None = None,
+        purpose: str | None = None,
         active_only: bool = False,
         now: datetime | None = None,
         limit: int | None = None,
+        for_update: bool = False,
     ) -> list[PortalLoginCode]:
         statement = select(PortalLoginCode)
         if email:
@@ -453,6 +492,8 @@ class CommercialRepository:
             statement = statement.where(PortalLoginCode.principal_id == principal_id)
         if status:
             statement = statement.where(PortalLoginCode.status == status)
+        if purpose:
+            statement = statement.where(PortalLoginCode.purpose == purpose)
         if active_only:
             current = now or datetime.now(UTC)
             statement = statement.where(
@@ -465,6 +506,8 @@ class CommercialRepository:
         )
         if limit is not None and limit > 0:
             statement = statement.limit(limit)
+        if for_update:
+            statement = statement.with_for_update()
         return list(self.session.scalars(statement))
 
     def get_principal_identity_by_email(self, *, email: str) -> Principal | None:
@@ -509,8 +552,36 @@ class CommercialRepository:
             select(IdentityProviderBinding).where(
                 IdentityProviderBinding.provider == provider,
                 IdentityProviderBinding.unionid_hash == unionid_hash,
+            ).order_by(IdentityProviderBinding.binding_id.asc())
+        )
+
+    def purge_expired_portal_auth_evidence(
+        self,
+        *,
+        before: datetime,
+        limit: int = 500,
+    ) -> dict[str, int]:
+        bounded_limit = max(1, min(int(limit or 0), 1000))
+        codes = list(
+            self.session.scalars(
+                select(PortalLoginCode)
+                .where(PortalLoginCode.expires_at < before)
+                .order_by(PortalLoginCode.expires_at.asc(), PortalLoginCode.code_id.asc())
+                .limit(bounded_limit)
             )
         )
+        states = list(
+            self.session.scalars(
+                select(PortalOAuthState)
+                .where(PortalOAuthState.expires_at < before)
+                .order_by(PortalOAuthState.expires_at.asc(), PortalOAuthState.state_id.asc())
+                .limit(bounded_limit)
+            )
+        )
+        for row in [*codes, *states]:
+            self.session.delete(row)
+        self.session.flush()
+        return {"portal_login_codes": len(codes), "portal_oauth_states": len(states)}
 
     def list_identity_provider_bindings_for_principal(
         self,
@@ -626,13 +697,15 @@ class CommercialRepository:
         *,
         provider: str,
         state_hash: str,
+        for_update: bool = False,
     ) -> PortalOAuthState | None:
-        return self.session.scalar(
-            select(PortalOAuthState).where(
-                PortalOAuthState.provider == provider,
-                PortalOAuthState.state_hash == state_hash,
-            )
+        statement = select(PortalOAuthState).where(
+            PortalOAuthState.provider == provider,
+            PortalOAuthState.state_hash == state_hash,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def create_portal_oauth_state(
         self,
@@ -785,6 +858,54 @@ class CommercialRepository:
         )
         return list(self.session.scalars(statement))
 
+    def count_active_account_principals(self, *, account_id: str) -> int:
+        statement = (
+            select(func.count(func.distinct(AccountUserMembership.principal_id)))
+            .join(
+                Principal,
+                Principal.principal_id == AccountUserMembership.principal_id,
+            )
+            .where(
+                AccountUserMembership.account_id == account_id,
+                AccountUserMembership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                Principal.status == PRINCIPAL_STATUS_ACTIVE,
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def count_active_account_sites(self, *, account_id: str) -> int:
+        statement = select(func.count(Site.site_id)).where(
+            Site.account_id == account_id,
+            Site.status == SITE_STATUS_ACTIVE,
+        )
+        return int(self.session.scalar(statement) or 0)
+
+    def count_active_principal_bound_sites(
+        self,
+        *,
+        account_id: str,
+        principal_id: str,
+    ) -> int:
+        statement = (
+            select(func.count(func.distinct(Site.site_id)))
+            .join(
+                PrincipalSiteBinding,
+                and_(
+                    PrincipalSiteBinding.site_id == Site.site_id,
+                    PrincipalSiteBinding.account_id == Site.account_id,
+                    PrincipalSiteBinding.principal_id == principal_id,
+                    PrincipalSiteBinding.status
+                    == PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+                    PrincipalSiteBinding.released_at.is_(None),
+                ),
+            )
+            .where(
+                Site.account_id == account_id,
+                Site.status == SITE_STATUS_ACTIVE,
+            )
+        )
+        return int(self.session.scalar(statement) or 0)
+
     def revoke_account_user_memberships(self, *, principal_id: str) -> int:
         memberships = self.list_account_user_memberships(
             principal_ids=[principal_id],
@@ -854,8 +975,21 @@ class CommercialRepository:
         statement = (
             select(Site, Principal, AccountUserMembership)
             .join(
+                PrincipalSiteBinding,
+                and_(
+                    PrincipalSiteBinding.site_id == Site.site_id,
+                    PrincipalSiteBinding.principal_id == principal_id,
+                    PrincipalSiteBinding.account_id == Site.account_id,
+                    PrincipalSiteBinding.status == PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+                    PrincipalSiteBinding.released_at.is_(None),
+                ),
+            )
+            .join(
                 AccountUserMembership,
-                AccountUserMembership.account_id == Site.account_id,
+                and_(
+                    AccountUserMembership.account_id == Site.account_id,
+                    AccountUserMembership.principal_id == principal_id,
+                ),
             )
             .join(Principal, Principal.principal_id == AccountUserMembership.principal_id)
             .join(Account, Account.account_id == Site.account_id)
@@ -877,9 +1011,24 @@ class CommercialRepository:
         *,
         principal_id: str,
         site_id: str,
-    ) -> tuple[Site, Account, Principal | None, AccountUserMembership | None] | None:
+    ) -> (
+        tuple[
+            Site,
+            Account,
+            Principal | None,
+            AccountUserMembership | None,
+            PrincipalSiteBinding | None,
+        ]
+        | None
+    ):
         row = self.session.execute(
-            select(Site, Account, Principal, AccountUserMembership)
+            select(
+                Site,
+                Account,
+                Principal,
+                AccountUserMembership,
+                PrincipalSiteBinding,
+            )
             .join(Account, Account.account_id == Site.account_id)
             .outerjoin(
                 AccountUserMembership,
@@ -892,11 +1041,21 @@ class CommercialRepository:
                 Principal,
                 Principal.principal_id == AccountUserMembership.principal_id,
             )
+            .outerjoin(
+                PrincipalSiteBinding,
+                and_(
+                    PrincipalSiteBinding.site_id == Site.site_id,
+                    PrincipalSiteBinding.principal_id == principal_id,
+                    PrincipalSiteBinding.account_id == Site.account_id,
+                    PrincipalSiteBinding.status == PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+                    PrincipalSiteBinding.released_at.is_(None),
+                ),
+            )
             .where(Site.site_id == site_id)
         ).first()
         if row is None:
             return None
-        return row[0], row[1], row[2], row[3]
+        return row[0], row[1], row[2], row[3], row[4]
 
     def get_platform_admin_grant(
         self,
@@ -1007,6 +1166,128 @@ class CommercialRepository:
 
     def get_site(self, site_id: str) -> Site | None:
         return self.session.get(Site, site_id)
+
+    def get_site_for_update(self, site_id: str) -> Site | None:
+        return self.session.scalar(select(Site).where(Site.site_id == site_id).with_for_update())
+
+    def get_current_principal_site_binding(
+        self,
+        site_id: str,
+        *,
+        for_update: bool = False,
+    ) -> PrincipalSiteBinding | None:
+        statement = (
+            select(PrincipalSiteBinding)
+            .where(
+                PrincipalSiteBinding.site_id == site_id,
+                PrincipalSiteBinding.status == PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+                PrincipalSiteBinding.released_at.is_(None),
+            )
+            .order_by(
+                PrincipalSiteBinding.bound_at.desc(),
+                PrincipalSiteBinding.binding_id.desc(),
+            )
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def create_principal_site_binding(
+        self,
+        *,
+        binding_id: str,
+        principal_id: str,
+        site_id: str,
+        account_id: str,
+        status: str,
+        bound_at: datetime,
+        released_at: datetime | None = None,
+        release_reason: str | None = None,
+        metadata_json: dict[str, object] | None = None,
+    ) -> PrincipalSiteBinding:
+        binding = PrincipalSiteBinding(
+            binding_id=binding_id,
+            principal_id=principal_id,
+            site_id=site_id,
+            account_id=account_id,
+            status=status,
+            bound_at=bound_at,
+            released_at=released_at,
+            release_reason=release_reason,
+            metadata_json=metadata_json,
+        )
+        self.session.add(binding)
+        self.session.flush()
+        return binding
+
+    def get_current_site_account_binding(
+        self,
+        site_id: str,
+        *,
+        for_update: bool = False,
+    ) -> SiteAccountBinding | None:
+        statement = (
+            select(SiteAccountBinding)
+            .where(
+                SiteAccountBinding.site_id == site_id,
+                SiteAccountBinding.released_at.is_(None),
+            )
+            .order_by(
+                SiteAccountBinding.bound_at.desc(),
+                SiteAccountBinding.binding_id.desc(),
+            )
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def get_latest_released_site_account_binding(
+        self,
+        site_id: str,
+    ) -> SiteAccountBinding | None:
+        statement = (
+            select(SiteAccountBinding)
+            .where(
+                SiteAccountBinding.site_id == site_id,
+                SiteAccountBinding.released_at.is_not(None),
+            )
+            .order_by(
+                SiteAccountBinding.released_at.desc(),
+                SiteAccountBinding.binding_id.desc(),
+            )
+            .limit(1)
+        )
+        return self.session.scalar(statement)
+
+    def create_site_account_binding(
+        self,
+        *,
+        binding_id: str,
+        site_id: str,
+        account_id: str,
+        status: str,
+        bound_at: datetime,
+        released_at: datetime | None = None,
+        cooldown_until: datetime | None = None,
+        release_reason: str | None = None,
+        metadata_json: dict[str, object] | None = None,
+    ) -> SiteAccountBinding:
+        binding = SiteAccountBinding(
+            binding_id=binding_id,
+            site_id=site_id,
+            account_id=account_id,
+            status=status,
+            bound_at=bound_at,
+            released_at=released_at,
+            cooldown_until=cooldown_until,
+            release_reason=release_reason,
+            metadata_json=metadata_json,
+        )
+        self.session.add(binding)
+        self.session.flush()
+        return binding
 
     def list_sites(
         self,
@@ -1363,7 +1644,7 @@ class CommercialRepository:
         status: str,
         trial_enabled: bool,
         trial_days: int,
-        trial_credit_limit: int,
+        trial_ai_credit_limit: int,
         trial_requires_approval: bool,
         valid_from_at: datetime | None,
         valid_until_at: datetime | None,
@@ -1382,7 +1663,7 @@ class CommercialRepository:
             "status": status,
             "trial_enabled": trial_enabled,
             "trial_days": trial_days,
-            "trial_credit_limit": trial_credit_limit,
+            "trial_ai_credit_limit": trial_ai_credit_limit,
             "trial_requires_approval": trial_requires_approval,
             "valid_from_at": valid_from_at,
             "valid_until_at": valid_until_at,
@@ -1648,7 +1929,7 @@ class CommercialRepository:
         tier_id: str,
         highest_tier_id: str,
         status: str,
-        credit_limit: int,
+        ai_credit_limit: int,
         started_at: datetime,
         ends_at: datetime,
         approved_by_principal_id: str | None,
@@ -1664,7 +1945,7 @@ class CommercialRepository:
             tier_id=tier_id,
             highest_tier_id=highest_tier_id,
             status=status,
-            credit_limit=credit_limit,
+            ai_credit_limit=ai_credit_limit,
             started_at=started_at,
             ends_at=ends_at,
             approved_by_principal_id=approved_by_principal_id,
@@ -1940,7 +2221,7 @@ class CommercialRepository:
         order_kind: str,
         status: str,
         list_amount: Decimal,
-        credit_amount: Decimal,
+        ai_credit_amount: Decimal,
         payable_amount: Decimal,
         currency: str,
         effective_at: datetime | None,
@@ -1959,7 +2240,7 @@ class CommercialRepository:
             order_kind=order_kind,
             status=status,
             list_amount=list_amount,
-            credit_amount=credit_amount,
+            ai_credit_amount=ai_credit_amount,
             payable_amount=payable_amount,
             currency=currency,
             effective_at=effective_at,
@@ -2254,7 +2535,7 @@ class CommercialRepository:
         event_type: str = CREDIT_LEDGER_EVENT_CONSUME,
         source_type: str,
         source_id: str,
-        credit_delta: float,
+        ai_credit_delta: float,
         quantity: float,
         unit: str,
         rate: float,
@@ -2270,12 +2551,12 @@ class CommercialRepository:
         if existing is not None:
             return existing
 
-        normalized_credit_delta = round(float(credit_delta or 0.0), 6)
+        normalized_credit_delta = round(float(ai_credit_delta or 0.0), 6)
         if (
             event_type == CREDIT_LEDGER_EVENT_CONSUME
             and not float(normalized_credit_delta).is_integer()
         ):
-            raise ValueError("consume credit_delta must be an integer credit unit")
+            raise ValueError("consume ai_credit_delta must be an integer credit unit")
         if event_type == CREDIT_LEDGER_EVENT_CONSUME:
             normalized_credit_delta = float(int(normalized_credit_delta))
 
@@ -2290,7 +2571,7 @@ class CommercialRepository:
             event_type=event_type,
             source_type=source_type,
             source_id=source_id,
-            credit_delta=normalized_credit_delta,
+            ai_credit_delta=normalized_credit_delta,
             quantity=round(float(quantity or 0.0), 6),
             unit=unit,
             rate=round(float(rate or 0.0), 6),
@@ -2375,13 +2656,13 @@ class CommercialRepository:
         statement = (
             select(
                 bucket_expression,
-                func.sum(-CreditLedgerEntry.credit_delta).label("consumed_credits"),
+                func.sum(-CreditLedgerEntry.ai_credit_delta).label("consumed_ai_credits"),
                 func.count(CreditLedgerEntry.ledger_entry_id).label("entry_count"),
             )
             .where(
                 CreditLedgerEntry.account_id == account_id,
                 CreditLedgerEntry.event_type == CREDIT_LEDGER_EVENT_CONSUME,
-                CreditLedgerEntry.credit_delta < 0,
+                CreditLedgerEntry.ai_credit_delta < 0,
                 CreditLedgerEntry.created_at >= buckets[0][0],
                 CreditLedgerEntry.created_at < buckets[-1][1],
             )
@@ -2393,10 +2674,10 @@ class CommercialRepository:
             statement = statement.where(CreditLedgerEntry.site_id.in_(site_ids))
         return {
             int(bucket_index): {
-                "credits": round(float(consumed_credits or 0.0), 6),
+                "ai_credits": round(float(consumed_ai_credits or 0.0), 6),
                 "entry_count": int(entry_count or 0),
             }
-            for bucket_index, consumed_credits, entry_count in self.session.execute(statement)
+            for bucket_index, consumed_ai_credits, entry_count in self.session.execute(statement)
             if bucket_index is not None
         }
 
@@ -2449,7 +2730,7 @@ class CommercialRepository:
                 CreditLedgerEntry.site_id.label("site_id"),
                 feature_expression,
                 func.max(CreditLedgerEntry.created_at).label("created_at"),
-                func.sum(CreditLedgerEntry.credit_delta).label("net_credit_delta"),
+                func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
                 func.count(CreditLedgerEntry.ledger_entry_id).label("component_count"),
             )
             .select_from(CreditLedgerEntry)
@@ -2479,8 +2760,8 @@ class CommercialRepository:
                 func.sum(
                     case(
                         (
-                            grouped_subquery.c.net_credit_delta < 0,
-                            -grouped_subquery.c.net_credit_delta,
+                            grouped_subquery.c.net_ai_credit_delta < 0,
+                            -grouped_subquery.c.net_ai_credit_delta,
                         ),
                         else_=0,
                     )
@@ -2579,7 +2860,7 @@ class CommercialRepository:
             select(
                 bucket_index,
                 feature_expression,
-                func.sum(CreditLedgerEntry.credit_delta).label("net_credit_delta"),
+                func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
                 func.count(func.distinct(group_id)).label("event_count"),
                 func.count(func.distinct(CreditLedgerEntry.site_id)).label("site_count"),
             )
@@ -2604,7 +2885,7 @@ class CommercialRepository:
         total_statement = (
             select(
                 bucket_index,
-                func.sum(CreditLedgerEntry.credit_delta).label("net_credit_delta"),
+                func.sum(CreditLedgerEntry.ai_credit_delta).label("net_ai_credit_delta"),
                 func.count(func.distinct(group_id)).label("event_count"),
                 func.count(func.distinct(CreditLedgerEntry.site_id)).label("site_count"),
             )
@@ -2639,37 +2920,45 @@ class CommercialRepository:
             cast(list[dict[str, Any]], features).append(
                 {
                     "feature_key": str(row["feature_key"] or "content_generation"),
-                    "net_credit_delta": float(row["net_credit_delta"] or 0.0),
+                    "net_ai_credit_delta": float(row["net_ai_credit_delta"] or 0.0),
                     "event_count": int(row["event_count"] or 0),
                 }
             )
         return list(totals.values())
 
-    def get_paid_credit_grant_by_order(self, payment_order_id: str) -> PaidCreditGrant | None:
-        return self.session.scalar(
-            select(PaidCreditGrant).where(PaidCreditGrant.payment_order_id == payment_order_id)
+    def get_paid_credit_grant_by_order(
+        self,
+        payment_order_id: str,
+        *,
+        for_update: bool = False,
+    ) -> PaidCreditGrant | None:
+        statement = select(PaidCreditGrant).where(
+            PaidCreditGrant.payment_order_id == payment_order_id
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def upsert_paid_credit_grant(
         self,
         *,
         account_id: str,
         payment_order_id: str,
-        original_credits: float,
+        original_ai_credits: float,
         expires_at: datetime,
         metadata_json: dict[str, object] | None = None,
     ) -> PaidCreditGrant:
         existing = self.get_paid_credit_grant_by_order(payment_order_id)
         if existing is not None:
             return existing
-        normalized_credits = round(max(0.0, float(original_credits or 0.0)), 6)
+        normalized_credits = round(max(0.0, float(original_ai_credits or 0.0)), 6)
         grant = PaidCreditGrant(
             grant_id=f"pcg_{uuid4().hex}",
             account_id=account_id,
             payment_order_id=payment_order_id,
-            original_credits=normalized_credits,
-            remaining_credits=normalized_credits,
-            refunded_credits=0.0,
+            original_ai_credits=normalized_credits,
+            remaining_ai_credits=normalized_credits,
+            refunded_ai_credits=0.0,
             expires_at=expires_at,
             metadata_json=metadata_json or {},
             created_at=datetime.now(UTC),
@@ -2689,7 +2978,7 @@ class CommercialRepository:
             select(PaidCreditGrant)
             .where(
                 PaidCreditGrant.account_id == account_id,
-                PaidCreditGrant.remaining_credits > 0,
+                PaidCreditGrant.remaining_ai_credits > 0,
                 PaidCreditGrant.expires_at > now,
             )
             .order_by(PaidCreditGrant.expires_at.asc(), PaidCreditGrant.created_at.asc())
@@ -2702,10 +2991,10 @@ class CommercialRepository:
         self,
         *,
         account_id: str,
-        credits: float,
+        ai_credits: float,
         now: datetime,
     ) -> float:
-        remaining = round(max(0.0, float(credits or 0.0)), 6)
+        remaining = round(max(0.0, float(ai_credits or 0.0)), 6)
         consumed = 0.0
         for grant in self.list_available_paid_credit_grants(
             account_id=account_id,
@@ -2714,8 +3003,8 @@ class CommercialRepository:
         ):
             if remaining <= 0:
                 break
-            amount = min(remaining, max(0.0, float(grant.remaining_credits or 0.0)))
-            grant.remaining_credits = round(float(grant.remaining_credits) - amount, 6)
+            amount = min(remaining, max(0.0, float(grant.remaining_ai_credits or 0.0)))
+            grant.remaining_ai_credits = round(float(grant.remaining_ai_credits) - amount, 6)
             consumed += amount
             remaining -= amount
         self.session.flush()
@@ -2725,7 +3014,7 @@ class CommercialRepository:
         self,
         *,
         payment_order_id: str,
-        credits: float,
+        ai_credits: float,
     ) -> PaidCreditGrant | None:
         grant = self.session.scalar(
             select(PaidCreditGrant)
@@ -2734,13 +3023,13 @@ class CommercialRepository:
         )
         if grant is None:
             return None
-        normalized = round(max(0.0, float(credits or 0.0)), 6)
-        already_refunded = max(0.0, float(grant.refunded_credits or 0.0))
-        target_refunded = min(float(grant.original_credits), already_refunded + normalized)
+        normalized = round(max(0.0, float(ai_credits or 0.0)), 6)
+        already_refunded = max(0.0, float(grant.refunded_ai_credits or 0.0))
+        target_refunded = min(float(grant.original_ai_credits), already_refunded + normalized)
         increment = max(0.0, target_refunded - already_refunded)
-        grant.refunded_credits = round(target_refunded, 6)
-        grant.remaining_credits = round(
-            max(0.0, float(grant.remaining_credits or 0.0) - increment),
+        grant.refunded_ai_credits = round(target_refunded, 6)
+        grant.remaining_ai_credits = round(
+            max(0.0, float(grant.remaining_ai_credits or 0.0) - increment),
             6,
         )
         self.session.flush()

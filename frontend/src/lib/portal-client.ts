@@ -56,10 +56,26 @@ export interface Site {
   site_url: string;
   platform_kind: string;
   status: string;
+  ownership_released_at?: string;
+  relink_cooldown_until?: string;
 }
 
 export interface PortalSiteDetail extends Site {
   created_at: string;
+}
+
+export interface PortalSiteRelinkPolicy {
+  enabled: boolean;
+  cooldown_days: number;
+  same_account_reconnect_allowed: boolean;
+}
+
+export interface PortalSiteRemovalResult {
+  site: Site;
+  revoked_key_ids: string[];
+  relink_policy: PortalSiteRelinkPolicy & {
+    relink_available_at: string;
+  };
 }
 
 export interface PortalLoginCodeRequest {
@@ -98,9 +114,6 @@ export interface PortalEmailChangeResult extends PortalSession {
 
 export interface PortalRegistrationCodeRequest {
   email: string;
-  site_url?: string;
-  site_name?: string;
-  use_case?: string;
   locale?: 'en' | 'zh-CN';
 }
 
@@ -161,8 +174,8 @@ export interface AddonConnectionResult {
   site_id: string;
   site_url: string;
   platform_kind: 'wordpress';
-  key_id: string;
   site_created: boolean;
+  activation_state: 'pending_exchange';
   redirect_url: string;
   return_url: string;
   expires_at: string;
@@ -204,7 +217,7 @@ export interface PortalAccountEntitlements {
     generated_at?: string;
     period_start_at?: string;
     period_end_at?: string;
-    credit?: {
+    ai_credits?: {
       key?: string;
       used?: number;
       limit?: number;
@@ -223,21 +236,21 @@ export interface PortalAccountEntitlements {
       paid_next_expires_at?: string;
       total_remaining?: number;
     };
-    credit_ledger_summary?: {
-      consumed_credits?: number;
-      granted_credits?: number;
-      adjustment_credits?: number;
-      refund_credits?: number;
-      net_credit_delta?: number;
-      net_used_credits?: number;
+    ai_credit_ledger_summary?: {
+      consumed_ai_credits?: number;
+      granted_ai_credits?: number;
+      adjustment_ai_credits?: number;
+      refund_ai_credits?: number;
+      net_ai_credit_delta?: number;
+      net_used_ai_credits?: number;
       entry_count?: number;
     };
-    credit_policy?: {
+    ai_credit_policy?: {
       rate_version?: string;
       period_policy?: string;
       renewal_policy?: string;
       topup_policy?: string;
-      paid_credit_policy?: string;
+      paid_ai_credit_policy?: string;
     };
     resource_limits?: Array<{
       key?: string;
@@ -254,7 +267,7 @@ export interface PortalAccountEntitlements {
       label?: string;
       quantity?: number;
       unit?: string;
-      credits?: number;
+      ai_credits?: number;
     }>;
   };
   generated_at: string;
@@ -1022,6 +1035,8 @@ function normalizePortalSiteSummaryRecord(raw: unknown): PortalSiteSummaryRecord
       site_url: String(nestedSite.site_url || ''),
       platform_kind: String(nestedSite.platform_kind || ''),
       status: String(nestedSite.status || 'inactive'),
+      ownership_released_at: String(nestedSite.ownership_released_at || ''),
+      relink_cooldown_until: String(nestedSite.relink_cooldown_until || ''),
       created_at: String(nestedSite.created_at || ''),
     },
     package_alias:
@@ -1081,10 +1096,10 @@ export interface PortalCreditLedgerEntry {
   explanation?: string;
   source_id?: string;
   run_id?: string;
-  credit_delta: number;
-  consumed_credits: number;
-  granted_credits?: number;
-  net_credit_delta?: number;
+  ai_credit_delta: number;
+  consumed_ai_credits: number;
+  granted_ai_credits?: number;
+  net_ai_credit_delta?: number;
   quantity: number;
   unit: string;
   rate?: number;
@@ -1169,7 +1184,7 @@ export interface PortalPlanOffer {
   status: string;
   trial_enabled: boolean;
   trial_days: number;
-  trial_credit_limit: number;
+  trial_ai_credit_limit: number;
   trial_requires_approval: boolean;
   valid_from_at?: string;
   valid_until_at?: string;
@@ -1221,7 +1236,7 @@ export interface PortalPlanOfferListPayload {
     tier_id?: string;
     highest_tier_id?: string;
     trial_days?: number;
-    credit_limit?: number;
+    ai_credit_limit?: number;
     trial_started_at?: string;
     trial_ends_at?: string;
   };
@@ -1235,7 +1250,7 @@ export interface PortalPlanTrialPayload {
     status?: string;
     tier_id?: string;
     trial_days?: number;
-    credit_limit?: number;
+    ai_credit_limit?: number;
     trial_started_at?: string;
     trial_ends_at?: string;
     monthly_price_cny?: number;
@@ -1253,7 +1268,7 @@ export interface PortalSubscriptionOrder {
   order_kind: 'purchase' | 'upgrade' | 'renewal' | 'downgrade';
   status: string;
   list_amount: number;
-  credit_amount: number;
+  ai_credit_amount: number;
   payable_amount: number;
   currency: 'CNY';
   effective_at?: string;
@@ -1392,19 +1407,19 @@ export interface PortalCreditLedgerPayload {
     has_more?: boolean;
   };
   summary?: {
-    total_credits?: number;
-    consumed_credits?: number;
-    granted_credits?: number;
-    adjustment_credits?: number;
-    refund_credits?: number;
-    net_credit_delta?: number;
-    net_used_credits?: number;
+    total_ai_credits?: number;
+    consumed_ai_credits?: number;
+    granted_ai_credits?: number;
+    adjustment_ai_credits?: number;
+    refund_ai_credits?: number;
+    net_ai_credit_delta?: number;
+    net_used_ai_credits?: number;
     entry_count?: number;
     category_totals?: Record<
       string,
       {
         label?: string;
-        net_credit_delta?: number;
+        net_ai_credit_delta?: number;
       }
     >;
     breakdown?: Array<{
@@ -1412,10 +1427,10 @@ export interface PortalCreditLedgerPayload {
       label?: string;
       quantity?: number;
       unit?: string;
-      credits?: number;
+      ai_credits?: number;
     }>;
   };
-  usage_detail?: {
+  ai_credit_usage_detail?: {
     surface?: string;
     default_visibility?: string;
     local_addon_policy?: string;
@@ -1439,7 +1454,7 @@ export interface PortalCreditLedgerPayload {
       unit?: string;
       rate?: number;
       rate_unit?: string;
-      credits?: number;
+      ai_credits?: number;
       capability_group?: string;
     }>;
     recent_items?: PortalCreditLedgerEntry[];
@@ -1462,7 +1477,7 @@ export type PortalCreditTrendWindow = '1h' | '24h' | '7d' | '30d';
 export interface PortalCreditTrendPoint {
   start_at: string;
   end_at: string;
-  credits: number;
+  ai_credits: number;
   entry_count: number;
 }
 
@@ -1474,7 +1489,7 @@ export interface PortalCreditTrendPayload {
   bucket_seconds: number;
   start_at: string;
   end_at: string;
-  total_credits: number;
+  total_ai_credits: number;
   entry_count: number;
   points: PortalCreditTrendPoint[];
 }
@@ -1497,11 +1512,11 @@ export interface PortalCreditEvent {
   feature_label: string;
   feature_detail: string;
   created_at: string;
-  net_credit_delta: number;
-  consumed_credits: number;
+  net_ai_credit_delta: number;
+  consumed_ai_credits: number;
   direction: 'consumed' | 'added';
   component_count: number;
-  components: Array<{ key: string; credits: number }>;
+  components: Array<{ key: string; ai_credits: number }>;
 }
 
 export interface PortalCreditEventsPayload {
@@ -1510,7 +1525,7 @@ export interface PortalCreditEventsPayload {
   period_start_at: string;
   period_end_at: string;
   filters: { window: PortalCreditEventWindow; site_id: string; feature: string };
-  summary: { event_count: number; consumed_credits: number };
+  summary: { event_count: number; consumed_ai_credits: number };
   pagination: { limit: number; offset: number; total: number; has_more: boolean };
   items: PortalCreditEvent[];
 }
@@ -1520,11 +1535,11 @@ export interface PortalCreditEventBucket {
   bucket_id: string;
   start_at: string;
   end_at: string;
-  consumed_credits: number;
+  consumed_ai_credits: number;
   event_count: number;
   site_count: number;
   top_feature_key: string;
-  feature_totals: Array<{ feature_key: string; consumed_credits: number; event_count: number }>;
+  feature_totals: Array<{ feature_key: string; consumed_ai_credits: number; event_count: number }>;
 }
 export interface PortalCreditEventBucketsPayload {
   contract_version: 'portal-credit-event-buckets-v1';
@@ -1535,7 +1550,7 @@ export interface PortalCreditEventBucketsPayload {
   bucket_seconds: number;
   timezone: string;
   filters: { window: PortalCreditEventWindow; site_id: string; feature: string };
-  summary: { bucket_count: number; consumed_credits: number };
+  summary: { bucket_count: number; consumed_ai_credits: number };
   pagination: { limit: number; offset: number; total: number; has_more: boolean };
   items: PortalCreditEventBucket[];
 }
@@ -1647,7 +1662,7 @@ export class PortalClient {
   }
 
   /**
-   * 验证注册验证码并创建 Free 账号
+   * 验证注册验证码并创建账号；Free 权益在 WordPress Addon 完成真实连接后激活
    * POST /portal/v1/register/verify
    */
   async verifyRegistration(payload: PortalRegistrationVerifyRequest): Promise<PortalEnvelope<PortalSession>> {
@@ -1668,6 +1683,15 @@ export class PortalClient {
    */
   async startQqBind(returnTo = '/portal/account'): Promise<PortalEnvelope<PortalQqStartResponse>> {
     const params = new URLSearchParams({ intent: 'bind', return_to: returnTo });
+    return this.request('GET', `/auth/qq/start?${params.toString()}`, undefined);
+  }
+
+  /**
+   * 发起 QQ 登录或首次注册
+   * GET /portal/v1/auth/qq/start?intent=login
+   */
+  async startQqLogin(returnTo = '/portal'): Promise<PortalEnvelope<PortalQqStartResponse>> {
+    const params = new URLSearchParams({ intent: 'login', return_to: returnTo });
     return this.request('GET', `/auth/qq/start?${params.toString()}`, undefined);
   }
 
@@ -1723,11 +1747,15 @@ export class PortalClient {
     return this.request('GET', '/addon-connection-accounts', undefined);
   }
 
+  async getSiteRelinkPolicy(): Promise<PortalEnvelope<PortalSiteRelinkPolicy>> {
+    return this.request('GET', '/site-relink-policy', undefined);
+  }
+
   async createAddonConnection(payload: CreateAddonConnectionRequest): Promise<PortalEnvelope<AddonConnectionResult>> {
     return this.request('POST', '/addon-connections', payload);
   }
 
-  async removeSite(siteId: string): Promise<PortalEnvelope<{ site: Site; revoked_key_ids: string[] }>> {
+  async removeSite(siteId: string): Promise<PortalEnvelope<PortalSiteRemovalResult>> {
     return this.request('POST', `/sites/${siteId}/remove`, {});
   }
 
@@ -1875,7 +1903,7 @@ export class PortalClient {
   }
 
   /**
-   * 获取本期积分账本明细
+   * 获取本期 AI 积分账本明细
    * GET /portal/v1/sites/{siteId}/credit-ledger
    */
   async getCreditLedger(

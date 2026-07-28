@@ -142,6 +142,7 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
+from app.domain.runtime.provider_evidence import summarize_provider_runtime_evidence
 from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
     ProviderOutputDecision,
@@ -1312,6 +1313,58 @@ class RuntimeService:
             "generated_at": self.run_projector.serialize_timestamp(current_time),
             "guard": guard_summary,
             **summary,
+        }
+
+    def get_provider_runtime_evidence_summary(
+        self,
+        *,
+        site_id: str | None = None,
+        provider_id: str | None = None,
+        model_id: str | None = None,
+        ability_name: str | None = None,
+        recent_minutes: int = 1440,
+        lane_limit: int = 50,
+    ) -> dict[str, object]:
+        current_time = datetime.now(UTC)
+        resolved_recent_minutes = max(1, recent_minutes)
+        resolved_lane_limit = max(1, lane_limit)
+        record_limit = 10000
+        recent_since = current_time - timedelta(minutes=resolved_recent_minutes)
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            records, records_truncated = repository.list_provider_evidence_records(
+                since=recent_since,
+                limit=record_limit,
+                site_id=site_id,
+                provider_id=provider_id,
+                model_id=model_id,
+                ability_name=ability_name,
+            )
+            meter_events = repository.list_provider_evidence_meter_events(
+                [record.call_id for record in records]
+            )
+        evidence = summarize_provider_runtime_evidence(
+            records,
+            meter_events,
+            lane_limit=resolved_lane_limit,
+        )
+        return {
+            "filters": {
+                "site_id": site_id or "",
+                "provider_id": provider_id or "",
+                "model_id": model_id or "",
+                "ability_name": ability_name or "",
+                "recent_minutes": resolved_recent_minutes,
+                "lane_limit": resolved_lane_limit,
+            },
+            "window": {
+                "started_at": self.run_projector.serialize_timestamp(recent_since),
+                "ended_at": self.run_projector.serialize_timestamp(current_time),
+                "record_limit": record_limit,
+                "records_truncated": records_truncated,
+            },
+            "generated_at": self.run_projector.serialize_timestamp(current_time),
+            **evidence,
         }
 
     def get_runtime_telemetry_diagnostics(
@@ -5569,8 +5622,11 @@ class RuntimeService:
             "region": candidate.region,
             "weight": candidate.weight,
             "health_status": candidate.health_status,
+            "context_window": candidate.context_window,
             "price_input": candidate.price_input,
             "price_output": candidate.price_output,
+            "price_cache_read": candidate.price_cache_read,
+            "price_cache_write": candidate.price_cache_write,
             "capability_tags": candidate.capability_tags,
         }
 
@@ -5592,8 +5648,13 @@ class RuntimeService:
                     region=str(item.get("region") or ""),
                     weight=max(0, self._coerce_int(item.get("weight"), default=0)),
                     health_status=str(item.get("health_status") or "unknown"),
+                    context_window=self._coerce_optional_positive_int(
+                        item.get("context_window")
+                    ),
                     price_input=self._coerce_float(item.get("price_input")),
                     price_output=self._coerce_float(item.get("price_output")),
+                    price_cache_read=self._coerce_float(item.get("price_cache_read")),
+                    price_cache_write=self._coerce_float(item.get("price_cache_write")),
                     capability_tags=[
                         str(tag) for tag in item.get("capability_tags", []) if isinstance(tag, str)
                     ],
@@ -6217,6 +6278,10 @@ class RuntimeService:
             except ValueError:
                 return default
         return default
+
+    def _coerce_optional_positive_int(self, value: object | None) -> int | None:
+        normalized = self._coerce_int(value, default=0)
+        return normalized if normalized > 0 else None
 
     def _coerce_float(self, value: object | None) -> float | None:
         if value is None:

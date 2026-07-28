@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -33,6 +34,10 @@ SITE_STATUS_INACTIVE = "inactive"
 SITE_STATUS_SUSPENDED = "suspended"
 SITE_STATUS_ARCHIVED = "archived"
 PLATFORM_KIND_WORDPRESS = "wordpress"
+SITE_ACCOUNT_BINDING_STATUS_ACTIVE = "active"
+SITE_ACCOUNT_BINDING_STATUS_RELEASED = "released"
+PRINCIPAL_SITE_BINDING_STATUS_ACTIVE = "active"
+PRINCIPAL_SITE_BINDING_STATUS_RELEASED = "released"
 
 SITE_API_KEY_STATUS_ACTIVE = "active"
 SITE_API_KEY_STATUS_REVOKED = "revoked"
@@ -161,11 +166,22 @@ class Account(Base):
 
 class PortalLoginCode(Base):
     __tablename__ = "portal_login_codes"
+    __table_args__ = (
+        Index(
+            "uq_portal_login_codes_pending_email_purpose",
+            "email",
+            "purpose",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
 
     code_id: Mapped[str] = mapped_column(String(191), primary_key=True)
     email: Mapped[str] = mapped_column(String(191), index=True)
     principal_id: Mapped[str] = mapped_column(String(191), index=True)
     code_hash: Mapped[str] = mapped_column(String(191))
+    purpose: Mapped[str] = mapped_column(String(64), default="portal_login", index=True)
     status: Mapped[str] = mapped_column(
         String(32),
         default=PORTAL_LOGIN_CODE_STATUS_PENDING,
@@ -189,6 +205,10 @@ class PortalLoginCode(Base):
 class PlatformAdminGrant(Base):
     __tablename__ = "platform_admin_grants"
     __table_args__ = (
+        CheckConstraint(
+            "role IN ('platform_admin')",
+            name="ck_platform_admin_grants_role",
+        ),
         UniqueConstraint("principal_id", name="uq_platform_admin_grants_principal_id"),
     )
 
@@ -290,7 +310,7 @@ class PlanOffer(Base):
     status: Mapped[str] = mapped_column(String(32), index=True)
     trial_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     trial_days: Mapped[int] = mapped_column(Integer, default=0)
-    trial_credit_limit: Mapped[int] = mapped_column(Integer, default=0)
+    trial_ai_credit_limit: Mapped[int] = mapped_column(Integer, default=0)
     trial_requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
     valid_from_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     valid_until_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
@@ -316,7 +336,7 @@ class SubscriptionOrder(Base):
     order_kind: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(32), index=True)
     list_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
-    credit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    ai_credit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     payable_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     currency: Mapped[str] = mapped_column(String(16), default="CNY")
     effective_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -348,7 +368,7 @@ class TrialClaim(Base):
     tier_id: Mapped[str] = mapped_column(String(32), index=True)
     highest_tier_id: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(32), index=True)
-    credit_limit: Mapped[int] = mapped_column(Integer, default=0)
+    ai_credit_limit: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     approved_by_principal_id: Mapped[str | None] = mapped_column(String(191))
@@ -383,6 +403,53 @@ class Site(Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspension_reason: Mapped[str | None] = mapped_column(Text)
+    ownership_released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    relink_cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class SiteAccountBinding(Base):
+    __tablename__ = "site_account_bindings"
+    __table_args__ = (
+        Index(
+            "uq_site_account_bindings_current_site",
+            "site_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+            sqlite_where=text("released_at IS NULL"),
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    account_id: Mapped[str] = mapped_column(String(191), index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=SITE_ACCOUNT_BINDING_STATUS_ACTIVE,
+        index=True,
+    )
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    release_reason: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -408,6 +475,61 @@ class Principal(Base):
     session_version: Mapped[int] = mapped_column(Integer, default=1)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PrincipalSiteBinding(Base):
+    __tablename__ = "principal_site_bindings"
+    __table_args__ = (
+        CheckConstraint(
+            "(status = 'active' AND released_at IS NULL) OR "
+            "(status = 'released' AND released_at IS NOT NULL)",
+            name="ck_principal_site_bindings_lifecycle",
+        ),
+        Index(
+            "uq_principal_site_bindings_current_site",
+            "site_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+            sqlite_where=text("released_at IS NULL"),
+        ),
+        Index(
+            "ix_principal_site_bindings_principal_status",
+            "principal_id",
+            "status",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(
+        ForeignKey("principals.principal_id"),
+        index=True,
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.site_id"), index=True)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.account_id"),
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=PRINCIPAL_SITE_BINDING_STATUS_ACTIVE,
+        index=True,
+    )
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
+    release_reason: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -1495,9 +1617,9 @@ class CreditLedgerEntry(Base):
     )
     source_type: Mapped[str] = mapped_column(String(64), index=True)
     source_id: Mapped[str] = mapped_column(String(191), index=True)
-    credit_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    ai_credit_delta: Mapped[float] = mapped_column(Float, default=0.0)
     quantity: Mapped[float] = mapped_column(Float, default=0.0)
-    unit: Mapped[str] = mapped_column(String(32), default="credit")
+    unit: Mapped[str] = mapped_column(String(32), default="ai_credits")
     rate: Mapped[float] = mapped_column(Float, default=0.0)
     rate_unit: Mapped[str | None] = mapped_column(String(64))
     rate_version: Mapped[str] = mapped_column(String(64), index=True)
@@ -1516,11 +1638,11 @@ class PaidCreditGrant(Base):
     __tablename__ = "paid_credit_grants"
     __table_args__ = (
         CheckConstraint(
-            "original_credits >= 0 AND remaining_credits >= 0 AND refunded_credits >= 0",
+            "original_ai_credits >= 0 AND remaining_ai_credits >= 0 AND refunded_ai_credits >= 0",
             name="ck_paid_credit_grants_nonnegative",
         ),
         CheckConstraint(
-            "remaining_credits + refunded_credits <= original_credits",
+            "remaining_ai_credits + refunded_ai_credits <= original_ai_credits",
             name="ck_paid_credit_grants_balance",
         ),
     )
@@ -1530,9 +1652,9 @@ class PaidCreditGrant(Base):
     payment_order_id: Mapped[str] = mapped_column(
         ForeignKey("payment_orders.order_id"), unique=True, index=True
     )
-    original_credits: Mapped[float] = mapped_column(Float)
-    remaining_credits: Mapped[float] = mapped_column(Float)
-    refunded_credits: Mapped[float] = mapped_column(Float, default=0.0)
+    original_ai_credits: Mapped[float] = mapped_column(Float)
+    remaining_ai_credits: Mapped[float] = mapped_column(Float)
+    refunded_ai_credits: Mapped[float] = mapped_column(Float, default=0.0)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(

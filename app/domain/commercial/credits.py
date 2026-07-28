@@ -49,14 +49,24 @@ def package_credit_net_delta(entries: Iterable[object]) -> float:
         source_type = str(getattr(entry, "source_type", "") or "")
         if source_type in PAID_CREDIT_BALANCE_SOURCE_TYPES:
             continue
-        total += float(getattr(entry, "credit_delta", 0.0) or 0.0)
+        total += float(getattr(entry, "ai_credit_delta", 0.0) or 0.0)
     return round(total, 6)
 
 
-def package_credit_used(entries: Iterable[object]) -> float:
-    """Return package allowance used after ordinary grants and adjustments."""
+def package_credit_used_from_net_delta(net_delta: float) -> float:
+    """Return package allowance used for a period net delta."""
 
-    return round(max(0.0, -package_credit_net_delta(entries)), 6)
+    return round(max(0.0, -float(net_delta)), 6)
+
+
+def package_credit_remaining_from_net_delta(
+    package_credit_limit: float,
+    net_delta: float,
+) -> float:
+    """Return spendable package credits, including operator grants and adjustments."""
+
+    return round(max(0.0, float(package_credit_limit) + float(net_delta)), 6)
+
 
 AI_CREDIT_BREAKDOWN_ORDER = (
     "runs",
@@ -436,13 +446,13 @@ def usage_meter_credit_component(event: object) -> dict[str, object] | None:
         return {
             **AI_CREDIT_COMPONENT_POLICY_REGISTRY["runs"],
             "quantity": quantity,
-            "credits": quantity,
+            "ai_credits": quantity,
         }
     if meter_key == "tokens_total":
         return {
             **AI_CREDIT_COMPONENT_POLICY_REGISTRY["tokens_total"],
             "quantity": quantity,
-            "credits": rounded_token_credits(quantity),
+            "ai_credits": rounded_token_credits(quantity),
         }
     if meter_key == "provider_calls":
         component = classify_provider_credit_component(
@@ -453,7 +463,7 @@ def usage_meter_credit_component(event: object) -> dict[str, object] | None:
         return {
             **component,
             "quantity": quantity,
-            "credits": quantity * _coerce_float(component.get("rate")),
+            "ai_credits": quantity * _coerce_float(component.get("rate")),
         }
     return None
 
@@ -536,7 +546,7 @@ def record_credit_ledger_component(
     source_type = str(component.get("source_type") or "").strip()
     if not source_type:
         return None
-    credits = _coerce_float(component.get("credits"))
+    credits = _coerce_float(component.get("ai_credits"))
     if credits <= 0:
         return None
     return cast(Any, repository).record_credit_ledger_entry(
@@ -548,9 +558,9 @@ def record_credit_ledger_component(
         provider_call_id=provider_call_id,
         source_type=source_type,
         source_id=source_id,
-        credit_delta=-credits,
+        ai_credit_delta=-credits,
         quantity=_coerce_float(component.get("quantity")),
-        unit=str(component.get("unit") or "credit"),
+        unit=str(component.get("unit") or "ai_credits"),
         rate=_coerce_float(component.get("rate")),
         rate_unit=(
             str(component.get("rate_unit"))
@@ -582,18 +592,18 @@ def build_credit_breakdown_from_ledger(entries: Iterable[object]) -> list[dict[s
                 "key": source_type,
                 "label": AI_CREDIT_COMPONENT_LABELS.get(source_type, source_type),
                 "quantity": 0.0,
-                "unit": str(getattr(entry, "unit", "") or "credit"),
+                "unit": str(getattr(entry, "unit", "") or "ai_credits"),
                 "rate": _coerce_float(getattr(entry, "rate", 0.0)),
                 "rate_unit": getattr(entry, "rate_unit", None),
-                "credits": 0.0,
+                "ai_credits": 0.0,
             },
         )
         item["quantity"] = _coerce_float(item.get("quantity")) + _coerce_float(
             getattr(entry, "quantity", 0.0)
         )
-        item["credits"] = _coerce_float(item.get("credits")) + max(
+        item["ai_credits"] = _coerce_float(item.get("ai_credits")) + max(
             0.0,
-            -_coerce_float(getattr(entry, "credit_delta", 0.0)),
+            -_coerce_float(getattr(entry, "ai_credit_delta", 0.0)),
         )
 
     def sort_key(item: dict[str, object]) -> tuple[int, str]:
@@ -608,7 +618,7 @@ def build_credit_breakdown_from_ledger(entries: Iterable[object]) -> list[dict[s
         {
             **item,
             "quantity": round(_coerce_float(item.get("quantity")), 6),
-            "credits": round(_coerce_float(item.get("credits")), 6),
+            "ai_credits": round(_coerce_float(item.get("ai_credits")), 6),
         }
         for item in items
         if _coerce_float(item.get("quantity")) > 0

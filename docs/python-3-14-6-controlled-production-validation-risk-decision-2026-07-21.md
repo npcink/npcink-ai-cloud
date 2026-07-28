@@ -55,6 +55,15 @@ relevant fix. The exception must be removed as soon as the first supported
 stable 3.14 image containing the relevant fixes can be pinned, rebuilt, scanned,
 and replayed; do not wait for the expiry date.
 
+The read-only
+[2026-07-24 upstream checkpoint](python-3-14-cve-upstream-checkpoint-2026-07-24.md)
+confirmed that the official `python:3.14-alpine` tag still reports Python
+`3.14.6` and still resolves to the digest already pinned in `Dockerfile`.
+No `3.14.7` image variant was observed. The daily upstream watch added by that
+checkpoint is an alerting seam only: a changed candidate still requires the
+full repin, rebuild, fresh scan, and exact-bundle replay before an exception can
+be removed.
+
 ## Required artifact gate
 
 Before any production-host image, database, Edge, or release mutation:

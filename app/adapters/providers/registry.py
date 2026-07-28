@@ -265,6 +265,16 @@ def _instantiate_connection_adapter(
                 provider_label=display_name,
                 image_output_hosts=image_output_hosts,
                 image_response_format=image_response_format or None,
+                default_reasoning_effort=_coerce_string(
+                    config.get("default_reasoning_effort")
+                )
+                or None,
+                prompt_cache_affinity_enabled=(
+                    config["supports_prompt_cache_key"]
+                    if isinstance(config.get("supports_prompt_cache_key"), bool)
+                    else provider_id == "openai"
+                ),
+                model_metadata_overrides=config.get("model_metadata_overrides"),
             ),
             provider_id=provider_id,
             display_name=display_name,

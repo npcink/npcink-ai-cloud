@@ -313,6 +313,8 @@ class WordPressAIConnectorTextProvider:
                 "WordPress - 流行的建站程序介绍与下载 摘要： "
                 "WordPress是一款能让您建立出色网站、博客或应用的开源软件"
             )
+        elif task == "title_generation" and "title schema mismatch" in source_text:
+            output_text = '{"headline":"This must not pass the title Ability schema"}'
         if task == "content_classification":
             output_text = (
                 '{"suggestions":[{"term":"经验教程","confidence":0.8,"is_new":false}]}'
@@ -458,6 +460,15 @@ class WordPressAIConnectorTextProvider:
                 tokens_out=0,
                 cost=0.0,
             )
+        response_format = request.input_payload.get("response_format")
+        if (
+            task == "title_generation"
+            and isinstance(response_format, dict)
+            and response_format.get("type") == "json_schema"
+            and "title schema mismatch" not in source_text
+        ):
+            output_text = json.dumps({"title": output_text}, ensure_ascii=False)
+
         return ProviderExecutionResult(
             output={
                 "output_text": output_text,
@@ -768,7 +779,7 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
     assert result["output"]["output_text"] == ("Npcink Cloud Addon: WordPress AI scene helper")
     assert data["execution_context"]["contract_version"] == "cloud_connector_runtime.v1"
     assert data["execution_context"]["ability_family"] == "text"
-    assert data["execution_context"]["data_classification"] == "public_site_content"
+    assert data["execution_context"]["data_classification"] == "internal"
     assert provider.requests[0].ability_name == "npcink-cloud/connector-runtime"
     assert provider.requests[0].execution_kind == "text"
     assert provider.requests[0].profile_id == WP_AI_CONNECTOR_SHORT_TEXT_PROFILE_ID
@@ -817,6 +828,88 @@ def test_wordpress_ai_connector_runtime_executes_scene_bound_text(tmp_path: Path
         assert run.policy_json["execution_contract"]["task_group"] == "short_text"
         assert run.policy_json["execution_contract"]["routing_intent"] == "content.short_text"
         assert run.result_json == result
+
+
+def test_wordpress_ai_connector_title_generation_enforces_its_ability_output_schema(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    title_schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string"}},
+    }
+    payload = _payload(
+        {
+            "request": {
+                "source_text": "<content>Generate one schema-bound title.</content>",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                    "output_schema": title_schema,
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-title-schema-success")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["result"]["output"]["output_text"] == (
+        "Npcink Cloud Addon: WordPress AI scene helper"
+    )
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "wordpress_title_generation_output",
+            "schema": {
+                "type": "object",
+                "properties": {"title": {"type": "string"}},
+                "required": ["title"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    }
+    assert provider_input["metadata"]["ability_output_schema"] == title_schema
+
+
+def test_wordpress_ai_connector_title_generation_rejects_a_parseable_wrong_schema(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "request": {
+                "source_text": "<content>title schema mismatch must fail closed</content>",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/title-generation",
+                    "task": "title_generation",
+                    "task_family": "generation",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["single_value", "source_grounded", "no_new_numbers"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}},
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-title-schema-mismatch")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert response.json()["error_code"] == "provider.output_quality_rejected"
+    assert len(provider.requests) == 2
 
 
 @pytest.mark.parametrize(
@@ -2985,6 +3078,70 @@ def test_wordpress_ai_connector_runtime_projects_classification_json_scene(
     assert any(
         suggestion["term"] in {"WordPress", "WordPress AI"} for suggestion in result["suggestions"]
     )
+
+
+def test_wordpress_ai_connector_runtime_enforces_ability_output_schema_for_comment_moderation(
+    tmp_path: Path,
+) -> None:
+    _, client, provider = _build_client(tmp_path)
+    payload = _payload(
+        {
+            "task": "comment_moderation",
+            "request": {
+                "prompt": (
+                    "Comment by Local diagnostic:\n"
+                    '\"\"\"Thank you for the useful explanation.\"\"\"'
+                ),
+                "response_format": "json",
+                "task_contract": {
+                    "contract_version": "ai_task_contract.v1",
+                    "ability_name": "ai/comment-analysis",
+                    "task": "comment_moderation",
+                    "task_family": "classification",
+                    "context_requirements": ["current_content"],
+                    "constraints": ["source_grounded", "json_object"],
+                    "output_schema": {
+                        "type": "object",
+                        "properties": {
+                            "toxicity_score": {"type": "number", "minimum": 0, "maximum": 1},
+                            "sentiment": {
+                                "type": "string",
+                                "enum": ["positive", "neutral", "negative"],
+                            },
+                        },
+                        "required": ["toxicity_score", "sentiment"],
+                        "additionalProperties": False,
+                    },
+                    "write_posture": "suggestion_only",
+                },
+            },
+        }
+    )
+
+    response = _execute(client, payload, idempotency_key="wp-ai-comment-moderation-json")
+
+    assert response.status_code == 200
+    provider_input = provider.requests[0].input_payload
+    assert provider_input["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "wordpress_ability_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "toxicity_score": {"type": "number", "minimum": 0, "maximum": 1},
+                    "sentiment": {
+                        "type": "string",
+                        "enum": ["positive", "neutral", "negative"],
+                    },
+                },
+                "required": ["toxicity_score", "sentiment"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    assert "Ability output schema" in provider_input["input"]
+    assert '"toxicity_score"' in provider_input["input"]
 
 
 def test_wordpress_ai_connector_runtime_preserves_existing_only_taxonomy_terms(

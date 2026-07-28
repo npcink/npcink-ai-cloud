@@ -32,6 +32,17 @@ Current repository status is a strong-contraction cleanup baseline:
 - portal surface is bounded to login, session, site connection, usage,
   entitlements, billing, support, Cloud audit, health, and diagnostics; runtime
   keys are system-managed through the WordPress addon connection exchange
+- email or QQ registration creates an active login identity and account only;
+  it does not create a site, subscription, runtime key, or Free credit budget
+- the first verified WordPress addon exchange atomically activates the default
+  Free entitlement, creates or reconnects the site, and issues its
+  system-managed runtime key after membership, host binding, replay, capacity,
+  and site-ownership checks pass
+- Free entitlement remains account-owned: same-account site reconnect is
+  immediate, while a different account requires explicit site removal, the
+  site's stored 90-365 day cooldown, and a new verified Addon exchange; global
+  cooldown changes affect future removals unless an operator changes one
+  released site's unlock time
 - addon projection/repair surfaces are not part of this baseline; they remain
   deferred to a separate proposal with independent review
 
@@ -55,19 +66,51 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/019-dedicated-runtime-data-encryption-domain.md](docs/decisions/019-dedicated-runtime-data-encryption-domain.md)
 - [docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md](docs/decisions/022-one-time-cloud-install-and-rds-postgresql-18.md)
 - [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
+- [docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md](docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md)
+- [docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md](docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md)
 
 Evidence records (not target-contract completion proof):
 
+- [docs/production-master-delta-audit-2026-07-25.md](docs/production-master-delta-audit-2026-07-25.md)
 - [docs/refactor-baseline-2026-07-14.md](docs/refactor-baseline-2026-07-14.md)
 - [docs/p5-hardening-release-audit-2026-07-17.md](docs/p5-hardening-release-audit-2026-07-17.md)
 - [docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md](docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md)
 - [docs/p5-b2-security-hardening-2026-07-17.md](docs/p5-b2-security-hardening-2026-07-17.md)
 - [docs/p5-b4-runtime-load-soak-closeout-2026-07-19.md](docs/p5-b4-runtime-load-soak-closeout-2026-07-19.md)
+- [docs/editor-assist-quality-flywheel-closeout-and-development-retrospective-2026-07-26.md](docs/editor-assist-quality-flywheel-closeout-and-development-retrospective-2026-07-26.md)
+- [docs/system-refactor-phase-closeout-and-feature-iteration-handoff-2026-07-26.md](docs/system-refactor-phase-closeout-and-feature-iteration-handoff-2026-07-26.md)
+- [docs/project-remediation-and-development-retrospective-2026-07-25.md](docs/project-remediation-and-development-retrospective-2026-07-25.md)
+- [docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md](docs/provider-runtime-compatibility-development-retrospective-2026-07-25.md)
+- [docs/provider-three-item-closeout-and-development-retrospective-2026-07-25.md](docs/provider-three-item-closeout-and-development-retrospective-2026-07-25.md)
+- [docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md](docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md)
+- [docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md](docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
+- [docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md](docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md)
+- [docs/public-frontend-development-retrospective-and-standard-2026-07-25.md](docs/public-frontend-development-retrospective-and-standard-2026-07-25.md)
+- [docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md](docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
+- [docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md](docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md)
+- [docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md](docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md)
+- [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
+- [docs/cloud-admin-ui-development-retrospective-2026-07-27.md](docs/cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md](docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
+- [docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md](docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md)
+- [docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md](docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md)
 
 Operational references:
 
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
+- [docs/development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md)
+- [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
+- [docs/image-processing-fc-oss-readiness-2026-07-20.md](docs/image-processing-fc-oss-readiness-2026-07-20.md)
+- [docs/m4-preview-development-v1.md](docs/m4-preview-development-v1.md)
+- [docs/m4-personal-preview-auto-route-retrospective-2026-07-25.md](docs/m4-personal-preview-auto-route-retrospective-2026-07-25.md)
+- [docs/decisions/024-risk-tiered-development-validation-authority.md](docs/decisions/024-risk-tiered-development-validation-authority.md)
+- [docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
+- [docs/decisions/026-private-source-relay-transfer.md](docs/decisions/026-private-source-relay-transfer.md)
+- [docs/m4-source-relay-transfer-validation-2026-07-24.md](docs/m4-source-relay-transfer-validation-2026-07-24.md)
+- [docs/decisions/027-m4-package-proxy-streaming-cache.md](docs/decisions/027-m4-package-proxy-streaming-cache.md)
+- [docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
+- [docs/ci-pytest-sharding-v1.md](docs/ci-pytest-sharding-v1.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
 - [deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md](deploy/PROJECTION_DRILL_EVIDENCE_2026-04-15.md)
 - [docs/internal-alpha-execution-plan.md](docs/internal-alpha-execution-plan.md)
@@ -104,6 +147,11 @@ Operational references:
 - [docs/alipay-payment-and-portal-entry-hardening-2026-07-11.md](docs/alipay-payment-and-portal-entry-hardening-2026-07-11.md)
 - [docs/ai-provider-env-config-retirement-2026-06-26.md](docs/ai-provider-env-config-retirement-2026-06-26.md)
 - [docs/text-model-provider-integration-decision-2026-07-11.md](docs/text-model-provider-integration-decision-2026-07-11.md)
+- [docs/pi-provider-runtime-compatibility-evidence-2026-07-25.md](docs/pi-provider-runtime-compatibility-evidence-2026-07-25.md)
+- [docs/wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md](docs/wordpress-title-provider-e2e-and-context-preflight-validation-2026-07-25.md)
+- [docs/wordpress-title-external-provider-e2e-revalidation-2026-07-25.md](docs/wordpress-title-external-provider-e2e-revalidation-2026-07-25.md)
+- [docs/provider-context-window-p2-revalidation-2026-07-25.md](docs/provider-context-window-p2-revalidation-2026-07-25.md)
+- [docs/provider-pricing-and-cache-economics-revalidation-2026-07-25.md](docs/provider-pricing-and-cache-economics-revalidation-2026-07-25.md)
 - [docs/cloud-runtime-reference-notes-2026-07.md](docs/cloud-runtime-reference-notes-2026-07.md)
 - [docs/wordpress-ai-editor-runtime-closeout-2026-07-07.md](docs/wordpress-ai-editor-runtime-closeout-2026-07-07.md)
 - [docs/wordpress-ai-generation-reference-stage-closeout-2026-07-12.md](docs/wordpress-ai-generation-reference-stage-closeout-2026-07-12.md)
@@ -138,6 +186,7 @@ repository; it points at a path that no longer exists here.
 - local frontend dependency lock check: `pnpm run check:frontend-locks`
 - local frontend health check: `bash scripts/dev-frontend-doctor.sh`
 - local frontend dependency recovery: `bash scripts/dev-frontend-recover.sh`
+- shared real-Provider experiment budget: `pnpm run provider:call-ledger --help`
 - perimeter seam: `pnpm run check:perimeter`
 - hosted runtime smoke: `pnpm run smoke:local-alpha`
 - internal alpha onboarding smoke: `pnpm run smoke:internal-alpha-onboarding`
@@ -209,6 +258,10 @@ Internal identity is frozen separately from those product labels:
   generated by the server as `prn_<uuid4 hex>` and is not changed when a user
   changes email, binds or unbinds a provider, joins another account, changes
   sites, or changes package.
+- new first-install platform administrator identities also use the canonical
+  `prn_<uuid4 hex>` form. Existing installations that explicitly use the
+  legacy `platform:internal_root` ID remain compatible and are not silently
+  rotated, so persisted grants and audit history keep their actor.
 - email and provider subjects are login aliases, not permanent identity keys.
   Email remains mutable on `principals`; QQ/OpenID/UnionID-style subjects belong
   only in `identity_provider_bindings`, where they map back to one
@@ -216,7 +269,10 @@ Internal identity is frozen separately from those product labels:
 - `account_id` identifies a commercial account/tenant, while `membership_id`
   identifies the relationship between a principal and an account. Neither is a
   user identity.
-- sites are a separate resource dimension. A WordPress `wp_user_id`, when
+- sites are a separate resource dimension. Portal site access requires both an
+  active account membership and an active `principal_site_bindings` record for
+  the exact principal and site; users do not inherit access to every site in an
+  account. A WordPress `wp_user_id`, when
   present as site-scoped integration metadata, is only an external reference;
   Cloud does not own the WordPress user directory or local permission truth.
 
@@ -303,11 +359,16 @@ Cloud development and verification now follow a fixed three-layer order:
 1. Local source workspace:
    - edit `app/**`, `frontend/**`, `tests/**`, contracts, and feature docs here first
    - this remains the only day-to-day development truth
-2. Local Docker runtime:
-   - validate the current branch with `docker-compose.dev.yml`, focused `pytest`,
-     and `pnpm run check:perimeter`
-   - this is the default runtime test loop for auth, perimeter, worker, and
-     bundle-adjacent behavior
+2. Development Docker runtime:
+   - in the approved office workflow, run `docker-compose.dev.yml` through the
+     [M4 Preview workflow](docs/m4-preview-development-v1.md)
+   - the authoring machine packages the current worktree while M4 alone builds
+     and runs Docker; M4 has no Git role and the authoring Mac does not provide
+     a routine Cloud Docker fallback
+   - validate the current branch with focused `pytest` and the narrowest
+     applicable perimeter gate
+   - when the test needs M4 containers, use
+     `pnpm run m4:preview:test -- --focused <tests/path-or-node-id>`
 3. Remote host deploy verification:
    - use `deploy-to-ssh-host.sh` only after local checks pass
    - remote hosts exist to prove `scp -> load/up -> migrate -> seed -> smoke`,
@@ -315,10 +376,54 @@ Cloud development and verification now follow a fixed three-layer order:
    - they do not replace the local development loop or become a second source
      of truth
 
-Remote hosts are therefore release-verification surfaces, not the primary
-authoring environment. If a problem appears only after SSH deploy, treat it as
-deploy/config/state drift to be fixed back in the repo, not as a reason to move
-daily development onto the host.
+Remote hosts are never the primary authoring environment. M4 Preview is an
+explicit development-runtime exception, while release hosts remain
+release-verification surfaces. If a problem appears only on a remote runtime,
+treat it as deploy/config/state drift to be fixed back in the repo; do not edit
+or commit source on that host.
+
+Direct M4 syncs and deploys are candidate previews. After the reviewed pull
+request is merged, use a clean, current `master` worktree to record the accepted
+state without rebuilding by default:
+
+```bash
+pnpm run m4:preview:promote -- --pr <merged-pr-number>
+```
+
+See the [M4 Preview development workflow](docs/m4-preview-development-v1.md)
+for host and command mechanics. AI agents must use the
+[M4 Preview AI development standard](docs/m4-preview-ai-development-standard-v1.md)
+to select the local-only, Cloud source, or build/runtime lane and to keep
+candidate, Git, and accepted evidence distinct.
+
+For an already authorized Cloud code task, the agent dispatches the appropriate
+M4 candidate action at a coherent task checkpoint without waiting for a second
+"please deploy" instruction. This is task-scoped orchestration, not a per-save
+watcher, Git hook, background daemon, or GitHub-to-M4 deployment controller.
+
+GitHub required checks are the repository merge authority. The full M4
+contract/domain gate is reserved for high-risk or M4-specific runtime evidence;
+it is not repeated before and after the same green PR by default. Post-merge
+M4 acceptance normally uses source promotion, status, and the relevant smoke.
+
+Complete a copy of `.github/pull_request_template.md`, then publish a clean
+topic branch with:
+
+```bash
+pnpm run pr:publish -- \
+  --title "fix: describe the focused change" \
+  --body-file /absolute/path/to/completed-pr-body.md
+```
+
+The publisher validates `Scope`, `Boundary`, `Verification`, and `Risk`,
+requires the latest target-branch revision, and requests protected squash
+auto-merge without deleting branches. A PR targeting `production` must also
+contain `Approved for production validation by operator.`.
+
+Dependabot PRs use a separate trusted-bot semantic contract instead of the
+human-authored heading template. The contract and recovery procedure are
+documented in
+[PR And Dependency Update Policy](docs/pr-and-dependency-update-policy.md).
 
 ## Borrowed Foundations
 
@@ -668,6 +773,16 @@ key family. A fresh PostgreSQL 18 installation does not import legacy raw rows
 or consume the retired P1-E06 migration evidence; historical databases are not
 accepted through a compatibility chain.
 
+Then review `/admin/site-compliance`. It derives non-secret public-disclosure
+candidates from current Cloud configuration but requires the operator to
+confirm real identity, contact, refund-processing, retention, and third-party
+facts. Saving a draft does not change public pages. Publishing creates a
+versioned snapshot for anonymous `GET /open/compliance`; drafts, validation,
+history, and credentials are never returned there. See
+[ADR-028](docs/decisions/028-versioned-public-site-compliance-projection.md)
+and the
+[public/Portal release checklist](docs/frontend-public-portal-release-checklist-v1.md).
+
 The runtime-data secret and key ID are not ordinary configuration-only rotation
 values. Changing them requires the stopped-writer inventory, backup,
 re-encryption, verification, and matched rollback procedure in
@@ -792,7 +907,8 @@ Internal read-only detail examples:
 
 Portal member auth:
 
-- portal members are invite-only `user` identities
+- portal members may be invited or self-register as `user` identities through
+  email verification or QQ
 - browser login is two-step:
   - `POST /portal/v1/auth/code/request`
   - `POST /portal/v1/auth/code/verify`
@@ -800,15 +916,25 @@ Portal member auth:
   `/portal/*` and `/portal/v1/*`
 - WordPress addon authorization uses the bounded Portal connection seam:
   - `POST /portal/v1/addon-connections` requires a Portal session and issues a
-    short-lived return code after creating or activating the site connection
+    short-lived, host-bound return code without creating a site, subscription,
+    or runtime key
   - `POST /portal/v1/addon-connections/exchange` consumes that one-time code
-    from the WordPress server and returns the customer-facing Cloud API key
+    from the WordPress server; after revalidating account access and
+    entitlement/site capacity, it atomically creates or reconnects the site,
+    activates the default Free entitlement for a never-subscribed account, and
+    returns the customer-facing Cloud API key
+  - same-account reconnect has no cooldown; cross-account reconnect requires
+    explicit removal, the released site's stored cooldown expiry, and the same
+    verified host-bound exchange, without moving or regranting account Free
+    entitlement
 - production deploys should set:
   - `NPCINK_CLOUD_PORTAL_JWT_SECRET`
 - production deploys should configure in `/admin/service-settings`:
   - Portal public URL
   - QQ login, when enabled
   - SMTP sender settings for verification-code delivery
+  - cross-account site relink policy, including the 90-365 day default for
+    future site removals
 Platform admin key auth:
 
 - Cloud now assumes one non-self-serve `platform_admin`
@@ -823,6 +949,8 @@ Platform admin key auth:
   - `GET /admin/plans`
   - `GET /admin/accounts/{account_id}`
   - `GET /admin/sites/{site_id}`
+  - `GET /admin/service-settings`
+  - `GET /admin/site-compliance`
 - current `/admin` overview now also includes:
   - one `Identity Layers` block for platform roles vs customer portal roles
   - one `Plan catalog` block derived from live `plan_distribution`
@@ -834,20 +962,24 @@ Platform admin key auth:
 Buyer-facing web routes:
 
 - `GET /`
+- `GET /help`
+- `GET /privacy`
+- `GET /terms`
+- `GET /status`
 - `GET /portal/login`
 - `GET /portal`
-- `GET /portal/sites`
 - `GET /portal/usage`
 - `GET /portal/billing`
 - `GET /portal/audit`
 - `GET /portal/logout`
 
-These routes are a bounded Cloud service status and portal layer, not a
-customer-facing commercial front-office. Marketing pages, standalone top-up
-catalog request pages, impersonation pages, compliance pages, and request queues
-are intentionally removed. The Portal usage surface may show credit-pack
-catalog, payment orders, and simulated payment status as bounded billing detail;
-real external payment provider checkout remains gated by
+These routes are a bounded Cloud public-service and Portal layer, not a second
+WordPress control plane. Standalone top-up catalog request pages,
+impersonation pages, and public request queues remain intentionally absent.
+Privacy, terms, and help keep maintained baseline copy and append only the
+current published site-compliance projection. The Portal usage surface may
+show credit-pack catalog, payment orders, and simulated payment status as
+bounded billing detail; real external payment provider checkout remains gated by
 [payment-gateway-contract-v1.md](docs/payment-gateway-contract-v1.md).
 
 ## Verification Quickstart
@@ -886,7 +1018,6 @@ Primary local verification routes:
 - `http://127.0.0.1:8010/portal/login`
 - `http://127.0.0.1:8010/portal`
 - `http://127.0.0.1:8010/portal/overview`
-- `http://127.0.0.1:8010/portal/sites`
 
 `portal:bind:dev` marks its output as `"data_mode": "real_site_bootstrap"`
 and does not synthesize seeded runs or usage. It only binds a portal member
@@ -1031,8 +1162,9 @@ Current auth decision stays bounded:
   current bounded seam
 - remote smoke should use `/portal/v1/auth/code/request` and
   `/portal/v1/auth/code/verify`
-- do not add email+password, public registration, or persistent session
-  inventory in the current lane
+- public registration remains passwordless and identity-only; do not restore
+  registration-time site provisioning or Free credit activation
+- do not add email+password or persistent session inventory in the current lane
 
 Portal email login delivery:
 

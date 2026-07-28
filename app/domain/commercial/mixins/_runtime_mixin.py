@@ -26,15 +26,24 @@ from app.core.models import (
     AccountSubscription,
     ProviderCallRecord,
     RunRecord,
+    ServiceSetting,
 )
 from app.core.secrets import encrypt_site_api_signing_secret
 from app.core.security import build_secret_hash
 from app.domain.commercial.credits import (
     SITE_KNOWLEDGE_INDEX_METERING_CLASS,
     package_credit_net_delta,
-    package_credit_used,
+    package_credit_remaining_from_net_delta,
+    package_credit_used_from_net_delta,
     record_credit_ledger_component,
     usage_meter_credit_component,
+)
+from app.domain.commercial.currency import (
+    ACCOUNTING_CURRENCY,
+    PROVIDER_COST_CURRENCY,
+    SERVICE_SETTING_ACCOUNTING_FX,
+    cost_snapshot,
+    resolve_accounting_fx_rate,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.mixins._billing_mixin import (
@@ -100,7 +109,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                     plan_id=plan_id,
                     version_label="v1",
                     status=PLAN_VERSION_STATUS_PUBLISHED,
-                    currency="USD",
+                    currency="CNY",
                     entitlements_json=cast(dict[str, object], DEFAULT_RUNTIME_ENTITLEMENTS),
                     budgets_json=DEFAULT_RUNTIME_BUDGETS,
                     concurrency_json=DEFAULT_RUNTIME_CONCURRENCY,
@@ -482,7 +491,8 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             until=period_end_at,
             limit=None,
         )
-        used_ai_credits = package_credit_used(credit_entries)
+        package_net_delta = package_credit_net_delta(credit_entries)
+        used_ai_credits = package_credit_used_from_net_delta(package_net_delta)
         paid_credit = service._paid_credit_balance_in_session(
             repository,
             account_id=subscription.account_id,
@@ -491,14 +501,21 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         package_credit_limit = self._coerce_float(
             budgets.get("max_ai_credits_per_period")
         )
-        package_credit_remaining = max(0.0, package_credit_limit - used_ai_credits)
+        package_remaining = (
+            package_credit_remaining_from_net_delta(
+                package_credit_limit,
+                package_net_delta,
+            )
+            if package_credit_limit > 0
+            else 0.0
+        )
         paid_credit_remaining = self._coerce_float(paid_credit.get("remaining"))
         # Zero is the unlimited sentinel; prior usage must not turn it into a finite limit.
         effective_ai_credit_limit = (
             0.0
             if package_credit_limit <= 0
             else round(
-                used_ai_credits + package_credit_remaining + paid_credit_remaining,
+                used_ai_credits + package_remaining + paid_credit_remaining,
                 6,
             )
         )
@@ -600,11 +617,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 "estimated_request": projected_ai_credits,
                 "limit": effective_ai_credit_limit,
                 "package_limit": package_credit_limit,
-                "package_remaining": round(package_credit_remaining, 6),
+                "package_remaining": round(package_remaining, 6),
                 "paid_remaining": round(paid_credit_remaining, 6),
                 "paid_grant_count": int(paid_credit.get("grant_count") or 0),
                 "remaining_before_request": round(
-                    package_credit_remaining + paid_credit_remaining,
+                    package_remaining + paid_credit_remaining,
                     6,
                 ),
             },
@@ -642,7 +659,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                     "used": used_ai_credits,
                     "estimated_request": projected_ai_credits,
                     "limit": effective_ai_credit_limit,
-                    "package_remaining": round(package_credit_remaining, 6),
+                    "package_remaining": round(package_remaining, 6),
                     "paid_remaining": round(paid_credit_remaining, 6),
                 },
                 "concurrency": concurrency,
@@ -678,7 +695,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             execution_kind=run.execution_kind,
             execution_tier=run.execution_tier,
             data_classification=run.data_classification,
-            currency="USD",
+            currency=None,
             dedupe_key=f"run:{run.run_id}:runs",
             payload_json=self._runtime_usage_meter_context(run, {"status": run.status}),
         )
@@ -726,18 +743,76 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             execution_kind=run.execution_kind,
             execution_tier=run.execution_tier,
             data_classification=run.data_classification,
-            currency="USD",
+            currency=None,
             dedupe_key=f"provider_call:{provider_call.id}:provider_calls",
             payload_json=base_payload,
         )
         self._record_credit_for_usage_meter_event(repository=repository, event=event)
-        metric_rows = (
-            ("tokens_in", float(provider_call.tokens_in)),
-            ("tokens_out", float(provider_call.tokens_out)),
-            ("tokens_total", float(provider_call.tokens_in + provider_call.tokens_out)),
-            ("cost", float(provider_call.cost)),
+        normalized_usage_context = usage_context if isinstance(usage_context, dict) else {}
+        provider_cost_usd = max(0.0, float(provider_call.cost))
+        fx_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+        fx_rate = resolve_accounting_fx_rate(
+            fx_row.config_json if fx_row is not None and fx_row.enabled else None
         )
-        for meter_key, quantity in metric_rows:
+        provider_cost_snapshot = cost_snapshot(
+            cost_usd=provider_cost_usd,
+            rate=fx_rate,
+        )
+        cost_payload = {
+            **base_payload,
+            **provider_cost_snapshot,
+        }
+        metric_rows = (
+            ("tokens_in", float(provider_call.tokens_in), None, base_payload),
+            ("tokens_out", float(provider_call.tokens_out), None, base_payload),
+            (
+                "tokens_total",
+                float(provider_call.tokens_in + provider_call.tokens_out),
+                None,
+                base_payload,
+            ),
+            ("cost", provider_cost_usd, PROVIDER_COST_CURRENCY, cost_payload),
+            (
+                "cost_cny",
+                float(provider_cost_snapshot["cost_cny"]),
+                ACCOUNTING_CURRENCY,
+                cost_payload,
+            ),
+            (
+                "input_tokens_uncached",
+                max(
+                    0.0,
+                    self._coerce_float(
+                        normalized_usage_context.get("input_tokens_uncached")
+                    ),
+                ),
+                None,
+                base_payload,
+            ),
+            (
+                "cache_read_tokens",
+                max(
+                    0.0,
+                    self._coerce_float(
+                        normalized_usage_context.get("cache_read_tokens")
+                    ),
+                ),
+                None,
+                base_payload,
+            ),
+            (
+                "cache_write_tokens",
+                max(
+                    0.0,
+                    self._coerce_float(
+                        normalized_usage_context.get("cache_write_tokens")
+                    ),
+                ),
+                None,
+                base_payload,
+            ),
+        )
+        for meter_key, quantity, currency, event_payload in metric_rows:
             if quantity <= 0:
                 continue
             event = repository.record_usage_meter_event(
@@ -755,9 +830,9 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 execution_kind=run.execution_kind,
                 execution_tier=run.execution_tier,
                 data_classification=run.data_classification,
-                currency="USD",
+                currency=currency,
                 dedupe_key=f"provider_call:{provider_call.id}:{meter_key}",
-                payload_json=base_payload,
+                payload_json=event_payload,
             )
             self._record_credit_for_usage_meter_event(repository=repository, event=event)
 
@@ -847,7 +922,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         package_limit = self._coerce_float(budgets.get("max_ai_credits_per_period"))
         current_credits = max(
             0.0,
-            -self._coerce_float(getattr(entry, "credit_delta", 0.0)),
+            -self._coerce_float(getattr(entry, "ai_credit_delta", 0.0)),
         )
         if package_limit <= 0:
             entry_metadata["paid_credit_consumed"] = 0.0
@@ -868,8 +943,11 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             limit=None,
         )
         package_net_after = package_credit_net_delta(period_entries)
-        package_used_before = max(0.0, -(package_net_after + current_credits))
-        package_remaining_before = max(0.0, package_limit - package_used_before)
+        package_net_before = package_net_after + current_credits
+        package_remaining_before = package_credit_remaining_from_net_delta(
+            package_limit,
+            package_net_before,
+        )
         paid_credits = max(0.0, current_credits - package_remaining_before)
         if paid_credits <= 0:
             return
@@ -879,7 +957,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         )
         allocated = repository.consume_paid_credit_grants(
             account_id=str(entry.account_id),
-            credits=paid_credits,
+            ai_credits=paid_credits,
             now=now,
         )
         entry_metadata["paid_credit_consumed"] = round(allocated, 6)

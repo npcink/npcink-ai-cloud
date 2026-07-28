@@ -15,6 +15,7 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
     ProviderMediaCandidate,
 )
+from app.adapters.providers.compatibility import assess_context_budget
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.error_taxonomy import get_error_taxonomy
 from app.core.models import ProviderCallRecord, RunRecord
@@ -52,8 +53,11 @@ class ProviderCandidate(Protocol):
     instance_id: str
     endpoint_variant: str
     region: str
+    context_window: int | None
     price_input: float | None
     price_output: float | None
+    price_cache_read: float | None
+    price_cache_write: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +169,27 @@ class RuntimeProviderExecutionService:
     ) -> ProviderExecutionResult:
         return provider.execute(request)
 
+    @staticmethod
+    def enforce_context_budget(
+        request: ProviderExecutionRequest,
+    ) -> dict[str, object] | None:
+        assessment = assess_context_budget(
+            request.input_payload,
+            context_window=request.context_window,
+            execution_kind=request.execution_kind,
+            endpoint_variant=request.endpoint_variant,
+        )
+        if assessment is None:
+            return None
+        if assessment.fits:
+            return assessment.usage_context()
+        raise ProviderExecutionError(
+            "provider.context_overflow",
+            "estimated context requirement exceeds the selected model budget",
+            retryable=False,
+            usage_context=assessment.usage_context(),
+        )
+
     def record_provider_call(
         self,
         *,
@@ -263,27 +288,41 @@ class RuntimeProviderExecutionService:
                     )
                     return
 
+                provider_request = ProviderExecutionRequest(
+                    run_id=run.run_id,
+                    site_id=run.site_id,
+                    ability_name=run.ability_name,
+                    profile_id=run.profile_id,
+                    execution_kind=run.execution_kind,
+                    model_id=candidate.model_id,
+                    instance_id=candidate.instance_id,
+                    endpoint_variant=candidate.endpoint_variant,
+                    trace_id=run.trace_id,
+                    input_payload=input_payload,
+                    policy=policy,
+                    timeout_ms=timeout_ms,
+                    contract_version=run.contract_version or "",
+                    context_window=getattr(candidate, "context_window", None),
+                    price_input=candidate.price_input,
+                    price_output=candidate.price_output,
+                    price_cache_read=getattr(candidate, "price_cache_read", None),
+                    price_cache_write=getattr(candidate, "price_cache_write", None),
+                    retry_count=retry_count,
+                )
+                preflight_usage_context: dict[str, object] | None = None
                 try:
+                    preflight_usage_context = self.enforce_context_budget(
+                        provider_request
+                    )
                     provider_result = provider.execute(
-                        ProviderExecutionRequest(
-                            run_id=run.run_id,
-                            site_id=run.site_id,
-                            ability_name=run.ability_name,
-                            profile_id=run.profile_id,
-                            execution_kind=run.execution_kind,
-                            model_id=candidate.model_id,
-                            instance_id=candidate.instance_id,
-                            endpoint_variant=candidate.endpoint_variant,
-                            trace_id=run.trace_id,
-                            input_payload=input_payload,
-                            policy=policy,
-                            timeout_ms=timeout_ms,
-                            price_input=candidate.price_input,
-                            price_output=candidate.price_output,
-                            retry_count=retry_count,
-                        )
+                        provider_request
                     )
                 except ProviderExecutionError as error:
+                    if preflight_usage_context:
+                        error.usage_context = {
+                            **preflight_usage_context,
+                            **(error.usage_context or {}),
+                        }
                     self._record_attempt_error(
                         repository=repository,
                         run=run,
@@ -336,6 +375,7 @@ class RuntimeProviderExecutionService:
                         fallback_used=fallback_used,
                         provider_result=provider_result,
                         error_code=decision.error_code,
+                        preflight_usage_context=preflight_usage_context,
                     )
                     if allow_fallback:
                         break
@@ -358,6 +398,7 @@ class RuntimeProviderExecutionService:
                     retry_count=retry_count,
                     fallback_used=fallback_used,
                     provider_result=provider_result,
+                    preflight_usage_context=preflight_usage_context,
                 )
                 try:
                     durable_result = self.output_finalizer(
@@ -432,6 +473,7 @@ class RuntimeProviderExecutionService:
                 fallback_used=fallback_used,
                 error_code=error.error_code,
             ),
+            usage_context=error.usage_context,
         )
 
     def _record_attempt_result(
@@ -444,7 +486,12 @@ class RuntimeProviderExecutionService:
         fallback_used: bool,
         provider_result: ProviderExecutionResult,
         error_code: str | None = None,
+        preflight_usage_context: dict[str, object] | None = None,
     ) -> None:
+        usage_context = {
+            **(preflight_usage_context or {}),
+            **provider_result.usage_context(),
+        }
         self.record_provider_call(
             repository=repository,
             run=run,
@@ -461,6 +508,7 @@ class RuntimeProviderExecutionService:
                 fallback_used=fallback_used,
                 error_code=error_code,
             ),
+            usage_context=usage_context,
         )
 
     @staticmethod

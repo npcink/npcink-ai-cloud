@@ -77,6 +77,7 @@ async function installLoginFlowMocks(
   let requestCodeCount = 0;
   let verifyCodeCalled = false;
   let addonConnectionPayload: Record<string, unknown> | null = null;
+  let qqStartReturnTo = '';
 
   await page.route(/\/(?:api\/portal|portal\/v1)\/.*/, async (route) => {
     const url = new URL(route.request().url());
@@ -130,6 +131,20 @@ async function installLoginFlowMocks(
       return;
     }
 
+    if (pathname === '/auth/qq/start') {
+      qqStartReturnTo = String(url.searchParams.get('return_to') || '');
+      expect(url.searchParams.get('intent')).toBe('login');
+      await fulfillJson(route, {
+        provider: 'qq',
+        authorization_url: `${BASE_URL}/qq-authorize-test`,
+        state: 'qq-e2e-state',
+        expires_in_seconds: 300,
+        return_to: qqStartReturnTo,
+        intent: 'login',
+      });
+      return;
+    }
+
     if (pathname === '/auth/identity-providers') {
       await fulfillJson(route, {
         providers: [
@@ -178,8 +193,30 @@ async function installLoginFlowMocks(
     requestCodeCount: () => requestCodeCount,
     verifyCodeCalled: () => verifyCodeCalled,
     addonConnectionPayload: () => addonConnectionPayload,
+    qqStartReturnTo: () => qqStartReturnTo,
   };
 }
+
+test('QQ is a first-class login entry and preserves the Portal return path', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page);
+
+  await page.goto('/portal/login?redirect=/portal/usage');
+  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
+  expect(calls.qqStartReturnTo()).toBe('/portal/usage');
+});
+
+test('registration preserves a selected paid plan through QQ authentication', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page);
+
+  await page.goto('/portal/register?plan=pro');
+  await expect(page.getByText(/Continue with Pro after signup|注册后继续选择 Pro/i)).toBeVisible();
+  await page.getByRole('button', { name: /QQ 登录|QQ login/i }).click();
+
+  await expect(page).toHaveURL(`${BASE_URL}/qq-authorize-test`);
+  expect(calls.qqStartReturnTo()).toBe('/portal/billing?plan=pro&action=upgrade');
+});
 
 test('portal email-code login enters the dashboard after verification', async ({ page }) => {
   const calls = await installLoginFlowMocks(page);
@@ -270,5 +307,56 @@ test('addon binding survives login and returns the complete payload to WordPress
     site_name: 'Demo Site',
     return_url: returnUrl,
     state: 'addon-state-001',
+  });
+});
+
+test('public authentication entry keeps current desktop and mobile visual contracts', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+    window.localStorage.setItem('theme', 'light');
+  });
+  await installLoginFlowMocks(page);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/portal/login');
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expect(
+    page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-login-current.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+
+  await page.goto('/portal/register');
+  await expect(
+    page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
+  ).toBeVisible();
+  await expect(page.getByText(/activate Free service|激活 Free 服务/i).first()).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-register-current.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portal/login');
+  await expect(
+    page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-login-current-mobile.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
+  });
+
+  await page.goto('/portal/register');
+  await expect(
+    page.getByRole('heading', { name: /Create your Portal account|创建服务中心账号/i })
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot('portal-register-current-mobile.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
   });
 });

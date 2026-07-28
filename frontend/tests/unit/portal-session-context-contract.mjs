@@ -85,6 +85,11 @@ assert.match(
   /return session\?\.selected_context\?\.site \|\| null/,
   'the selected-site hook must read only selected_context.site'
 );
+assert.match(
+  sessionHookSource,
+  /activeSites = nextSession\.sites\.filter[\s\S]*!nextSession\.selected_context && activeSites\.length === 1[\s\S]*portalClient\.selectSite\(activeSites\[0\]\.site_id\)/,
+  'a sole active site must become the initial session context automatically'
+);
 
 const internalProjectionFields = [
   'account_id',

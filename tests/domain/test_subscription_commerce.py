@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
+from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
@@ -96,6 +98,49 @@ def _pay(
     )
 
 
+def test_public_plan_catalog_reads_published_versions_and_active_offers(
+    tmp_path: Path,
+) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    _account(service, "acct_public_catalog")
+
+    service.list_account_plan_offers(account_id="acct_public_catalog")
+    service.create_account_agency_quote(
+        account_id="acct_public_catalog",
+        amount_cny=199,
+    )
+
+    catalog = service.list_public_plan_catalog()
+    tiers = catalog["tiers"]
+
+    assert [tier["tier_id"] for tier in tiers] == [
+        "free",
+        "plus",
+        "pro",
+        "agency",
+    ]
+    assert [tier["amount"] for tier in tiers] == [0.0, 15.0, 29.0, None]
+    assert [tier["monthly_points"] for tier in tiers] == [
+        300,
+        3_000,
+        10_000,
+        150_000,
+    ]
+    assert [tier["site_limit"] for tier in tiers] == [1, 3, 5, 25]
+    assert tiers[3]["purchase_mode"] == "quote"
+    assert tiers[3]["trial_requires_approval"] is True
+    assert catalog["shared_paid_trial"] == {
+        "days": 14,
+        "one_per_customer": True,
+        "self_serve_tiers": ["plus", "pro"],
+        "approval_required_tiers": ["agency"],
+    }
+
+    dispose_engine(database_url)
+
+
 def test_paid_trial_is_shared_and_only_moves_upward(tmp_path: Path) -> None:
     database_url = _database_url(tmp_path)
     init_schema(database_url)
@@ -126,7 +171,7 @@ def test_paid_trial_is_shared_and_only_moves_upward(tmp_path: Path) -> None:
 
     assert pro["subscription"]["subscription_id"] == plus["subscription"]["subscription_id"]
     assert pro["trial"]["trial_ends_at"] == plus["trial"]["trial_ends_at"]
-    assert pro["trial"]["credit_limit"] == 5_000
+    assert pro["trial"]["ai_credit_limit"] == 5_000
     pro_active = service.list_account_plan_offers(account_id="acct_trial_shared")["trial"]
     assert pro_active["state"] == "active"
     assert pro_active["allowed_tiers"] == []
@@ -219,7 +264,7 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
         plan_id="plus",
         plan_version_id="plus_v2",
         version_label="v2",
-        budgets_json={"max_ai_credits_per_period": 3500, "max_cost_per_period": 2.5},
+        budgets_json={"max_ai_credits_per_period": 3500, "max_cost_cny_per_period": 2.5},
         metadata_json={"tier_id": "plus", "monthly_included_points": 3500},
         sales_price_cny=19.0,
     )
@@ -248,6 +293,57 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
     assert checkout["order"]["amount"] == 19.0
     assert checkout["order"]["plan_version_id"] == "plus_v2"
     assert checkout["subscription_order"]["list_amount"] == 19.0
+    dispose_engine(database_url)
+
+
+def test_legacy_account_scoped_standard_offer_cannot_override_public_price(
+    tmp_path: Path,
+) -> None:
+    database_url = _database_url(tmp_path)
+    init_schema(database_url)
+    service = _service(database_url)
+    account_id = "acct_legacy_standard_offer"
+    _account(service, account_id)
+    service.list_account_plan_offers(account_id=account_id)
+
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        canonical = repository.get_plan_offer("plus_monthly_v1")
+        assert canonical is not None
+        repository.upsert_plan_offer(
+            offer_id="legacy_account_plus_108",
+            plan_id=canonical.plan_id,
+            plan_version_id=canonical.plan_version_id,
+            account_id=account_id,
+            tier_id="plus",
+            billing_cycle="monthly",
+            amount=Decimal("108.00"),
+            currency="CNY",
+            purchase_mode="self_serve",
+            status="active",
+            trial_enabled=True,
+            trial_days=14,
+            trial_ai_credit_limit=3_000,
+            trial_requires_approval=False,
+            valid_from_at=None,
+            valid_until_at=None,
+            metadata_json={"source": "legacy_account_offer"},
+        )
+        session.commit()
+
+    offers = service.list_account_plan_offers(account_id=account_id)
+    plus_offers = [item for item in offers["items"] if item["tier_id"] == "plus"]
+    assert len(plus_offers) == 1
+    assert plus_offers[0]["offer_id"] == "plus_monthly_v1"
+    assert plus_offers[0]["amount"] == 15.0
+
+    with pytest.raises(CommercialNotFoundError) as stale_checkout:
+        service.create_account_subscription_payment_order(
+            account_id=account_id,
+            offer_id="legacy_account_plus_108",
+            audit_context=_audit("legacy-account-offer-checkout"),
+        )
+    assert stale_checkout.value.error_code == "service.plan_offer_not_found"
     dispose_engine(database_url)
 
 
@@ -427,7 +523,7 @@ def test_agency_requires_account_quote_and_approved_trial(tmp_path: Path) -> Non
         account_id="acct_agency",
         amount_cny=499,
         valid_days=7,
-        trial_credit_limit=12_000,
+        trial_ai_credit_limit=12_000,
         audit_context=_audit("agency-quote"),
     )
     offers = service.list_account_plan_offers(account_id="acct_agency")
@@ -443,11 +539,11 @@ def test_agency_requires_account_quote_and_approved_trial(tmp_path: Path) -> Non
         account_id="acct_agency",
         tier_id="agency",
         approved_by_principal_id="platform_admin",
-        trial_credit_limit=12_000,
+        trial_ai_credit_limit=12_000,
         audit_context=_audit("agency-trial-approved"),
     )
     assert trial["subscription"]["plan_id"] == "agency"
-    assert trial["trial"]["credit_limit"] == 12_000
+    assert trial["trial"]["ai_credit_limit"] == 12_000
     dispose_engine(database_url)
 
 

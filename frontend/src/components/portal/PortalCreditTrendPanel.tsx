@@ -34,8 +34,8 @@ export function PortalCreditTrendPanel({
 }: PortalCreditTrendPanelProps) {
   const { locale, t } = useLocale();
   const points = payload?.points || [];
-  const totalCredits = Number(payload?.total_credits || 0);
-  const maxCredits = Math.max(...points.map((point) => Number(point.credits || 0)), 0);
+  const totalCredits = Number(payload?.total_ai_credits || 0);
+  const maxCredits = Math.max(...points.map((point) => Number(point.ai_credits || 0)), 0);
   const hasUsage = totalCredits > 0 && maxCredits > 0;
   const labelEvery = points.length <= 12 ? 1 : points.length <= 24 ? 4 : 5;
   const dateLocale = locale === 'en' ? 'en-US' : 'zh-CN';
@@ -59,10 +59,10 @@ export function PortalCreditTrendPanel({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-            {t('portal.usage.primary_trend_title', {}, 'Point usage trend')}
+            {t('portal.usage.primary_trend_title', {}, 'AI credit usage trend')}
           </h2>
           <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
-            {t('portal.usage.primary_trend_desc', {}, 'Review actual point consumption over time before opening individual usage records.')}
+            {t('portal.usage.primary_trend_desc', {}, 'Review actual AI credit consumption over time before opening individual usage records.')}
           </p>
         </div>
         <div
@@ -109,10 +109,10 @@ export function PortalCreditTrendPanel({
         ) : !hasUsage ? (
           <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-6 text-center dark:border-slate-700 dark:bg-slate-900/35">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-              {t('portal.usage.trend_empty_title', {}, 'No point usage in this range')}
+              {t('portal.usage.trend_empty_title', {}, 'No AI credit usage in this range')}
             </p>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              {t('portal.usage.trend_empty_desc', {}, 'Point consumption will appear here after Cloud services are used.')}
+              {t('portal.usage.trend_empty_desc', {}, 'AI credit consumption will appear here after Cloud services are used.')}
             </p>
           </div>
         ) : (
@@ -121,7 +121,7 @@ export function PortalCreditTrendPanel({
               {t(
                 'portal.usage.trend_total',
                 { count: formatNumber(totalCredits) },
-                `${formatNumber(totalCredits)} points used in this range`,
+                `${formatNumber(totalCredits)} AI credits used in this range`,
               )}
               {updatedAt
                 ? ` · ${t('portal.usage.updated_at_inline', { time: updatedAt }, 'Updated {{time}}')}`
@@ -129,11 +129,11 @@ export function PortalCreditTrendPanel({
             </p>
             <div
               role="img"
-              aria-label={t('portal.usage.trend_chart_label', {}, 'Point usage over time')}
+              aria-label={t('portal.usage.trend_chart_label', {}, 'AI credit usage over time')}
               className="mt-4 flex h-44 items-end gap-1"
             >
               {points.map((point, index) => {
-                const credits = Number(point.credits || 0);
+                const credits = Number(point.ai_credits || 0);
                 const height = credits > 0 ? Math.max(4, (credits / maxCredits) * 100) : 0;
                 const pointLabel = formatPointLabel(point.start_at);
                 const showLabel = index % labelEvery === 0 || index === points.length - 1;

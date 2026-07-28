@@ -28,6 +28,7 @@ IDENTITY_TYPE_USER = "user"
 USER_ALLOWED_ACTION_VIEW_SITES = "view_sites"
 USER_ALLOWED_ACTION_VIEW_USAGE = "view_usage"
 USER_ALLOWED_ACTION_VIEW_BILLING = "view_billing"
+USER_ALLOWED_ACTION_MANAGE_BILLING = "manage_billing"
 USER_ALLOWED_ACTION_VIEW_AUDIT = "view_audit"
 USER_ALLOWED_ACTION_PROVISION_SITES = "provision_sites"
 USER_ALLOWED_ACTION_REMOVE_SITES = "remove_sites"
@@ -41,7 +42,10 @@ def _canonicalize_platform_admin_role_for_write(role: str) -> str:
     normalized_role = str(role or "").strip()
     if normalized_role in PLATFORM_ADMIN_ALLOWED_ROLES:
         return PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
-    return PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN
+    raise CommercialPermissionError(
+        "service.platform_admin_role_invalid",
+        f"unsupported platform admin role '{normalized_role}'",
+    )
 
 
 def resolve_principal_allowed_actions() -> list[str]:
@@ -49,6 +53,7 @@ def resolve_principal_allowed_actions() -> list[str]:
         USER_ALLOWED_ACTION_VIEW_SITES,
         USER_ALLOWED_ACTION_VIEW_USAGE,
         USER_ALLOWED_ACTION_VIEW_BILLING,
+        USER_ALLOWED_ACTION_MANAGE_BILLING,
         USER_ALLOWED_ACTION_VIEW_AUDIT,
         USER_ALLOWED_ACTION_PROVISION_SITES,
         USER_ALLOWED_ACTION_REMOVE_SITES,
@@ -69,9 +74,32 @@ def _new_principal_id() -> str:
     return f"prn_{uuid4().hex}"
 
 
+_EMAIL_LOCAL_PART_PATTERN = re.compile(r"^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+$", re.IGNORECASE)
+_EMAIL_DOMAIN_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
 def _normalize_principal_email(email: str) -> str:
     normalized_email = str(email or "").strip().lower()
-    if not normalized_email or "@" not in normalized_email or " " in normalized_email:
+    local_part, separator, domain = normalized_email.partition("@")
+    domain_labels = domain.split(".")
+    if (
+        not normalized_email
+        or len(normalized_email) > 191
+        or len(local_part) > 64
+        or len(domain) > 253
+        or not separator
+        or not local_part
+        or not domain
+        or "@" in domain
+        or not normalized_email.isascii()
+        or any(character.isspace() for character in normalized_email)
+        or local_part.startswith(".")
+        or local_part.endswith(".")
+        or ".." in local_part
+        or _EMAIL_LOCAL_PART_PATTERN.fullmatch(local_part) is None
+        or len(domain_labels) < 2
+        or any(_EMAIL_DOMAIN_LABEL_PATTERN.fullmatch(label) is None for label in domain_labels)
+    ):
         raise CommercialPermissionError(
             "service.principal_email_invalid",
             "a valid user email is required",

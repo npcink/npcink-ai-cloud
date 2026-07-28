@@ -6,7 +6,6 @@ import secrets
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
@@ -27,7 +26,6 @@ from app.core.models import (
     PORTAL_OAUTH_STATE_STATUS_PENDING,
     PRINCIPAL_STATUS_ACTIVE,
     PRINCIPAL_STATUS_DISABLED,
-    SITE_STATUS_ACTIVE,
     Site,
 )
 from app.core.security import build_secret_hash, verify_secret_hash
@@ -41,13 +39,15 @@ from app.domain.commercial.identity import (
     IDENTITY_TYPE_USER,
     USER_ROLE_USER,
     _new_principal_id,
-    _normalize_portal_site_url,
     _normalize_principal_email,
-    _slugify_portal_site_segment,
     normalize_user_role,
     resolve_principal_allowed_actions,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
+
+PORTAL_LOGIN_CODE_PURPOSE_LOGIN = "portal_login"
+PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE = "portal_email_change"
+PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION = "portal_registration"
 
 
 def _normalize_identity_provider(provider: str) -> str:
@@ -133,19 +133,90 @@ def _resolve_membership_allowed_actions(value: object) -> list[str]:
 
 def _portal_registration_code_metadata(value: object) -> dict[str, object]:
     metadata = value if isinstance(value, dict) else {}
-    if str(metadata.get("purpose") or "").strip() != "portal_registration":
+    if str(metadata.get("purpose") or "").strip() != PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION:
         return {}
     return metadata
 
 
 def _portal_email_change_code_metadata(value: object) -> dict[str, object]:
     metadata = value if isinstance(value, dict) else {}
-    if str(metadata.get("purpose") or "").strip() != "portal_email_change":
+    if str(metadata.get("purpose") or "").strip() != PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE:
         return {}
     return metadata
 
 
+def _principal_registration_access_is_blocked(
+    repository: CommercialRepository,
+    *,
+    principal_id: str,
+    principal_status: str,
+) -> bool:
+    if principal_status != PRINCIPAL_STATUS_ACTIVE:
+        return True
+    memberships = repository.list_account_user_memberships(
+        principal_ids=[principal_id],
+        statuses=None,
+    )
+    if not memberships:
+        return False
+    active_accounts = repository.list_accounts_for_principal(
+        principal_id=principal_id,
+        membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
+    )
+    return not active_accounts
+
+
 class CommercialServicePortalMixin(CommercialServiceAuditMixin):
+    def resolve_portal_account_principal_scope(
+        self,
+        *,
+        account_id: str,
+        principal_id: str,
+    ) -> dict[str, object]:
+        normalized_account_id = str(account_id or "").strip()
+        normalized_principal_id = str(principal_id or "").strip()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            membership_row = repository.get_account_user_membership(
+                principal_id=normalized_principal_id,
+                account_id=normalized_account_id,
+            )
+            if membership_row is None:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal account access is required",
+                )
+            account, identity, membership = membership_row
+            if (
+                account.status != ACCOUNT_STATUS_ACTIVE
+                or identity.status != PRINCIPAL_STATUS_ACTIVE
+                or membership.status != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+            ):
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "portal account access is required",
+                )
+            active_principal_count = repository.count_active_account_principals(
+                account_id=normalized_account_id
+            )
+            active_site_count = repository.count_active_account_sites(
+                account_id=normalized_account_id
+            )
+            principal_bound_site_count = repository.count_active_principal_bound_sites(
+                account_id=normalized_account_id,
+                principal_id=normalized_principal_id,
+            )
+            return {
+                "active_principal_count": active_principal_count,
+                "active_site_count": active_site_count,
+                "principal_bound_site_count": principal_bound_site_count,
+                "is_exclusive": (
+                    active_principal_count == 1
+                    and active_site_count > 0
+                    and principal_bound_site_count == active_site_count
+                ),
+            }
+
     def get_portal_current_subscription(
         self,
         *,
@@ -239,7 +310,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     )
                 query_start_at = max(query_start_at, range_start_at)
                 query_end_at = min(query_end_at, range_end_at)
-            group_rows, total, consumed_credits = repository.list_portal_credit_event_groups(
+            group_rows, total, consumed_ai_credits = repository.list_portal_credit_event_groups(
                 account_id=account_id,
                 subscription_id=(
                     primary_subscription.subscription_id
@@ -289,7 +360,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     else "other"
                 )
                 components_by_group[group_id][component_key] += abs(
-                    float(getattr(entry, "credit_delta", 0.0) or 0.0)
+                    float(getattr(entry, "ai_credit_delta", 0.0) or 0.0)
                 )
 
         feature_copy = {
@@ -321,7 +392,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             run_id = str(row.get("run_id") or "")
             feature_key = str(row.get("feature_key") or "content_generation")
             feature_label, feature_detail = feature_copy[feature_key]
-            net_delta = round(float(row.get("net_credit_delta") or 0.0), 6)
+            net_delta = round(float(row.get("net_ai_credit_delta") or 0.0), 6)
             components = components_by_group[group_id]
             events.append(
                 {
@@ -332,12 +403,12 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "feature_label": feature_label,
                     "feature_detail": feature_detail,
                     "created_at": self._serialize_datetime(row.get("created_at")),
-                    "net_credit_delta": net_delta,
-                    "consumed_credits": round(max(0.0, -net_delta), 6),
+                    "net_ai_credit_delta": net_delta,
+                    "consumed_ai_credits": round(max(0.0, -net_delta), 6),
                     "direction": "consumed" if net_delta < 0 else "added",
                     "component_count": int(row.get("component_count") or 0),
                     "components": [
-                        {"key": key, "credits": round(value, 6)}
+                        {"key": key, "ai_credits": round(value, 6)}
                         for key, value in sorted(components.items())
                     ],
                 }
@@ -357,7 +428,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             },
             "summary": {
                 "event_count": total,
-                "consumed_credits": consumed_credits,
+                "consumed_ai_credits": consumed_ai_credits,
             },
             "pagination": {
                 "limit": normalized_limit,
@@ -461,8 +532,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             feature_totals = [
                 {
                     "feature_key": str(item.get("feature_key") or "content_generation"),
-                    "consumed_credits": round(
-                        max(0.0, -float(item.get("net_credit_delta") or 0.0)),
+                    "consumed_ai_credits": round(
+                        max(0.0, -float(item.get("net_ai_credit_delta") or 0.0)),
                         6,
                     ),
                     "event_count": int(item.get("event_count") or 0),
@@ -470,16 +541,16 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 for item in features
             ]
             feature_totals.sort(
-                key=lambda item: service._coerce_float(item.get("consumed_credits")),
+                key=lambda item: service._coerce_float(item.get("consumed_ai_credits")),
                 reverse=True,
             )
-            net_delta = round(float(row.get("net_credit_delta") or 0.0), 6)
+            net_delta = round(float(row.get("net_ai_credit_delta") or 0.0), 6)
             items.append(
                 {
                     "bucket_id": f"{normalized_bucket}:{bucket_index}",
                     "start_at": self._serialize_datetime(bucket_start_at),
                     "end_at": self._serialize_datetime(bucket_end_at),
-                    "consumed_credits": round(max(0.0, -net_delta), 6),
+                    "consumed_ai_credits": round(max(0.0, -net_delta), 6),
                     "event_count": int(row.get("event_count") or 0),
                     "site_count": int(row.get("site_count") or 0),
                     "top_feature_key": (
@@ -489,8 +560,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 }
             )
         total = len(items)
-        consumed_credits = round(
-            sum(service._coerce_float(item.get("consumed_credits")) for item in items),
+        consumed_ai_credits = round(
+            sum(service._coerce_float(item.get("consumed_ai_credits")) for item in items),
             6,
         )
         paged_items = items[normalized_offset : normalized_offset + normalized_limit]
@@ -510,7 +581,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             },
             "summary": {
                 "bucket_count": total,
-                "consumed_credits": consumed_credits,
+                "consumed_ai_credits": consumed_ai_credits,
             },
             "pagination": {
                 "limit": normalized_limit,
@@ -568,15 +639,15 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             {
                 "start_at": self._serialize_datetime(bucket_start),
                 "end_at": self._serialize_datetime(bucket_end),
-                "credits": float(summaries.get(index, {}).get("credits", 0.0)),
+                "ai_credits": float(summaries.get(index, {}).get("ai_credits", 0.0)),
                 "entry_count": int(summaries.get(index, {}).get("entry_count", 0)),
             }
             for index, (bucket_start, bucket_end) in enumerate(buckets)
         ]
-        total_credits = 0.0
+        total_ai_credits = 0.0
         entry_count = 0
         for summary in summaries.values():
-            total_credits += float(summary.get("credits", 0.0))
+            total_ai_credits += float(summary.get("ai_credits", 0.0))
             entry_count += int(summary.get("entry_count", 0))
         return {
             "contract_version": "portal-credit-trend-v1",
@@ -587,7 +658,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "bucket_seconds": int(bucket_size.total_seconds()),
             "start_at": self._serialize_datetime(start_at),
             "end_at": self._serialize_datetime(end_at),
-            "total_credits": round(total_credits, 6),
+            "total_ai_credits": round(total_ai_credits, 6),
             "entry_count": entry_count,
             "points": points,
         }
@@ -659,6 +730,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             row = repository.get_portal_oauth_state(
                 provider=normalized_provider,
                 state_hash=_hash_provider_subject(normalized_provider, normalized_state),
+                for_update=True,
             )
             if row is None:
                 raise CommercialPermissionError(
@@ -808,6 +880,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{principal_id}' is not active",
                 )
+            if not str(identity.email or "").strip():
+                raise CommercialValidationError(
+                    "service.identity_provider_binding_last_login_method",
+                    "set and verify an email login before unbinding the only identity provider",
+                )
             bindings = repository.list_identity_provider_bindings_for_principal(
                 principal_id=identity.principal_id,
                 provider=normalized_provider,
@@ -893,6 +970,130 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 ),
             }
 
+    def register_portal_identity_provider_login(
+        self,
+        *,
+        provider: str,
+        external_subject: str,
+        unionid: str = "",
+        display_name: str = "",
+        avatar_url: str = "",
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        normalized_provider = _normalize_identity_provider(provider)
+        subject_hash = _hash_external_identity(normalized_provider, external_subject)
+        unionid_hash = (
+            _hash_external_identity(normalized_provider, unionid, kind="unionid") if unionid else ""
+        )
+        normalized_display_name = " ".join(str(display_name or "").split())[:80]
+        normalized_avatar_url = str(avatar_url or "").strip()[:1024]
+        if normalized_avatar_url and not normalized_avatar_url.startswith("https://"):
+            normalized_avatar_url = ""
+        now = self.now_factory()
+
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            existing = repository.get_identity_provider_binding(
+                provider=normalized_provider,
+                external_subject_hash=subject_hash,
+            )
+            if existing is None and unionid_hash:
+                existing = repository.get_identity_provider_binding_by_unionid(
+                    provider=normalized_provider,
+                    unionid_hash=unionid_hash,
+                )
+            if existing is not None:
+                raise CommercialPermissionError(
+                    "service.identity_provider_binding_conflict",
+                    "this identity provider account is already registered",
+                )
+
+            principal_id = _new_principal_id()
+            account_id = f"acct_{principal_id.removeprefix('prn_')}"
+            profile_metadata = {
+                "display_name": normalized_display_name,
+                "avatar_url": normalized_avatar_url,
+            }
+            account = repository.upsert_account(
+                account_id=account_id,
+                name=normalized_display_name or "QQ 用户",
+                status=ACCOUNT_STATUS_ACTIVE,
+                metadata_json={
+                    "source": "portal_self_registration",
+                    "created_via": "qq_login",
+                },
+            )
+            identity = repository.upsert_principal_identity(
+                principal_id=principal_id,
+                email=None,
+                status=PRINCIPAL_STATUS_ACTIVE,
+                metadata_json={
+                    "source": "portal_self_registration",
+                    "identity_type": IDENTITY_TYPE_USER,
+                    "provider": normalized_provider,
+                    "profile": profile_metadata,
+                },
+                last_login_at=now,
+            )
+            repository.upsert_account_user_membership(
+                membership_id=f"aum_{uuid4().hex}",
+                principal_id=identity.principal_id,
+                account_id=account.account_id,
+                role=normalize_user_role(USER_ROLE_USER),
+                status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                allowed_actions_json=resolve_principal_allowed_actions(),
+                metadata_json={
+                    "source": "portal_self_registration",
+                    "created_via": "qq_login",
+                },
+            )
+            binding = repository.upsert_identity_provider_binding(
+                binding_id=f"pib_{uuid4().hex}",
+                principal_id=identity.principal_id,
+                provider=normalized_provider,
+                external_subject_hash=subject_hash,
+                unionid_hash=unionid_hash or None,
+                status=IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE,
+                metadata_json={
+                    "source": "portal_qq_self_registration",
+                    "profile": profile_metadata,
+                },
+                last_login_at=now,
+            )
+            payload: dict[str, object] = {
+                "status": "registered",
+                "provider": normalized_provider,
+                "principal_id": identity.principal_id,
+                "session_version": int(identity.session_version or 1),
+                "account_id": account.account_id,
+                "identity_type": IDENTITY_TYPE_USER,
+                "role": USER_ROLE_USER,
+                "binding": _serialize_identity_provider_binding(
+                    binding,
+                    principal_id=identity.principal_id,
+                ),
+                "subscription": None,
+                "free_entitlement_state": "pending_addon_connection",
+            }
+            self._record_service_audit_in_session(
+                repository=repository,
+                audit_context=audit_context,
+                event_kind="portal.registration",
+                outcome="succeeded",
+                account_id=account.account_id,
+                scope_kind="account_membership",
+                scope_id=identity.principal_id,
+                payload_json={
+                    "status": "registered",
+                    "provider": normalized_provider,
+                    "created_via": "qq_login",
+                    "account_id": account.account_id,
+                    "principal_id": identity.principal_id,
+                },
+            )
+            session.commit()
+        return payload
+
     def issue_portal_login_code(
         self,
         *,
@@ -909,21 +1110,17 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
 
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            existing_codes = repository.list_portal_login_codes(
+            repository.expire_pending_portal_login_codes(
                 email=normalized_email,
-                principal_id=principal_id,
-                active_only=True,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
                 now=now,
-                limit=None,
             )
-            for existing in existing_codes:
-                existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                existing.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_email,
                 principal_id=principal_id,
                 code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
                 expires_at=expires_at,
                 metadata_json={"accounts": login.get("accounts") or []},
             )
@@ -945,7 +1142,13 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         max_attempts: int,
         login_at: datetime | None = None,
     ) -> dict[str, object]:
-        normalized_email = str(email or "").strip().lower()
+        try:
+            normalized_email = _normalize_principal_email(email)
+        except CommercialPermissionError as error:
+            raise CommercialPermissionError(
+                "service.portal_email_invalid",
+                "a valid portal email is required",
+            ) from error
         normalized_code = str(code or "").strip()
         if not normalized_email or "@" not in normalized_email or " " in normalized_email:
             raise CommercialPermissionError(
@@ -964,9 +1167,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             active_codes = repository.list_portal_login_codes(
                 email=normalized_email,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_LOGIN,
                 active_only=True,
                 now=now,
                 limit=1,
+                for_update=True,
             )
             if not active_codes:
                 raise CommercialPermissionError(
@@ -1032,8 +1237,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{normalized_principal_id}' is not active",
                 )
-            current_email = _normalize_principal_email(str(identity.email or ""))
-            if normalized_new_email == current_email:
+            current_email = str(identity.email or "").strip().lower()
+            if current_email and normalized_new_email == current_email:
                 raise CommercialValidationError(
                     "service.portal_email_change_same_email",
                     "new email is already the current portal email",
@@ -1049,26 +1254,20 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.portal_email_change_email_in_use",
                     "new email is already used by another portal user",
                 )
-            active_codes = repository.list_portal_login_codes(
+            repository.expire_pending_portal_login_codes(
                 email=normalized_new_email,
-                principal_id=normalized_principal_id,
-                active_only=True,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                 now=now,
-                limit=None,
             )
-            for active_code in active_codes:
-                metadata = _portal_email_change_code_metadata(active_code.metadata_json)
-                if metadata:
-                    active_code.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                    active_code.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_new_email,
                 principal_id=normalized_principal_id,
                 code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                 expires_at=expires_at,
                 metadata_json={
-                    "purpose": "portal_email_change",
+                    "purpose": PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                     "old_email": current_email,
                     "new_email": normalized_new_email,
                 },
@@ -1113,13 +1312,15 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "service.principal_access_required",
                     f"principal '{normalized_principal_id}' is not active",
                 )
-            current_email = _normalize_principal_email(str(identity.email or ""))
+            current_email = str(identity.email or "").strip().lower()
             active_codes = repository.list_portal_login_codes(
                 email=normalized_new_email,
                 principal_id=normalized_principal_id,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_EMAIL_CHANGE,
                 active_only=True,
                 now=now,
                 limit=10,
+                for_update=True,
             )
             active_code = None
             active_metadata: dict[str, object] = {}
@@ -1170,6 +1371,12 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             active_code.status = PORTAL_LOGIN_CODE_STATUS_CONSUMED
             active_code.consumed_at = now
             identity.email = normalized_new_email
+            identity = (
+                repository.increment_principal_session_version(
+                    principal_id=normalized_principal_id,
+                )
+                or identity
+            )
             payload: dict[str, object] = {
                 "principal_id": normalized_principal_id,
                 "old_email": current_email,
@@ -1187,36 +1394,50 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             session.commit()
         return payload
 
+    def revoke_portal_sessions(self, *, principal_id: str) -> dict[str, object]:
+        normalized_principal_id = str(principal_id or "").strip()
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            identity = repository.get_principal_identity_by_ref(
+                principal_id=normalized_principal_id,
+            )
+            if identity is None or identity.status != PRINCIPAL_STATUS_ACTIVE:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    "principal is not active",
+                )
+            updated = repository.increment_principal_session_version(
+                principal_id=normalized_principal_id,
+            )
+            session.commit()
+        return {
+            "principal_id": normalized_principal_id,
+            "session_version": int(getattr(updated, "session_version", 1) or 1),
+        }
+
+    def cleanup_expired_portal_auth_evidence(
+        self,
+        *,
+        retention_days: int,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        current = now or self.now_factory()
+        before = current - timedelta(days=max(1, int(retention_days or 0)))
+        with get_session(self.database_url) as session:
+            repository = CommercialRepository(session)
+            result = repository.purge_expired_portal_auth_evidence(before=before)
+            session.commit()
+        return result
+
     def issue_portal_registration_code(
         self,
         *,
         email: str,
-        site_url: str = "",
-        site_name: str = "",
-        use_case: str = "",
         ttl_seconds: int,
     ) -> dict[str, object]:
         normalized_email = _normalize_principal_email(email)
         principal_id = _new_principal_id()
         account_id = f"acct_{principal_id.removeprefix('prn_')}"
-        canonical_site_url = ""
-        site_id = ""
-        resolved_site_name = ""
-        if str(site_url or "").strip():
-            canonical_site_url, site_source = _normalize_portal_site_url(site_url)
-            site_slug = _slugify_portal_site_segment(site_source)
-            if not site_slug:
-                raise CommercialPermissionError(
-                    "service.portal_site_slug_invalid",
-                    "wordpress site url could not be converted into a stable site id",
-                )
-            site_id = f"site_{site_slug}"
-            resolved_site_name = (
-                str(site_name or "").strip()
-                or urlsplit(canonical_site_url).hostname
-                or site_id
-            )
-        normalized_use_case = str(use_case or "").strip()[:500]
         now = self.now_factory()
         expires_at = now + timedelta(seconds=max(60, int(ttl_seconds or 0)))
         code = f"{secrets.randbelow(1_000_000):06d}"
@@ -1227,34 +1448,32 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             existing_identity = repository.get_principal_identity_by_email(email=normalized_email)
             if existing_identity is not None:
                 principal_id = str(existing_identity.principal_id or "").strip() or principal_id
+                if _principal_registration_access_is_blocked(
+                    repository,
+                    principal_id=principal_id,
+                    principal_status=str(existing_identity.status or ""),
+                ):
+                    raise CommercialPermissionError(
+                        "service.principal_access_required",
+                        "portal registration is unavailable for this principal",
+                    )
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
-            existing_codes = repository.list_portal_login_codes(
+            repository.expire_pending_portal_login_codes(
                 email=normalized_email,
-                active_only=True,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                 now=now,
-                limit=None,
             )
-            for existing in existing_codes:
-                metadata = (
-                    existing.metadata_json if isinstance(existing.metadata_json, dict) else {}
-                )
-                if str(metadata.get("purpose") or "").strip() == "portal_registration":
-                    existing.status = PORTAL_LOGIN_CODE_STATUS_EXPIRED
-                    existing.consumed_at = now
             repository.create_portal_login_code(
                 code_id=f"plc_{uuid4().hex}",
                 email=normalized_email,
                 principal_id=principal_id,
                 code_hash=code_hash,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                 expires_at=expires_at,
                 metadata_json={
-                    "purpose": "portal_registration",
+                    "purpose": PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                     "source": "portal_self_registration",
                     "account_id": account_id,
-                    "site_id": site_id,
-                    "site_name": resolved_site_name,
-                    "site_url": canonical_site_url,
-                    "use_case": normalized_use_case,
                 },
             )
             session.commit()
@@ -1262,9 +1481,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             "email": normalized_email,
             "principal_id": principal_id,
             "account_id": account_id,
-            "site_id": site_id,
-            "site_name": resolved_site_name,
-            "site_url": canonical_site_url,
+            "site_id": "",
+            "site_name": "",
+            "site_url": "",
             "platform_kind": PLATFORM_KIND_WORDPRESS,
             "code": code,
             "expires_at": self._serialize_datetime(expires_at),
@@ -1293,9 +1512,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             repository = CommercialRepository(session)
             active_codes = repository.list_portal_login_codes(
                 email=normalized_email,
+                purpose=PORTAL_LOGIN_CODE_PURPOSE_REGISTRATION,
                 active_only=True,
                 now=now,
                 limit=None,
+                for_update=True,
             )
             active_code = None
             registration_metadata: dict[str, object] = {}
@@ -1325,6 +1546,16 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             identity = repository.get_principal_identity_by_email(email=normalized_email)
             if identity is not None:
                 principal_id = str(identity.principal_id or "").strip()
+                if _principal_registration_access_is_blocked(
+                    repository,
+                    principal_id=principal_id,
+                    principal_status=str(identity.status or ""),
+                ):
+                    session.commit()
+                    raise CommercialPermissionError(
+                        "service.principal_access_required",
+                        "portal registration is unavailable for this principal",
+                    )
                 memberships = repository.list_accounts_for_principal(
                     principal_id=principal_id,
                     membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
@@ -1343,42 +1574,19 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     }
 
             account_id = str(registration_metadata.get("account_id") or "").strip()
-            site_id = str(registration_metadata.get("site_id") or "").strip()
-            site_url = str(registration_metadata.get("site_url") or "").strip()
-            site_name = str(registration_metadata.get("site_name") or "").strip() or site_id
             if not principal_id:
                 principal_id = _new_principal_id()
             if not account_id:
                 account_id = f"acct_{principal_id.removeprefix('prn_')}"
-            if (site_id and not site_url) or (site_url and not site_id):
-                raise CommercialPermissionError(
-                    "service.portal_registration_payload_invalid",
-                    "portal registration site request is incomplete",
-                )
-            existing_site = repository.get_site(site_id) if site_id else None
-            if existing_site is not None:
-                raise CommercialPermissionError(
-                    "service.portal_site_conflict",
-                    f"site id '{site_id}' is already registered",
-                )
-            account_name = f"{site_name} Free" if site_name else f"{normalized_email} Free"
             account = repository.upsert_account(
                 account_id=account_id,
-                name=account_name,
+                name=normalized_email,
                 status=ACCOUNT_STATUS_ACTIVE,
                 metadata_json={
                     "source": "portal_self_registration",
                     "registration_email": normalized_email,
                     "created_via": "portal_register",
                 },
-            )
-            subscription_payload = cast(
-                Any,
-                self,
-            )._bind_default_free_subscription_for_account_in_session(
-                repository=repository,
-                account_id=account.account_id,
-                audit_context=audit_context,
             )
             identity = repository.upsert_principal_identity(
                 principal_id=principal_id,
@@ -1390,22 +1598,6 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 },
                 last_login_at=now,
             )
-            site = None
-            if site_id and site_url:
-                site = repository.upsert_site(
-                    site_id=site_id,
-                    account_id=account.account_id,
-                    name=site_name,
-                    status=SITE_STATUS_ACTIVE,
-                    site_url=site_url,
-                    platform_kind=PLATFORM_KIND_WORDPRESS,
-                    metadata_json={
-                        "source": "portal_self_registration",
-                        "created_via": "portal_register",
-                        "use_case": str(registration_metadata.get("use_case") or ""),
-                    },
-                    provisioned_at=now,
-                )
             repository.upsert_account_user_membership(
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
@@ -1415,7 +1607,6 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 allowed_actions_json=resolve_principal_allowed_actions(),
                 metadata_json={"source": "portal_self_registration"},
             )
-            subscription = repository.get_runtime_subscription(account.account_id)
             service = cast(Any, self)
             payload: dict[str, object] = {
                 "status": "registered",
@@ -1424,29 +1615,17 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "session_version": int(identity.session_version or 1),
                 "account": service._serialize_account(account),
                 "account_id": account.account_id,
-                "site": service._serialize_site(site) if site is not None else None,
-                "site_id": str(getattr(site, "site_id", "") or ""),
-                "subscription": (
-                    subscription_payload.get("subscription")
-                    if isinstance(subscription_payload, dict)
-                    else service._serialize_subscription(subscription)
-                    if subscription is not None
-                    else None
-                ),
+                "site": None,
+                "site_id": "",
+                "subscription": None,
+                "free_entitlement_state": "pending_addon_connection",
                 "identity_type": IDENTITY_TYPE_USER,
                 "role": USER_ROLE_USER,
                 "allowed_actions": resolve_principal_allowed_actions(),
                 "next": {
                     "portal_path": "/portal",
                     "qq_bind_path": "/portal/account",
-                    "connection_path": (
-                        f"/portal/sites/{site.site_id}" if site is not None else "/portal/sites"
-                    ),
-                    "sites_path": (
-                        f"/portal/sites?site={site.site_id}"
-                        if site is not None
-                        else "/portal/sites"
-                    ),
+                    "connection_path": "/portal",
                 },
             }
             self._record_service_audit_in_session(
@@ -1455,13 +1634,9 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 event_kind="portal.registration",
                 outcome="succeeded",
                 account_id=account.account_id,
-                site_id=str(getattr(site, "site_id", "") or ""),
+                site_id="",
                 scope_kind="account_membership",
-                scope_id=(
-                    f"{site.site_id}:{identity.principal_id}"
-                    if site is not None
-                    else identity.principal_id
-                ),
+                scope_id=identity.principal_id,
                 payload_json={
                     **payload,
                     "email": normalized_email,
@@ -1482,13 +1657,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 principal_id=principal_id,
                 membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
             )
-            membership_account_ids = [
-                str(getattr(account, "account_id", "") or "")
-                for account, _identity, _membership in memberships
-                if str(getattr(account, "account_id", "") or "").strip()
-            ]
             sites_by_account: defaultdict[str, list[Site]] = defaultdict(list)
-            for site in repository.list_sites(account_ids=membership_account_ids, limit=None):
+            for site, _identity, _membership in repository.list_sites_for_principal(
+                principal_id=principal_id,
+                membership_statuses=[ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE],
+            ):
                 if site.account_id:
                     sites_by_account[site.account_id].append(site)
             account_items: list[dict[str, object]] = []
@@ -1525,15 +1698,17 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         account_id: str,
         email: str,
         status: str = PRINCIPAL_STATUS_ACTIVE,
+        site_id: str = "",
         metadata_json: dict[str, object] | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         normalized_email = _normalize_principal_email(email)
         normalized_status = str(status or PRINCIPAL_STATUS_ACTIVE).strip().lower()
+        normalized_site_id = str(site_id or "").strip()
         if normalized_status not in {PRINCIPAL_STATUS_ACTIVE, PRINCIPAL_STATUS_DISABLED}:
             raise CommercialValidationError(
-                "service.principal_status_invalid",
-                "principal status must be active or disabled",
+                "service.account_membership_status_invalid",
+                "account membership status must be active or disabled",
             )
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
@@ -1546,24 +1721,51 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             existing_identity = repository.get_principal_identity_by_email(
                 email=normalized_email,
             )
-            principal_id = (
-                str(existing_identity.principal_id)
-                if existing_identity is not None
-                else _new_principal_id()
-            )
-            identity = repository.upsert_principal_identity(
-                principal_id=principal_id,
-                email=normalized_email,
-                status=normalized_status,
-                metadata_json=metadata_json,
-            )
-            if normalized_status == PRINCIPAL_STATUS_DISABLED:
-                identity = (
-                    repository.increment_principal_session_version(
-                        principal_id=identity.principal_id,
+            if existing_identity is None:
+                if normalized_status == PRINCIPAL_STATUS_DISABLED:
+                    raise CommercialNotFoundError(
+                        "service.account_membership_not_found",
+                        f"account membership for '{normalized_email}' was not found",
                     )
-                    or identity
+                principal_id = _new_principal_id()
+                identity = repository.upsert_principal_identity(
+                    principal_id=principal_id,
+                    email=normalized_email,
+                    status=PRINCIPAL_STATUS_ACTIVE,
+                    metadata_json={
+                        "source": "account_membership",
+                        "identity_type": IDENTITY_TYPE_USER,
+                    },
                 )
+            else:
+                identity = existing_identity
+                principal_id = str(identity.principal_id)
+            existing_membership_row = repository.get_account_user_membership(
+                principal_id=principal_id,
+                account_id=account_id,
+            )
+            existing_membership = (
+                existing_membership_row[2]
+                if existing_membership_row is not None
+                else None
+            )
+            if normalized_status == PRINCIPAL_STATUS_ACTIVE:
+                if str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE:
+                    raise CommercialPermissionError(
+                        "service.principal_access_required",
+                        f"principal '{principal_id}' is not active",
+                    )
+            elif existing_membership_row is None:
+                raise CommercialNotFoundError(
+                    "service.account_membership_not_found",
+                    f"account membership for '{normalized_email}' was not found",
+                )
+            existing_membership_metadata = (
+                dict(existing_membership.metadata_json or {})
+                if existing_membership is not None
+                else {}
+            )
+            requested_membership_metadata = dict(metadata_json or {})
             membership = repository.upsert_account_user_membership(
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
@@ -1574,12 +1776,37 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     if normalized_status == PRINCIPAL_STATUS_ACTIVE
                     else ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED
                 ),
-                allowed_actions_json=resolve_principal_allowed_actions(),
+                allowed_actions_json=(
+                    list(existing_membership.allowed_actions_json or [])
+                    if existing_membership is not None
+                    else resolve_principal_allowed_actions()
+                ),
                 metadata_json={
-                    **dict(metadata_json or {}),
-                    "source": str((metadata_json or {}).get("source") or "account_membership"),
+                    **existing_membership_metadata,
+                    **requested_membership_metadata,
+                    "source": str(
+                        requested_membership_metadata.get("source")
+                        or existing_membership_metadata.get("source")
+                        or "account_membership"
+                    ),
                 },
             )
+            if normalized_site_id and normalized_status == PRINCIPAL_STATUS_ACTIVE:
+                site = repository.get_site_for_update(normalized_site_id)
+                if site is None or str(site.account_id or "") != account_id:
+                    raise CommercialNotFoundError(
+                        "service.site_not_found",
+                        f"site '{normalized_site_id}' was not found for account '{account_id}'",
+                    )
+                service = cast(Any, self)
+                service._ensure_principal_site_binding_in_session(
+                    repository=repository,
+                    site=site,
+                    principal_id=str(identity.principal_id),
+                    account_id=account_id,
+                    now=self.now_factory(),
+                    source="account_membership",
+                )
             payload: dict[str, object] = {
                 "principal_id": identity.principal_id,
                 "email": identity.email,
@@ -1589,6 +1816,8 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "membership_id": membership.membership_id,
                 "membership_status": membership.status,
             }
+            if normalized_site_id:
+                payload["site_id"] = normalized_site_id
             self._record_service_audit_in_session(
                 repository=repository,
                 audit_context=audit_context,

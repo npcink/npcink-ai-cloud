@@ -115,8 +115,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /disabled=\{primary \|\| !editingProfile\.candidate_instance_ids\[0\]\}/,
-  'a fallback cannot be selected before the primary candidate exists'
+  /disabled=\{tone === 'error'\}[\s\S]*disabled=\{tone === 'error' \|\| primary \|\| !editingProfile\.candidate_instance_ids\[0\]\}/,
+  'unavailable models must be disabled and a fallback cannot be selected before the primary candidate exists'
 );
 
 assert.match(
@@ -147,17 +147,61 @@ assert.match(
   'profile readiness must require an available and healthy primary model, block unhealthy, and warn on unknown health'
 );
 
-const dialogIndex = pageSource.indexOf('createPortal(');
+const dialogIndex = pageSource.indexOf('<AdminWorkbenchDialog');
 const candidateRowsIndex = pageSource.indexOf('candidates.map');
-assert.ok(dialogIndex >= 0, 'hosted runtime profile editing must use a bounded dialog');
+assert.ok(dialogIndex >= 0, 'hosted runtime profile editing must use the shared admin workbench');
 assert.ok(candidateRowsIndex > dialogIndex, 'model candidates must only render inside the edit dialog');
 assert.equal(pageSource.indexOf('candidates.map', candidateRowsIndex + 1), -1, 'model candidates must not be duplicated outside the dialog');
 
 assert.match(
   pageSource,
-  /const dialogRef = useDialogKeyboard<[\s\S]*ref=\{dialogRef\}/,
-  'the runtime profile dialog must keep Escape, focus containment, and trigger restoration'
+  /AdminDataTableFrame[\s\S]*dataUi="runtime-profile-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
+  'the runtime profile directory must use the shared semantic table frame'
 );
+
+assert.match(
+  pageSource,
+  /<AdminWorkbenchDialog[\s\S]*<AdminConfigurationTable[\s\S]*data-ui="runtime-profile-model-toolbar"[\s\S]*data-ui="runtime-profile-candidate-table"[\s\S]*type="radio"[\s\S]*name=\{`runtime-primary-[\s\S]*type="radio"[\s\S]*name=\{`runtime-fallback-/,
+  'the shared workbench must use configuration and candidate tables with primary and fallback radio columns'
+);
+
+assert.match(
+  pageSource,
+  /<AdminDataTableFrame[\s\S]*dataUi="runtime-profile-table"[\s\S]*density="compact"/,
+  'the runtime profile directory must opt into the shared compact table density'
+);
+
+assert.match(
+  pageSource,
+  /<AdminWorkbenchDialog[\s\S]*density="compact"[\s\S]*<AdminConfigurationTable[\s\S]*density="compact"/,
+  'the runtime profile workbench and policy table must use one compact density'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /line-clamp-2|mt-1 block truncate font-mono text-\[11px\]/,
+  'compact runtime profile tables must not spend a second line on routine labels or instance identifiers'
+);
+
+assert.match(
+  pageSource,
+  /section className="grid gap-2\.5 pt-1"[\s\S]*runtime-profile-model-toolbar" className="flex items-center gap-3"[\s\S]*flex min-w-0 flex-1 items-baseline gap-2[\s\S]*flex shrink-0 items-center gap-2[\s\S]*select[\s\S]*className="input w-40"[\s\S]*aria-label=\{copy\('provider_filter'[\s\S]*input[\s\S]*className="input w-64"[\s\S]*aria-label=\{copy\('model_search'[\s\S]*runtime-profile-candidate-table" className="max-h-\[25rem\] overflow-auto"[\s\S]*min-w-\[960px\] table-auto[\s\S]*w-\[40%\][\s\S]*whitespace-nowrap/,
+  'candidate context and self-labelled compact controls must share one balanced toolbar above readable table widths'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /<span>\{copy\('(provider_filter|model_search)'/,
+  'compact filter controls must not repeat visible labels already expressed by their value and placeholder'
+);
+
+assert.doesNotMatch(
+  pageSource,
+  /runtime-profile-candidate-table" className="[^"]*\bborder\b/,
+  'the compact candidate table must not add an outer decorative border'
+);
+
+assert.doesNotMatch(pageSource, /createPortal|useDialogKeyboard/, 'runtime profile editing must not retain a route-local dialog implementation');
 
 assert.match(
   pageSource,

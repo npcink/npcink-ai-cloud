@@ -8,8 +8,8 @@ const externalServicesSource = read('src/app/admin/external-services/page.tsx');
 const vectorSettingsSource = read('src/app/admin/vector-settings/page.tsx');
 const layoutSource = read('src/app/admin/layout.tsx');
 const toolbarSource = read('src/components/admin/SupplierToolbar.tsx');
-const summarySource = read('src/components/admin/SupplierSummaryCards.tsx');
 const tablesSource = read('src/components/admin/SupplierConnectionTables.tsx');
+const tableFrameSource = read('src/components/admin/AdminDataTableFrame.tsx');
 const i18nSource = read('src/lib/i18n.ts');
 const aiResourcesTranslationSource = i18nSource
   .split('\n')
@@ -34,7 +34,11 @@ assert.match(i18nSource, /'admin\.nav_ai_resources': '模型供应商'/);
 assert.match(i18nSource, /'admin\.nav_external_services': '搜索与图片'/);
 assert.match(i18nSource, /'admin\.ai_resources\.title': '模型供应商'/);
 
-assert.match(pageSource, /<SupplierToolbar[\s\S]*onAddModelSupplier=\{openNewProviderConnection\}/);
+assert.match(pageSource, /<BackofficePrimaryPanel[\s\S]*actionPlacement="header"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-5 md:py-2\.5"/);
+assert.match(pageSource, /<BackofficeSummaryStrip[\s\S]*density="compact"/);
+assert.match(pageSource, /openNewProviderConnection[\s\S]*action_add_model_supplier/);
+assert.match(pageSource, /<ModelSupplierTable[\s\S]*toolbar=\{\([\s\S]*<SupplierToolbar/);
+assert.doesNotMatch(pageSource, /<SupplierSummaryCards/);
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*connections=\{aiSupplierConnections\}/);
 assert.match(pageSource, /href="\/admin\/runtime-profiles"[\s\S]*action_open_runtime_profiles/);
 assert.match(pageSource, /modelFeatureLabel/);
@@ -53,13 +57,32 @@ assert.doesNotMatch(pageSource, /isCapabilityProviderForm|capabilityAddDialogOpe
 assert.doesNotMatch(pageSource, /action_add_capability_supplier|capability_channel_form|capability_diagnostics/);
 assert.doesNotMatch(pageSource, /runtime-telemetry|RuntimeTelemetrySummary|provider_model_health|capability_matrix/);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
+assert.match(pageSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
+assert.match(pageSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
+assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);
+assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
+assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);
+assert.match(pageSource, /imageOutputHostsAreExact\(imageOutputHosts\)/);
+assert.match(pageSource, /Connection testing does not prove image delivery/);
+assert.match(pageSource, /URL mode accepts exact hosts only; no scheme, path, port, or wildcard/);
+assert.match(pageSource, /data-ui="model-visibility-toolbar"/);
+assert.match(pageSource, /data-ui="model-maintenance-table"/);
+assert.match(pageSource, /data-ui="model-clear-all-request"/);
+assert.match(pageSource, /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/);
+assert.doesNotMatch(pageSource, /model_visibility_more_operations[\s\S]*sm:absolute sm:right-0 sm:z-30/);
+assert.match(i18nSource, /'admin\.ai_resources\.field_image_output_hosts': '精确图片下载域名'/);
+assert.match(i18nSource, /文本或模型目录连接测试通过，不代表生成图片一定可以交付/);
+assert.match(i18nSource, /不能包含协议、路径、端口或通配符/);
 
-assert.match(toolbarSource, /action_add_model_supplier/);
+assert.doesNotMatch(toolbarSource, /action_add_model_supplier|onAddModelSupplier/);
+assert.match(toolbarSource, /data-ui="supplier-directory-toolbar"/);
+assert.match(toolbarSource, /sm:w-\[30rem\] xl:w-\[34rem\]/);
 assert.doesNotMatch(toolbarSource, /SupplierTypeFilter|supplierTypeFilter|action_add_capability_supplier/);
-assert.match(summarySource, /grid-cols-2/);
-assert.doesNotMatch(summarySource, /readyCapabilitySupplierCount|capabilitySupplierCount/);
 assert.match(tablesSource, /export function ModelSupplierTable/);
+assert.match(tablesSource, /headerActions=\{toolbar\}/);
+assert.match(tablesSource, /className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"/);
 assert.doesNotMatch(tablesSource, /CapabilitySupplierTable|capability-supplier-directory|CapabilityProviderCategory/);
+assert.match(tableFrameSource, /headerActions\?: ReactNode/);
 
 for (const providerId of ['tavily', 'bocha', 'apify', 'zhihu', 'jina_reader', 'unsplash', 'pixabay', 'pexels']) {
   assert.match(externalServicesSource, new RegExp(`id: '${providerId}'`), `${providerId} must remain a fixed external-service option`);
@@ -71,14 +94,25 @@ assert.match(externalServicesSource, /role: 'parallel'/);
 assert.match(externalServicesSource, /One primary \+ Reader enhancement/);
 assert.match(externalServicesSource, /Enabled sources in parallel/);
 assert.match(externalServicesSource, /data-external-service-id=\{option\.id\}/);
-assert.match(externalServicesSource, /readOnly value=\{option\.baseUrl\}/);
+assert.match(externalServicesSource, /AdminDataTableFrame[\s\S]*dataUi="external-service-directory"/);
+assert.match(
+  externalServicesSource,
+  /descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*density="compact"/,
+  'External services must keep diagnostics and status in a compact operational header'
+);
+assert.match(externalServicesSource, /AdminWorkbenchDialog[\s\S]*width="compact"/);
+assert.match(externalServicesSource, /AdminConfigurationTable[\s\S]*AdminConfigurationRow/);
+assert.match(externalServicesSource, /rowId="service-url"[\s\S]*editingOption\.baseUrl/);
+assert.match(externalServicesSource, /AdminCredentialField/);
+assert.doesNotMatch(externalServicesSource, /AdminSettingsDisclosure/);
 assert.match(externalServicesSource, /Clear credential and disable/);
+assert.match(externalServicesSource, /Clear and disable/);
 assert.match(externalServicesSource, /\/api\/admin\/provider-connections/);
 assert.match(externalServicesSource, /metadata: \{ ui_source: 'external_services', service_role: option\.role \}/);
 assert.doesNotMatch(externalServicesSource, /priority|channel_note|Add capability supplier|Delete supplier/);
 
-assert.match(vectorSettingsSource, /admin\.vector_settings\.provider_title/);
-assert.match(vectorSettingsSource, /admin\.vector_settings\.store_title/);
+assert.match(vectorSettingsSource, /admin\.vector_settings\.configuration_title/);
+assert.match(vectorSettingsSource, /AdminConfigurationTable[\s\S]*AdminCredentialField[\s\S]*AdminSettingsDisclosure/);
 assert.match(vectorSettingsSource, /site-knowledge-vector-profile\/vector-store/);
 assert.match(vectorSettingsSource, /site_knowledge_zh_v1/);
 assert.doesNotMatch(vectorSettingsSource, /rerank_provider|Result reranking|结果重排/);

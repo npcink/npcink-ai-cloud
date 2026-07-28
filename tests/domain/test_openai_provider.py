@@ -23,6 +23,10 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
                     {
                         "id": "gpt-4.1-mini",
                         "context_window": 128000,
+                        "pricing": {
+                            "cache_read_per_million": 0.04,
+                            "cache_write_per_million": 0.4,
+                        },
                     },
                     {
                         "id": "gpt-4.1",
@@ -56,12 +60,54 @@ def test_openai_adapter_fetches_catalog_over_http() -> None:
     ]
     assert snapshot.models[0].instances[0].endpoint_variant == "chat_completions"
     assert snapshot.models[0].instances[0].capability_tags == ["text", "balanced"]
+    assert snapshot.models[0].raw_json["runtime_pricing"] == {
+        "cache_read": 0.04,
+        "cache_write": 0.4,
+    }
     assert snapshot.models[1].feature == "vision"
     assert snapshot.models[1].instances[0].endpoint_variant == "responses"
     assert snapshot.models[2].feature == "image_generation"
     assert snapshot.models[2].instances[0].endpoint_variant == "image_generations"
     assert snapshot.models[3].feature == "embedding"
     assert snapshot.models[3].instances[0].endpoint_variant == "embeddings"
+
+
+def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": "gateway-model"}]})
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        model_metadata_overrides={
+            "gateway-model": {
+                "context_window": 64000,
+                "price_input": 1.25,
+                "price_output": 5,
+                "price_cache_read": 0.125,
+                "price_cache_write": 1.25,
+                "source": "gateway billing console",
+                "revision": "2026-07-25",
+                "ignored_nested": {"secret": "must-not-project"},
+            }
+        },
+        transport=httpx.MockTransport(handler),
+    )
+
+    model = adapter.fetch_catalog().models[0]
+
+    assert model.context_window == 64000
+    assert model.price_input == 1.25
+    assert model.price_output == 5.0
+    assert model.raw_json["runtime_pricing"] == {
+        "cache_read": 0.125,
+        "cache_write": 1.25,
+    }
+    assert model.raw_json["operator_metadata_override"] == {
+        "source": "gateway billing console",
+        "revision": "2026-07-25",
+    }
+    assert "ignored_nested" not in model.raw_json
 
 
 def test_openai_adapter_classifies_bge_catalog_models_as_embeddings() -> None:
@@ -238,6 +284,84 @@ def test_openai_adapter_executes_chat_with_hosted_params_tools_and_thinking() ->
     )
 
     assert result.output["output_text"] == "ok"
+
+
+def test_openai_adapter_applies_provider_default_reasoning_effort() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["reasoning_effort"] == "none"
+        return httpx.Response(
+            200,
+            json={
+                "model": "qwen3.5:9b",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "正文"},
+                    }
+                ],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 2},
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        default_reasoning_effort="none",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="chat_completions",
+            model_id="qwen3.5:9b",
+            input_payload={"messages": [{"role": "user", "content": "给出正文"}]},
+        )
+    )
+
+    assert result.output["output_text"] == "正文"
+
+
+def test_openai_adapter_request_extra_overrides_provider_default_reasoning_effort() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["reasoning_effort"] == "high"
+        return httpx.Response(
+            200,
+            json={
+                "model": "reasoning-model",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "ok"},
+                    }
+                ],
+                "usage": {},
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        default_reasoning_effort="none",
+        transport=httpx.MockTransport(handler),
+    )
+
+    adapter.execute(
+        _build_request(
+            execution_kind="text",
+            endpoint_variant="chat_completions",
+            model_id="reasoning-model",
+            input_payload={
+                "messages": [{"role": "user", "content": "think"}],
+                "params": {"extra": {"reasoning_effort": "high"}},
+            },
+        )
+    )
+
+
+def test_openai_adapter_rejects_unknown_default_reasoning_effort() -> None:
+    with pytest.raises(ValueError, match="default_reasoning_effort"):
+        OpenAIProviderAdapter(default_reasoning_effort="disabled")
 
 
 def _build_request(
@@ -696,6 +820,7 @@ def test_openai_adapter_executes_embeddings_over_http() -> None:
 def test_openai_adapter_executes_image_generation_over_http() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/images/generations")
+        assert request.headers["accept-encoding"] == "identity"
         payload = json.loads(request.content.decode("utf-8"))
         assert payload["model"] == GROK_IMAGINE_IMAGE_MODEL_ID
         assert payload["prompt"] == "A clean product photo of a red running shoe"
@@ -1146,7 +1271,9 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
         assert payload["max_output_tokens"] == 256
         assert payload["text"]["format"] == {
             "type": "json_schema",
-            "json_schema": {"name": "vision_payload", "schema": {"type": "object"}},
+            "name": "vision_payload",
+            "schema": {"type": "object"},
+            "strict": True,
         }
         assert payload["tools"] == [
             {
@@ -1193,6 +1320,7 @@ def test_openai_adapter_executes_responses_with_hosted_params_tools_and_text_for
                         "json_schema": {
                             "name": "vision_payload",
                             "schema": {"type": "object"},
+                            "strict": True,
                         },
                     },
                 },
@@ -1302,3 +1430,161 @@ def test_openai_adapter_rejects_sample_execution_when_fallback_is_disabled() -> 
         assert error.retryable is False
     else:
         raise AssertionError("expected provider execution error")
+
+
+def test_openai_adapter_applies_cache_affinity_and_normalizes_cached_usage() -> None:
+    seen_payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        seen_payloads.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "model": "gpt-4.1-mini",
+                "output": [
+                    {
+                        "type": "message",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": "cached response"}],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 1000,
+                    "output_tokens": 50,
+                    "input_tokens_details": {
+                        "cached_tokens": 800,
+                        "cache_write_tokens": 100,
+                    },
+                    "output_tokens_details": {"reasoning_tokens": 20},
+                },
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant="responses",
+        model_id="gpt-4.1-mini",
+        input_payload={
+            "input": (
+                "Generate exactly one concise title faithful to the main topic. "
+                "Return only the title text.\n\nScene input:\nA dynamic article."
+            ),
+            "max_output_tokens": 50,
+        },
+    )
+    request.contract_version = "wordpress_operation.v1"
+    request.price_cache_read = 0.1
+    request.price_cache_write = 0.5
+
+    result = adapter.execute(request)
+
+    prompt_cache_key = seen_payloads[0]["prompt_cache_key"]
+    assert isinstance(prompt_cache_key, str)
+    assert prompt_cache_key.startswith("npcink-pc-v1-")
+    assert "site_alpha" not in prompt_cache_key
+    assert result.tokens_in == 1000
+    assert result.tokens_out == 50
+    assert result.uncached_input_tokens == 100
+    assert result.cache_read_tokens == 800
+    assert result.cache_write_tokens == 100
+    assert result.reasoning_tokens == 20
+    assert result.cost == 0.00025
+    assert result.cost_estimate_mode == "cache_rates"
+    assert result.usage_context() == {
+        "input_tokens_uncached": 100,
+        "cache_read_tokens": 800,
+        "cache_write_tokens": 100,
+        "reasoning_tokens": 20,
+        "cache_hit_ratio": 0.8,
+        "cost_estimate_mode": "cache_rates",
+        "cache_affinity_applied": True,
+    }
+
+
+def test_openai_adapter_disables_unsupported_prompt_cache_key_after_one_retry() -> None:
+    prompt_cache_presence: list[bool] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        prompt_cache_presence.append("prompt_cache_key" in payload)
+        if "prompt_cache_key" in payload:
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "type": "invalid_request_error",
+                        "param": "prompt_cache_key",
+                        "message": "unsupported parameter prompt_cache_key",
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": "compatible-model",
+                "output": [],
+                "usage": {"input_tokens": 10, "output_tokens": 2},
+            },
+        )
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(handler),
+    )
+    request = _build_request(
+        execution_kind="text",
+        endpoint_variant="responses",
+        model_id="compatible-model",
+        input_payload={
+            "input": (
+                "Use this stable instruction and return only the final value."
+                "\n\nScene input:\nfirst"
+            )
+        },
+    )
+
+    first_result = adapter.execute(request)
+    request.input_payload["input"] = (
+        "Use this stable instruction and return only the final value."
+        "\n\nScene input:\nsecond"
+    )
+    second_result = adapter.execute(request)
+
+    assert prompt_cache_presence == [True, False, False]
+    assert first_result.cache_affinity_applied is False
+    assert second_result.cache_affinity_applied is False
+
+
+def test_openai_adapter_maps_context_overflow_separately_from_invalid_request() -> None:
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": "Your input exceeds the context window of this model",
+                    }
+                },
+            )
+        ),
+    )
+
+    with pytest.raises(ProviderExecutionError) as error:
+        adapter.execute(
+            _build_request(
+                execution_kind="text",
+                endpoint_variant="responses",
+                model_id="gpt-4.1-mini",
+                input_payload={"input": "x"},
+            )
+        )
+
+    assert error.value.error_code == "provider.context_overflow"
+    assert error.value.retryable is False

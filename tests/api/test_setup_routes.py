@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
+import re
 import secrets
 import threading
 from collections.abc import Callable
@@ -283,6 +285,11 @@ def test_setup_session_database_install_and_permanent_close(
     runtime_payload = service.store.runtime_config_path.read_text()
     assert "database-secret" in runtime_payload
     assert installed.json()["data"]["admin_key"] not in runtime_payload
+    runtime_config = json.loads(runtime_payload)
+    assert re.fullmatch(
+        r"prn_[0-9a-f]{32}",
+        runtime_config["security"]["admin_principal_id"],
+    )
     assert hashlib.sha256(runtime_payload.encode()).hexdigest() == (
         service.store.read_state().config_digest
     )

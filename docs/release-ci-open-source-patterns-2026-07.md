@@ -80,14 +80,53 @@ and branch protection.
 
 ## Follow-Up Order
 
-1. Refresh `ci/pytest-backend-durations.json` from several successful
-   `pytest-backend-timing-shard-*` artifacts after the new split has run.
-2. Compare actual wall time for `backend-static` and the three pytest shards
-   against the previous 7-8 minute monolithic backend gate.
-3. Rebalance shard count only if one shard remains the long pole for several
-   releases.
-4. Keep `production` deployment dependent on stable aggregate gates, not on
+1. Refresh `ci/pytest-backend-durations.json` from complete
+   `pytest-backend-timing-shard-*` artifacts for the five most recent
+   successful full `master` runs. The generator merges every shard within a
+   run, then uses each file's mean plus population standard deviation. This
+   keeps high-variance files from clustering while ensuring one run does not
+   become durable scheduling truth. Use the repeatable entry point:
+
+   ```bash
+   pnpm run ci:pytest:weights:refresh -- --recent-master 5
+   ```
+2. Review the advisory `Pytest Shard Balance` summary. Refresh through a
+   focused PR when `max/min > 1.30` or material per-file drift persists.
+3. Observe three successful full `master` runs after refresh. Split sustained
+   slow files before adding node-level scheduling metadata.
+4. Add a fourth shard only if three shards are balanced but the critical path
+   still misses the agreed feedback target.
+5. Keep `production` deployment dependent on stable aggregate gates, not on
    individual shard names.
+
+The normative command, warning thresholds, escalation order, and verification
+gate are recorded in
+[CI Pytest Sharding v1](ci-pytest-sharding-v1.md).
+
+## Validation Record
+
+PR #232 validated the fail-closed classifier and complete high-risk lane. All
+required checks passed. Its backend pytest jobs completed in 9m09s, 13m38s,
+and 6m37s, so file-level duration weights alone did not remove the long tail.
+Keep the full coverage and use per-test timing evidence before changing the
+oversized recovery-contract shard.
+
+The documentation-only lane is validated separately by a Markdown-only pull
+request. It must preserve the stable `backend` and `frontend` check names while
+skipping Python dependency installation, frontend installation, production
+image smoke, and the full pytest shards.
+
+Do not add node-level sharding from a single slow run. Observe at least two
+additional full runs after refreshing the weights. Escalate only if the longest
+shard remains above 10 minutes and the fastest-to-slowest spread remains above
+2x; keep all existing tests and recovery-contract semantics intact.
+
+The first post-refresh `master` observation is Cloud CI run `30079632893`.
+Its backend pytest jobs completed in 8m37s, 9m36s, and 6m56s. The longest job
+fell below 10 minutes and the fastest-to-slowest ratio fell to about 1.38x, so
+this run does not trigger node-level sharding. Use the next naturally occurring
+full high-risk run as the second observation; do not manufacture an expensive
+run only to satisfy the sample count.
 
 ## References
 

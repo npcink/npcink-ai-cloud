@@ -236,7 +236,7 @@ export async function installAdminMocks(page: Page) {
           pack_id: 'pack_small',
           runs_increment: Number(payload.runs_increment || 0),
           tokens_increment: Number(payload.tokens_increment || 0),
-          cost_increment: Number(payload.cost_increment || 0),
+          cost_cny_increment: Number(payload.cost_cny_increment || 0),
           reason: String(payload.reason || ''),
         },
         topup_summary: {
@@ -244,7 +244,7 @@ export async function installAdminMocks(page: Page) {
           current_period_totals: {
             runs: Number(payload.runs_increment || 0),
             tokens: Number(payload.tokens_increment || 0),
-            cost: Number(payload.cost_increment || 0),
+            cost_cny: Number(payload.cost_cny_increment || 0),
           },
         },
       });
@@ -435,6 +435,49 @@ export async function installAdminMocks(page: Page) {
         top_abilities: [],
         top_families: [],
         attention_items: [],
+      });
+      return;
+    }
+
+    if (pathname === '/api/admin/editor-assist-quality') {
+      await fulfillJson(route, {
+        contract_version: 'editor_assist_quality.v1',
+        generated_at: '2026-04-08T10:00:00Z',
+        filters: {
+          task_key: searchParams.get('task_key') || '',
+          window_hours: Number(searchParams.get('window_hours') || 24),
+        },
+        totals: {
+          session_total: 65,
+          resolved_session_total: 60,
+          repeat_session_rate: 0.2769,
+          exact_saved_rate: 0.45,
+          unmatched_saved_rate: 0.35,
+          expired_without_save_rate: 0.2,
+          sample_stage: 'observation',
+        },
+        trend: [
+          { label: '2026-04-02', session_total: 8, repeat_session_rate: 0.25, exact_saved_rate: 0.5 },
+          { label: '2026-04-03', session_total: 9, repeat_session_rate: 0.22, exact_saved_rate: 0.44 },
+          { label: '2026-04-04', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
+          { label: '2026-04-05', session_total: 7, repeat_session_rate: 0.29, exact_saved_rate: 0.43 },
+          { label: '2026-04-06', session_total: 11, repeat_session_rate: 0.27, exact_saved_rate: 0.45 },
+          { label: '2026-04-07', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.5 },
+          { label: '2026-04-08', session_total: 10, repeat_session_rate: 0.3, exact_saved_rate: 0.4 },
+        ],
+        issue_candidates: [
+          {
+            code: 'editor_assist.repeat_pressure',
+            task_key: 'content_summary',
+            sample_size: 65,
+            observed_rate: 0.2769,
+            confidence: 'medium',
+            persistence: 'sustained',
+            actionable: false,
+            next_action: 'review_quality_trend',
+          },
+        ],
+        read_only: true,
       });
       return;
     }
@@ -1234,7 +1277,7 @@ export async function installAdminMocks(page: Page) {
             budgets_template: {
               max_runs_per_period: 500,
               max_tokens_per_period: 200000,
-              max_cost_per_period: 5,
+              max_cost_cny_per_period: 5,
             },
             concurrency_template: { max_active_runs: 1 },
             max_batch_items: 0,
@@ -1254,7 +1297,7 @@ export async function installAdminMocks(page: Page) {
               budgets: {
                 max_runs_per_period: 500,
                 max_tokens_per_period: 200000,
-                max_cost_per_period: 5,
+                max_cost_cny_per_period: 5,
               },
               concurrency: { max_active_runs: 1 },
               policy: { subscription: { grace_period_days: 0 } },
@@ -1282,7 +1325,7 @@ export async function installAdminMocks(page: Page) {
             budgets_template: {
               max_runs_per_period: 3000,
               max_tokens_per_period: 600000,
-              max_cost_per_period: 15,
+              max_cost_cny_per_period: 15,
             },
             concurrency_template: { max_active_runs: 2 },
             max_batch_items: 15,
@@ -1302,7 +1345,7 @@ export async function installAdminMocks(page: Page) {
               budgets: {
                 max_runs_per_period: 3000,
                 max_tokens_per_period: 600000,
-                max_cost_per_period: 15,
+                max_cost_cny_per_period: 15,
               },
               concurrency: { max_active_runs: 2 },
               policy: { subscription: { grace_period_days: 3 } },
@@ -1330,7 +1373,7 @@ export async function installAdminMocks(page: Page) {
             budgets_template: {
               max_runs_per_period: 10000,
               max_tokens_per_period: 2000000,
-              max_cost_per_period: 99,
+              max_cost_cny_per_period: 99,
             },
             concurrency_template: { max_active_runs: 2 },
             max_batch_items: 10,
@@ -1350,7 +1393,7 @@ export async function installAdminMocks(page: Page) {
               budgets: {
                 max_runs_per_period: 10000,
                 max_tokens_per_period: 2000000,
-                max_cost_per_period: 99,
+                max_cost_cny_per_period: 99,
               },
               concurrency: { max_active_runs: 2 },
               policy: { subscription: { grace_period_days: 3, downgrade_policy: 'review_before_downgrade' } },
@@ -1378,7 +1421,7 @@ export async function installAdminMocks(page: Page) {
             budgets_template: {
               max_runs_per_period: 50000,
               max_tokens_per_period: 10000000,
-              max_cost_per_period: 499,
+              max_cost_cny_per_period: 499,
             },
             concurrency_template: { max_active_runs: 6 },
             max_batch_items: 100,
@@ -1398,7 +1441,7 @@ export async function installAdminMocks(page: Page) {
               budgets: {
                 max_runs_per_period: 50000,
                 max_tokens_per_period: 10000000,
-                max_cost_per_period: 499,
+                max_cost_cny_per_period: 499,
               },
               concurrency: { max_active_runs: 6 },
               policy: { subscription: { grace_period_days: 7 } },
@@ -1436,7 +1479,7 @@ export async function installAdminMocks(page: Page) {
                 budgets: {
                   max_runs_per_period: 500,
                   max_tokens_per_period: 200000,
-                  max_cost_per_period: 5,
+                  max_cost_cny_per_period: 5,
                 },
                 concurrency: { max_active_runs: 1 },
                 metadata: { monthly_included_points: 300, site_limit: 3, max_batch_items: 5 },
@@ -1451,7 +1494,7 @@ export async function installAdminMocks(page: Page) {
               budgets: {
                 max_runs_per_period: 500,
                 max_tokens_per_period: 200000,
-                max_cost_per_period: 5,
+                max_cost_cny_per_period: 5,
               },
               concurrency: { max_active_runs: 1 },
               metadata: { monthly_included_points: 300, site_limit: 3, max_batch_items: 5 },
@@ -1468,7 +1511,7 @@ export async function installAdminMocks(page: Page) {
               budgets_template: {
                 max_runs_per_period: 500,
                 max_tokens_per_period: 200000,
-                max_cost_per_period: 5,
+                max_cost_cny_per_period: 5,
               },
               concurrency_template: { max_active_runs: 1 },
               max_batch_items: 0,
@@ -1501,7 +1544,7 @@ export async function installAdminMocks(page: Page) {
                 budgets: {
                   max_runs_per_period: 10000,
                   max_tokens_per_period: 2000000,
-                  max_cost_per_period: 99,
+                  max_cost_cny_per_period: 99,
                 },
                 concurrency: { max_active_runs: 2 },
                 created_at: '2026-04-05T00:00:00Z',
@@ -1515,7 +1558,7 @@ export async function installAdminMocks(page: Page) {
               budgets: {
                 max_runs_per_period: 10000,
                 max_tokens_per_period: 2000000,
-                max_cost_per_period: 99,
+                max_cost_cny_per_period: 99,
               },
               concurrency: { max_active_runs: 2 },
               created_at: '2026-04-05T00:00:00Z',
@@ -1531,7 +1574,7 @@ export async function installAdminMocks(page: Page) {
               budgets_template: {
                 max_runs_per_period: 10000,
                 max_tokens_per_period: 2000000,
-                max_cost_per_period: 99,
+                max_cost_cny_per_period: 99,
               },
               concurrency_template: { max_active_runs: 2 },
               max_batch_items: 10,
@@ -1571,7 +1614,7 @@ export async function installAdminMocks(page: Page) {
             budgets: {
               max_runs_per_period: 10000,
               max_tokens_per_period: 2000000,
-              max_cost_per_period: 99,
+              max_cost_cny_per_period: 99,
             },
             concurrency: { max_active_runs: 2 },
             policy: { grace_period_days: 3 },
@@ -1588,7 +1631,7 @@ export async function installAdminMocks(page: Page) {
           budgets: {
             max_runs_per_period: 10000,
             max_tokens_per_period: 2000000,
-            max_cost_per_period: 99,
+            max_cost_cny_per_period: 99,
           },
           concurrency: { max_active_runs: 2 },
           policy: { grace_period_days: 3 },
@@ -1606,7 +1649,7 @@ export async function installAdminMocks(page: Page) {
           budgets_template: {
             max_runs_per_period: 10000,
             max_tokens_per_period: 2000000,
-            max_cost_per_period: 99,
+            max_cost_cny_per_period: 99,
           },
           concurrency_template: { max_active_runs: 2 },
           max_batch_items: 10,
@@ -1664,7 +1707,7 @@ export async function installAdminMocks(page: Page) {
             budgets: {
               max_runs_per_period: 500,
               max_tokens_per_period: 200000,
-              max_cost_per_period: 5,
+              max_cost_cny_per_period: 5,
             },
             concurrency: { max_active_runs: 1 },
             policy: { grace_period_days: 0 },
@@ -1681,7 +1724,7 @@ export async function installAdminMocks(page: Page) {
           budgets: {
             max_runs_per_period: 500,
             max_tokens_per_period: 200000,
-            max_cost_per_period: 5,
+            max_cost_cny_per_period: 5,
           },
           concurrency: { max_active_runs: 1 },
           policy: { grace_period_days: 0 },
@@ -1699,7 +1742,7 @@ export async function installAdminMocks(page: Page) {
           budgets_template: {
             max_runs_per_period: 500,
             max_tokens_per_period: 200000,
-            max_cost_per_period: 5,
+            max_cost_cny_per_period: 5,
           },
           concurrency_template: { max_active_runs: 1 },
           max_batch_items: 0,

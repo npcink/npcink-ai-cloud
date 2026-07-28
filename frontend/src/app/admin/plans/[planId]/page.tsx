@@ -135,7 +135,7 @@ type PlanVersionFormState = {
   monthly_included_points: string;
   site_limit: string;
   max_vector_documents: string;
-  max_cost_per_period: string;
+  max_cost_cny_per_period: string;
   sales_price_cny: string;
   max_active_runs: string;
   max_batch_items: string;
@@ -202,7 +202,7 @@ function numericValue(value: unknown): number {
 }
 
 function formatBudgetCurrency(value: unknown): string {
-  return formatCurrency(numericValue(value), 'USD');
+  return formatCurrency(numericValue(value), ADMIN_CURRENCY);
 }
 
 function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormState {
@@ -231,7 +231,7 @@ function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormStat
     ),
     site_limit: numberField(metadata.site_limit ?? tierSummary?.site_limit ?? 0),
     max_vector_documents: numberField(metadata.max_vector_documents ?? tierSummary?.max_vector_documents ?? 0),
-    max_cost_per_period: numberField(budgets.max_cost_per_period),
+    max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     sales_price_cny: numberField(detail?.sales_offer?.amount),
     max_active_runs: numberField(concurrency.max_active_runs),
     max_batch_items: numberField(metadata.max_batch_items ?? tierSummary?.max_batch_items ?? 0),
@@ -254,7 +254,7 @@ function buildBaselineFieldPatch(
     monthly_included_points: numberField(tierSummary?.monthly_included_points ?? 0),
     site_limit: numberField(tierSummary?.site_limit ?? 0),
     max_vector_documents: numberField(tierSummary?.max_vector_documents ?? 0),
-    max_cost_per_period: numberField(budgets.max_cost_per_period),
+    max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     max_active_runs: numberField(concurrency.max_active_runs),
     max_batch_items: numberField(tierSummary?.max_batch_items ?? 0),
     grace_period_days: numberField(policyBaseline.grace_period_days),
@@ -276,7 +276,7 @@ function buildLatestFieldPatch(
     ),
     site_limit: numberField(metadata.site_limit ?? tierSummary?.site_limit ?? 0),
     max_vector_documents: numberField(metadata.max_vector_documents ?? tierSummary?.max_vector_documents ?? 0),
-    max_cost_per_period: numberField(budgets.max_cost_per_period),
+    max_cost_cny_per_period: numberField(budgets.max_cost_cny_per_period),
     max_active_runs: numberField(concurrency.max_active_runs),
     max_batch_items: numberField(metadata.max_batch_items ?? tierSummary?.max_batch_items ?? 0),
     grace_period_days: numberField(subscriptionPolicy.grace_period_days),
@@ -384,7 +384,7 @@ function PlanDetailContent() {
             max_ai_credits_per_period: Number(form.monthly_included_points || 0),
             max_runs_per_period: 0,
             max_tokens_per_period: 0,
-            max_cost_per_period: Number(form.max_cost_per_period || 0),
+            max_cost_cny_per_period: Number(form.max_cost_cny_per_period || 0),
           },
           parseJsonObject(form.budgets_override_json, 'Budgets override')
         ),
@@ -459,14 +459,14 @@ function PlanDetailContent() {
   const tierSummary = detail.tier_summary;
   const templateBudgets = (tierSummary?.budgets_template || {}) as {
     max_ai_credits_per_period?: number;
-    max_cost_per_period?: number;
+    max_cost_cny_per_period?: number;
   };
   const templateConcurrency = (tierSummary?.concurrency_template || {}) as {
     max_active_runs?: number;
   };
   const latestBudgets = (latestVersion?.budgets || {}) as {
     max_ai_credits_per_period?: number;
-    max_cost_per_period?: number;
+    max_cost_cny_per_period?: number;
   };
   const latestConcurrency = (latestVersion?.concurrency || {}) as { max_active_runs?: number };
   const policyBaseline = (tierSummary?.policy_baseline || {}) as {
@@ -617,7 +617,7 @@ function PlanDetailContent() {
         <BackofficeMetricStrip
           items={[
             {
-              label: t('admin.included_points', {}, 'Package points'),
+              label: t('admin.included_points', {}, 'Package AI credits'),
               value: formatInteger(effectivePackagePoints),
               detail: t('admin.included_points_detail', {}, 'Current-period package points shared by all sites on this account.'),
             },
@@ -638,7 +638,7 @@ function PlanDetailContent() {
             },
             {
               label: t('admin.period_cost_budget', {}, 'Package fee'),
-              value: formatBudgetCurrency(latestBudgets.max_cost_per_period),
+              value: formatBudgetCurrency(latestBudgets.max_cost_cny_per_period),
               detail: t('admin.period_cost_budget_detail', {}, 'Saved package fee for this billing period.'),
             },
             {
@@ -744,7 +744,7 @@ function PlanDetailContent() {
               <BackofficeMetricStrip
                 items={[
                   {
-                    label: t('admin.included_points', {}, 'Package points'),
+                    label: t('admin.included_points', {}, 'Package AI credits'),
                     value: formatInteger(Number(tierSummary?.monthly_included_points || 0)),
                     detail: t('admin.included_points_detail', {}, 'Current-period package points shared by all sites on this account.'),
                   },
@@ -760,7 +760,7 @@ function PlanDetailContent() {
                   },
                   {
                     label: t('common.cost'),
-                    value: formatBudgetCurrency(templateBudgets.max_cost_per_period),
+                    value: formatBudgetCurrency(templateBudgets.max_cost_cny_per_period),
                     detail: t('admin.plan_template_cost_detail', {}, 'Cost ceiling stored for this package period.'),
                   },
                   {
@@ -916,7 +916,7 @@ function PlanDetailContent() {
                     {t(
                       'admin.plan_package_fields_desc',
                       {},
-                      'Customer sales price uses CNY; the internal provider-cost budget uses USD.'
+                      'Customer sales price and the internal provider-cost budget use CNY. Provider cost evidence remains available in its original USD amount.'
                     )}
                   </p>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -928,14 +928,14 @@ function PlanDetailContent() {
                       </span>
                     </label>
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.model_cost_budget_usd', {}, 'Model cost budget (USD / period)')}</span>
-                      <input value={form.max_cost_per_period} onChange={(e) => setForm((c) => ({ ...c, max_cost_per_period: e.target.value }))} className="input w-full" type="number" min="0" step="0.01" />
+                      <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}</span>
+                      <input value={form.max_cost_cny_per_period} onChange={(e) => setForm((c) => ({ ...c, max_cost_cny_per_period: e.target.value }))} className="input w-full" type="number" min="0" step="0.01" />
                       <span className="mt-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {t('admin.model_cost_budget_usd_detail', {}, 'Internal provider-cost monitoring threshold. It does not change the customer payment amount.')}
+                        {t('admin.model_cost_budget_cny_detail', {}, 'Internal provider-cost monitoring threshold in CNY. It does not change the customer payment amount.')}
                       </span>
                     </label>
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.included_points', {}, 'Package points')}</span>
+                      <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">{t('admin.included_points', {}, 'Package AI credits')}</span>
                       <input value={form.monthly_included_points} onChange={(e) => setForm((c) => ({ ...c, monthly_included_points: e.target.value }))} className="input w-full" type="number" min="0" step="1" />
                     </label>
                     <label className="text-sm">

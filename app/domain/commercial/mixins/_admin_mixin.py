@@ -32,6 +32,7 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
+    ServiceSetting,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.credits import (
@@ -39,8 +40,14 @@ from app.domain.commercial.credits import (
     AI_CREDIT_RATE_VERSION,
     build_credit_breakdown_from_ledger,
     is_site_knowledge_index_meter_event,
-    package_credit_used,
+    package_credit_net_delta,
+    package_credit_remaining_from_net_delta,
+    package_credit_used_from_net_delta,
     rounded_token_credits,
+)
+from app.domain.commercial.currency import (
+    SERVICE_SETTING_ACCOUNTING_FX,
+    resolve_accounting_fx_rate,
 )
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
@@ -1765,6 +1772,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 now=now,
             )
             totals = cast(Any, self)._aggregate_meter_events(meter_events)
+            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
+            accounting_fx = resolve_accounting_fx_rate(
+                rate_row.config_json if rate_row is not None and rate_row.enabled else None
+            )
+            totals.update(
+                cast(Any, self)._aggregate_accounting_costs(
+                    meter_events,
+                    accounting_fx,
+                )
+            )
             budgets = cast(Any, self)._resolve_effective_subscription_budgets(
                 plan_version=plan_version,
                 subscription=primary_subscription,
@@ -1830,7 +1847,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         )
         ledger_source = bool(credit_ledger_entries)
         credit_rate_version = AI_CREDIT_RATE_VERSION if ledger_source else "ai-credit-estimate-v2"
-        credit_ledger_summary = self._summarize_credit_ledger_entries(credit_ledger_entries)
+        ai_credit_ledger_summary = self._summarize_credit_ledger_entries(credit_ledger_entries)
         credit_breakdown = build_credit_breakdown_from_ledger(credit_ledger_entries)
         if not credit_breakdown:
             credit_breakdown = self._build_admin_account_credit_breakdown(
@@ -1844,23 +1861,32 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ),
             )
         credit_used = round(
-            sum(service._coerce_float(item.get("credits")) for item in credit_breakdown),
+            sum(service._coerce_float(item.get("ai_credits")) for item in credit_breakdown),
             6,
         )
+        package_net_delta = 0.0
         if ledger_source:
-            credit_used = package_credit_used(credit_ledger_entries)
+            package_net_delta = package_credit_net_delta(credit_ledger_entries)
+            credit_used = package_credit_used_from_net_delta(package_net_delta)
         package_credit_limit = service._coerce_float(
             budgets.get("max_ai_credits_per_period")
         )
         if package_credit_limit <= 0:
             package_credit_limit = service._coerce_float(budgets.get("max_runs_per_period"))
         paid_credit_remaining = service._coerce_float(paid_credit.get("remaining"))
-        package_credit_remaining = max(0.0, package_credit_limit - credit_used)
-        credit_limit = round(
-            credit_used + package_credit_remaining + paid_credit_remaining,
+        package_remaining = (
+            package_credit_remaining_from_net_delta(
+                package_credit_limit,
+                package_net_delta,
+            )
+            if ledger_source and package_credit_limit > 0
+            else max(0.0, package_credit_limit - credit_used)
+        )
+        ai_credit_limit = round(
+            credit_used + package_remaining + paid_credit_remaining,
             6,
         )
-        credit_status = self._quota_status(used=credit_used, limit=credit_limit)
+        credit_status = self._quota_status(used=credit_used, limit=ai_credit_limit)
 
         resource_limits = [
             self._quota_metric(
@@ -1936,9 +1962,15 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             self._quota_metric(
                 key="cost",
                 label="Provider cost",
-                used=service._coerce_float(totals.get("cost")),
-                limit=service._coerce_float(budgets.get("max_cost_per_period")),
-                unit="usd",
+                used=service._coerce_float(
+                    cast(dict[str, object], budget_state.get("cost", {})).get(
+                        "current_total"
+                    )
+                ),
+                limit=service._coerce_float(
+                    cast(dict[str, object], budget_state.get("cost", {})).get("limit")
+                ),
+                unit="cny",
             ),
             self._quota_metric(
                 key="provider_calls",
@@ -1962,12 +1994,12 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "period_start_at": self._serialize_datetime(period_start_at),
             "period_end_at": self._serialize_datetime(period_end_at),
             "status": status,
-            "credit": self._quota_metric(
+            "ai_credits": self._quota_metric(
                 key="ai_credits",
                 label="AI credits",
                 used=credit_used,
-                limit=credit_limit,
-                unit="credit",
+                limit=ai_credit_limit,
+                unit="ai_credits",
                 status=credit_status,
                 extra={
                     "estimated": not ledger_source,
@@ -1979,27 +2011,27 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                         else "max_runs_per_period"
                     ),
                     "package_limit": round(package_credit_limit, 6),
-                    "package_remaining": round(package_credit_remaining, 6),
+                    "package_remaining": round(package_remaining, 6),
                     "paid_remaining": round(paid_credit_remaining, 6),
                     "paid_grant_count": int(paid_credit.get("grant_count") or 0),
                     "paid_next_expires_at": paid_credit.get("next_expires_at") or "",
                     "total_remaining": round(
-                        package_credit_remaining + paid_credit_remaining,
+                        package_remaining + paid_credit_remaining,
                         6,
                     ),
                 },
             ),
-            "credit_policy": {
+            "ai_credit_policy": {
                 "rate_version": AI_CREDIT_RATE_VERSION,
                 "period_policy": "subscription_period",
                 "renewal_policy": "monthly_plan_grant_resets_each_period",
                 "topup_policy": "operator_topups_apply_to_target_period_only",
-                "paid_credit_policy": "payment_order_grants_expire_independently",
+                "paid_ai_credit_policy": "payment_order_grants_expire_independently",
             },
             "resource_limits": resource_limits,
             "internal_limits": internal_limits,
             "breakdown": credit_breakdown,
-            "credit_ledger_summary": credit_ledger_summary,
+            "ai_credit_ledger_summary": ai_credit_ledger_summary,
             "totals": totals,
             "budget_state": budget_state,
             "coverage": {
@@ -2018,7 +2050,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         account_id: str,
         *,
         event_type: str,
-        credit_delta: float,
+        ai_credit_delta: float,
         reason: str,
         note: str = "",
         audit_context: ServiceAuditContext | None = None,
@@ -2038,7 +2070,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "service.credit_adjustment_reason_required",
                 "credit adjustment requires an operator reason",
             )
-        normalized_delta = round(self._coerce_float(credit_delta), 6)
+        normalized_delta = round(self._coerce_float(ai_credit_delta), 6)
         if normalized_delta == 0:
             raise CommercialValidationError(
                 "service.credit_adjustment_delta_required",
@@ -2084,9 +2116,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 event_type=normalized_event_type,
                 source_type="operator_credit_adjustment",
                 source_id=ledger_idempotency,
-                credit_delta=normalized_delta,
+                ai_credit_delta=normalized_delta,
                 quantity=abs(normalized_delta),
-                unit="credit",
+                unit="ai_credits",
                 rate=1.0,
                 rate_unit=None,
                 rate_version=AI_CREDIT_RATE_VERSION,
@@ -2220,8 +2252,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
 
         service = cast(Any, self)
         breakdown = build_credit_breakdown_from_ledger(summary_entries)
-        total_credits = round(
-            sum(service._coerce_float(item.get("credits")) for item in breakdown),
+        total_ai_credits = round(
+            sum(service._coerce_float(item.get("ai_credits")) for item in breakdown),
             6,
         )
         ledger_summary = self._summarize_credit_ledger_entries(summary_entries)
@@ -2244,7 +2276,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "has_more": normalized_offset + len(entries) < total,
             },
             "summary": {
-                "total_credits": total_credits,
+                "total_ai_credits": total_ai_credits,
                 **ledger_summary,
                 "entry_count": total,
                 "breakdown": breakdown,
@@ -2262,7 +2294,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         summary = self.get_admin_account_quota_summary(account_id)
         raw_breakdown = summary.get("breakdown")
         breakdown: list[object] = raw_breakdown if isinstance(raw_breakdown, list) else []
-        raw_credit = summary.get("credit")
+        raw_credit = summary.get("ai_credits")
         credit: dict[str, object] = (
             cast(dict[str, object], raw_credit) if isinstance(raw_credit, dict) else {}
         )
@@ -2296,20 +2328,20 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "period_start_at": summary.get("period_start_at"),
             "period_end_at": summary.get("period_end_at"),
             "status": portal_status,
-            "credit": credit,
-            "credit_ledger_summary": (
-                summary.get("credit_ledger_summary")
-                if isinstance(summary.get("credit_ledger_summary"), dict)
+            "ai_credits": credit,
+            "ai_credit_ledger_summary": (
+                summary.get("ai_credit_ledger_summary")
+                if isinstance(summary.get("ai_credit_ledger_summary"), dict)
                 else {}
             ),
-            "credit_policy": (
-                summary.get("credit_policy")
-                if isinstance(summary.get("credit_policy"), dict)
+            "ai_credit_policy": (
+                summary.get("ai_credit_policy")
+                if isinstance(summary.get("ai_credit_policy"), dict)
                 else {}
             ),
             "resource_limits": resource_limits,
             "breakdown": breakdown,
-            "credit_usage_detail": self._build_portal_credit_usage_detail(
+            "ai_credit_usage_detail": self._build_portal_ai_credit_usage_detail(
                 credit=credit,
                 breakdown=breakdown,
                 recent_items=[],
@@ -2352,7 +2384,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "rate_version": ledger.get("rate_version"),
             "pagination": ledger.get("pagination"),
             "summary": summary,
-            "usage_detail": self._build_portal_credit_usage_detail(
+            "ai_credit_usage_detail": self._build_portal_ai_credit_usage_detail(
                 credit={},
                 breakdown=breakdown,
                 recent_items=items,
@@ -2380,11 +2412,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             if isinstance(entry, dict):
                 event_type = str(entry.get("event_type") or "")
                 source_type = str(entry.get("source_type") or "")
-                delta = service._coerce_float(entry.get("credit_delta"))
+                delta = service._coerce_float(entry.get("ai_credit_delta"))
             else:
                 event_type = str(getattr(entry, "event_type", "") or "")
                 source_type = str(getattr(entry, "source_type", "") or "")
-                delta = service._coerce_float(getattr(entry, "credit_delta", 0.0))
+                delta = service._coerce_float(getattr(entry, "ai_credit_delta", 0.0))
 
             category = self._credit_ledger_entry_category(
                 event_type=event_type,
@@ -2403,26 +2435,26 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 refund += max(0.0, delta)
 
         return {
-            "consumed_credits": round(consumed, 6),
-            "granted_credits": round(granted, 6),
-            "adjustment_credits": round(adjustment, 6),
-            "refund_credits": round(refund, 6),
-            "net_credit_delta": round(net_delta, 6),
-            "net_used_credits": round(max(0.0, -net_delta), 6),
+            "consumed_ai_credits": round(consumed, 6),
+            "granted_ai_credits": round(granted, 6),
+            "adjustment_ai_credits": round(adjustment, 6),
+            "refund_ai_credits": round(refund, 6),
+            "net_ai_credit_delta": round(net_delta, 6),
+            "net_used_ai_credits": round(max(0.0, -net_delta), 6),
             "event_type_totals": {
                 key: round(value, 6) for key, value in sorted(by_event_type.items())
             },
             "category_totals": {
                 key: {
                     "label": AI_CREDIT_LEDGER_CATEGORY_LABELS.get(key, key),
-                    "net_credit_delta": round(value, 6),
+                    "net_ai_credit_delta": round(value, 6),
                 }
                 for key, value in sorted(by_category.items())
             },
             "entry_count": len(entries),
         }
 
-    def _build_portal_credit_usage_detail(
+    def _build_portal_ai_credit_usage_detail(
         self,
         *,
         credit: dict[str, object],
@@ -2437,7 +2469,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         used = service._coerce_float(credit.get("used")) if credit else 0.0
         remaining = max(0.0, limit - used) if limit > 0 else None
         return {
-            "surface": "portal_personal_credit_usage",
+            "surface": "portal_personal_ai_credit_usage",
             "default_visibility": "cloud_portal_only",
             "local_addon_policy": "summary_and_link_only",
             "generated_at": generated_at,
@@ -2450,7 +2482,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "limit": round(limit, 6),
                 "remaining": round(remaining, 6) if remaining is not None else None,
                 "status": str(credit.get("status") or ""),
-                "unit": str(credit.get("unit") or "credit"),
+                "unit": str(credit.get("unit") or "ai_credits"),
                 "rate_version": str(credit.get("rate_version") or AI_CREDIT_RATE_VERSION),
             },
             "breakdown": [
@@ -2469,8 +2501,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 for key, label in AI_CREDIT_LEDGER_CATEGORY_LABELS.items()
             ],
             "portal_paths": {
-                "credit_usage": "/portal/usage",
-                "credit_ledger": "/portal/usage/credits",
+                "ai_credit_usage": "/portal/usage",
+                "ai_credit_ledger": "/portal/usage/credits",
             },
         }
 
@@ -2481,10 +2513,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "key": key,
             "label": str(item.get("label") or AI_CREDIT_COMPONENT_LABELS.get(key, key)),
             "quantity": service._coerce_float(item.get("quantity")),
-            "unit": str(item.get("unit") or "credit"),
+            "unit": str(item.get("unit") or "ai_credits"),
             "rate": service._coerce_float(item.get("rate")),
             "rate_unit": item.get("rate_unit"),
-            "credits": service._coerce_float(item.get("credits")),
+            "ai_credits": service._coerce_float(item.get("ai_credits")),
             "capability_group": self._portal_credit_capability_group(key),
         }
 
@@ -2522,10 +2554,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             return "refund"
         return "other"
 
-    def _credit_ledger_entry_direction(self, credit_delta: float) -> str:
-        if credit_delta > 0:
+    def _credit_ledger_entry_direction(self, ai_credit_delta: float) -> str:
+        if ai_credit_delta > 0:
             return "credit_in"
-        if credit_delta < 0:
+        if ai_credit_delta < 0:
             return "credit_out"
         return "neutral"
 
@@ -2535,9 +2567,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         event_type: str,
         source_type: str,
         category: str,
-        credit_delta: float,
+        ai_credit_delta: float,
     ) -> str:
-        credits = round(abs(credit_delta), 6)
+        credits = round(abs(ai_credit_delta), 6)
         if category == "monthly_plan_grant":
             return f"Monthly package grant added {credits} AI credits to the current period."
         if category == "credit_pack_purchase":
@@ -2548,7 +2580,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         if category == "refund_adjustment":
             return f"Refund adjustment removed {credits} AI credits from the current period."
         if category == "operator_adjustment":
-            direction = "added" if credit_delta >= 0 else "removed"
+            direction = "added" if ai_credit_delta >= 0 else "removed"
             return f"Operator adjustment {direction} {credits} AI credits."
         if category == "refund":
             return f"Refund event added {credits} AI credits back to the account."
@@ -2648,7 +2680,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 return entry.get(key, default)
             return getattr(entry, key, default)
 
-        credit_delta = service._coerce_float(value("credit_delta", 0.0))
+        ai_credit_delta = service._coerce_float(value("ai_credit_delta", 0.0))
         event_type = str(value("event_type", "") or "")
         source_type = str(value("source_type", "") or "")
         category = self._credit_ledger_entry_category(
@@ -2663,19 +2695,19 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "source_type": source_type,
             "category": category,
             "category_label": AI_CREDIT_LEDGER_CATEGORY_LABELS.get(category, category),
-            "direction": self._credit_ledger_entry_direction(credit_delta),
+            "direction": self._credit_ledger_entry_direction(ai_credit_delta),
             "explanation": self._credit_ledger_entry_explanation(
                 event_type=event_type,
                 source_type=source_type,
                 category=category,
-                credit_delta=credit_delta,
+                ai_credit_delta=ai_credit_delta,
             ),
             "source_id": str(value("source_id", "") or ""),
             "run_id": str(value("run_id", "") or ""),
-            "credit_delta": credit_delta,
-            "consumed_credits": max(0.0, -credit_delta),
-            "granted_credits": max(0.0, credit_delta),
-            "net_credit_delta": credit_delta,
+            "ai_credit_delta": ai_credit_delta,
+            "consumed_ai_credits": max(0.0, -ai_credit_delta),
+            "granted_ai_credits": max(0.0, ai_credit_delta),
+            "net_ai_credit_delta": ai_credit_delta,
             "quantity": service._coerce_float(value("quantity", 0.0)),
             "unit": str(value("unit", "") or ""),
             "rate": service._coerce_float(value("rate", 0.0)),
@@ -2754,7 +2786,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "quantity": round(run_count, 6),
                 "unit": "run",
                 "rate": 1.0,
-                "credits": round(run_count, 6),
+                "ai_credits": round(run_count, 6),
             },
             {
                 "key": "tokens_total",
@@ -2763,7 +2795,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "unit": "token",
                 "rate": 1.0,
                 "rate_unit": "1000_tokens_rounded_up",
-                "credits": token_credits,
+                "ai_credits": token_credits,
             },
             {
                 "key": "web_search",
@@ -2771,7 +2803,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "quantity": round(web_search_calls, 6),
                 "unit": "call",
                 "rate": 5.0,
-                "credits": round(web_search_calls * 5.0, 6),
+                "ai_credits": round(web_search_calls * 5.0, 6),
             },
             {
                 "key": "image_recommendation",
@@ -2779,7 +2811,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "quantity": round(image_calls, 6),
                 "unit": "call",
                 "rate": 3.0,
-                "credits": round(image_calls * 3.0, 6),
+                "ai_credits": round(image_calls * 3.0, 6),
             },
             {
                 "key": "provider_calls_other",
@@ -2787,7 +2819,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "quantity": round(other_provider_calls, 6),
                 "unit": "call",
                 "rate": 0.0,
-                "credits": 0.0,
+                "ai_credits": 0.0,
             },
             {
                 "key": "vector_documents",
@@ -2795,7 +2827,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "quantity": indexed_document_count,
                 "unit": "document",
                 "rate": 0.0,
-                "credits": 0.0,
+                "ai_credits": 0.0,
             },
             {
                 "key": "vector_chunks",
@@ -2803,7 +2835,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "quantity": indexed_chunk_count,
                 "unit": "chunk",
                 "rate": 0.0,
-                "credits": 0.0,
+                "ai_credits": 0.0,
             },
         ]
         return [item for item in items if service._coerce_float(item.get("quantity")) > 0]

@@ -35,6 +35,8 @@ const commercialDtos = [
   'PortalCreditEventBucketsPayload',
   'PortalBillingSnapshot',
   'PortalBillingReconciliation',
+  'PortalSiteRelinkPolicy',
+  'PortalSiteRemovalResult',
 ];
 const forbiddenFields = [
   'account_id',
@@ -68,7 +70,7 @@ assert.match(
 );
 assert.match(
   interfaceBlock('PortalCreditLedgerPayload'),
-  /usage_detail\?: \{[\s\S]*recent_items\?: PortalCreditLedgerEntry\[\];/,
+  /ai_credit_usage_detail\?: \{[\s\S]*recent_items\?: PortalCreditLedgerEntry\[\];/,
   'credit ledger usage detail must be explicitly modeled as customer-facing data'
 );
 
@@ -108,7 +110,7 @@ for (const method of [
 
 assert.match(
   clientSource,
-  /async removeSite\(siteId: string\): Promise<PortalEnvelope<\{ site: Site; revoked_key_ids: string\[\] \}>>/,
+  /async removeSite\(siteId: string\): Promise<PortalEnvelope<PortalSiteRemovalResult>>/,
   'site removal must retain its bounded public site response'
 );
 

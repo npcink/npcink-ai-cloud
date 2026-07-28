@@ -14,6 +14,8 @@ from app.core.models import (
     AccountSubscription,
     CreditLedgerEntry,
     PaidCreditGrant,
+    ServiceSetting,
+    UsageMeterEvent,
 )
 from app.domain.commercial.service import CommercialService
 from app.domain.runtime.errors import RuntimeQuotaExceededError
@@ -43,11 +45,11 @@ def _record_existing_credit_usage(
             provider_call_id=None,
             source_type="runs",
             source_id=f"{site_id}_existing_usage",
-            credit_delta=-credits,
+            ai_credit_delta=-credits,
             quantity=credits,
-            unit="credit",
+            unit="ai_credits",
             rate=1,
-            rate_unit="credit",
+            rate_unit="ai_credits",
             rate_version="ai-credit-ledger-v2",
             idempotency_key=f"{site_id}-existing-usage",
         )
@@ -85,7 +87,7 @@ def test_authorize_runtime_request_uses_free_ai_credit_package_defaults(
         "max_ai_credits_per_period": 300.0,
         "max_runs_per_period": 0.0,
         "max_tokens_per_period": 0.0,
-        "max_cost_per_period": 0.0,
+        "max_cost_cny_per_period": 0.0,
     }
     assert decision["concurrency"] == {
         "max_active_runs": 1,
@@ -124,6 +126,139 @@ def test_authorize_runtime_request_allows_cloud_managed_knowledge_family(
     assert decision["decision_code"] == "commercial.allowed"
     assert decision["entitlements"]["ability_families"] == ["*"]
 
+    dispose_engine(database_url)
+
+
+def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_cache_metering",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+    )
+    service = CommercialService(database_url)
+
+    with get_session(database_url) as session:
+        session.add(
+            ServiceSetting(
+                setting_id="commercial_accounting_fx",
+                setting_kind="commercial",
+                enabled=True,
+                config_json={
+                    "usd_cny_rate": "7.100000",
+                    "effective_at": "2026-07-01T00:00:00+00:00",
+                    "source": "test-approved",
+                    "note": "",
+                    "rate_version": "usd-cny-20260701T000000Z-7_100000",
+                },
+                secret_ciphertext_json={},
+                status="ready",
+                last_tested_at=None,
+                last_error_code="",
+                last_error_message="",
+                metadata_json={},
+            )
+        )
+        session.flush()
+        subscription = session.scalar(select(AccountSubscription))
+        assert subscription is not None
+        runtime_repository = RuntimeRepository(session)
+        run = runtime_repository.create_run(
+            run_id="run_cache_metering",
+            site_id="site_cache_metering",
+            account_id=subscription.account_id,
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            ability_name="test/cache-metering",
+            ability_family="text",
+            skill_id="",
+            workflow_id="",
+            contract_version="v1",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            execution_pattern="inline",
+            data_classification="internal",
+            profile_id="text.balanced",
+            canonical_run_id=None,
+            status="running",
+            idempotency_key="run-cache-metering",
+            request_fingerprint="fingerprint-cache-metering",
+            trace_id="trace-cache-metering",
+            input_json={},
+            execution_input_ciphertext=None,
+            policy_json={},
+        )
+        provider_call = runtime_repository.record_provider_call(
+            run_id=run.run_id,
+            provider_id="openai",
+            model_id="gpt-4.1-mini",
+            instance_id="openai-global",
+            region="global",
+            latency_ms=25,
+            tokens_in=1000,
+            tokens_out=50,
+            cost=0.004,
+            retry_count=0,
+            fallback_used=False,
+        )
+        service.record_provider_call_usage(
+            session=session,
+            run=run,
+            provider_call=provider_call,
+            usage_context={
+                "input_tokens_uncached": 100,
+                "cache_read_tokens": 800,
+                "cache_write_tokens": 100,
+                "cache_hit_ratio": 0.8,
+                "cost_estimate_mode": "cache_rates",
+            },
+        )
+        events = list(
+            session.scalars(
+                select(UsageMeterEvent).where(
+                    UsageMeterEvent.run_id == run.run_id
+                )
+            )
+        )
+        quantities = {event.meter_key: event.quantity for event in events}
+        provider_event = next(
+            event for event in events if event.meter_key == "provider_calls"
+        )
+        provider_payload = dict(provider_event.payload_json or {})
+        cost_usd_event = next(event for event in events if event.meter_key == "cost")
+        cost_cny_event = next(event for event in events if event.meter_key == "cost_cny")
+        credit_source_types = set(
+            session.scalars(
+                select(CreditLedgerEntry.source_type).where(
+                    CreditLedgerEntry.run_id == run.run_id
+                )
+            )
+        )
+        session.commit()
+
+    assert quantities == {
+        "provider_calls": 1.0,
+        "tokens_in": 1000.0,
+        "tokens_out": 50.0,
+        "tokens_total": 1050.0,
+        "cost": 0.004,
+        "cost_cny": 0.0284,
+        "input_tokens_uncached": 100.0,
+        "cache_read_tokens": 800.0,
+        "cache_write_tokens": 100.0,
+    }
+    assert provider_payload["cache_hit_ratio"] == 0.8
+    assert provider_payload["cost_estimate_mode"] == "cache_rates"
+    assert cost_usd_event.currency == "USD"
+    assert cost_cny_event.currency == "CNY"
+    assert cost_usd_event.payload_json["accounting_fx"]["rate_version"] == (
+        "usd-cny-20260701T000000Z-7_100000"
+    )
+    assert cost_cny_event.payload_json["cost_usd"] == 0.004
+    assert cost_cny_event.payload_json["cost_cny"] == 0.0284
+    assert credit_source_types == {"tokens_total"}
     dispose_engine(database_url)
 
 
@@ -167,7 +302,7 @@ def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
         repository.upsert_paid_credit_grant(
             account_id=subscription.account_id,
             payment_order_id="pay_runtime_paid_grant",
-            original_credits=10_000,
+            original_ai_credits=10_000,
             expires_at=now + timedelta(days=365),
         )
         repository.record_credit_ledger_entry(
@@ -179,11 +314,11 @@ def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
             provider_call_id=None,
             source_type="runs",
             source_id="base_allowance_consumed",
-            credit_delta=-300,
+            ai_credit_delta=-300,
             quantity=300,
-            unit="credit",
+            unit="ai_credits",
             rate=1,
-            rate_unit="credit",
+            rate_unit="ai_credits",
             rate_version="ai-credit-ledger-v2",
             idempotency_key="base-allowance-consumed",
             created_at=now,
@@ -256,9 +391,80 @@ def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
         )
         session.commit()
     assert grant is not None
-    assert grant.remaining_credits == 9999.0
+    assert grant.remaining_ai_credits == 9999.0
     assert paid_consume is not None
     assert paid_consume.metadata_json["paid_credit_consumed"] == 1.0
+    dispose_engine(database_url)
+
+
+def test_authorize_runtime_request_adds_operator_grants_to_package_headroom(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_operator_credit_grant",
+        scopes=["runtime:execute", "runtime:read", "runtime:resolve"],
+        budgets={"max_ai_credits_per_period": 300},
+    )
+    with get_session(database_url) as session:
+        repository = CommercialRepository(session)
+        subscription = session.scalar(select(AccountSubscription))
+        assert subscription is not None
+        period_start = subscription.current_period_start_at or datetime.now(UTC)
+        if period_start.tzinfo is None:
+            period_start = period_start.replace(tzinfo=UTC)
+        service_now = period_start + timedelta(hours=1)
+        repository.record_credit_ledger_entry(
+            account_id=subscription.account_id,
+            site_id=None,
+            subscription_id=subscription.subscription_id,
+            plan_version_id=subscription.plan_version_id,
+            run_id=None,
+            provider_call_id=None,
+            event_type="grant",
+            source_type="operator_credit_adjustment",
+            source_id="operator-credit-grant-headroom",
+            ai_credit_delta=1000,
+            quantity=1000,
+            unit="ai_credits",
+            rate=1,
+            rate_unit=None,
+            rate_version="ai-credit-ledger-v2",
+            idempotency_key="operator-credit-grant-headroom",
+            created_at=service_now,
+        )
+        session.commit()
+
+    service = CommercialService(database_url, now_factory=lambda: service_now)
+    with get_session(database_url) as session:
+        decision = service.authorize_runtime_request(
+            session=session,
+            site_id="site_operator_credit_grant",
+            ability_family="workflow",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            data_classification="internal",
+            trace_id="trace-commercial-operator-credit-grant-001",
+            idempotency_key="idem-commercial-operator-credit-grant-001",
+            request_kind="execute",
+            estimated_ai_credits=500,
+        )
+        session.commit()
+
+    assert decision["decision_code"] == "commercial.allowed"
+    assert decision["ai_credit_budget"] == {
+        "used": 0.0,
+        "estimated_request": 500.0,
+        "limit": 1300.0,
+        "package_limit": 300.0,
+        "package_remaining": 1300.0,
+        "paid_remaining": 0.0,
+        "paid_grant_count": 0,
+        "remaining_before_request": 1300.0,
+    }
     dispose_engine(database_url)
 
 
@@ -350,7 +556,7 @@ def test_zero_credit_limit_does_not_consume_paid_grants_after_acceptance(
         repository.upsert_paid_credit_grant(
             account_id=subscription.account_id,
             payment_order_id="pay_unlimited_runtime_grant",
-            original_credits=10,
+            original_ai_credits=10,
             expires_at=now + timedelta(days=365),
         )
         run = RuntimeRepository(session).create_run(
@@ -390,7 +596,7 @@ def test_zero_credit_limit_does_not_consume_paid_grants_after_acceptance(
         session.commit()
 
     assert grant is not None
-    assert grant.remaining_credits == 10.0
+    assert grant.remaining_ai_credits == 10.0
     assert consume is not None
     assert consume.metadata_json["paid_credit_consumed"] == 0.0
     assert consume.metadata_json["package_credit_consumed"] == 1.0

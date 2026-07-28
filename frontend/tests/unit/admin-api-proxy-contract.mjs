@@ -69,8 +69,20 @@ assert.match(
 
 assert.match(
   source,
-  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:portal-public\|qq-login\|email\|alipay-payment\)\$\/[\s\S]*?methods: \['POST'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:qq-login\\\/test\|email\\\/test\|email\\\/preview\|alipay-payment\\\/test\)\$\//,
+  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:portal-public\|qq-login\|email\|alipay-payment\|site-relink-policy\|accounting-fx\)\$\/[\s\S]*?methods: \['POST'\],[\s\S]*?pattern: \/\^service-settings\\\/\(\?:qq-login\\\/test\|email\\\/test\|email\\\/preview\|alipay-payment\\\/test\)\$\//,
   'admin service-settings writes must enumerate the supported method for each subpath'
+);
+
+assert.match(
+  source,
+  /methods: \['PATCH'\],[\s\S]*?pattern: \/\^sites\\\/\[\^\/\]\+\\\/relink-cooldown\$\/[\s\S]*?requiredCapability: 'can_manage_accounts'/,
+  'site relink overrides must require the account-management capability'
+);
+
+assert.match(
+  source,
+  /methods: \['GET'\],[\s\S]*?pattern: \/\^\(\?:service-settings\|site-compliance\)\$\/[\s\S]*?methods: \['PUT'\],[\s\S]*?pattern: \/\^site-compliance\\\/draft\$\/[\s\S]*?methods: \['POST'\],[\s\S]*?pattern: \/\^site-compliance\\\/publish\$\//,
+  'site compliance proxy routes must enumerate read, draft save, and publish methods'
 );
 
 assert.doesNotMatch(

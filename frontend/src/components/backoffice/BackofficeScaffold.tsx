@@ -38,6 +38,7 @@ type BackofficePrimaryPanelProps = BackofficeHeaderProps & {
   summary?: React.ReactNode;
   contentClassName?: string;
   summaryClassName?: string;
+  actionPlacement?: 'below' | 'header';
 };
 
 type BackofficeMetricItem = {
@@ -58,6 +59,7 @@ type BackofficeMetricStripProps = {
 type BackofficeSummaryStripProps = {
   items: BackofficeMetricItem[];
   className?: string;
+  density?: 'standard' | 'compact';
 };
 
 type BackofficeEmptyStateProps = {
@@ -167,6 +169,7 @@ export function BackofficePrimaryPanel({
   summary,
   contentClassName,
   summaryClassName,
+  actionPlacement = 'below',
 }: BackofficePrimaryPanelProps) {
   return (
     <section className={cn('glass-panel overflow-hidden rounded-[1.6rem] p-0', className)}>
@@ -188,9 +191,16 @@ export function BackofficePrimaryPanel({
               <p className="max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{description}</p>
             ) : null}
           </div>
-          {aside ? <div className="shrink-0">{aside}</div> : null}
+          {aside || (actions && actionPlacement === 'header') ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
+              {aside}
+              {actionPlacement === 'header' ? actions : null}
+            </div>
+          ) : null}
         </div>
-        {actions ? <div className="mt-6 flex flex-wrap gap-3">{actions}</div> : null}
+        {actions && actionPlacement === 'below' ? (
+          <div className="mt-6 flex flex-wrap gap-3">{actions}</div>
+        ) : null}
         {children ? <div className="mt-5 space-y-4">{children}</div> : null}
       </div>
       {summary ? (
@@ -307,13 +317,29 @@ export function BackofficeMetricStrip({ items, columnsClassName, variant = 'defa
   );
 }
 
-export function BackofficeSummaryStrip({ items, className }: BackofficeSummaryStripProps) {
+export function BackofficeSummaryStrip({
+  items,
+  className,
+  density = 'standard',
+}: BackofficeSummaryStripProps) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-2 text-sm', className)}>
+    <div
+      data-density={density}
+      className={cn(
+        'flex flex-wrap items-center text-sm',
+        density === 'compact' ? 'gap-x-4 gap-y-1' : 'gap-2',
+        className
+      )}
+    >
       {items.map((item) => (
         <div
           key={item.label}
-          className="inline-flex min-h-9 items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 dark:border-slate-800 dark:bg-slate-950/45 dark:text-slate-300"
+          className={cn(
+            'inline-flex items-center gap-2 text-slate-600 dark:text-slate-300',
+            density === 'compact'
+              ? 'min-h-7'
+              : 'min-h-9 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-950/45'
+          )}
           title={item.detail || undefined}
         >
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.label}</span>

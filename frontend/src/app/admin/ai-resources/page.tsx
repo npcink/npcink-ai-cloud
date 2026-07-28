@@ -7,11 +7,16 @@ import {
   BackofficeDiagnosticNotice,
   BackofficePageStack,
   BackofficePrimaryPanel,
-  BackofficeSectionPanel,
   BackofficeStackCard,
+  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
+import {
+  AdminConfigurationRow,
+  AdminConfigurationTable,
+} from '@/components/admin/AdminConfigurationTable';
+import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
@@ -20,7 +25,6 @@ import {
   type ProviderConnectionTestResult,
   type SupplierConnection as Connection,
 } from '@/components/admin/SupplierConnectionTables';
-import { SupplierSummaryCards } from '@/components/admin/SupplierSummaryCards';
 import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { Modal } from '@/components/ui/Modal';
@@ -145,6 +149,8 @@ type ProviderConnectionForm = {
   capabilityIds: string;
   runtimeProfileIds: string;
   modelIds: string;
+  imageResponseFormat: string;
+  imageOutputHosts: string;
   credential: string;
   enabled: boolean;
 };
@@ -160,6 +166,8 @@ const EMPTY_PROVIDER_CONNECTION_FORM: ProviderConnectionForm = {
   capabilityIds: 'text_generation, image_generation',
   runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
   modelIds: '',
+  imageResponseFormat: '',
+  imageOutputHosts: '',
   credential: '',
   enabled: true,
 };
@@ -387,16 +395,6 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   },
 ];
 
-function connectionHost(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return '-';
-  try {
-    return new URL(trimmed).host || trimmed;
-  } catch {
-    return trimmed.replace(/^https?:\/\//, '').split('/')[0] || trimmed;
-  }
-}
-
 function externalUrlValue(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
@@ -497,6 +495,13 @@ function splitList(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function imageOutputHostsAreExact(hosts: string[]): boolean {
+  return hosts.every((host) => (
+    !Array.from(host).some((character) => /\s/.test(character))
+    && !['://', '/', '*', '@', '?', '#', ':'].some((marker) => host.includes(marker))
+  ));
 }
 
 function uniqueList(values: string[]): string[] {
@@ -842,10 +847,11 @@ function AiResourcesContent() {
   const [modelReferenceFeatureFilter, setModelReferenceFeatureFilter] = useState<ModelReferenceFeatureFilter>('all');
   const [modelReferenceVisibilityFilter, setModelReferenceVisibilityFilter] = useState<ModelReferenceVisibilityFilter>('all');
   const [modelReferenceShowDeprecated, setModelReferenceShowDeprecated] = useState(false);
+  const [confirmingClearModels, setConfirmingClearModels] = useState(false);
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
   const [providerFormOpen, setProviderFormOpen] = useState(false);
   const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
-  const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(true);
+  const [credentialEditOpen, setCredentialEditOpen] = useState(true);
   const [providerConnectionForm, setProviderConnectionForm] = useState<ProviderConnectionForm>(
     EMPTY_PROVIDER_CONNECTION_FORM
   );
@@ -966,7 +972,28 @@ function AiResourcesContent() {
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
-    const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
+    const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
+    if (providerConnectionForm.imageResponseFormat === 'url' && !imageOutputHosts.length) {
+      setError(aiText(
+        'error_image_output_hosts_required',
+        'Enter the exact image download host when the provider returns image URLs.'
+      ));
+      return;
+    }
+    if (!imageOutputHostsAreExact(imageOutputHosts)) {
+      setError(aiText(
+        'error_image_output_hosts_invalid',
+        'Use exact host names only, without schemes, paths, ports, or wildcards.'
+      ));
+      return;
+    }
+    const modelConfig = {
+      ...(modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {}),
+      ...(providerConnectionForm.imageResponseFormat
+        ? { image_response_format: providerConnectionForm.imageResponseFormat }
+        : {}),
+      ...(imageOutputHosts.length ? { image_output_hosts: imageOutputHosts } : {}),
+    };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
@@ -1094,7 +1121,28 @@ function AiResourcesContent() {
     const normalizedConnectionId = providerConnectionForm.connectionId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.providerId);
     const normalizedProviderId = providerConnectionForm.providerId || slugifyProviderValue(providerConnectionForm.displayName || providerConnectionForm.connectionId);
     const modelIds = splitList(providerConnectionForm.modelIds);
-    const modelConfig = modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {};
+    const imageOutputHosts = splitList(providerConnectionForm.imageOutputHosts);
+    if (providerConnectionForm.imageResponseFormat === 'url' && !imageOutputHosts.length) {
+      setError(aiText(
+        'error_image_output_hosts_required',
+        'Enter the exact image download host when the provider returns image URLs.'
+      ));
+      return;
+    }
+    if (!imageOutputHostsAreExact(imageOutputHosts)) {
+      setError(aiText(
+        'error_image_output_hosts_invalid',
+        'Use exact host names only, without schemes, paths, ports, or wildcards.'
+      ));
+      return;
+    }
+    const modelConfig = {
+      ...(modelIds.length ? { model_ids: modelIds, model_id: modelIds[0] } : {}),
+      ...(providerConnectionForm.imageResponseFormat
+        ? { image_response_format: providerConnectionForm.imageResponseFormat }
+        : {}),
+      ...(imageOutputHosts.length ? { image_output_hosts: imageOutputHosts } : {}),
+    };
     const referenceLinks = providerReferenceLinksForForm(providerConnectionForm);
     const websiteUrl = externalUrlValue(referenceLinks.websiteUrl);
     const statusUrl = externalUrlValue(referenceLinks.statusUrl);
@@ -1280,7 +1328,7 @@ function AiResourcesContent() {
     setConfirmingDeleteConnectionId('');
     setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
     setProviderFormMode('create');
-    setConnectionDetailsOpen(true);
+    setCredentialEditOpen(true);
     setProviderFormOpen(true);
     setProviderCatalogPreview(null);
     setModelReferenceProviderId(defaultReferenceProviderId(EMPTY_PROVIDER_CONNECTION_FORM.providerId, EMPTY_PROVIDER_CONNECTION_FORM.providerPreset));
@@ -1288,6 +1336,7 @@ function AiResourcesContent() {
     setModelReferenceFeatureFilter('all');
     setModelReferenceVisibilityFilter('all');
     setModelReferenceShowDeprecated(true);
+    setConfirmingClearModels(false);
     setCustomModelInput('');
     setError('');
     setMessage('');
@@ -1297,9 +1346,7 @@ function AiResourcesContent() {
     setConfirmingDeleteConnectionId('');
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
-    setMessage(aiText('message_editing_connection', 'Editing {{name}}. Credential is left blank unless you replace it.', {
-      name: connection.display_name,
-    }));
+    setMessage('');
     setError('');
     setProviderCatalogPreview(storedCatalogPreview);
     setModelReferenceProviderId(referenceProviderForConnection(connection));
@@ -1307,9 +1354,10 @@ function AiResourcesContent() {
     setModelReferenceFeatureFilter('all');
     setModelReferenceVisibilityFilter('all');
     setModelReferenceShowDeprecated(true);
+    setConfirmingClearModels(false);
     setCustomModelInput('');
     setProviderFormMode('edit');
-    setConnectionDetailsOpen(false);
+    setCredentialEditOpen(false);
     setProviderConnectionForm({
       providerPreset,
       connectionId: connection.connection_id,
@@ -1321,6 +1369,10 @@ function AiResourcesContent() {
       capabilityIds: connection.capability_ids.join(', '),
       runtimeProfileIds: connection.runtime_profile_ids.join(', '),
       modelIds: (connection.model_ids || []).join(', '),
+      imageResponseFormat: String(connection.config?.image_response_format || ''),
+      imageOutputHosts: Array.isArray(connection.config?.image_output_hosts)
+        ? connection.config.image_output_hosts.map(String).join(', ')
+        : '',
       credential: '',
       enabled: connection.enabled,
     });
@@ -1329,6 +1381,8 @@ function AiResourcesContent() {
 
   function closeProviderForm() {
     setProviderFormOpen(false);
+    setCredentialEditOpen(true);
+    setConfirmingClearModels(false);
     setMessage('');
     setError('');
   }
@@ -1344,6 +1398,7 @@ function AiResourcesContent() {
   }
 
   function setProviderModelIds(modelIds: string[]) {
+    setConfirmingClearModels(false);
     const inferredReferenceProviderId = inferReferenceProviderFromModelIds(modelIds, modelReferenceProviderId);
     if (modelIds.length && inferredReferenceProviderId !== modelReferenceProviderId) {
       setModelReferenceProviderId(inferredReferenceProviderId);
@@ -1554,6 +1609,9 @@ function AiResourcesContent() {
 
   const referenceProviderCanBeChanged = canChooseReferenceProvider(providerConnectionForm.providerPreset);
   const providerUsesCustomRuntimeFields = providerConnectionForm.providerPreset === 'custom';
+  const providerUsesImageGeneration = splitList(
+    providerConnectionForm.capabilityIds
+  ).includes('image_generation');
   const providerFormExternalLinkItems = providerExternalLinkItems(
     providerReferenceLinksForForm(providerConnectionForm)
   );
@@ -1607,55 +1665,6 @@ function AiResourcesContent() {
     syncingModelReferences,
   ]);
 
-  const modelReferenceStatusText = useMemo(() => {
-    const providerLabel = referenceProviderLabel(modelReferenceProviderId);
-    if (autoSyncingModelReferences) {
-      return aiText('model_reference_status_auto_syncing', 'Reference intelligence: {{provider}} · syncing models.dev automatically...', {
-        provider: providerLabel,
-      });
-    }
-    if (loadingModelReferences) {
-      return aiText('model_reference_status_loading', 'Reference intelligence: {{provider}} · loading...', {
-        provider: providerLabel,
-      });
-    }
-    if (modelReferenceAutoSyncError && modelReferenceTotal <= 0) {
-      return aiText('model_reference_status_auto_sync_failed', 'Reference intelligence: {{provider}} · automatic sync failed: {{message}}', {
-        provider: providerLabel,
-        message: modelReferenceAutoSyncError,
-      });
-    }
-    if (modelReferenceTotal > 0) {
-      return aiText('model_reference_status_loaded', 'Reference intelligence: {{provider}} · {{count}} local records from models.dev.', {
-        provider: providerLabel,
-        count: String(modelReferenceTotal),
-      });
-    }
-    if (modelsDevReferenceSource?.status === 'error') {
-      return aiText('model_reference_status_error', 'Reference intelligence: {{provider}} · models.dev sync failed: {{message}}', {
-        provider: providerLabel,
-        message: modelsDevReferenceSource.last_error_message || modelsDevReferenceSource.last_error_code || aiText('unknown', 'unknown'),
-      });
-    }
-    if (modelsDevReferenceSource?.last_synced_at) {
-      return aiText('model_reference_status_empty_after_sync', 'Reference intelligence: {{provider}} · no local match after models.dev sync at {{time}}.', {
-        provider: providerLabel,
-        time: formatDate(modelsDevReferenceSource.last_synced_at),
-      });
-    }
-    return aiText('model_reference_status_not_synced', 'Reference intelligence: {{provider}} · not synced locally yet.', {
-      provider: providerLabel,
-    });
-  }, [
-    aiText,
-    autoSyncingModelReferences,
-    loadingModelReferences,
-    modelReferenceAutoSyncError,
-    modelReferenceProviderId,
-    modelReferenceTotal,
-    modelsDevReferenceSource,
-  ]);
-
   const modelReferenceCompactStatusText = useMemo(() => {
     if (autoSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
@@ -1678,6 +1687,9 @@ function AiResourcesContent() {
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
+  const modelReferenceHasSyncError = Boolean(
+    modelReferenceAutoSyncError || modelsDevReferenceSource?.status === 'error'
+  );
 
   const modelVisibilityRows = useMemo<ModelVisibilityRow[]>(() => {
     const rows = new Map<string, ModelVisibilityRow>();
@@ -1810,6 +1822,17 @@ function AiResourcesContent() {
   const attentionSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai' && connection.status !== 'ready'
   ).length;
+  const latestModelSupplierTestAt = data.connections
+    .filter(
+      (connection) =>
+        supplierCategory(connection) === 'ai' &&
+        connection.last_tested_at &&
+        !Number.isNaN(Date.parse(connection.last_tested_at))
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(String(right.last_tested_at)) - Date.parse(String(left.last_tested_at))
+    )[0]?.last_tested_at;
   return (
     <BackofficePageStack>
       <BackofficePrimaryPanel
@@ -1818,38 +1841,52 @@ function AiResourcesContent() {
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
         descriptionDisplay="hint"
         aside={(
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
-              {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
-            </Link>
-            <Link href="/admin/troubleshooting" className="btn btn-secondary justify-center">
-              {aiText('action_view_diagnostics', 'View diagnostics')}
+          <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
+            {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
+          </Link>
+        )}
+        actions={(
+          <button type="button" className="btn btn-primary justify-center" onClick={openNewProviderConnection}>
+            {aiText('action_add_model_supplier', 'Add model supplier')}
+          </button>
+        )}
+        actionPlacement="header"
+        contentClassName="px-4 py-4 md:px-5 md:py-4"
+        summaryClassName="px-4 py-2.5 md:px-5 md:py-2.5"
+        summary={(
+          <div
+            data-ui="supplier-summary-strip"
+            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <BackofficeSummaryStrip
+              density="compact"
+              items={[
+                {
+                  label: aiText('overview_model_suppliers', 'Model suppliers'),
+                  value: `${readyModelSupplierCount}/${modelSupplierCount}`,
+                },
+                {
+                  label: aiText('overview_attention_suppliers', 'Needs attention'),
+                  value: attentionSupplierCount,
+                  toneClassName: attentionSupplierCount > 0
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-emerald-600 dark:text-emerald-400',
+                },
+                {
+                  label: aiText('last_test', 'Last test'),
+                  value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
+                },
+              ]}
+            />
+            <Link
+              href="/admin/troubleshooting"
+              className="shrink-0 text-xs font-semibold text-slate-600 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
+            >
+              {aiText('action_view_diagnostics', 'View diagnostics')} →
             </Link>
           </div>
         )}
-        actions={null}
-        contentClassName="py-4 md:py-4"
-      >
-        <SupplierSummaryCards
-          readyModelSupplierCount={readyModelSupplierCount}
-          modelSupplierCount={modelSupplierCount}
-          attentionSupplierCount={attentionSupplierCount}
-          translate={aiText}
-        />
-        <p className="border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          {aiText('workspace_boundary_notice', 'This page opens Cloud service-plane detail only. Local plugin prompts, routers, approval, and WordPress writes stay outside Cloud.')}
-        </p>
-      </BackofficePrimaryPanel>
-
-      <BackofficeSectionPanel>
-        <SupplierToolbar
-          connectionSearch={connectionSearch}
-          onConnectionSearchChange={handleConnectionSearchChange}
-          hasLatestOperation={Boolean(lastReceipt)}
-          onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
-          onAddModelSupplier={openNewProviderConnection}
-          translate={aiText}
-        />
+      />
 
         <ProviderConnectionDialog
           open={providerFormOpen}
@@ -1860,99 +1897,114 @@ function AiResourcesContent() {
           saving={savingConnection}
           closeLabel={aiText('action_close_dialog', 'Close')}
           cancelLabel={aiText('action_cancel', 'Cancel')}
-          saveLabel={aiText('action_save_and_test_connection', 'Save and test provider')}
+          saveLabel={aiText('action_save_and_test_connection', 'Save and test')}
           savingLabel={aiText('saving', 'Saving...')}
           footerNotice={aiText('save_test_notice', 'Saving will immediately run a masked provider test. Secrets are never returned to the browser.')}
           onClose={closeProviderForm}
           onSubmit={() => void saveProviderConnection()}
         >
-                <details
-                  className="group border-b border-slate-200 pb-3 dark:border-slate-800"
-                  open={connectionDetailsOpen}
-                  onToggle={(event) => setConnectionDetailsOpen(event.currentTarget.open)}
+                <AdminConfigurationTable
+                  ariaLabel={aiText('provider_configuration_table_label', '{{name}} configuration', { name: providerDialogName })}
+                  itemHeading={aiText('configuration_item_heading', 'Setting')}
+                  valueHeading={aiText('configuration_value_heading', 'Current setting')}
+                  detailHeading={aiText('configuration_detail_heading', 'Action / note')}
                 >
-                  <summary className="flex cursor-pointer list-none flex-col gap-2 rounded-lg px-1 py-1.5 transition hover:bg-slate-50 dark:hover:bg-slate-900/50 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
-                        <span className="mr-2 inline-block text-slate-400 transition group-open:rotate-90 dark:text-slate-500">›</span>
-                        {aiText('connection_section_title', 'Connection')}
-                      </h3>
-                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        {providerConnectionForm.displayName || providerKindLabel(providerConnectionForm.kind)}
-                        <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
-                        {connectionHost(providerConnectionForm.baseUrl) || aiText('connection_summary_base_url_missing', 'No base URL')}
-                        <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
-                        {providerConnectionForm.enabled ? aiText('field_enabled', 'Enabled') : aiText('status_disabled_label', 'Disabled')}
-                        {providerFormExternalLinkItems.length ? (
-                          <>
-                            <span className="mx-1 text-slate-300 dark:text-slate-700">·</span>
-                            {aiText('provider_links_configured', 'Reference links configured')}
-                          </>
-                        ) : null}
-                      </p>
-                    </div>
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {aiText('connection_section_toggle_hint', 'Low-frequency settings')}
-                    </span>
-                  </summary>
-                  <div className="mt-3 grid gap-3 px-1">
-                    <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                      {aiText('connection_section_desc', 'Choose the service, name, base URL, and credential for this runtime channel.')}
-                    </p>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_provider_type', 'Provider type')}
-                        <select
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.providerPreset}
-                          onChange={(event) => applyProviderPreset(event.target.value)}
-                        >
-                          {PROVIDER_PRESETS.map((preset) => (
-                            <option key={preset.id} value={preset.id}>
-                              {preset.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_display_name', 'Display name')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.displayName}
-                          onChange={(event) => {
-                            const displayName = event.target.value;
-                            updateProviderConnectionForm({
-                              displayName,
-                              connectionId: providerConnectionForm.connectionId ? providerConnectionForm.connectionId : slugifyProviderValue(displayName),
-                            });
-                          }}
-                          placeholder="GPT-5.5 via NewAPI"
-                          required
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_credential', 'API Key')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          type="password"
-                          value={providerConnectionForm.credential}
-                          onChange={(event) => updateProviderConnectionForm({ credential: event.target.value })}
-                          placeholder={aiText('placeholder_keep_current_credential', 'leave blank to keep current')}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                      <label className="grid gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {aiText('field_base_url', 'Base URL')}
-                        <input
-                          className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          value={providerConnectionForm.baseUrl}
-                          onChange={(event) => updateProviderConnectionForm({ baseUrl: event.target.value })}
-                          placeholder="https://api.example.com/v1"
-                        />
-                      </label>
-                      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <AdminConfigurationRow
+                    rowId="provider-type"
+                    label={aiText('field_provider_type', 'Provider type')}
+                    value={(
+                      <select
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                        value={providerConnectionForm.providerPreset}
+                        onChange={(event) => applyProviderPreset(event.target.value)}
+                        aria-label={aiText('field_provider_type', 'Provider type')}
+                      >
+                        {PROVIDER_PRESETS.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    detail={providerKindLabel(providerConnectionForm.kind)}
+                  />
+                  <AdminConfigurationRow
+                    rowId="display-name"
+                    label={aiText('field_display_name', 'Display name')}
+                    value={(
+                      <input
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                        value={providerConnectionForm.displayName}
+                        onChange={(event) => {
+                          const displayName = event.target.value;
+                          updateProviderConnectionForm({
+                            displayName,
+                            connectionId: providerConnectionForm.connectionId ? providerConnectionForm.connectionId : slugifyProviderValue(displayName),
+                          });
+                        }}
+                        placeholder="GPT-5.5 via NewAPI"
+                        aria-label={aiText('field_display_name', 'Display name')}
+                        required
+                      />
+                    )}
+                    detail={aiText('display_name_note', 'Operator-facing name')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="credential"
+                    label={aiText('field_credential', 'API Key')}
+                    value={(
+                      <AdminCredentialField
+                        mode={providerFormMode}
+                        revealed={credentialEditOpen}
+                        value={providerConnectionForm.credential}
+                        label={aiText('field_credential', 'API Key')}
+                        unchangedLabel={aiText('credential_unchanged', 'Keep current credential')}
+                        replaceLabel={aiText('action_replace_credential', 'Replace credential')}
+                        cancelReplacementLabel={aiText('action_cancel_credential_replacement', 'Cancel replacement')}
+                        keepCurrentPlaceholder={aiText('placeholder_keep_current_credential', 'Leave blank to keep current')}
+                        onChange={(credential) => updateProviderConnectionForm({ credential })}
+                        onReveal={() => setCredentialEditOpen(true)}
+                        onCancelReplacement={() => {
+                          setCredentialEditOpen(false);
+                          updateProviderConnectionForm({ credential: '' });
+                        }}
+                        density="compact"
+                        hideLabel
+                      />
+                    )}
+                    detail={providerFormMode === 'edit'
+                      ? aiText('credential_keep_hint', 'Credential stays unchanged unless you replace it')
+                      : aiText('credential_create_hint', 'Stored securely after save')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="base-url"
+                    label={aiText('field_base_url', 'Base URL')}
+                    value={(
+                      <input
+                        className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                        value={providerConnectionForm.baseUrl}
+                        onChange={(event) => updateProviderConnectionForm({ baseUrl: event.target.value })}
+                        placeholder="https://api.example.com/v1"
+                        aria-label={aiText('field_base_url', 'Base URL')}
+                      />
+                    )}
+                    detail={providerFormExternalLinkItems.length ? (
+                      <ProviderReferenceLinks
+                        items={providerFormExternalLinkItems}
+                        label={aiText('provider_links_title', 'Reference links')}
+                        translate={aiText}
+                        variant="inline"
+                      />
+                    ) : aiText('provider_links_none', 'No reference links')}
+                  />
+                  <AdminConfigurationRow
+                    rowId="runtime-enabled"
+                    label={aiText('runtime_use_label', 'Runtime use')}
+                    value={providerConnectionForm.enabled
+                      ? aiText('field_enabled', 'Enabled')
+                      : aiText('status_disabled_label', 'Disabled')}
+                    detail={(
+                      <label className="inline-flex min-h-9 items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                         <input
                           type="checkbox"
                           checked={providerConnectionForm.enabled}
@@ -1960,181 +2012,261 @@ function AiResourcesContent() {
                         />
                         {aiText('field_enabled_runtime', 'Enabled for runtime use')}
                       </label>
-                    </div>
-
-                    <ProviderReferenceLinks
-                      items={providerFormExternalLinkItems}
-                      label={aiText('provider_links_title', 'Reference links')}
-                      translate={aiText}
-                    />
-                  </div>
-                </details>
+                    )}
+                  />
+                  {providerUsesImageGeneration ? (
+                    <>
+                      <AdminConfigurationRow
+                        rowId="image-response-format"
+                        label={aiText('image_delivery_row_label', 'Image delivery')}
+                        value={(
+                          <select
+                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            value={providerConnectionForm.imageResponseFormat}
+                            onChange={(event) => updateProviderConnectionForm({ imageResponseFormat: event.target.value })}
+                            aria-label={aiText('field_image_response_format', 'Provider image response')}
+                          >
+                            <option value="">{aiText('image_response_provider_default', 'Provider default')}</option>
+                            <option value="url">{aiText('image_response_url', 'Image URL')}</option>
+                            <option value="b64_json">{aiText('image_response_base64', 'Base64 image')}</option>
+                          </select>
+                        )}
+                        detail={(
+                          <span className="grid gap-0.5">
+                            {!providerConnectionForm.imageResponseFormat && !splitList(providerConnectionForm.imageOutputHosts).length ? (
+                              <span className="font-medium text-amber-700 dark:text-amber-300">
+                                {aiText('image_delivery_unconfirmed_compact', 'Delivery format not confirmed')}
+                              </span>
+                            ) : (
+                              <span>{aiText('status_configured', 'Configured')}</span>
+                            )}
+                            <span>{aiText('image_delivery_test_not_proof_compact', 'Connection testing does not prove image delivery.')}</span>
+                          </span>
+                        )}
+                      />
+                      <AdminConfigurationRow
+                        rowId="image-output-hosts"
+                        label={aiText('field_image_output_hosts', 'Image download hosts')}
+                        value={(
+                          <input
+                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            value={providerConnectionForm.imageOutputHosts}
+                            onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
+                            placeholder="images.provider.example, assets.provider.example"
+                            aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
+                            required={providerConnectionForm.imageResponseFormat === 'url'}
+                          />
+                        )}
+                        detail={aiText(
+                          'image_delivery_security_note_compact',
+                          'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
+                        )}
+                      />
+                    </>
+                  ) : null}
+                </AdminConfigurationTable>
 
                 <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
                   <div className="grid gap-3">
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
-                        <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
-                        </p>
-                        <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {aiText('model_visibility_compact_summary', 'Enabled {{enabled}} / available {{available}} · {{status}}', {
-                            enabled: String(splitList(providerConnectionForm.modelIds).length),
-                            available: String(availableModelCount),
-                            status: modelReferenceCompactStatusText,
-                          })}
-                          {selectedModelMetadataGapCount ? (
-                            <>
-                              {' '}
-                              {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
-                                count: String(selectedModelMetadataGapCount),
-                              })}
-                            </>
-                          ) : null}
-                        </p>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
+                      <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
+                        {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-slate-500 dark:text-slate-400">
+                        <span data-ui="model-visibility-status">
+                          {aiText(
+                            'model_visibility_operating_summary',
+                            'Enabled {{enabled}} / available {{available}} · upstream {{upstream}} · intelligence {{intelligence}} · {{provider}} · {{status}}',
+                            {
+                              enabled: String(selectedProviderModelIds.length),
+                              available: String(availableModelCount),
+                              upstream: providerCatalogPreview ? String(providerCatalogPreview.model_count) : '—',
+                              intelligence: String(modelReferenceTotal),
+                              provider: referenceProviderLabel(modelReferenceProviderId),
+                              status: modelReferenceCompactStatusText,
+                            }
+                          )}
+                        </span>
+                        {modelReferenceHasSyncError ? (
+                          <button
+                            type="button"
+                            data-ui="model-reference-retry"
+                            className="font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
+                            disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
+                            onClick={() => void syncModelReferences()}
+                          >
+                            {syncingModelReferences || autoSyncingModelReferences
+                              ? aiText('action_syncing_model_references', 'Syncing...')
+                              : aiText('action_sync_model_references', 'Retry intelligence only')}
+                          </button>
+                        ) : null}
                       </div>
+                      {selectedModelMetadataGapCount ? (
+                        <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                          {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
+                            count: String(selectedModelMetadataGapCount),
+                          })}
+                        </p>
+                      ) : null}
+                    </div>
 
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end xl:justify-end">
-                        <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300 sm:w-80">
-                          <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
-                          <input
-                            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            value={modelReferenceSearch}
-                            onChange={(event) => setModelReferenceSearch(event.target.value)}
-                            placeholder={aiText('placeholder_search_models', 'model, family, provider')}
+                    <div data-ui="model-visibility-toolbar" className="flex flex-wrap items-center gap-2">
+                      <label className="min-w-[16rem] flex-1">
+                        <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
+                        <input
+                          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          value={modelReferenceSearch}
+                          onChange={(event) => setModelReferenceSearch(event.target.value)}
+                          placeholder={aiText('placeholder_search_models', 'model, family, provider')}
+                        />
+                      </label>
+                      <select
+                        className="h-10 min-w-28 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                        value={modelReferenceVisibilityFilter}
+                        onChange={(event) => setModelReferenceVisibilityFilter(event.target.value as ModelReferenceVisibilityFilter)}
+                        aria-label={aiText('field_visibility_filter', 'Visibility')}
+                      >
+                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="enabled">{aiText('filter_enabled_models', 'Enabled')}</option>
+                        <option value="disabled">{aiText('filter_disabled_models', 'Disabled')}</option>
+                      </select>
+                      <select
+                        className="h-10 min-w-32 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                        value={modelReferenceFeatureFilter}
+                        onChange={(event) => setModelReferenceFeatureFilter(event.target.value as ModelReferenceFeatureFilter)}
+                        aria-label={aiText('field_feature_filter', 'Feature')}
+                      >
+                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
+                        <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
+                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
+                        <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
+                        <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
+                      </select>
+                      <label className="inline-flex h-10 shrink-0 items-center gap-2 px-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={modelReferenceShowDeprecated}
+                          onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
+                        />
+                        {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
+                      </label>
+                      <button
+                        type="button"
+                        data-ui="model-sync-primary"
+                        className="btn btn-secondary h-10 shrink-0 px-3"
+                        disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
+                        onClick={() => void fetchProviderCatalogPreview()}
+                      >
+                        {fetchingProviderCatalog || syncingModelReferences
+                          ? aiText('action_fetching_upstream_models', 'Syncing...')
+                          : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
+                      </button>
+                    </div>
+
+                    <div data-ui="model-maintenance-table">
+                      <AdminConfigurationTable
+                        ariaLabel={aiText('model_maintenance_table_label', 'Model maintenance')}
+                        itemHeading={aiText('configuration_item_heading', 'Setting')}
+                        valueHeading={aiText('configuration_value_heading', 'Current setting')}
+                        detailHeading={aiText('configuration_detail_heading', 'Action / note')}
+                      >
+                        {referenceProviderCanBeChanged ? (
+                          <AdminConfigurationRow
+                            rowId="model-reference-provider"
+                            label={aiText('field_reference_provider', 'Reference source')}
+                            value={(
+                              <select
+                                className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                value={modelReferenceProviderId}
+                                onChange={(event) => setModelReferenceProviderId(event.target.value)}
+                                aria-label={aiText('field_reference_provider', 'Reference source')}
+                              >
+                                {modelReferenceProviderOptions.map((providerId) => (
+                                  <option key={providerId} value={providerId}>
+                                    {referenceProviderLabel(providerId)}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            detail={aiText('reference_provider_desc', 'Only compatible or custom channels need this. Clear provider types automatically use their own reference intelligence.')}
                           />
-                        </label>
-
-                        <details className="relative text-xs text-slate-600 dark:text-slate-300">
-                          <summary className="flex h-10 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700">
-                            {aiText('model_visibility_more_operations', 'More operations')}
-                          </summary>
-                          <div className="mt-2 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:absolute sm:right-0 sm:z-30 sm:w-[42rem]">
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]">
-                              <div className="grid gap-2">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                                  {aiText('model_visibility_operations_title', 'Actions')}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary h-9 px-3 py-1 text-xs"
-                                    disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
-                                    onClick={() => void fetchProviderCatalogPreview()}
-                                  >
-                                    {fetchingProviderCatalog || syncingModelReferences
-                                      ? aiText('action_fetching_upstream_models', 'Syncing...')
-                                      : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="h-9 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700"
-                                    disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
-                                    onClick={() => void syncModelReferences()}
-                                  >
-                                    {syncingModelReferences || autoSyncingModelReferences
-                                      ? aiText('action_syncing_model_references', 'Syncing...')
-                                      : aiText('action_sync_model_references', 'Retry intelligence only')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="h-9 rounded-full border border-transparent bg-transparent px-3 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                                    disabled={!splitList(providerConnectionForm.modelIds).length || savingConnection}
-                                    onClick={() => setProviderModelIds([])}
-                                  >
-                                    {aiText('action_clear_all_models', 'Clear all')}
-                                  </button>
-                                  <label className="flex h-9 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                    <input
-                                      type="checkbox"
-                                      checked={modelReferenceShowDeprecated}
-                                      onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
-                                    />
-                                    {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
-                                  </label>
-                                </div>
-                              </div>
-
-                              <div className="grid gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                                  {aiText('model_visibility_status_title', 'Status')}
-                                </div>
-                                <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                  <div>
-                                    {providerCatalogPreview
-                                      ? aiText('catalog_preview_loaded', 'Loaded {{count}} models from upstream.', {
-                                        count: String(providerCatalogPreview.model_count),
-                                      })
-                                      : aiText('model_catalog_empty_compact', 'Upstream catalog has not been synced yet.')}
-                                  </div>
-                                  <div>{modelReferenceStatusText}</div>
-                                </div>
-                              </div>
+                        ) : null}
+                        <AdminConfigurationRow
+                          rowId="manual-model-add"
+                          label={aiText('manual_model_add_title', 'Add model ID manually')}
+                          value={(
+                            <div className="flex items-center gap-2">
+                              <input
+                                className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                value={customModelInput}
+                                onChange={(event) => setCustomModelInput(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    addCustomProviderModels();
+                                  }
+                                }}
+                                placeholder={aiText('placeholder_add_custom_models', 'Add specified models, separated by commas')}
+                                aria-label={aiText('manual_model_add_title', 'Add model ID manually')}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-secondary h-9 shrink-0 px-3"
+                                disabled={!customModelInput.trim()}
+                                onClick={addCustomProviderModels}
+                              >
+                                {aiText('action_add_model', 'Add')}
+                              </button>
                             </div>
-
-                            {referenceProviderCanBeChanged ? (
-                              <details className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
-                                <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
-                                  {aiText('reference_provider_summary', 'Reference intelligence source: {{provider}}', {
-                                    provider: referenceProviderLabel(modelReferenceProviderId),
-                                  })}
-                                </summary>
-                                <label className="mt-3 grid max-w-sm gap-1 font-semibold">
-                                  {aiText('field_reference_provider', 'Reference source')}
-                                  <select
-                                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                                    value={modelReferenceProviderId}
-                                    onChange={(event) => setModelReferenceProviderId(event.target.value)}
-                                  >
-                                    {modelReferenceProviderOptions.map((providerId) => (
-                                      <option key={providerId} value={providerId}>
-                                        {referenceProviderLabel(providerId)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <p className="mt-2 leading-5 text-slate-500 dark:text-slate-400">
-                                  {aiText('reference_provider_desc', 'Only compatible or custom channels need this. Clear provider types automatically use their own reference intelligence.')}
-                                </p>
-                              </details>
-                            ) : null}
-
-                            <div className="grid gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                              <div>
-                                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                  {aiText('manual_model_add_title', 'Add model ID manually')}
-                                </div>
-                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                  {aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
-                                </p>
-                              </div>
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <input
-                                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                                  value={customModelInput}
-                                  onChange={(event) => setCustomModelInput(event.target.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                      event.preventDefault();
-                                      addCustomProviderModels();
-                                    }
-                                  }}
-                                  placeholder={aiText('placeholder_add_custom_models', 'Add specified models, separated by commas')}
-                                />
+                          )}
+                          detail={aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
+                        />
+                        <AdminConfigurationRow
+                          rowId="enabled-model-bulk-maintenance"
+                          label={aiText('enabled_models_maintenance_label', 'Enabled models')}
+                          value={aiText('model_catalog_enabled_count_short', '{{count}} models', {
+                            count: String(selectedProviderModelIds.length),
+                          })}
+                          detail={confirmingClearModels ? (
+                            <span className="grid gap-2">
+                              <span className="text-rose-700 dark:text-rose-300">
+                                {aiText('clear_all_models_confirmation', 'Disable all {{count}} currently enabled models?', {
+                                  count: String(selectedProviderModelIds.length),
+                                })}
+                              </span>
+                              <span className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  className="btn btn-secondary h-10 shrink-0"
-                                  disabled={!customModelInput.trim()}
-                                  onClick={addCustomProviderModels}
+                                  data-ui="model-clear-all-confirm"
+                                  className="font-semibold text-rose-700 hover:underline dark:text-rose-300"
+                                  onClick={() => setProviderModelIds([])}
                                 >
-                                  {aiText('action_add_model', 'Add')}
+                                  {aiText('action_confirm_clear_all_models', 'Confirm clear')}
                                 </button>
-                              </div>
-                            </div>
-                          </div>
-                        </details>
-                      </div>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
+                                  onClick={() => setConfirmingClearModels(false)}
+                                >
+                                  {aiText('action_cancel', 'Cancel')}
+                                </button>
+                              </span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              data-ui="model-clear-all-request"
+                              className="font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
+                              disabled={!selectedProviderModelIds.length || savingConnection}
+                              onClick={() => setConfirmingClearModels(true)}
+                            >
+                              {aiText('action_clear_all_models', 'Clear all')}
+                            </button>
+                          )}
+                        />
+                      </AdminConfigurationTable>
                     </div>
 
                     {loadingModelReferences ? (
@@ -2142,38 +2274,13 @@ function AiResourcesContent() {
                           {aiText('loading_model_references', 'Loading model reference data...')}
                         </div>
                       ) : modelVisibilityRows.length ? (
-                        <div className="relative max-h-[22rem] overflow-auto border-t border-slate-200 dark:border-slate-800">
+                        <div className="relative max-h-[28rem] overflow-auto border-t border-slate-200 dark:border-slate-800">
                           <table className="w-full min-w-[50rem] text-left text-xs">
                             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_rgba(30,41,59,0.9)]">
                               <tr>
-                                <th className="px-3 py-2 font-semibold">
-                                  <select
-                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold normal-case tracking-normal text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-                                    value={modelReferenceVisibilityFilter}
-                                    onChange={(event) => setModelReferenceVisibilityFilter(event.target.value as ModelReferenceVisibilityFilter)}
-                                    aria-label={aiText('field_visibility_filter', 'Visibility')}
-                                  >
-                                    <option value="all">{aiText('filter_all', 'All')}</option>
-                                    <option value="enabled">{aiText('filter_enabled_models', 'Enabled')}</option>
-                                    <option value="disabled">{aiText('filter_disabled_models', 'Disabled')}</option>
-                                  </select>
-                                </th>
+                                <th className="px-3 py-2 font-semibold">{aiText('column_model_visibility', 'Visibility')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_model', 'Model')}</th>
-                                <th className="px-3 py-2 font-semibold">
-                                  <select
-                                    className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold normal-case tracking-normal text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-                                    value={modelReferenceFeatureFilter}
-                                    onChange={(event) => setModelReferenceFeatureFilter(event.target.value as ModelReferenceFeatureFilter)}
-                                    aria-label={aiText('field_feature_filter', 'Feature')}
-                                  >
-                                    <option value="all">{aiText('filter_all', 'All')}</option>
-                                    <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
-                                    <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
-                                    <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
-                                    <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
-                                    <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
-                                  </select>
-                                </th>
+                                <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_feature', 'Feature')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('column_context_output', 'Context / output')}</th>
                                 <th className="px-3 py-2 font-semibold">
                                   <span>{aiText('column_reference_price', 'Reference price')}</span>
@@ -2383,8 +2490,17 @@ function AiResourcesContent() {
         </ProviderConnectionDialog>
         <ModelSupplierTable
           connections={aiSupplierConnections}
-          statusFilter={connectionStatusFilter}
-          onStatusFilterChange={handleConnectionStatusFilterChange}
+          toolbar={(
+            <SupplierToolbar
+              connectionSearch={connectionSearch}
+              onConnectionSearchChange={handleConnectionSearchChange}
+              statusFilter={connectionStatusFilter}
+              onStatusFilterChange={handleConnectionStatusFilterChange}
+              hasLatestOperation={Boolean(lastReceipt)}
+              onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
+              translate={aiText}
+            />
+          )}
           selectedConnectionId={selectedConnectionId}
           onSelectConnection={handleSelectConnection}
           testResults={connectionTestResults}
@@ -2402,7 +2518,6 @@ function AiResourcesContent() {
           onCancelDelete={() => setConfirmingDeleteConnectionId('')}
           translate={aiText}
         />
-      </BackofficeSectionPanel>
 
       <Modal
         isOpen={receiptDetailsOpen && Boolean(lastReceipt)}

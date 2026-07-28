@@ -91,7 +91,7 @@ EXPECTED_API_IMAGE_ID="$(
 BOOTSTRAP_ARGS=(
 	python -
 	--site-id "${SITE_ID}"
-	--site-admin-email "${MEMBER_EMAIL}"
+	--user-email "${MEMBER_EMAIL}"
 	--public-base-url "${BASE_URL}"
 	--key-label "${KEY_LABEL}"
 	--scopes "${SCOPES}"

@@ -27,6 +27,7 @@ from app.adapters.providers.minimax import MiniMaxProviderAdapter
 from app.adapters.providers.siliconflow import SiliconFlowProviderAdapter
 from app.adapters.repositories.catalog_repository import CatalogRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.api.main import create_app
 from app.api.routes import service as service_routes
 from app.core.config import Settings
@@ -100,6 +101,116 @@ from tests.conftest import (
     seed_provider_model_allowlist,
     seed_site_auth,
 )
+
+
+def test_internal_provider_runtime_evidence_summary_is_read_only_and_filterable(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    seed_site_auth(database_url, site_id="site_provider_evidence")
+
+    with get_session(database_url) as session:
+        repository = RuntimeRepository(session)
+        run = repository.create_run(
+            run_id="run_provider_evidence",
+            site_id="site_provider_evidence",
+            account_id=None,
+            subscription_id=None,
+            plan_version_id=None,
+            ability_name="npcink/test-provider-evidence",
+            ability_family="text",
+            skill_id="",
+            workflow_id="",
+            contract_version="v1",
+            channel="openapi",
+            execution_kind="text",
+            execution_tier="cloud",
+            execution_pattern="inline",
+            data_classification="internal",
+            profile_id="text.balanced",
+            canonical_run_id=None,
+            status="succeeded",
+            idempotency_key="idem-provider-evidence",
+            request_fingerprint="fingerprint-provider-evidence",
+            trace_id="trace-provider-evidence",
+            input_json={},
+            execution_input_ciphertext=None,
+            policy_json={},
+        )
+        provider_call = repository.record_provider_call(
+            run_id=run.run_id,
+            provider_id="openai",
+            model_id="gpt-test",
+            instance_id="openai-global-gpt-test",
+            region="global",
+            latency_ms=125,
+            tokens_in=1000,
+            tokens_out=50,
+            cost=0.005,
+            retry_count=0,
+            fallback_used=False,
+        )
+        CommercialService(database_url).record_provider_call_usage(
+            session=session,
+            run=run,
+            provider_call=provider_call,
+            usage_context={
+                "input_tokens_uncached": 100,
+                "cache_read_tokens": 800,
+                "cache_write_tokens": 100,
+                "cache_hit_ratio": 0.8,
+                "cost_estimate_mode": "cache_rates",
+                "cache_affinity_applied": True,
+                "context_preflight": "accepted",
+                "estimated_input_tokens": 900,
+                "requested_output_tokens": 50,
+                "context_safety_margin_tokens": 16,
+                "estimated_total_tokens": 966,
+                "context_window": 4096,
+            },
+        )
+        session.commit()
+
+    unauthorized = client.get(
+        "/internal/service/runtime/provider-evidence/summary"
+    )
+    response = client.get(
+        "/internal/service/runtime/provider-evidence/summary"
+        "?site_id=site_provider_evidence"
+        "&provider_id=openai"
+        "&model_id=gpt-test"
+        "&ability_name=npcink%2Ftest-provider-evidence"
+        "&recent_minutes=120"
+        "&lane_limit=10",
+        headers=build_internal_headers(),
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["revision"] == "m1"
+    evidence = payload["data"]
+    assert evidence["filters"] == {
+        "site_id": "site_provider_evidence",
+        "provider_id": "openai",
+        "model_id": "gpt-test",
+        "ability_name": "npcink/test-provider-evidence",
+        "recent_minutes": 120,
+        "lane_limit": 10,
+    }
+    assert evidence["summary"]["evidence_records_total"] == 1
+    assert evidence["window"]["record_limit"] == 10000
+    assert evidence["window"]["records_truncated"] is False
+    assert evidence["summary"]["metering"]["completeness_ratio"] == 1.0
+    assert evidence["summary"]["cache"]["read_ratio"] == 0.8
+    assert evidence["summary"]["cost"]["cache_monetary_evidence_status"] == (
+        "confirmed"
+    )
+    assert evidence["summary"]["context_preflight"]["accepted_records"] == 1
+    assert evidence["lanes"][0]["provider_id"] == "openai"
+    assert evidence["lanes"][0]["model_id"] == "gpt-test"
+    assert evidence["boundary"]["read_only"] is True
+    assert evidence["boundary"]["contains_prompt_or_result_payloads"] is False
 
 SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"S" * 32).decode("ascii")
 OLD_SERVICE_SETTINGS_ROOT = base64.urlsafe_b64encode(b"O" * 32).decode("ascii")
@@ -227,17 +338,10 @@ def _request_portal_registration_code(
     client: TestClient,
     *,
     email: str,
-    site_url: str,
-    site_name: str = "",
 ) -> dict[str, object]:
     response = client.post(
         "/portal/v1/register/code/request",
-        json={
-            "email": email,
-            "site_url": site_url,
-            "site_name": site_name,
-            "use_case": "content generation",
-        },
+        json={"email": email},
         headers={
             "origin": "http://testserver",
             "referer": "http://testserver/",
@@ -440,8 +544,6 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     request_data = _request_portal_registration_code(
         client,
         email=email,
-        site_url="https://admin-portal-user.example.com",
-        site_name="Admin Portal User",
     )
     registration_data = _verify_portal_registration_code(
         client,
@@ -471,11 +573,10 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert items[0]["principal_id"] == principal_id
     assert items[0]["email"] == email
     assert items[0]["source"] == "portal_self_registration"
-    assert items[0]["package_alias"] == "Free"
-    assert items[0]["plan_id"] == "free"
+    assert items[0]["package_alias"] == ""
+    assert items[0]["plan_id"] == ""
     assert items[0]["qq_bound"] is False
-    assert items[0]["site_id"] == "site_admin-portal-user-example-com"
-    site_id = str(items[0]["site_id"])
+    assert items[0]["site_id"] == ""
 
     principal_lookup_response = client.get(
         f"/internal/service/admin/portal-users?q={principal_id}",
@@ -513,10 +614,6 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     revoked_session_response = client.get("/portal/v1/session")
     assert revoked_session_response.status_code == 401
     assert revoked_session_response.json()["error_code"] == "auth.portal_session_revoked"
-
-    revoked_site_response = client.get(f"/portal/v1/sites/{site_id}/summary")
-    assert revoked_site_response.status_code == 401
-    assert revoked_site_response.json()["error_code"] == "auth.portal_session_revoked"
 
     audit_response = client.get(
         f"/internal/service/admin/portal-users/{principal_id}/audit",
@@ -570,15 +667,10 @@ def test_admin_portal_users_batch_disable_processes_each_principal(
     )
 
     principal_ids: list[str] = []
-    for email, site_url in (
-        ("batch-one@example.com", "https://batch-one.example.com"),
-        ("batch-two@example.com", "https://batch-two.example.com"),
-    ):
+    for email in ("batch-one@example.com", "batch-two@example.com"):
         request_data = _request_portal_registration_code(
             client,
             email=email,
-            site_url=site_url,
-            site_name=email.split("@")[0],
         )
         registration_data = _verify_portal_registration_code(
             client,
@@ -707,9 +799,76 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert initial_response.status_code == 200
     assert initial_response.json()["data"]["env_fallback"] == "disabled"
     assert initial_response.json()["data"]["settings"]["portal_email"]["status"] == "missing_config"
+    accounting_fx = initial_response.json()["data"]["settings"]["accounting_fx"]
+    assert accounting_fx["status"] == "missing_config"
+    assert accounting_fx["configured"] is False
+    assert accounting_fx["config"]["usd_cny_rate"] == "7.200000"
+    assert accounting_fx["config"]["is_fallback"] is True
     assert (
         initial_response.json()["data"]["settings"]["alipay_payment"]["status"] == "missing_config"
     )
+    assert initial_response.json()["data"]["settings"]["site_relink_policy"] == {
+        "setting_id": "site_relink_policy",
+        "setting_kind": "commercial",
+        "enabled": True,
+        "configured": True,
+        "status": "ready",
+        "config": {"cooldown_days": 90},
+        "secrets": {},
+        "last_tested_at": "",
+        "last_error_code": "",
+        "last_error_message": "",
+        "credential_value_exposure": "none",
+    }
+
+    relink_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 180},
+        headers=build_internal_headers(idempotency_key="service-settings-relink-001"),
+    )
+    assert relink_response.status_code == 200, relink_response.text
+    assert relink_response.json()["data"]["setting_kind"] == "commercial"
+    assert relink_response.json()["data"]["config"] == {"cooldown_days": 180}
+    invalid_relink_response = client.patch(
+        "/internal/service/admin/service-settings/site-relink-policy",
+        json={"enabled": True, "cooldown_days": 89},
+        headers=build_internal_headers(idempotency_key="service-settings-relink-invalid"),
+    )
+    assert invalid_relink_response.status_code == 422
+
+    accounting_response = client.patch(
+        "/internal/service/admin/service-settings/accounting-fx",
+        json={
+            "usd_cny_rate": 7.1234567,
+            "effective_at": "2026-07-28T08:00:00+08:00",
+            "source": "operator-approved monthly rate",
+            "note": "July accounting close",
+        },
+        headers=build_internal_headers(idempotency_key="service-settings-accounting-fx-001"),
+    )
+    assert accounting_response.status_code == 200, accounting_response.text
+    assert accounting_response.json()["data"]["setting_kind"] == "commercial"
+    assert accounting_response.json()["data"]["config"]["usd_cny_rate"] == "7.123457"
+    assert accounting_response.json()["data"]["config"]["effective_at"] == (
+        "2026-07-28T00:00:00+00:00"
+    )
+    assert accounting_response.json()["data"]["config"]["rate_version"] == (
+        "usd-cny-20260728T000000Z-7_123457"
+    )
+    assert accounting_response.json()["data"]["config"]["is_fallback"] is False
+
+    invalid_accounting_response = client.patch(
+        "/internal/service/admin/service-settings/accounting-fx",
+        json={
+            "usd_cny_rate": 0,
+            "effective_at": "2026-07-28T00:00:00Z",
+            "source": "operator",
+        },
+        headers=build_internal_headers(
+            idempotency_key="service-settings-accounting-fx-invalid"
+        ),
+    )
+    assert invalid_accounting_response.status_code == 422
 
     public_response = client.patch(
         "/internal/service/admin/service-settings/portal-public",
@@ -793,9 +952,17 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
         qq_row = session.get(ServiceSetting, "portal_qq_login")
         email_row = session.get(ServiceSetting, "portal_email")
         alipay_row = session.get(ServiceSetting, "payment_alipay")
+        relink_row = session.get(ServiceSetting, "site_relink_policy")
+        accounting_row = session.get(ServiceSetting, "commercial_accounting_fx")
         assert qq_row is not None
         assert email_row is not None
         assert alipay_row is not None
+        assert relink_row is not None
+        assert accounting_row is not None
+        assert accounting_row.setting_kind == "commercial"
+        assert accounting_row.config_json["usd_cny_rate"] == "7.123457"
+        assert relink_row.setting_kind == "commercial"
+        assert relink_row.config_json == {"cooldown_days": 180}
         assert (
             decrypt_service_setting_secret(
                 str((qq_row.secret_ciphertext_json or {})["client_secret"]),
@@ -834,10 +1001,103 @@ def test_admin_service_settings_store_masked_cloud_runtime_config(tmp_path: Path
     assert data["settings"]["qq_login"]["configured"] is True
     assert data["settings"]["portal_email"]["configured"] is True
     assert data["settings"]["alipay_payment"]["configured"] is True
+    assert data["settings"]["site_relink_policy"]["config"]["cooldown_days"] == 180
     assert data["boundary"]["wordpress_control_plane"] is False
     assert "smtp-password" not in json.dumps(data)
     assert alipay_private_key not in json.dumps(data)
     assert alipay_public_key not in json.dumps(data)
+
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_draft_publish_and_public_projection(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    initial = client.get(
+        "/internal/service/admin/site-compliance",
+        headers=build_internal_headers(),
+    )
+    assert initial.status_code == 200, initial.text
+    payload = initial.json()["data"]["draft"]["payload"]
+    assert initial.json()["data"]["published"] is None
+    assert client.get("/open/compliance").json()["data"]["published"] is False
+
+    payload["operator"]["entity_name"] = "示例运营主体"
+    payload["operator"]["entity_type"] = "企业"
+    payload["refund"]["processing_business_days"] = 7
+    payload["review"]["operator_confirmed"] = True
+    for item in payload["retention"]:
+        item["confirmed"] = True
+
+    saved = client.put(
+        "/internal/service/admin/site-compliance/draft",
+        json={"payload": payload},
+        headers=build_internal_headers(idempotency_key="site-compliance-save-001"),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["draft"]["validation"]["ready_to_publish"] is True
+
+    published = client.post(
+        "/internal/service/admin/site-compliance/publish",
+        json={},
+        headers=build_internal_headers(idempotency_key="site-compliance-publish-001"),
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["data"]["published"]["version_number"] == 1
+
+    public = client.get("/open/compliance")
+    assert public.status_code == 200, public.text
+    public_data = public.json()["data"]
+    assert public_data["published"] is True
+    assert public_data["payload"]["operator"]["entity_name"] == "示例运营主体"
+    assert "draft" not in public_data
+    assert "review" not in public_data["payload"]
+
+    with get_session(database_url) as session:
+        events = list(
+            session.scalars(
+                select(ServiceAuditEvent).where(
+                    ServiceAuditEvent.scope_id == "site_compliance"
+                )
+            )
+        )
+    assert {event.event_kind for event in events} == {
+        "site_compliance.draft.save",
+        "site_compliance.publish",
+    }
+    assert "示例运营主体" not in json.dumps(
+        [event.payload_json for event in events],
+        ensure_ascii=False,
+    )
+
+    dispose_engine(database_url)
+
+
+def test_admin_site_compliance_publish_is_blocked_until_required_fields_are_confirmed(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    initial = client.get(
+        "/internal/service/admin/site-compliance",
+        headers=build_internal_headers(),
+    )
+    payload = initial.json()["data"]["draft"]["payload"]
+
+    saved = client.put(
+        "/internal/service/admin/site-compliance/draft",
+        json={"payload": payload},
+        headers=build_internal_headers(idempotency_key="site-compliance-save-blocked"),
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["draft"]["validation"]["blockers"]
+
+    published = client.post(
+        "/internal/service/admin/site-compliance/publish",
+        json={},
+        headers=build_internal_headers(idempotency_key="site-compliance-publish-blocked"),
+    )
+    assert published.status_code == 409
+    assert published.json()["error_code"] == "site_compliance.publish_blocked"
 
     dispose_engine(database_url)
 
@@ -1635,6 +1895,45 @@ def test_admin_provider_connections_store_encrypted_credentials_and_project_to_a
     assert projection["runtime_resolution"]
     assert "env_migration" not in projection
     assert "provider-connection-test-secret" not in json.dumps(projection)
+
+
+def test_admin_provider_connection_save_returns_json_when_secret_storage_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={"service_settings_encryption_key_id": None},
+    )
+
+    response = client.post(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(
+            idempotency_key="provider-connection-secret-storage-unavailable"
+        ),
+        json={
+            "connection_id": "unavailable_secret_storage",
+            "provider_id": "openai",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "Unavailable secret storage",
+            "enabled": False,
+            "base_url": "https://api.openai.test/v1",
+            "credential": "provider-connection-test-secret",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/json")
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == (
+        "provider_connection.credential_storage_unavailable"
+    )
+    assert payload["message"] == "provider credential storage is unavailable"
+    assert "provider-connection-test-secret" not in response.text
+
+    with get_session(database_url) as session:
+        assert session.get(ProviderConnection, "unavailable_secret_storage") is None
 
 
 def test_admin_provider_connection_catalog_preview_fetches_models_without_persisting(
@@ -4926,7 +5225,7 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
             "ai_credits_increment": 10000,
             "runs_increment": 10000,
             "tokens_increment": 2000000,
-            "cost_increment": 99,
+            "cost_cny_increment": 99,
             "reason": "operator_overage_buffer",
             "note": "Customer needs temporary headroom before tier review.",
         },
@@ -4958,12 +5257,12 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_ai_credits_per_period"] == 10000.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_runs_per_period"] == 10010.0
     assert topup_payload["entitlement_snapshot"]["budgets"]["max_tokens_per_period"] == 2005000.0
-    assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_per_period"] == 99.0
+    assert topup_payload["entitlement_snapshot"]["budgets"]["max_cost_cny_per_period"] == 99.0
     assert topup_payload["topup_summary"]["current_period_count"] == 1
     assert topup_payload["topup_summary"]["current_period_totals"]["ai_credits"] == 10000.0
     assert topup_payload["topup_summary"]["current_period_totals"]["runs"] == 10000.0
     assert topup_payload["topup_summary"]["current_period_totals"]["tokens"] == 2000000.0
-    assert topup_payload["topup_summary"]["current_period_totals"]["cost"] == 99.0
+    assert topup_payload["topup_summary"]["current_period_totals"]["cost_cny"] == 99.0
     assert topup_payload["billing_snapshot_refresh"]["status"] == "refreshed"
     assert topup_payload["billing_snapshot_refresh"]["site_count"] == 1
     assert topup_payload["billing_snapshot_refresh"]["snapshots"][0]["site_id"] == "site_billing"
@@ -4980,15 +5279,18 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert admin_subscription["topup_summary"]["latest"]["pack_id"] == ""
     assert admin_subscription["topup_summary"]["latest"]["reason"] == "operator_overage_buffer"
     assert admin_subscription["topup_summary"]["current_period_totals"]["ai_credits"] == 10000.0
-    assert admin_subscription["topup_summary"]["current_period_totals"]["cost"] == 99.0
+    assert admin_subscription["topup_summary"]["current_period_totals"]["cost_cny"] == 99.0
     assert admin_subscription["budget_headroom"]["base_budget"]["ai_credits"] == 0.0
     assert admin_subscription["budget_headroom"]["base_budget"]["runs"] == 10.0
     assert (
         admin_subscription["budget_headroom"]["current_period_topup_delta"]["ai_credits"] == 10000.0
     )
     assert admin_subscription["budget_headroom"]["current_period_topup_delta"]["runs"] == 10000.0
+    assert admin_subscription["budget_headroom"]["current_period_topup_delta"]["cost"] == 99.0
     assert admin_subscription["budget_headroom"]["effective_budget"]["ai_credits"] == 10000.0
     assert admin_subscription["budget_headroom"]["effective_budget"]["runs"] == 10010.0
+    assert admin_subscription["budget_headroom"]["effective_budget"]["cost"] == 99.0
+    assert admin_subscription["budget_headroom"]["cost_currency"] == "CNY"
     assert admin_subscription["billing_snapshot_status"]["status"] == "fresh"
     assert admin_subscription["billing_snapshot_status"]["fresh_site_count"] == 1
     assert admin_subscription["billing_snapshot_status"]["next_action"] is None
@@ -5010,6 +5312,26 @@ def test_service_routes_bind_subscription_and_rebuild_billing_snapshot(
     assert rebuild_payload["billing_snapshot_refresh"]["site_count"] == 1
     assert rebuild_payload["billing_snapshot_status"]["status"] == "fresh"
     assert rebuild_payload["billing_snapshot_status"]["next_action"] is None
+
+    removed_cost_topup_response = client.post(
+        "/internal/service/subscriptions/sub_pro_topup/topup",
+        json={
+            "target_period_start_at": subscription_response.json()["data"]["subscription"][
+                "current_period_start_at"
+            ],
+            "target_period_end_at": subscription_response.json()["data"]["subscription"][
+                "current_period_end_at"
+            ],
+            "cost_increment": 1,
+            "reason": "removed_api_field",
+        },
+        headers=build_internal_headers(idempotency_key="svc-subscription-topup-removed-cost"),
+    )
+    assert removed_cost_topup_response.status_code == 422
+    assert any(
+        detail["loc"][-1] == "cost_increment" and detail["type"] == "extra_forbidden"
+        for detail in removed_cost_topup_response.json()["detail"]
+    )
 
     execute_payload = {
         "site_id": "site_billing",
@@ -5196,7 +5518,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     )
     client.post(
         "/internal/service/accounts/acct_admin/members",
-        json={"email": "admin@example.com"},
+        json={"email": "admin@example.com", "site_id": "site_primary"},
         headers=build_internal_headers(idempotency_key="svc-admin-account-members-001"),
     )
     client.post(
@@ -5683,7 +6005,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "budgets": {
                     "max_runs_per_period": 8_000,
                     "max_tokens_per_period": 6_000_000,
-                    "max_cost_per_period": 220,
+                    "max_cost_cny_per_period": 220,
                 },
                 "concurrency": {"max_active_runs": 12},
                 "metadata": {"tier_id": "agency"},
@@ -5698,7 +6020,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "budgets": {
                     "max_runs_per_period": 12_000,
                     "max_tokens_per_period": 9_000_000,
-                    "max_cost_per_period": 260,
+                    "max_cost_cny_per_period": 260,
                 },
                 "concurrency": {"max_active_runs": 18},
             },
@@ -5712,7 +6034,7 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
                 "budgets": {
                     "max_runs_per_period": 10_000,
                     "max_tokens_per_period": 2_000_000,
-                    "max_cost_per_period": 99,
+                    "max_cost_cny_per_period": 99,
                 },
                 "concurrency": {"max_active_runs": 2},
             },
@@ -5794,6 +6116,21 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
     assert default_tier_detail["tier_summary"]["api_enabled"] is True
     assert default_tier_detail["tier_summary"]["openclaw_enabled"] is True
     assert default_tier_detail["package_fit_cues"][0]["code"] == "package_fit.within_band"
+
+    removed_budget_response = client.post(
+        "/internal/service/plans/general_ops/versions",
+        json={
+            "plan_version_id": "general_ops_removed_usd_budget",
+            "version_label": "removed-usd-budget",
+            "budgets": {"max_cost_per_period": 99},
+        },
+        headers=build_internal_headers(idempotency_key="svc-tier-version-removed-usd-budget"),
+    )
+    assert removed_budget_response.status_code == 400
+    assert (
+        removed_budget_response.json()["error_code"]
+        == "service.plan_budget_legacy_cost_field_removed"
+    )
 
     dispose_engine(database_url)
 
@@ -5930,16 +6267,16 @@ def test_admin_account_quota_summary_reports_ai_credits_and_resource_limits(
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["account_id"] == "acct_site_quota"
-    assert data["credit"]["key"] == "ai_credits"
-    assert data["credit"]["used"] == 9.0
-    assert data["credit"]["limit"] == 20.0
-    assert data["credit"]["remaining"] == 11.0
-    assert data["credit"]["status"] == "ok"
-    assert data["credit"]["estimated"] is True
-    assert data["credit"]["rate_version"] == "ai-credit-estimate-v2"
-    assert data["credit_policy"]["rate_version"] == "ai-credit-ledger-v2"
-    assert data["credit_policy"]["renewal_policy"] == "monthly_plan_grant_resets_each_period"
-    assert {item["key"]: item["credits"] for item in data["breakdown"]} == {
+    assert data["ai_credits"]["key"] == "ai_credits"
+    assert data["ai_credits"]["used"] == 9.0
+    assert data["ai_credits"]["limit"] == 20.0
+    assert data["ai_credits"]["remaining"] == 11.0
+    assert data["ai_credits"]["status"] == "ok"
+    assert data["ai_credits"]["estimated"] is True
+    assert data["ai_credits"]["rate_version"] == "ai-credit-estimate-v2"
+    assert data["ai_credit_policy"]["rate_version"] == "ai-credit-ledger-v2"
+    assert data["ai_credit_policy"]["renewal_policy"] == "monthly_plan_grant_resets_each_period"
+    assert {item["key"]: item["ai_credits"] for item in data["breakdown"]} == {
         "runs": 2.0,
         "tokens_total": 2,
         "web_search": 5.0,
@@ -5991,9 +6328,9 @@ def test_account_quota_summary_shares_ai_credits_across_sites(tmp_path: Path) ->
                 event_type="consume",
                 source_type="tokens_total",
                 source_id=f"{site_id}:tokens",
-                credit_delta=delta,
+                ai_credit_delta=delta,
                 quantity=abs(delta),
-                unit="credit",
+                unit="ai_credits",
                 rate=1.0,
                 rate_unit=None,
                 rate_version="ai-credit-ledger-v2",
@@ -6010,11 +6347,11 @@ def test_account_quota_summary_shares_ai_credits_across_sites(tmp_path: Path) ->
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["credit"]["used"] == 7.0
-    assert data["credit"]["limit"] == 20.0
-    assert data["credit"]["remaining"] == 13.0
-    assert data["credit"]["source"] == "ledger"
-    assert data["credit_ledger_summary"]["net_used_credits"] == 7.0
+    assert data["ai_credits"]["used"] == 7.0
+    assert data["ai_credits"]["limit"] == 20.0
+    assert data["ai_credits"]["remaining"] == 13.0
+    assert data["ai_credits"]["source"] == "ledger"
+    assert data["ai_credit_ledger_summary"]["net_used_ai_credits"] == 7.0
 
 
 def test_admin_account_credit_ledger_lists_current_period_entries(
@@ -6045,7 +6382,7 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
             provider_call_id=None,
             source_type="tokens_total",
             source_id="run-credit-ledger-1:tokens",
-            credit_delta=-2,
+            ai_credit_delta=-2,
             quantity=1500,
             unit="token",
             rate=1,
@@ -6063,7 +6400,7 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
             provider_call_id=None,
             source_type="vector_chunks",
             source_id="run-credit-ledger-1:chunks",
-            credit_delta=-2,
+            ai_credit_delta=-2,
             quantity=11,
             unit="chunk",
             rate=1,
@@ -6087,9 +6424,9 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
     data = response.json()["data"]
     assert data["account_id"] == "acct_site_credit_ledger"
     assert data["rate_version"] == "ai-credit-ledger-v2"
-    assert data["summary"]["total_credits"] == 4.0
+    assert data["summary"]["total_ai_credits"] == 4.0
     assert data["summary"]["entry_count"] == 2
-    assert {item["key"]: item["credits"] for item in data["summary"]["breakdown"]} == {
+    assert {item["key"]: item["ai_credits"] for item in data["summary"]["breakdown"]} == {
         "tokens_total": 2.0,
         "vector_chunks": 2.0,
     }
@@ -6101,8 +6438,8 @@ def test_admin_account_credit_ledger_lists_current_period_entries(
     }
     assert len(data["items"]) == 1
     assert data["items"][0]["source_type"] == "vector_chunks"
-    assert data["items"][0]["credit_delta"] == -2.0
-    assert data["items"][0]["consumed_credits"] == 2.0
+    assert data["items"][0]["ai_credit_delta"] == -2.0
+    assert data["items"][0]["consumed_ai_credits"] == 2.0
 
     dispose_engine(database_url)
 
@@ -6135,7 +6472,7 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
             provider_call_id=None,
             source_type="tokens_total",
             source_id="run-credit-adjustment-1:tokens",
-            credit_delta=-12,
+            ai_credit_delta=-12,
             quantity=12000,
             unit="token",
             rate=1,
@@ -6151,7 +6488,7 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
         headers=build_internal_headers(idempotency_key="svc-credit-adjustment-001"),
         json={
             "event_type": "grant",
-            "credit_delta": 5,
+            "ai_credit_delta": 5,
             "reason": "billing_correction",
             "note": "restore manually purchased credits",
         },
@@ -6159,7 +6496,7 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
     missing_reason = client.post(
         "/internal/service/admin/accounts/acct_site_credit_adjustment/credit-ledger/adjustments",
         headers=build_internal_headers(idempotency_key="svc-credit-adjustment-002"),
-        json={"event_type": "grant", "credit_delta": 1, "reason": ""},
+        json={"event_type": "grant", "ai_credit_delta": 1, "reason": ""},
     )
     quota_response = client.get(
         "/internal/service/admin/accounts/acct_site_credit_adjustment/quota-summary",
@@ -6174,29 +6511,69 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
     payload = response.json()["data"]
     assert payload["receipt"]["event_kind"] == "credit_ledger.adjustment"
     assert payload["entry"]["event_type"] == "grant"
-    assert payload["entry"]["credit_delta"] == 5.0
-    assert payload["entry"]["granted_credits"] == 5.0
+    assert payload["entry"]["ai_credit_delta"] == 5.0
+    assert payload["entry"]["granted_ai_credits"] == 5.0
     assert payload["entry"]["metadata"]["reason"] == "billing_correction"
-    assert payload["summary"]["consumed_credits"] == 12.0
-    assert payload["summary"]["granted_credits"] == 5.0
-    assert payload["summary"]["net_credit_delta"] == -7.0
-    assert payload["summary"]["net_used_credits"] == 7.0
+    assert payload["summary"]["consumed_ai_credits"] == 12.0
+    assert payload["summary"]["granted_ai_credits"] == 5.0
+    assert payload["summary"]["net_ai_credit_delta"] == -7.0
+    assert payload["summary"]["net_used_ai_credits"] == 7.0
     assert missing_reason.status_code == 400
 
     assert quota_response.status_code == 200
     quota = quota_response.json()["data"]
-    assert quota["credit"]["used"] == 7.0
-    assert quota["credit"]["remaining"] == 13.0
-    assert quota["credit"]["estimated"] is False
-    assert quota["credit_ledger_summary"]["net_used_credits"] == 7.0
+    assert quota["ai_credits"]["used"] == 7.0
+    assert quota["ai_credits"]["remaining"] == 13.0
+    assert quota["ai_credits"]["estimated"] is False
+    assert quota["ai_credit_ledger_summary"]["net_used_ai_credits"] == 7.0
 
     assert ledger_response.status_code == 200
     ledger = ledger_response.json()["data"]
     assert ledger["summary"]["entry_count"] == 2
-    assert ledger["summary"]["consumed_credits"] == 12.0
-    assert ledger["summary"]["granted_credits"] == 5.0
-    assert ledger["summary"]["net_used_credits"] == 7.0
+    assert ledger["summary"]["consumed_ai_credits"] == 12.0
+    assert ledger["summary"]["granted_ai_credits"] == 5.0
+    assert ledger["summary"]["net_used_ai_credits"] == 7.0
     assert {item["event_type"] for item in ledger["items"]} == {"consume", "grant"}
+
+    dispose_engine(database_url)
+
+
+def test_admin_account_credit_grant_expands_current_period_available_balance(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    seed_site_auth(
+        database_url,
+        site_id="site_credit_grant_headroom",
+        scopes=["runtime:execute", "runtime:read", "stats:read"],
+        budgets={"max_ai_credits_per_period": 300},
+    )
+
+    response = client.post(
+        "/internal/service/admin/accounts/acct_site_credit_grant_headroom/credit-ledger/adjustments",
+        headers=build_internal_headers(idempotency_key="svc-credit-grant-headroom-001"),
+        json={
+            "event_type": "grant",
+            "ai_credit_delta": 1000,
+            "reason": "operator_test_grant",
+            "note": "expand current-period available balance",
+        },
+    )
+    quota_response = client.get(
+        "/internal/service/admin/accounts/acct_site_credit_grant_headroom/quota-summary",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    assert quota_response.status_code == 200
+    credit = quota_response.json()["data"]["ai_credits"]
+    assert credit["used"] == 0.0
+    assert credit["limit"] == 1300.0
+    assert credit["remaining"] == 1300.0
+    assert credit["package_limit"] == 300.0
+    assert credit["package_remaining"] == 1300.0
+    assert credit["paid_remaining"] == 0.0
+    assert credit["total_remaining"] == 1300.0
 
     dispose_engine(database_url)
 
@@ -6228,7 +6605,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
                 provider_call_id=None,
                 source_type="tokens_total",
                 source_id="run-credit-integer-1:tokens",
-                credit_delta=-1.25,
+                ai_credit_delta=-1.25,
                 quantity=1250,
                 unit="token",
                 rate=1,
@@ -6239,7 +6616,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
         except ValueError as error:
             assert "integer credit unit" in str(error)
         else:
-            raise AssertionError("non-integer consume credit_delta should be rejected")
+            raise AssertionError("non-integer consume ai_credit_delta should be rejected")
         session.rollback()
 
         entry = repository.record_credit_ledger_entry(
@@ -6251,7 +6628,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
             provider_call_id=None,
             source_type="vector_chunks",
             source_id="run-credit-integer-2:chunks",
-            credit_delta=-2.0,
+            ai_credit_delta=-2.0,
             quantity=11,
             unit="chunk",
             rate=1,
@@ -6259,7 +6636,7 @@ def test_credit_ledger_consume_credit_delta_must_be_integer(
             rate_version="ai-credit-ledger-v2",
             idempotency_key="credit-integer-valid-001",
         )
-        assert entry.credit_delta == -2.0
+        assert entry.ai_credit_delta == -2.0
         session.commit()
 
     dispose_engine(database_url)
@@ -6555,7 +6932,7 @@ def test_service_routes_expose_ops_cadence_summary(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    assert payload["totals"]["tasks_total"] == 10
+    assert payload["totals"]["tasks_total"] == 11
     assert any(item["task_id"] == "retention_cleanup" for item in payload["items"])
     assert any(item["task_id"] == "artifact_inventory_reconciliation" for item in payload["items"])
     assert any(item["task_id"] == "payment_order_expiration" for item in payload["items"])
@@ -6618,7 +6995,7 @@ def test_service_routes_expose_observability_summary(tmp_path: Path) -> None:
     assert "feature_flags" not in payload
     assert payload["workers"]["totals"]["workers_total"] == 3
     assert any(item["worker_id"] == "runtime_queue" for item in payload["workers"]["items"])
-    assert payload["cadence"]["totals"]["tasks_total"] == 10
+    assert payload["cadence"]["totals"]["tasks_total"] == 11
     assert any(
         item["task_id"] == "artifact_inventory_reconciliation"
         for item in payload["cadence"]["items"]

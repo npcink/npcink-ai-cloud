@@ -264,6 +264,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           labelKey: 'admin.nav_service_settings',
           fallback: 'Service Settings',
         },
+        {
+          href: '/admin/site-compliance',
+          labelKey: 'admin.nav_site_compliance',
+          fallback: 'Site Compliance',
+        },
       ],
     },
   ], []);
@@ -432,8 +437,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     >
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-slate-200/80 bg-slate-50/96 px-3 py-3 backdrop-blur-xl transition-[width] duration-200 ease-out dark:border-slate-800 dark:bg-slate-950/94 lg:flex',
-          sidebarCollapsed ? 'w-16' : 'w-60'
+          'admin-sidebar fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-slate-200/80 bg-slate-50/96 px-3 py-3 backdrop-blur-xl transition-[width] duration-200 ease-out dark:border-slate-800 dark:bg-slate-950/94 lg:flex'
         )}
       >
         <div className={cn('flex h-11 items-center gap-2', sidebarCollapsed ? 'justify-center' : 'justify-between')}>
@@ -459,7 +463,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </div>
       </aside>
 
-      <div className={cn('flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-60')}>
+      <div className="admin-shell-content flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-200 ease-out">
         <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/86 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/86">
           <div className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5 md:px-5">
             <Link

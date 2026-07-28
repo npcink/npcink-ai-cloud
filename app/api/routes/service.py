@@ -35,6 +35,7 @@ from app.domain.hosted_model_defaults import FREE_GPT55_MODEL_ID
 from app.domain.image_sources.metrics import ImageSourceMetricsService
 from app.domain.media_derivatives.metrics import MediaDerivativeObservabilityService
 from app.domain.model_references import ModelReferenceError, ModelReferenceService
+from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.observability.service import ObservabilityService
 from app.domain.provider_connections.model_allowlist import (
@@ -54,6 +55,11 @@ from app.domain.service_settings import (
     ServiceSettingsAdminError,
     ServiceSettingsAdminService,
     resolve_portal_public_base_url,
+)
+from app.domain.site_compliance import (
+    SITE_COMPLIANCE_SETTING_ID,
+    SiteComplianceAdminError,
+    SiteComplianceAdminService,
 )
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.site_knowledge.vector_profile import (
@@ -151,9 +157,20 @@ class SiteStatusPayload(BaseModel):
     reason: str = ""
 
 
+class SiteRelinkCooldownPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["clear", "set", "reset"]
+    cooldown_until: datetime | None = None
+    reason: str = Field(default="", max_length=500)
+
+
 class AccountMemberAccessPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: str
     status: str = "active"
+    site_id: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -203,19 +220,21 @@ class SubscriptionPayload(BaseModel):
 
 
 class SubscriptionTopUpPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_period_start_at: datetime | None = None
     target_period_end_at: datetime | None = None
     ai_credits_increment: float = 0.0
     runs_increment: float = 0.0
     tokens_increment: float = 0.0
-    cost_increment: float = 0.0
+    cost_cny_increment: float = 0.0
     reason: str = ""
     note: str = ""
 
 
 class AccountCreditAdjustmentPayload(BaseModel):
     event_type: str = "adjustment"
-    credit_delta: float
+    ai_credit_delta: float
     reason: str = ""
     note: str = ""
 
@@ -244,13 +263,13 @@ class AgencyQuotePayload(BaseModel):
     amount_cny: float = Field(gt=0, le=9_999_999_999.99)
     valid_days: int = Field(default=7, ge=1, le=30)
     trial_enabled: bool = True
-    trial_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
+    trial_ai_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
 
 
 class AgencyTrialApprovalPayload(BaseModel):
     principal_id: str = Field(default="", max_length=191)
     site_domain: str = Field(default="", max_length=255)
-    trial_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
+    trial_ai_credit_limit: int = Field(default=20_000, ge=0, le=20_000)
 
 
 class CreditPackCatalogItemPayload(BaseModel):
@@ -386,6 +405,22 @@ class AlipayPaymentServiceSettingsPayload(BaseModel):
     public_key: str | None = Field(default=None, max_length=20000)
 
 
+class SiteRelinkPolicyServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    cooldown_days: int = Field(default=90, ge=90, le=365)
+
+
+class AccountingFxServiceSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    usd_cny_rate: float = Field(gt=0, le=20)
+    effective_at: datetime
+    source: str = Field(min_length=1, max_length=128)
+    note: str = Field(default="", max_length=500)
+
+
 class ServiceSettingsEmailTestPayload(BaseModel):
     recipient_email: str = Field(min_length=3, max_length=320)
 
@@ -395,6 +430,12 @@ class ServiceSettingsEmailPreviewPayload(BaseModel):
     locale: str = Field(default="zh-CN", max_length=16)
     from_name: str = Field(default="", max_length=191)
     from_email: str = Field(default="", max_length=320)
+
+
+class SiteComplianceDraftPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payload: dict[str, Any]
 
 
 class ModelReferenceSyncPayload(BaseModel):
@@ -489,6 +530,7 @@ def _service_error_response(
             status="error",
             error_code=error.error_code,
             message=error.message,
+            data=error.data,
             trace_id=(
                 extract_trace_id(request.headers.get("traceparent", ""))
                 if request is not None
@@ -676,6 +718,42 @@ def _service_setting_audit_result(result: dict[str, Any]) -> dict[str, Any]:
         "status": str(result.get("status") or ""),
         "last_error_code": str(result.get("last_error_code") or ""),
     }
+
+
+def _record_site_compliance_audit(
+    request: Request,
+    *,
+    event_kind: str,
+    outcome: str,
+    result: dict[str, Any] | None = None,
+    error_code: str = "",
+    message: str = "",
+) -> None:
+    data = result or {}
+    draft = _dict_value(data.get("draft"))
+    published = _dict_value(data.get("published"))
+    validation = _dict_value(draft.get("validation"))
+    try:
+        _get_commercial_service(request).record_service_audit_event(
+            audit_context=_build_audit_context(request),
+            event_kind=event_kind,
+            outcome=outcome,
+            scope_kind="service_setting",
+            scope_id=SITE_COMPLIANCE_SETTING_ID,
+            payload_json={
+                "surface": "admin_site_compliance",
+                "draft_version_id": str(draft.get("version_id") or ""),
+                "published_version_id": str(published.get("version_id") or ""),
+                "blocker_count": len(_dict_list(validation.get("blockers"))),
+                "warning_count": len(_dict_list(validation.get("warnings"))),
+                "error_code": error_code,
+                "message": message,
+                "content_exposed": False,
+                "credential_value_exposure": "none",
+            },
+        )
+    except Exception:
+        return
 
 
 def _provider_connection_audit_payload(
@@ -1377,6 +1455,7 @@ async def upsert_account_member_access(
             account_id=account_id,
             email=payload.email,
             status=payload.status,
+            site_id=payload.site_id,
             metadata_json=payload.metadata,
             audit_context=audit_context,
         )
@@ -1839,7 +1918,7 @@ async def apply_subscription_topup(
             ai_credits_increment=payload.ai_credits_increment,
             runs_increment=payload.runs_increment,
             tokens_increment=payload.tokens_increment,
-            cost_increment=payload.cost_increment,
+            cost_cny_increment=payload.cost_cny_increment,
             reason=payload.reason,
             note=payload.note,
             target_period_start_at=payload.target_period_start_at,
@@ -2923,7 +3002,7 @@ async def create_admin_account_agency_quote(
             amount_cny=payload.amount_cny,
             valid_days=payload.valid_days,
             trial_enabled=payload.trial_enabled,
-            trial_credit_limit=payload.trial_credit_limit,
+            trial_ai_credit_limit=payload.trial_ai_credit_limit,
             audit_context=_build_audit_context(request),
         )
     except CommercialServiceError as error:
@@ -2953,7 +3032,7 @@ async def approve_admin_account_agency_trial(
             principal_id=payload.principal_id,
             site_domain=payload.site_domain,
             approved_by_principal_id=audit_context.actor_ref,
-            trial_credit_limit=payload.trial_credit_limit,
+            trial_ai_credit_limit=payload.trial_ai_credit_limit,
             audit_context=audit_context,
         )
     except CommercialServiceError as error:
@@ -3160,7 +3239,7 @@ async def apply_admin_account_credit_adjustment(
         result = service.apply_admin_account_credit_adjustment(
             account_id=account_id,
             event_type=payload.event_type,
-            credit_delta=payload.credit_delta,
+            ai_credit_delta=payload.ai_credit_delta,
             reason=payload.reason,
             note=payload.note,
             audit_context=audit_context,
@@ -3190,7 +3269,7 @@ async def apply_admin_account_credit_adjustment(
                 effective_summary=(
                     f"Account {account_id} AI credit ledger received "
                     f"{entry.get('event_type') or payload.event_type} "
-                    f"delta {entry.get('credit_delta') or payload.credit_delta}."
+                    f"delta {entry.get('ai_credit_delta') or payload.ai_credit_delta}."
                 ),
                 account_id=account_id,
             ),
@@ -3318,6 +3397,33 @@ async def get_admin_site(
         message="admin site loaded",
         data=result,
         revision="m6",
+    )
+
+
+@router.patch("/admin/sites/{site_id}/relink-cooldown")
+async def update_admin_site_relink_cooldown(
+    request: Request,
+    site_id: str,
+    payload: SiteRelinkCooldownPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).update_site_relink_cooldown(
+            site_id,
+            action=payload.action,
+            cooldown_until=payload.cooldown_until,
+            reason=payload.reason,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="site relink cooldown updated",
+        data=result,
+        revision="site-relink-v1",
     )
 
 
@@ -3513,6 +3619,32 @@ async def get_admin_plugin_observability(
     )
 
 
+@router.get("/admin/editor-assist-quality")
+async def get_admin_editor_assist_quality(
+    request: Request,
+    window_hours: int = Query(default=24, ge=1, le=168),
+    site_id: str = Query(default="", max_length=191),
+    task_key: str = Query(default="", max_length=64),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = EditorAssistQualityService(
+        services.settings.database_url
+    ).get_summary(
+        window_hours=window_hours,
+        site_id=site_id.strip(),
+        task_key=task_key.strip(),
+    )
+    return build_envelope(
+        status="ok",
+        message="editor assist quality summary loaded",
+        data=result,
+        revision="m6",
+    )
+
+
 @router.get("/admin/media-observability")
 async def get_admin_media_observability(
     request: Request,
@@ -3630,6 +3762,111 @@ async def get_admin_service_settings(request: Request) -> Any:
     )
 
 
+@router.get("/admin/site-compliance")
+async def get_admin_site_compliance(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = SiteComplianceAdminService(
+        services.settings.database_url,
+        services.settings,
+    ).get_workspace()
+    return build_envelope(
+        status="ok",
+        message="site compliance workspace loaded",
+        data=result,
+        revision="site-compliance-admin-v1",
+    )
+
+
+@router.put("/admin/site-compliance/draft")
+async def save_admin_site_compliance_draft(
+    request: Request,
+    payload: SiteComplianceDraftPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = SiteComplianceAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_draft(payload.payload, actor_ref="internal")
+    except SiteComplianceAdminError as error:
+        _record_site_compliance_audit(
+            request,
+            event_kind="site_compliance.draft.save",
+            outcome="error",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="site-compliance-admin-v1",
+            ),
+        )
+    _record_site_compliance_audit(
+        request,
+        event_kind="site_compliance.draft.save",
+        outcome="succeeded",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="site compliance draft saved",
+        data=result,
+        revision="site-compliance-admin-v1",
+    )
+
+
+@router.post("/admin/site-compliance/publish")
+async def publish_admin_site_compliance(request: Request) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = SiteComplianceAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).publish(actor_ref="internal")
+    except SiteComplianceAdminError as error:
+        _record_site_compliance_audit(
+            request,
+            event_kind="site_compliance.publish",
+            outcome="error",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="site-compliance-admin-v1",
+            ),
+        )
+    _record_site_compliance_audit(
+        request,
+        event_kind="site_compliance.publish",
+        outcome="succeeded",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="site compliance published",
+        data=result,
+        revision="site-compliance-admin-v1",
+    )
+
+
 @router.patch("/admin/service-settings/portal-public")
 async def update_admin_portal_public_settings(
     request: Request,
@@ -3674,6 +3911,100 @@ async def update_admin_portal_public_settings(
         message="portal public settings saved",
         data=result,
         revision="m6",
+    )
+
+
+@router.patch("/admin/service-settings/site-relink-policy")
+async def update_admin_site_relink_policy_settings(
+    request: Request,
+    payload: SiteRelinkPolicyServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_site_relink_policy(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="site_relink_policy",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="site-relink-v1",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="site_relink_policy",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="site relink policy settings saved",
+        data=result,
+        revision="site-relink-v1",
+    )
+
+
+@router.patch("/admin/service-settings/accounting-fx")
+async def update_admin_accounting_fx_settings(
+    request: Request,
+    payload: AccountingFxServiceSettingsPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    try:
+        result = ServiceSettingsAdminService(
+            services.settings.database_url,
+            services.settings,
+        ).save_accounting_fx(payload.model_dump(mode="json"))
+    except ServiceSettingsAdminError as error:
+        _record_service_setting_audit(
+            request,
+            event_kind="service_setting.save",
+            outcome="error",
+            setting_id="commercial_accounting_fx",
+            error_code=error.error_code,
+            message=error.message,
+        )
+        return JSONResponse(
+            status_code=error.status_code,
+            content=build_envelope(
+                status="error",
+                error_code=error.error_code,
+                message=error.message,
+                revision="accounting-fx-v1",
+            ),
+        )
+    _record_service_setting_audit(
+        request,
+        event_kind="service_setting.save",
+        outcome="succeeded",
+        setting_id="commercial_accounting_fx",
+        result=result,
+    )
+    return build_envelope(
+        status="ok",
+        message="accounting FX settings saved",
+        data=result,
+        revision="accounting-fx-v1",
     )
 
 
@@ -4985,6 +5316,38 @@ async def get_runtime_diagnostics_summary(
         message="runtime diagnostics summary loaded",
         data=result,
         revision="m8",
+    )
+
+
+@router.get("/runtime/provider-evidence/summary")
+async def get_provider_runtime_evidence_summary(
+    request: Request,
+    site_id: str | None = Query(default=None),
+    provider_id: str | None = Query(default=None, min_length=1, max_length=64),
+    model_id: str | None = Query(default=None, min_length=1, max_length=191),
+    ability_name: str | None = Query(default=None, min_length=1, max_length=191),
+    recent_minutes: int = Query(default=1440, ge=1, le=10080),
+    lane_limit: int = Query(default=50, ge=1, le=100),
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=False)
+    if auth is not None:
+        return auth
+    services = get_cloud_services(request)
+    result = RuntimeService(
+        services.settings.database_url
+    ).get_provider_runtime_evidence_summary(
+        site_id=site_id,
+        provider_id=provider_id,
+        model_id=model_id,
+        ability_name=ability_name,
+        recent_minutes=recent_minutes,
+        lane_limit=lane_limit,
+    )
+    return build_envelope(
+        status="ok",
+        message="provider runtime evidence summary loaded",
+        data=result,
+        revision="m1",
     )
 
 

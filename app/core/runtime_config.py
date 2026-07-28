@@ -22,6 +22,7 @@ FRONTEND_INTERNAL_TOKEN_FILE = "frontend/internal-auth-token"
 SETUP_REVISION = "first-install-v1"
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_PRINCIPAL_ID_PATTERN = re.compile(r"^prn_[0-9a-f]{32}$")
 _PRODUCTION_ENVIRONMENTS = {"production", "prod", "staging"}
 _PRODUCTION_RUNTIME_ENV_KEYS = {
     "NPCINK_CLOUD_DATABASE_URL",
@@ -242,6 +243,12 @@ def load_runtime_settings_values(
     admin_key_sha256 = _required_string(security, "admin_key_sha256")
     if _SHA256_PATTERN.fullmatch(admin_key_sha256) is None:
         raise RuntimeConfigError("runtime admin key digest is invalid")
+    admin_principal_id = str(security.get("admin_principal_id") or "").strip()
+    if (
+        admin_principal_id
+        and _PRINCIPAL_ID_PATTERN.fullmatch(admin_principal_id) is None
+    ):
+        raise RuntimeConfigError("runtime admin principal identity is invalid")
 
     hostname = str(parsed.hostname).lower()
     trusted_host = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
@@ -255,7 +262,7 @@ def load_runtime_settings_values(
             "localhost",
         )
     )
-    return {
+    values = {
         "_env_file": None,
         "project_name": _required_string(cloud, "name"),
         "environment": "production",
@@ -286,6 +293,9 @@ def load_runtime_settings_values(
         "database_pool_recycle_seconds": 1800,
         "database_connect_timeout_seconds": 5,
     }
+    if admin_principal_id:
+        values["admin_principal_id"] = admin_principal_id
+    return values
 
 
 def _read_json_object(path: Path, *, secret: bool) -> dict[str, Any]:

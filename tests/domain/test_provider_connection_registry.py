@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.adapters.providers.openai import OpenAIProviderAdapter
 from app.adapters.providers.registry import (
     build_provider_adapters,
@@ -14,7 +16,10 @@ from app.domain.provider_connections.model_allowlist import build_provider_model
 from app.domain.provider_connections.runtime_settings import (
     apply_provider_connection_runtime_settings,
 )
-from app.domain.provider_connections.service import ProviderConnectionAdminService
+from app.domain.provider_connections.service import (
+    ProviderConnectionAdminError,
+    ProviderConnectionAdminService,
+)
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_INTERNAL_AUTH_TOKEN,
@@ -200,6 +205,13 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
             "config": {
                 "image_output_hosts": ["cdn.openai.example", "assets.openai.example"],
                 "image_response_format": "b64_json",
+                "default_reasoning_effort": "none",
+                "model_metadata_overrides": {
+                    "gpt-gateway": {
+                        "context_window": 64000,
+                        "source": "operator declaration",
+                    }
+                },
             },
             "credential": "db-openai-key",
         }
@@ -217,6 +229,13 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
         "assets.openai.example",
     )
     assert openai.image_response_format == "b64_json"
+    assert openai.default_reasoning_effort == "none"
+    assert openai.model_metadata_overrides == {
+        "gpt-gateway": {
+            "context_window": 64000,
+            "source": "operator declaration",
+        }
+    }
 
     env_only_providers = build_provider_adapters(settings, include_enabled_connections=False)
     assert "openai" not in env_only_providers
@@ -235,6 +254,82 @@ def test_provider_registry_uses_enabled_provider_connections_instead_of_env_fall
     assert isinstance(execution_openai, OpenAIProviderAdapter)
     assert execution_openai.base_url == "https://db-openai.example/v1"
     assert execution_openai.api_key == "db-openai-key"
+
+    dispose_engine(database_url)
+
+
+def test_provider_connection_image_delivery_config_round_trips_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    service = ProviderConnectionAdminService(database_url, _settings(database_url))
+    payload = {
+        "connection_id": "image_gateway",
+        "provider_id": "openai",
+        "provider_type": "openai_compatible",
+        "kind": "openai_compatible",
+        "display_name": "Image gateway",
+        "enabled": True,
+        "base_url": "https://gateway.example/v1",
+        "capability_ids": ["image_generation"],
+        "runtime_profile_ids": ["grok-imagine-image-quality"],
+        "config": {
+            "model_ids": ["Tongyi-MAI/Z-Image-Turbo"],
+            "image_response_format": "URL",
+            "image_output_hosts": [
+                "Images.Example.",
+                "images.example",
+                "assets.example",
+            ],
+        },
+        "credential": "gateway-key",
+    }
+
+    saved = service.save_connection(payload)
+    listed = service.list_connections()["connections"][0]
+
+    assert saved["config"]["image_response_format"] == "url"
+    assert saved["config"]["image_output_hosts"] == [
+        "images.example",
+        "assets.example",
+    ]
+    assert listed["config"]["image_response_format"] == "url"
+    assert listed["config"]["image_output_hosts"] == [
+        "images.example",
+        "assets.example",
+    ]
+
+    with pytest.raises(ProviderConnectionAdminError) as missing_hosts:
+        service.save_connection(
+            {
+                **payload,
+                "config": {
+                    "model_ids": ["Tongyi-MAI/Z-Image-Turbo"],
+                    "image_response_format": "url",
+                },
+            },
+            connection_id="image_gateway",
+        )
+    assert missing_hosts.value.error_code == (
+        "provider_connection.image_output_hosts_required"
+    )
+
+    with pytest.raises(ProviderConnectionAdminError) as wildcard_host:
+        service.save_connection(
+            {
+                **payload,
+                "config": {
+                    "model_ids": ["Tongyi-MAI/Z-Image-Turbo"],
+                    "image_response_format": "url",
+                    "image_output_hosts": ["*.example"],
+                },
+            },
+            connection_id="image_gateway",
+        )
+    assert wildcard_host.value.error_code == (
+        "provider_connection.image_output_hosts_invalid"
+    )
 
     dispose_engine(database_url)
 

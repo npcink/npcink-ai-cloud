@@ -73,6 +73,13 @@ Real provider integration must stay behind this contract. It must not change
 the payment order, credit pack, subscription, entitlement, or credit ledger
 state machine.
 
+Real Alipay refunds use `alipay.trade.refund` with a stable
+`out_request_no`. Cloud verifies the signed synchronous response, payment
+order number, and refund amount before recording provider success or changing
+entitlement. A timeout or malformed response is an unknown result, not a
+failed refund: the same stable refund number must be reconciled before any
+retry.
+
 Provider timestamps without an explicit offset must be interpreted in the
 provider's documented business timezone. Alipay `gmt_*` values are interpreted
 as Asia/Shanghai and normalized to UTC before persistence.
@@ -97,6 +104,12 @@ The Portal payment-order list is a filtered customer view, not the accounting
 retention source. It supports `all`, `pending`, `paid`, and `closed` status
 groups with independent pagination and server-computed counts.
 
+Account-shaped Portal payment routes are compatibility paths scoped to the
+caller's selected, principal-bound site. They must not list, resolve, or cancel
+a payment order for another or formerly bound site. New Portal subscription and
+credit-pack orders record that selected `site_id`; an older site-less account
+order is not exposed merely because the caller has account membership.
+
 Canceled and expired unpaid orders remain visible to the customer for 7 days.
 After that window they are hidden from Portal list responses, but the database
 record, payment evidence, audit trail, subscription relationship, and admin
@@ -109,6 +122,16 @@ The browser return URL is not payment evidence. Portal resolves
 `GET /portal/v1/account/payment-orders/{order_id}` for the exact internal order
 and may poll while it remains pending. Only the persisted, verified order state
 may produce a success message or trigger refreshed entitlement and quota data.
+
+Payment timeliness is determined by the verified provider payment timestamp,
+not callback delivery time. A payment completed inside the 30-minute checkout
+window remains valid when its verified callback arrives late. Customer-canceled
+orders and payments completed after the checkout deadline remain closed.
+
+Provider notifications identify their subject only through the verified
+provider order number and the persisted Cloud payment order. Extra callback
+fields that resemble `account_id`, `site_id`, or `principal_id` are untrusted
+payload data and cannot select or rewrite ownership.
 
 ## Package Price and Cost Budget
 

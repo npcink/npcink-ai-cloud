@@ -9,6 +9,7 @@ const subscription = read('src/app/admin/subscriptions/[subscriptionId]/page.tsx
 const serviceSettings = read('src/app/admin/service-settings/page.tsx');
 const modal = read('src/components/ui/Modal.tsx');
 const providerDialog = read('src/components/admin/ProviderConnectionDialog.tsx');
+const workbenchDialog = read('src/components/admin/AdminWorkbenchDialog.tsx');
 const dialogHook = read('src/hooks/useDialogKeyboard.ts');
 const runtimeProfiles = read('src/app/admin/runtime-profiles/page.tsx');
 const aiResources = read('src/app/admin/ai-resources/page.tsx');
@@ -26,11 +27,13 @@ for (const [name, source] of [
 }
 
 assert.match(dialogHook, /event\.key === 'Escape'[\s\S]*event\.key !== 'Tab'[\s\S]*previouslyFocused\?\.focus\(\)/, 'custom admin dialogs must share Escape, focus containment, and trigger restoration');
-assert.match(runtimeProfiles, /const dialogRef = useDialogKeyboard<[\s\S]*ref=\{dialogRef\}/, 'hosted runtime profile editing must use the shared keyboard behavior');
+assert.match(runtimeProfiles, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'hosted runtime profile editing must reuse the shared admin workbench');
+assert.doesNotMatch(runtimeProfiles, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'hosted runtime profiles must not keep route-local modal behavior');
 assert.doesNotMatch(runtimeProfiles, /cloudBindingDialogRef|runtime-binding|embedding/i, 'hosted runtime profiles must not retain the removed Cloud dependency dialog');
 assert.doesNotMatch(aiResources, /capabilityAddDialogRef|capabilityAddDialogOpen/, 'model supplier management must not keep the retired capability supplier dialog');
 assert.match(planDetail, /editorDialogRef = useDialogKeyboard[\s\S]*ref=\{editorDialogRef\}/, 'package editor must use shared keyboard behavior');
-assert.match(serviceSettings, /emailPreviewDialogRef = useDialogKeyboard[\s\S]*ref=\{emailPreviewDialogRef\}/, 'email preview drawer must use shared keyboard behavior');
+assert.match(serviceSettings, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'email preview must reuse the shared admin workbench');
+assert.doesNotMatch(serviceSettings, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'email preview must not keep route-local modal behavior');
 assert.match(layout, /commandDialogRef = useDialogKeyboard[\s\S]*ref=\{commandDialogRef\}/, 'quick switcher must use shared keyboard behavior');
 
 assert.doesNotMatch(serviceSettings, /window\.confirm/, 'internal unsaved navigation must not use a browser-native confirmation');
@@ -38,12 +41,18 @@ assert.match(serviceSettings, /pendingNavigationHref[\s\S]*<ConfirmModal[\s\S]*d
 
 for (const [name, source] of [
   ['shared modal', modal],
-  ['provider dialog', providerDialog],
+  ['shared admin workbench', workbenchDialog],
 ]) {
   assert.match(source, /event\.key === 'Escape'/, `${name} must support Escape`);
   assert.match(source, /event\.key !== 'Tab'/, `${name} must contain keyboard focus`);
   assert.match(source, /document\.body\.style\.overflow = 'hidden'/, `${name} must prevent background scroll`);
   assert.match(source, /previous(?:ActiveElementRef\.current|lyFocused)\?\.focus\(\)/, `${name} must restore focus to its trigger`);
 }
+
+assert.match(
+  providerDialog,
+  /AdminWorkbenchDialog[\s\S]*return <AdminWorkbenchDialog/,
+  'provider editing must reuse the shared admin workbench instead of duplicating modal behavior'
+);
 
 console.log('admin_pc_interaction_consistency_contract: ok');

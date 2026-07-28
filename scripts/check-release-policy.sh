@@ -148,6 +148,17 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - dependencies
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 1
+    labels:
+      - dependencies
 YAML
 	if ! cmp -s "${ROOT_DIR}/.github/dependabot.yml" <(printf '%s' "${expected}"); then
 		echo "[fail] .github/dependabot.yml does not match the canonical pre-GA policy" >&2
@@ -186,8 +197,10 @@ require_file "docker-compose.p5-b4-runtime-proof.yml"
 require_file "docker-compose.runtime.yml"
 require_file "docker-compose.pg18-proof.yml"
 require_file "scripts/cloud-deploy-bundle-smoke-flow.sh"
+require_file "scripts/classify-ci-changes.sh"
 require_file "scripts/check-pg18-proof.sh"
 require_file "scripts/check-first-install-cve-gate.py"
+require_file "scripts/check-python-cve-upstream.py"
 require_file "scripts/alembic_revision_gate.py"
 require_file "scripts/pg18-semantic-proof.py"
 require_file "scripts/production-image-supply.py"
@@ -198,9 +211,14 @@ require_file "Makefile"
 require_file "README.md"
 require_file "AGENTS.md"
 require_file ".github/pull_request_template.md"
+require_file ".github/scripts/check_pr_body_contract.py"
+require_file "scripts/publish-pr.sh"
+require_file "scripts/test-pr-body-contract.py"
+require_file "docs/pr-and-dependency-update-policy.md"
 require_file ".github/dependabot.yml"
 require_file ".github/workflows/ci.yml"
 require_file ".github/workflows/deploy-production.yml"
+require_file ".github/workflows/python-cve-upstream-watch.yml"
 require_file "deploy/deploy-static-terms-to-ssh-host.sh"
 require_file "site/terms/en/terms.html"
 require_file "site/terms/en/privacy.html"
@@ -243,6 +261,7 @@ require_executable "deploy/admin-key-rotate.sh"
 require_executable "deploy/first-install-finalize.sh"
 require_executable "deploy/first-install-rollback.sh"
 require_executable "deploy/remote-runtime-config-preflight.sh"
+require_executable "scripts/classify-ci-changes.sh"
 
 require_marker "docs/python-3-14-6-controlled-production-validation-risk-decision-2026-07-21.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
@@ -303,6 +322,16 @@ require_marker "deploy/OPS_PLAYBOOK.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
 require_marker "deploy/RELEASE_CHECKLIST.md" \
 	'npcink.controlled_production_cve_risk_acceptance.v1'
+require_marker ".github/workflows/python-cve-upstream-watch.yml" \
+	'python3 scripts/check-python-cve-upstream.py'
+require_marker ".github/workflows/python-cve-upstream-watch.yml" \
+	'cron: "15 1 * * *"'
+require_marker "scripts/check-python-cve-upstream.py" \
+	'fixed_image_claimed=False'
+require_marker "scripts/check-python-cve-upstream.py" \
+	'exception_expired'
+require_marker "package.json" \
+	'"check:python-cve-upstream": "python3 scripts/check-python-cve-upstream.py"'
 
 if git -C "${ROOT_DIR}" ls-files | grep -Eq '(^|/)\.env\.deploy$'; then
 	echo "[fail] Release payload source must not track .env.deploy" >&2
@@ -344,7 +373,8 @@ require_marker ".github/workflows/ci.yml" "production-python-image-smoke:"
 require_marker ".github/workflows/ci.yml" "bash scripts/production-python-extras-smoke.sh"
 require_marker ".github/workflows/ci.yml" "PRODUCTION_PYTHON_IMAGE_SMOKE_RESULT"
 require_marker ".github/workflows/ci.yml" "Python 3.14 Alpine production image smoke did not pass"
-require_marker ".github/workflows/ci.yml" "Dockerfile*|*/Dockerfile*"
+require_marker ".github/workflows/ci.yml" "bash scripts/classify-ci-changes.sh"
+require_marker "scripts/classify-ci-changes.sh" "Dockerfile*|*/Dockerfile*"
 require_marker ".github/workflows/deploy-production.yml" 'NPCINK_CLOUD_INCLUDE_EXTERNAL_IMAGES: "1"'
 reject_marker ".github/workflows/ci.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
 reject_marker ".github/workflows/deploy-production.yml" "PROD_INCLUDE_EXTERNAL_IMAGES"
@@ -357,6 +387,24 @@ require_marker ".github/pull_request_template.md" "Focused module:"
 require_marker ".github/pull_request_template.md" "Cloud boundary impact:"
 require_marker ".github/pull_request_template.md" "Approved for production validation by operator."
 require_marker ".github/pull_request_template.md" "does not commit production secrets"
+require_marker "package.json" '"pr:publish": "bash scripts/publish-pr.sh"'
+require_marker "package.json" '"test:pr-body-contract": "python3 scripts/test-pr-body-contract.py"'
+require_marker "scripts/publish-pr.sh" 'git status --porcelain'
+require_marker "scripts/publish-pr.sh" 'git merge-base --is-ancestor "origin/${base_branch}" HEAD'
+require_marker "scripts/publish-pr.sh" '--body-file "${body_path}"'
+require_marker "scripts/publish-pr.sh" '--auto --squash --match-head-commit "${head_sha}"'
+require_marker "scripts/publish-pr.sh" 'Approved for production validation by operator.'
+reject_marker "scripts/publish-pr.sh" '--delete-branch'
+require_marker ".github/workflows/pr-body-contract.yml" \
+	"python3 .github/scripts/check_pr_body_contract.py"
+require_marker ".github/scripts/check_pr_body_contract.py" \
+	'DEPENDABOT_LOGINS = {"dependabot[bot]", "app/dependabot"}'
+require_marker ".github/scripts/check_pr_body_contract.py" \
+	'head repository must equal the base repository'
+require_marker ".github/scripts/check_pr_body_contract.py" \
+	'only dependency manifests, lockfiles, Dependabot config, or '
+require_marker "docs/pr-and-dependency-update-policy.md" \
+	"Dependabot is not exempt from semantic validation."
 
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "docs/cloud-production-release-policy-v1.md"
 require_marker "deploy/PRODUCTION_GITHUB_DEPLOY.md" "pnpm run check:release-policy"
@@ -904,7 +952,7 @@ require_marker "deploy/nginx.prod.conf" "location /terms/"
 require_marker "deploy/nginx.prod.conf" "try_files /terms/index.html =404;"
 require_marker ".github/workflows/ci.yml" "branches: [master, main, production]"
 require_marker ".github/workflows/ci.yml" "static_terms_only"
-require_marker ".github/workflows/ci.yml" "site/terms/*"
+require_marker "scripts/classify-ci-changes.sh" "site/terms/*"
 reject_marker ".github/workflows/ci.yml" "environment: production"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-to-ssh-host.sh"
 reject_marker ".github/workflows/ci.yml" "deploy/deploy-static-terms-to-ssh-host.sh"

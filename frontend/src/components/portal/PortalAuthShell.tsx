@@ -17,7 +17,7 @@ export function PortalAuthShell({
   aside,
 }: PortalAuthShellProps) {
   return (
-    <main className="mx-auto flex min-h-[72vh] w-full max-w-5xl items-center px-4 py-10" data-portal-auth="shell">
+    <div className="mx-auto flex min-h-[72vh] w-full max-w-5xl items-center px-4 py-10" data-portal-auth="shell">
       <PortalPageStack>
         <PortalSection className="w-full overflow-hidden p-0">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.75fr)]">
@@ -41,6 +41,6 @@ export function PortalAuthShell({
           </div>
         </PortalSection>
       </PortalPageStack>
-    </main>
+    </div>
   );
 }

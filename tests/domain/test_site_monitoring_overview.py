@@ -104,7 +104,7 @@ def test_site_monitoring_overview_prioritizes_actions_and_quota(tmp_path: Path) 
         budgets={
             "max_runs_per_period": 10,
             "max_tokens_per_period": 100,
-            "max_cost_per_period": 5,
+            "max_cost_cny_per_period": 36,
         },
     )
     with get_session(database_url) as session:
@@ -212,9 +212,15 @@ def test_site_monitoring_overview_prioritizes_actions_and_quota(tmp_path: Path) 
         )
         session.commit()
 
+    commercial_policy = _policy(database_url, site_id)
+    cost_budget = commercial_policy["budget_state"]["cost"]
+    assert cost_budget["limit"] == 36.0
+    assert cost_budget["currency"] == "CNY"
+    assert cost_budget["budget_source"] == "max_cost_cny_per_period"
+
     summary = SiteMonitoringOverviewService(database_url).get_summary(
         site_id=site_id,
-        commercial_policy=_policy(database_url, site_id),
+        commercial_policy=commercial_policy,
         window_hours=24,
         now=now,
     )

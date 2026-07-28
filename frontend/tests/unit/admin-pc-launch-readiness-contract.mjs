@@ -9,7 +9,7 @@ const subscriptionsSource = readFileSync(resolve(root, 'src/app/admin/subscripti
 const plansSource = readFileSync(resolve(root, 'src/app/admin/plans/page.tsx'), 'utf8');
 const creditPacksSource = readFileSync(resolve(root, 'src/app/admin/credit-packs/page.tsx'), 'utf8');
 const serviceSettingsSource = readFileSync(resolve(root, 'src/app/admin/service-settings/page.tsx'), 'utf8');
-const providerDialogSource = readFileSync(resolve(root, 'src/components/admin/ProviderConnectionDialog.tsx'), 'utf8');
+const workbenchDialogSource = readFileSync(resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const toastSource = readFileSync(resolve(root, 'src/components/ui/Toast.tsx'), 'utf8');
 
 assert.match(
@@ -67,12 +67,12 @@ assert.match(
 );
 
 assert.match(
-  providerDialogSource,
+  workbenchDialogSource,
   /role="alert"[\s\S]*\{error\}/,
   'provider form errors must expose alert semantics in the active dialog'
 );
 assert.match(
-  providerDialogSource,
+  workbenchDialogSource,
   /role="status"[\s\S]*aria-live="polite"[\s\S]*\{message\}/,
   'provider form success and progress messages must expose polite status semantics in the active dialog'
 );

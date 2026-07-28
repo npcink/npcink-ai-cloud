@@ -121,8 +121,8 @@ assert.match(
 );
 assert.match(
   packagePanelSource,
-  /paid_offer_desc[\s\S]*formatPortalCurrency\(plusOffer\.amount\)[\s\S]*formatPortalCurrency\(proOffer\.amount\)/,
-  'Portal paid package copy must render live offer prices instead of hard-coded amounts'
+  /function formatOfferAmount[\s\S]*from: normalizePortalCurrency\(offer\.currency\)[\s\S]*paid_offer_desc[\s\S]*formatOfferAmount\(plusOffer\)[\s\S]*formatOfferAmount\(proOffer\)/,
+  'Portal paid package copy must render live CNY offer prices without USD conversion'
 );
 assert.doesNotMatch(
   billingPageSource,

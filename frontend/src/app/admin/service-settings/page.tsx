@@ -1,26 +1,30 @@
 'use client';
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   BackofficeDiagnosticNotice,
   BackofficePageStack,
   BackofficePrimaryPanel,
-  BackofficeSectionPanel,
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
+import {
+  AdminConfigurationRow,
+  AdminConfigurationTable,
+} from '@/components/admin/AdminConfigurationTable';
+import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
+import { AdminSettingsWorkbench } from '@/components/admin/AdminSettingsWorkbench';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
-import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { cn } from '@/lib/utils';
 
 type SettingStatus = 'ready' | 'disabled' | 'missing_config' | 'error' | string;
-type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment';
+type ServiceSettingsTab = 'portal' | 'qq' | 'email' | 'payment' | 'accounting' | 'site-relink';
 type EmailPreviewType = 'login' | 'registration' | 'email_change' | 'email_changed' | 'test';
 type EmailPreviewMode = 'html' | 'text';
 type Translator = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -48,6 +52,8 @@ type ServiceSettingsData = {
     qq_login: ServiceSetting;
     portal_email: ServiceSetting;
     alipay_payment: ServiceSetting;
+    accounting_fx: ServiceSetting;
+    site_relink_policy: ServiceSetting;
   };
 };
 
@@ -96,11 +102,25 @@ type AlipayForm = {
   public_key: string;
 };
 
+type SiteRelinkPolicyForm = {
+  enabled: boolean;
+  cooldown_days: string;
+};
+
+type AccountingFxForm = {
+  usd_cny_rate: string;
+  effective_date: string;
+  source: string;
+  note: string;
+};
+
 type SavedServiceSettingsForms = {
   portal: PortalPublicForm;
   qq: QQForm;
   email: EmailForm;
   payment: AlipayForm;
+  accounting: AccountingFxForm;
+  siteRelink: SiteRelinkPolicyForm;
 };
 
 function stringValue(value: unknown): string {
@@ -126,7 +146,7 @@ function statusTone(status: SettingStatus): string {
 }
 
 function fieldClassName(): string {
-  return 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-blue-500 dark:focus:ring-blue-950 dark:disabled:bg-slate-900';
+  return 'input mt-1 w-full';
 }
 
 function checkboxClassName(): string {
@@ -285,12 +305,11 @@ function serviceSettingsRequestErrorMessage(
   return message;
 }
 
-function tabButtonClassName(active: boolean): string {
-  return `rounded-[1rem] px-4 py-3 text-left transition ${
-    active
-      ? 'bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950'
-      : 'text-slate-600 hover:bg-white/75 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900/70 dark:hover:text-white'
-  }`;
+function settingTone(status: SettingStatus): 'ready' | 'attention' | 'neutral' | 'error' {
+  if (status === 'ready') return 'ready';
+  if (status === 'error') return 'error';
+  if (status === 'missing_config') return 'attention';
+  return 'neutral';
 }
 
 export default function AdminServiceSettingsPage() {
@@ -312,6 +331,10 @@ export default function AdminServiceSettingsPage() {
   const [emailConfigExpanded, setEmailConfigExpanded] = useState(false);
   const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
   const [browserPublicBaseUrl, setBrowserPublicBaseUrl] = useState('');
+  const [qqCredentialRevealed, setQqCredentialRevealed] = useState(false);
+  const [emailCredentialRevealed, setEmailCredentialRevealed] = useState(false);
+  const [alipayPrivateKeyRevealed, setAlipayPrivateKeyRevealed] = useState(false);
+  const [alipayPublicKeyRevealed, setAlipayPublicKeyRevealed] = useState(false);
 
   const [portalPublicForm, setPortalPublicForm] = useState<PortalPublicForm>({
     enabled: true,
@@ -343,6 +366,16 @@ export default function AdminServiceSettingsPage() {
     return_url: '',
     private_key: '',
     public_key: '',
+  });
+  const [siteRelinkPolicyForm, setSiteRelinkPolicyForm] = useState<SiteRelinkPolicyForm>({
+    enabled: true,
+    cooldown_days: '90',
+  });
+  const [accountingFxForm, setAccountingFxForm] = useState<AccountingFxForm>({
+    usd_cny_rate: '7.200000',
+    effective_date: '2026-07-01',
+    source: 'operator_approved',
+    note: '',
   });
   const [savedForms, setSavedForms] = useState<SavedServiceSettingsForms | null>(null);
   const savedFormsRef = useRef<SavedServiceSettingsForms | null>(null);
@@ -380,12 +413,37 @@ export default function AdminServiceSettingsPage() {
       if (!settingsMountedRef.current || settingsRequestSequenceRef.current !== requestSequence) {
         return;
       }
-      setData(nextData);
       const portalPublic = nextData.settings.portal_public;
       const qq = nextData.settings.qq_login;
       const email = nextData.settings.portal_email;
       setEmailConfigExpanded(email.status === 'missing_config' || email.status === 'error');
       const alipay = nextData.settings.alipay_payment;
+      const accountingFx = nextData.settings.accounting_fx || {
+        setting_id: 'commercial_accounting_fx',
+        enabled: true,
+        configured: false,
+        status: 'missing_config',
+        config: {
+          usd_cny_rate: '7.200000',
+          effective_at: '2026-07-01T00:00:00Z',
+          source: 'platform_default',
+          note: '',
+          rate_version: 'usd-cny-20260701T000000Z-7_200000',
+          is_fallback: true,
+        },
+        secrets: {},
+        last_tested_at: '',
+        last_error_code: '',
+        last_error_message: '',
+      };
+      setData({
+        ...nextData,
+        settings: {
+          ...nextData.settings,
+          accounting_fx: accountingFx,
+        },
+      });
+      const siteRelinkPolicy = nextData.settings.site_relink_policy;
       const emailSmtpUsername = stringValue(email.config.smtp_username);
       const emailFromAddress = stringValue(email.config.from_email);
       const emailUsernameSameAsFromEmail =
@@ -422,11 +480,24 @@ export default function AdminServiceSettingsPage() {
         private_key: '',
         public_key: '',
       };
+      const nextSiteRelinkPolicyForm: SiteRelinkPolicyForm = {
+        enabled: siteRelinkPolicy.enabled,
+        cooldown_days: stringValue(siteRelinkPolicy.config.cooldown_days) || '90',
+      };
+      const nextAccountingFxForm: AccountingFxForm = {
+        usd_cny_rate: stringValue(accountingFx.config.usd_cny_rate) || '7.200000',
+        effective_date:
+          stringValue(accountingFx.config.effective_at).slice(0, 10) || '2026-07-01',
+        source: stringValue(accountingFx.config.source) || 'operator_approved',
+        note: stringValue(accountingFx.config.note),
+      };
       const nextSavedForms = {
         portal: nextPortalForm,
         qq: nextQqForm,
         email: nextEmailForm,
         payment: nextAlipayForm,
+        accounting: nextAccountingFxForm,
+        siteRelink: nextSiteRelinkPolicyForm,
       };
       savedFormsRef.current = nextSavedForms;
       setSavedForms(nextSavedForms);
@@ -434,6 +505,12 @@ export default function AdminServiceSettingsPage() {
       setQqForm(nextQqForm);
       setEmailForm(nextEmailForm);
       setAlipayForm(nextAlipayForm);
+      setAccountingFxForm(nextAccountingFxForm);
+      setSiteRelinkPolicyForm(nextSiteRelinkPolicyForm);
+      setQqCredentialRevealed(false);
+      setEmailCredentialRevealed(false);
+      setAlipayPrivateKeyRevealed(false);
+      setAlipayPublicKeyRevealed(false);
     } catch (loadError) {
       if (settingsMountedRef.current && settingsRequestSequenceRef.current === requestSequence) {
         setError(serviceSettingsRequestErrorMessage(loadError, t('admin.service_settings.load_failed', {}, 'Failed to load service settings.'), t));
@@ -485,6 +562,22 @@ export default function AdminServiceSettingsPage() {
         label: t('admin.service_settings.metric_payment', {}, 'Payment'),
         value: statusLabel(settings?.alipay_payment.status || 'missing_config', t),
         toneClassName: statusTone(settings?.alipay_payment.status || 'missing_config'),
+        size: 'compact' as const,
+      },
+      {
+        label: t('admin.service_settings.metric_accounting_fx', {}, 'Accounting FX'),
+        value: `${stringValue(settings?.accounting_fx.config.usd_cny_rate) || '7.200000'} CNY/USD`,
+        toneClassName: statusTone(settings?.accounting_fx.status || 'missing_config'),
+        size: 'compact' as const,
+      },
+      {
+        label: t('admin.service_settings.metric_site_relink', {}, 'Site relink'),
+        value: settings?.site_relink_policy.enabled
+          ? `${stringValue(settings.site_relink_policy.config.cooldown_days) || '90'} ${t('common.days', {}, 'days')}`
+          : t('admin.service_settings.site_relink_disabled', {}, 'Cross-account disabled'),
+        toneClassName: settings?.site_relink_policy.enabled
+          ? 'text-emerald-700 dark:text-emerald-300'
+          : 'text-slate-500 dark:text-slate-400',
         size: 'compact' as const,
       },
     ];
@@ -644,6 +737,46 @@ export default function AdminServiceSettingsPage() {
     );
   }
 
+  function submitSiteRelinkPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setError(activeValidationIssues[0]);
+      return;
+    }
+    void saveJson(
+      '/api/admin/service-settings/site-relink-policy',
+      {
+        enabled: siteRelinkPolicyForm.enabled,
+        cooldown_days: Number(siteRelinkPolicyForm.cooldown_days),
+      },
+      'site-relink-policy',
+      t(
+        'admin.service_settings.site_relink_saved',
+        {},
+        'Site relink policy saved.'
+      )
+    );
+  }
+
+  function submitAccountingFx(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (activeValidationIssues.length > 0) {
+      setError(activeValidationIssues[0]);
+      return;
+    }
+    void saveJson(
+      '/api/admin/service-settings/accounting-fx',
+      {
+        usd_cny_rate: Number(accountingFxForm.usd_cny_rate),
+        effective_at: `${accountingFxForm.effective_date}T00:00:00Z`,
+        source: accountingFxForm.source,
+        note: accountingFxForm.note,
+      },
+      'accounting-fx',
+      t('admin.service_settings.accounting_fx_saved', {}, 'Accounting FX rate saved.')
+    );
+  }
+
   function submitQq(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (activeValidationIssues.length > 0) {
@@ -766,6 +899,12 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'portal') return JSON.stringify(portalPublicForm) !== JSON.stringify(savedForms.portal);
     if (activeTab === 'qq') return JSON.stringify(qqForm) !== JSON.stringify(savedForms.qq);
     if (activeTab === 'email') return JSON.stringify(emailForm) !== JSON.stringify(savedForms.email);
+    if (activeTab === 'site-relink') {
+      return JSON.stringify(siteRelinkPolicyForm) !== JSON.stringify(savedForms.siteRelink);
+    }
+    if (activeTab === 'accounting') {
+      return JSON.stringify(accountingFxForm) !== JSON.stringify(savedForms.accounting);
+    }
     return JSON.stringify(alipayForm) !== JSON.stringify(savedForms.payment);
   })();
 
@@ -834,6 +973,52 @@ export default function AdminServiceSettingsPage() {
         issues.push(t('admin.service_settings.validation_payment_public_key', {}, 'Enter the Alipay public key.'));
       }
     }
+    if (activeTab === 'site-relink') {
+      const cooldownDays = Number(siteRelinkPolicyForm.cooldown_days);
+      if (
+        !Number.isInteger(cooldownDays) ||
+        cooldownDays < 90 ||
+        cooldownDays > 365
+      ) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_site_relink_days',
+            {},
+            'Enter a whole number from 90 to 365 days.'
+          )
+        );
+      }
+    }
+    if (activeTab === 'accounting') {
+      const rate = Number(accountingFxForm.usd_cny_rate);
+      if (!Number.isFinite(rate) || rate <= 0 || rate > 20) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_accounting_fx_rate',
+            {},
+            'Enter a USD/CNY rate greater than 0 and no greater than 20.'
+          )
+        );
+      }
+      if (!accountingFxForm.effective_date) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_accounting_fx_date',
+            {},
+            'Select the accounting rate effective date.'
+          )
+        );
+      }
+      if (!accountingFxForm.source.trim()) {
+        issues.push(
+          t(
+            'admin.service_settings.validation_accounting_fx_source',
+            {},
+            'Enter the accounting rate source.'
+          )
+        );
+      }
+    }
     return issues;
   })();
 
@@ -844,6 +1029,14 @@ export default function AdminServiceSettingsPage() {
     if (activeTab === 'qq') setQqForm(saved.qq);
     if (activeTab === 'email') setEmailForm(saved.email);
     if (activeTab === 'payment') setAlipayForm(saved.payment);
+    if (activeTab === 'site-relink') setSiteRelinkPolicyForm(saved.siteRelink);
+    if (activeTab === 'accounting') setAccountingFxForm(saved.accounting);
+    if (activeTab === 'qq') setQqCredentialRevealed(false);
+    if (activeTab === 'email') setEmailCredentialRevealed(false);
+    if (activeTab === 'payment') {
+      setAlipayPrivateKeyRevealed(false);
+      setAlipayPublicKeyRevealed(false);
+    }
     setError('');
   }, [activeTab]);
 
@@ -897,13 +1090,21 @@ export default function AdminServiceSettingsPage() {
     ? emailSetting.last_tested_at
     : t('admin.service_settings.email_summary_never_tested', {}, 'Never tested');
 
-  const tabs: Array<{ id: ServiceSettingsTab; label: string; description: string }> = [
+  const tabs: Array<{
+    id: ServiceSettingsTab;
+    label: string;
+    description: string;
+    tone: 'ready' | 'attention' | 'neutral' | 'error';
+  }> = [
     {
       id: 'portal',
       label: t('admin.service_settings.tab_portal', {}, '门户地址'),
       description: activeTab === 'portal' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
         : statusLabel(data?.settings.portal_public.status || 'missing_config', t),
+      tone: activeTab === 'portal' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.portal_public.status || 'missing_config'),
     },
     {
       id: 'qq',
@@ -911,6 +1112,9 @@ export default function AdminServiceSettingsPage() {
       description: activeTab === 'qq' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
         : statusLabel(data?.settings.qq_login.status || 'missing_config', t),
+      tone: activeTab === 'qq' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.qq_login.status || 'missing_config'),
     },
     {
       id: 'email',
@@ -918,6 +1122,9 @@ export default function AdminServiceSettingsPage() {
       description: activeTab === 'email' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
         : statusLabel(data?.settings.portal_email.status || 'missing_config', t),
+      tone: activeTab === 'email' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.portal_email.status || 'missing_config'),
     },
     {
       id: 'payment',
@@ -925,6 +1132,33 @@ export default function AdminServiceSettingsPage() {
       description: activeTab === 'payment' && activeGroupDirty
         ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
         : statusLabel(data?.settings.alipay_payment.status || 'missing_config', t),
+      tone: activeTab === 'payment' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.alipay_payment.status || 'missing_config'),
+    },
+    {
+      id: 'accounting',
+      label: t('admin.service_settings.tab_accounting', {}, '成本核算'),
+      description: activeTab === 'accounting' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : statusLabel(data?.settings.accounting_fx.status || 'missing_config', t),
+      tone: activeTab === 'accounting' && activeGroupDirty
+        ? 'attention'
+        : settingTone(data?.settings.accounting_fx.status || 'missing_config'),
+    },
+    {
+      id: 'site-relink',
+      label: t('admin.service_settings.tab_site_relink', {}, '站点重连'),
+      description: activeTab === 'site-relink' && activeGroupDirty
+        ? t('admin.service_settings.unsaved_short', {}, 'Unsaved')
+        : data?.settings.site_relink_policy.enabled
+          ? `${stringValue(data.settings.site_relink_policy.config.cooldown_days) || '90'} ${t('common.days', {}, 'days')}`
+          : t('admin.service_settings.site_relink_disabled', {}, 'Cross-account disabled'),
+      tone: activeTab === 'site-relink' && activeGroupDirty
+        ? 'attention'
+        : data?.settings.site_relink_policy.enabled
+          ? 'ready'
+          : 'neutral',
     },
   ];
 
@@ -950,17 +1184,12 @@ export default function AdminServiceSettingsPage() {
       label: t('admin.service_settings.email_preview_test', {}, '测试邮件'),
     },
   ];
-  const emailPreviewDialogRef = useDialogKeyboard<HTMLDivElement>({
-    open: emailPreviewOpen,
-    onClose: () => setEmailPreviewOpen(false),
-  });
-
   const activeStateNotice = (activeGroupDirty || activeValidationIssues.length > 0 || error) ? (
     <div
       data-ui="service-settings-active-state"
       role={error || activeValidationIssues.length > 0 ? 'alert' : 'status'}
       className={cn(
-        'flex flex-col gap-3 rounded-xl border px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between',
+        'flex flex-col gap-3 border-l-2 px-3 py-2 text-sm sm:flex-row sm:items-start sm:justify-between',
         error || activeValidationIssues.length > 0
           ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200'
           : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200'
@@ -1016,7 +1245,7 @@ export default function AdminServiceSettingsPage() {
   }
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack className="space-y-3">
       <BackofficePrimaryPanel
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.service_settings_title', {}, 'Service settings')}
@@ -1026,62 +1255,70 @@ export default function AdminServiceSettingsPage() {
           'Configure Cloud-owned Portal login, QQ quick login, email delivery, and payment. Values are stored in Cloud runtime storage; .env fallback is no longer read.'
         )}
         descriptionDisplay="hint"
-        summary={<BackofficeSummaryStrip items={metrics} />}
+        summary={<BackofficeSummaryStrip items={metrics} density="compact" />}
+        summaryClassName="px-5 py-2.5 md:px-7 md:py-2.5"
       />
 
-      <BackofficeSectionPanel className="p-2 md:p-2">
-        <div role="tablist" aria-label={t('admin.service_settings.tablist_label', {}, 'Service settings categories')} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {tabs.map((tab) => {
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                aria-controls={`service-settings-${tab.id}`}
-                className={tabButtonClassName(active)}
-                onClick={() => requestTabChange(tab.id)}
-              >
-                <span className="block text-sm font-semibold">{tab.label}</span>
-                <span className={`mt-1 block text-xs ${active ? 'text-white/70 dark:text-slate-700' : 'text-slate-500 dark:text-slate-400'}`}>
-                  {tab.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </BackofficeSectionPanel>
+      <AdminSettingsWorkbench
+        ariaLabel={t('admin.service_settings.tablist_label', {}, 'Service settings categories')}
+        activeId={activeTab}
+        items={tabs.map((tab) => ({
+          id: tab.id,
+          label: tab.label,
+          status: tab.description,
+          tone: tab.tone,
+        }))}
+        onSelect={(nextTab) => requestTabChange(nextTab as ServiceSettingsTab)}
+      >
 
       {activeTab === 'portal' ? (
-        <BackofficeSectionPanel>
-          <div id="service-settings-portal" role="tabpanel">
-            <section className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Portal URL
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+          <div id="service-settings-portal" className="grid gap-3" role="tabpanel">
+            <div className="flex min-w-0 items-baseline gap-3">
+              <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
                 {t('admin.service_settings.portal_public_title', {}, '门户基础地址')}
               </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                 {t('admin.service_settings.portal_public_desc', {}, 'Used to generate public callback URLs for QQ login, WeChat login, and payment notifications.')}
               </p>
             </div>
             {activeStateNotice}
-            <form className="grid gap-4 lg:grid-cols-[1fr_auto]" onSubmit={submitPortalPublic}>
-              <label className={labelClassName()}>
-                {t('admin.service_settings.base_url_label', {}, 'Base URL')}
-                <input
-                  className={fieldClassName()}
+            <form className="grid gap-3" onSubmit={submitPortalPublic}>
+              <AdminConfigurationTable
+                ariaLabel={t('admin.service_settings.portal_public_title', {}, 'Portal public URL')}
+                itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
+                valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
+                detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
+                density="compact"
+              >
+                <AdminConfigurationRow
+                  rowId="portal-base-url"
+                  label={t('admin.service_settings.base_url_label', {}, 'Base URL')}
+                  value={<input
+                  className="input w-full"
                   value={portalPublicForm.public_base_url}
                   onChange={(event) => setPortalPublicForm((current) => ({ ...current, public_base_url: event.target.value }))}
                   placeholder="https://cloud.example.com"
                   disabled={loading}
+                  aria-label={t('admin.service_settings.base_url_label', {}, 'Base URL')}
+                />}
+                  detail={browserPublicBaseUrl && portalPublicForm.public_base_url.trim() !== browserPublicBaseUrl ? (
+                    <button
+                      type="button"
+                      className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                      disabled={saving === 'portal-public'}
+                      onClick={() => setPortalPublicForm((current) => ({ ...current, enabled: true, public_base_url: browserPublicBaseUrl }))}
+                    >
+                      {t('admin.service_settings.use_current_base_url', {}, 'Use current URL')}
+                    </button>
+                  ) : t('admin.service_settings.callback_source_note', {}, 'Callback URL source')}
                 />
-              </label>
-              <div className="flex items-end gap-3">
-                <div className="mb-2 inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <AdminConfigurationRow
+                  rowId="portal-enabled"
+                  label={t('admin.service_settings.portal_enabled_label', {}, 'Portal entry enabled')}
+                  value={portalPublicForm.enabled
+                    ? t('common.enabled', {}, 'Enabled')
+                    : t('common.disabled', {}, 'Disabled')}
+                  detail={<label className="inline-flex cursor-pointer items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
                   <button
                     type="button"
                     role="switch"
@@ -1094,20 +1331,13 @@ export default function AdminServiceSettingsPage() {
                     <span className={switchKnobClassName(portalPublicForm.enabled)} />
                   </button>
                   {t('admin.service_settings.portal_enabled_label', {}, 'Portal entry enabled')}
-                </div>
-                {browserPublicBaseUrl && portalPublicForm.public_base_url.trim() !== browserPublicBaseUrl ? (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={saving === 'portal-public'}
-                    onClick={() => setPortalPublicForm((current) => ({ ...current, enabled: true, public_base_url: browserPublicBaseUrl }))}
-                  >
-                    {t('admin.service_settings.use_current_base_url', {}, '使用当前访问地址')}
-                  </button>
-                ) : null}
+                  </label>}
+                />
+              </AdminConfigurationTable>
+              <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-sm"
                   disabled={saving === 'portal-public' || !activeGroupDirty || activeValidationIssues.length > 0}
                 >
                   {saving === 'portal-public'
@@ -1116,21 +1346,248 @@ export default function AdminServiceSettingsPage() {
                 </button>
               </div>
             </form>
-            </section>
           </div>
-        </BackofficeSectionPanel>
+      ) : null}
+
+      {activeTab === 'accounting' ? (
+          <div id="service-settings-accounting" className="grid gap-3" role="tabpanel">
+            <div className="flex min-w-0 items-baseline gap-3">
+              <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
+                {t('admin.service_settings.accounting_fx_title', {}, 'USD/CNY accounting rate')}
+              </h2>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'admin.service_settings.accounting_fx_desc',
+                  {},
+                  'Provider costs remain in USD; Cloud snapshots the approved rate and the converted CNY amount for operator accounting.'
+                )}
+              </p>
+            </div>
+            {activeStateNotice}
+            <form className="grid gap-3" onSubmit={submitAccountingFx}>
+              <AdminConfigurationTable
+                ariaLabel={t('admin.service_settings.accounting_fx_title', {}, 'USD/CNY accounting rate')}
+                itemHeading={t('admin.service_settings.configuration_item', {}, 'Setting')}
+                valueHeading={t('admin.service_settings.current_value', {}, 'Current value')}
+                detailHeading={t('admin.service_settings.action_or_note', {}, 'Action / note')}
+                density="compact"
+              >
+                <AdminConfigurationRow
+                  rowId="accounting-fx-rate"
+                  label={t('admin.service_settings.accounting_fx_rate_label', {}, 'CNY per USD')}
+                  value={<input
+                    className="input w-full"
+                    type="number"
+                    min="0.000001"
+                    max="20"
+                    step="0.000001"
+                    value={accountingFxForm.usd_cny_rate}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      usd_cny_rate: event.target.value,
+                    }))}
+                  />}
+                  detail={t(
+                    'admin.service_settings.accounting_fx_rate_detail',
+                    {},
+                    'One global operator-approved rate. It is not a customer currency selector.'
+                  )}
+                />
+                <AdminConfigurationRow
+                  rowId="accounting-fx-effective-date"
+                  label={t('admin.service_settings.accounting_fx_effective_label', {}, 'Effective date')}
+                  value={<input
+                    className="input w-full"
+                    type="date"
+                    value={accountingFxForm.effective_date}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      effective_date: event.target.value,
+                    }))}
+                  />}
+                  detail={stringValue(data.settings.accounting_fx.config.rate_version)}
+                />
+                <AdminConfigurationRow
+                  rowId="accounting-fx-source"
+                  label={t('admin.service_settings.accounting_fx_source_label', {}, 'Source')}
+                  value={<input
+                    className="input w-full"
+                    maxLength={128}
+                    value={accountingFxForm.source}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      source: event.target.value,
+                    }))}
+                  />}
+                  detail={t(
+                    'admin.service_settings.accounting_fx_source_detail',
+                    {},
+                    'For example: operator-approved monthly accounting rate.'
+                  )}
+                />
+                <AdminConfigurationRow
+                  rowId="accounting-fx-note"
+                  label={t('admin.service_settings.accounting_fx_note_label', {}, 'Note')}
+                  value={<input
+                    className="input w-full"
+                    maxLength={500}
+                    value={accountingFxForm.note}
+                    onChange={(event) => setAccountingFxForm((current) => ({
+                      ...current,
+                      note: event.target.value,
+                    }))}
+                  />}
+                  detail={data.settings.accounting_fx.config.is_fallback
+                    ? t(
+                        'admin.service_settings.accounting_fx_fallback',
+                        {},
+                        'The fallback rate is active. Save an operator-approved rate before relying on CNY margin reporting.'
+                      )
+                    : t(
+                        'admin.service_settings.accounting_fx_snapshot_note',
+                        {},
+                        'New provider-cost events snapshot this rate version; historical snapshots are not rewritten.'
+                      )}
+                />
+              </AdminConfigurationTable>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={
+                    saving === 'accounting-fx' ||
+                    !activeGroupDirty ||
+                    activeValidationIssues.length > 0
+                  }
+                >
+                  {saving === 'accounting-fx'
+                    ? t('admin.service_settings.saving', {}, 'Saving')
+                    : t('admin.service_settings.save_accounting_fx', {}, 'Save accounting rate')}
+                </button>
+              </div>
+            </form>
+          </div>
+      ) : null}
+
+      {activeTab === 'site-relink' ? (
+          <div id="service-settings-site-relink" className="grid gap-3" role="tabpanel">
+              <div className="flex min-w-0 items-baseline gap-3">
+                <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
+                  {t(
+                    'admin.service_settings.site_relink_title',
+                    {},
+                    '跨账号站点重连'
+                  )}
+                </h2>
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {t(
+                    'admin.service_settings.site_relink_desc',
+                    {},
+                    'The cooldown starts only after the current account removes the site. Same-account reconnects remain available immediately, and Free entitlement stays account-owned.'
+                  )}
+                </p>
+              </div>
+              {activeStateNotice}
+              <form className="space-y-5" onSubmit={submitSiteRelinkPolicy}>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)]">
+                  <div className="rounded-xl border border-slate-200 px-4 py-4 dark:border-slate-800">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                          {t(
+                            'admin.service_settings.site_relink_enabled_label',
+                            {},
+                            'Allow cross-account relink after cooldown'
+                          )}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          {t(
+                            'admin.service_settings.site_relink_enabled_hint',
+                            {},
+                            'When disabled, a removed site remains unavailable to other accounts until this policy is enabled or an operator changes the site record.'
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-label={t(
+                          'admin.service_settings.site_relink_toggle_label',
+                          {},
+                          'Enable cross-account site relink'
+                        )}
+                        aria-checked={siteRelinkPolicyForm.enabled}
+                        className={switchButtonClassName(siteRelinkPolicyForm.enabled)}
+                        disabled={loading}
+                        onClick={() =>
+                          setSiteRelinkPolicyForm((current) => ({
+                            ...current,
+                            enabled: !current.enabled,
+                          }))
+                        }
+                      >
+                        <span className={switchKnobClassName(siteRelinkPolicyForm.enabled)} />
+                      </button>
+                    </div>
+                  </div>
+                  <label className={labelClassName()}>
+                    {t(
+                      'admin.service_settings.site_relink_days_label',
+                      {},
+                      'Default cooldown days'
+                    )}
+                    <input
+                      type="number"
+                      min={90}
+                      max={365}
+                      step={1}
+                      className={fieldClassName()}
+                      value={siteRelinkPolicyForm.cooldown_days}
+                      onChange={(event) =>
+                        setSiteRelinkPolicyForm((current) => ({
+                          ...current,
+                          cooldown_days: event.target.value,
+                        }))
+                      }
+                      disabled={loading}
+                    />
+                    <span className="mt-2 block text-xs font-normal text-slate-500 dark:text-slate-400">
+                      {t(
+                        'admin.service_settings.site_relink_days_hint',
+                        {},
+                        'Applies to future removals. Existing sites keep their stored unlock time until changed from site detail.'
+                      )}
+                    </span>
+                  </label>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="btn btn-primary btn-sm"
+                    disabled={
+                      saving === 'site-relink-policy' ||
+                      !activeGroupDirty ||
+                      activeValidationIssues.length > 0
+                    }
+                  >
+                    {saving === 'site-relink-policy'
+                      ? t('admin.service_settings.saving', {}, 'Saving')
+                      : t(
+                          'admin.service_settings.save_site_relink',
+                          {},
+                          '保存重连策略'
+                        )}
+                  </button>
+                </div>
+              </form>
+          </div>
       ) : null}
 
       {activeTab === 'qq' ? (
-        <BackofficeSectionPanel>
-          <div id="service-settings-qq" role="tabpanel">
-            <section className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                QQ OAuth
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.qq_title', {}, 'QQ 快捷登录')}</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <div id="service-settings-qq" className="grid gap-3" role="tabpanel">
+            <div className="flex min-w-0 items-baseline gap-3">
+              <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.qq_title', {}, 'QQ 快捷登录')}</h2>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                 {t('admin.service_settings.qq_desc', {}, '回调地址由门户基础地址自动生成。这里仅保存 QQ 应用凭证和登录开关。')}
               </p>
             </div>
@@ -1140,12 +1597,25 @@ export default function AdminServiceSettingsPage() {
                 App ID
                 <input className={fieldClassName()} value={qqForm.client_id} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, client_id: event.target.value }))} />
               </label>
-              <label className={labelClassName()}>
-                App Secret {secretConfigured.qq
+              <AdminCredentialField
+                mode={secretConfigured.qq ? 'edit' : 'create'}
+                revealed={qqCredentialRevealed}
+                value={qqForm.client_secret}
+                label={`App Secret ${secretConfigured.qq
                   ? t('admin.service_settings.secret_configured_suffix', {}, '(configured)')
-                  : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}
-                <input className={fieldClassName()} type="password" value={qqForm.client_secret} disabled={loading} onChange={(event) => setQqForm((current) => ({ ...current, client_secret: event.target.value }))} placeholder={secretConfigured.qq ? t('admin.service_settings.qq_secret_keep_placeholder', {}, 'Leave empty to keep the current secret') : t('admin.service_settings.required_placeholder', {}, 'Required')} />
-              </label>
+                  : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}`}
+                unchangedLabel={t('admin.service_settings.credential_unchanged', {}, 'Current saved credential remains unchanged')}
+                replaceLabel={t('admin.service_settings.replace_credential', {}, 'Replace credential')}
+                cancelReplacementLabel={t('admin.service_settings.cancel_credential_replacement', {}, 'Cancel replacement')}
+                keepCurrentPlaceholder={t('admin.service_settings.qq_secret_keep_placeholder', {}, 'Leave empty to keep the current secret')}
+                density="compact"
+                onChange={(value) => setQqForm((current) => ({ ...current, client_secret: value }))}
+                onReveal={() => setQqCredentialRevealed(true)}
+                onCancelReplacement={() => {
+                  setQqCredentialRevealed(false);
+                  setQqForm((current) => ({ ...current, client_secret: '' }));
+                }}
+              />
               <div className="lg:col-span-2">
                 <div className={labelClassName()}>
                   {t('admin.service_settings.redirect_uri_label', {}, 'Redirect URL')}
@@ -1188,7 +1658,7 @@ export default function AdminServiceSettingsPage() {
                   <button type="button" className="btn btn-secondary" disabled={saving === 'qq-test' || activeGroupDirty || activeValidationIssues.length > 0} onClick={() => postJson('/api/admin/service-settings/qq-login/test', {}, 'qq-test', t('admin.service_settings.qq_test_done', {}, 'QQ login configuration check completed.'))}>
                     {t('admin.service_settings.check_qq', {}, 'Check QQ settings')}
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={saving === 'qq-login' || !activeGroupDirty || activeValidationIssues.length > 0}>
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={saving === 'qq-login' || !activeGroupDirty || activeValidationIssues.length > 0}>
                     {saving === 'qq-login'
                       ? t('admin.service_settings.saving', {}, 'Saving')
                       : t('admin.service_settings.save_qq', {}, '保存 QQ 配置')}
@@ -1196,24 +1666,20 @@ export default function AdminServiceSettingsPage() {
                 </div>
               </div>
             </form>
-            </section>
           </div>
-        </BackofficeSectionPanel>
       ) : null}
 
       {activeTab === 'email' ? (
-        <BackofficeSectionPanel>
-          <div id="service-settings-email" className="space-y-8" role="tabpanel">
+          <div id="service-settings-email" className="space-y-4" role="tabpanel">
             <section className="space-y-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    SMTP
-                  </p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.email_title', {}, 'Email delivery')}</h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  <div className="flex min-w-0 items-baseline gap-3">
+                  <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">{t('admin.service_settings.email_title', {}, 'Email delivery')}</h2>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                     {t('admin.service_settings.email_summary_desc', {}, '常用检查保留在页面上；低频 SMTP 字段需要编辑时再展开。')}
                   </p>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1324,12 +1790,25 @@ export default function AdminServiceSettingsPage() {
                   }
                 />
               </label>
-              <label className={labelClassName()}>
-                {t('admin.service_settings.smtp_password_label', {}, 'SMTP password')} {secretConfigured.email
+              <AdminCredentialField
+                mode={secretConfigured.email ? 'edit' : 'create'}
+                revealed={emailCredentialRevealed}
+                value={emailForm.smtp_password}
+                label={`${t('admin.service_settings.smtp_password_label', {}, 'SMTP password')} ${secretConfigured.email
                   ? t('admin.service_settings.secret_configured_suffix', {}, '(configured)')
-                  : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}
-                <input className={fieldClassName()} type="password" value={emailForm.smtp_password} disabled={loading} onChange={(event) => setEmailForm((current) => ({ ...current, smtp_password: event.target.value }))} placeholder={secretConfigured.email ? t('admin.service_settings.email_password_keep_placeholder', {}, 'Leave empty to keep the current password') : t('admin.service_settings.email_password_required_placeholder', {}, 'Required when username is set')} />
-              </label>
+                  : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}`}
+                unchangedLabel={t('admin.service_settings.credential_unchanged', {}, 'Current saved credential remains unchanged')}
+                replaceLabel={t('admin.service_settings.replace_credential', {}, 'Replace credential')}
+                cancelReplacementLabel={t('admin.service_settings.cancel_credential_replacement', {}, 'Cancel replacement')}
+                keepCurrentPlaceholder={t('admin.service_settings.email_password_keep_placeholder', {}, 'Leave empty to keep the current password')}
+                density="compact"
+                onChange={(value) => setEmailForm((current) => ({ ...current, smtp_password: value }))}
+                onReveal={() => setEmailCredentialRevealed(true)}
+                onCancelReplacement={() => {
+                  setEmailCredentialRevealed(false);
+                  setEmailForm((current) => ({ ...current, smtp_password: '' }));
+                }}
+              />
               <label className={labelClassName()}>
                 {t('admin.service_settings.from_email_label', {}, 'Sender email')}
                 <input
@@ -1443,58 +1922,58 @@ export default function AdminServiceSettingsPage() {
               </div>
             </section>
           </div>
-        </BackofficeSectionPanel>
       ) : null}
 
-      {emailPreviewOpen && typeof document !== 'undefined' ? createPortal((
-        <div className="fixed inset-0 z-50 bg-slate-950/35" role="presentation">
-          <div
-            ref={emailPreviewDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="email-preview-drawer-title"
-            tabIndex={-1}
-            className="ml-auto flex h-full w-full max-w-[60rem] flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
-          >
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  {t('admin.service_settings.email_preview_eyebrow', {}, 'Email preview')}
-                </p>
-                <h3 id="email-preview-drawer-title" className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">
-                  {t('admin.service_settings.email_preview_title', {}, '预览邮件效果')}
-                </h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {t(
-                    'admin.service_settings.email_preview_desc',
-                    {},
-                    '使用真实后端邮件模板生成样例。这里只预览，不发送邮件，也不会保存配置。'
-                  )}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={saving === 'email-preview'}
-                  onClick={() => void loadEmailPreview()}
-                >
-                  {saving === 'email-preview'
-                    ? t('admin.service_settings.email_preview_loading', {}, '生成中')
-                    : t('admin.service_settings.email_preview_refresh', {}, '生成预览')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setEmailPreviewOpen(false)}
-                >
-                  {t('admin.service_settings.email_preview_close', {}, '关闭预览')}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[18rem_1fr]">
-              <aside className="space-y-4 overflow-auto border-b border-slate-200 p-5 dark:border-slate-800 lg:border-b-0 lg:border-r">
+      <AdminWorkbenchDialog
+        open={emailPreviewOpen}
+        title={t('admin.service_settings.email_preview_title', {}, 'Preview email')}
+        titleId="email-preview-drawer-title"
+        headerAccessory={(
+          <span className="truncate text-xs text-slate-500 dark:text-slate-400">
+            {t(
+              'admin.service_settings.email_preview_desc',
+              {},
+              'Uses the real backend template for preview only; it does not send email or save settings.'
+            )}
+          </span>
+        )}
+        saving={false}
+        closeLabel={t('common.close', {}, 'Close')}
+        cancelLabel={t('common.cancel', {}, 'Cancel')}
+        saveLabel={t('admin.service_settings.email_preview_refresh', {}, 'Generate preview')}
+        savingLabel={t('admin.service_settings.email_preview_loading', {}, 'Generating')}
+        footerNotice={t(
+          'admin.service_settings.email_preview_desc',
+          {},
+          'Uses the real backend template for preview only; it does not send email or save settings.'
+        )}
+        footerActions={(
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={saving === 'email-preview'}
+              onClick={() => void loadEmailPreview()}
+            >
+              {saving === 'email-preview'
+                ? t('admin.service_settings.email_preview_loading', {}, 'Generating')
+                : t('admin.service_settings.email_preview_refresh', {}, 'Generate preview')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setEmailPreviewOpen(false)}
+            >
+              {t('admin.service_settings.email_preview_close', {}, 'Close preview')}
+            </button>
+          </div>
+        )}
+        density="compact"
+        onClose={() => setEmailPreviewOpen(false)}
+        onSubmit={() => void loadEmailPreview()}
+      >
+            <div className="grid h-[calc(100vh-10rem)] min-h-0 overflow-hidden lg:grid-cols-[16rem_1fr]">
+              <aside className="space-y-3 overflow-auto border-b border-slate-200 pr-4 dark:border-slate-800 lg:border-b-0 lg:border-r">
                 <label className={labelClassName()}>
                   {t('admin.service_settings.email_preview_type_label', {}, '邮件类型')}
                   <select
@@ -1515,7 +1994,7 @@ export default function AdminServiceSettingsPage() {
                   </select>
                 </label>
 
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="border-t border-slate-200 pt-3 text-sm dark:border-slate-800">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                     {t('admin.service_settings.email_preview_inbox_label', {}, 'Inbox header')}
                   </p>
@@ -1546,14 +2025,14 @@ export default function AdminServiceSettingsPage() {
                 </div>
               </aside>
 
-              <div className="flex min-h-0 flex-col overflow-hidden bg-slate-50 dark:bg-slate-900">
-                <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex min-h-0 flex-col overflow-hidden pl-4">
+                <div className="flex items-center justify-between border-b border-slate-200 bg-white pb-2 dark:border-slate-800 dark:bg-slate-950">
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                     {emailPreviewMode === 'html'
                       ? t('admin.service_settings.email_preview_html', {}, 'HTML 预览')
                       : t('admin.service_settings.email_preview_text', {}, '文本预览')}
                   </div>
-                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs dark:border-slate-800 dark:bg-slate-900">
+                  <div className="inline-flex border border-slate-200 bg-slate-50 p-0.5 text-xs dark:border-slate-800 dark:bg-slate-900">
                     <button
                       type="button"
                       className={`rounded-md px-2 py-1 ${emailPreviewMode === 'html' ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}
@@ -1594,22 +2073,16 @@ export default function AdminServiceSettingsPage() {
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      ), document.body) : null}
+      </AdminWorkbenchDialog>
 
       {activeTab === 'payment' ? (
-        <BackofficeSectionPanel>
-          <div id="service-settings-payment" className="space-y-8" role="tabpanel">
+          <div id="service-settings-payment" className="space-y-4" role="tabpanel">
             <section className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  Alipay
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+              <div className="flex min-w-0 items-baseline gap-3">
+                <h2 className="shrink-0 text-base font-semibold text-slate-950 dark:text-white">
                   {t('admin.service_settings.alipay_title', {}, '支付宝支付')}
                 </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                   {t('admin.service_settings.alipay_desc', {}, '保存支付宝网页支付所需凭证。密钥加密存储，不会在页面回显。')}
                 </p>
               </div>
@@ -1707,30 +2180,46 @@ export default function AdminServiceSettingsPage() {
                   </div>
                 </section>
 
-                <label className={labelClassName()}>
-                  {t('admin.service_settings.alipay_private_key_label', {}, '应用私钥')} {secretConfigured.alipayPrivateKey
+                <AdminCredentialField
+                  mode={secretConfigured.alipayPrivateKey ? 'edit' : 'create'}
+                  revealed={alipayPrivateKeyRevealed}
+                  value={alipayForm.private_key}
+                  label={`${t('admin.service_settings.alipay_private_key_label', {}, 'Application private key')} ${secretConfigured.alipayPrivateKey
                     ? t('admin.service_settings.secret_configured_suffix', {}, '(configured)')
-                    : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}
-                  <textarea
-                    className={`${fieldClassName()} min-h-32 font-mono`}
-                    value={alipayForm.private_key}
-                    disabled={loading}
-                    onChange={(event) => setAlipayForm((current) => ({ ...current, private_key: event.target.value }))}
-                    placeholder={secretConfigured.alipayPrivateKey ? t('admin.service_settings.secret_keep_placeholder', {}, '留空则保留当前密钥') : t('admin.service_settings.alipay_private_key_placeholder', {}, '粘贴 PEM 或支付宝工具导出的裸 Base64 应用私钥')}
-                  />
-                </label>
-                <label className={labelClassName()}>
-                  {t('admin.service_settings.alipay_public_key_label', {}, '支付宝公钥')} {secretConfigured.alipayPublicKey
+                    : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}`}
+                  unchangedLabel={t('admin.service_settings.credential_unchanged', {}, 'Current saved credential remains unchanged')}
+                  replaceLabel={t('admin.service_settings.replace_credential', {}, 'Replace credential')}
+                  cancelReplacementLabel={t('admin.service_settings.cancel_credential_replacement', {}, 'Cancel replacement')}
+                  keepCurrentPlaceholder={t('admin.service_settings.secret_keep_placeholder', {}, 'Leave empty to keep the current key')}
+                  density="compact"
+                  multiline
+                  onChange={(value) => setAlipayForm((current) => ({ ...current, private_key: value }))}
+                  onReveal={() => setAlipayPrivateKeyRevealed(true)}
+                  onCancelReplacement={() => {
+                    setAlipayPrivateKeyRevealed(false);
+                    setAlipayForm((current) => ({ ...current, private_key: '' }));
+                  }}
+                />
+                <AdminCredentialField
+                  mode={secretConfigured.alipayPublicKey ? 'edit' : 'create'}
+                  revealed={alipayPublicKeyRevealed}
+                  value={alipayForm.public_key}
+                  label={`${t('admin.service_settings.alipay_public_key_label', {}, 'Alipay public key')} ${secretConfigured.alipayPublicKey
                     ? t('admin.service_settings.secret_configured_suffix', {}, '(configured)')
-                    : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}
-                  <textarea
-                    className={`${fieldClassName()} min-h-32 font-mono`}
-                    value={alipayForm.public_key}
-                    disabled={loading}
-                    onChange={(event) => setAlipayForm((current) => ({ ...current, public_key: event.target.value }))}
-                    placeholder={secretConfigured.alipayPublicKey ? t('admin.service_settings.secret_keep_placeholder', {}, '留空则保留当前密钥') : t('admin.service_settings.alipay_public_key_placeholder', {}, '粘贴 PEM 或裸 Base64 支付宝公钥')}
-                  />
-                </label>
+                    : t('admin.service_settings.secret_missing_suffix', {}, '(not configured)')}`}
+                  unchangedLabel={t('admin.service_settings.credential_unchanged', {}, 'Current saved credential remains unchanged')}
+                  replaceLabel={t('admin.service_settings.replace_credential', {}, 'Replace credential')}
+                  cancelReplacementLabel={t('admin.service_settings.cancel_credential_replacement', {}, 'Cancel replacement')}
+                  keepCurrentPlaceholder={t('admin.service_settings.secret_keep_placeholder', {}, 'Leave empty to keep the current key')}
+                  density="compact"
+                  multiline
+                  onChange={(value) => setAlipayForm((current) => ({ ...current, public_key: value }))}
+                  onReveal={() => setAlipayPublicKeyRevealed(true)}
+                  onCancelReplacement={() => {
+                    setAlipayPublicKeyRevealed(false);
+                    setAlipayForm((current) => ({ ...current, public_key: '' }));
+                  }}
+                />
 
                 <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 lg:col-span-2 lg:flex-row lg:items-center lg:justify-between">
                   <div className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
@@ -1768,8 +2257,9 @@ export default function AdminServiceSettingsPage() {
               </form>
             </section>
           </div>
-        </BackofficeSectionPanel>
       ) : null}
+
+      </AdminSettingsWorkbench>
 
       <ConfirmModal
         isOpen={pendingTab !== null}

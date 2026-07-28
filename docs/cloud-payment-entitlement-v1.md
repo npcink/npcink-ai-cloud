@@ -64,6 +64,11 @@ not hosted runtime authorization truth.
 The first supported product policy is full refund inside a configured refund
 window, defaulting to 14 days.
 
+The refund window is enforced when the refund is requested. Paid credit packs
+are refundable only while none of their purchased credits have been consumed.
+Credit-pack purchase and payment confirmation both require the target
+subscription to remain `active` or `trialing`.
+
 Full refund success cancels the subscription created by the payment order and
 supersedes only entitlement snapshots for that subscription. It must not
 supersede unrelated subscriptions for the same account.

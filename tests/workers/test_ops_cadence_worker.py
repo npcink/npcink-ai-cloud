@@ -22,6 +22,73 @@ def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{tmp_path / 'ops-cadence-worker.sqlite3'}"
 
 
+def test_editor_assist_quality_detection_records_bounded_read_only_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeEditorAssistQualityService:
+        def __init__(self, database_url: str) -> None:
+            assert database_url == "sqlite+pysqlite:///:memory:"
+
+        def get_summary(self, *, window_hours: int) -> dict[str, object]:
+            assert window_hours == 168
+            return {
+                "contract_version": "editor_assist_quality.v1",
+                "totals": {
+                    "session_total": 65,
+                    "resolved_session_total": 60,
+                    "sample_stage": "observation",
+                },
+                "issue_candidates": [
+                    {
+                        "code": "editor_assist.repeat_pressure",
+                        "task_key": "content_summary",
+                        "confidence": "medium",
+                        "persistence": "sustained",
+                        "sample_size": 65,
+                        "actionable": False,
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(
+        ops_cadence_module,
+        "EditorAssistQualityService",
+        FakeEditorAssistQualityService,
+    )
+    settings = Settings(
+        project_name="Npcink AI Cloud Test",
+        environment="test",
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+
+    payload = ops_cadence_module._run_editor_assist_quality_detection(settings)
+
+    assert payload == {
+        "contract_version": "editor_assist_quality.v1",
+        "window_hours": 168,
+        "session_total": 65,
+        "resolved_session_total": 60,
+        "sample_stage": "observation",
+        "issue_candidate_total": 1,
+        "sustained_issue_candidate_total": 1,
+        "actionable_issue_candidate_total": 0,
+        "candidate_refs": [
+            {
+                "code": "editor_assist.repeat_pressure",
+                "task_key": "content_summary",
+                "confidence": "medium",
+                "persistence": "sustained",
+                "sample_size": 65,
+            }
+        ],
+        "read_only": True,
+        "production_mutation": False,
+        "automatic_evaluation_trigger": False,
+        "content_storage": "omitted_metadata_only",
+    }
+
+
 def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
     tmp_path: Path,
 ) -> None:
@@ -55,6 +122,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         "retention_cleanup",
         "plugin_observability_cleanup",
         "usage_rollup",
+        "editor_assist_quality_detection",
         "router_diagnostics_summary",
         "latency_probe_summary",
         "alert_provider_degradation",
@@ -108,7 +176,7 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
 
     service = CommercialService(database_url, settings=settings)
     first_events = service.list_service_audit_events(limit=20)["items"]
-    assert len(first_events) == 10
+    assert len(first_events) == 11
     cleanup_event = next(
         item for item in first_events if item["event_kind"] == "runtime.artifact_cleanup.cadence"
     )
@@ -120,6 +188,27 @@ def test_ops_cadence_worker_records_managed_task_audit_and_respects_intervals(
         == "runtime.artifact_inventory_reconciliation.cadence"
     )
     assert reconciliation_event["payload"] == artifact_reconciliation["payload"]
+    quality_detection = next(
+        item
+        for item in first_results
+        if item["task_id"] == "editor_assist_quality_detection"
+    )
+    assert quality_detection["payload"] == {
+        "contract_version": "editor_assist_quality.v1",
+        "window_hours": 168,
+        "session_total": 0,
+        "resolved_session_total": 0,
+        "sample_stage": "insufficient",
+        "issue_candidate_total": 0,
+        "sustained_issue_candidate_total": 0,
+        "actionable_issue_candidate_total": 0,
+        "candidate_refs": [],
+        "read_only": True,
+        "production_mutation": False,
+        "automatic_evaluation_trigger": False,
+        "content_storage": "omitted_metadata_only",
+        "interval_seconds": 86400,
+    }
 
     latest_created_at = datetime.fromisoformat(
         str(first_events[0]["created_at"]).replace("Z", "+00:00")

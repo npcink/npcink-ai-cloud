@@ -5,15 +5,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_portal_runtime_has_one_account_membership_authorization_source() -> None:
+def test_portal_runtime_requires_account_membership_and_principal_site_binding() -> None:
     app_sources = "\n".join(
         path.read_text(encoding="utf-8") for path in sorted((ROOT / "app").rglob("*.py"))
     )
     assert "site_user_grants" not in app_sources
     assert "SiteUserGrant" not in app_sources
+    assert "PrincipalSiteBinding" in app_sources
+    assert "principal_site_bindings" in app_sources
 
     service_routes = (ROOT / "app/api/routes/service.py").read_text(encoding="utf-8")
     assert '@router.post("/accounts/{account_id}/members")' in service_routes
+    assert "site_id: str = \"\"" in service_routes
     assert "/sites/{site_id}/user-grants" not in service_routes
 
 

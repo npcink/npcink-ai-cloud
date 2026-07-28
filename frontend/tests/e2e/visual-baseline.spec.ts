@@ -1,205 +1,62 @@
-/**
- * Cloud Frontend Visual Baseline Tests
- * 
- * 覆盖范围：
- * - Portal: /portal 主页面
- * - Portal Billing: /portal/billing 页面
- * - Admin: /admin 管理后台
- * 
- * 注意：这些测试需要运行在开发或生产环境中，并且需要适当的认证状态。
- * 对于需要登录的页面，测试会使用固定测试数据或预置认证状态。
- */
 import { expect, test } from '@playwright/test';
 
-/**
- * Portal 主页面视觉基线
- * 验证：成员访问状态、站点列表、预览上下文
- */
-test('cloud frontend visual baseline: portal page', async ({ page }) => {
+test('protected Portal routes return anonymous visitors to the current login entry', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/portal');
-
-  // 等待页面加载
-  await page.waitForLoadState('networkidle');
-
-  // 处理未登录状态 - 显示登录提示
-  const notSignedIn = page.getByText(/not signed in|please sign in|未登录/i).first();
-  if (await notSignedIn.isVisible()) {
-    // 截取未登录状态
-    await expect(page).toHaveScreenshot('portal-not-authenticated.png', {
-      fullPage: true,
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-      maxDiffPixelRatio: 0.02,
+  await page.route('**/api/portal/**', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        error_code: 'auth.portal_session_required',
+        message: 'auth.portal_session_required',
+        data: {},
+      }),
     });
-    return;
-  }
-
-  // 验证已登录状态的关键元素
-  await expect(
-    page.getByText(/Member-Gated Preview|成员预览面/i).first()
-  ).toBeVisible();
-
-  // 截取整个页面
-  await expect(page).toHaveScreenshot('portal-baseline.png', {
-    fullPage: true,
-    animations: 'disabled',
-    caret: 'hide',
-    scale: 'css',
-    maxDiffPixelRatio: 0.02,
   });
 
-  // 截取 Hero 区
-  const heroSection = page.locator('section').first();
-  if (await heroSection.isVisible()) {
-    await expect(heroSection).toHaveScreenshot('portal-hero.png', {
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-    });
-  }
-
-  // 截取站点列表
-  const sitesSection = page.locator('section').nth(1);
-  if (await sitesSection.isVisible()) {
-    await expect(sitesSection).toHaveScreenshot('portal-sites-grid.png', {
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-    });
+  for (const protectedPath of ['/portal', '/portal/billing']) {
+    await page.goto(protectedPath);
+    await expect(page).toHaveURL(/\/portal\/login\?redirect=/);
+    expect(new URL(page.url()).searchParams.get('redirect')).toBe(protectedPath);
+    await expect(
+      page.getByRole('heading', { name: /Log in to user service center|登录用户服务中心/i })
+    ).toBeVisible();
+    await expect(page.locator('[data-ui="portal-primary-nav"]')).toHaveCount(0);
   }
 });
 
-/**
- * Portal Billing 页面视觉基线
- * 验证：账单预览、对账信号、快照历史
- */
-test('cloud frontend visual baseline: portal billing page', async ({ page }) => {
+test('admin login gate keeps the current visual contract', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/portal/billing');
-
-  // 等待页面加载
-  await page.waitForLoadState('networkidle');
-
-  // 处理未登录状态
-  const notSignedIn = page.getByText(/not signed in|please sign in|未登录/i).first();
-  if (await notSignedIn.isVisible()) {
-    await expect(page).toHaveScreenshot('billing-not-authenticated.png', {
-      fullPage: true,
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-      maxDiffPixelRatio: 0.02,
+  await page.route('**/api/admin/**', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        error_code: 'auth.admin_session_required',
+        message: 'auth.admin_session_required',
+        data: {},
+      }),
     });
-    return;
-  }
-
-  // 验证已登录状态的关键元素
-  await expect(
-    page.getByText(/Billing Preview|账单预览/i).first()
-  ).toBeVisible();
-
-  // 截取整个页面
-  await expect(page).toHaveScreenshot('billing-baseline.png', {
-    fullPage: true,
-    animations: 'disabled',
-    caret: 'hide',
-    scale: 'css',
-    maxDiffPixelRatio: 0.02,
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+    window.localStorage.setItem('theme', 'light');
   });
 
-  // 截取对账面板
-  const reconciliationSection = page.locator('section').nth(1);
-  if (await reconciliationSection.isVisible()) {
-    await expect(reconciliationSection).toHaveScreenshot('billing-reconciliation-panel.png', {
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-    });
-  }
-});
-
-/**
- * Admin 管理后台视觉基线
- * 验证：运营快照、服务健康、运行时信号、控制甲板
- */
-test('cloud frontend visual baseline: admin page', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/admin');
-
-  // 等待页面加载
-  await page.waitForLoadState('networkidle');
-
-  // 处理未授权状态
-  const unauthorized = page.getByText(/unauthorized|access denied|未授权/i).first();
-  if (await unauthorized.isVisible()) {
-    await expect(page).toHaveScreenshot('admin-unauthorized.png', {
-      fullPage: true,
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-      maxDiffPixelRatio: 0.02,
-    });
-    return;
-  }
-
-  // 处理内部登录门禁状态
-  const internalOnlyGate = page
-    .getByText(/Internal Only|仅内部使用|僅供內部使用/i)
-    .first();
-  if (await internalOnlyGate.isVisible()) {
-    await expect(page).toHaveScreenshot('admin-login-gate.png', {
-      fullPage: true,
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-      maxDiffPixelRatio: 0.02,
-    });
-    return;
-  }
-
-  // 验证关键元素
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
   await expect(
-    page.getByText(/Operations Snapshot|运营快照|營運快照/i).first()
+    page.getByRole('heading', { name: /Log in to Admin|登录管理后台/i })
   ).toBeVisible();
-
-  // 截取整个页面
-  await expect(page).toHaveScreenshot('admin-baseline.png', {
+  await expect(page).toHaveScreenshot('admin-login-gate-current.png', {
     fullPage: true,
     animations: 'disabled',
     caret: 'hide',
     scale: 'css',
     maxDiffPixelRatio: 0.02,
   });
-
-  // 截取 Hero 区
-  const heroSection = page.locator('section').first();
-  if (await heroSection.isVisible()) {
-    await expect(heroSection).toHaveScreenshot('admin-hero.png', {
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-    });
-  }
-
-  // 截取服务健康面板
-  const healthSection = page.locator('section').nth(1);
-  if (await healthSection.isVisible()) {
-    await expect(healthSection).toHaveScreenshot('admin-service-health.png', {
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-    });
-  }
-
-  // 截取控制甲板
-  const controlDeckSection = page.locator('section').last();
-  if (await controlDeckSection.isVisible()) {
-    await expect(controlDeckSection).toHaveScreenshot('admin-control-deck.png', {
-      animations: 'disabled',
-      caret: 'hide',
-      scale: 'css',
-    });
-  }
 });

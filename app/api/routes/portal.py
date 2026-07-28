@@ -16,7 +16,9 @@ from app.adapters.notifications.smtp import build_portal_email_sender
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalBearerTokenError,
+    enforce_portal_email_change_request_rate_limit,
     enforce_portal_login_code_request_rate_limit,
+    enforce_portal_oauth_state_request_rate_limit,
     get_cloud_services,
     resolve_portal_login_code_ttl_seconds,
 )
@@ -48,8 +50,13 @@ from app.domain.agent_workflow_metadata import (
     get_workflow_metadata,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
-from app.domain.commercial.errors import CommercialPermissionError, CommercialServiceError
+from app.domain.commercial.errors import (
+    CommercialConflictError,
+    CommercialPermissionError,
+    CommercialServiceError,
+)
 from app.domain.commercial.identity import (
+    USER_ALLOWED_ACTION_MANAGE_BILLING,
     USER_ALLOWED_ACTION_PROVISION_SITES,
     USER_ALLOWED_ACTION_REMOVE_SITES,
     USER_ALLOWED_ACTION_VIEW_AUDIT,
@@ -63,6 +70,7 @@ from app.domain.observability.site_monitoring_overview import SiteMonitoringOver
 from app.domain.portal_idempotency import build_portal_business_idempotency_key
 from app.domain.service_settings import (
     resolve_portal_qq_runtime_config,
+    resolve_site_relink_policy,
 )
 from app.domain.site_knowledge.metrics import SiteKnowledgeObservabilityService
 from app.domain.usage.service import UsageService
@@ -92,39 +100,46 @@ class PortalAddonConnectionExchangePayload(BaseModel):
 
 
 class PortalLoginCodeRequestPayload(BaseModel):
-    email: str = ""
-    locale: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalLoginCodeVerifyPayload(BaseModel):
-    email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
     remember_me: bool = False
 
 
 class PortalEmailChangeRequestPayload(BaseModel):
-    new_email: str = ""
-    locale: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalEmailChangeVerifyPayload(BaseModel):
-    new_email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
 
 
 class PortalRegistrationCodeRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    email: str = ""
-    site_url: str = Field(default="", max_length=2048)
-    site_name: str = ""
-    use_case: str = ""
-    locale: str = ""
+    email: str = Field(default="", max_length=191)
+    locale: str = Field(default="", max_length=16)
 
 
 class PortalRegistrationVerifyPayload(BaseModel):
-    email: str = ""
-    code: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(default="", max_length=191)
+    code: str = Field(default="", max_length=32)
 
 
 class PortalQQBindPayload(BaseModel):
@@ -215,6 +230,8 @@ def _portal_public_site_data(value: object) -> dict[str, object]:
         "site_url": str(site.get("site_url") or ""),
         "platform_kind": str(site.get("platform_kind") or ""),
         "status": str(site.get("status") or ""),
+        "ownership_released_at": str(site.get("ownership_released_at") or ""),
+        "relink_cooldown_until": str(site.get("relink_cooldown_until") or ""),
         "created_at": str(site.get("created_at") or ""),
     }
 
@@ -304,12 +321,12 @@ def _portal_public_quota_summary_data(value: object) -> dict[str, object]:
         "period_start_at": str(summary.get("period_start_at") or ""),
         "period_end_at": str(summary.get("period_end_at") or ""),
         "status": str(summary.get("status") or ""),
-        "credit": _dict_value(summary.get("credit")),
-        "credit_ledger_summary": _dict_value(summary.get("credit_ledger_summary")),
-        "credit_policy": _dict_value(summary.get("credit_policy")),
+        "ai_credits": _dict_value(summary.get("ai_credits")),
+        "ai_credit_ledger_summary": _dict_value(summary.get("ai_credit_ledger_summary")),
+        "ai_credit_policy": _dict_value(summary.get("ai_credit_policy")),
         "resource_limits": _object_list(summary.get("resource_limits")),
         "breakdown": _object_list(summary.get("breakdown")),
-        "credit_usage_detail": _dict_value(summary.get("credit_usage_detail")),
+        "ai_credit_usage_detail": _dict_value(summary.get("ai_credit_usage_detail")),
     }
 
 
@@ -378,7 +395,7 @@ def _portal_plan_offer_data(value: object) -> dict[str, object]:
         "status": str(offer.get("status") or ""),
         "trial_enabled": bool(offer.get("trial_enabled")),
         "trial_days": int(offer.get("trial_days") or 0),
-        "trial_credit_limit": int(offer.get("trial_credit_limit") or 0),
+        "trial_ai_credit_limit": int(offer.get("trial_ai_credit_limit") or 0),
         "trial_requires_approval": bool(offer.get("trial_requires_approval")),
         "valid_from_at": str(offer.get("valid_from_at") or ""),
         "valid_until_at": str(offer.get("valid_until_at") or ""),
@@ -437,7 +454,7 @@ def _portal_plan_offer_trial_data(value: object) -> dict[str, object]:
         "tier_id": str(trial.get("tier_id") or ""),
         "highest_tier_id": str(trial.get("highest_tier_id") or ""),
         "trial_days": int(trial.get("trial_days") or 0),
-        "credit_limit": int(trial.get("credit_limit") or 0),
+        "ai_credit_limit": int(trial.get("ai_credit_limit") or 0),
         "trial_started_at": str(trial.get("trial_started_at") or ""),
         "trial_ends_at": str(trial.get("trial_ends_at") or ""),
     }
@@ -450,7 +467,7 @@ def _portal_started_trial_data(value: object) -> dict[str, object]:
         "status": str(trial.get("status") or ""),
         "tier_id": str(trial.get("tier_id") or ""),
         "trial_days": int(trial.get("trial_days") or 0),
-        "credit_limit": int(trial.get("credit_limit") or 0),
+        "ai_credit_limit": int(trial.get("ai_credit_limit") or 0),
         "trial_started_at": str(trial.get("trial_started_at") or ""),
         "trial_ends_at": str(trial.get("trial_ends_at") or ""),
         "monthly_price_cny": float(trial.get("monthly_price_cny") or 0),
@@ -483,7 +500,7 @@ def _portal_subscription_order_data(value: object) -> dict[str, object]:
         "order_kind": str(order.get("order_kind") or ""),
         "status": str(order.get("status") or ""),
         "list_amount": float(order.get("list_amount") or 0),
-        "credit_amount": float(order.get("credit_amount") or 0),
+        "ai_credit_amount": float(order.get("ai_credit_amount") or 0),
         "payable_amount": float(order.get("payable_amount") or 0),
         "currency": str(order.get("currency") or ""),
         "effective_at": str(order.get("effective_at") or ""),
@@ -617,10 +634,10 @@ def _portal_credit_ledger_entry_data(value: object) -> dict[str, object]:
             "explanation",
             "source_id",
             "run_id",
-            "credit_delta",
-            "consumed_credits",
-            "granted_credits",
-            "net_credit_delta",
+            "ai_credit_delta",
+            "consumed_ai_credits",
+            "granted_ai_credits",
+            "net_ai_credit_delta",
             "quantity",
             "unit",
             "rate",
@@ -643,7 +660,7 @@ def _portal_credit_breakdown_item_data(value: object) -> dict[str, object]:
             "unit",
             "rate",
             "rate_unit",
-            "credits",
+            "ai_credits",
             "capability_group",
         )
     }
@@ -653,19 +670,19 @@ def _portal_credit_summary_data(value: object) -> dict[str, object]:
     summary = _dict_value(value)
     category_totals = _dict_value(summary.get("category_totals"))
     return {
-        "total_credits": float(summary.get("total_credits") or 0),
-        "consumed_credits": float(summary.get("consumed_credits") or 0),
-        "granted_credits": float(summary.get("granted_credits") or 0),
-        "adjustment_credits": float(summary.get("adjustment_credits") or 0),
-        "refund_credits": float(summary.get("refund_credits") or 0),
-        "net_credit_delta": float(summary.get("net_credit_delta") or 0),
-        "net_used_credits": float(summary.get("net_used_credits") or 0),
+        "total_ai_credits": float(summary.get("total_ai_credits") or 0),
+        "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0),
+        "granted_ai_credits": float(summary.get("granted_ai_credits") or 0),
+        "adjustment_ai_credits": float(summary.get("adjustment_ai_credits") or 0),
+        "refund_ai_credits": float(summary.get("refund_ai_credits") or 0),
+        "net_ai_credit_delta": float(summary.get("net_ai_credit_delta") or 0),
+        "net_used_ai_credits": float(summary.get("net_used_ai_credits") or 0),
         "entry_count": int(summary.get("entry_count") or 0),
         "category_totals": {
             str(key): {
                 "label": str(_dict_value(item).get("label") or ""),
-                "net_credit_delta": float(
-                    _dict_value(item).get("net_credit_delta") or 0
+                "net_ai_credit_delta": float(
+                    _dict_value(item).get("net_ai_credit_delta") or 0
                 ),
             }
             for key, item in category_totals.items()
@@ -677,7 +694,7 @@ def _portal_credit_summary_data(value: object) -> dict[str, object]:
     }
 
 
-def _portal_credit_usage_detail_data(value: object) -> dict[str, object]:
+def _portal_ai_credit_usage_detail_data(value: object) -> dict[str, object]:
     detail = _dict_value(value)
     period = _dict_value(detail.get("period"))
     summary = _dict_value(detail.get("summary"))
@@ -721,8 +738,8 @@ def _portal_credit_usage_detail_data(value: object) -> dict[str, object]:
             for item in _object_list(detail.get("legend"))
         ],
         "portal_paths": {
-            "credit_usage": str(paths.get("credit_usage") or ""),
-            "credit_ledger": str(paths.get("credit_ledger") or ""),
+            "ai_credit_usage": str(paths.get("ai_credit_usage") or ""),
+            "ai_credit_ledger": str(paths.get("ai_credit_ledger") or ""),
         },
     }
 
@@ -740,7 +757,9 @@ def _portal_credit_ledger_data(
         "rate_version": str(ledger.get("rate_version") or ""),
         "pagination": _portal_pagination_data(ledger.get("pagination")),
         "summary": _portal_credit_summary_data(ledger.get("summary")),
-        "usage_detail": _portal_credit_usage_detail_data(ledger.get("usage_detail")),
+        "ai_credit_usage_detail": _portal_ai_credit_usage_detail_data(
+            ledger.get("ai_credit_usage_detail")
+        ),
         "items": [
             _portal_credit_ledger_entry_data(item)
             for item in _object_list(ledger.get("items"))
@@ -761,13 +780,13 @@ def _portal_credit_trend_data(value: object) -> dict[str, object]:
         "bucket_seconds": int(trend.get("bucket_seconds") or 0),
         "start_at": str(trend.get("start_at") or ""),
         "end_at": str(trend.get("end_at") or ""),
-        "total_credits": float(trend.get("total_credits") or 0),
+        "total_ai_credits": float(trend.get("total_ai_credits") or 0),
         "entry_count": int(trend.get("entry_count") or 0),
         "points": [
             {
                 "start_at": str(_dict_value(item).get("start_at") or ""),
                 "end_at": str(_dict_value(item).get("end_at") or ""),
-                "credits": float(_dict_value(item).get("credits") or 0),
+                "ai_credits": float(_dict_value(item).get("ai_credits") or 0),
                 "entry_count": int(_dict_value(item).get("entry_count") or 0),
             }
             for item in _object_list(trend.get("points"))
@@ -791,7 +810,7 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
         },
         "summary": {
             "event_count": int(summary.get("event_count") or 0),
-            "consumed_credits": float(summary.get("consumed_credits") or 0),
+            "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0),
         },
         "pagination": _portal_pagination_data(events.get("pagination")),
         "items": [
@@ -805,8 +824,8 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
                     "feature_label",
                     "feature_detail",
                     "created_at",
-                    "net_credit_delta",
-                    "consumed_credits",
+                    "net_ai_credit_delta",
+                    "consumed_ai_credits",
                     "direction",
                     "component_count",
                 )
@@ -815,7 +834,7 @@ def _portal_credit_events_data(value: object) -> dict[str, object]:
                 "components": [
                     {
                         "key": str(_dict_value(component).get("key") or ""),
-                        "credits": float(_dict_value(component).get("credits") or 0),
+                        "ai_credits": float(_dict_value(component).get("ai_credits") or 0),
                     }
                     for component in _object_list(_dict_value(item).get("components"))
                 ]
@@ -844,7 +863,7 @@ def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
         },
         "summary": {
             "bucket_count": int(summary.get("bucket_count") or 0),
-            "consumed_credits": float(summary.get("consumed_credits") or 0),
+            "consumed_ai_credits": float(summary.get("consumed_ai_credits") or 0),
         },
         "pagination": _portal_pagination_data(buckets.get("pagination")),
         "items": [
@@ -854,7 +873,7 @@ def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
                     "bucket_id",
                     "start_at",
                     "end_at",
-                    "consumed_credits",
+                    "consumed_ai_credits",
                     "event_count",
                     "site_count",
                     "top_feature_key",
@@ -866,8 +885,8 @@ def _portal_credit_event_buckets_data(value: object) -> dict[str, object]:
                         "feature_key": str(
                             _dict_value(total).get("feature_key") or ""
                         ),
-                        "consumed_credits": float(
-                            _dict_value(total).get("consumed_credits") or 0
+                        "consumed_ai_credits": float(
+                            _dict_value(total).get("consumed_ai_credits") or 0
                         ),
                         "event_count": int(
                             _dict_value(total).get("event_count") or 0
@@ -985,11 +1004,31 @@ def _portal_free_downgrade_data(value: object) -> dict[str, object]:
 
 def _portal_remove_site_data(value: object) -> dict[str, object]:
     result = _dict_value(value)
+    relink_policy = _dict_value(result.get("relink_policy"))
     return {
         "site": _portal_public_site_data(result.get("site")),
         "revoked_key_ids": [
             str(item) for item in _object_list(result.get("revoked_key_ids"))
         ],
+        "relink_policy": {
+            "enabled": bool(relink_policy.get("enabled")),
+            "cooldown_days": int(relink_policy.get("cooldown_days") or 0),
+            "same_account_reconnect_allowed": bool(
+                relink_policy.get("same_account_reconnect_allowed")
+            ),
+            "relink_available_at": str(
+                relink_policy.get("relink_available_at") or ""
+            ),
+        },
+    }
+
+
+def _portal_site_relink_policy_data(value: object) -> dict[str, object]:
+    policy = _dict_value(value)
+    return {
+        "enabled": bool(policy.get("enabled", True)),
+        "cooldown_days": int(policy.get("cooldown_days") or 90),
+        "same_account_reconnect_allowed": True,
     }
 
 
@@ -1366,6 +1405,45 @@ def _fetch_qq_openid(request: Request, *, access_token: str) -> dict[str, str]:
     }
 
 
+def _fetch_qq_profile(
+    request: Request,
+    *,
+    access_token: str,
+    openid: str,
+) -> dict[str, str]:
+    config = _portal_qq_config(request)
+    with httpx.Client(timeout=float(config.get("timeout_seconds") or 10.0)) as client:
+        response = client.get(
+            "https://graph.qq.com/user/get_user_info",
+            params={
+                "access_token": access_token,
+                "oauth_consumer_key": str(config.get("client_id") or "").strip(),
+                "openid": openid,
+                "format": "json",
+            },
+        )
+        response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or int(payload.get("ret") or 0) != 0:
+        raise CommercialServiceError(
+            502,
+            "portal.qq_profile_fetch_failed",
+            "QQ profile fetch failed",
+        )
+    avatar_url = str(
+        payload.get("figureurl_qq_2")
+        or payload.get("figureurl_qq_1")
+        or payload.get("figureurl_2")
+        or ""
+    ).strip()
+    if avatar_url.startswith("http://"):
+        avatar_url = f"https://{avatar_url.removeprefix('http://')}"
+    return {
+        "display_name": " ".join(str(payload.get("nickname") or "").split())[:80],
+        "avatar_url": avatar_url,
+    }
+
+
 def _portal_write_guard(request: Request) -> JSONResponse | None:
     return None
 
@@ -1452,6 +1530,15 @@ async def start_portal_qq_login(
     config_error = _portal_qq_config_error(request)
     if config_error is not None:
         return config_error
+    try:
+        enforce_portal_oauth_state_request_rate_limit(request)
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     nonce = secrets.token_urlsafe(32)
     issued = _get_commercial_service(request).issue_portal_oauth_state(
         provider="qq",
@@ -1560,27 +1647,19 @@ async def finish_qq_login_callback(
             unionid=str(subject.get("unionid") or ""),
         )
         if str(login.get("status") or "") == "binding_required":
-            redirect = _portal_oauth_return_response(
+            profile = _fetch_qq_profile(
                 request,
-                return_to=return_to,
-                status="binding_required",
+                access_token=str(token.get("access_token") or ""),
+                openid=str(subject.get("openid") or ""),
             )
-            if redirect is not None:
-                _clear_portal_qq_oauth_nonce_cookie(redirect)
-                return redirect
-            response = JSONResponse(
-                status_code=200,
-                content=_portal_route_envelope(
-                    message="portal QQ binding required",
-                    data={
-                        "status": "binding_required",
-                        "provider": str(login.get("provider") or "qq"),
-                        "return_to": return_to,
-                    },
-                ),
+            login = _get_commercial_service(request).register_portal_identity_provider_login(
+                provider="qq",
+                external_subject=str(subject.get("openid") or ""),
+                unionid=str(subject.get("unionid") or ""),
+                display_name=str(profile.get("display_name") or ""),
+                avatar_url=str(profile.get("avatar_url") or ""),
+                audit_context=_build_audit_context(request),
             )
-            _clear_portal_qq_oauth_nonce_cookie(response)
-            return response
         principal_id = str(login.get("principal_id") or "")
         data = serialize_portal_session(
             request,
@@ -1613,6 +1692,16 @@ async def finish_qq_login_callback(
         site_id=str(data.get("site_id") or ""),
     )
     _clear_portal_qq_oauth_nonce_cookie(response)
+    if _portal_prefers_html(request):
+        redirect = RedirectResponse(return_to, status_code=303)
+        set_portal_session_cookies(
+            request,
+            redirect,
+            principal_id=principal_id,
+            site_id=str(data.get("site_id") or ""),
+        )
+        _clear_portal_qq_oauth_nonce_cookie(redirect)
+        return redirect
     return response
 
 
@@ -1953,6 +2042,43 @@ def _resolve_selected_portal_account_access(
             message="portal account access is required",
         )
     return access
+
+
+def _resolve_portal_account_commercial_site_scope(
+    request: Request,
+    *,
+    principal_id: str,
+    account_id: str,
+    selected_site_id: str,
+    require_exclusive: bool = False,
+    allow_exclusive_account_scope: bool = False,
+) -> str | JSONResponse:
+    try:
+        scope = _get_commercial_service(request).resolve_portal_account_principal_scope(
+            account_id=account_id,
+            principal_id=principal_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    if require_exclusive and not bool(scope.get("is_exclusive")):
+        return _service_error_response(
+            CommercialConflictError(
+                "service.portal_shared_account_commercial_scope_ambiguous",
+                "account package changes require exclusive principal-owned site authority",
+            ),
+            request=request,
+        )
+    if allow_exclusive_account_scope and bool(scope.get("is_exclusive")):
+        return ""
+    normalized_site_id = str(selected_site_id or "").strip()
+    if not normalized_site_id:
+        return portal_json_error(
+            request,
+            status_code=409,
+            error_code="portal.site_selection_required",
+            message="portal site selection is required",
+        )
+    return normalized_site_id
 
 
 def _resolve_portal_addon_account_access(
@@ -2300,6 +2426,19 @@ async def request_portal_email_change_code(
             error_code="portal.email_change_invalid",
             message="new email is required",
         )
+    try:
+        enforce_portal_email_change_request_rate_limit(
+            request,
+            principal_id=auth.principal_id,
+            target_email=new_email,
+        )
+    except PortalBearerTokenError as error:
+        return portal_json_error(
+            request,
+            status_code=error.status_code,
+            error_code=error.error_code,
+            message=error.message,
+        )
     services = get_cloud_services(request)
     ttl_seconds = resolve_portal_login_code_ttl_seconds(services.settings)
     email_sender = services.portal_email_sender or build_portal_email_sender(
@@ -2380,6 +2519,13 @@ async def verify_portal_email_change_code(
             message="portal email change code and new email are required",
         )
     services = get_cloud_services(request)
+    renewed_session_metadata = build_new_portal_session_metadata(
+        request,
+        ttl_seconds=resolve_portal_login_session_ttl_seconds(
+            request,
+            remember_me=False,
+        ),
+    )
     try:
         changed = _get_commercial_service(request).verify_portal_email_change_code(
             principal_id=auth.principal_id,
@@ -2396,6 +2542,7 @@ async def verify_portal_email_change_code(
             principal_id=auth.principal_id,
             site_id=auth.site_id,
             strict_site=False,
+            session_metadata=renewed_session_metadata,
         )
     except CommercialServiceError as error:
         if error.error_code == "service.portal_email_change_code_invalid":
@@ -2411,7 +2558,7 @@ async def verify_portal_email_change_code(
         services.settings,
         database_url=services.settings.database_url,
     )
-    if email_sender is not None:
+    if email_sender is not None and str(changed.get("old_email") or "").strip():
         try:
             email_sender.send_email_changed_notice(
                 recipient_email=str(changed.get("old_email") or ""),
@@ -2422,14 +2569,24 @@ async def verify_portal_email_change_code(
             )
         except PortalEmailDeliveryError:
             pass
-    return _portal_route_envelope(
-        message="portal email changed",
-        data={
-            **data,
-            "old_email": str(changed.get("old_email") or ""),
-            "new_email": str(changed.get("new_email") or ""),
-        },
+    response = JSONResponse(
+        status_code=200,
+        content=_portal_route_envelope(
+            message="portal email changed",
+            data={
+                **data,
+                "old_email": str(changed.get("old_email") or ""),
+                "new_email": str(changed.get("new_email") or ""),
+            },
+        ),
     )
+    set_portal_session_cookies(
+        request,
+        response,
+        principal_id=auth.principal_id,
+        site_id=auth.site_id,
+    )
+    return response
 
 
 @router.post("/register/code/request")
@@ -2441,7 +2598,6 @@ async def request_portal_registration_code(
     if same_origin is not None:
         return same_origin
     email = payload.email.strip()
-    site_url = payload.site_url.strip()
     locale = resolve_portal_email_locale(request, payload.locale)
     if not email:
         return portal_json_error(
@@ -2476,9 +2632,6 @@ async def request_portal_registration_code(
     try:
         issued = _get_commercial_service(request).issue_portal_registration_code(
             email=email,
-            site_url=site_url,
-            site_name=payload.site_name,
-            use_case=payload.use_case,
             ttl_seconds=ttl_seconds,
         )
     except CommercialServiceError as error:
@@ -2667,6 +2820,19 @@ async def revoke_portal_session(request: Request) -> Any:
     same_origin = _portal_same_origin_guard(request, always=True)
     if same_origin is not None:
         return same_origin
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    try:
+        _get_commercial_service(request).revoke_portal_sessions(
+            principal_id=auth.principal_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
     return _portal_session_cleared_response()
 
 
@@ -2688,6 +2854,15 @@ async def list_portal_account_plan_offers(request: Request) -> Any:
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     try:
         offers = _get_commercial_service(request).list_account_plan_offers(account_id=account_id)
     except CommercialServiceError as error:
@@ -2720,14 +2895,23 @@ async def start_portal_account_plan_trial(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).start_account_plan_trial(
             account_id=account_id,
@@ -2771,19 +2955,29 @@ async def create_portal_account_subscription_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).create_account_subscription_payment_order(
             account_id=account_id,
             offer_id=payload.offer_id,
             provider=payload.provider,
+            site_id=auth.site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -2816,18 +3010,28 @@ async def cancel_portal_account_subscription_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).cancel_account_subscription_payment_order(
             account_id=account_id,
             subscription_order_id=subscription_order_id,
+            site_id=auth.site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -2857,14 +3061,23 @@ async def schedule_portal_account_free_downgrade(request: Request) -> Any:
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).schedule_account_free_downgrade(
             account_id=account_id,
@@ -2896,6 +3109,15 @@ async def get_portal_account_entitlements(request: Request) -> Any:
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+        require_exclusive=True,
+    )
+    if isinstance(commercial_scope, JSONResponse):
+        return commercial_scope
     try:
         quota_summary = _get_commercial_service(request).get_portal_account_quota_summary(
             account_id
@@ -2973,11 +3195,20 @@ async def get_portal_account_credit_ledger(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         ledger = _get_commercial_service(request).get_portal_account_credit_ledger(
             account_id,
             limit=limit,
             offset=offset,
+            site_id=commercial_site_scope or None,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3009,11 +3240,19 @@ async def get_portal_account_credit_trend(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     resolved_site_id = _validate_portal_account_site_filter(
         request,
         principal_id=auth.principal_id,
         account_id=account_id,
-        site_id=site_id,
+        site_id=site_id or commercial_site_scope,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(resolved_site_id, JSONResponse):
@@ -3059,11 +3298,19 @@ async def get_portal_account_credit_events(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     resolved_site_id = _validate_portal_account_site_filter(
         request,
         principal_id=auth.principal_id,
         account_id=account_id,
-        site_id=site_id,
+        site_id=site_id or commercial_site_scope,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(resolved_site_id, JSONResponse):
@@ -3113,11 +3360,19 @@ async def get_portal_account_credit_event_buckets(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     resolved_site_id = _validate_portal_account_site_filter(
         request,
         principal_id=auth.principal_id,
         account_id=account_id,
-        site_id=site_id,
+        site_id=site_id or commercial_site_scope,
         required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
     )
     if isinstance(resolved_site_id, JSONResponse):
@@ -3186,7 +3441,7 @@ async def create_portal_account_credit_pack_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3199,6 +3454,7 @@ async def create_portal_account_credit_pack_order(
             account_id=account_id,
             pack_id=payload.pack_id,
             provider=payload.provider,
+            site_id=auth.site_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -3234,9 +3490,18 @@ async def list_portal_account_payment_orders(
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         result = _get_commercial_service(request).list_account_payment_orders(
             account_id,
+            site_id=commercial_site_scope or None,
             status_group=status_group,
             limit=limit,
             offset=offset,
@@ -3267,10 +3532,19 @@ async def get_portal_account_payment_order(request: Request, order_id: str) -> A
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         order = _get_commercial_service(request).get_account_payment_order(
             account_id=account_id,
             order_id=order_id,
+            site_id=commercial_site_scope or None,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3302,18 +3576,27 @@ async def cancel_portal_account_payment_order(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
+    account_id = str(account_access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=auth.site_id,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
-    account_id = str(account_access.get("account_id") or "")
     try:
         result = _get_commercial_service(request).cancel_account_payment_order(
             account_id=account_id,
             order_id=order_id,
+            site_id=commercial_site_scope or None,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -3668,6 +3951,23 @@ async def submit_portal_support_request_feedback(
     )
 
 
+@router.get("/site-relink-policy")
+async def get_portal_site_relink_policy(request: Request) -> Any:
+    auth = await resolve_portal_request_context(
+        request,
+        require_idempotency=False,
+        allow_session_cookies=True,
+    )
+    if isinstance(auth, JSONResponse):
+        return auth
+    return _portal_route_envelope(
+        message="portal site relink policy loaded",
+        data=_portal_site_relink_policy_data(
+            resolve_site_relink_policy(_get_commercial_service(request).database_url)
+        ),
+    )
+
+
 @router.get("/addon-connection-accounts")
 async def list_portal_addon_connection_accounts(request: Request) -> Any:
     auth = await resolve_portal_request_context(
@@ -3765,10 +4065,14 @@ async def exchange_portal_addon_connection(
     request: Request,
     payload: PortalAddonConnectionExchangePayload,
 ) -> Any:
+    audit_context = _build_audit_context(request)
+    audit_context.actor_kind = "wordpress_addon"
+    audit_context.actor_ref = "pending_exchange"
     try:
         result = _get_commercial_service(request).consume_wordpress_addon_connection(
             code=payload.code,
             addon_state=payload.state,
+            audit_context=audit_context,
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -3808,6 +4112,7 @@ async def remove_portal_site(request: Request, site_id: str) -> Any:
     try:
         result = _get_commercial_service(request).remove_portal_site(
             site_id,
+            principal_id=auth.principal_id,
             audit_context=_build_portal_audit_context(request, auth.principal_id),
         )
     except CommercialServiceError as error:
@@ -4191,11 +4496,23 @@ async def get_portal_site_entitlements(request: Request, site_id: str) -> Any:
     )
     if isinstance(access, JSONResponse):
         return access
+    account_id = str(access.get("account_id") or "")
+    commercial_site_scope = _resolve_portal_account_commercial_site_scope(
+        request,
+        principal_id=auth.principal_id,
+        account_id=account_id,
+        selected_site_id=site_id,
+        allow_exclusive_account_scope=True,
+    )
+    if isinstance(commercial_site_scope, JSONResponse):
+        return commercial_site_scope
     try:
         commercial_service = _get_commercial_service(request)
         policy = commercial_service.inspect_commercial_policy(site_id)
-        quota_summary = commercial_service.get_portal_account_quota_summary(
-            str(access.get("account_id") or "")
+        quota_summary = (
+            commercial_service.get_portal_account_quota_summary(account_id)
+            if not commercial_site_scope
+            else {}
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
@@ -4346,7 +4663,7 @@ async def create_portal_site_credit_pack_order(
         request,
         site_id=site_id,
         principal_id=auth.principal_id,
-        required_action=USER_ALLOWED_ACTION_VIEW_BILLING,
+        required_action=USER_ALLOWED_ACTION_MANAGE_BILLING,
     )
     if isinstance(access, JSONResponse):
         return access

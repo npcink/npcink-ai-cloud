@@ -9,7 +9,7 @@ from typing import Literal
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.config import Settings
 from app.core.db import get_session
@@ -265,7 +265,14 @@ def _collect_records(
         PortalMutationIdempotencyReceipt.receipt_id
     )
     run_query = select(RunRecord).order_by(RunRecord.run_id)
-    site_query = select(Site).order_by(Site.site_id)
+    # This maintenance command intentionally runs against the historical 0068
+    # cutover schema. Load only the columns owned by that contract so later
+    # additive Site fields do not make the offline recovery path unreadable.
+    site_query = (
+        select(Site)
+        .options(load_only(Site.site_id, Site.metadata_json))
+        .order_by(Site.site_id)
+    )
     oauth_query = select(PortalOAuthState).order_by(PortalOAuthState.state_id)
     if lock:
         site_key_query = site_key_query.with_for_update()

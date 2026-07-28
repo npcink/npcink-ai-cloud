@@ -12,6 +12,7 @@ from app.core.db import require_database_connection
 from app.core.logging import configure_logging, get_logger
 from app.domain.catalog.service import CatalogService
 from app.domain.commercial.service import CommercialService, ServiceAuditContext
+from app.domain.observability.editor_assist_quality import EditorAssistQualityService
 from app.domain.observability.plugin_events import PluginObservabilityService
 from app.domain.runtime.service import RuntimeService
 from app.domain.usage.rollup import UsageRollupService
@@ -50,7 +51,13 @@ def _run_retention_cleanup(settings: Settings) -> dict[str, object]:
         settings.database_url,
         settings=settings,
     ).cleanup_expired_run_results()
-    return {"purged_runs": purged_runs}
+    portal_auth = CommercialService(
+        settings.database_url,
+        settings=settings,
+    ).cleanup_expired_portal_auth_evidence(
+        retention_days=settings.portal_auth_retention_days,
+    )
+    return {"purged_runs": purged_runs, "portal_auth": portal_auth}
 
 
 def _run_plugin_observability_cleanup(settings: Settings) -> dict[str, object]:
@@ -66,6 +73,49 @@ def _run_usage_rollup(settings: Settings) -> dict[str, object]:
         "sites_total": _coerce_int(result.get("sites_total")),
         "profile_rollups_total": _coerce_int(result.get("profile_rollups_total")),
         "instance_rollups_total": _coerce_int(result.get("instance_rollups_total")),
+    }
+
+
+def _run_editor_assist_quality_detection(settings: Settings) -> dict[str, object]:
+    summary = EditorAssistQualityService(settings.database_url).get_summary(
+        window_hours=168
+    )
+    raw_candidates = summary.get("issue_candidates")
+    candidates = (
+        [item for item in raw_candidates if isinstance(item, dict)]
+        if isinstance(raw_candidates, list)
+        else []
+    )
+    totals = _dict_value(summary.get("totals"))
+    return {
+        "contract_version": str(summary.get("contract_version") or ""),
+        "window_hours": 168,
+        "session_total": _coerce_int(totals.get("session_total")),
+        "resolved_session_total": _coerce_int(
+            totals.get("resolved_session_total")
+        ),
+        "sample_stage": str(totals.get("sample_stage") or "insufficient"),
+        "issue_candidate_total": len(candidates),
+        "sustained_issue_candidate_total": sum(
+            1 for item in candidates if item.get("persistence") == "sustained"
+        ),
+        "actionable_issue_candidate_total": sum(
+            1 for item in candidates if item.get("actionable") is True
+        ),
+        "candidate_refs": [
+            {
+                "code": str(item.get("code") or ""),
+                "task_key": str(item.get("task_key") or ""),
+                "confidence": str(item.get("confidence") or ""),
+                "persistence": str(item.get("persistence") or ""),
+                "sample_size": _coerce_int(item.get("sample_size")),
+            }
+            for item in candidates
+        ],
+        "read_only": True,
+        "production_mutation": False,
+        "automatic_evaluation_trigger": False,
+        "content_storage": "omitted_metadata_only",
     }
 
 
@@ -191,6 +241,12 @@ def cadence_task_specs() -> list[CadenceTaskSpec]:
             event_kind="usage.rollup_cadence",
             interval_seconds=lambda settings: settings.usage_rollup_interval_seconds,
             runner=_run_usage_rollup,
+        ),
+        CadenceTaskSpec(
+            task_id="editor_assist_quality_detection",
+            event_kind="editor_assist.quality_detection.cadence",
+            interval_seconds=lambda _settings: 24 * 60 * 60,
+            runner=_run_editor_assist_quality_detection,
         ),
         CadenceTaskSpec(
             task_id="router_diagnostics_summary",

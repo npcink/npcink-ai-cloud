@@ -6,13 +6,22 @@ Every AI development session should start with:
 
 1. Run `git status --short --branch`.
 2. Read `README.md`.
-3. Read the relevant boundary docs before editing:
+3. For feature, bug-fix, M4, or CI work, read
+   `docs/development-validation-operating-model-v1.md`.
+4. Read the relevant boundary docs before editing:
    - `docs/cloud-content-generation-boundary-v1.md`
    - `docs/cloud-task-pack-boundary-v1.md`
    - `docs/cloud-agent-workflow-metadata-projection-v1.md`
    - `docs/cloud-agent-feedback-quality-gate-v1.md`
-4. Briefly report the focused module, relevant Cloud boundary, and intended
+5. Briefly report the focused module, relevant Cloud boundary, and intended
    verification gate before editing.
+
+For any change under `frontend/src/app/admin/**` or
+`frontend/src/components/admin/**`, also read
+`docs/cloud-admin-ui-standard-v1.md` and inspect
+`frontend/admin-ui-manifest.json`. Before editing, report the route's declared
+page model, operator job, primary/secondary/destructive action hierarchy,
+shared primitives, low-frequency disclosure plan, and PC browser gate.
 
 ## Product Boundary
 
@@ -45,6 +54,25 @@ prompt/router/preset local truth, or WordPress write owner.
   into Cloud:
   `composer quality:matrix` for status and `composer quality:matrix:run` before
   cross-repo closeout.
+- Publish a completed clean topic branch with
+  `pnpm run pr:publish -- --title "<title>" --body-file <path>`. Start the body
+  from `.github/pull_request_template.md`; do not replace it with ad hoc
+  `gh pr create --body` text that omits `Scope`, `Boundary`, `Verification`, or
+  `Risk`.
+- Dependabot-authored PRs use the trusted bot contract documented in
+  `docs/pr-and-dependency-update-policy.md`. Do not manually weaken or bypass
+  that contract: bot identity, same-repository origin, `dependabot/*` branch,
+  `master` target, dependency-only changed files, and the from/to version
+  statement must all validate.
+- The publisher checks the current base-branch revision, creates the PR, and
+  requests protected squash auto-merge. It never bypasses required checks and
+  never deletes local or remote branches, because this repository commonly
+  uses multiple worktrees.
+- A PR targeting `production` must also contain
+  `Approved for production validation by operator.`; the publisher rejects a
+  production body without it.
+- The cross-repository contract is
+  `/Users/muze/gitee/npcink-workflow-toolbox/docs/platform/pr-publishing-standard-v1.md`.
 
 ## AI Production Operation Rules
 
@@ -72,11 +100,17 @@ prompt/router/preset local truth, or WordPress write owner.
 
 ## Verification Gates
 
-Default fast gate:
+Repository integration gate:
 
 ```bash
 pnpm run check:fast
 ```
+
+`check:fast` is not the default inner-loop command for every small edit. Start
+with the narrowest test, lint, type, or contract gate that covers the changed
+seam. Use `check:fast` when risk or integration closeout requires the combined
+contract/domain suite, and do not duplicate the same full gate for one revision
+without a distinct reason.
 
 Additional gates by scope:
 
@@ -89,3 +123,78 @@ pnpm run lint
 
 Before finishing a code session, run the narrowest useful gate and report
 exactly what passed or failed.
+
+Admin UI work must run:
+
+```bash
+pnpm run check:admin-ui
+```
+
+Material admin layout, table, dialog, or shared-primitive changes must also run:
+
+```bash
+pnpm run check:admin-ui:visual
+```
+
+Do not add an unclassified admin route, a route-local modal overlay, duplicated
+credential reveal behavior, or repeated admin geometry literals. Use the
+shared admin primitives and `--admin-*` tokens. Existing route-local dialogs
+are migration debt recorded in `frontend/admin-ui-manifest.json`; reduce that
+list over time and never grow it without an explicit reviewed exception.
+
+## M4 Preview Completion Protocol
+
+- Before M4-related development or operations, read
+  `docs/m4-preview-ai-development-standard-v1.md`. Classify the change as
+  local-only, Cloud source, or build/runtime, then use the smallest valid
+  verification lane defined there.
+- In the approved M4 workflow, the authoring Mac owns source edits, Git, and
+  operator commands only. Routine Cloud Docker build, execution, migration,
+  and runtime testing belong on M4; do not silently replace a failed or
+  unavailable M4 lane with local Docker.
+- A user-authorized Cloud source or build/runtime task also authorizes the
+  corresponding candidate preview action. After a coherent task checkpoint
+  and the narrowest useful local source/static gate, run `m4:preview:sync` or
+  `m4:preview:deploy` without waiting for the user to ask again.
+- Automatic checkpoint dispatch means an explicit agent action in the active
+  task. Do not add per-save watchers, background daemons, Git hooks, or
+  GitHub-hosted M4 deployment credentials. Batch related edits into a coherent
+  checkpoint; if source changes after validation, dispatch the candidate again
+  before claiming M4 evidence.
+- The default source path is the Tailscale-only source relay documented in
+  ADR-026. Keep the relay transient and private; it does not become source or
+  Git truth. Do not substitute its public SSH maintenance address or silently
+  fall back to direct transfer. Use the explicit direct fallback only when the
+  operator selects it for a bounded recovery.
+- The package proxy cache documented in ADR-027 is disposable M4 build state.
+  Preserve frozen-lockfile and package-manager integrity authority; do not
+  repurpose the cache as source, dependency, accepted-revision, relay, or
+  private-package truth. Recover by removing only its exact cache directory.
+- During the edit loop, prefer
+  `pnpm run m4:preview:test -- --focused <tests/path-or-node-id>`. Use
+  `--contract`, `--domain`, or `--full` only when that broader scope answers a
+  real risk question.
+- GitHub required checks are the merge authority. Do not routinely rerun the
+  same full contract/domain gate on M4 before and after a green CI result for
+  the same revision.
+- Direct `m4:preview:sync` and `m4:preview:deploy` operations are candidate
+  previews. They prove behavior but do not prove that the source reached
+  `master`.
+- Do not report an M4-validated change as accepted until its pull request is
+  merged into `master` and a clean, current `origin/master` worktree runs
+  `pnpm run m4:preview:promote -- --pr <number>`.
+- Promotion uses source sync by default. Add `--deploy` only when the command
+  reports that dependency, Dockerfile, lock-file, Compose, proxy, or deployment
+  script inputs require an M4 image rebuild.
+- Post-merge acceptance normally requires promotion, status, and the relevant
+  smoke; another full M4 suite requires a recorded M4-specific or high-risk
+  reason.
+- Final evidence must show `acceptance_state=accepted`, the merged PR number,
+  `source_branch=master`, `source_dirty=false`, and the current
+  `origin/master` revision in `m4:preview:status`.
+- GitHub rebase merge may replace feature commit SHAs. Use the merged PR,
+  current `origin/master`, and deployed source revision as the acceptance
+  chain; do not require the pre-merge feature SHA to remain an ancestor.
+- Keep M4 access operator-initiated. Do not add M4 SSH credentials to
+  GitHub-hosted CI or turn preview promotion into a second deployment control
+  plane.

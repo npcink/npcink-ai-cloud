@@ -24,25 +24,34 @@ budget using a currency label that made it look like the customer price.
 3. The package editor exposes two separate commercial values:
    - **Sales price (CNY):** the amount charged to the customer and snapshotted
      onto a new payment order.
-   - **Model cost budget (USD):** an internal provider-cost guardrail for one
-     package period. It is not a customer price or wallet balance.
+   - **Model cost budget (CNY):** an internal accounting guardrail for one
+     package period. It is not a customer price or wallet balance. Provider
+     cost evidence remains in its original USD amount and is converted through
+     the versioned accounting-rate contract in ADR-033.
 4. Publishing a paid package version synchronizes its standard Portal offer.
    New checkouts use that offer; existing orders keep their purchase-time
    amount and subject snapshots.
 5. The Alipay return page resolves and polls the exact internal order. Query
    parameters from the browser are only navigation hints and never proof of a
    successful payment.
+6. Audited operator grants and signed adjustments apply to the active package
+   period. Package remaining is the package limit plus the period's non-payment
+   ledger net delta, floored at zero. Positive operator grants therefore expand
+   current-period headroom; they do not create `paid_credit_grants` rows or
+   pretend to be payment-backed balance.
 
 ## Consequences
 
 - Portal quota shows package remaining, paid-credit remaining, and total
   available separately.
+- Package remaining and runtime authorization use the same operator-adjusted
+  ledger projection, so an accepted grant cannot exist only in audit history.
 - Paid-credit grants remain part of Cloud commercial service-plane truth; no
   WordPress write/control-plane responsibility moves into Cloud.
 - Refund handling can reduce only unspent paid-credit balance. Accounting and
   audit evidence is retained even when Portal history hides old closed orders.
-- Sales price and model cost budget may intentionally use different currencies
-  because they answer different business questions.
+- Sales price and model cost budget use CNY for consistent product and operator
+  decisions. Raw provider USD cost remains separately available as evidence.
 
 ## Rollback
 

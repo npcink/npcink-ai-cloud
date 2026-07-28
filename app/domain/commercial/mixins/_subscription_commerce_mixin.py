@@ -19,6 +19,8 @@ from app.core.models import (
     PLAN_OFFER_PURCHASE_MODE_SELF_SERVE,
     PLAN_OFFER_STATUS_ACTIVE,
     PLAN_OFFER_STATUS_RETIRED,
+    PLAN_STATUS_ACTIVE,
+    PLAN_VERSION_STATUS_PUBLISHED,
     SUBSCRIPTION_ORDER_KIND_DOWNGRADE,
     SUBSCRIPTION_ORDER_KIND_PURCHASE,
     SUBSCRIPTION_ORDER_KIND_RENEWAL,
@@ -63,12 +65,12 @@ STANDARD_PLAN_OFFERS: dict[str, dict[str, object]] = {
     "plus": {
         "offer_id": "plus_monthly_v1",
         "amount": Decimal("15.00"),
-        "trial_credit_limit": 3_000,
+        "trial_ai_credit_limit": 3_000,
     },
     "pro": {
         "offer_id": "pro_monthly_v1",
         "amount": Decimal("29.00"),
-        "trial_credit_limit": 5_000,
+        "trial_ai_credit_limit": 5_000,
     },
 }
 SUBSCRIPTION_PERIOD_DAYS = 30
@@ -79,17 +81,137 @@ MAX_PENDING_SUBSCRIPTION_ORDERS = 5
 
 
 class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
+    def list_public_plan_catalog(self) -> dict[str, object]:
+        """Return the bounded public package comparison without account context."""
+
+        now = cast(Any, self).now_factory()
+        tier_order = ("free", "plus", "pro", "agency")
+        with get_session(cast(Any, self).database_url) as session:
+            repository = CommercialRepository(session)
+            offers_by_tier = {
+                str(offer.tier_id): offer
+                for offer in repository.list_plan_offers(
+                    status=PLAN_OFFER_STATUS_ACTIVE,
+                    self_serve_only=True,
+                    now=now,
+                )
+            }
+            tiers: list[dict[str, object]] = []
+            for tier_id in tier_order:
+                offer = offers_by_tier.get(tier_id)
+                plan_version: PlanVersion | None = None
+                plan_active = False
+                if offer is not None:
+                    candidate = repository.get_plan_version(offer.plan_version_id)
+                    if (
+                        candidate is not None
+                        and candidate.status == PLAN_VERSION_STATUS_PUBLISHED
+                    ):
+                        plan_version = candidate
+                if plan_version is None:
+                    published_versions = repository.list_plan_versions(
+                        plan_id=tier_id,
+                        status=PLAN_VERSION_STATUS_PUBLISHED,
+                        limit=1,
+                    )
+                    if published_versions:
+                        plan_version = published_versions[0]
+
+                comparison: dict[str, object] = {}
+                if plan_version is not None:
+                    plan = repository.get_plan(plan_version.plan_id)
+                    plan_active = bool(
+                        plan is not None and plan.status == PLAN_STATUS_ACTIVE
+                    )
+                    comparison = self._serialize_plan_comparison_tier(
+                        tier_id=tier_id,
+                        plan_version=plan_version,
+                        label=str(getattr(plan, "name", "") or tier_id.title()),
+                        offer=offer,
+                    )
+
+                requires_offer = tier_id in {"plus", "pro"}
+                available = plan_version is not None and plan_active and (
+                    not requires_offer or offer is not None
+                )
+                tiers.append(
+                    {
+                        "tier_id": tier_id,
+                        "label": str(comparison.get("label") or tier_id.title()),
+                        "availability": "available" if available else "unavailable",
+                        "plan_id": str(comparison.get("plan_id") or tier_id),
+                        "plan_version_id": str(
+                            comparison.get("plan_version_id") or ""
+                        ),
+                        "monthly_points": comparison.get("monthly_points"),
+                        "site_limit": comparison.get("site_limit"),
+                        "concurrency_limit": comparison.get("concurrency_limit"),
+                        "batch_item_limit": comparison.get("batch_item_limit"),
+                        "amount": (
+                            0.0
+                            if tier_id == "free" and available
+                            else comparison.get("amount")
+                        ),
+                        "currency": str(comparison.get("currency") or "CNY"),
+                        "billing_cycle": comparison.get("billing_cycle"),
+                        "purchase_mode": (
+                            PLAN_OFFER_PURCHASE_MODE_QUOTE
+                            if tier_id == "agency"
+                            else str(
+                                comparison.get("purchase_mode")
+                                or (
+                                    "included"
+                                    if tier_id == "free"
+                                    else PLAN_OFFER_PURCHASE_MODE_SELF_SERVE
+                                )
+                            )
+                        ),
+                        "trial_enabled": bool(
+                            offer.trial_enabled if offer is not None else False
+                        ),
+                        "trial_days": int(
+                            offer.trial_days if offer is not None else 0
+                        ),
+                        "trial_requires_approval": bool(
+                            offer.trial_requires_approval
+                            if offer is not None
+                            else tier_id == "agency"
+                        ),
+                    }
+                )
+            return {
+                "tiers": tiers,
+                "tier_order": list(tier_order),
+                "shared_paid_trial": {
+                    "days": PAID_PACKAGE_TRIAL_DAYS,
+                    "one_per_customer": True,
+                    "self_serve_tiers": ["plus", "pro"],
+                    "approval_required_tiers": ["agency"],
+                },
+            }
+
     def list_account_plan_offers(self, *, account_id: str) -> dict[str, object]:
         now = cast(Any, self).now_factory()
         with get_session(cast(Any, self).database_url) as session:
             repository = CommercialRepository(session)
             self._require_commerce_account(repository, account_id)
             self._ensure_standard_plan_offers_in_session(repository)
-            offers = repository.list_plan_offers(
+            accessible_offers = repository.list_plan_offers(
                 account_id=account_id,
                 status=PLAN_OFFER_STATUS_ACTIVE,
                 now=now,
             )
+            canonical_standard_offer_ids = {
+                str(settings["offer_id"]) for settings in STANDARD_PLAN_OFFERS.values()
+            }
+            offers = [
+                offer
+                for offer in accessible_offers
+                if (
+                    offer.offer_id in canonical_standard_offer_ids
+                    or (offer.tier_id == "agency" and offer.account_id == account_id)
+                )
+            ]
             claim = repository.find_trial_claim(account_id=account_id)
             current = cast(Any, self)._select_primary_subscription(
                 repository.list_account_subscriptions(account_id)
@@ -139,7 +261,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         amount_cny: float,
         valid_days: int = 7,
         trial_enabled: bool = True,
-        trial_credit_limit: int = 20_000,
+        trial_ai_credit_limit: int = 20_000,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -155,7 +277,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "service.agency_quote_validity_invalid",
                 "Agency quote validity must be between 1 and 30 days",
             )
-        if trial_credit_limit < 0 or trial_credit_limit > AGENCY_TRIAL_CREDIT_LIMIT_MAX:
+        if trial_ai_credit_limit < 0 or trial_ai_credit_limit > AGENCY_TRIAL_CREDIT_LIMIT_MAX:
             raise CommercialValidationError(
                 "service.agency_trial_credit_limit_invalid",
                 "Agency trial credit limit must be between 0 and 20000",
@@ -191,7 +313,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 status=PLAN_OFFER_STATUS_ACTIVE,
                 trial_enabled=trial_enabled,
                 trial_days=PAID_PACKAGE_TRIAL_DAYS if trial_enabled else 0,
-                trial_credit_limit=trial_credit_limit if trial_enabled else 0,
+                trial_ai_credit_limit=trial_ai_credit_limit if trial_enabled else 0,
                 trial_requires_approval=True,
                 valid_from_at=now,
                 valid_until_at=now + timedelta(days=valid_days),
@@ -219,6 +341,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         account_id: str,
         offer_id: str,
         provider: str = "alipay",
+        site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -303,7 +426,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 target_tier=target_tier,
             )
             list_amount = self._money(offer.amount)
-            credit_amount = Decimal("0.00")
+            ai_credit_amount = Decimal("0.00")
             payable_amount = list_amount
             if (
                 current is not None
@@ -315,7 +438,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 payable_amount = self._money(
                     max(Decimal("0.00"), list_amount - current_price) * remaining_fraction
                 )
-                credit_amount = self._money(list_amount - payable_amount)
+                ai_credit_amount = self._money(list_amount - payable_amount)
                 if payable_amount <= Decimal("0.00"):
                     raise CommercialValidationError(
                         "service.subscription_upgrade_price_invalid",
@@ -359,7 +482,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             payment_order = repository.create_payment_order(
                 order_id=payment_order_id,
                 account_id=account_id,
-                site_id=None,
+                site_id=str(site_id or "").strip() or None,
                 subscription_id=(current.subscription_id if current is not None else None),
                 plan_id=offer.plan_id,
                 plan_version_id=offer.plan_version_id,
@@ -385,7 +508,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 order_kind=order_kind,
                 status=SUBSCRIPTION_ORDER_STATUS_PENDING_PAYMENT,
                 list_amount=list_amount,
-                credit_amount=credit_amount,
+                ai_credit_amount=ai_credit_amount,
                 payable_amount=payable_amount,
                 currency="CNY",
                 effective_at=effective_at,
@@ -418,6 +541,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         subscription_order_id: str,
+        site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -445,6 +569,11 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 if subscription_order.payment_order_id
                 else None
             )
+            if site_id and (payment_order is None or payment_order.site_id != site_id):
+                raise CommercialNotFoundError(
+                    "service.subscription_order_not_found",
+                    f"subscription order '{subscription_order_id}' was not found",
+                )
             if subscription_order.status == SUBSCRIPTION_ORDER_STATUS_CANCELED:
                 payload = {
                     "order": service._serialize_payment_order(payment_order)
@@ -516,7 +645,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
         principal_id: str = "",
         site_domain: str = "",
         approved_by_principal_id: str = "",
-        trial_credit_limit: int | None = None,
+        trial_ai_credit_limit: int | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -615,9 +744,9 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 repository=repository,
                 tier_id=normalized_tier,
             )
-            credit_limit = self._resolve_trial_credit_limit(
+            ai_credit_limit = self._resolve_trial_credit_limit(
                 tier_id=normalized_tier,
-                requested=trial_credit_limit,
+                requested=trial_ai_credit_limit,
             )
             if claim is None:
                 ends_at = now + timedelta(days=PAID_PACKAGE_TRIAL_DAYS)
@@ -631,7 +760,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     tier_id=normalized_tier,
                     highest_tier_id=normalized_tier,
                     status=TRIAL_CLAIM_STATUS_ACTIVE,
-                    credit_limit=credit_limit,
+                    ai_credit_limit=ai_credit_limit,
                     started_at=now,
                     ends_at=ends_at,
                     approved_by_principal_id=approved_by_principal_id or None,
@@ -642,7 +771,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 claim.plan_version_id = plan_version_id
                 claim.tier_id = normalized_tier
                 claim.highest_tier_id = normalized_tier
-                claim.credit_limit = max(claim.credit_limit, credit_limit)
+                claim.ai_credit_limit = max(claim.ai_credit_limit, ai_credit_limit)
                 if approved_by_principal_id:
                     claim.approved_by_principal_id = approved_by_principal_id
 
@@ -672,12 +801,12 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     "trial_days": PAID_PACKAGE_TRIAL_DAYS,
                     "trial_started_at": service._serialize_datetime(claim.started_at),
                     "trial_ends_at": service._serialize_datetime(claim.ends_at),
-                    "trial_credit_limit": claim.credit_limit,
+                    "trial_ai_credit_limit": claim.ai_credit_limit,
                     "fallback_tier_id": "free",
                 },
             )
             budgets = dict(snapshot.budgets_json or {})
-            budgets["max_ai_credits_per_period"] = claim.credit_limit
+            budgets["max_ai_credits_per_period"] = claim.ai_credit_limit
             snapshot.budgets_json = budgets
             payload = {
                 "subscription": service._serialize_subscription(subscription),
@@ -1282,10 +1411,10 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             trial_days=(
                 existing.trial_days if existing is not None else PAID_PACKAGE_TRIAL_DAYS
             ),
-            trial_credit_limit=(
-                existing.trial_credit_limit
+            trial_ai_credit_limit=(
+                existing.trial_ai_credit_limit
                 if existing is not None
-                else int(cast(int, settings["trial_credit_limit"]))
+                else int(cast(int, settings["trial_ai_credit_limit"]))
             ),
             trial_requires_approval=(
                 existing.trial_requires_approval if existing is not None else False
@@ -1315,6 +1444,13 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 "service.plan_offer_not_found",
                 "The selected package offer is not available",
             )
+        if offer.tier_id in STANDARD_PLAN_OFFERS:
+            canonical_offer_id = str(STANDARD_PLAN_OFFERS[offer.tier_id]["offer_id"])
+            if offer.account_id is not None or offer.offer_id != canonical_offer_id:
+                raise CommercialNotFoundError(
+                    "service.plan_offer_not_found",
+                    "The selected package offer is not available",
+                )
         if offer.valid_from_at and self._aware_datetime(offer.valid_from_at) > now:
             raise CommercialValidationError(
                 "service.plan_offer_not_started",
@@ -1426,7 +1562,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                     "Agency trial credit limit must be between 0 and 20000",
                 )
             return value
-        return int(cast(int, STANDARD_PLAN_OFFERS[tier_id]["trial_credit_limit"]))
+        return int(cast(int, STANDARD_PLAN_OFFERS[tier_id]["trial_ai_credit_limit"]))
 
     @staticmethod
     def _resolve_trial_site_domain(
@@ -1486,7 +1622,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             "status": offer.status,
             "trial_enabled": offer.trial_enabled,
             "trial_days": offer.trial_days,
-            "trial_credit_limit": offer.trial_credit_limit,
+            "trial_ai_credit_limit": offer.trial_ai_credit_limit,
             "trial_requires_approval": offer.trial_requires_approval,
             "valid_from_at": cast(Any, self)._serialize_datetime(offer.valid_from_at),
             "valid_until_at": cast(Any, self)._serialize_datetime(offer.valid_until_at),
@@ -1582,7 +1718,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             "order_kind": order.order_kind,
             "status": order.status,
             "list_amount": float(order.list_amount),
-            "credit_amount": float(order.credit_amount),
+            "ai_credit_amount": float(order.ai_credit_amount),
             "payable_amount": float(order.payable_amount),
             "currency": order.currency,
             "effective_at": cast(Any, self)._serialize_datetime(order.effective_at),
@@ -1599,7 +1735,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             "tier_id": str(getattr(claim, "tier_id", "") or ""),
             "highest_tier_id": str(getattr(claim, "highest_tier_id", "") or ""),
             "trial_days": PAID_PACKAGE_TRIAL_DAYS,
-            "credit_limit": int(getattr(claim, "credit_limit", 0) or 0),
+            "ai_credit_limit": int(getattr(claim, "ai_credit_limit", 0) or 0),
             "trial_started_at": cast(Any, self)._serialize_datetime(
                 getattr(claim, "started_at", None)
             ),

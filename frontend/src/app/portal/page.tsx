@@ -197,12 +197,21 @@ export default function PortalPage() {
   const currentSubscriptionStatusLabel = currentSubscription?.status === 'active' || hasPackageLabel
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
-  const remainingCredits = Number(accountEntitlements?.quota_summary?.credit?.remaining ?? 0);
-  const accountQuotaStatus = String(accountEntitlements?.quota_summary?.status || '');
+  const remainingCredits = Number(accountEntitlements?.quota_summary?.ai_credits?.remaining ?? 0);
+  const creditUnavailable =
+    String(accountEntitlements?.quota_summary?.ai_credits?.status || '') === 'limited';
+  const resourceOverLimit = Boolean(
+    accountEntitlements?.quota_summary?.resource_limits?.some((resource) => (
+      !resource.unlimited
+      && Number(resource.limit || 0) > 0
+      && Number(resource.used || 0) > Number(resource.limit || 0)
+    ))
+  );
   const currentServiceStatusToken =
     !selectedSite ||
     restrictedCount > 0 ||
-    accountQuotaStatus === 'limited' ||
+    creditUnavailable ||
+    resourceOverLimit ||
     (currentSubscription?.status && currentSubscription.status !== 'active')
       ? 'warning'
       : 'active';
@@ -218,9 +227,9 @@ export default function PortalPage() {
       size: 'compact' as const,
     },
     {
-      label: t('portal.usage.remaining_credits', {}, 'Remaining'),
+      label: t('portal.usage.remaining_ai_credits', {}, 'Remaining'),
       value: remainingCredits > 0 ? formatNumber(remainingCredits) : t('portal.home.package_pending_label', {}, 'To confirm'),
-      detail: t('portal.home.account_points_detail', {}, 'Account package points remaining this period.'),
+      detail: t('portal.home.account_points_detail', {}, 'Account package AI credits remaining this period.'),
       size: 'compact' as const,
     },
     {

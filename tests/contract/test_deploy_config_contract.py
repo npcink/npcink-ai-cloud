@@ -168,6 +168,9 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
     (fixture_github / "workflows").symlink_to(
         cloud_root / ".github" / "workflows", target_is_directory=True
     )
+    (fixture_github / "scripts").symlink_to(
+        cloud_root / ".github" / "scripts", target_is_directory=True
+    )
     (fixture_github / "dependabot.yml").write_text(dependabot_text)
 
     fixture_scripts = fixture_root / "scripts"
@@ -180,15 +183,19 @@ def _release_policy_fixture_root(tmp_path: Path, dependabot_text: str) -> Path:
         "bundle-images.sh",
         "alembic_revision_gate.py",
         "check-first-install-cve-gate.py",
+        "check-python-cve-upstream.py",
         "check-pg18-proof.sh",
         "check-pr-backend-gate.sh",
+        "classify-ci-changes.sh",
         "cloud-deploy-bundle-smoke-flow.sh",
         "dev-compose.sh",
         "dev-frontend-recover.sh",
         "local-alpha-smoke.sh",
         "production-image-supply.py",
         "production-python-extras-smoke.sh",
+        "publish-pr.sh",
         "pg18-semantic-proof.py",
+        "test-pr-body-contract.py",
         "verify-release-bundle-manifest.py",
     ):
         (fixture_scripts / name).symlink_to(cloud_root / "scripts" / name)
@@ -2298,8 +2305,13 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in ci_workflow
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in deploy_workflow
     assert "deploy_required:" in ci_workflow
-    assert ".github/workflows/ci.yml|.github/workflows/deploy-production.yml" in (ci_workflow)
-    assert "docker-compose*.yml|Dockerfile*|*/Dockerfile*|deploy/*.sh" in ci_workflow
+    ci_classifier = (
+        cloud_root / "scripts" / "classify-ci-changes.sh"
+    ).read_text()
+    assert ".github/workflows/ci.yml|.github/workflows/deploy-production.yml" in (
+        ci_classifier
+    )
+    assert "docker-compose*.yml|Dockerfile*|*/Dockerfile*|deploy/*.sh" in ci_classifier
     assert "needs: [classify, backend-scope]" in ci_workflow
     assert "needs['backend-scope'].outputs.requires_full_backend == '1'" in ci_workflow
     assert "should be skipped for a targeted PR" in ci_workflow
@@ -2311,7 +2323,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "load-plan" in remote_load_script
     assert "verify loaded image IDs" in remote_load_script
     assert "static_terms_only" in ci_workflow
-    assert "site/terms/*" in ci_workflow
+    assert "site/terms/*" in ci_classifier
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
     assert "backend-targeted:" in ci_workflow
@@ -2560,6 +2572,18 @@ def test_lightweight_release_policy_gate_is_documented(tmp_path: Path) -> None:
                     "timezone": "Asia/Shanghai",
                 },
                 "open-pull-requests-limit": 2,
+                "labels": ["dependencies"],
+            },
+            {
+                "package-ecosystem": "docker",
+                "directory": "/",
+                "schedule": {
+                    "interval": "weekly",
+                    "day": "monday",
+                    "time": "10:30",
+                    "timezone": "Asia/Shanghai",
+                },
+                "open-pull-requests-limit": 1,
                 "labels": ["dependencies"],
             },
         ],

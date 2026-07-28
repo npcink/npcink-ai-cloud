@@ -43,6 +43,17 @@ class PluginEventPayload(BaseModel):
     blocked_count: int | None = Field(default=None, ge=0, le=100_000)
     executed_count: int | None = Field(default=None, ge=0, le=100_000)
     failed_count: int | None = Field(default=None, ge=0, le=100_000)
+    quality_contract: str = Field(default="", max_length=64)
+    quality_session_id: str = Field(default="", max_length=191)
+    task_key: str = Field(default="", max_length=64)
+    object_scope_hash: str = Field(default="", max_length=128)
+    actor_scope_hash: str = Field(default="", max_length=128)
+    outcome: str = Field(default="", max_length=64)
+    outcome_confidence: str = Field(default="", max_length=32)
+    save_kind: str = Field(default="", max_length=32)
+    time_to_outcome_bucket: str = Field(default="", max_length=32)
+    generation_sequence: int | None = Field(default=None, ge=1, le=100_000)
+    content_storage: str = Field(default="", max_length=64)
 
 
 class PluginEventBatchPayload(BaseModel):

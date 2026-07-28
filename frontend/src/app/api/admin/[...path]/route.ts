@@ -38,7 +38,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Operator and diagnostic reads.
   {
     methods: ['GET'],
-    pattern: /^(?:overview|plugin-observability|media-observability|vector-observability|agent-feedback|runtime-telemetry|agent-workflow-metadata)$/,
+    pattern: /^(?:overview|plugin-observability|media-observability|vector-observability|agent-feedback|editor-assist-quality|runtime-telemetry|agent-workflow-metadata)$/,
     namespace: 'admin',
     requiredCapability: 'can_review_diagnostics',
   },
@@ -134,9 +134,9 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['GET'],
-    pattern: /^service-settings$/,
+    pattern: /^(?:service-settings|site-compliance)$/,
     namespace: 'admin',
-    // The existing session model has no service-settings capability.
+    // The existing session model has no service-settings/compliance capability.
     // The platform_admin identity/role gate remains the explicit authority.
   },
 
@@ -151,6 +151,12 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     methods: ['POST'],
     pattern: /^sites\/[^/]+\/activate$/,
     namespace: 'service',
+    requiredCapability: 'can_manage_accounts',
+  },
+  {
+    methods: ['PATCH'],
+    pattern: /^sites\/[^/]+\/relink-cooldown$/,
+    namespace: 'admin',
     requiredCapability: 'can_manage_accounts',
   },
   {
@@ -259,12 +265,22 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   },
   {
     methods: ['PATCH'],
-    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment)$/,
+    pattern: /^service-settings\/(?:portal-public|qq-login|email|alipay-payment|site-relink-policy|accounting-fx)$/,
     namespace: 'admin',
   },
   {
     methods: ['POST'],
     pattern: /^service-settings\/(?:qq-login\/test|email\/test|email\/preview|alipay-payment\/test)$/,
+    namespace: 'admin',
+  },
+  {
+    methods: ['PUT'],
+    pattern: /^site-compliance\/draft$/,
+    namespace: 'admin',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^site-compliance\/publish$/,
     namespace: 'admin',
   },
 ];

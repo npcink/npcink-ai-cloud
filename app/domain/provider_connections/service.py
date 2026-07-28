@@ -10,6 +10,10 @@ import httpx
 from sqlalchemy import select
 
 from app.adapters.providers.base import ProviderCatalogSnapshot
+from app.adapters.providers.openai import (
+    ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS,
+    normalize_provider_image_output_hosts,
+)
 from app.adapters.providers.registry import build_provider_adapter_from_connection
 from app.core.config import Settings
 from app.core.db import get_session
@@ -153,11 +157,18 @@ class ProviderConnectionAdminService:
 
             credential = normalized["credential"]
             if credential is not None:
-                row.secret_ciphertext = (
-                    encrypt_provider_connection_secret(credential, settings=self.settings)
-                    if credential
-                    else None
-                )
+                try:
+                    row.secret_ciphertext = (
+                        encrypt_provider_connection_secret(credential, settings=self.settings)
+                        if credential
+                        else None
+                    )
+                except RuntimeError as error:
+                    raise ProviderConnectionAdminError(
+                        "provider_connection.credential_storage_unavailable",
+                        "provider credential storage is unavailable",
+                        status_code=503,
+                    ) from error
 
             configured, credential_error = _credential_readiness(
                 self.settings,
@@ -602,6 +613,7 @@ class ProviderConnectionAdminService:
             )
         config = _dict(payload.get("config"))
         config = _sanitize_config(config)
+        config = _normalize_image_delivery_config(config)
         for key in SITE_KNOWLEDGE_VECTOR_VERIFICATION_CONFIG_KEYS:
             config.pop(key, None)
         capability_ids = _normalize_id_list(payload.get("capability_ids"))
@@ -846,6 +858,57 @@ def _normalize_id_list(value: object) -> list[str]:
         if not item or item in normalized:
             continue
         normalized.append(item[:128])
+    return normalized
+
+
+def _normalize_image_delivery_config(config: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(config)
+    response_format = _string(normalized.get("image_response_format")).lower()
+    if response_format and response_format not in ALLOWED_PROVIDER_IMAGE_RESPONSE_FORMATS:
+        raise ProviderConnectionAdminError(
+            "provider_connection.image_response_format_invalid",
+            "image_response_format must be url or b64_json",
+        )
+
+    raw_hosts = normalized.get("image_output_hosts")
+    if raw_hosts is None:
+        hosts_input: list[str] = []
+    elif isinstance(raw_hosts, str):
+        hosts_input = [item.strip() for item in raw_hosts.split(",") if item.strip()]
+    elif isinstance(raw_hosts, list):
+        if any(not isinstance(item, str) for item in raw_hosts):
+            raise ProviderConnectionAdminError(
+                "provider_connection.image_output_hosts_invalid",
+                "image_output_hosts must contain strings only",
+            )
+        hosts_input = list(raw_hosts)
+    else:
+        raise ProviderConnectionAdminError(
+            "provider_connection.image_output_hosts_invalid",
+            "image_output_hosts must be a list of exact host names",
+        )
+    try:
+        image_output_hosts = list(normalize_provider_image_output_hosts(hosts_input))
+    except ValueError as error:
+        raise ProviderConnectionAdminError(
+            "provider_connection.image_output_hosts_invalid",
+            "image_output_hosts must contain exact host names without schemes, paths, or wildcards",
+        ) from error
+
+    if response_format == "url" and not image_output_hosts:
+        raise ProviderConnectionAdminError(
+            "provider_connection.image_output_hosts_required",
+            "image_output_hosts is required when image_response_format is url",
+        )
+
+    if response_format:
+        normalized["image_response_format"] = response_format
+    else:
+        normalized.pop("image_response_format", None)
+    if image_output_hosts:
+        normalized["image_output_hosts"] = image_output_hosts
+    else:
+        normalized.pop("image_output_hosts", None)
     return normalized
 
 

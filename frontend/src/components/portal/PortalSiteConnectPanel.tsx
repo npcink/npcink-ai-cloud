@@ -116,6 +116,19 @@ export function PortalSiteConnectPanel({
         </p>
       </div>
 
+      <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+        <p className="font-semibold">
+          {t('portal.connect_site_ownership_title', undefined, 'Account and site ownership')}
+        </p>
+        <p className="mt-1 leading-6 text-blue-900/80 dark:text-blue-100/80">
+          {t(
+            'portal.connect_site_ownership_desc',
+            undefined,
+            'Free service and credits belong to the selected account, not this site. The same account may reconnect at any time; a different account requires the previous account to remove the site and wait for the Cloud cooldown to end.'
+          )}
+        </p>
+      </div>
+
       <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <label className="block">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-200">

@@ -499,7 +499,10 @@ def _resolve_data_classification(payload: RuntimePayload) -> str:
             WP_AI_CONNECTOR_VISION_DATA_CLASSIFICATION,
         )
     if _is_wordpress_ai_connector_payload(payload):
-        return WP_AI_CONNECTOR_DATA_CLASSIFICATION
+        return _resolve_feature_data_classification(
+            payload,
+            WP_AI_CONNECTOR_DATA_CLASSIFICATION,
+        )
     return payload.data_classification
 
 

@@ -6,6 +6,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { PortalAuthShell } from '@/components/portal/PortalAuthShell';
 import { PortalCard } from '@/components/portal/PortalScaffold';
+import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { useLocale } from '@/contexts/LocaleContext';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { useSession } from '@/hooks/useSession';
@@ -213,7 +214,7 @@ function LoginFormContent() {
         <>
           <PortalCard className="bg-white/70 dark:bg-slate-950/35">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-300">
-              {t('portal.register.free_label', undefined, 'Free')}
+              {t('portal.register.free_label', undefined, 'Free after connection')}
             </p>
             <h2 className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
               {t('portal.login.new_title', undefined, 'No account yet?')}
@@ -222,23 +223,31 @@ function LoginFormContent() {
               {t(
                 'portal.login.new_desc',
                 undefined,
-                'Create a Free account for one WordPress site, then come back to sign in with email.'
+                'Create your account, then connect from the WordPress addon to activate Free service.'
               )}
             </p>
             <Link href="/portal/register" className="btn btn-secondary mt-4 w-full justify-center">
-              {t('auth.create_free_account', undefined, 'Create a Free account')}
+              {t('auth.create_free_account', undefined, 'Create an account')}
             </Link>
           </PortalCard>
           <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
             {t(
               'auth.no_password',
               undefined,
-              'Portal sign-in is passwordless. New users can create a Free account and bind QQ quick login after signing in.'
+              'Portal sign-in is passwordless. Account creation does not provision a site or issue service credit.'
             )}
           </p>
         </>
       )}
     >
+      <div className="space-y-5">
+        <QqLoginButton returnTo={redirectTo} />
+        <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+          <span>{t('auth.or_email_code', undefined, 'or use an email code')}</span>
+          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+        </div>
+      </div>
       <form
                 onSubmit={form.step === 'request' ? handleRequestCode : handleVerifyCode}
                 className="space-y-5"
@@ -370,6 +379,17 @@ function LoginFormContent() {
                   ) : null}
                 </div>
       </form>
+      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+        {t('auth.legal_notice', undefined, 'By continuing, you agree to the Terms of Service and acknowledge the Privacy Policy.')}
+        {' '}
+        <Link href="/terms" className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+          {t('auth.terms_link', undefined, 'Terms')}
+        </Link>
+        {' · '}
+        <Link href="/privacy" className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+          {t('auth.privacy_link', undefined, 'Privacy')}
+        </Link>
+      </p>
     </PortalAuthShell>
   );
 }

@@ -4,13 +4,13 @@ import { resolve } from 'node:path';
 
 const page = readFileSync(resolve(process.cwd(), 'src/app/admin/ai-resources/page.tsx'), 'utf8');
 const directory = readFileSync(resolve(process.cwd(), 'src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
-const dialog = readFileSync(resolve(process.cwd(), 'src/components/admin/ProviderConnectionDialog.tsx'), 'utf8');
+const dialog = readFileSync(resolve(process.cwd(), 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const i18n = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
 
 assert.match(page, /<ModelSupplierTable[\s\S]*testingConnectionId=\{testingConnectionId\}[\s\S]*onTest=\{\(connectionId\) => void runProviderConnectionTest\(connectionId\)\}/, 'model suppliers must expose a bounded connection test flow');
-assert.match(directory, /selectedTestResult\?\.ok[\s\S]*role="status"[\s\S]*test_result_passed_inline/, 'successful supplier tests must render beside the selected supplier');
-assert.match(directory, /selectedTestResult && !selectedTestResult\.ok[\s\S]*role="alert"/, 'failed supplier tests must render beside the selected supplier');
-assert.match(directory, /selectedIsConfirmingDelete[\s\S]*role="alert"[\s\S]*delete_confirmation_notice/, 'delete confirmation must state impact in the selected supplier inspector');
+assert.match(directory, /data-feedback-for=\{connection\.connection_id\}[\s\S]*testResult\?\.ok[\s\S]*role="status"[\s\S]*test_result_passed_inline/, 'successful supplier tests must render beside the affected supplier row');
+assert.match(directory, /testResult && !testResult\.ok[\s\S]*role="alert"/, 'failed supplier tests must render beside the affected supplier row');
+assert.match(directory, /isConfirmingDelete[\s\S]*role="alert"[\s\S]*delete_confirmation_notice/, 'delete confirmation must state impact beside the affected supplier row');
 
 assert.match(dialog, /document\.body\.style\.overflow = 'hidden'/, 'provider configuration must prevent background scroll');
 assert.match(dialog, /event\.key === 'Escape'[\s\S]*onCloseRef\.current\(\)/, 'provider configuration must close with Escape while idle');

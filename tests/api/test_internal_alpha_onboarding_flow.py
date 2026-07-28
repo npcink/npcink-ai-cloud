@@ -160,7 +160,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
             "budgets": {
                 "max_runs_per_period": 0,
                 "max_tokens_per_period": 0,
-                "max_cost_per_period": 0,
+                "max_cost_cny_per_period": 0,
             },
             "concurrency": {"max_active_runs": 0},
             "metadata": {"package_alias": "pro"},
@@ -201,7 +201,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
     _post_internal(
         client,
         "/internal/service/accounts/acct_alpha_flow/members",
-        json_payload={"email": "alpha@example.com"},
+        json_payload={"email": "alpha@example.com", "site_id": site_id},
         idempotency_key="alpha-account-members-001",
     )
 
@@ -331,8 +331,8 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
     portal_audit_items = portal_audit_response.json()["data"]["items"]
     assert {item["event_kind"] for item in portal_audit_items} >= {
         "site.provision",
-        "site_key.issue",
         "wordpress_addon_connection.issue",
+        "wordpress_addon_connection.exchange",
     }
 
     admin_audit_response = client.get(

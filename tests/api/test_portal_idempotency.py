@@ -27,6 +27,7 @@ from app.core.models import (
     AccountUserMembership,
     PortalMutationIdempotencyReceipt,
     Principal,
+    PrincipalSiteBinding,
     Site,
     SupportRequest,
     SupportRequestMessage,
@@ -99,6 +100,16 @@ def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
                 metadata_json={},
             )
         )
+        session.add(
+            Site(
+                site_id="site_portal_idempotency_beta",
+                account_id="acct_portal_idempotency",
+                name="Portal Idempotency Beta Site",
+                status=SITE_STATUS_ACTIVE,
+                site_url="https://beta.idempotency.example.com",
+                metadata_json={},
+            )
+        )
         for suffix in ("alpha", "beta"):
             principal_id = f"prn_portal_idempotency_{suffix}"
             session.add(
@@ -121,6 +132,28 @@ def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
                     metadata_json={},
                 )
             )
+        session.add(
+            PrincipalSiteBinding(
+                binding_id="psb_portal_idempotency_alpha",
+                principal_id="prn_portal_idempotency_alpha",
+                site_id="site_portal_idempotency",
+                account_id="acct_portal_idempotency",
+                status="active",
+                bound_at=datetime.now(UTC),
+                metadata_json={"source": "test"},
+            )
+        )
+        session.add(
+            PrincipalSiteBinding(
+                binding_id="psb_portal_idempotency_beta",
+                principal_id="prn_portal_idempotency_beta",
+                site_id="site_portal_idempotency_beta",
+                account_id="acct_portal_idempotency",
+                status="active",
+                bound_at=datetime.now(UTC),
+                metadata_json={"source": "test"},
+            )
+        )
         session.commit()
 
     try:
@@ -136,11 +169,16 @@ def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
         dispose_engine(database_url)
 
 
-def _headers(principal: str, *, key: str = "") -> dict[str, str]:
+def _headers(
+    principal: str,
+    *,
+    key: str = "",
+    site_id: str = "site_portal_idempotency",
+) -> dict[str, str]:
     return build_portal_bearer_headers(
         principal_id=f"prn_portal_idempotency_{principal}",
         session_version=1,
-        site_id="site_portal_idempotency",
+        site_id=site_id,
         idempotency_key=key,
     )
 
@@ -281,8 +319,12 @@ def test_different_principals_may_reuse_the_same_key(
     )
     beta = client.post(
         PORTAL_PATH,
-        json=PORTAL_PAYLOAD,
-        headers=_headers("beta", key=PORTAL_KEY),
+        json={**PORTAL_PAYLOAD, "site_id": "site_portal_idempotency_beta"},
+        headers=_headers(
+            "beta",
+            key=PORTAL_KEY,
+            site_id="site_portal_idempotency_beta",
+        ),
     )
 
     assert alpha.status_code == 200, alpha.text

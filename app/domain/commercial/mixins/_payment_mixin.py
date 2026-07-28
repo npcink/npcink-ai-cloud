@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
@@ -18,6 +18,7 @@ from app.core.models import (
     PAYMENT_REFUND_STATUS_SUCCEEDED,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_CANCELED,
+    SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
     PaymentEvent,
     PaymentOrder,
@@ -411,7 +412,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     f"payment order '{order_id}' was not found",
                 )
             if order.account_id != account_id or (
-                site_id and order.site_id and order.site_id != site_id
+                site_id and order.site_id != site_id
             ):
                 raise CommercialNotFoundError(
                     "service.payment_order_not_found",
@@ -429,6 +430,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         order_id: str,
+        site_id: str | None = None,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
         service = cast(Any, self)
@@ -441,7 +443,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     f"account '{account_id}' was not found",
                 )
             order = repository.get_payment_order_for_update(order_id)
-            if order is None or order.account_id != account_id:
+            if (
+                order is None
+                or order.account_id != account_id
+                or (site_id and order.site_id != site_id)
+            ):
                 raise CommercialNotFoundError(
                     "service.payment_order_not_found",
                     f"payment order '{order_id}' was not found",
@@ -548,6 +554,14 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 raise CommercialValidationError(
                     "service.credit_pack_subscription_required",
                     "credit pack purchase requires a current account subscription",
+                )
+            if primary_subscription.status not in {
+                SUBSCRIPTION_STATUS_ACTIVE,
+                SUBSCRIPTION_STATUS_TRIALING,
+            }:
+                raise CommercialConflictError(
+                    "service.credit_pack_subscription_inactive",
+                    "credit pack purchase requires an active or trialing subscription",
                 )
             period_start_at, period_end_at = service._resolve_period(primary_subscription, now)
             order_id = f"pay_{uuid4().hex[:24]}"
@@ -744,7 +758,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "service.payment_order_not_found",
                     f"payment order '{order_id}' was not found",
                 )
-            if self._cancel_expired_pending_payment_order_in_session(order, now=now):
+            normalized_paid_at = self._normalize_payment_order_datetime(paid_at) or now
+            if self._cancel_expired_pending_payment_order_in_session(
+                order,
+                now=normalized_paid_at,
+            ):
                 cast(Any, self)._cancel_subscription_order_for_payment_in_session(
                     repository=repository,
                     payment_order_id=order.order_id,
@@ -755,10 +773,15 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "expired payment orders cannot be marked paid",
                 )
             if order.status == PAYMENT_ORDER_STATUS_CANCELED:
-                raise CommercialConflictError(
-                    "service.payment_order_canceled",
-                    "canceled payment orders cannot be marked paid",
-                )
+                if not self._restore_expired_order_for_timely_payment_in_session(
+                    order,
+                    paid_at=paid_at,
+                    reconciled_at=now,
+                ):
+                    raise CommercialConflictError(
+                        "service.payment_order_canceled",
+                        "canceled payment orders cannot be marked paid",
+                    )
             if order.status == PAYMENT_ORDER_STATUS_REFUNDED:
                 raise CommercialConflictError(
                     "service.payment_order_already_refunded",
@@ -786,7 +809,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     order=order,
                     event=event,
                     provider_trade_no=provider_trade_no,
-                    paid_at=paid_at or now,
+                    paid_at=normalized_paid_at,
                     audit_context=audit_context,
                 )
                 session.commit()
@@ -799,7 +822,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     order=order,
                     event=event,
                     provider_trade_no=provider_trade_no,
-                    paid_at=paid_at or now,
+                    paid_at=normalized_paid_at,
                     audit_context=audit_context,
                 )
                 session.commit()
@@ -819,7 +842,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             order.provider_trade_no = (
                 str(provider_trade_no or "").strip() or order.provider_trade_no
             )
-            order.paid_at = paid_at or now
+            order.paid_at = normalized_paid_at
             subscription_id = order.subscription_id or f"sub_{order.order_id}"
             service._cancel_covered_subscriptions_for_replacement(
                 repository=repository,
@@ -913,6 +936,14 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 repository=repository,
                 payment_order=order,
             )
+            refund_window_end_at = self._normalize_payment_order_datetime(
+                order.refund_window_end_at
+            )
+            if refund_window_end_at is not None and now > refund_window_end_at:
+                raise CommercialConflictError(
+                    "service.payment_refund_window_expired",
+                    "the payment order refund window has expired",
+                )
             refund_amount = self._normalize_payment_amount(
                 order.amount if amount is None else float(amount)
             )
@@ -931,7 +962,35 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                     "service.payment_refund_amount_invalid",
                     "refund requests cannot exceed the remaining paid amount",
                 )
-            refund_id = f"ref_{uuid4().hex[:24]}"
+            if self._payment_order_purchase_kind(order) == "credit_pack":
+                grant = repository.get_paid_credit_grant_by_order(
+                    order.order_id,
+                    for_update=True,
+                )
+                if grant is None:
+                    raise CommercialConflictError(
+                        "service.credit_pack_refund_grant_missing",
+                        "credit pack refund requires its paid credit grant",
+                    )
+                consumed_ai_credits = round(
+                    max(
+                        0.0,
+                        float(grant.original_ai_credits or 0.0)
+                        - float(grant.remaining_ai_credits or 0.0)
+                        - float(grant.refunded_ai_credits or 0.0),
+                    ),
+                    6,
+                )
+                if consumed_ai_credits > 0:
+                    raise CommercialConflictError(
+                        "service.credit_pack_refund_credits_consumed",
+                        "credit packs cannot be refunded after any purchased credits are consumed",
+                    )
+            refund_id = self._build_payment_refund_id(
+                provider=order.provider,
+                order_id=order.order_id,
+                idempotency_key=idempotency_key,
+            )
             refund_metadata = dict(metadata_json or {})
             gateway = get_payment_gateway_provider(
                 order.provider,
@@ -979,6 +1038,30 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 scope_id=refund.refund_id,
                 payload_json=payload,
             )
+            if str(gateway_refund.provider_payload.get("refund_status") or "") == "succeeded":
+                event = self._record_payment_event_once(
+                    repository=repository,
+                    provider=refund.provider,
+                    event_kind="refund.succeeded",
+                    order_id=refund.order_id,
+                    refund_id=refund.refund_id,
+                    provider_event_id=f"{refund.provider}:refund:{refund.refund_id}",
+                    idempotency_key=f"refund-success:{refund.refund_id}",
+                    payload_json=self._sanitize_payload_dict(gateway_refund.provider_payload) or {},
+                    processed_at=now,
+                )
+                succeeded_payload = self._apply_payment_refund_succeeded_in_session(
+                    repository=repository,
+                    order=order,
+                    refund=refund,
+                    event=event,
+                    provider_refund_no=str(
+                        gateway_refund.provider_payload.get("provider_refund_no") or ""
+                    ),
+                    succeeded_at=now,
+                    audit_context=audit_context,
+                )
+                payload = cast(dict[str, object], succeeded_payload["refund"])
             session.commit()
             return payload
 
@@ -1020,91 +1103,112 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 payload_json=self._sanitize_payload_dict(raw_event or {}) or {},
                 processed_at=now,
             )
-            if self._payment_order_purchase_kind(order) == "credit_pack":
-                payload = self._mark_credit_pack_refund_succeeded_in_session(
-                    repository=repository,
-                    order=order,
-                    refund=refund,
-                    event=event,
-                    provider_refund_no=provider_refund_no,
-                    succeeded_at=succeeded_at or now,
-                    audit_context=audit_context,
-                )
-                session.commit()
-                return payload
-            if refund.status != PAYMENT_REFUND_STATUS_SUCCEEDED:
-                refund.status = PAYMENT_REFUND_STATUS_SUCCEEDED
-                refund.provider_refund_no = (
-                    str(provider_refund_no or "").strip() or refund.provider_refund_no
-                )
-                refund.succeeded_at = succeeded_at or now
-            revoked_subscription = None
-            restored_subscription = None
-            succeeded_refund_amount = sum(
-                float(item.amount)
-                for item in repository.list_payment_refunds(order.order_id)
-                if item.status == PAYMENT_REFUND_STATUS_SUCCEEDED
-            )
-            full_refund = round(succeeded_refund_amount, 6) >= round(float(order.amount), 6)
-            if full_refund and order.status != PAYMENT_ORDER_STATUS_REFUNDED:
-                order.status = PAYMENT_ORDER_STATUS_REFUNDED
-                order.refunded_at = refund.succeeded_at or now
-                is_subscription_order = bool(
-                    str((order.metadata_json or {}).get("subscription_order_id") or "")
-                )
-                if is_subscription_order:
-                    revoked_subscription = (
-                        repository.get_subscription(order.subscription_id)
-                        if order.subscription_id
-                        else None
-                    )
-                    restored_subscription = cast(
-                        Any, self
-                    )._restore_subscription_order_after_full_refund_in_session(
-                        repository=repository,
-                        order=order,
-                        now=refund.succeeded_at or now,
-                    )
-                elif order.subscription_id:
-                    subscription = self._require_subscription(repository, order.subscription_id)
-                    subscription.status = SUBSCRIPTION_STATUS_CANCELED
-                    subscription.canceled_at = refund.succeeded_at or now
-                    repository.supersede_entitlement_snapshots(
-                        order.account_id,
-                        subscription_id=subscription.subscription_id,
-                    )
-                    revoked_subscription = subscription
-            payload = {
-                "order": self._serialize_payment_order(order),
-                "refund": self._serialize_payment_refund(refund),
-                "payment_event": self._serialize_payment_event(event),
-                "revoked_subscription": (
-                    service._serialize_subscription(revoked_subscription)
-                    if revoked_subscription is not None
-                    else {}
-                ),
-                "restored_subscription": (
-                    service._serialize_subscription(restored_subscription)
-                    if restored_subscription is not None
-                    else {}
-                ),
-            }
-            service._record_service_audit_in_session(
+            payload = self._apply_payment_refund_succeeded_in_session(
                 repository=repository,
+                order=order,
+                refund=refund,
+                event=event,
+                provider_refund_no=provider_refund_no,
+                succeeded_at=succeeded_at or now,
                 audit_context=audit_context,
-                event_kind="payment.refund.succeeded",
-                outcome="succeeded",
-                account_id=order.account_id,
-                site_id=order.site_id,
-                subscription_id=order.subscription_id,
-                plan_id=order.plan_id,
-                plan_version_id=order.plan_version_id,
-                scope_kind="payment_refund",
-                scope_id=refund.refund_id,
-                payload_json=payload,
             )
             session.commit()
             return payload
+
+    def _apply_payment_refund_succeeded_in_session(
+        self,
+        *,
+        repository: CommercialRepository,
+        order: PaymentOrder,
+        refund: PaymentRefund,
+        event: PaymentEvent,
+        provider_refund_no: str,
+        succeeded_at: datetime,
+        audit_context: ServiceAuditContext | None,
+    ) -> dict[str, object]:
+        service = cast(Any, self)
+        if self._payment_order_purchase_kind(order) == "credit_pack":
+            return self._mark_credit_pack_refund_succeeded_in_session(
+                repository=repository,
+                order=order,
+                refund=refund,
+                event=event,
+                provider_refund_no=provider_refund_no,
+                succeeded_at=succeeded_at,
+                audit_context=audit_context,
+            )
+        if refund.status != PAYMENT_REFUND_STATUS_SUCCEEDED:
+            refund.status = PAYMENT_REFUND_STATUS_SUCCEEDED
+            refund.provider_refund_no = (
+                str(provider_refund_no or "").strip() or refund.provider_refund_no
+            )
+            refund.succeeded_at = succeeded_at
+        revoked_subscription = None
+        restored_subscription = None
+        succeeded_refund_amount = sum(
+            float(item.amount)
+            for item in repository.list_payment_refunds(order.order_id)
+            if item.status == PAYMENT_REFUND_STATUS_SUCCEEDED
+        )
+        full_refund = round(succeeded_refund_amount, 6) >= round(float(order.amount), 6)
+        if full_refund and order.status != PAYMENT_ORDER_STATUS_REFUNDED:
+            order.status = PAYMENT_ORDER_STATUS_REFUNDED
+            order.refunded_at = refund.succeeded_at or succeeded_at
+            is_subscription_order = bool(
+                str((order.metadata_json or {}).get("subscription_order_id") or "")
+            )
+            if is_subscription_order:
+                revoked_subscription = (
+                    repository.get_subscription(order.subscription_id)
+                    if order.subscription_id
+                    else None
+                )
+                restored_subscription = cast(
+                    Any, self
+                )._restore_subscription_order_after_full_refund_in_session(
+                    repository=repository,
+                    order=order,
+                    now=refund.succeeded_at or succeeded_at,
+                )
+            elif order.subscription_id:
+                subscription = self._require_subscription(repository, order.subscription_id)
+                subscription.status = SUBSCRIPTION_STATUS_CANCELED
+                subscription.canceled_at = refund.succeeded_at or succeeded_at
+                repository.supersede_entitlement_snapshots(
+                    order.account_id,
+                    subscription_id=subscription.subscription_id,
+                )
+                revoked_subscription = subscription
+        payload = {
+            "order": self._serialize_payment_order(order),
+            "refund": self._serialize_payment_refund(refund),
+            "payment_event": self._serialize_payment_event(event),
+            "revoked_subscription": (
+                service._serialize_subscription(revoked_subscription)
+                if revoked_subscription is not None
+                else {}
+            ),
+            "restored_subscription": (
+                service._serialize_subscription(restored_subscription)
+                if restored_subscription is not None
+                else {}
+            ),
+        }
+        service._record_service_audit_in_session(
+            repository=repository,
+            audit_context=audit_context,
+            event_kind="payment.refund.succeeded",
+            outcome="succeeded",
+            account_id=order.account_id,
+            site_id=order.site_id,
+            subscription_id=order.subscription_id,
+            plan_id=order.plan_id,
+            plan_version_id=order.plan_version_id,
+            scope_kind="payment_refund",
+            scope_id=refund.refund_id,
+            payload_json=payload,
+        )
+        return payload
 
     def verify_payment_gateway_callback(
         self,
@@ -1217,6 +1321,14 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 "service.credit_pack_subscription_mismatch",
                 "credit pack target subscription does not belong to the order account",
             )
+        if subscription.status not in {
+            SUBSCRIPTION_STATUS_ACTIVE,
+            SUBSCRIPTION_STATUS_TRIALING,
+        }:
+            raise CommercialConflictError(
+                "service.credit_pack_subscription_inactive",
+                "credit pack payment requires an active or trialing subscription",
+            )
         if order.status != PAYMENT_ORDER_STATUS_PAID:
             order.status = PAYMENT_ORDER_STATUS_PAID
             order.provider_trade_no = (
@@ -1237,11 +1349,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             event_type=CREDIT_LEDGER_EVENT_GRANT,
             source_type="credit_pack_purchase",
             source_id=order.order_id,
-            credit_delta=ai_credits,
+            ai_credit_delta=ai_credits,
             quantity=ai_credits,
-            unit="credit",
+            unit="ai_credits",
             rate=round(float(order.amount or 0.0) / max(1.0, ai_credits), 8),
-            rate_unit="payment_amount_per_credit",
+            rate_unit="payment_amount_per_ai_credit",
             rate_version=AI_CREDIT_RATE_VERSION,
             idempotency_key=f"credit_pack_grant:{order.order_id}",
             metadata_json={
@@ -1263,7 +1375,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         repository.upsert_paid_credit_grant(
             account_id=order.account_id,
             payment_order_id=order.order_id,
-            original_credits=ai_credits,
+            original_ai_credits=ai_credits,
             expires_at=grant_expires_at,
             metadata_json={
                 "pack_id": str(pack["pack_id"]),
@@ -1334,7 +1446,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             1.0,
             max(0.0, round(float(refund.amount or 0.0), 6) / round(float(order.amount), 6)),
         )
-        refunded_credits = round(ai_credits * refunded_ratio, 6)
+        refunded_ai_credits = round(ai_credits * refunded_ratio, 6)
         ledger_entry = repository.record_credit_ledger_entry(
             account_id=order.account_id,
             site_id=order.site_id,
@@ -1345,11 +1457,11 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             event_type=CREDIT_LEDGER_EVENT_ADJUSTMENT,
             source_type="credit_pack_refund",
             source_id=refund.refund_id,
-            credit_delta=-refunded_credits,
-            quantity=refunded_credits,
-            unit="credit",
-            rate=round(float(refund.amount or 0.0) / max(1.0, refunded_credits), 8),
-            rate_unit="payment_refund_amount_per_credit",
+            ai_credit_delta=-refunded_ai_credits,
+            quantity=refunded_ai_credits,
+            unit="ai_credits",
+            rate=round(float(refund.amount or 0.0) / max(1.0, refunded_ai_credits), 8),
+            rate_unit="payment_refund_amount_per_ai_credit",
             rate_version=AI_CREDIT_RATE_VERSION,
             idempotency_key=f"credit_pack_refund:{refund.refund_id}",
             metadata_json={
@@ -1365,7 +1477,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         )
         repository.refund_paid_credit_grant(
             payment_order_id=order.order_id,
-            credits=refunded_credits,
+            ai_credits=refunded_ai_credits,
         )
         payload = {
             "order": self._serialize_credit_pack_payment_order(order),
@@ -1419,7 +1531,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
             repository.upsert_paid_credit_grant(
                 account_id=account_id,
                 payment_order_id=payment_order_id,
-                original_credits=max(0.0, float(entry.credit_delta or 0.0)),
+                original_ai_credits=max(0.0, float(entry.ai_credit_delta or 0.0)),
                 expires_at=service._normalize_datetime(expires_at),
                 metadata_json={
                     "pack_id": str(metadata.get("pack_id") or ""),
@@ -1442,20 +1554,20 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
                 continue
             refund_totals[payment_order_id] = round(
                 refund_totals.get(payment_order_id, 0.0)
-                + max(0.0, -float(entry.credit_delta or 0.0)),
+                + max(0.0, -float(entry.ai_credit_delta or 0.0)),
                 6,
             )
-        for payment_order_id, refunded_credits in refund_totals.items():
+        for payment_order_id, refunded_ai_credits in refund_totals.items():
             grant = repository.get_paid_credit_grant_by_order(payment_order_id)
             if grant is None:
                 continue
-            already_refunded = max(0.0, float(grant.refunded_credits or 0.0))
-            increment = max(0.0, refunded_credits - already_refunded)
+            already_refunded = max(0.0, float(grant.refunded_ai_credits or 0.0))
+            increment = max(0.0, refunded_ai_credits - already_refunded)
             if increment <= 0:
                 continue
             repository.refund_paid_credit_grant(
                 payment_order_id=payment_order_id,
-                credits=increment,
+                ai_credits=increment,
             )
 
     def _paid_credit_balance_in_session(
@@ -1476,7 +1588,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         )
         return {
             "remaining": round(
-                sum(max(0.0, float(grant.remaining_credits or 0.0)) for grant in grants),
+                sum(max(0.0, float(grant.remaining_ai_credits or 0.0)) for grant in grants),
                 6,
             ),
             "grant_count": len(grants),
@@ -1685,6 +1797,53 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
         order.canceled_at = current_time
         order.metadata_json = metadata
         return True
+
+    def _restore_expired_order_for_timely_payment_in_session(
+        self,
+        order: PaymentOrder,
+        *,
+        paid_at: datetime | None,
+        reconciled_at: datetime,
+    ) -> bool:
+        if paid_at is None:
+            return False
+        metadata = dict(order.metadata_json or {})
+        if str(metadata.get("cancellation_reason") or "") != "unpaid_order_expired":
+            return False
+        created_at = self._normalize_payment_order_datetime(order.created_at)
+        normalized_paid_at = self._normalize_payment_order_datetime(paid_at)
+        if (
+            created_at is None
+            or normalized_paid_at is None
+            or normalized_paid_at > created_at + PAYMENT_ORDER_PENDING_TTL
+        ):
+            return False
+        prior_expired_at = metadata.pop("expired_at", None)
+        metadata.pop("cancellation_reason", None)
+        metadata["late_payment_reconciliation"] = {
+            "provider_paid_at": cast(Any, self)._serialize_datetime(normalized_paid_at),
+            "reconciled_at": cast(Any, self)._serialize_datetime(reconciled_at),
+            "prior_expired_at": prior_expired_at,
+        }
+        order.status = PAYMENT_ORDER_STATUS_PENDING
+        order.canceled_at = None
+        order.metadata_json = metadata
+        return True
+
+    @staticmethod
+    def _build_payment_refund_id(
+        *,
+        provider: str,
+        order_id: str,
+        idempotency_key: str,
+    ) -> str:
+        if not idempotency_key:
+            return f"ref_{uuid4().hex[:24]}"
+        stable_id = uuid5(
+            NAMESPACE_URL,
+            f"npcink-ai-cloud:{provider}:{order_id}:{idempotency_key}",
+        )
+        return f"ref_{stable_id.hex[:24]}"
 
     def _cancel_expired_pending_payment_orders_in_session(
         self,

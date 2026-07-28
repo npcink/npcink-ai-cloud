@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--site-id", required=True)
-    parser.add_argument("--site-admin-email", dest="principal_email", required=True)
+    parser.add_argument("--user-email", dest="principal_email", required=True)
     parser.add_argument("--public-base-url", default="http://127.0.0.1:8010")
     parser.add_argument(
         "--skip-billing-rebuild",
@@ -99,6 +99,7 @@ def bootstrap_portal_site(
         account_id=account_id,
         email=normalized_email,
         status="active",
+        site_id=site_id,
         metadata_json={
             "source": "bootstrap_portal_site",
             "site_id": site_id,
@@ -143,12 +144,11 @@ def bootstrap_portal_site(
             "plan_version_id": str(subscription.get("plan_version_id") or ""),
             "principal_email": normalized_email,
             "principal_id": principal_id,
-            "identity_type": "principal",
+            "identity_type": "user",
             "routes": {
                 "login_url": f"{base_url}/portal/login",
                 "portal_url": f"{base_url}/portal",
                 "overview_url": f"{base_url}/portal/overview",
-                "sites_url": f"{base_url}/portal/sites",
             },
             "auth_mode": "email_code",
             "login_code_request": {

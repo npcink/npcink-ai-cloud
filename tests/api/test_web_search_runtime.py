@@ -286,6 +286,7 @@ def test_cloud_managed_web_search_executes_and_records_provider_usage(
             "runs",
             "provider_calls",
             "cost",
+            "cost_cny",
         ]
         assert all(event.ability_family == "knowledge" for event in meter_events)
 
@@ -680,7 +681,7 @@ def test_zhihu_direct_answer_records_lane_credit_component(
             )
         )
         assert credit_entry is not None
-        assert credit_entry.credit_delta == -5.0
+        assert credit_entry.ai_credit_delta == -5.0
         assert credit_entry.metadata_json["credit_component"] == "zhihu_direct_answer_deep"
         assert credit_entry.metadata_json["source_type"] == "zhida_deep"
 

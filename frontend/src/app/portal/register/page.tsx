@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useState } from 'react';
 import { PortalAuthShell } from '@/components/portal/PortalAuthShell';
 import { PortalCard } from '@/components/portal/PortalScaffold';
+import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
@@ -22,8 +23,22 @@ interface RegisterFormState {
 
 function RegisterFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const { isAuthenticated, isLoading, refresh } = useSession();
+  const requestedPlan = searchParams.get('plan') === 'plus'
+    ? 'plus'
+    : searchParams.get('plan') === 'pro'
+      ? 'pro'
+      : null;
+  const postRegistrationTarget = requestedPlan
+    ? `/portal/billing?plan=${requestedPlan}&action=upgrade`
+    : '/portal';
+  const requestedPlanLabel = requestedPlan === 'plus'
+    ? 'Plus'
+    : requestedPlan === 'pro'
+      ? 'Pro'
+      : 'Free';
   const [form, setForm] = useState<RegisterFormState>({
     email: '',
     code: '',
@@ -34,9 +49,9 @@ function RegisterFormContent() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace('/portal');
+      router.replace(postRegistrationTarget);
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, postRegistrationTarget, router]);
 
   if (isLoading || isAuthenticated) {
     return <LoadingFallback />;
@@ -111,7 +126,7 @@ function RegisterFormContent() {
     try {
       await portalClient.verifyRegistration({ email, code });
       await refresh();
-      window.location.replace('/portal');
+      window.location.replace(postRegistrationTarget);
     } catch (error) {
       setForm((prev) => ({
         ...prev,
@@ -185,30 +200,42 @@ function RegisterFormContent() {
 
   return (
     <PortalAuthShell
-      eyebrow={t('portal.register.chip', undefined, 'Free signup')}
+      eyebrow={t('portal.register.chip', undefined, 'Account signup')}
       title={t('portal.register.title', undefined, 'Create your Portal account')}
       description={t(
         form.step === 'request' ? 'portal.register.request_desc' : 'portal.register.verify_desc',
         undefined,
         form.step === 'request'
-          ? 'Enter your email address to create a Free account.'
+          ? 'Enter your email address to create an account. No site or service credit is created at this step.'
           : 'Enter the code from your email to finish registration.'
       )}
       aside={(
         <>
           <PortalCard className="bg-white/70 dark:bg-slate-950/35">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-300">
-              {t('portal.register.free_label', undefined, 'Free')}
+              {requestedPlanLabel}
             </p>
             <h2 className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
-              {t('portal.register.free_title', undefined, 'Start with one WordPress site')}
+              {requestedPlan
+                ? t(
+                    'portal.register.plan_intent_title',
+                    { plan: requestedPlanLabel },
+                    `Continue with ${requestedPlanLabel} after signup`
+                  )
+                : t('portal.register.free_title', undefined, 'Start with one WordPress site')}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              {t(
-                'portal.register.desc',
-                undefined,
-                'Use email verification to open a Free account for one WordPress site. QQ quick login can be bound after you sign in.'
-              )}
+              {requestedPlan
+                ? t(
+                    'portal.register.plan_intent_desc',
+                    { plan: requestedPlanLabel },
+                    `Create the account first. We will keep your ${requestedPlanLabel} selection and open the current package offer before payment.`
+                  )
+                : t(
+                    'portal.register.desc',
+                    undefined,
+                    'Use QQ or email verification to create your account, then connect the WordPress addon to activate Free service.'
+                  )}
             </p>
           </PortalCard>
           <PortalCard className="mt-4 bg-white/70 dark:bg-slate-950/35">
@@ -218,13 +245,24 @@ function RegisterFormContent() {
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
               {t('portal.register.already_desc', undefined, 'Use your email verification code to log in.')}
             </p>
-            <Link href="/portal/login" className="btn btn-secondary mt-4 w-full justify-center">
+            <Link
+              href={`/portal/login?redirect=${encodeURIComponent(postRegistrationTarget)}`}
+              className="btn btn-secondary mt-4 w-full justify-center"
+            >
               {t('nav.sign_in')}
             </Link>
           </PortalCard>
         </>
       )}
     >
+      <div className="space-y-5">
+        <QqLoginButton returnTo={postRegistrationTarget} />
+        <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+          <span>{t('auth.or_email_code', undefined, 'or register with email')}</span>
+          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+        </div>
+      </div>
       <form
                 onSubmit={form.step === 'request' ? handleRequestCode : handleVerifyCode}
                 className="space-y-5"
@@ -319,6 +357,17 @@ function RegisterFormContent() {
                   ) : null}
                 </div>
       </form>
+      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+        {t('auth.legal_notice', undefined, 'By continuing, you agree to the Terms of Service and acknowledge the Privacy Policy.')}
+        {' '}
+        <Link href="/terms" className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+          {t('auth.terms_link', undefined, 'Terms')}
+        </Link>
+        {' · '}
+        <Link href="/privacy" className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+          {t('auth.privacy_link', undefined, 'Privacy')}
+        </Link>
+      </p>
     </PortalAuthShell>
   );
 }
