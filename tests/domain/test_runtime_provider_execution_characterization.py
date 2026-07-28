@@ -530,6 +530,7 @@ def test_non_fallbackable_error_stops_immediately_and_preserves_usage_evidence(
             ("tokens_out", 3.0),
             ("tokens_total", 22.0),
             ("cost", 0.91),
+            ("cost_cny", 6.552),
         ]
 
 

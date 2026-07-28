@@ -71,7 +71,7 @@ def _seed_account_and_plan(service: CommercialService) -> None:
         budgets_json={
             "max_runs_per_period": 200,
             "max_tokens_per_period": 100000,
-            "max_cost_per_period": 50.0,
+            "max_cost_cny_per_period": 50.0,
         },
         concurrency_json={"max_active_runs": 4},
     )

@@ -264,7 +264,7 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
         plan_id="plus",
         plan_version_id="plus_v2",
         version_label="v2",
-        budgets_json={"max_ai_credits_per_period": 3500, "max_cost_per_period": 2.5},
+        budgets_json={"max_ai_credits_per_period": 3500, "max_cost_cny_per_period": 2.5},
         metadata_json={"tier_id": "plus", "monthly_included_points": 3500},
         sales_price_cny=19.0,
     )

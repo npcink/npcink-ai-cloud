@@ -160,7 +160,7 @@ def test_internal_alpha_onboarding_flow_closes_admin_addon_usage_audit(
             "budgets": {
                 "max_runs_per_period": 0,
                 "max_tokens_per_period": 0,
-                "max_cost_per_period": 0,
+                "max_cost_cny_per_period": 0,
             },
             "concurrency": {"max_active_runs": 0},
             "metadata": {"package_alias": "pro"},

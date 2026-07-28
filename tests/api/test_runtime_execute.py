@@ -650,6 +650,7 @@ def test_execute_route_runs_and_supports_idempotency(tmp_path: Path) -> None:
         "tokens_out",
         "tokens_total",
         "cost",
+        "cost_cny",
     ]
     assert all(event.ability_family == "workflow" for event in meter_events)
 
@@ -4618,6 +4619,7 @@ def test_failed_run_records_metered_provider_cost_and_purge_keeps_ledger(
         ("tokens_out", 4.0),
         ("tokens_total", 13.0),
         ("cost", 0.42),
+        ("cost_cny", 3.024),
     ]
 
     with get_session(database_url) as session:

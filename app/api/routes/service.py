@@ -220,13 +220,14 @@ class SubscriptionPayload(BaseModel):
 
 
 class SubscriptionTopUpPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_period_start_at: datetime | None = None
     target_period_end_at: datetime | None = None
     ai_credits_increment: float = 0.0
     runs_increment: float = 0.0
     tokens_increment: float = 0.0
-    cost_cny_increment: float | None = None
-    cost_increment: float = 0.0
+    cost_cny_increment: float = 0.0
     reason: str = ""
     note: str = ""
 
@@ -1918,7 +1919,6 @@ async def apply_subscription_topup(
             runs_increment=payload.runs_increment,
             tokens_increment=payload.tokens_increment,
             cost_cny_increment=payload.cost_cny_increment,
-            cost_increment=payload.cost_increment,
             reason=payload.reason,
             note=payload.note,
             target_period_start_at=payload.target_period_start_at,

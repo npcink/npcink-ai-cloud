@@ -36,15 +36,15 @@ when the current rate changes.
    `7.200000` effective `2026-07-01T00:00:00Z`. Admin must show that this is a
    fallback requiring review; it is not represented as a live market or
    settlement rate.
-6. Package versions write `max_cost_cny_per_period`. The legacy
-   `max_cost_per_period` field remains readable and is not reinterpreted as CNY.
-   New operator top-up history writes `cost_cny`; legacy `cost` top-up metadata
-   remains USD evidence and is not relabelled. The top-up API accepts the new
-   `cost_cny_increment`; its legacy `cost_increment` input is treated as USD
-   and converted with a snapshotted accounting rate.
+6. Package versions accept only `max_cost_cny_per_period`, and operator top-ups
+   accept only `cost_cny_increment`. Because the product has no external users
+   or production package/top-up history, the unreleased
+   `max_cost_per_period` and `cost_increment` compatibility inputs are removed
+   instead of becoming permanent dual contracts.
    Existing usage without a CNY snapshot may be converted for read-only
-   reporting using the currently resolved accounting rate and must be
-   identified as legacy conversion.
+   provider-cost reporting using the currently resolved accounting rate and
+   must be identified as legacy conversion. This provider evidence fallback is
+   not a package-budget or top-up compatibility path.
 7. Browser code formats already-snapshotted CNY amounts. It does not own an
    exchange-rate table or perform arbitrary USD/CNY conversion.
 
@@ -58,10 +58,12 @@ when the current rate changes.
 
 ## Compatibility And Storage
 
-No schema migration is required. The rate uses the existing
+No schema migration is required. A one-time data cleanup removes the unreleased
+USD keys from internal plan versions, entitlement snapshots, and top-up
+metadata; there is no external package or top-up data to convert. The rate uses the existing
 `service_settings.config_json` record, cost snapshots use the existing usage
-event payload and currency fields, and the new CNY budget is additive JSON.
-Legacy USD fields stay readable during the compatibility period.
+event payload and currency fields, and package/top-up JSON uses only the CNY
+fields.
 
 ## Verification
 
@@ -70,6 +72,9 @@ Legacy USD fields stay readable during the compatibility period.
 - Runtime tests require paired USD and CNY cost events with the same immutable
   rate snapshot.
 - Service-route tests cover explicit fallback state and operator updates.
+- Service-route tests reject removed USD package-budget and top-up inputs.
+- A migration contract test proves that the one-time cleanup preserves CNY and
+  unrelated metadata while removing only the unreleased USD keys.
 - Frontend contracts reject browser-owned exchange rates and require the
   accounting settings route to pass through the Admin proxy.
 
@@ -77,5 +82,6 @@ Legacy USD fields stay readable during the compatibility period.
 
 The Admin accounting panel and CNY budget input may be hidden without deleting
 stored settings or event evidence. Stop emitting new `cost_cny` events only
-after readers again use raw USD explicitly; do not relabel legacy
-`max_cost_per_period` values or delete snapshotted rate metadata.
+after readers again use raw USD explicitly; do not delete snapshotted rate
+metadata. Reintroducing a second package or top-up currency contract requires a
+new decision and migration plan.
