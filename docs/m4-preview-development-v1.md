@@ -485,6 +485,39 @@ and verifies the final loopback binding. It owns only
 `~/Library/LaunchAgents/top.mqzj.npcink-ollama-preview.plist` and the
 corresponding launchd job.
 
+Treat that LaunchAgent as the sole Ollama owner on the M4 preview host. Do not
+enable Ollama.app as a login item or leave it running alongside the managed
+job. Opening Ollama.app for deliberate desktop use requires a later
+operator-approved handoff before the next preview deployment.
+
+`m4:preview:deploy` and
+`m4:preview:promote -- --pr <number> --deploy` run a read-only ownership
+preflight before source transfer, image build, migration, or container changes
+when the managed plist is installed:
+
+```text
+listener_owner=managed
+  -> continue
+
+listener missing
+  -> continue; the managed restart recovers it after deployment
+
+listener_owner=unmanaged
+  -> fail before source transfer
+  -> inspect with m4:preview:ollama:status
+  -> after operator approval, use m4:preview:ollama:install only for standard
+     Ollama.app / ollama serve ownership
+
+unknown listener process
+  -> fail closed; investigate without terminating or taking over the process
+```
+
+The preflight never installs Ollama, kills an unknown process, or changes the
+listener. Keep the final post-deploy PID and loopback-binding verification as
+a race-safe check even after the early preflight passes. Do not substitute
+`m4:preview:recover` for an ownership handoff: recovery only restarts the
+managed job and must remain blocked while another process owns `11434`.
+
 After the Cloud source containing the provider request contract is deployed,
 configure the disposable M4 database:
 

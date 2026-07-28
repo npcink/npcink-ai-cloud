@@ -421,6 +421,62 @@ def test_m4_ollama_launch_agent_is_loopback_only_and_dry_run_is_non_mutating() -
     assert "rsync" not in completed.stdout
 
 
+def test_m4_ollama_ownership_preflight_is_early_and_fail_closed() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    runbook = RUNBOOK.read_text(encoding="utf-8")
+    standard = AI_STANDARD.read_text(encoding="utf-8")
+
+    preflight = source[
+        source.index("remote_ollama_preflight() {") :
+        source.index("remote_ollama_install() {")
+    ]
+    promote = source[
+        source.index("promote_accepted_master() {") :
+        source.index("probe_tunnel_host() {")
+    ]
+    main = source[source.index("main() {") :]
+    deploy_case = main[main.index("\t\tdeploy)") : main.index("\t\tpromote)")]
+
+    assert "Ollama ownership preflight failed before source transfer" in preflight
+    assert "m4:preview:ollama:status" in preflight
+    assert "m4:preview:ollama:install" in preflight
+    assert "kill " not in preflight
+    assert "launchctl kickstart" not in preflight
+    assert deploy_case.index("remote_ollama_preflight") < deploy_case.index(
+        "upload_and_apply"
+    )
+    assert promote.index("remote_ollama_preflight") < promote.index(
+        "upload_and_apply"
+    )
+    assert "before source transfer" in runbook
+    assert "unknown listener process" in runbook
+    assert "MUST be checked before source transfer" in standard
+    assert "MUST NOT automatically stop" in standard
+
+
+def test_m4_deploy_stops_before_packaging_when_ollama_preflight_fails(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text("#!/bin/sh\ncat >/dev/null\nexit 65\n", encoding="utf-8")
+    fake_ssh.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "deploy"],
+        cwd=ROOT,
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 65
+    assert "packaging tracked files" not in completed.stdout
+    assert "source revision:" not in completed.stdout
+
+
 def test_m4_overlay_is_loopback_only_and_starts_the_complete_runtime() -> None:
     overlay = OVERLAY.read_text(encoding="utf-8")
     base = (ROOT / "docker-compose.dev.yml").read_text(encoding="utf-8")

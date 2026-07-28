@@ -283,6 +283,14 @@ exposure, or recovery behavior, also verify the applicable items:
 - restart or recovery behavior is proved;
 - failure containment touches only the named M4 Compose project.
 
+For build/runtime operations on an M4 with the managed Ollama plist installed,
+the Ollama listener owner MUST be checked before source transfer, image build,
+migration, or container mutation. An unmanaged listener MUST fail closed with
+an actionable status/install path. An AI agent MUST NOT automatically stop,
+replace, or take over that listener; the standard Ollama.app handoff requires
+explicit operator approval, and an unknown process requires read-only
+investigation.
+
 Production validation, Cloudflare configuration, and external WordPress
 acceptance require separate explicit authorization.
 
