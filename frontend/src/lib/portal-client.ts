@@ -7,6 +7,8 @@
 
 import { ApiClient, type ApiEnvelope, type ApiMethod } from './api-client';
 import { getPortalApiBaseUrl } from './env';
+import { ApiError } from './errors';
+import { generateIdempotencyKey } from './idempotency';
 
 // ============================================
 // 类型定义
@@ -1581,6 +1583,18 @@ export interface PortalSiteDiagnostics {
 }
 
 export type PortalEnvelope<T> = ApiEnvelope<T>;
+const MAX_PENDING_WRITE_INTENTS = 64;
+
+function fallbackWriteIntentDigest(value: string): string {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${value.length.toString(16)}-${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 // ============================================
 // Portal API Client
@@ -1588,8 +1602,45 @@ export type PortalEnvelope<T> = ApiEnvelope<T>;
 
 export class PortalClient {
   private apiClient?: ApiClient;
+  private readonly pendingWriteKeys = new Map<string, string>();
 
   constructor(private readonly baseUrl?: string) {}
+
+  private async writeIntentSignature(
+    method: ApiMethod,
+    path: string,
+    body: unknown
+  ): Promise<string> {
+    const serializedIntent = `${method}:${path}:${body === undefined ? '' : JSON.stringify(body)}`;
+    if (!globalThis.crypto?.subtle) {
+      return fallbackWriteIntentDigest(serializedIntent);
+    }
+    const digest = await globalThis.crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(serializedIntent)
+    );
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  private rememberPendingWriteKey(writeIntent: string, idempotencyKey: string): void {
+    if (
+      !this.pendingWriteKeys.has(writeIntent)
+      && this.pendingWriteKeys.size >= MAX_PENDING_WRITE_INTENTS
+    ) {
+      const oldestIntent = this.pendingWriteKeys.keys().next().value;
+      if (oldestIntent) {
+        this.pendingWriteKeys.delete(oldestIntent);
+      }
+    }
+    this.pendingWriteKeys.set(writeIntent, idempotencyKey);
+  }
+
+  private isUnconfirmedWriteError(error: unknown): boolean {
+    if (!(error instanceof ApiError)) {
+      return true;
+    }
+    return error.statusCode === 0 || error.errorCode.startsWith('client.');
+  }
 
   /**
    * 通用请求方法
@@ -1603,10 +1654,31 @@ export class PortalClient {
       baseUrl: this.baseUrl || getPortalApiBaseUrl(),
       idempotencyPrefix: 'portal_write',
     });
-    return this.apiClient.request<T>(path, {
-      method,
-      ...(body === undefined ? {} : { body }),
-    });
+    const isWrite = method !== 'GET' && method !== 'HEAD';
+    const writeIntent = isWrite ? await this.writeIntentSignature(method, path, body) : '';
+    const idempotencyKey = isWrite
+      ? this.pendingWriteKeys.get(writeIntent) || generateIdempotencyKey('portal_write')
+      : undefined;
+    if (isWrite && !this.pendingWriteKeys.has(writeIntent)) {
+      this.rememberPendingWriteKey(writeIntent, idempotencyKey as string);
+    }
+
+    try {
+      const response = await this.apiClient.request<T>(path, {
+        method,
+        ...(body === undefined ? {} : { body }),
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+      });
+      if (writeIntent) {
+        this.pendingWriteKeys.delete(writeIntent);
+      }
+      return response;
+    } catch (error) {
+      if (writeIntent && !this.isUnconfirmedWriteError(error)) {
+        this.pendingWriteKeys.delete(writeIntent);
+      }
+      throw error;
+    }
   }
 
   // ========================================

@@ -19,6 +19,7 @@ export default function StatusPage() {
     const controller = new AbortController();
     requestRef.current = controller;
     setState('checking');
+    setCheckedAt('');
     fetch('/api/health', {
       cache: 'no-store',
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)]),

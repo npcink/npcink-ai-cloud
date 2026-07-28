@@ -136,6 +136,11 @@ assert.match(
   'portal registration must expose QQ as a first-class registration entry'
 );
 assert.match(
+  registerSource,
+  /aria-invalid=\{form\.status === 'error'[\s\S]*portal-register-form-message[\s\S]*role=\{form\.status === 'error' \? 'alert' : 'status'\}/,
+  'portal registration errors must be announced and associated with the active field'
+);
+assert.match(
   clientSource,
   /startQqLogin[\s\S]*intent: 'login'/,
   'portal client must start the QQ login and first-registration flow explicitly'

@@ -131,6 +131,11 @@ export function PortalWorkspaceHeader({
             value={selectedSiteId}
             onChange={(event) => onSiteChange(event.target.value)}
           >
+            {!selectedSiteId ? (
+              <option value="" disabled>
+                {t('portal.select_site_placeholder', {}, 'Select a site')}
+              </option>
+            ) : null}
             {getVisiblePortalSites(sites).map((site) => (
               <option key={site.site_id} value={site.site_id}>
                 {getPortalSiteDisplayName(site)} ({getPortalSiteSecondaryLabel(site)})

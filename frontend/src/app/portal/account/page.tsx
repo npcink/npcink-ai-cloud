@@ -445,13 +445,15 @@ function AccountPageContent() {
         <div className="grid gap-3" data-portal-account="email-change-dialog">
           {message ? (
             <p
+              id="portal-account-action-message"
               className={cn(
                 'rounded-xl px-3 py-2 text-sm',
                 status === 'error'
                   ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-200'
                   : 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200'
               )}
-              role="status"
+              role={status === 'error' ? 'alert' : 'status'}
+              aria-live={status === 'error' ? 'assertive' : 'polite'}
             >
               {message}
             </p>

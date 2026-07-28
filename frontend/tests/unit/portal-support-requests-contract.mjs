@@ -39,6 +39,26 @@ assert.match(
 );
 assert.match(
   portalSupportPageSource,
+  /listError[\s\S]*listErrorCode[\s\S]*formError/,
+  'Portal support must keep list recovery separate from ticket submission errors'
+);
+assert.match(
+  portalSupportPageSource,
+  /portal\.site_selection_required[\s\S]*PortalEmptyState[\s\S]*support_context_required_action/,
+  'Portal support must provide a bounded recovery path when account context requires site selection'
+);
+assert.match(
+  portalSupportPageSource,
+  /selectedSiteId=\{contextSiteId\}[\s\S]*sites=\{session\.sites\}[\s\S]*onSiteChange=/,
+  'Portal support must allow multi-account users to establish context without leaving the page'
+);
+assert.match(
+  portalSupportPageSource,
+  /formatPortalWriteErrorMessage/,
+  'Portal support writes must distinguish an unconfirmed result from a definitive save failure'
+);
+assert.match(
+  portalSupportPageSource,
   /<Modal[\s\S]*data-portal-support="new-ticket-dialog"/,
   'Portal ticket creation must open in a focused dialog instead of displacing ticket history'
 );
@@ -95,6 +115,11 @@ assert.match(
   portalClientSource,
   /async createSupportRequest[\s\S]*'POST', '\/support-requests'/,
   'Portal client must expose support request creation'
+);
+assert.match(
+  portalClientSource,
+  /pendingWriteKeys[\s\S]*writeIntentSignature[\s\S]*isUnconfirmedWriteError/,
+  'Portal writes must retain one idempotency key while the outcome remains unconfirmed'
 );
 assert.match(
   portalClientSource,
