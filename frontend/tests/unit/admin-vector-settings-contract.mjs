@@ -82,8 +82,13 @@ assert.match(
 );
 assert.match(
   page,
-  /AdminSettingsDisclosure[\s\S]*vector-settings-technical-details/,
-  'Vector settings must keep low-frequency technical detail behind the shared disclosure'
+  /descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*\/admin\/vector-observability/,
+  'Vector settings must keep diagnostics and status in a compact runtime-style header'
+);
+assert.match(
+  page,
+  /AdminSettingsDisclosure[\s\S]*vector-settings-technical-details[\s\S]*admin\.vector_settings\.boundary/,
+  'Vector settings must keep low-frequency technical detail and the Cloud boundary behind the shared disclosure'
 );
 assert.match(
   page,

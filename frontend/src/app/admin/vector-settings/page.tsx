@@ -7,7 +7,6 @@ import {
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
-  BackofficeSummaryStrip
 } from '@/components/backoffice/BackofficeScaffold';
 import {
   AdminConfigurationRow,
@@ -456,6 +455,10 @@ export default function VectorSettingsPage() {
           '使用平台固定的中文站点向量档案。管理员只需提供供应商密钥和 Zilliz 连接凭证。',
           'Use the platform-defined Chinese Site Knowledge vector profile. Admins only provide the provider key and Zilliz connection credentials.'
         )}
+        descriptionDisplay="hint"
+        actionPlacement="header"
+        contentClassName="px-4 py-3 md:px-4 md:py-3"
+        summaryClassName="px-4 py-2.5 md:px-4 md:py-2.5"
         actions={
           <Link href="/admin/vector-observability" className="btn btn-secondary">
             {copy(
@@ -466,32 +469,31 @@ export default function VectorSettingsPage() {
           </Link>
         }
         summary={
-          <BackofficeSummaryStrip
-            items={[
-              {
-                label: 'Profile',
-                value: profile?.profile_id || 'site-knowledge.zh.v1'
-              },
+          <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+            {[
+              { label: 'Profile', value: profile?.profile_id || 'site-knowledge.zh.v1' },
               {
                 label: copy('admin.vector_settings.model', '模型', 'Model'),
                 value: profile?.model_id || 'BAAI/bge-m3'
               },
               {
                 label: copy('admin.vector_settings.current_status', '当前状态', 'Current status'),
-                value: status.label
+                value: status.label,
+                toneClassName: status.tone === 'success'
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : status.tone === 'warning' || status.tone === 'failed'
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : undefined
               }
-            ]}
-          />
+            ].map((item) => (
+              <div key={item.label} className="flex items-baseline gap-1.5">
+                <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
+                <dd className={`font-semibold text-slate-900 dark:text-white ${item.toneClassName || ''}`}>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
         }
-      >
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-          {copy(
-            'admin.vector_settings.boundary',
-            '该页面只管理 Cloud 运行配置；Site Knowledge 结果仍为建议型，不拥有 WordPress 写入权限。',
-            'This page manages Cloud runtime configuration only. Site Knowledge remains suggestion-only and has no WordPress write authority.'
-          )}
-        </p>
-      </BackofficePrimaryPanel>
+      />
 
       {error ? (
         <BackofficeDiagnosticNotice
@@ -935,6 +937,13 @@ export default function VectorSettingsPage() {
             </dd>
           </div>
         </dl>
+        <p className="mt-4 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          {copy(
+            'admin.vector_settings.boundary',
+            '该页面只管理 Cloud 运行配置；Site Knowledge 结果仍为建议型，不拥有 WordPress 写入权限。',
+            'This page manages Cloud runtime configuration only. Site Knowledge remains suggestion-only and has no WordPress write authority.'
+          )}
+        </p>
       </AdminSettingsDisclosure>
     </BackofficePageStack>
   );

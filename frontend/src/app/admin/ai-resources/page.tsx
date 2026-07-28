@@ -5,11 +5,10 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
-  BackofficeLayer,
   BackofficePageStack,
   BackofficePrimaryPanel,
-  BackofficeSectionPanel,
   BackofficeStackCard,
+  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
@@ -26,7 +25,6 @@ import {
   type ProviderConnectionTestResult,
   type SupplierConnection as Connection,
 } from '@/components/admin/SupplierConnectionTables';
-import { SupplierSummaryCards } from '@/components/admin/SupplierSummaryCards';
 import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { Modal } from '@/components/ui/Modal';
@@ -1824,45 +1822,71 @@ function AiResourcesContent() {
   const attentionSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai' && connection.status !== 'ready'
   ).length;
+  const latestModelSupplierTestAt = data.connections
+    .filter(
+      (connection) =>
+        supplierCategory(connection) === 'ai' &&
+        connection.last_tested_at &&
+        !Number.isNaN(Date.parse(connection.last_tested_at))
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(String(right.last_tested_at)) - Date.parse(String(left.last_tested_at))
+    )[0]?.last_tested_at;
   return (
     <BackofficePageStack>
-      <BackofficeLayer
+      <BackofficePrimaryPanel
         eyebrow={aiText('eyebrow', 'Runtime plane')}
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
         descriptionDisplay="hint"
         aside={(
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
-              {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
-            </Link>
-            <Link href="/admin/troubleshooting" className="btn btn-secondary justify-center">
-              {aiText('action_view_diagnostics', 'View diagnostics')}
+          <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
+            {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
+          </Link>
+        )}
+        actions={(
+          <button type="button" className="btn btn-primary justify-center" onClick={openNewProviderConnection}>
+            {aiText('action_add_model_supplier', 'Add model supplier')}
+          </button>
+        )}
+        actionPlacement="header"
+        contentClassName="px-4 py-4 md:px-5 md:py-4"
+        summaryClassName="px-4 py-2.5 md:px-5 md:py-2.5"
+        summary={(
+          <div
+            data-ui="supplier-summary-strip"
+            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <BackofficeSummaryStrip
+              density="compact"
+              items={[
+                {
+                  label: aiText('overview_model_suppliers', 'Model suppliers'),
+                  value: `${readyModelSupplierCount}/${modelSupplierCount}`,
+                },
+                {
+                  label: aiText('overview_attention_suppliers', 'Needs attention'),
+                  value: attentionSupplierCount,
+                  toneClassName: attentionSupplierCount > 0
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-emerald-600 dark:text-emerald-400',
+                },
+                {
+                  label: aiText('last_test', 'Last test'),
+                  value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
+                },
+              ]}
+            />
+            <Link
+              href="/admin/troubleshooting"
+              className="shrink-0 text-xs font-semibold text-slate-600 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
+            >
+              {aiText('action_view_diagnostics', 'View diagnostics')} →
             </Link>
           </div>
         )}
-        actions={null}
       />
-
-      <BackofficeSectionPanel className="p-4 md:p-4">
-        <div className="grid gap-3 xl:grid-cols-[19rem_minmax(0,1fr)] xl:items-center">
-          <SupplierSummaryCards
-            readyModelSupplierCount={readyModelSupplierCount}
-            modelSupplierCount={modelSupplierCount}
-            attentionSupplierCount={attentionSupplierCount}
-            translate={aiText}
-          />
-          <SupplierToolbar
-            connectionSearch={connectionSearch}
-            onConnectionSearchChange={handleConnectionSearchChange}
-            statusFilter={connectionStatusFilter}
-            onStatusFilterChange={handleConnectionStatusFilterChange}
-            hasLatestOperation={Boolean(lastReceipt)}
-            onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
-            onAddModelSupplier={openNewProviderConnection}
-            translate={aiText}
-          />
-        </div>
 
         <ProviderConnectionDialog
           open={providerFormOpen}
@@ -2466,6 +2490,17 @@ function AiResourcesContent() {
         </ProviderConnectionDialog>
         <ModelSupplierTable
           connections={aiSupplierConnections}
+          toolbar={(
+            <SupplierToolbar
+              connectionSearch={connectionSearch}
+              onConnectionSearchChange={handleConnectionSearchChange}
+              statusFilter={connectionStatusFilter}
+              onStatusFilterChange={handleConnectionStatusFilterChange}
+              hasLatestOperation={Boolean(lastReceipt)}
+              onOpenLatestOperation={() => setReceiptDetailsOpen(true)}
+              translate={aiText}
+            />
+          )}
           selectedConnectionId={selectedConnectionId}
           onSelectConnection={handleSelectConnection}
           testResults={connectionTestResults}
@@ -2483,7 +2518,6 @@ function AiResourcesContent() {
           onCancelDelete={() => setConfirmingDeleteConnectionId('')}
           translate={aiText}
         />
-      </BackofficeSectionPanel>
 
       <Modal
         isOpen={receiptDetailsOpen && Boolean(lastReceipt)}

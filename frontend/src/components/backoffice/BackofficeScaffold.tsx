@@ -38,6 +38,7 @@ type BackofficePrimaryPanelProps = BackofficeHeaderProps & {
   summary?: React.ReactNode;
   contentClassName?: string;
   summaryClassName?: string;
+  actionPlacement?: 'below' | 'header';
 };
 
 type BackofficeMetricItem = {
@@ -168,6 +169,7 @@ export function BackofficePrimaryPanel({
   summary,
   contentClassName,
   summaryClassName,
+  actionPlacement = 'below',
 }: BackofficePrimaryPanelProps) {
   return (
     <section className={cn('glass-panel overflow-hidden rounded-[1.6rem] p-0', className)}>
@@ -189,9 +191,16 @@ export function BackofficePrimaryPanel({
               <p className="max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{description}</p>
             ) : null}
           </div>
-          {aside ? <div className="shrink-0">{aside}</div> : null}
+          {aside || (actions && actionPlacement === 'header') ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
+              {aside}
+              {actionPlacement === 'header' ? actions : null}
+            </div>
+          ) : null}
         </div>
-        {actions ? <div className="mt-6 flex flex-wrap gap-3">{actions}</div> : null}
+        {actions && actionPlacement === 'below' ? (
+          <div className="mt-6 flex flex-wrap gap-3">{actions}</div>
+        ) : null}
         {children ? <div className="mt-5 space-y-4">{children}</div> : null}
       </div>
       {summary ? (

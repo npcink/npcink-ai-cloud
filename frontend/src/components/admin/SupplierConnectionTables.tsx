@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
@@ -169,6 +169,7 @@ type ModelSupplierTableProps = SharedTableProps & {
   providerKindLabel: (kind: string) => string;
   referenceLinksForConnection: (connection: SupplierConnection) => ReferenceLinkItem[];
   onConfigure: (connection: SupplierConnection) => void;
+  toolbar?: ReactNode;
 };
 
 export function ModelSupplierTable({
@@ -189,12 +190,14 @@ export function ModelSupplierTable({
   onRequestDelete,
   onCancelDelete,
   translate,
+  toolbar,
 }: ModelSupplierTableProps) {
   return (
     <AdminDataTableFrame
       dataUi="model-supplier-directory"
       title={translate('overview_model_suppliers', 'Model suppliers')}
       resultLabel={translate('directory_result_count', '{{count}} suppliers', { count: String(connections.length) })}
+      headerActions={toolbar}
       footer={(
         <details data-ui="supplier-boundary" className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
           <summary className="cursor-pointer font-medium text-slate-600 dark:text-slate-300">
@@ -281,7 +284,7 @@ export function ModelSupplierTable({
                       <div className="flex items-start justify-end gap-2">
                         <button
                           type="button"
-                          className="btn btn-primary btn-sm shrink-0 whitespace-nowrap"
+                          className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"
                           disabled={isDeleting}
                           onClick={() => {
                             selectConnection();
