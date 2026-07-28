@@ -99,6 +99,7 @@ class WordPressOperationRuntime:
             system_instruction = str(raw_system_instruction or "").strip()
         task_contract = self._dict_or_empty(scene_request.get("task_contract"))
         task_family = str(task_contract.get("task_family") or "").strip()
+        title_output_schema = self._title_output_schema(task=task, task_contract=task_contract)
         raw_constraints = task_contract.get("constraints")
         constraint_items = raw_constraints if isinstance(raw_constraints, list) else []
         constraints = {
@@ -196,7 +197,16 @@ class WordPressOperationRuntime:
                 "suggestion_only": True,
             },
         }
-        if "json_object" in constraints:
+        if title_output_schema:
+            provider_input["metadata"]["ability_output_schema"] = title_output_schema
+            provider_input["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "wordpress_title_generation_output",
+                    "schema": title_output_schema,
+                },
+            }
+        elif "json_object" in constraints:
             output_schema = self._dict_or_empty(task_contract.get("output_schema"))
             provider_input["response_format"] = (
                 {
@@ -419,6 +429,14 @@ class WordPressOperationRuntime:
             return self._normalize_alt_text_provider_output(
                 output_text=output_text,
             )
+        title_output_schema = self._dict_or_empty(metadata.get("ability_output_schema"))
+        if task == "title_generation" and title_output_schema:
+            output_text = self._extract_title_schema_output(
+                output_text=output_text,
+                output_schema=title_output_schema,
+            )
+            if not output_text:
+                return {}
         if not output_text:
             return output
 
@@ -490,6 +508,38 @@ class WordPressOperationRuntime:
         if not normalized_text or contains_inline_media_transport(normalized_text):
             return {}
         return {"output_text": normalized_text}
+
+    @staticmethod
+    def _title_output_schema(*, task: str, task_contract: dict[str, object]) -> dict[str, object]:
+        """Return the current title Ability schema only when it is safe to enforce."""
+        if task != "title_generation":
+            return {}
+        output_schema = task_contract.get("output_schema")
+        if not isinstance(output_schema, dict) or output_schema.get("type") != "object":
+            return {}
+        properties = output_schema.get("properties")
+        title = properties.get("title") if isinstance(properties, dict) else None
+        if not isinstance(title, dict) or title.get("type") != "string":
+            return {}
+        return output_schema
+
+    @staticmethod
+    def _extract_title_schema_output(*, output_text: str, output_schema: dict[str, object]) -> str:
+        """Fail closed unless the Provider result satisfies the Ability title field."""
+        if output_schema.get("type") != "object":
+            return ""
+        properties = output_schema.get("properties")
+        title_schema = properties.get("title") if isinstance(properties, dict) else None
+        if not isinstance(title_schema, dict) or title_schema.get("type") != "string":
+            return ""
+        try:
+            value = json.loads(output_text)
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(value, dict):
+            return ""
+        title = value.get("title")
+        return title.strip() if isinstance(title, str) else ""
 
     def is_empty_text_output(
         self,
