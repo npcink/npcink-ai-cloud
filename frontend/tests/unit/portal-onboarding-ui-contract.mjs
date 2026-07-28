@@ -77,8 +77,18 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /useState\(''\)[\s\S]*accounts\.some\(\(account\) => account\.account_id === selectedAccountId\)[\s\S]*account_id: selectedAccountId/,
+  /useState\(''\)[\s\S]*accounts\.some\([\s\S]*account\.account_id === selectedAccountId[\s\S]*account_id: selectedAccountId/,
   'addon binding must require an explicit eligible account selection'
+);
+assert.match(
+  connectSource,
+  /soleAccount[\s\S]*type="radio"[\s\S]*checked=\{selectedAccountId === soleAccount\.account_id\}/,
+  'a sole eligible account must still require one explicit ownership confirmation'
+);
+assert.match(
+  connectSource,
+  /onRetryAccounts[\s\S]*portal\.connect_site_account_recovery_desc[\s\S]*portal\.connect_site_context_expired_desc/,
+  'addon binding failures must offer an actionable retry or WordPress restart path'
 );
 assert.match(
   connectSource,

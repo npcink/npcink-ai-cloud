@@ -302,6 +302,26 @@ export function PortalPackageChangePanel({
           {pendingAction ? t('common.saving', {}, 'Saving...') : actionLabel}
         </button>
       </div>
+      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+        <p>
+          {t(
+            'portal.billing.purchase_readiness_notice',
+            {},
+            'Payment is available only for a currently published offer. Package access changes only after payment confirmation.'
+          )}
+        </p>
+        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+          <Link href="/terms" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+            {t('auth.terms_link', {}, 'Terms')}
+          </Link>
+          <Link href="/privacy" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+            {t('auth.privacy_link', {}, 'Privacy')}
+          </Link>
+          <Link href="/portal/support?new=1&topic=billing" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+            {t('portal.nav_support_requests', {}, 'Tickets')}
+          </Link>
+        </p>
+      </div>
 
       <section className="mt-5" aria-labelledby="portal-package-comparison-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

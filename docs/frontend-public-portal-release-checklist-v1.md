@@ -125,6 +125,24 @@ approve:
 Until those facts are approved, the authenticated ticket flow is the supported
 request channel and production/external acceptance remains pending.
 
+Before external self-service payment acceptance, complete one operator-recorded
+real merchant exercise for each enabled purchase kind:
+
+1. open the customer-visible package or credit-pack dialog and verify the
+   purchase-time amount, validity, Terms, Privacy, and billing-support path;
+2. complete payment through the configured merchant sandbox or approved live
+   low-value lane;
+3. verify that browser return alone grants nothing and that the server-side
+   provider confirmation updates the order and entitlement exactly once;
+4. exercise cancel, failed-payment, delayed-confirmation, refund-request, and
+   authenticated support handoff paths;
+5. record the deployment revision, offer/catalog version, order reference,
+   provider evidence, screenshots, and operator conclusion without storing
+   credentials or full tokens.
+
+Mock browser tests and HTTP `200` responses are engineering evidence only; they
+do not satisfy this merchant or external-customer acceptance.
+
 Publication requires confirmed retention enforcement and, for every enabled
 third-party candidate, its legal operator, privacy URL, and processing region.
 Warnings such as missing filing information, missing service hours, or pending
@@ -134,6 +152,18 @@ blockers. See
 `docs/decisions/028-versioned-public-site-compliance-projection.md`.
 
 ## Required verification
+
+Before external onboarding acceptance, recruit 3–5 participants who did not
+implement the feature and ask each participant to complete this task without
+step-by-step prompting:
+
+`enable Addon -> register or sign in -> bind the WordPress site -> confirm Free activation -> complete one normal hosted AI action in WordPress`
+
+Record the exact deployment revision, participant role, completion result,
+time-to-first-success, prompts requested from the observer, blocking step,
+recovery result, and participant wording. Do not store submitted content,
+credentials, verification codes, or provider payloads. A passing engineering
+test is not a substitute for this exercise.
 
 At minimum for a related change:
 

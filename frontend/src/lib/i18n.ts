@@ -431,6 +431,14 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.connect_site_account_label': 'Customer account',
     'portal.connect_site_account_placeholder': 'Select an account',
     'portal.connect_site_account_empty': 'No eligible account',
+    'portal.connect_site_confirm_ownership':
+      'Confirm that this site belongs to this account. {{count}} sites are currently connected.',
+    'portal.connect_site_account_recovery_desc':
+      'Reload available accounts. If none appear, close this window and restart the connection from WordPress.',
+    'portal.connect_site_reload_accounts': 'Reload accounts',
+    'portal.connect_site_context_expired_title': 'Restart the WordPress connection',
+    'portal.connect_site_context_expired_desc':
+      'This connection request is incomplete or expired. Close this window and start again from the WordPress addon.',
     'portal.connect_site_addon_title': 'Finish WordPress connection',
     'portal.connect_site_addon_desc':
       'Confirm this site, then return to WordPress to finish setup.',
@@ -3421,6 +3429,8 @@ export const translations: Record<Locale, TranslationMap> = {
       'Your Agency quote is ready at {{amount}} for 30 days.',
     'portal.billing.package_change_path': '{{from}} to {{to}}',
     'portal.billing.package_pay_price_action': 'Pay {{amount}}',
+    'portal.billing.purchase_readiness_notice':
+      'Payment is available only for a currently published offer. Service rights or AI credits change only after payment confirmation.',
     'portal.billing.package_renew_price_action': 'Renew {{amount}}',
     'portal.billing.package_upgrade_effective':
       'The new 30-day package takes effect after payment confirmation.',
@@ -5081,6 +5091,10 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.home.package_available_label': 'Available',
     'portal.home.package_card_label': 'Current package',
     'portal.home.package_pending_label': 'To confirm',
+    'portal.home.entitlements_retry': 'Unavailable · Retry',
+    'portal.home.entitlements_failed_title': 'Package usage is unavailable',
+    'portal.home.entitlements_failed_desc':
+      'Package usage could not be loaded. Retry before relying on the service status.',
     'portal.home.package_period_pending_label': 'To confirm',
     'portal.home.service_state_label': 'Service status',
     'portal.home.site_address_needs_setup': 'Needs setup',
@@ -5705,6 +5719,13 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.connect_site_account_label': '客户账号',
     'portal.connect_site_account_placeholder': '选择账号',
     'portal.connect_site_account_empty': '没有可用账号',
+    'portal.connect_site_confirm_ownership': '请确认此站点属于该账户。当前已连接 {{count}} 个站点。',
+    'portal.connect_site_account_recovery_desc':
+      '请重新加载可用账户。如果仍为空，请关闭窗口并从 WordPress 插件重新发起连接。',
+    'portal.connect_site_reload_accounts': '重新加载账户',
+    'portal.connect_site_context_expired_title': '请重新发起 WordPress 连接',
+    'portal.connect_site_context_expired_desc':
+      '本次连接请求不完整或已经失效。请关闭窗口并从 WordPress 插件重新发起。',
     'portal.connect_site_addon_title': '完成站点绑定',
     'portal.connect_site_addon_desc': '确认这个站点，然后回到 WordPress 完成设置。',
     'portal.connect_site_ownership_title': '账户与站点归属',
@@ -9414,6 +9435,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.billing.agency_quote_ready_desc': '你的 Agency 报价已就绪：{{amount}}/30 天。',
     'portal.billing.package_change_path': '{{from}} → {{to}}',
     'portal.billing.package_pay_price_action': '支付 {{amount}}',
+    'portal.billing.purchase_readiness_notice':
+      '仅当前已发布的购买项可以付款。套餐权益或 AI 额度只会在支付确认后变更。',
     'portal.billing.package_renew_price_action': '续费 {{amount}}',
     'portal.billing.package_upgrade_effective': '支付确认后立即生效，有效期 30 天。',
     'portal.billing.package_downgrade_effective': '当前周期结束后切换到较低套餐。',
@@ -10586,6 +10609,9 @@ export const translations: Record<Locale, TranslationMap> = {
     'portal.home.package_available_label': '可用',
     'portal.home.package_card_label': '当前套餐',
     'portal.home.package_pending_label': '待确认',
+    'portal.home.entitlements_retry': '暂不可用 · 重试',
+    'portal.home.entitlements_failed_title': '套餐用量暂不可用',
+    'portal.home.entitlements_failed_desc': '套餐用量加载失败。请重试后再判断当前服务状态。',
     'portal.home.package_period_pending_label': '待确认',
     'portal.home.service_state_label': '服务状态',
     'portal.home.site_address_needs_setup': '需设置',
