@@ -45,6 +45,21 @@ assert.match(
 );
 assert.match(
   source,
+  /accountEntitlementsState !== 'loaded'[\s\S]*portal\.home\.service_status_attention/,
+  'Portal home must not report Ready while account entitlements are unknown'
+);
+assert.match(
+  source,
+  /accountEntitlementsUnavailable[\s\S]*portal\.home\.entitlements_retry[\s\S]*formatNumber\(remainingCredits\)/,
+  'Portal home must distinguish an entitlement failure from a real zero balance'
+);
+assert.doesNotMatch(
+  source,
+  /remainingCredits > 0/,
+  'Portal home must render a real zero balance instead of treating it as pending'
+);
+assert.match(
+  source,
   /creditUnavailable[\s\S]*resourceOverLimit[\s\S]*Number\(resource\.used \|\| 0\) > Number\(resource\.limit \|\| 0\)/,
   'Portal service status must not treat an exactly-full site allowance as a runtime incident'
 );

@@ -254,7 +254,7 @@ assert.match(
 );
 assert.match(
   connectSource,
-  /const \[selectedAccountId, setSelectedAccountId\] = useState\(''\)[\s\S]*accounts\.some\(\(account\) => account\.account_id === selectedAccountId\)/,
+  /const \[selectedAccountId, setSelectedAccountId\] = useState\(''\)[\s\S]*accounts\.some\([\s\S]*account\.account_id === selectedAccountId/,
   'addon binding must require explicit selection of an eligible candidate'
 );
 assert.equal(

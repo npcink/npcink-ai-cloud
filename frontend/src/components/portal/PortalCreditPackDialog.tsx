@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Modal } from '@/components/ui/Modal';
 import type { PortalCreditPackCatalogPayload } from '@/lib/portal-client';
 import {
@@ -153,6 +154,26 @@ export function PortalCreditPackDialog({
               ? t('common.saving', {}, 'Saving...')
               : t('portal.usage.credit_pack_buy_action', {}, 'Buy credits')}
           </button>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+          <p>
+            {t(
+              'portal.billing.purchase_readiness_notice',
+              {},
+              'Payment is available only for a currently published offer. Credits are added only after payment confirmation.'
+            )}
+          </p>
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            <Link href="/terms" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+              {t('auth.terms_link', {}, 'Terms')}
+            </Link>
+            <Link href="/privacy" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+              {t('auth.privacy_link', {}, 'Privacy')}
+            </Link>
+            <Link href="/portal/support?new=1&topic=billing" className="font-semibold text-[#0066cc] hover:underline dark:text-[#2997ff]">
+              {t('portal.nav_support_requests', {}, 'Tickets')}
+            </Link>
+          </p>
         </div>
         {error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-200">
