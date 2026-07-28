@@ -7025,7 +7025,10 @@ def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> N
     assert "ai_assistance" not in {
         str(item.get("feature_key") or "") for item in credit_ledger_data["items"]
     }
-    assert credit_ledger_data["summary"]["category_totals"]["ai_usage"]["net_ai_credit_delta"] == -4.0
+    assert (
+        credit_ledger_data["summary"]["category_totals"]["ai_usage"]["net_ai_credit_delta"]
+        == -4.0
+    )
     assert credit_ledger_data["usage_detail"]["surface"] == "portal_personal_credit_usage"
     assert {item["category"] for item in credit_ledger_data["usage_detail"]["legend"]} >= {
         "ai_usage",
