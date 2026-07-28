@@ -95,7 +95,7 @@ def apply_provider_connection_runtime_settings(
                 projection.web_search_count += 1
                 projection.applied_count += 1
                 applied_provider_channels.add(provider_channel_key)
-                if provider_id in {"tavily", "bocha", "apify", "zhihu"}:
+                if provider_id in {"tavily", "bocha", "doubao_search", "apify", "zhihu"}:
                     web_search_primary_seen = True
             continue
         if kind == "image_source_provider":
@@ -211,6 +211,20 @@ def _apply_web_search_connection(
             config.get("cost_per_query") or config.get("cost"),
             settings.web_search_bocha_cost_per_query,
         )
+    elif provider_id == "doubao_search":
+        settings.web_search_doubao_base_url = row.base_url or settings.web_search_doubao_base_url
+        if credential:
+            settings.web_search_doubao_api_key = credential
+        settings.web_search_doubao_search_path = _string(
+            config.get("search_path") or settings.web_search_doubao_search_path
+        )
+        settings.web_search_doubao_timeout_seconds = _positive_float(
+            config.get("timeout_seconds"), settings.web_search_doubao_timeout_seconds
+        )
+        settings.web_search_doubao_cost_per_query = _nonnegative_float(
+            config.get("cost_per_query") or config.get("cost"),
+            settings.web_search_doubao_cost_per_query,
+        )
     elif provider_id == "jina_reader":
         settings.web_search_jina_reader_enabled = True
         settings.web_search_jina_reader_base_url = (
@@ -273,7 +287,13 @@ def _apply_web_search_connection(
     else:
         return False
 
-    if not primary_seen and provider_id in {"tavily", "bocha", "apify", "zhihu"}:
+    if not primary_seen and provider_id in {
+        "tavily",
+        "bocha",
+        "doubao_search",
+        "apify",
+        "zhihu",
+    }:
         settings.web_search_provider = _string(config.get("provider_mode") or "auto")
     return True
 
