@@ -554,8 +554,8 @@ export default function AdminSiteCompliancePage() {
             <div className="mb-4 border-l-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:bg-rose-950/25 dark:text-rose-200" data-ui="site-compliance-section-validation">
               <p className="font-semibold">
                 {copy(
-                  `保存前请处理此区域的 ${activeSectionChecks.length} 个检查项`,
-                  `Resolve ${activeSectionChecks.length} checks in this section before publishing`
+                  `此区域有 ${activeSectionChecks.length} 个发布检查项`,
+                  `This section has ${activeSectionChecks.length} publication checks`
                 )}
               </p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
