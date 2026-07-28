@@ -70,7 +70,7 @@ assert.match(
 );
 assert.match(
   interfaceBlock('PortalCreditLedgerPayload'),
-  /usage_detail\?: \{[\s\S]*recent_items\?: PortalCreditLedgerEntry\[\];/,
+  /ai_credit_usage_detail\?: \{[\s\S]*recent_items\?: PortalCreditLedgerEntry\[\];/,
   'credit ledger usage detail must be explicitly modeled as customer-facing data'
 );
 
