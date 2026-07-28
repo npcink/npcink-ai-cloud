@@ -9,6 +9,7 @@ const register = read('src/app/portal/register/page.tsx');
 const health = read('src/app/api/health/route.ts');
 const publicShell = read('src/components/public/PublicSiteShell.tsx');
 const publicNavigation = read('src/lib/public-navigation.ts');
+const help = read('src/app/help/page.tsx');
 const publicHeaderNavigation = publicNavigation
   .split('export const PUBLIC_HEADER_NAV_ITEMS = ')[1]
   .split('export const PUBLIC_FOOTER_NAV_ITEMS = ')[0];
@@ -49,13 +50,13 @@ assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the
 assert.match(publicStatus, /href="\/status"/, 'home status must link to the full status page');
 assert.match(publicStatus, /aria-busy=/, 'home status must expose its checking state without changing layout');
 assert.match(publicNavigation, /href: '\/status'/, 'public navigation must link to the full status page');
-assert.doesNotMatch(
-  publicHeaderNavigation,
-  /href: '\/(?:help|status)'/,
-  'header navigation must keep secondary help and status links in the footer'
-);
+assert.match(publicHeaderNavigation, /href: '\/status'/, 'header navigation must retain the operational status link');
+assert.doesNotMatch(publicHeaderNavigation, /href: '\/help'/, 'header navigation must leave secondary help in the footer');
 assert.match(publicFooterNavigation, /href: '\/help'/, 'footer navigation must retain the help link');
-assert.match(publicFooterNavigation, /href: '\/status'/, 'footer navigation must retain the status link');
+assert.doesNotMatch(publicFooterNavigation, /href: '\/status'/, 'footer navigation must not duplicate the header status link');
+assert.match(help, /<details key=\{item\.question\}/, 'help FAQs must use native disclosure semantics');
+assert.match(help, /<summary[\s\S]*item\.question/, 'each FAQ question must be the full disclosure trigger');
+assert.doesNotMatch(help, /<details[^>]* open/, 'help FAQs must be collapsed by default');
 assert.match(publicShell, /PUBLIC_HEADER_NAV_ITEMS/, 'desktop and mobile navigation must use the shared header config');
 assert.match(publicShell, /PUBLIC_FOOTER_NAV_ITEMS/, 'footer navigation must use the shared footer config');
 assert.doesNotMatch(publicShell, /const navItems =/, 'public navigation must not drift into a page-local menu');

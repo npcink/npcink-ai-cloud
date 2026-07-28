@@ -8,6 +8,32 @@ import { useLocale } from '@/contexts/LocaleContext';
 export default function HelpPage() {
   const { locale } = useLocale();
   const zh = locale === 'zh-CN';
+  const faqItems = [
+    {
+      question: zh ? '收不到邮箱验证码怎么办？' : 'What if the email code does not arrive?',
+      answer: zh
+        ? '先确认邮箱拼写并检查垃圾邮件；等待一分钟后再重发。开发环境如果未配置邮件，会明确显示配置错误，不代表账号密码错误。'
+        : 'Confirm the address, check spam, and resend after one minute. A development environment without email delivery reports a configuration error; it does not mean the account password is wrong.',
+    },
+    {
+      question: zh ? '为什么套餐页要求先选择站点？' : 'Why does the package page ask for a site?',
+      answer: zh
+        ? '服务中心用当前站点确认您对所属账号的权限。只有一个正常站点时会自动选择；多个站点时请先选择当前站点。'
+        : 'The Portal uses the current site to verify access to its account. A sole active site is selected automatically; with multiple sites, choose the current site first.',
+    },
+    {
+      question: zh ? 'QQ 登录后会接管 WordPress 吗？' : 'Does QQ login take over WordPress?',
+      answer: zh
+        ? '不会。QQ 仅用于 Cloud 服务中心身份认证；WordPress 内容、配置、最终确认与发布仍留在站点。'
+        : 'No. QQ is only an identity method for the Cloud Portal. WordPress content, settings, final approval, and publishing remain in the site.',
+    },
+    {
+      question: zh ? '可以把站点连接到另一个账户吗？' : 'Can I connect a site to another account?',
+      answer: zh
+        ? '可以。请先由原账户移除站点。原账户可随时重新连接；更换账户时，需要等待 Cloud 显示的冷却期结束，并通过已验证的 Addon 重新连接。是否可以连接以及具体时间，以 Cloud 页面显示为准，无需人工审核。套餐和额度不会转移。'
+        : 'Yes. The previous account must remove the site first. That account may reconnect at any time. To use another account, wait until the cooldown shown by Cloud ends, then reconnect through a verified Addon. Cloud shows whether and when the site can be connected; no manual review is required. Plans and credits do not transfer.',
+    },
+  ];
 
   return (
     <PublicDocument
@@ -37,21 +63,18 @@ export default function HelpPage() {
         <Link href="/portal/support?new=1" className="inline-flex font-bold text-[#2357ff] hover:underline">{zh ? '提交工单 →' : 'Submit a ticket →'}</Link>
       </DocumentSection>
       <DocumentSection title={zh ? '常见问题' : 'Frequently asked questions'}>
-        <div>
-          <h3 className="font-bold text-slate-950 dark:text-white">{zh ? '收不到邮箱验证码怎么办？' : 'What if the email code does not arrive?'}</h3>
-          <p>{zh ? '先确认邮箱拼写并检查垃圾邮件；等待一分钟后再重发。开发环境如果未配置邮件，会明确显示配置错误，不代表账号密码错误。' : 'Confirm the address, check spam, and resend after one minute. A development environment without email delivery reports a configuration error; it does not mean the account password is wrong.'}</p>
-        </div>
-        <div>
-          <h3 className="font-bold text-slate-950 dark:text-white">{zh ? '为什么套餐页要求先选择站点？' : 'Why does the package page ask for a site?'}</h3>
-          <p>{zh ? '服务中心用当前站点确认您对所属账号的权限。只有一个正常站点时会自动选择；多个站点时请先选择当前站点。' : 'The Portal uses the current site to verify access to its account. A sole active site is selected automatically; with multiple sites, choose the current site first.'}</p>
-        </div>
-        <div>
-          <h3 className="font-bold text-slate-950 dark:text-white">{zh ? 'QQ 登录后会接管 WordPress 吗？' : 'Does QQ login take over WordPress?'}</h3>
-          <p>{zh ? '不会。QQ 仅用于 Cloud 服务中心身份认证；WordPress 内容、配置、最终确认与发布仍留在站点。' : 'No. QQ is only an identity method for the Cloud Portal. WordPress content, settings, final approval, and publishing remain in the site.'}</p>
-        </div>
-        <div>
-          <h3 className="font-bold text-slate-950 dark:text-white">{zh ? '可以把站点连接到另一个账户吗？' : 'Can I connect a site to another account?'}</h3>
-          <p>{zh ? '可以。请先由原账户移除站点。原账户可随时重新连接；更换账户时，需要等待 Cloud 显示的冷却期结束，并通过已验证的 Addon 重新连接。是否可以连接以及具体时间，以 Cloud 页面显示为准，无需人工审核。套餐和额度不会转移。' : 'Yes. The previous account must remove the site first. That account may reconnect at any time. To use another account, wait until the cooldown shown by Cloud ends, then reconnect through a verified Addon. Cloud shows whether and when the site can be connected; no manual review is required. Plans and credits do not transfer.'}</p>
+        <div className="divide-y divide-slate-300 border-y border-slate-300 dark:divide-white/15 dark:border-white/15">
+          {faqItems.map((item) => (
+            <details key={item.question} className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-4 font-bold text-slate-950 outline-none transition-colors hover:text-[#2357ff] focus-visible:text-[#2357ff] dark:text-white dark:hover:text-[#8ca7ff] dark:focus-visible:text-[#8ca7ff] [&::-webkit-details-marker]:hidden">
+                <span>{item.question}</span>
+                <span aria-hidden="true" className="shrink-0 text-xl font-normal text-slate-500 transition-transform group-open:rotate-180 dark:text-slate-400">
+                  ⌄
+                </span>
+              </summary>
+              <p className="max-w-3xl pb-5 pr-10 text-slate-600 dark:text-slate-300">{item.answer}</p>
+            </details>
+          ))}
         </div>
       </DocumentSection>
       <PublicComplianceDetails surface="help" />
