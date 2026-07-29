@@ -25,6 +25,9 @@ Current implementation evidence:
 
 - Stage 1 added the existing Vitest suite to frontend CI.
 - Stage 2 remediated `/admin/portal-users` as the first Query-first queue.
+- The Portal users directory repository owns filtered counts, stable
+  principal pagination, and current-page candidate selection; the domain
+  hydrates related details only for that page.
 - The measured acceptance record is
   [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md).
 - A headless table library and React Hook Form remain unadopted. They require
@@ -456,8 +459,9 @@ A new implementation session should:
    route manifest, and the development-validation model;
 3. revalidate the evidence instead of trusting the 2026-07-29 snapshot;
 4. treat Stages 1 and 2 as accepted baselines, not work to repeat;
-5. remove the Portal users backend in-memory filtering, counting, and
-   pagination before expanding the frontend pattern;
+5. treat Portal users repository pagination as the accepted backend baseline
+   and revalidate its response contract rather than restoring full-directory
+   hydration;
 6. use Support requests as the only approved second Query-first queue, then
    record whether the shared provider cost and adapter remain justified;
 7. select at most one independent form group for the Stage 3 pilot; do not
