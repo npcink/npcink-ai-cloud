@@ -467,7 +467,7 @@ assert_remote_static_page() {
 }
 
 CURRENT_PHASE="validate-activated-static-terms"
-assert_remote_static_page "/terms" "Npcink Cloud Legal Documents" || fail "Activated /terms validation failed"
+assert_remote_static_page "/terms/index.html" "Npcink Cloud Legal Documents" || fail "Activated legacy terms index validation failed"
 assert_remote_static_page "/terms/en/terms.html" "Npcink Cloud Terms of Service" || fail "Activated English terms validation failed"
 assert_remote_static_page "/terms/zh/terms.html" "Npcink Cloud 服务条款" || fail "Activated Chinese terms validation failed"
 assert_remote_static_page "/terms/styles.css" "site-header" || fail "Activated terms stylesheet validation failed"
@@ -510,7 +510,7 @@ assert_public_static_page() {
 	fi
 }
 
-assert_public_static_page "/terms" "Npcink Cloud Legal Documents"
+assert_public_static_page "/terms/index.html" "Npcink Cloud Legal Documents"
 assert_public_static_page "/terms/en/terms.html" "Npcink Cloud Terms of Service"
 assert_public_static_page "/terms/zh/terms.html" "Npcink Cloud 服务条款"
 assert_public_static_page "/terms/styles.css" "site-header"

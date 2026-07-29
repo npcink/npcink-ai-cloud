@@ -216,7 +216,9 @@ require_image_platform npcink-ai-cloud-api:prod
 echo "[info] Building frontend image exactly once for ${MANIFEST_IMAGE_PLATFORM}"
 set_build_cache_args frontend
 docker buildx build --platform "${MANIFEST_IMAGE_PLATFORM}" \
-	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} --load -t npcink-ai-cloud-frontend:prod \
+	${BUILD_CACHE_ARGS[@]+"${BUILD_CACHE_ARGS[@]}"} \
+	--build-arg "NPCINK_CLOUD_SOURCE_REVISION=${REVISION}" \
+	--load -t npcink-ai-cloud-frontend:prod \
 	-f "${CLOUD_DIR}/frontend/Dockerfile" "${CLOUD_DIR}"
 require_image_platform npcink-ai-cloud-frontend:prod
 

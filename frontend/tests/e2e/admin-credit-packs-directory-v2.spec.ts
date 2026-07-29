@@ -73,30 +73,31 @@ test('credit pack directory is read-first, URL-backed, retained on refresh failu
   const harness = await installCreditPackHarness(page);
   await page.goto('/admin/credit-packs');
 
-  await expect(page.locator('[data-ui="credit-pack-directory-item"]')).toHaveCount(3);
+  await expect(page.locator('[data-ui="credit-pack-directory-row"]')).toHaveCount(3);
   await expect(page.locator('main input')).toHaveCount(0);
-  await expect(page.locator('#credit-pack-inspector')).toContainText('Small credit pack');
+  await expect(page.locator('[data-pack-id="pack_small"]')).toHaveAttribute('data-selected', 'true');
   expect(harness.getGetCount()).toBe(1);
 
-  await page.locator('[data-pack-id="pack_medium"] button').click();
+  await page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/i }).click();
   await expect(page).toHaveURL(/focus=pack_medium/);
-  await expect(page.locator('#credit-pack-inspector')).toContainText('Medium credit pack');
+  await expect(page.getByRole('dialog', { name: /Edit Medium credit pack|编辑 Medium credit pack/i })).toBeVisible();
+  await page.getByRole('dialog', { name: /Edit Medium credit pack|编辑 Medium credit pack/i }).getByRole('button', { name: /^Cancel$|^取消$/i }).click();
   await page.reload();
-  await expect(page.locator('[data-pack-id="pack_medium"] button')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-pack-id="pack_medium"]')).toHaveAttribute('data-selected', 'true');
 
   await page.getByRole('button', { name: /^Inactive$|^未启用$|^未啟用$/i }).click();
   await expect(page).toHaveURL(/status=inactive/);
-  await expect(page.locator('[data-ui="credit-pack-directory-item"]')).toHaveCount(1);
-  await expect(page.locator('#credit-pack-inspector')).toContainText('Large credit pack');
+  await expect(page.locator('[data-ui="credit-pack-directory-row"]')).toHaveCount(1);
+  await expect(page.locator('[data-pack-id="pack_large"]')).toHaveAttribute('data-selected', 'true');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(150);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
-  expect(await page.locator('[data-ui="credit-pack-directory-item"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(650);
+  expect(await page.locator('[data-ui="credit-pack-directory-row"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(650);
 
   harness.failNextRequest();
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
-  await expect(page.getByText(/last successfully loaded credit pack catalog|最近一次成功加载的积分包目录/i)).toBeVisible();
+  await expect(page.getByText(/last successfully loaded credit pack catalog|最近一次成功加载的(?:AI )?积分包目录/i)).toBeVisible();
   await expect(page.locator('[data-pack-id="pack_large"]')).toBeVisible();
 });
 
@@ -105,21 +106,21 @@ test('credit pack editor changes one selected pack while preserving the atomic c
   const harness = await installCreditPackHarness(page);
   await page.goto('/admin/credit-packs?focus=pack_medium');
 
-  await page.getByRole('button', { name: /Edit selected pack|编辑当前积分包/i }).click();
+  await page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/i }).click();
   let editor = page.getByRole('dialog', { name: /Edit Medium credit pack|编辑 Medium credit pack/i });
-  await expect(editor.getByRole('button', { name: /Save pack|保存积分包/i })).toBeDisabled();
+  await expect(editor.getByRole('button', { name: /Save pack|保存(?: AI )?积分包/i })).toBeDisabled();
   await editor.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
   expect(harness.getPatchCount()).toBe(0);
 
-  await page.getByRole('button', { name: /Edit selected pack|编辑当前积分包/i }).click();
+  await page.locator('[data-pack-id="pack_medium"]').getByRole('button', { name: /Edit|编辑/i }).click();
   editor = page.getByRole('dialog', { name: /Edit Medium credit pack|编辑 Medium credit pack/i });
   await editor.getByLabel(/^Amount|^价格/i).fill('29.9');
-  await editor.getByRole('button', { name: /Save pack|保存积分包/i }).click();
+  await editor.getByRole('button', { name: /Save pack|保存(?: AI )?积分包/i }).click();
   await expect(editor).toHaveCount(0);
   await expect(page.getByText(/Credit pack catalog saved|积分包目录已保存/i)).toBeVisible();
   expect(harness.getPatchCount()).toBe(1);
   expect(harness.getLastPatch()).toHaveLength(3);
   expect(harness.getLastPatch().find((item) => item.pack_id === 'pack_medium')?.amount).toBe(29.9);
   expect(harness.getLastPatch().find((item) => item.pack_id === 'pack_small')?.amount).toBe(9.9);
-  await expect(page.locator('#credit-pack-inspector')).toContainText('29.90');
+  await expect(page.locator('[data-pack-id="pack_medium"]')).toContainText('29.90');
 });

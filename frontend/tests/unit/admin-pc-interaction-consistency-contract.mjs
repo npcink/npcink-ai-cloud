@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fromFrontendRoot } from './_paths.mjs';
 
-const read = (path) => readFileSync(resolve(process.cwd(), path), 'utf8');
+const read = (path) => readFileSync(fromFrontendRoot(path), 'utf8');
 const account = read('src/app/admin/accounts/[accountId]/page.tsx');
 const site = read('src/app/admin/sites/[siteId]/page.tsx');
 const subscription = read('src/app/admin/subscriptions/[subscriptionId]/page.tsx');
@@ -13,7 +13,7 @@ const workbenchDialog = read('src/components/admin/AdminWorkbenchDialog.tsx');
 const dialogHook = read('src/hooks/useDialogKeyboard.ts');
 const runtimeProfiles = read('src/app/admin/runtime-profiles/page.tsx');
 const aiResources = read('src/app/admin/ai-resources/page.tsx');
-const planDetail = read('src/app/admin/plans/[planId]/page.tsx');
+const planManagement = read('src/components/admin/PlanManagementWorkbench.tsx');
 const layout = read('src/app/admin/layout.tsx');
 
 for (const [name, source] of [
@@ -31,7 +31,8 @@ assert.match(runtimeProfiles, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/
 assert.doesNotMatch(runtimeProfiles, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'hosted runtime profiles must not keep route-local modal behavior');
 assert.doesNotMatch(runtimeProfiles, /cloudBindingDialogRef|runtime-binding|embedding/i, 'hosted runtime profiles must not retain the removed Cloud dependency dialog');
 assert.doesNotMatch(aiResources, /capabilityAddDialogRef|capabilityAddDialogOpen/, 'model supplier management must not keep the retired capability supplier dialog');
-assert.match(planDetail, /editorDialogRef = useDialogKeyboard[\s\S]*ref=\{editorDialogRef\}/, 'package editor must use shared keyboard behavior');
+assert.match(planManagement, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'package management must reuse the shared admin workbench');
+assert.doesNotMatch(planManagement, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'package management must not keep route-local modal behavior');
 assert.match(serviceSettings, /AdminWorkbenchDialog[\s\S]*<AdminWorkbenchDialog/, 'email preview must reuse the shared admin workbench');
 assert.doesNotMatch(serviceSettings, /createPortal|useDialogKeyboard|role="dialog"|aria-modal="true"/, 'email preview must not keep route-local modal behavior');
 assert.match(layout, /commandDialogRef = useDialogKeyboard[\s\S]*ref=\{commandDialogRef\}/, 'quick switcher must use shared keyboard behavior');

@@ -88,6 +88,7 @@ test('fixed service directory uses a table and one configuration workbench', asy
 
   await expect(page.locator('[data-ui="external-service-table"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="tavily"]')).toBeVisible();
+  await expect(page.locator('[data-external-service-id="doubao_search"]')).toBeVisible();
   await expect(page.locator('[data-external-service-id="jina_reader"]')).toBeVisible();
   await expect(page.getByRole('button', { name: /Add|添加/i })).toHaveCount(0);
   await expect(page.locator('aside.admin-sidebar')).toHaveCSS('width', '208px');
@@ -107,6 +108,11 @@ test('fixed service directory uses a table and one configuration workbench', asy
   await unsplash.getByRole('button', { name: /Configure|配置/i }).click();
   const dialog = page.getByRole('dialog', { name: /Configure Unsplash|配置 Unsplash/i });
   await expect(dialog).toBeVisible();
+  const unsplashCredentialLink = dialog.locator('[data-external-credential-link="unsplash"]');
+  await expect(unsplashCredentialLink).toHaveText(/Get Access Key|获取 Access Key/);
+  await expect(unsplashCredentialLink).toHaveAttribute('href', 'https://unsplash.com/oauth/applications');
+  await expect(unsplashCredentialLink).toHaveAttribute('target', '_blank');
+  await expect(unsplashCredentialLink).toHaveAttribute('rel', 'noreferrer noopener');
   await dialog.getByLabel(/API key|API Key|Token/i).fill('test-image-key');
   await dialog.getByLabel(/Enable for runtime calls|启用于运行时调用/i).check();
   page.once('dialog', async (browserDialog) => {
@@ -151,13 +157,20 @@ test('stored credentials require explicit replacement and clearing needs confirm
   await tavily.getByRole('button', { name: /Configure|配置/i }).click();
   const dialog = page.getByRole('dialog', { name: /Configure Tavily|配置 Tavily/i });
   await expect(dialog.getByText(/Current saved credential remains unchanged|保留当前已保存凭据/i)).toBeVisible();
+  await expect(dialog.locator('[data-external-credential-link="tavily"]')).toHaveText(/Manage API Key|管理 API Key/);
+  await expect(dialog.locator('[data-external-credential-link="tavily"]')).toHaveAttribute('href', 'https://app.tavily.com/home');
   await expect(dialog.getByLabel(/API key|API Key|Token/i)).toHaveCount(0);
   await dialog.getByRole('button', { name: /Replace credential|替换凭据/i }).click();
   await expect(dialog.getByLabel(/API key|API Key|Token/i)).toBeVisible();
   await dialog.getByRole('button', { name: /Cancel replacement|取消替换/i }).click();
   await expect(dialog.getByLabel(/API key|API Key|Token/i)).toHaveCount(0);
 
-  await expect(dialog.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
+  const configurationTable = dialog.locator('[data-ui="admin-configuration-table"]');
+  await expect(configurationTable).toBeVisible();
+  await expect(configurationTable).toHaveAttribute('data-boundary', 'header-only');
+  await expect(configurationTable).toHaveCSS('border-top-width', '0px');
+  await expect(configurationTable.locator('[data-configuration-row="service-url"]')).toHaveCSS('border-top-width', '0px');
+  await expect(dialog.locator('[data-ui="admin-workbench-close"]')).toHaveCSS('border-top-width', '0px');
   await expect(dialog.locator('[data-configuration-row="service-url"]')).toContainText('https://api.tavily.com');
   await dialog.getByRole('button', { name: /Clear credential and disable|清除凭据并停用/i }).click();
   await expect(dialog.getByText(/Clear the credential for Tavily|确认清除 Tavily/i)).toBeVisible();
@@ -173,6 +186,7 @@ test('stored credentials require explicit replacement and clearing needs confirm
   const reader = page.locator('[data-external-service-id="jina_reader"]');
   await reader.getByRole('button', { name: /Configure|配置/i }).click();
   const readerDialog = page.getByRole('dialog', { name: /Configure Jina Reader|配置 Jina Reader/i });
+  await expect(readerDialog.locator('[data-external-credential-link]')).toHaveCount(0);
   await readerDialog.getByLabel(/Enable for runtime calls|启用于运行时调用/i).check();
   await readerDialog.getByRole('button', { name: /Save settings|保存设置|^Save$|^保存$/i }).click();
   await expect.poll(() => writes.length).toBe(2);

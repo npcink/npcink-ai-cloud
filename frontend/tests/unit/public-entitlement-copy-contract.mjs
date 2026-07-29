@@ -21,13 +21,13 @@ assert.match(
 
 assert.match(
   help,
-  /同一账户可以随时重新连接[\s\S]*无需单独提交人工审核[\s\S]*以 Cloud 页面显示为准/,
-  'help must explain automatic post-cooldown validation without a manual review request'
+  /原账户可随时重新连接[\s\S]*以 Cloud 页面显示为准[\s\S]*无需人工审核[\s\S]*套餐和额度不会转移/,
+  'help must retain concise same-account, cooldown, review, and entitlement guidance'
 );
 assert.match(
   help,
-  /same account may reconnect at any time[\s\S]*no separate manual review request is required[\s\S]*availability time shown by Cloud/i,
-  'help must retain the English automatic post-cooldown validation guidance'
+  /account may reconnect at any time[\s\S]*cooldown shown by Cloud[\s\S]*no manual review is required[\s\S]*Plans and credits do not transfer/i,
+  'help must retain the concise English reconnect and entitlement guidance'
 );
 
 assert.match(

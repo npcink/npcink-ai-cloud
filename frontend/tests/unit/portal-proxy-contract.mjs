@@ -43,7 +43,7 @@ for (const retiredHeaderName of [
 
 assert.match(
   portalSharedSource,
-  /catch \{[\s\S]*options\.unreachableMessage[\s\S]*\}/m,
+  /catch \(error\) \{[\s\S]*options\.unreachableMessage[\s\S]*\}/m,
   'portal network failures must return the stable configured fallback message'
 );
 assert.doesNotMatch(
@@ -127,13 +127,18 @@ assert.match(
 );
 assert.match(
   portalSessionBoundarySource,
-  /if \(isLoading \|\| isAuthenticated \|\| redirectStartedRef\.current\)[\s\S]*logout\(\)\.finally\(\(\) => window\.location\.replace\(loginUrl\)\)/,
-  'a stale Portal cookie must be cleared before returning the user to login with the original path'
+  /if \(isLoading \|\| isAuthenticated \|\| !sessionInvalid \|\| redirectStartedRef\.current\)[\s\S]*logout\(\)\.finally\(\(\) => window\.location\.replace\(loginUrl\)\)/,
+  'only a confirmed stale Portal session must be cleared before returning the user to login'
 );
 assert.match(
   portalSessionBoundarySource,
-  /if \(!isPublicPath && !isLoading && !isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'protected Portal content and navigation must stay hidden while stale-session redirect is in progress'
+  /if \(!sessionInvalid\) \{[\s\S]*Your browser has not been signed out[\s\S]*void refresh\(\)/,
+  'transient session verification failures must retain the cookie and offer retry'
+);
+assert.match(
+  portalSharedSource,
+  /signal: AbortSignal\.timeout\(12_000\)/,
+  'Portal backend proxy requests must have a bounded timeout'
 );
 assert.doesNotMatch(
   proxySource,

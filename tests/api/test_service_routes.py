@@ -34,13 +34,16 @@ from app.core.config import Settings
 from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
+    IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE,
     PRINCIPAL_STATUS_DISABLED,
     SITE_STATUS_ARCHIVED,
+    SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_PAST_DUE,
     AccountEntitlementSnapshot,
     AccountSubscription,
     AccountUserMembership,
     BillingSnapshot,
+    IdentityProviderBinding,
     ModelReferenceModel,
     ModelReferenceSource,
     PluginObservabilityEvent,
@@ -332,6 +335,49 @@ def _runtime_service_settings(database_url: str) -> Settings:
         siliconflow_api_key="",
         site_knowledge_embedding_provider="deterministic",
     )
+
+
+def test_admin_operational_readiness_projection_is_bounded_and_fail_closed() -> None:
+    ready = service_routes._build_admin_operational_readiness_projection(
+        {
+            "ok": True,
+            "generated_at": "2026-07-29T08:00:00Z",
+            "checks": {
+                "dependencies.ready": True,
+                "providers.fresh": True,
+                "worker.runtime_queue.fresh": True,
+                "cadence.provider_health_scan.fresh": True,
+            },
+            "summary": {"must_not_escape": True},
+        }
+    )
+    blocked = service_routes._build_admin_operational_readiness_projection(
+        {
+            "ok": False,
+            "generated_at": "2026-07-29T08:01:00Z",
+            "checks": {
+                "dependencies.ready": True,
+                "providers.fresh": False,
+                "worker.runtime_queue.fresh": False,
+                "cadence.provider_health_scan.fresh": False,
+            },
+        }
+    )
+
+    assert ready == {
+        "status": "ok",
+        "ok": True,
+        "generated_at": "2026-07-29T08:00:00Z",
+        "checks_total": 4,
+        "checks_failed": 0,
+        "failed_checks": [],
+        "failure_scopes": [],
+        "href": "/admin/troubleshooting",
+    }
+    assert blocked["status"] == "error"
+    assert blocked["checks_failed"] == 3
+    assert blocked["failure_scopes"] == ["providers", "workers", "cadence"]
+    assert "summary" not in blocked
 
 
 def _request_portal_registration_code(
@@ -650,6 +696,156 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
         )
         assert membership is not None
         assert membership.status == ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED
+
+    dispose_engine(database_url)
+
+
+def test_admin_portal_users_filters_counts_and_paginates_in_repository(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_login_code_ttl_seconds": 300,
+            "debug_local_origin_allowlist": "http://testserver",
+        },
+    )
+    seeded: list[tuple[str, str]] = []
+    for index, email in enumerate(
+        (
+            "sql-page-alpha@example.com",
+            "sql-page-beta@example.com",
+            "sql-page-gamma@example.com",
+        )
+    ):
+        request_data = _request_portal_registration_code(client, email=email)
+        registration_data = _verify_portal_registration_code(
+            client,
+            email=email,
+            code=str(request_data["code"]),
+        )
+        assert registration_data["email"] == email
+        with get_session(database_url) as session:
+            principal = session.scalar(select(Principal).where(Principal.email == email))
+            assert principal is not None
+            membership = session.scalar(
+                select(AccountUserMembership).where(
+                    AccountUserMembership.principal_id == principal.principal_id
+                )
+            )
+            assert membership is not None
+            principal.created_at = datetime(2026, 7, 29, 1, index, tzinfo=UTC)
+            seeded.append((principal.principal_id, membership.account_id))
+            session.commit()
+
+    alpha_principal_id, alpha_account_id = seeded[0]
+    with get_session(database_url) as session:
+        session.add(
+            Site(
+                site_id="site_sql_page_alpha",
+                account_id=alpha_account_id,
+                name="Alpha SQL Site",
+                status="active",
+                site_url="https://alpha-sql.example.com",
+                platform_kind="wordpress",
+                metadata_json={"source": "portal_self_registration"},
+            )
+        )
+        session.add(
+            AccountSubscription(
+                subscription_id="sub_sql_page_alpha",
+                account_id=alpha_account_id,
+                plan_id="pro",
+                plan_version_id="pro-v1",
+                status=SUBSCRIPTION_STATUS_ACTIVE,
+                metadata_json={"tier_id": "pro", "package_alias": "Pro"},
+            )
+        )
+        session.add(
+            IdentityProviderBinding(
+                binding_id="idp_sql_page_alpha",
+                principal_id=alpha_principal_id,
+                provider="qq",
+                external_subject_hash="qq-subject-sql-page-alpha",
+                unionid_hash=None,
+                status=IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE,
+                metadata_json={},
+                last_login_at=datetime(2026, 7, 29, 2, 0, tzinfo=UTC),
+            )
+        )
+        session.commit()
+
+    original_list_principals = CommercialRepository.list_principals
+    hydrated_principal_ids: list[list[str]] = []
+
+    def record_page_hydration(
+        repository: CommercialRepository,
+        **kwargs: Any,
+    ) -> list[Principal]:
+        principal_ids = kwargs.get("principal_ids")
+        hydrated_principal_ids.append(list(principal_ids) if principal_ids is not None else [])
+        return original_list_principals(repository, **kwargs)
+
+    monkeypatch.setattr(
+        CommercialRepository,
+        "list_principals",
+        record_page_hydration,
+    )
+
+    first_page_response = client.get(
+        "/internal/service/admin/portal-users?source=all&limit=1",
+        headers=build_internal_headers(),
+    )
+    assert first_page_response.status_code == 200, first_page_response.text
+    first_page = first_page_response.json()["data"]
+    assert first_page["total"] == 3
+    assert first_page["pagination"] == {
+        "offset": 0,
+        "limit": 1,
+        "total": 3,
+        "has_more": True,
+    }
+    assert [item["principal_id"] for item in first_page["items"]] == [seeded[2][0]]
+    assert hydrated_principal_ids == [[seeded[2][0]]]
+
+    second_page_response = client.get(
+        "/internal/service/admin/portal-users?source=all&limit=1&offset=1",
+        headers=build_internal_headers(),
+    )
+    assert second_page_response.status_code == 200, second_page_response.text
+    assert [item["principal_id"] for item in second_page_response.json()["data"]["items"]] == [
+        seeded[1][0]
+    ]
+
+    site_search = client.get(
+        "/internal/service/admin/portal-users?q=alpha-sql.example.com",
+        headers=build_internal_headers(),
+    ).json()["data"]
+    assert site_search["total"] == 1
+    assert site_search["items"][0]["principal_id"] == alpha_principal_id
+
+    package_search = client.get(
+        "/internal/service/admin/portal-users?package_alias=pro",
+        headers=build_internal_headers(),
+    ).json()["data"]
+    assert package_search["total"] == 1
+    assert package_search["items"][0]["package_alias"] == "Pro"
+
+    qq_search = client.get(
+        "/internal/service/admin/portal-users?qq_bound=true",
+        headers=build_internal_headers(),
+    ).json()["data"]
+    assert qq_search["total"] == 1
+    assert qq_search["items"][0]["principal_id"] == alpha_principal_id
+    assert qq_search["summary"]["qq_bound"] == 1
+
+    literal_wildcard_search = client.get(
+        "/internal/service/admin/portal-users?q=%25",
+        headers=build_internal_headers(),
+    ).json()["data"]
+    assert literal_wildcard_search["total"] == 0
 
     dispose_engine(database_url)
 
@@ -5688,6 +5884,12 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert overview["recent_usage"]["event_count"] >= 1
     assert "platform_credit_summary" not in overview
     assert "runtime_diagnostics" in overview
+    assert overview["operational_readiness"]["status"] == "error"
+    assert overview["operational_readiness"]["ok"] is False
+    assert overview["operational_readiness"]["checks_failed"] >= 1
+    assert "providers" in overview["operational_readiness"]["failure_scopes"]
+    assert overview["operational_readiness"]["href"] == "/admin/troubleshooting"
+    assert "summary" not in overview["operational_readiness"]
     assert overview["runtime_telemetry"]["filters"]["recent_minutes"] == 1440
     assert overview["runtime_telemetry"]["alert_summary"]["status"] in {
         "ok",

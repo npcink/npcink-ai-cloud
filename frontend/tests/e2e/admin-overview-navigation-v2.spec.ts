@@ -9,6 +9,12 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   await installAdminMocks(page);
   await page.goto('/admin');
 
+  await expect(page.getByText(/Not operationally ready|未达到运营就绪/i).first()).toBeVisible();
+  await expect(page.getByText(/2 formal readiness checks failed|正式运营就绪检查有 2 项失败/i)).toBeVisible();
+  await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toHaveAttribute(
+    'href',
+    '/admin/troubleshooting'
+  );
   await expect(page.locator('[data-ui="admin-overview-destination"]')).toHaveCount(4);
   await expect(page.locator('[data-ui="admin-overview-destination"][href="/admin/accounts"]')).toBeVisible();
   await expect(page.locator('[data-ui="admin-overview-destination"][href="/admin/coverage"]')).toBeVisible();

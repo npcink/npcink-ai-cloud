@@ -67,6 +67,7 @@ async function installAccountsQueueMocks(page: Page) {
   await installAdminMocks(page);
   let accounts = initialAccounts();
   let requestCount = 0;
+  let createRequestCount = 0;
   let failNext = false;
 
   await page.route('**/api/admin/accounts?*', async (route) => {
@@ -104,6 +105,7 @@ async function installAccountsQueueMocks(page: Page) {
       await route.fallback();
       return;
     }
+    createRequestCount += 1;
     const payload = route.request().postDataJSON() as Record<string, unknown>;
     const metadata = (payload.metadata || {}) as Record<string, unknown>;
     const bindDefaultFree = Boolean(payload.bind_default_free);
@@ -133,6 +135,7 @@ async function installAccountsQueueMocks(page: Page) {
 
   return {
     getRequestCount: () => requestCount,
+    getCreateRequestCount: () => createRequestCount,
     failNextRequest: () => {
       failNext = true;
     },
@@ -186,10 +189,17 @@ test('customer queue persists risk filters and inspector focus while retaining d
 
 test('customer creation remains explicit and binds the formal Free package by default', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installAccountsQueueMocks(page);
+  const mocks = await installAccountsQueueMocks(page);
   await page.goto('/admin/accounts');
 
   await page.getByRole('button', { name: /Add customer|添加客户|新增客戶/i }).click();
+  await page.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i).fill('   ');
+  await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('   ');
+  await page.getByRole('button', { name: /Create user|创建用户|建立使用者/i }).click();
+  await expect(page.getByText(/Enter an Account ID|请输入账号 ID/i)).toBeVisible();
+  await expect(page.getByText(/Enter a customer name|请输入客户名称/i)).toBeVisible();
+  expect(mocks.getCreateRequestCount()).toBe(0);
+
   await page.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i).fill('acct_new_customer_free');
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('New Customer');
   await page.getByLabel(/Operator name|运营显示名|營運顯示名/i).fill('New Customer Display');
@@ -200,4 +210,5 @@ test('customer creation remains explicit and binds the formal Free package by de
   await expect(page.getByText('New Customer Display')).toBeVisible();
   await expect(page.getByText('Internal launch note')).toBeVisible();
   await expect(page.getByText('Free').last()).toBeVisible();
+  expect(mocks.getCreateRequestCount()).toBe(1);
 });

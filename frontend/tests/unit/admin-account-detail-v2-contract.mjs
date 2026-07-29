@@ -3,6 +3,24 @@ import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
 
 const source = readFileSync(fromFrontendRoot('src/app/admin/accounts/[accountId]/page.tsx'), 'utf8');
+const siteRuntimeSource = readFileSync(
+  fromFrontendRoot('src/features/admin/accounts/account-site-runtime.ts'),
+  'utf8'
+);
+const operatorProfileSource = [
+  readFileSync(
+    fromFrontendRoot(
+      'src/features/admin/accounts/AccountOperatorProfileEditor.tsx'
+    ),
+    'utf8'
+  ),
+  readFileSync(
+    fromFrontendRoot(
+      'src/features/admin/accounts/account-operator-profile.ts'
+    ),
+    'utf8'
+  ),
+].join('\n');
 const architectureSource = readFileSync(
   fromFrontendRoot('../docs/cloud-admin-information-architecture-v2.md'),
   'utf8'
@@ -35,15 +53,19 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(activeDetailTab === 'commercial'\)[\s\S]*loadPackagePlans\(\)[\s\S]*if \(activeDetailTab === 'credits'\)[\s\S]*loadQuotaSummary\(\)[\s\S]*loadCreditLedger\(\)[\s\S]*activeDetailTab === 'audit'[\s\S]*loadSiteRuntimeData\(siteIds\)/,
-  'low-frequency commercial, credit, ledger, and site-runtime data must load from its owning tab'
+  /if \(activeDetailTab === 'commercial'\)[\s\S]*loadPackagePlans\(\)[\s\S]*if \(activeDetailTab === 'credits'\)[\s\S]*loadQuotaSummary\(\)[\s\S]*loadCreditLedger\(\)/,
+  'low-frequency commercial, quota, and ledger data must load from their owning tabs'
+);
+assert.match(
+  source,
+  /useAccountSiteRuntime\([\s\S]*activeDetailTab === 'audit'/,
+  'site-runtime diagnostics must load through the account feature query only for the audit tab'
 );
 for (const requestGuard of [
   'accountRequestedRef',
   'packagePlansRequestedRef',
   'quotaSummaryRequestedRef',
   'creditLedgerRequestedRef',
-  'siteRuntimeRequestKeyRef',
 ]) {
   assert.match(
     source,
@@ -51,11 +73,51 @@ for (const requestGuard of [
     `${requestGuard} must prevent duplicate tab or Strict Mode requests`
   );
 }
+assert.doesNotMatch(
+  source,
+  /siteRuntimeRequestKeyRef|loadSiteRuntimeData/,
+  'account detail must not retain a second route-local site-runtime request lifecycle'
+);
+assert.match(
+  siteRuntimeSource,
+  /useQuery\([\s\S]*queryKey: accountSiteRuntimeKeys\.detail[\s\S]*queryFn: \(\{ signal \}\)[\s\S]*enabled: enabled/,
+  'the account feature query must own site-runtime identity, cancellation, and activation'
+);
+assert.match(
+  siteRuntimeSource,
+  /Promise\.allSettled[\s\S]*failedSiteIds[\s\S]*failedSiteIds\.length === normalizedSiteIds\.length[\s\S]*throw/,
+  'site-runtime aggregation must preserve partial failures and reject a completely unavailable scope'
+);
+assert.match(
+  source,
+  /siteRuntimeEvidenceComplete[\s\S]*trustedSiteRuntimeData[\s\S]*hasApiKeyGap/,
+  'incomplete site-runtime evidence must not drive account health or quota conclusions'
+);
 
 assert.match(
   source,
   /admin\.account_detail\.more_account_actions[\s\S]*admin\.accounts\.suspend_account_action/,
   'account suspension must stay behind an explicit more-actions disclosure'
+);
+assert.match(
+  source,
+  /useAccountOperatorProfile\([\s\S]*<AccountOperatorProfileEditor/,
+  'the route must compose the operator-profile controller and presentation boundary'
+);
+assert.doesNotMatch(
+  source,
+  /accountMetaForm|handleSaveAccountMeta|isSavingAccountMeta/,
+  'the route must not retain operator-profile draft or submit lifecycle state'
+);
+assert.match(
+  operatorProfileSource,
+  /data-ui="operator-profile-editor"[\s\S]*controller\.values\.operator_display_name[\s\S]*controller\.values\.operator_note/,
+  'the feature component must preserve the collapsed operator-profile editor'
+);
+assert.match(
+  operatorProfileSource,
+  /buildAccountOperatorProfilePayload[\s\S]*bind_default_free: false[\s\S]*accountDetailClient\.request[\s\S]*'\/api\/admin\/accounts'/,
+  'the feature API must preserve the bounded account metadata payload'
 );
 assert.match(source, /useToast\(\)/, 'customer and commercial success feedback must use global Toast');
 assert.doesNotMatch(

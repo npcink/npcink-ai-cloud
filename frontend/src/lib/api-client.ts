@@ -26,6 +26,7 @@ export interface ApiClientConfig {
   cache?: RequestCache;
   idempotencyPrefix?: string;
   idempotencyKeyFactory?: (prefix: string) => string;
+  timeoutMs?: number;
 }
 
 export interface ApiRequestOptions {
@@ -36,6 +37,7 @@ export interface ApiRequestOptions {
   cache?: RequestCache;
   signal?: AbortSignal;
   idempotencyKey?: string;
+  timeoutMs?: number;
 }
 
 const SAFE_METHODS = new Set<ApiMethod>(['GET', 'HEAD']);
@@ -168,6 +170,7 @@ export class ApiClient {
   private readonly defaultCache: RequestCache;
   private readonly idempotencyPrefix: string;
   private readonly idempotencyKeyFactory: (prefix: string) => string;
+  private readonly defaultTimeoutMs: number;
 
   constructor(config: ApiClientConfig = {}) {
     this.baseUrl = String(config.baseUrl || '').trim();
@@ -178,6 +181,7 @@ export class ApiClient {
       config.idempotencyPrefix || 'api_write'
     );
     this.idempotencyKeyFactory = config.idempotencyKeyFactory || generateIdempotencyKey;
+    this.defaultTimeoutMs = Math.max(1_000, Number(config.timeoutMs || 12_000));
   }
 
   async request<T>(path: string, options: ApiRequestOptions = {}): Promise<ApiEnvelope<T>> {
@@ -211,6 +215,11 @@ export class ApiClient {
       body = serializedBody;
     }
 
+    const timeoutMs = Math.max(1_000, Number(options.timeoutMs || this.defaultTimeoutMs));
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
     let response: Response;
     try {
       response = await fetch(joinUrl(this.baseUrl, path), {
@@ -219,13 +228,16 @@ export class ApiClient {
         body,
         credentials: options.credentials || this.defaultCredentials,
         cache: options.cache || this.defaultCache,
-        signal: options.signal,
+        signal,
       });
     } catch (cause) {
+      const timedOut = timeoutSignal.aborted && !options.signal?.aborted;
       throw new ApiError({
         statusCode: 0,
-        errorCode: 'client.network_error',
-        message: cause instanceof Error ? cause.message : 'Network request failed',
+        errorCode: timedOut ? 'client.request_timeout' : 'client.network_error',
+        message: timedOut
+          ? `Request timed out after ${timeoutMs}ms`
+          : cause instanceof Error ? cause.message : 'Network request failed',
         details: cause,
         rawBody: undefined,
         cause,

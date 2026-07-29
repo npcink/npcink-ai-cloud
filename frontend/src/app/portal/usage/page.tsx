@@ -14,6 +14,7 @@ import {
 import { PortalCreditTrendPanel } from '@/components/portal/PortalCreditTrendPanel';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
+import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 import {
   portalClient,
   type Entitlements,
@@ -379,21 +380,16 @@ function PortalUsageContent() {
     };
   }, [activeUsageView, contextSiteId, isAuthenticated, loadCreditTrend]);
 
-  useEffect(() => {
-    if (!selectedCreditEvent && !selectedCreditBucket) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (selectedCreditEvent) setSelectedCreditEvent(null);
-        else setSelectedCreditBucket(null);
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = '';
-    };
-  }, [selectedCreditBucket, selectedCreditEvent]);
+  const closeCreditBucket = useCallback(() => setSelectedCreditBucket(null), []);
+  const closeCreditEvent = useCallback(() => setSelectedCreditEvent(null), []);
+  const creditBucketDrawerRef = useDialogFocusManagement<HTMLElement>(
+    Boolean(selectedCreditBucket),
+    closeCreditBucket
+  );
+  const creditEventDrawerRef = useDialogFocusManagement<HTMLElement>(
+    Boolean(selectedCreditEvent),
+    closeCreditEvent
+  );
 
   const handleUsageViewChange = (nextView: PortalUsageView) => {
     setActiveUsageView(nextView);
@@ -784,7 +780,7 @@ function PortalUsageContent() {
       {selectedCreditBucket ? (
         <div className="fixed inset-0 z-50">
           <button type="button" className="absolute inset-0 bg-slate-950/45" aria-label={t('common.close')} onClick={() => setSelectedCreditBucket(null)} />
-          <aside role="dialog" aria-modal="true" aria-labelledby="credit-bucket-detail-title" className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+          <aside ref={creditBucketDrawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="credit-bucket-detail-title" className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
               <div>
                 <h2 id="credit-bucket-detail-title" className="text-xl font-semibold text-slate-950 dark:text-white">{formatCreditBucketRange(selectedCreditBucket.start_at, selectedCreditBucket.end_at, locale)}</h2>
@@ -815,7 +811,7 @@ function PortalUsageContent() {
       {selectedCreditEvent ? (
         <div className="fixed inset-0 z-50">
           <button type="button" className="absolute inset-0 bg-slate-950/45" aria-label={t('common.close')} onClick={() => setSelectedCreditEvent(null)} />
-          <aside role="dialog" aria-modal="true" aria-labelledby="credit-event-detail-title" className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+          <aside ref={creditEventDrawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="credit-event-detail-title" className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-slate-800">
               <div><h2 id="credit-event-detail-title" className="text-xl font-semibold text-slate-950 dark:text-white">{eventFeatureText(selectedCreditEvent, 'title')}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{eventSiteLabel(selectedCreditEvent)}</p></div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedCreditEvent(null)}>{t('common.close')}</button>

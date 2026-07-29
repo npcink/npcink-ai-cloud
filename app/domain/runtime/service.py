@@ -22,7 +22,6 @@ from app.adapters.queue.base import RuntimeQueue
 from app.adapters.repositories.runtime_repository import RuntimeRepository
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
-from app.core.error_taxonomy import get_error_taxonomy
 from app.core.logging import get_logger
 from app.core.models import (
     RUN_CALLBACK_STATUS_FAILED,
@@ -30,19 +29,11 @@ from app.core.models import (
     SITE_STATUS_ACTIVE,
     ProviderCallRecord,
     RunRecord,
-    RuntimeGuardEvent,
     UsageMeterEvent,
 )
 from app.core.secrets import (
     decrypt_runtime_execution_input,
     encrypt_runtime_execution_input,
-)
-from app.core.security import (
-    REPLAY_SCOPE_INTERNAL_POST,
-    REPLAY_SCOPE_INTERNAL_POST_IP,
-    REPLAY_SCOPE_PUBLIC_POST_IP,
-    REPLAY_SCOPE_PUBLIC_POST_KEY,
-    REPLAY_SCOPE_PUBLIC_POST_SITE,
 )
 from app.domain.audio_generation.artifacts import (
     AudioArtifactMaterializationError,
@@ -71,7 +62,9 @@ from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_ABILITIES,
     IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
+    MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES,
     ImageContextEvidenceContractViolation,
+    image_context_evidence_artifact_ids,
 )
 from app.domain.image_context_evidence.service import (
     ImageContextEvidenceProviderError,
@@ -112,6 +105,7 @@ from app.domain.runtime.artifact_coordination import (
 )
 from app.domain.runtime.callback_delivery import RuntimeCallbackDeliveryService
 from app.domain.runtime.contract_validation import RuntimeContractValidator
+from app.domain.runtime.diagnostics_query import RuntimeDiagnosticsQueryService
 from app.domain.runtime.errors import (
     RuntimeBatchLimitExceededError,
     RuntimeErrorBase,
@@ -123,15 +117,9 @@ from app.domain.runtime.errors import (
     RuntimeSiteNotProvisionedError,
 )
 from app.domain.runtime.models import (
-    ABUSE_GUARD_ATTENTION_RATIO,
-    ABUSE_GUARD_CRITICAL_RATIO,
-    RUNTIME_BACKLOG_QUEUED_AGING_AFTER_SECONDS,
-    RUNTIME_BACKLOG_RUNNING_AGING_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_AFTER_SECONDS,
     RUNTIME_CALLBACK_DISPATCH_LEASE_RECOVERY_ERROR_CODE,
-    RUNTIME_DIAGNOSTIC_CALLBACK_DISPATCHING_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
-    RUNTIME_DIAGNOSTIC_CANCEL_STUCK_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
     RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
     RUNTIME_STORAGE_MODE_FULL_STORE_WITH_TTL,
@@ -142,7 +130,6 @@ from app.domain.runtime.models import (
     normalize_runtime_request_policy,
     normalize_runtime_task_backend,
 )
-from app.domain.runtime.provider_evidence import summarize_provider_runtime_evidence
 from app.domain.runtime.provider_execution import (
     ProviderCallEvidenceCommand,
     ProviderOutputDecision,
@@ -234,6 +221,10 @@ class RuntimeService:
             providers=self.providers,
         )
         self.run_projector = RuntimeRunProjector()
+        self.diagnostics_query_service = RuntimeDiagnosticsQueryService(
+            database_url=self.database_url,
+            run_projector=self.run_projector,
+        )
         self.callback_delivery_service = RuntimeCallbackDeliveryService(
             database_url=self.database_url,
             settings=self.settings,
@@ -1259,61 +1250,10 @@ class RuntimeService:
         site_id: str | None = None,
         recent_minutes: int = 60,
     ) -> dict[str, object]:
-        current_time = datetime.now(UTC)
-        recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            summary = repository.get_runtime_diagnostics_summary(
-                site_id=site_id,
-                now=current_time,
-                recent_since=recent_since,
-            )
-            guard_summary = {
-                "recent_events": repository.count_runtime_guard_events(
-                    since=recent_since,
-                    site_id=site_id,
-                ),
-                "recent_rate_limit_exceeded": repository.count_runtime_guard_events(
-                    since=recent_since,
-                    site_id=site_id,
-                    event_code="auth.rate_limit_exceeded",
-                ),
-                "recent_replay_blocked": repository.count_runtime_guard_events(
-                    since=recent_since,
-                    site_id=site_id,
-                    event_code="auth.replay_blocked",
-                ),
-                "recent_payload_too_large": repository.count_runtime_guard_events(
-                    since=recent_since,
-                    site_id=site_id,
-                    event_code="auth.payload_too_large",
-                ),
-                "recent_invalid_nonce": repository.count_runtime_guard_events(
-                    since=recent_since,
-                    site_id=site_id,
-                    event_code="auth.invalid_nonce",
-                ),
-                "recent_invalid_idempotency_key": repository.count_runtime_guard_events(
-                    since=recent_since,
-                    site_id=site_id,
-                    event_code="auth.invalid_idempotency_key",
-                ),
-                "event_codes": repository.summarize_runtime_guard_event_codes(
-                    since=recent_since,
-                    site_id=site_id,
-                    limit=10,
-                ),
-            }
-        summary = self._augment_runtime_diagnostics_summary(summary, current_time)
-        return {
-            "filters": {
-                "site_id": site_id or "",
-                "recent_minutes": recent_minutes,
-            },
-            "generated_at": self.run_projector.serialize_timestamp(current_time),
-            "guard": guard_summary,
-            **summary,
-        }
+        return self.diagnostics_query_service.get_runtime_diagnostics_summary(
+            site_id=site_id,
+            recent_minutes=recent_minutes,
+        )
 
     def get_provider_runtime_evidence_summary(
         self,
@@ -1325,47 +1265,14 @@ class RuntimeService:
         recent_minutes: int = 1440,
         lane_limit: int = 50,
     ) -> dict[str, object]:
-        current_time = datetime.now(UTC)
-        resolved_recent_minutes = max(1, recent_minutes)
-        resolved_lane_limit = max(1, lane_limit)
-        record_limit = 10000
-        recent_since = current_time - timedelta(minutes=resolved_recent_minutes)
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            records, records_truncated = repository.list_provider_evidence_records(
-                since=recent_since,
-                limit=record_limit,
-                site_id=site_id,
-                provider_id=provider_id,
-                model_id=model_id,
-                ability_name=ability_name,
-            )
-            meter_events = repository.list_provider_evidence_meter_events(
-                [record.call_id for record in records]
-            )
-        evidence = summarize_provider_runtime_evidence(
-            records,
-            meter_events,
-            lane_limit=resolved_lane_limit,
+        return self.diagnostics_query_service.get_provider_runtime_evidence_summary(
+            site_id=site_id,
+            provider_id=provider_id,
+            model_id=model_id,
+            ability_name=ability_name,
+            recent_minutes=recent_minutes,
+            lane_limit=lane_limit,
         )
-        return {
-            "filters": {
-                "site_id": site_id or "",
-                "provider_id": provider_id or "",
-                "model_id": model_id or "",
-                "ability_name": ability_name or "",
-                "recent_minutes": resolved_recent_minutes,
-                "lane_limit": resolved_lane_limit,
-            },
-            "window": {
-                "started_at": self.run_projector.serialize_timestamp(recent_since),
-                "ended_at": self.run_projector.serialize_timestamp(current_time),
-                "record_limit": record_limit,
-                "records_truncated": records_truncated,
-            },
-            "generated_at": self.run_projector.serialize_timestamp(current_time),
-            **evidence,
-        }
 
     def get_runtime_telemetry_diagnostics(
         self,
@@ -1613,176 +1520,11 @@ class RuntimeService:
         site_id: str | None = None,
         limit: int = 20,
     ) -> dict[str, object]:
-        current_time = datetime.now(UTC)
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            runs = repository.list_runtime_backlog_runs(site_id=site_id)
-
-        queued_ages: list[int] = []
-        running_ages: list[int] = []
-        grouped_runs: dict[str, dict[str, object]] = {}
-        for run in runs:
-            age_seconds = self._resolve_backlog_age_seconds(run, current_time)
-            scope_id = self._resolve_backlog_scope_id(run, scope_kind)
-            entry = grouped_runs.setdefault(
-                scope_id,
-                {
-                    "scope_kind": scope_kind,
-                    "scope_id": scope_id,
-                    "queued_ages": [],
-                    "running_ages": [],
-                },
-            )
-            if run.status == "queued":
-                queued_ages.append(age_seconds)
-                cast(list[int], entry["queued_ages"]).append(age_seconds)
-            elif run.status == "running":
-                running_ages.append(age_seconds)
-                cast(list[int], entry["running_ages"]).append(age_seconds)
-
-        total_queued = self._summarize_backlog_status(
-            queued_ages,
-            aging_after_seconds=RUNTIME_BACKLOG_QUEUED_AGING_AFTER_SECONDS,
-            stale_after_seconds=RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
+        return self.diagnostics_query_service.get_runtime_backlog_diagnostics(
+            scope_kind=scope_kind,
+            site_id=site_id,
+            limit=limit,
         )
-        total_running = self._summarize_backlog_status(
-            running_ages,
-            aging_after_seconds=RUNTIME_BACKLOG_RUNNING_AGING_AFTER_SECONDS,
-            stale_after_seconds=RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-        )
-
-        items: list[dict[str, object]] = []
-        for item in grouped_runs.values():
-            item_queued = self._summarize_backlog_status(
-                cast(list[int], item["queued_ages"]),
-                aging_after_seconds=RUNTIME_BACKLOG_QUEUED_AGING_AFTER_SECONDS,
-                stale_after_seconds=RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
-            )
-            item_running = self._summarize_backlog_status(
-                cast(list[int], item["running_ages"]),
-                aging_after_seconds=RUNTIME_BACKLOG_RUNNING_AGING_AFTER_SECONDS,
-                stale_after_seconds=RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-            )
-            pressure_state, pressure_reasons = self._classify_backlog_pressure(
-                queued_state=str(item_queued["state"]),
-                running_state=str(item_running["state"]),
-            )
-            items.append(
-                {
-                    "scope_kind": str(item["scope_kind"]),
-                    "scope_id": str(item["scope_id"]),
-                    "total_runs": self._coerce_int(item_queued.get("runs"), default=0)
-                    + self._coerce_int(item_running.get("runs"), default=0),
-                    "queued": item_queued,
-                    "running": item_running,
-                    "bottleneck_state": self._classify_backlog_bottleneck(
-                        queued_state=str(item_queued["state"]),
-                        running_state=str(item_running["state"]),
-                    ),
-                    "pressure_state": pressure_state,
-                    "pressure_reasons": pressure_reasons,
-                    "lease_recovery_inputs": {
-                        "queued_stale_runs": self._coerce_int(
-                            item_queued.get("stale_runs"), default=0
-                        ),
-                        "running_stale_runs": self._coerce_int(
-                            item_running.get("stale_runs"), default=0
-                        ),
-                        "total_stale_runs": (
-                            self._coerce_int(item_queued.get("stale_runs"), default=0)
-                            + self._coerce_int(item_running.get("stale_runs"), default=0)
-                        ),
-                    },
-                }
-            )
-
-        def backlog_sort_key(item: dict[str, object]) -> tuple[int, int, int, str]:
-            lease_recovery_inputs = self._dict_or_empty(item.get("lease_recovery_inputs"))
-            return (
-                0
-                if item.get("pressure_state") == "critical"
-                else 1
-                if item.get("pressure_state") == "attention"
-                else 2,
-                -self._coerce_int(lease_recovery_inputs.get("total_stale_runs"), default=0),
-                -self._coerce_int(item.get("total_runs"), default=0),
-                str(item.get("scope_id") or ""),
-            )
-
-        items.sort(key=backlog_sort_key)
-        limited_items = items[: max(1, limit)]
-        active_scope_count = len(items)
-        pressured_scope_count = sum(1 for item in items if item["pressure_state"] != "healthy")
-        stale_scope_count = sum(
-            1
-            for item in items
-            if self._coerce_int(
-                self._dict_or_empty(item.get("lease_recovery_inputs")).get("total_stale_runs"),
-                default=0,
-            )
-            > 0
-        )
-        total_active_runs = max(
-            1,
-            self._coerce_int(total_queued.get("runs"), default=0)
-            + self._coerce_int(total_running.get("runs"), default=0),
-        )
-        dominant_scope_share = (
-            round(self._coerce_int(items[0].get("total_runs"), default=0) / total_active_runs, 3)
-            if items
-            else 0.0
-        )
-        total_pressure_state, total_pressure_reasons = self._classify_backlog_pressure(
-            queued_state=str(total_queued["state"]),
-            running_state=str(total_running["state"]),
-        )
-
-        return {
-            "filters": {
-                "site_id": site_id or "",
-                "scope_kind": scope_kind,
-                "limit": limit,
-            },
-            "generated_at": self.run_projector.serialize_timestamp(current_time),
-            "thresholds": {
-                "queued_aging_after_seconds": RUNTIME_BACKLOG_QUEUED_AGING_AFTER_SECONDS,
-                "queued_stale_after_seconds": RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
-                "running_aging_after_seconds": RUNTIME_BACKLOG_RUNNING_AGING_AFTER_SECONDS,
-                "running_stale_after_seconds": RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-            },
-            "totals": {
-                "queued": total_queued,
-                "running": total_running,
-                "bottleneck_state": self._classify_backlog_bottleneck(
-                    queued_state=str(total_queued["state"]),
-                    running_state=str(total_running["state"]),
-                ),
-                "pressure_state": total_pressure_state,
-                "pressure_reasons": total_pressure_reasons,
-                "lease_recovery_inputs": {
-                    "queued_stale_runs": self._coerce_int(
-                        total_queued.get("stale_runs"), default=0
-                    ),
-                    "running_stale_runs": self._coerce_int(
-                        total_running.get("stale_runs"), default=0
-                    ),
-                    "stale_scope_count": stale_scope_count,
-                },
-            },
-            "scope_pressure": {
-                "scope_kind": scope_kind,
-                "active_scope_count": active_scope_count,
-                "pressured_scope_count": pressured_scope_count,
-                "stale_scope_count": stale_scope_count,
-                "spread_state": self._classify_backlog_spread_state(
-                    pressured_scope_count=pressured_scope_count,
-                    stale_scope_count=stale_scope_count,
-                    dominant_scope_share=dominant_scope_share,
-                ),
-                "dominant_scope_share": dominant_scope_share,
-            },
-            "items": limited_items,
-        }
 
     def _empty_hosted_governance_group(
         self,
@@ -2489,23 +2231,12 @@ class RuntimeService:
         event_code: str | None = None,
         limit: int = 20,
     ) -> dict[str, object]:
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            events = repository.list_runtime_guard_events(
-                site_id=site_id,
-                scope_kind=scope_kind,
-                event_code=event_code,
-                limit=limit,
-            )
-        return {
-            "filters": {
-                "site_id": site_id or "",
-                "scope_kind": scope_kind or "",
-                "event_code": event_code or "",
-                "limit": limit,
-            },
-            "items": [self._serialize_runtime_guard_event(event) for event in events],
-        }
+        return self.diagnostics_query_service.list_runtime_guard_events(
+            site_id=site_id,
+            scope_kind=scope_kind,
+            event_code=event_code,
+            limit=limit,
+        )
 
     def get_abuse_guard_diagnostics(
         self,
@@ -2524,467 +2255,21 @@ class RuntimeService:
         internal_guard_token_cooldown_limit: int,
         internal_guard_ip_cooldown_limit: int,
     ) -> dict[str, object]:
-        current_time = datetime.now(UTC)
-        since = current_time - timedelta(seconds=max(1, window_seconds))
-        cooldown_since = current_time - timedelta(seconds=max(1, cooldown_window_seconds))
-        scope_kinds = [
-            REPLAY_SCOPE_PUBLIC_POST_SITE,
-            REPLAY_SCOPE_PUBLIC_POST_KEY,
-            REPLAY_SCOPE_PUBLIC_POST_IP,
-            REPLAY_SCOPE_INTERNAL_POST,
-            REPLAY_SCOPE_INTERNAL_POST_IP,
-        ]
-        with get_session(self.database_url) as session:
-            repository = RuntimeRepository(session)
-            grouped = repository.summarize_replay_receipts(
-                scope_kinds=scope_kinds,
-                since=since,
-                limit_per_scope=limit_per_scope,
-            )
-            cooldown_grouped = repository.summarize_runtime_guard_events(
-                scope_kinds=scope_kinds,
-                since=cooldown_since,
-                limit_per_scope=limit_per_scope,
-            )
-            event_codes = repository.summarize_runtime_guard_event_codes(
-                since=cooldown_since,
-                limit=limit_per_scope,
-            )
-            cooldown_code_breakdown = (
-                repository.summarize_runtime_guard_event_code_breakdown_by_scope(
-                    scope_kinds=scope_kinds,
-                    since=cooldown_since,
-                    limit_per_scope=3,
-                )
-            )
-        scope_specs = {
-            REPLAY_SCOPE_PUBLIC_POST_SITE: {
-                "request_limit": public_post_site_limit,
-                "cooldown_limit": public_guard_site_cooldown_limit,
-            },
-            REPLAY_SCOPE_PUBLIC_POST_KEY: {
-                "request_limit": public_post_key_limit,
-                "cooldown_limit": public_guard_key_cooldown_limit,
-            },
-            REPLAY_SCOPE_PUBLIC_POST_IP: {
-                "request_limit": public_post_ip_limit,
-                "cooldown_limit": public_guard_ip_cooldown_limit,
-            },
-            REPLAY_SCOPE_INTERNAL_POST: {
-                "request_limit": internal_post_token_limit,
-                "cooldown_limit": internal_guard_token_cooldown_limit,
-            },
-            REPLAY_SCOPE_INTERNAL_POST_IP: {
-                "request_limit": internal_post_ip_limit,
-                "cooldown_limit": internal_guard_ip_cooldown_limit,
-            },
-        }
-        scopes: dict[str, dict[str, object]] = {}
-        watchlist: list[dict[str, object]] = []
-        for scope_kind in scope_kinds:
-            scope_spec = scope_specs[scope_kind]
-            request_limit = max(0, self._coerce_int(scope_spec.get("request_limit"), default=0))
-            cooldown_limit = max(0, self._coerce_int(scope_spec.get("cooldown_limit"), default=0))
-            request_items = [
-                self._decorate_abuse_guard_item(
-                    scope_kind=scope_kind,
-                    item=item,
-                    observed_count=max(0, self._coerce_int(item.get("request_count"), default=0)),
-                    limit=request_limit,
-                    signal_kind="request_burst",
-                    near_limit_reason="request_burst_near_limit",
-                    exceeded_reason="request_burst_limit_exceeded",
-                )
-                for item in grouped.get(scope_kind, [])
-            ]
-            cooldown_items = []
-            for item in cooldown_grouped.get(scope_kind, []):
-                scope_id = str(item.get("scope_id") or "")
-                breakdown = cooldown_code_breakdown.get((scope_kind, scope_id), [])
-                cooldown_items.append(
-                    self._decorate_abuse_guard_item(
-                        scope_kind=scope_kind,
-                        item=item,
-                        observed_count=max(0, self._coerce_int(item.get("event_count"), default=0)),
-                        limit=cooldown_limit,
-                        signal_kind="reject_storm",
-                        near_limit_reason="reject_storm_near_limit",
-                        exceeded_reason="reject_storm_limit_exceeded",
-                        event_code_breakdown=breakdown,
-                    )
-                )
-
-            scopes[scope_kind] = {
-                "max_requests_per_window": request_limit,
-                "items": request_items,
-                "request_pressure": self._summarize_abuse_guard_pressure(request_items),
-                "max_reject_events_per_cooldown_window": cooldown_limit,
-                "cooldown_items": cooldown_items,
-                "cooldown_pressure": self._summarize_abuse_guard_pressure(cooldown_items),
-            }
-            watchlist.extend(
-                item for item in (*request_items, *cooldown_items) if item["severity"] != "healthy"
-            )
-
-        sorted_watchlist = sorted(
-            watchlist,
-            key=lambda item: (
-                0 if item.get("severity") == "critical" else 1,
-                -(self._coerce_float(item.get("limit_ratio")) or 0.0),
-                -self._coerce_int(item.get("observed_count"), default=0),
-                str(item.get("scope_kind") or ""),
-                str(item.get("scope_id") or ""),
-            ),
+        return self.diagnostics_query_service.get_abuse_guard_diagnostics(
+            window_seconds=window_seconds,
+            cooldown_window_seconds=cooldown_window_seconds,
+            limit_per_scope=limit_per_scope,
+            public_post_site_limit=public_post_site_limit,
+            public_post_key_limit=public_post_key_limit,
+            public_post_ip_limit=public_post_ip_limit,
+            public_guard_site_cooldown_limit=public_guard_site_cooldown_limit,
+            public_guard_key_cooldown_limit=public_guard_key_cooldown_limit,
+            public_guard_ip_cooldown_limit=public_guard_ip_cooldown_limit,
+            internal_post_token_limit=internal_post_token_limit,
+            internal_post_ip_limit=internal_post_ip_limit,
+            internal_guard_token_cooldown_limit=internal_guard_token_cooldown_limit,
+            internal_guard_ip_cooldown_limit=internal_guard_ip_cooldown_limit,
         )
-        return {
-            "generated_at": self.run_projector.serialize_timestamp(current_time),
-            "window_seconds": window_seconds,
-            "cooldown_window_seconds": cooldown_window_seconds,
-            "limit_per_scope": limit_per_scope,
-            "guard_event_codes": event_codes,
-            "watchlist_summary": {
-                "highest_severity": (
-                    "critical"
-                    if any(item["severity"] == "critical" for item in sorted_watchlist)
-                    else "attention"
-                    if sorted_watchlist
-                    else "healthy"
-                ),
-                "attention_count": sum(
-                    1 for item in sorted_watchlist if item["severity"] == "attention"
-                ),
-                "critical_count": sum(
-                    1 for item in sorted_watchlist if item["severity"] == "critical"
-                ),
-                "request_burst_count": sum(
-                    1 for item in sorted_watchlist if item["signal_kind"] == "request_burst"
-                ),
-                "reject_storm_count": sum(
-                    1 for item in sorted_watchlist if item["signal_kind"] == "reject_storm"
-                ),
-            },
-            "watchlist": sorted_watchlist,
-            "scopes": scopes,
-        }
-
-    def _augment_runtime_diagnostics_summary(
-        self,
-        summary: dict[str, object],
-        current_time: datetime,
-    ) -> dict[str, object]:
-        queue = self._dict_or_empty(summary.get("queue"))
-        queued_oldest_age_seconds = self._calculate_age_seconds(
-            current_time,
-            queue.get("queued_oldest_requested_at"),
-        )
-        running_oldest_age_seconds = self._calculate_age_seconds(
-            current_time,
-            queue.get("running_oldest_processing_started_at"),
-        )
-        queue["queued_oldest_age_seconds"] = queued_oldest_age_seconds
-        queue["running_oldest_age_seconds"] = running_oldest_age_seconds
-        queue["pressure_thresholds"] = {
-            "queued_stale_after_seconds": RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
-            "running_stale_after_seconds": RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-        }
-        queue["pressure_state"], queue["pressure_reasons"] = self._classify_runtime_pressure(
-            (
-                (
-                    "queue.queued_stale",
-                    queued_oldest_age_seconds is not None
-                    and queued_oldest_age_seconds >= RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS,
-                    queued_oldest_age_seconds is not None
-                    and queued_oldest_age_seconds
-                    >= (RUNTIME_DIAGNOSTIC_QUEUED_STALE_AFTER_SECONDS * 3),
-                ),
-                (
-                    "queue.running_stale",
-                    running_oldest_age_seconds is not None
-                    and running_oldest_age_seconds
-                    >= RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS,
-                    running_oldest_age_seconds is not None
-                    and running_oldest_age_seconds
-                    >= (RUNTIME_DIAGNOSTIC_RUNNING_STALE_AFTER_SECONDS * 3),
-                ),
-            )
-        )
-
-        cancel = self._dict_or_empty(summary.get("cancel"))
-        oldest_request_age_seconds = self._calculate_age_seconds(
-            current_time,
-            cancel.get("oldest_requested_at"),
-        )
-        cancel["oldest_request_age_seconds"] = oldest_request_age_seconds
-        cancel["pressure_thresholds"] = {
-            "cancel_stuck_after_seconds": RUNTIME_DIAGNOSTIC_CANCEL_STUCK_AFTER_SECONDS,
-        }
-        cancel["pressure_state"], cancel["pressure_reasons"] = self._classify_runtime_pressure(
-            (
-                (
-                    "cancel.request_stuck",
-                    oldest_request_age_seconds is not None
-                    and oldest_request_age_seconds >= RUNTIME_DIAGNOSTIC_CANCEL_STUCK_AFTER_SECONDS,
-                    oldest_request_age_seconds is not None
-                    and oldest_request_age_seconds
-                    >= (RUNTIME_DIAGNOSTIC_CANCEL_STUCK_AFTER_SECONDS * 3),
-                ),
-            )
-        )
-
-        callback = self._dict_or_empty(summary.get("callback"))
-        pending = max(0, self._coerce_int(callback.get("pending"), default=0))
-        due_now = max(0, self._coerce_int(callback.get("due_now"), default=0))
-        failed = max(0, self._coerce_int(callback.get("failed"), default=0))
-        dispatching = max(0, self._coerce_int(callback.get("dispatching"), default=0))
-        recoverable_dispatching = max(
-            0, self._coerce_int(callback.get("recoverable_dispatching"), default=0)
-        )
-        oldest_due_age_seconds = self._calculate_age_seconds(
-            current_time,
-            callback.get("oldest_due_at"),
-        )
-        dispatching_oldest_age_seconds = self._calculate_age_seconds(
-            current_time,
-            callback.get("dispatching_oldest_last_attempt_at"),
-        )
-        callback["pending_not_due"] = max(0, pending - due_now)
-        callback["oldest_due_age_seconds"] = oldest_due_age_seconds
-        callback["dispatching_oldest_age_seconds"] = dispatching_oldest_age_seconds
-        callback["recovery_action"] = "requeue_pending_after_stale_dispatch_lease"
-        callback["pressure_thresholds"] = {
-            "callback_overdue_after_seconds": RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
-            "dispatching_stale_after_seconds": (
-                RUNTIME_DIAGNOSTIC_CALLBACK_DISPATCHING_STALE_AFTER_SECONDS
-            ),
-        }
-        callback["pressure_state"], callback["pressure_reasons"] = self._classify_runtime_pressure(
-            (
-                ("callback.failed", failed > 0, failed >= 3),
-                (
-                    "callback.overdue",
-                    oldest_due_age_seconds is not None
-                    and oldest_due_age_seconds >= RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS,
-                    oldest_due_age_seconds is not None
-                    and oldest_due_age_seconds
-                    >= (RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS * 3),
-                ),
-                (
-                    "callback.due_now",
-                    due_now > 0
-                    and (
-                        oldest_due_age_seconds is None
-                        or oldest_due_age_seconds
-                        < RUNTIME_DIAGNOSTIC_CALLBACK_OVERDUE_AFTER_SECONDS
-                    ),
-                    False,
-                ),
-                (
-                    "callback.dispatching_stale",
-                    recoverable_dispatching > 0,
-                    recoverable_dispatching >= 3
-                    or (
-                        dispatching_oldest_age_seconds is not None
-                        and dispatching_oldest_age_seconds
-                        >= (RUNTIME_DIAGNOSTIC_CALLBACK_DISPATCHING_STALE_AFTER_SECONDS * 3)
-                    ),
-                ),
-                (
-                    "callback.dispatching",
-                    dispatching > 0
-                    and (
-                        dispatching_oldest_age_seconds is None
-                        or dispatching_oldest_age_seconds
-                        < RUNTIME_DIAGNOSTIC_CALLBACK_DISPATCHING_STALE_AFTER_SECONDS
-                    ),
-                    False,
-                ),
-            )
-        )
-
-        failures = self._dict_or_empty(summary.get("failures"))
-        failed_recent = max(0, self._coerce_int(failures.get("failed_recent"), default=0))
-        provider_error_calls_recent = max(
-            0,
-            self._coerce_int(failures.get("provider_error_calls_recent"), default=0),
-        )
-        failures["pressure_state"], failures["pressure_reasons"] = self._classify_runtime_pressure(
-            (
-                ("failures.failed_recent", failed_recent > 0, failed_recent >= 3),
-                (
-                    "failures.provider_error_calls_recent",
-                    provider_error_calls_recent > 0,
-                    provider_error_calls_recent >= 3,
-                ),
-            )
-        )
-        failures["dominant_error"] = self._build_dominant_runtime_error(failures)
-        operator_guidance = self._build_runtime_operator_guidance(
-            queue=queue,
-            cancel=cancel,
-            callback=callback,
-            failures=failures,
-            retention=self._dict_or_empty(summary.get("retention")),
-        )
-
-        return {
-            **summary,
-            "queue": queue,
-            "cancel": cancel,
-            "callback": callback,
-            "failures": failures,
-            "operator_guidance": operator_guidance,
-        }
-
-    def _build_dominant_runtime_error(
-        self,
-        failures: dict[str, object],
-    ) -> dict[str, object]:
-        top_error_codes = failures.get("top_error_codes")
-        top_provider_errors = failures.get("top_provider_errors")
-        candidates: list[dict[str, object]] = []
-        if isinstance(top_error_codes, list):
-            candidates.extend(item for item in top_error_codes if isinstance(item, dict))
-        if isinstance(top_provider_errors, list):
-            candidates.extend(item for item in top_provider_errors if isinstance(item, dict))
-        if not candidates:
-            return {
-                "error_code": "",
-                "error_stage": "",
-                "count": 0,
-                "provider_id": "",
-                "last_seen_at": "",
-            }
-
-        def sort_key(item: dict[str, object]) -> tuple[int, str]:
-            return (
-                self._coerce_int(item.get("count"), default=0),
-                str(item.get("last_seen_at") or ""),
-            )
-
-        dominant = sorted(candidates, key=sort_key, reverse=True)[0]
-        error_code = str(dominant.get("error_code") or "")
-        taxonomy = get_error_taxonomy(error_code)
-        return {
-            "error_code": error_code,
-            "error_stage": taxonomy.error_stage,
-            "count": self._coerce_int(dominant.get("count"), default=0),
-            "provider_id": str(dominant.get("provider_id") or ""),
-            "last_seen_at": str(dominant.get("last_seen_at") or ""),
-        }
-
-    def _build_runtime_operator_guidance(
-        self,
-        *,
-        queue: dict[str, object],
-        cancel: dict[str, object],
-        callback: dict[str, object],
-        failures: dict[str, object],
-        retention: dict[str, object],
-    ) -> dict[str, object]:
-        candidates: list[dict[str, object]] = []
-
-        def add_candidate(
-            *,
-            reason: str,
-            state: str,
-            evidence_path: str,
-            action: str,
-            mode: str,
-            priority: int,
-        ) -> None:
-            candidates.append(
-                {
-                    "reason": reason,
-                    "state": state,
-                    "evidence_path": evidence_path,
-                    "suggested_action": action,
-                    "mode": mode,
-                    "priority": priority,
-                }
-            )
-
-        if callback.get("pressure_state") in {"attention", "critical"}:
-            add_candidate(
-                reason="callback_delivery",
-                state=str(callback.get("pressure_state") or "attention"),
-                evidence_path="callback.pressure_reasons",
-                action="inspect_callback_delivery_and_retry_buffer",
-                mode="operator_review",
-                priority=10,
-            )
-        if queue.get("pressure_state") in {"attention", "critical"}:
-            add_candidate(
-                reason="runtime_queue",
-                state=str(queue.get("pressure_state") or "attention"),
-                evidence_path="queue.pressure_reasons",
-                action="inspect_runtime_worker_and_backlog_scope",
-                mode="operator_review",
-                priority=20,
-            )
-        if cancel.get("pressure_state") in {"attention", "critical"}:
-            add_candidate(
-                reason="cancel_requests",
-                state=str(cancel.get("pressure_state") or "attention"),
-                evidence_path="cancel.pressure_reasons",
-                action="inspect_stuck_cancel_requests",
-                mode="operator_review",
-                priority=30,
-            )
-        if failures.get("pressure_state") in {"attention", "critical"}:
-            dominant = failures.get("dominant_error")
-            dominant_error = dominant if isinstance(dominant, dict) else {}
-            error_stage = str(dominant_error.get("error_stage") or "runtime")
-            action_by_stage = {
-                "provider": "inspect_provider_credentials_quota_and_health",
-                "auth": "inspect_site_key_signature_and_request_headers",
-                "routing": "inspect_profile_catalog_and_routing_candidates",
-                "runtime": "inspect_runtime_execution_error_and_worker_logs",
-            }
-            add_candidate(
-                reason=f"{error_stage}_failures",
-                state=str(failures.get("pressure_state") or "attention"),
-                evidence_path="failures.dominant_error",
-                action=action_by_stage.get(error_stage, "inspect_runtime_failure_detail"),
-                mode="operator_review",
-                priority=40,
-            )
-        if self._coerce_int(retention.get("due_purge"), default=0) > 0:
-            add_candidate(
-                reason="retention_due",
-                state="attention",
-                evidence_path="retention.due_purge",
-                action="run_retention_cleanup_or_check_ops_cadence",
-                mode="worker_auto",
-                priority=50,
-            )
-
-        candidates.sort(key=lambda item: self._coerce_int(item.get("priority"), default=0))
-        primary = (
-            candidates[0]
-            if candidates
-            else {
-                "reason": "none",
-                "state": "healthy",
-                "evidence_path": "",
-                "suggested_action": "continue_monitoring",
-                "mode": "none",
-                "priority": 100,
-            }
-        )
-        return {
-            "state": str(primary["state"]),
-            "primary_reason": str(primary["reason"]),
-            "primary_evidence_path": str(primary["evidence_path"]),
-            "suggested_actions": [
-                {
-                    "action": str(item["suggested_action"]),
-                    "reason": str(item["reason"]),
-                    "mode": str(item["mode"]),
-                    "evidence_path": str(item["evidence_path"]),
-                }
-                for item in candidates[:5]
-            ],
-        }
 
     def cancel_run(self, run_id: str, *, site_id: str | None = None) -> dict[str, object]:
         return self.run_lifecycle_service.cancel_run(run_id, site_id=site_id)
@@ -4121,6 +3406,12 @@ class RuntimeService:
                     idempotent_replay=True,
                 )
 
+            self._admit_image_context_evidence_artifact_inputs(
+                repository,
+                site_id=request.site_id,
+                input_payload=request.input_payload,
+            )
+
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
                 site_id=request.site_id,
@@ -4348,6 +3639,11 @@ class RuntimeService:
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
         timeout_ms = max(1, self._coerce_int(policy.get("timeout_ms"), default=30_000))
         try:
+            artifact_inputs = self._load_image_context_evidence_artifact_inputs(
+                repository,
+                site_id=run.site_id,
+                input_payload=payload,
+            )
             execution = ImageContextEvidenceService(self.settings).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,
@@ -4366,6 +3662,7 @@ class RuntimeService:
                 timeout_ms=timeout_ms,
                 price_input=selected_candidate.price_input,
                 price_output=selected_candidate.price_output,
+                artifact_inputs=artifact_inputs,
             )
         except ImageContextEvidenceContractViolation as error:
             self.run_lifecycle_service.fail_run(
@@ -4436,6 +3733,58 @@ class RuntimeService:
             instance_id=execution.usage.instance_id,
             fallback_used=False,
         )
+
+    def _admit_image_context_evidence_artifact_inputs(
+        self,
+        repository: RuntimeRepository,
+        *,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> None:
+        total_bytes = 0
+        for artifact_id in image_context_evidence_artifact_ids(input_payload):
+            try:
+                reference = admit_artifact_input(
+                    repository.session,
+                    site_id=site_id,
+                    artifact_id=artifact_id,
+                )
+            except ArtifactInputError as error:
+                raise RuntimeExecutionContractError(
+                    "image_context_evidence.source_artifact_unavailable",
+                    "image context evidence source artifact is unavailable",
+                ) from error
+            total_bytes += reference.byte_size
+            if total_bytes > MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES:
+                raise RuntimeExecutionContractError(
+                    "image_context_evidence.source_artifacts_too_large",
+                    "image context evidence source artifacts exceed the aggregate byte limit",
+                )
+
+    def _load_image_context_evidence_artifact_inputs(
+        self,
+        repository: RuntimeRepository,
+        *,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, LoadedArtifactInput]:
+        loaded: dict[str, LoadedArtifactInput] = {}
+        for artifact_id in image_context_evidence_artifact_ids(input_payload):
+            if artifact_id in loaded:
+                continue
+            try:
+                loaded[artifact_id] = load_artifact_input(
+                    repository.session,
+                    self.artifact_store,
+                    site_id=site_id,
+                    artifact_id=artifact_id,
+                )
+            except ArtifactInputError as error:
+                raise ImageContextEvidenceContractViolation(
+                    "image_context_evidence.source_artifact_unavailable",
+                    "image context evidence source artifact is unavailable",
+                ) from error
+        return loaded
 
     def _execute_cloud_batch_runtime_run(
         self,
@@ -5921,263 +5270,6 @@ class RuntimeService:
                 }
             )
         return actions
-
-    def _decorate_abuse_guard_item(
-        self,
-        *,
-        scope_kind: str,
-        item: dict[str, object],
-        observed_count: int,
-        limit: int,
-        signal_kind: str,
-        near_limit_reason: str,
-        exceeded_reason: str,
-        event_code_breakdown: list[dict[str, object]] | None = None,
-    ) -> dict[str, object]:
-        limit_ratio = self._calculate_limit_ratio(observed_count, limit)
-        severity = self._classify_abuse_guard_severity(limit_ratio)
-        reason_codes: list[str] = []
-        if severity == "critical":
-            reason_codes.append(exceeded_reason)
-        elif severity == "attention":
-            reason_codes.append(near_limit_reason)
-        if signal_kind == "reject_storm":
-            reason_codes.extend(
-                self._derive_guard_breakdown_reason_codes(event_code_breakdown or [])
-            )
-        return {
-            **item,
-            "scope_kind": scope_kind,
-            "signal_kind": signal_kind,
-            "severity": severity,
-            "observed_count": observed_count,
-            "limit": limit,
-            "limit_ratio": limit_ratio,
-            "remaining_before_limit": max(limit - observed_count, 0),
-            "exceeded_by": max(observed_count - limit, 0),
-            "reason_codes": reason_codes,
-            "event_code_breakdown": event_code_breakdown or [],
-        }
-
-    def _summarize_abuse_guard_pressure(
-        self,
-        items: list[dict[str, object]],
-    ) -> dict[str, object]:
-        return {
-            "highest_severity": (
-                "critical"
-                if any(item["severity"] == "critical" for item in items)
-                else "attention"
-                if any(item["severity"] == "attention" for item in items)
-                else "healthy"
-            ),
-            "healthy_count": sum(1 for item in items if item["severity"] == "healthy"),
-            "attention_count": sum(1 for item in items if item["severity"] == "attention"),
-            "critical_count": sum(1 for item in items if item["severity"] == "critical"),
-        }
-
-    def _calculate_limit_ratio(self, observed_count: int, limit: int) -> float:
-        if limit <= 0:
-            return 0.0
-        return round(observed_count / limit, 3)
-
-    def _classify_abuse_guard_severity(self, limit_ratio: float) -> str:
-        if limit_ratio >= ABUSE_GUARD_CRITICAL_RATIO:
-            return "critical"
-        if limit_ratio >= ABUSE_GUARD_ATTENTION_RATIO:
-            return "attention"
-        return "healthy"
-
-    def _derive_guard_breakdown_reason_codes(
-        self,
-        breakdown: list[dict[str, object]],
-    ) -> list[str]:
-        reason_codes: list[str] = []
-        if any(item.get("event_code") == "auth.replay_blocked" for item in breakdown):
-            reason_codes.append("rejects_include_replay_blocks")
-        if any(item.get("event_code") == "auth.rate_limit_exceeded" for item in breakdown):
-            reason_codes.append("rejects_include_rate_limits")
-        if any(item.get("event_code") == "auth.payload_too_large" for item in breakdown):
-            reason_codes.append("rejects_include_payload_limits")
-        if any(item.get("event_code") == "auth.invalid_nonce" for item in breakdown):
-            reason_codes.append("rejects_include_invalid_nonce")
-        if any(item.get("event_code") == "auth.invalid_idempotency_key" for item in breakdown):
-            reason_codes.append("rejects_include_invalid_idempotency_key")
-        return reason_codes
-
-    def _resolve_backlog_scope_id(
-        self,
-        run: RunRecord,
-        scope_kind: str,
-    ) -> str:
-        if scope_kind == "site_id":
-            return str(run.site_id or "unknown")
-        if scope_kind == "ability_family":
-            return str(run.ability_family or "unknown")
-        if scope_kind == "execution_pattern":
-            return str(run.execution_pattern or "unknown")
-        return "unknown"
-
-    def _resolve_backlog_age_seconds(
-        self,
-        run: RunRecord,
-        current_time: datetime,
-    ) -> int:
-        if run.status == "running" and run.processing_started_at is not None:
-            started_at = self.run_projector.normalize_timestamp(run.processing_started_at)
-        else:
-            started_at = self.run_projector.normalize_timestamp(run.started_at)
-        return max(0, int((current_time - started_at).total_seconds()))
-
-    def _summarize_backlog_status(
-        self,
-        ages: list[int],
-        *,
-        aging_after_seconds: int,
-        stale_after_seconds: int,
-    ) -> dict[str, object]:
-        ordered = sorted(max(0, int(age)) for age in ages)
-        fresh_count = sum(1 for age in ordered if age < aging_after_seconds)
-        aging_count = sum(
-            1 for age in ordered if age >= aging_after_seconds and age < stale_after_seconds
-        )
-        stale_count = sum(1 for age in ordered if age >= stale_after_seconds)
-        if not ordered:
-            state = "idle"
-        elif stale_count > 0:
-            state = "stale"
-        elif aging_count > 0:
-            state = "aging"
-        else:
-            state = "fresh_wave"
-        return {
-            "runs": len(ordered),
-            "stale_runs": stale_count,
-            "oldest_age_seconds": ordered[-1] if ordered else None,
-            "p95_age_seconds": self._calculate_percentile(ordered, percentile=95),
-            "state": state,
-            "age_buckets": {
-                "fresh": fresh_count,
-                "aging": aging_count,
-                "stale": stale_count,
-            },
-        }
-
-    def _calculate_percentile(
-        self,
-        ordered_values: list[int],
-        *,
-        percentile: int,
-    ) -> int | None:
-        if not ordered_values:
-            return None
-        bounded = min(100, max(1, percentile))
-        index = max(0, ((len(ordered_values) * bounded) - 1) // 100)
-        return ordered_values[index]
-
-    def _classify_backlog_pressure(
-        self,
-        *,
-        queued_state: str,
-        running_state: str,
-    ) -> tuple[str, list[str]]:
-        reasons: list[str] = []
-        if queued_state == "stale":
-            reasons.append("queue.stale")
-        elif queued_state == "aging":
-            reasons.append("queue.aging")
-        if running_state == "stale":
-            reasons.append("worker.stale")
-        elif running_state == "aging":
-            reasons.append("worker.aging")
-
-        if any(reason.endswith(".stale") for reason in reasons):
-            return "critical", reasons
-        if reasons:
-            return "attention", reasons
-        return "healthy", []
-
-    def _classify_backlog_bottleneck(
-        self,
-        *,
-        queued_state: str,
-        running_state: str,
-    ) -> str:
-        queued_abnormal = queued_state in {"aging", "stale"}
-        running_abnormal = running_state in {"aging", "stale"}
-        if queued_abnormal and running_abnormal:
-            return "mixed"
-        if queued_abnormal:
-            return "queue_claiming_lag"
-        if running_abnormal:
-            return "worker_stall"
-        return "healthy"
-
-    def _classify_backlog_spread_state(
-        self,
-        *,
-        pressured_scope_count: int,
-        stale_scope_count: int,
-        dominant_scope_share: float,
-    ) -> str:
-        if pressured_scope_count <= 0:
-            return "none"
-        if stale_scope_count <= 1 and dominant_scope_share >= 0.8:
-            return "isolated"
-        if pressured_scope_count == 1:
-            return "isolated"
-        return "multi_scope"
-
-    def _classify_runtime_pressure(
-        self,
-        rules: tuple[tuple[str, bool, bool], ...],
-    ) -> tuple[str, list[str]]:
-        reasons: list[str] = []
-        critical = False
-        for code, active, is_critical in rules:
-            if not active:
-                continue
-            reasons.append(code)
-            critical = critical or is_critical
-        if critical:
-            return "critical", reasons
-        if reasons:
-            return "attention", reasons
-        return "healthy", []
-
-    def _calculate_age_seconds(
-        self,
-        current_time: datetime,
-        serialized_timestamp: object,
-    ) -> int | None:
-        if not isinstance(serialized_timestamp, str) or not serialized_timestamp:
-            return None
-        try:
-            parsed = datetime.fromisoformat(serialized_timestamp.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        age = current_time - parsed.astimezone(UTC)
-        return max(0, int(age.total_seconds()))
-
-    def _serialize_runtime_guard_event(self, event: RuntimeGuardEvent) -> dict[str, object]:
-        return {
-            "id": event.id,
-            "auth_surface": event.auth_surface,
-            "scope_kind": event.scope_kind,
-            "scope_id": event.scope_id,
-            "site_id": event.site_id or "",
-            "key_id": event.key_id or "",
-            "client_ref": event.client_ref or "",
-            "event_code": event.event_code,
-            "status_code": event.status_code,
-            "method": event.method or "",
-            "path": event.path or "",
-            "trace_id": event.trace_id or "",
-            "payload": event.payload_json or {},
-            "created_at": self.run_projector.serialize_timestamp(event.created_at),
-        }
 
     def _record_callback_dispatch_recovery(
         self,

@@ -53,9 +53,16 @@ async function installPortalUsersMocks(page: Page) {
   let users = fixtures();
   let requestCount = 0;
   let failNext = false;
+  let failNextDisable = false;
+  let waitForNextRequest: Promise<void> | null = null;
 
   await page.route('**/api/admin/portal-users?*', async (route) => {
     requestCount += 1;
+    if (waitForNextRequest) {
+      const pendingRequest = waitForNextRequest;
+      waitForNextRequest = null;
+      await pendingRequest;
+    }
     if (failNext) {
       failNext = false;
       await route.fulfill({
@@ -94,6 +101,15 @@ async function installPortalUsersMocks(page: Page) {
   await page.route('**/api/admin/portal-users/*/disable', async (route: Route) => {
     if (route.request().method() !== 'POST') {
       await route.fallback();
+      return;
+    }
+    if (failNextDisable) {
+      failNextDisable = false;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify(buildAdminApiErrorEnvelope('temporary disable failure')),
+      });
       return;
     }
     const principalId = decodeURIComponent(route.request().url().split('/').at(-2) || '');
@@ -149,7 +165,22 @@ async function installPortalUsersMocks(page: Page) {
     });
   });
 
-  return { getRequestCount: () => requestCount, failNextRequest: () => { failNext = true; } };
+  return {
+    getRequestCount: () => requestCount,
+    failNextRequest: () => {
+      failNext = true;
+    },
+    failNextDisableRequest: () => {
+      failNextDisable = true;
+    },
+    holdNextRequest: () => {
+      let release = () => {};
+      waitForNextRequest = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+  };
 }
 
 test('Portal user directory persists filters and focus while retaining results on failure', async ({ page }) => {
@@ -184,11 +215,39 @@ test('Portal user directory persists filters and focus while retaining results o
   await expect(page.getByLabel(/Search users|搜索用户/i)).toHaveValue('issue');
   await expect(page.locator('#portal-user-inspector')).toContainText('issue@example.com');
 
+  await page.getByLabel(/Select issue@example.com|选择 issue@example.com/i).check();
+  const releasePendingRequest = mocks.holdNextRequest();
+  const requestCountBeforePendingScope = mocks.getRequestCount();
+  await page.getByLabel(/Search users|搜索用户/i).fill('active');
+  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect.poll(() => mocks.getRequestCount()).toBe(requestCountBeforePendingScope + 1);
+  await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
+  await expect(rows.first().locator('input[type="checkbox"]')).toBeDisabled();
+  await expect(page.getByLabel(/Select all active users|选择本页全部正常用户/i)).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Batch disable|批量禁用/i })).toBeDisabled();
+  await page.locator('#portal-user-inspector').getByText(/Access actions|访问操作/i).click();
+  await expect(page.locator('#portal-user-inspector').getByRole('button', { name: /^Disable$|^禁用$/i })).toBeDisabled();
+  releasePendingRequest();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('active@example.com');
+  await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toHaveCount(0);
+
+  await page.getByLabel(/Search users|搜索用户/i).fill('issue');
+  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('issue@example.com');
+
   mocks.failNextRequest();
   await page.getByLabel(/Search users|搜索用户/i).fill('missing');
   await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
   await expect(rows).toHaveCount(1);
+  await expect(rows.first().locator('input[type="checkbox"]')).toBeDisabled();
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /No users match these filters|没有用户符合当前筛选/i })).toBeVisible();
+  await expect(page.getByText(/Clear or change the current filters|清除或调整当前筛选条件/i)).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);
@@ -197,7 +256,7 @@ test('Portal user directory persists filters and focus while retaining results o
 
 test('Portal user inspector keeps audit and disable actions contextual and auditable', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installPortalUsersMocks(page);
+  const mocks = await installPortalUsersMocks(page);
   await page.goto('/admin/portal-users');
   const inspector = page.locator('#portal-user-inspector');
 
@@ -209,12 +268,29 @@ test('Portal user inspector keeps audit and disable actions contextual and audit
   await auditDialog.getByRole('button', { name: /^Close$|^关闭$/i }).click();
 
   await inspector.getByText(/Access actions|访问操作/i).click();
+  mocks.failNextDisableRequest();
   await inspector.getByRole('button', { name: /^Disable$|^禁用$/i }).click();
-  const confirmDialog = page.getByRole('dialog', { name: /Confirm disable user|确认禁用用户/i });
-  await confirmDialog.getByRole('button', { name: /^Confirm$|^确认$/i }).click();
+  await page.getByRole('dialog', { name: /Confirm disable user|确认禁用用户/i }).getByRole('button', { name: /^Confirm$|^确认$/i }).click();
+  await expect(page.getByText('temporary disable failure')).toBeVisible();
+  await expect(inspector).toContainText(/Active|正常/i);
+
+  const requestCountBeforeDisableRefetch = mocks.getRequestCount();
+  mocks.failNextRequest();
+  const releaseDisableRefetch = mocks.holdNextRequest();
+  await inspector.getByRole('button', { name: /^Disable$|^禁用$/i }).click();
+  await page.getByRole('dialog', { name: /Confirm disable user|确认禁用用户/i }).getByRole('button', { name: /^Confirm$|^确认$/i }).click();
+  await expect.poll(() => mocks.getRequestCount()).toBe(requestCountBeforeDisableRefetch + 1);
+  await expect(inspector.getByRole('button', { name: /^Disable$|^禁用$/i })).toBeDisabled();
+  await expect(page.getByLabel(/Select issue@example.com|选择 issue@example.com/i)).toBeDisabled();
+  await expect(page.getByLabel(/Select all active users|选择本页全部正常用户/i)).toBeDisabled();
+  releaseDisableRefetch();
 
   await expect(page.getByText(/was disabled|已禁用/i).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
+  await expect(inspector.getByRole('button', { name: /^Disable$|^禁用$/i })).toBeDisabled();
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect(page).toHaveURL(/focus=prn_access_issue/);
   await expect(inspector).toContainText(/Disabled|已禁用/i);
+  await expect(inspector.getByRole('button', { name: /^Disable$|^禁用$/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Latest operation|最近操作|最新操作/i })).toBeVisible();
 });

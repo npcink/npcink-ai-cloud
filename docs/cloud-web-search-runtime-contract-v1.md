@@ -58,6 +58,7 @@ Supported built-in provider IDs:
 
 - `tavily`
 - `bocha`
+- `doubao_search`
 - `apify`
 - `jina_reader`
 - `zhihu`
@@ -65,6 +66,12 @@ Supported built-in provider IDs:
 Provider credentials must be stored as provider connection secrets. Runtime
 requests must never carry provider API keys. Secrets are encrypted at rest and
 returned to admin browsers only as masked configured/missing status.
+
+`doubao_search` uses the Doubao Search Custom web endpoint with API Key bearer
+authentication. The built-in adapter requests `SearchType=web`, requires
+source URLs, and normalizes `Result.WebResults` into the existing evidence
+contract. Global edition and model-integrated search tools are outside this
+provider connection.
 
 The retired `/admin/web-search` page and
 `/internal/service/admin/web-search-providers` env-writer API are not the

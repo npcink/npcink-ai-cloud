@@ -235,6 +235,14 @@ preview hostname, Cloudflare service-token storage in the WordPress addon, a
 tunnel daemon, Git hook, hosted-CI callback, or another control plane to make
 this single-operator development path more automatic.
 
+When multiple AI tasks are changing appearance only, use the bounded
+frontend-only leases from
+[ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md). They share the
+accepted primary backend and do not add another database, API, worker,
+Cloudflare hostname, or accepted-state authority. Backend, migration,
+dependency, proxy, and mutation work still waits for the one primary merge
+lane.
+
 Keep this model for five working days and record only:
 
 - typical edit-to-preview time;
@@ -311,6 +319,14 @@ pnpm run m4:preview:ollama:restart
 # Targeted lifecycle operations
 pnpm run m4:preview:restart -- api
 pnpm run m4:preview:stop
+
+# Frontend-only collaboration slots (two normal, third explicit)
+pnpm run m4:frontend:up -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:sync -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:tunnel -- --slot 1 --auto
+pnpm run m4:frontend:status
+pnpm run m4:frontend:logs -- --slot 1
+pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
 ```
 
 `deploy` builds the runtime and frontend images on M4. It never calls local
@@ -466,6 +482,27 @@ add an automatic callback, second preview stack, or second deployment control
 plane. A later candidate sync intentionally replaces the accepted status and
 must be promoted again before completion is reported.
 
+Frontend-only slots do not replace the primary accepted status. They record
+their own owner, TTL, frontend revision, source bundle hash, and the accepted
+primary revision they consumed. Ordinary slot start/sync refuses an active
+primary operation, a candidate primary, fingerprint drift, or an unhealthy
+API. The `--allow-candidate-primary` flag is reserved for validating the slot
+machinery itself and requires exact candidate revision and full source-bundle
+equality.
+
+Slots 1 and 2 map M4 loopback ports `8021` and `8022` to authoring-Mac
+foreground tunnel ports `18021` and `18022`. Slot 3 maps `8023` to `18023` and
+requires `--allow-third`. No slot port is published to LAN or Tailscale.
+Product mutations are blocked at the slot NGINX edge; only session login,
+verification, and logout are allowed so authenticated pages can be inspected.
+Release removes only the exact slot; an expired lease is reclaimed by the next
+explicit owner claim.
+
+A later primary candidate may keep an existing slot container running, but it
+invalidates that slot's backend evidence. `m4:frontend:status` then reports
+`backend_lease_status=drifted`. Do not use that slot for acceptance until the
+primary is accepted again and the owner performs an explicit slot sync.
+
 ## Native M4 Ollama
 
 Ollama stays native on M4 rather than becoming another Docker service. The
@@ -484,6 +521,39 @@ listener on port `11434`, gracefully hands off an existing Ollama.app server,
 and verifies the final loopback binding. It owns only
 `~/Library/LaunchAgents/top.mqzj.npcink-ollama-preview.plist` and the
 corresponding launchd job.
+
+Treat that LaunchAgent as the sole Ollama owner on the M4 preview host. Do not
+enable Ollama.app as a login item or leave it running alongside the managed
+job. Opening Ollama.app for deliberate desktop use requires a later
+operator-approved handoff before the next preview deployment.
+
+`m4:preview:deploy` and
+`m4:preview:promote -- --pr <number> --deploy` run a read-only ownership
+preflight before source transfer, image build, migration, or container changes
+when the managed plist is installed:
+
+```text
+listener_owner=managed
+  -> continue
+
+listener missing
+  -> continue; the managed restart recovers it after deployment
+
+listener_owner=unmanaged
+  -> fail before source transfer
+  -> inspect with m4:preview:ollama:status
+  -> after operator approval, use m4:preview:ollama:install only for standard
+     Ollama.app / ollama serve ownership
+
+unknown listener process
+  -> fail closed; investigate without terminating or taking over the process
+```
+
+The preflight never installs Ollama, kills an unknown process, or changes the
+listener. Keep the final post-deploy PID and loopback-binding verification as
+a race-safe check even after the early preflight passes. Do not substitute
+`m4:preview:recover` for an ownership handoff: recovery only restarts the
+managed job and must remain blocked while another process owns `11434`.
 
 After the Cloud source containing the provider request contract is deployed,
 configure the disposable M4 database:

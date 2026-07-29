@@ -727,6 +727,50 @@ def test_provider_connection_runtime_selection_uses_fixed_slots_without_priority
     dispose_engine(database_url)
 
 
+def test_runtime_settings_project_doubao_search_custom_connection(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.web_search_provider = "disabled"
+    service = ProviderConnectionAdminService(database_url, settings)
+
+    service.save_connection(
+        {
+            "connection_id": "search_doubao_search",
+            "provider_id": "doubao_search",
+            "provider_type": "web_search_provider",
+            "kind": "web_search_provider",
+            "display_name": "Doubao Search",
+            "enabled": True,
+            "base_url": "https://open.feedcoopapi.com",
+            "capability_ids": ["web_search"],
+            "runtime_profile_ids": ["web-search.managed"],
+            "config": {
+                "provider_mode": "auto",
+                "search_path": "/search_api/web_search",
+                "timeout_seconds": 12,
+                "cost_per_query": 0.02,
+            },
+            "credential": "doubao-search-key",
+        }
+    )
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.web_search_count == 1
+    assert settings.web_search_provider == "auto"
+    assert settings.web_search_doubao_base_url == "https://open.feedcoopapi.com"
+    assert settings.web_search_doubao_api_key == "doubao-search-key"
+    assert settings.web_search_doubao_search_path == "/search_api/web_search"
+    assert settings.web_search_doubao_timeout_seconds == 12
+    assert settings.web_search_doubao_cost_per_query == 0.02
+    assert "doubao-search-key" not in str(service.list_connections())
+
+    dispose_engine(database_url)
+
+
 def test_image_source_connections_remain_parallel_without_priority(
     tmp_path: Path,
 ) -> None:

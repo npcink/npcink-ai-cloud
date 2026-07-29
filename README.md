@@ -86,19 +86,23 @@ Evidence records (not target-contract completion proof):
 - [docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md](docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
 - [docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md](docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md)
 - [docs/public-frontend-development-retrospective-and-standard-2026-07-25.md](docs/public-frontend-development-retrospective-and-standard-2026-07-25.md)
+- [docs/public-homepage-navigation-and-responsive-typography-retrospective-2026-07-29.md](docs/public-homepage-navigation-and-responsive-typography-retrospective-2026-07-29.md)
 - [docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md](docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
 - [docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md](docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md)
 - [docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md](docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 - [docs/cloud-admin-ui-development-retrospective-2026-07-27.md](docs/cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md](docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md)
 - [docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md](docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
 - [docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md](docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md)
 - [docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md](docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md)
+- [docs/doubao-search-and-external-service-credential-links-closeout-and-development-retrospective-2026-07-29.md](docs/doubao-search-and-external-service-credential-links-closeout-and-development-retrospective-2026-07-29.md)
 
 Operational references:
 
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
+- [docs/parallel-ai-collaboration-standard-v1.md](docs/parallel-ai-collaboration-standard-v1.md)
 - [docs/development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md)
 - [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
 - [docs/image-processing-fc-oss-readiness-2026-07-20.md](docs/image-processing-fc-oss-readiness-2026-07-20.md)
@@ -109,6 +113,7 @@ Operational references:
 - [docs/decisions/026-private-source-relay-transfer.md](docs/decisions/026-private-source-relay-transfer.md)
 - [docs/m4-source-relay-transfer-validation-2026-07-24.md](docs/m4-source-relay-transfer-validation-2026-07-24.md)
 - [docs/decisions/027-m4-package-proxy-streaming-cache.md](docs/decisions/027-m4-package-proxy-streaming-cache.md)
+- [docs/decisions/035-ephemeral-m4-frontend-preview-slots.md](docs/decisions/035-ephemeral-m4-frontend-preview-slots.md)
 - [docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 - [docs/ci-pytest-sharding-v1.md](docs/ci-pytest-sharding-v1.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
@@ -133,6 +138,8 @@ Operational references:
 - [docs/cloud-content-generation-boundary-v1.md](docs/cloud-content-generation-boundary-v1.md)
 - [docs/cloud-admin-information-architecture-v2.md](docs/cloud-admin-information-architecture-v2.md)
 - [docs/cloud-admin-site-knowledge-development-summary-2026-07-14.md](docs/cloud-admin-site-knowledge-development-summary-2026-07-14.md)
+- [docs/media-intelligence-and-attachment-indexing-next-stage-plan-v1.md](docs/media-intelligence-and-attachment-indexing-next-stage-plan-v1.md)
+- [docs/media-intelligence-milestone-a-inventory-and-gate-2026-07-29.md](docs/media-intelligence-milestone-a-inventory-and-gate-2026-07-29.md)
 - [docs/decisions/002-cloud-admin-task-oriented-information-architecture.md](docs/decisions/002-cloud-admin-task-oriented-information-architecture.md)
 - [docs/source-extraction-preview-v1.md](docs/source-extraction-preview-v1.md)
 - [docs/cloud-open-callback-boundary-v1.md](docs/cloud-open-callback-boundary-v1.md)
@@ -336,7 +343,13 @@ Still deferred in the current phase:
     RSA2 signing/verification configuration, while WeChat Pay remains deferred
     until provider signature verification, callback replay, and amount/currency
     matching are implemented
-- richer platform admin directory/session inventory remains deferred
+- richer platform admin capabilities remain deferred while the service is
+  intentionally operated by one `platform_admin`:
+  - trusted administrator identity propagation through the Admin BFF into
+    backend audit receipts;
+  - named administrator directory, active-session inventory, and per-session
+    revocation;
+  - both are required before operations expand beyond one administrator
 
 Commercial acceptance freeze:
 
@@ -462,6 +475,20 @@ pnpm run check:fast
 pnpm run check:seam
 pnpm run check:perimeter
 ```
+
+Frontend-only visual tasks may use one of the bounded read-only M4 slots
+without replacing the primary candidate:
+
+```bash
+pnpm run m4:frontend:up -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:sync -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:tunnel -- --slot 1 --auto
+pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
+```
+
+Slots share the accepted primary API and start no database, Redis, API, or
+worker copy. Use the primary M4 lane for backend, mutation, migration,
+dependency, proxy, and persistence work.
 
 - `test:contract`
   - contract truth for response shape and seam drift in `tests/contract/**`

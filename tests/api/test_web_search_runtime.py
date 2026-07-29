@@ -32,6 +32,7 @@ from app.domain.web_search.service import (
     _ZHIHU_HOT_LIST_CACHE,
     ApifyWebSearchProvider,
     BochaWebSearchProvider,
+    DoubaoSearchWebSearchProvider,
     TavilyWebSearchProvider,
     WebSearchExecutionResult,
     WebSearchProviderError,
@@ -2190,6 +2191,155 @@ def test_apify_provider_uses_actor_query_string_and_bearer_auth(monkeypatch: Any
     assert len(result.result_json["results"]) == 1
     assert result.result_json["evidence_gate"]["source_count"] == 1
     assert result.result_json["results"][0]["url"] == "https://example.com/apify-source"
+
+
+def test_doubao_search_provider_uses_custom_web_contract(monkeypatch: Any) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(self, *, timeout: float) -> None:
+            captured["timeout"] = timeout
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(
+            self,
+            endpoint: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+        ) -> httpx.Response:
+            captured["endpoint"] = endpoint
+            captured["headers"] = headers
+            captured["json"] = json
+            return httpx.Response(
+                200,
+                json={
+                    "ResponseMetadata": {"RequestId": "request-doubao"},
+                    "Result": {
+                        "ResultCount": 1,
+                        "WebResults": [
+                            {
+                                "Title": "Doubao Search source",
+                                "Url": "https://example.com/doubao-source",
+                                "Snippet": "Short source fragment.",
+                                "Summary": "A longer source summary returned by Doubao Search.",
+                            }
+                        ],
+                    },
+                },
+                request=httpx.Request("POST", endpoint),
+            )
+
+    monkeypatch.setattr("app.domain.web_search.service.httpx.Client", FakeClient)
+
+    result = DoubaoSearchWebSearchProvider(
+        Settings(
+            _env_file=None,
+            environment="test",
+            web_search_provider="doubao_search",
+            web_search_doubao_api_key="redacted-placeholder",
+        )
+    ).search(
+        query="latest WordPress AI search trends",
+        options={
+            "intent": "news",
+            "provider": "doubao_search",
+            "max_results": 3,
+            "recency_days": 7,
+            "allowed_domains": ["wordpress.org"],
+            "blocked_domains": ["example.net"],
+            "evidence_policy": {"required_sources": 1, "no_hit_policy": "abstain"},
+        },
+        site_id="site_alpha",
+        run_id="run_doubao_shape",
+    )
+
+    assert captured["endpoint"] == "https://open.feedcoopapi.com/search_api/web_search"
+    assert captured["headers"] == {"Authorization": "Bearer redacted-placeholder"}
+    assert captured["json"] == {
+        "Query": "latest WordPress AI search trends",
+        "SearchType": "web",
+        "Count": 3,
+        "Filter": {
+            "NeedContent": False,
+            "NeedUrl": True,
+            "Sites": "wordpress.org",
+            "BlockHosts": "example.net",
+        },
+        "TimeRange": "OneWeek",
+    }
+    assert result.usage.provider_id == "doubao_search"
+    assert result.usage.cost == 0.02
+    assert result.result_json["provider"] == "doubao_search"
+    assert result.result_json["results"][0]["snippet"] == (
+        "A longer source summary returned by Doubao Search."
+    )
+    assert result.result_json["results"][0]["url"] == ("https://example.com/doubao-source")
+    assert result.result_json["write_posture"] == "suggestion_only"
+    assert result.result_json["direct_wordpress_write"] is False
+
+
+def test_doubao_search_provider_surfaces_success_http_error_payload(
+    monkeypatch: Any,
+) -> None:
+    class FakeClient:
+        def __init__(self, *, timeout: float) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(
+            self,
+            endpoint: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+        ) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "ResponseMetadata": {
+                        "RequestId": "request-error",
+                        "Error": {
+                            "Code": "10406",
+                            "Message": "Free quota exhausted",
+                        },
+                    },
+                    "Result": None,
+                },
+                request=httpx.Request("POST", endpoint),
+            )
+
+    monkeypatch.setattr("app.domain.web_search.service.httpx.Client", FakeClient)
+
+    provider = DoubaoSearchWebSearchProvider(
+        Settings(
+            _env_file=None,
+            environment="test",
+            web_search_provider="doubao_search",
+            web_search_doubao_api_key="redacted-placeholder",
+        )
+    )
+    with pytest.raises(WebSearchProviderError) as error:
+        provider.search(
+            query="latest WordPress AI search trends",
+            options={"intent": "news", "max_results": 3},
+            site_id="site_alpha",
+            run_id="run_doubao_error",
+        )
+
+    assert error.value.error_code == "web_search.doubao_http_error"
+    assert error.value.usage is not None
+    assert error.value.usage.error_code == "web_search.doubao_http_error"
 
 
 def test_web_search_rejects_provider_keys_in_runtime_input(tmp_path: Path) -> None:

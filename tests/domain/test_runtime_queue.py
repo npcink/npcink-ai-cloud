@@ -957,6 +957,111 @@ def test_runtime_backlog_diagnostics_group_by_scope_and_classify_bottlenecks(
     dispose_engine(database_url)
 
 
+def test_runtime_backlog_diagnostics_preserves_aging_fresh_and_unknown_scope_states(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    CatalogService(database_url).refresh_catalog()
+    seed_openai_model_allowlist(database_url)
+    seed_site_auth(
+        database_url,
+        site_id="site_backlog_states",
+        concurrency={"max_active_runs": 2},
+    )
+
+    service = _runtime_service(database_url)
+    queued = service.execute(
+        RuntimeRequest(
+            site_id="site_backlog_states",
+            ability_name="workflow/media_nightly_image_optimize",
+            ability_family="automation",
+            channel="openapi",
+            execution_kind="text",
+            execution_pattern="whole_run_offload",
+            task_backend={"enabled": True, "mode": "polling"},
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-backlog-aging-001",
+            trace_id="trace-queue-domain-backlog-aging-001",
+            input_payload={"messages": [{"role": "user", "content": "aging queue"}]},
+        )
+    )
+    running = service.execute(
+        RuntimeRequest(
+            site_id="site_backlog_states",
+            ability_name="npcink-abilities-toolkit/build-article-block-plan",
+            ability_family="workflow",
+            channel="openapi",
+            execution_kind="text",
+            profile_id="text.balanced",
+            idempotency_key="queue-domain-backlog-fresh-running-001",
+            trace_id="trace-queue-domain-backlog-fresh-running-001",
+            input_payload={"messages": [{"role": "user", "content": "fresh running"}]},
+        )
+    )
+
+    current_time = datetime.now(UTC)
+    with get_session(database_url) as session:
+        queued_run = session.get(RunRecord, queued.run_id)
+        running_run = session.get(RunRecord, running.run_id)
+        assert queued_run is not None
+        assert running_run is not None
+        queued_run.status = "queued"
+        queued_run.started_at = current_time - timedelta(minutes=3)
+        running_run.status = "running"
+        running_run.processing_started_at = current_time - timedelta(seconds=30)
+        session.commit()
+
+    unknown_scope = service.get_runtime_backlog_diagnostics(
+        scope_kind="unsupported",
+        limit=10,
+    )
+
+    assert unknown_scope["totals"]["queued"]["state"] == "aging"
+    assert unknown_scope["totals"]["running"]["state"] == "fresh_wave"
+    assert unknown_scope["totals"]["pressure_state"] == "attention"
+    assert unknown_scope["totals"]["pressure_reasons"] == ["queue.aging"]
+    assert unknown_scope["totals"]["bottleneck_state"] == "queue_claiming_lag"
+    assert unknown_scope["scope_pressure"]["spread_state"] == "isolated"
+    assert unknown_scope["items"][0]["scope_id"] == "unknown"
+
+    with get_session(database_url) as session:
+        queued_run = session.get(RunRecord, queued.run_id)
+        running_run = session.get(RunRecord, running.run_id)
+        assert queued_run is not None
+        assert running_run is not None
+        queued_run.started_at = current_time - timedelta(seconds=30)
+        running_run.processing_started_at = current_time - timedelta(minutes=10)
+        session.commit()
+
+    worker_stall = service.get_runtime_backlog_diagnostics(
+        scope_kind="site_id",
+        site_id="site_backlog_states",
+        limit=10,
+    )
+
+    assert worker_stall["totals"]["queued"]["state"] == "fresh_wave"
+    assert worker_stall["totals"]["running"]["state"] == "aging"
+    assert worker_stall["totals"]["pressure_state"] == "attention"
+    assert worker_stall["totals"]["pressure_reasons"] == ["worker.aging"]
+    assert worker_stall["totals"]["bottleneck_state"] == "worker_stall"
+
+    empty = service.get_runtime_backlog_diagnostics(
+        scope_kind="site_id",
+        site_id="missing-site",
+        limit=10,
+    )
+
+    assert empty["totals"]["queued"]["state"] == "idle"
+    assert empty["totals"]["running"]["state"] == "idle"
+    assert empty["totals"]["pressure_state"] == "healthy"
+    assert empty["totals"]["bottleneck_state"] == "healthy"
+    assert empty["scope_pressure"]["spread_state"] == "none"
+    assert empty["items"] == []
+
+    dispose_engine(database_url)
+
+
 def test_callback_dispatch_recovery_logs_audit_failure_but_keeps_recovery_flow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

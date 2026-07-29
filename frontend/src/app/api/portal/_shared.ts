@@ -79,12 +79,14 @@ export async function proxyPortalBackendPath(
       headers,
       body,
       cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
     });
-  } catch {
+  } catch (error) {
+    const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
     return buildErrorResponse(
-      502,
-      options.unreachableCode,
-      options.unreachableMessage
+      timedOut ? 504 : 502,
+      timedOut ? 'proxy.portal_backend_timeout' : options.unreachableCode,
+      timedOut ? 'Portal backend request timed out' : options.unreachableMessage
     );
   }
 

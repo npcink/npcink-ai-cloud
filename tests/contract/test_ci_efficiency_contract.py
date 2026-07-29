@@ -32,6 +32,7 @@ def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
         "deploy_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
+        "frontend_e2e_required": "true",
     }
 
 
@@ -45,6 +46,7 @@ def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
         "deploy_required": "false",
         "static_terms_only": "false",
         "docs_only": "true",
+        "frontend_e2e_required": "false",
     }
 
     assert (
@@ -61,18 +63,40 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "deploy_required": "true",
         "static_terms_only": "true",
         "docs_only": "false",
+        "frontend_e2e_required": "false",
     }
 
     assert _classify("app/main.py") == {
         "deploy_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
+        "frontend_e2e_required": "false",
     }
     assert _classify(".github/workflows/ci.yml") == {
         "deploy_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
+        "frontend_e2e_required": "true",
     }
+
+
+def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None:
+    for path in (
+        "frontend/src/app/portal/page.tsx",
+        "frontend/tests/e2e/admin-operator-path.spec.ts",
+        "frontend/playwright.config.ts",
+        "package.json",
+        "pnpm-lock.yaml",
+        "scripts/run-cloud-frontend-playwright.js",
+    ):
+        assert _classify(path)["frontend_e2e_required"] == "true"
+
+    assert _classify("app/api/routes/service.py")["frontend_e2e_required"] == "false"
+    assert (
+        _classify("tests/api/test_service_routes.py")["frontend_e2e_required"]
+        == "false"
+    )
+    assert _classify("docs/portal-boundary.md")["frontend_e2e_required"] == "false"
 
 
 def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
@@ -92,11 +116,30 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "received a non-documentation change" in docs_gate
 
     assert "docs_only: ${{ steps.changed.outputs.docs_only }}" in workflow
+    assert (
+        "frontend_e2e_required: "
+        "${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
+    )
     assert workflow.count("--diff-filter=ACMRD") == 3
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
     assert "Docs-only frontend acknowledgement" in workflow
     assert "python dependency audit should be skipped for docs-only changes" in workflow
+    assert "pnpm --dir frontend exec playwright install --with-deps chromium" in workflow
+    assert "node scripts/run-cloud-frontend-playwright.js" in workflow
+    assert workflow.count(
+        "PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers"
+    ) == 2
+    assert "tests/e2e/admin-operator-path.spec.ts" in workflow
+    assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
+    assert (
+        "admin operator path smoke|portal workspace interaction path|"
+        "Alipay return polls|account projections stay idle|"
+        "account-level support stays available"
+    ) in workflow
+    assert workflow.count(
+        "if: needs.classify.outputs.frontend_e2e_required == 'true'"
+    ) == 2
 
 
 @pytest.mark.skipif(

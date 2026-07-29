@@ -42,7 +42,7 @@ MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
 MAX_READER_RESPONSE_BYTES = 500_000
 MAX_SOURCE_READER_CONTENT_CHARS = 8_000
 MAX_SOURCE_PREVIEW_CHARS = 600
-WEB_SEARCH_PROVIDER_ORDER = ("tavily", "bocha", "apify", "zhihu")
+WEB_SEARCH_PROVIDER_ORDER = ("tavily", "bocha", "doubao_search", "apify", "zhihu")
 TAVILY_KEY_QUARANTINE_SECONDS = 300.0
 _TAVILY_POOL_LOCK = threading.Lock()
 # Opaque runtime-local tokens avoid deriving identifiers from provider secrets.
@@ -471,6 +471,165 @@ class BochaWebSearchProvider:
             region=str(self.settings.deployment_region or "unspecified"),
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),
             cost=max(0.0, float(self.settings.web_search_bocha_cost_per_query or 0.0)),
+            error_code=error_code,
+        )
+
+
+class DoubaoSearchWebSearchProvider:
+    provider_id = "doubao_search"
+    model_id = "custom-web-search"
+    instance_id = "cloud-managed"
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def search(
+        self,
+        *,
+        query: str,
+        options: dict[str, Any],
+        site_id: str,
+        run_id: str,
+    ) -> WebSearchExecutionResult:
+        api_key = str(self.settings.web_search_doubao_api_key or "").strip()
+        if not api_key:
+            raise WebSearchProviderError(
+                "web_search.doubao_api_key_missing",
+                "Cloud-managed Doubao Search API key is not configured",
+            )
+        base_url = str(self.settings.web_search_doubao_base_url or "").strip().rstrip("/")
+        search_path = str(self.settings.web_search_doubao_search_path or "").strip()
+        if not base_url or not search_path:
+            raise WebSearchProviderError(
+                "web_search.doubao_endpoint_missing",
+                "Cloud-managed Doubao Search endpoint is not configured",
+            )
+        endpoint = f"{base_url}/{search_path.lstrip('/')}"
+        max_results = coerce_positive_int(options.get("max_results"), default=5, maximum=10)
+        external_query = _provider_query(
+            query,
+            str(options.get("intent") or "general_research"),
+        )[:100]
+        request_filter: dict[str, Any] = {
+            "NeedContent": False,
+            "NeedUrl": True,
+        }
+        allowed_domains = list(options.get("allowed_domains") or [])
+        blocked_domains = list(options.get("blocked_domains") or [])
+        if allowed_domains:
+            request_filter["Sites"] = "|".join(allowed_domains[:20])
+        if blocked_domains:
+            request_filter["BlockHosts"] = "|".join(blocked_domains[:5])
+        request_body: dict[str, Any] = {
+            "Query": external_query,
+            "SearchType": "web",
+            "Count": max_results,
+            "Filter": request_filter,
+        }
+        time_range = _doubao_time_range(options.get("recency_days"))
+        if time_range:
+            request_body["TimeRange"] = time_range
+
+        started = time.monotonic()
+        try:
+            with httpx.Client(
+                timeout=float(self.settings.web_search_doubao_timeout_seconds)
+            ) as client:
+                response = client.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=request_body,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as error:
+            usage = self._usage(started, error_code="provider.timeout")
+            raise WebSearchProviderError(
+                "provider.timeout",
+                "Doubao Search timed out",
+                usage=usage,
+            ) from error
+        except httpx.HTTPStatusError as error:
+            usage = self._usage(started, error_code=_map_provider_http_error(error.response))
+            raise WebSearchProviderError(
+                usage.error_code or "web_search.doubao_http_error",
+                _extract_http_error_message(error.response, provider_id=self.provider_id),
+                usage=usage,
+            ) from error
+        except httpx.RequestError as error:
+            usage = self._usage(started, error_code="provider.network_error")
+            raise WebSearchProviderError(
+                "provider.network_error",
+                "Doubao Search request failed",
+                usage=usage,
+            ) from error
+
+        usage = self._usage(started)
+        payload = _json_payload(response, provider_id=self.provider_id, usage=usage)
+        if not isinstance(payload, dict):
+            usage.error_code = "provider.invalid_response"
+            raise WebSearchProviderError(
+                "provider.invalid_response",
+                "Doubao Search returned an invalid response",
+                usage=usage,
+            )
+        response_metadata = payload.get("ResponseMetadata")
+        provider_error = (
+            response_metadata.get("Error") if isinstance(response_metadata, dict) else None
+        )
+        if isinstance(provider_error, dict):
+            message = str(provider_error.get("Message") or "Doubao Search returned an error")
+            usage.error_code = "web_search.doubao_http_error"
+            raise WebSearchProviderError(
+                "web_search.doubao_http_error",
+                message[:300],
+                usage=usage,
+            )
+        result_payload = payload.get("Result")
+        if not isinstance(result_payload, dict):
+            usage.error_code = "provider.invalid_response"
+            raise WebSearchProviderError(
+                "provider.invalid_response",
+                "Doubao Search response did not include a search result",
+                usage=usage,
+            )
+        raw_results = result_payload.get("WebResults")
+        if not isinstance(raw_results, list):
+            usage.error_code = "provider.invalid_response"
+            raise WebSearchProviderError(
+                "provider.invalid_response",
+                "Doubao Search response did not include web results",
+                usage=usage,
+            )
+        intent = str(options.get("intent") or "general_research")
+        results = _normalize_results(
+            raw_results[:max_results],
+            intent=intent,
+            provider_id=self.provider_id,
+            title_keys=("Title",),
+            url_keys=("Url",),
+            snippet_keys=("Summary", "Snippet", "Content"),
+        )
+        evidence_policy = _resolve_evidence_policy(options.get("evidence_policy"))
+        results = _apply_evidence_policy(results, evidence_policy)
+        return WebSearchExecutionResult(
+            result_json=_build_result_json(
+                provider_id=self.provider_id,
+                query=query,
+                options=options,
+                results=results,
+                evidence_policy=evidence_policy,
+            ),
+            usage=usage,
+        )
+
+    def _usage(self, started: float, *, error_code: str | None = None) -> WebSearchProviderUsage:
+        return WebSearchProviderUsage(
+            provider_id=self.provider_id,
+            model_id=self.model_id,
+            instance_id=self.instance_id,
+            region=str(self.settings.deployment_region or "unspecified"),
+            latency_ms=max(0, int((time.monotonic() - started) * 1000)),
+            cost=max(0.0, float(self.settings.web_search_doubao_cost_per_query or 0.0)),
             error_code=error_code,
         )
 
@@ -1132,6 +1291,7 @@ def _build_provider(
 ) -> (
     TavilyWebSearchProvider
     | BochaWebSearchProvider
+    | DoubaoSearchWebSearchProvider
     | ApifyWebSearchProvider
     | ZhihuWebSearchProvider
 ):
@@ -1139,6 +1299,8 @@ def _build_provider(
         return TavilyWebSearchProvider(settings)
     if provider_id == "bocha":
         return BochaWebSearchProvider(settings)
+    if provider_id == "doubao_search":
+        return DoubaoSearchWebSearchProvider(settings)
     if provider_id == "apify":
         return ApifyWebSearchProvider(settings)
     if provider_id == "zhihu":
@@ -1167,11 +1329,26 @@ def _zhihu_global_filter(recency_days: Any) -> str:
     return f"publish_time>={start_date} AND publish_time<={end_date}"
 
 
+def _doubao_time_range(recency_days: Any) -> str:
+    days = max(0, _coerce_int(recency_days))
+    if days <= 0:
+        return ""
+    if days <= 1:
+        return "OneDay"
+    if days <= 7:
+        return "OneWeek"
+    if days <= 30:
+        return "OneMonth"
+    return "OneYear"
+
+
 def _provider_configured(settings: Settings, provider_id: str) -> bool:
     if provider_id == "tavily":
         return bool(_tavily_api_key_pool(settings))
     if provider_id == "bocha":
         return bool(str(settings.web_search_bocha_api_key or "").strip())
+    if provider_id == "doubao_search":
+        return bool(str(settings.web_search_doubao_api_key or "").strip())
     if provider_id == "apify":
         return bool(
             str(settings.web_search_apify_api_token or "").strip()

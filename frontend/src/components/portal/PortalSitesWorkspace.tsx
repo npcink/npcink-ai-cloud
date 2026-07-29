@@ -59,6 +59,7 @@ function PortalSitesWorkspaceContent() {
   const [addonAccounts, setAddonAccounts] = useState<PortalAddonConnectionAccount[]>([]);
   const [addonAccountsError, setAddonAccountsError] = useState('');
   const [isLoadingAddonAccounts, setIsLoadingAddonAccounts] = useState(false);
+  const [addonAccountsRetryVersion, setAddonAccountsRetryVersion] = useState(0);
   const [selectingSiteId, setSelectingSiteId] = useState('');
   const [siteSelectionError, setSiteSelectionError] = useState('');
   const [pendingRemoveSite, setPendingRemoveSite] = useState<Site | null>(null);
@@ -192,7 +193,7 @@ function PortalSitesWorkspaceContent() {
     return () => {
       cancelled = true;
     };
-  }, [addonConnectMode, isAuthenticated, t]);
+  }, [addonAccountsRetryVersion, addonConnectMode, isAuthenticated, t]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -422,6 +423,7 @@ function PortalSitesWorkspaceContent() {
           accounts={addonAccounts}
           accountsError={addonAccountsError}
           isLoadingAccounts={isLoadingAddonAccounts}
+          onRetryAccounts={() => setAddonAccountsRetryVersion((current) => current + 1)}
           onClose={() => setShowConnectModal(false)}
           initialSiteUrl={addonSiteUrl}
           initialSiteName={addonSiteName}

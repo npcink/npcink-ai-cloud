@@ -941,7 +941,7 @@ require_marker_before "deploy/remote-operational-ready.sh" \
 
 require_marker "deploy/bundle-images.sh" 'git -C "${CLOUD_DIR}" archive HEAD'
 require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "CURRENT_LINK=\"\${REMOTE_DIR}/current\""
-require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "assert_public_static_page \"/terms\""
+require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "assert_public_static_page \"/terms/index.html\""
 require_marker "deploy/deploy-static-terms-to-ssh-host.sh" "Static terms deploy completed"
 require_marker "deploy/remote-smoke.sh" "\${BASE_URL%/}/terms"
 require_marker "deploy/remote-smoke.sh" "/terms/en/terms.html"
@@ -949,7 +949,8 @@ require_marker "deploy/remote-smoke.sh" "/terms/zh/terms.html"
 require_marker "deploy/remote-smoke.sh" "/terms/styles.css"
 require_marker "docker-compose.runtime.yml" "./site:/usr/share/nginx/html/npcink-site:ro"
 require_marker "deploy/nginx.prod.conf" "location /terms/"
-require_marker "deploy/nginx.prod.conf" "try_files /terms/index.html =404;"
+require_marker "deploy/nginx.prod.conf" "location = /terms {"
+require_marker "deploy/nginx.prod.conf" "location = /privacy {"
 require_marker ".github/workflows/ci.yml" "branches: [master, main, production]"
 require_marker ".github/workflows/ci.yml" "static_terms_only"
 require_marker "scripts/classify-ci-changes.sh" "site/terms/*"

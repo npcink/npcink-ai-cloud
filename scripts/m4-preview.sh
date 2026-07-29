@@ -355,6 +355,9 @@ promote_accepted_master() {
 
 	[ -n "${pr_number}" ] || fail "promote requires --pr N"
 	verify_promotion_preconditions "${pr_number}"
+	if [ "${mode}" = "deploy" ] && [ "${DRY_RUN}" = "0" ]; then
+		remote_ollama_preflight
+	fi
 	upload_and_apply "${mode}" accepted "${pr_number}"
 	if [ "${mode}" = "deploy" ] && [ "${DRY_RUN}" = "0" ]; then
 		remote_ollama_restart 1
@@ -534,6 +537,52 @@ if [ -x /usr/local/bin/ollama ] && [ -n "${version}" ]; then
 		awk 'NR == 1 { print "models:"; next } NR <= 9 { print "  " $1 " " $3 " " $4 }'
 fi
 REMOTE_OLLAMA_STATUS
+}
+
+remote_ollama_preflight() {
+	require_cmd ssh
+	ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" bash -s -- \
+		"${M4_OLLAMA_LABEL}" \
+		"${M4_OLLAMA_PORT}" <<'REMOTE_OLLAMA_PREFLIGHT'
+set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+label="$1"
+port="$2"
+uid="$(id -u)"
+job="gui/${uid}/${label}"
+plist="${HOME}/Library/LaunchAgents/${label}.plist"
+
+if [ ! -f "${plist}" ]; then
+	echo '[m4-preview] managed Ollama is not installed; skipping ownership preflight'
+	exit 0
+fi
+
+managed_pid="$(
+	launchctl print "${job}" 2>/dev/null |
+		awk -F ' = ' '/^[[:space:]]*pid = / { print $2; exit }' || true
+)"
+listener_pid="$(
+	lsof -nP -iTCP:"${port}" -sTCP:LISTEN -Fp 2>/dev/null |
+		sed -n 's/^p//p' |
+		head -n 1 || true
+)"
+
+if [ -z "${listener_pid}" ]; then
+	echo '[m4-preview] managed Ollama ownership preflight passed; listener will be recovered'
+	exit 0
+fi
+if [ -n "${managed_pid}" ] && [ "${listener_pid}" = "${managed_pid}" ]; then
+	echo "[m4-preview] managed Ollama ownership preflight passed; pid=${managed_pid}"
+	exit 0
+fi
+
+echo '[m4-preview] Ollama ownership preflight failed before source transfer' >&2
+echo "[m4-preview] port ${port} is not owned by ${label}" >&2
+echo '[m4-preview] inspect with: pnpm run m4:preview:ollama:status' >&2
+echo '[m4-preview] after operator approval, hand off standard Ollama.app with: pnpm run m4:preview:ollama:install' >&2
+exit 65
+REMOTE_OLLAMA_PREFLIGHT
 }
 
 remote_ollama_install() {
@@ -781,7 +830,9 @@ config_fingerprint() {
 	local files=(
 		docker-compose.dev.yml
 		docker-compose.m4-preview.yml
+		docker-compose.m4-frontend-slot.yml
 		deploy/nginx.m4-preview.conf
+		deploy/nginx.m4-frontend-slot.conf.template
 		scripts/redact-m4-preview-logs.py
 	)
 	local file=""
@@ -1108,6 +1159,7 @@ acceptance_state="${16}"
 promotion_pr="${17}"
 source_transfer_mode="${18}"
 source_relay_url="${19}"
+export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -1721,6 +1773,9 @@ elif [ "${mode}" = "deploy" ]; then
 		postgres redis api frontend proxy worker callback-worker ops-worker
 else
 	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
+	# The development frontend live-mounts source, but its source-revision
+	# environment still requires a recreate for each candidate sync.
+	"${compose[@]}" up -d --no-build --pull never frontend
 	"${compose[@]}" restart worker callback-worker ops-worker
 	proxy_id="$("${compose[@]}" ps -q proxy)"
 	if [ -n "${proxy_id}" ]; then
@@ -2193,6 +2248,9 @@ main() {
 			;;
 		deploy)
 			parse_dry_run "$@"
+			if [ "${DRY_RUN}" = "0" ]; then
+				remote_ollama_preflight
+			fi
 			upload_and_apply "${command}" candidate none
 			if [ "${DRY_RUN}" = "0" ]; then
 				remote_ollama_restart 1
@@ -2329,4 +2387,6 @@ main() {
 	esac
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+	main "$@"
+fi

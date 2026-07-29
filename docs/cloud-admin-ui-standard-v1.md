@@ -10,6 +10,7 @@ executable gates.
 This document composes with:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
+- [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md);
 - [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md).
 
@@ -109,9 +110,11 @@ The executable projection of the route matrix and accepted dimensions lives in
   radius, and focus treatment together. Do not place the standard `44px`
   control padding inside a forced `32px` height; clipped labels are a failed
   density implementation.
-- Compact tables use one structural boundary at a time. Prefer a quiet header
-  and low-contrast row dividers over an outer rounded frame plus equally strong
-  inner lines. Interactive controls keep their own visible boundary.
+- Compact tables use one structural boundary at a time. Comparison-heavy data
+  tables use a quiet header and low-contrast row dividers. Short, fixed
+  configuration tables use a quiet header boundary plus whitespace between
+  rows. Neither restores an outer rounded frame, and interactive controls keep
+  their own visible boundary.
 - Mobile remains accessible, but mobile-specific redesign is not required by
   a PC-only change unless the changed primitive breaks the core task.
 
@@ -146,6 +149,37 @@ Do not change an API or data owner merely to make two routes look alike.
 - Status must include text; color alone is insufficient.
 - One section has one job and one primary action by default.
 - A page must not repeat the same title or scope sentence in nested panels.
+
+### 4.1 Surface, Border, And Divider Semantics
+
+Every visible boundary must explain structure, interaction, or an incomplete
+state. Do not add a border only to make ordinary content resemble a card.
+
+| Surface | Required treatment | Dashed boundary |
+| --- | --- | --- |
+| Dialog or drawer shell | shadow plus one quiet solid perimeter; solid header and footer dividers | forbidden |
+| Input, select, textarea, or other editable control | visible solid control boundary and focus treatment | forbidden |
+| Data or comparison table | quiet header and low-contrast solid row dividers; no repeated outer frame when the parent already owns the surface | forbidden |
+| Short, fixed configuration table (normally six rows or fewer) | quiet header divider and whitespace between body rows; no body row dividers or repeated outer frame | forbidden |
+| Section inside an existing panel | whitespace first, then at most one solid divider when spacing is insufficient | forbidden |
+| Selected or interactive row | quiet background plus text, status, or solid focus/selection treatment | forbidden |
+| Success, warning, error, pending, or destructive state | state text plus tint, icon, or solid side/perimeter treatment | forbidden |
+| Empty, filtered-empty, or not-yet-created target | explicit empty-state primitive with low-contrast dashed boundary | allowed |
+| Upload or drag-and-drop target | explicit drop-target primitive with low-contrast dashed boundary | allowed |
+| Loading state | skeleton, progress, or quiet solid in-flow status | forbidden |
+| Advanced or low-frequency disclosure | whitespace, quiet background, or one solid divider | forbidden |
+
+The default decision order is:
+
+1. use alignment and whitespace;
+2. add one solid divider when the relationship is still unclear;
+3. add an outer solid frame only when the surface has independent ownership;
+4. use a dashed frame only for an explicitly incomplete or insertable target.
+
+`border-style: dashed` must not appear directly in Admin route files. Use the
+shared semantic empty-state or drop-target primitive so the exception remains
+reviewable. Removing a frame must not remove keyboard focus, control
+boundaries, status text, or accessible table structure.
 
 ## 5. Tables And Toolbars
 
@@ -183,7 +217,9 @@ new route-local table shell.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
 - Short, fixed service configuration uses `AdminConfigurationTable` instead of
-  stacked field cards or a low-frequency disclosure.
+  stacked field cards or a low-frequency disclosure. Its boundary is
+  `header-only`: retain the header divider, remove body row dividers, and rely
+  on alignment and vertical whitespace between normally six or fewer rows.
 
 ## 7. Credentials And Capability-Specific Settings
 
@@ -211,12 +247,13 @@ Prefer these shared surfaces:
 - `AdminCredentialField`;
 - `AdminSettingsWorkbench`;
 - `AdminSettingsDisclosure`;
+- `AdminEmptyState`;
 - `BackofficeStatusBadge`;
 - the global Toast and latest-operation receipt surfaces.
 
 Page files compose route data and behavior. They must not duplicate modal
 focus management, credential reveal behavior, table framing, status palette,
-or shared geometry.
+shared geometry, or dashed empty-state framing.
 
 Existing route-local dialogs are recorded as migration debt by the executable
 gate. New route-local dialogs are rejected; migrate one existing dialog at a
@@ -278,6 +315,9 @@ Reject a change when:
 - it exposes or pre-populates a stored credential;
 - it turns normal state into a prominent banner;
 - it uses architecture explanation as the main working content;
+- it adds a dashed boundary outside an approved empty or drop-target primitive;
+- it nests an outer table frame inside a parent surface that already owns the
+  boundary;
 - it changes Cloud/WordPress ownership for visual convenience;
 - it has no PC interaction evidence for a material shared-layout change.
 

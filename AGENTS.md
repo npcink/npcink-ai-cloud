@@ -6,22 +6,30 @@ Every AI development session should start with:
 
 1. Run `git status --short --branch`.
 2. Read `README.md`.
-3. For feature, bug-fix, M4, or CI work, read
+3. Read `docs/parallel-ai-collaboration-standard-v1.md`. When another session
+   may be active, inspect worktrees, open human PRs, and available task
+   ownership, then report the conflict-domain owner, merge-lane intent, and
+   shared-runtime intent before editing.
+4. For feature, bug-fix, M4, or CI work, read
    `docs/development-validation-operating-model-v1.md`.
-4. Read the relevant boundary docs before editing:
+5. Read the relevant boundary docs before editing:
    - `docs/cloud-content-generation-boundary-v1.md`
    - `docs/cloud-task-pack-boundary-v1.md`
    - `docs/cloud-agent-workflow-metadata-projection-v1.md`
    - `docs/cloud-agent-feedback-quality-gate-v1.md`
-5. Briefly report the focused module, relevant Cloud boundary, and intended
+6. Briefly report the focused module, relevant Cloud boundary, and intended
    verification gate before editing.
 
 For any change under `frontend/src/app/admin/**` or
 `frontend/src/components/admin/**`, also read
-`docs/cloud-admin-ui-standard-v1.md` and inspect
+`docs/cloud-admin-ui-standard-v1.md`,
+`docs/cloud-admin-frontend-engineering-standard-v1.md`, and inspect
 `frontend/admin-ui-manifest.json`. Before editing, report the route's declared
 page model, operator job, primary/secondary/destructive action hierarchy,
-shared primitives, low-frequency disclosure plan, and PC browser gate.
+shared primitives, current and target state ownership, low-frequency
+disclosure plan, and PC browser gate. A complete visual component-library
+migration is not the default remedy for page complexity; follow the bounded
+pilot and stop conditions in the frontend engineering standard.
 
 ## Product Boundary
 
@@ -40,6 +48,11 @@ prompt/router/preset local truth, or WordPress write owner.
   module, intended change, explicit non-goals, public contracts touched,
   expected files, files or areas that must not change, required gates,
   cross-repo matrix requirement, and rollback plan.
+- When sessions run in parallel, follow the Three Uniques in
+  `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
+  conflict domain, one human-authored PR in the protected merge lane, and one
+  shared-runtime operation owner. Parallel investigation and disjoint local
+  work remain allowed.
 - Keep changes scoped to one module per session.
 - Before staging, inspect `git status --short --branch` and `git diff --stat`.
   Stage only files changed for the current task. Do not use `git add -A` in a
@@ -141,6 +154,11 @@ credential reveal behavior, or repeated admin geometry literals. Use the
 shared admin primitives and `--admin-*` tokens. Existing route-local dialogs
 are migration debt recorded in `frontend/admin-ui-manifest.json`; reduce that
 list over time and never grow it without an explicit reviewed exception.
+Admin routes must not add `border-dashed` directly. Dashed boundaries are
+reserved for the approved shared empty-state or drop-target primitive; normal
+tables, dialogs, controls, disclosures, loading states, and status surfaces use
+whitespace or quiet solid dividers as defined by
+`docs/cloud-admin-ui-standard-v1.md`.
 
 ## M4 Preview Completion Protocol
 
@@ -192,6 +210,18 @@ list over time and never grow it without an explicit reviewed exception.
 - Final evidence must show `acceptance_state=accepted`, the merged PR number,
   `source_branch=master`, `source_dirty=false`, and the current
   `origin/master` revision in `m4:preview:status`.
+- Every task that uses M4 MUST end its final report with one compact observation
+  receipt beginning with `M4_OBSERVATION_RECEIPT`. Include the observation
+  date, connection path, ordinary sync duration, focused-feedback duration,
+  promotion duration, sync/deploy count, accepted-stable-window non-health
+  `502` count, M4-only defects, and coordination loss. Use `not measured` or
+  `not occurred` for unknown or absent values; never infer exact human time
+  from logs. Use one semicolon-delimited line:
+  `M4_OBSERVATION_RECEIPT date=...; route=...; sync=...; focused=...; promotion=...; operations=...; stable_502=...; m4_only=...; coordination=...`.
+- Ordinary task sessions MUST NOT edit the shared five-day observation table.
+  The scheduled daily collector is its single writer and aggregates the
+  receipts into `ai-doc/mac mini M4/2026-07-29-npcink-ai-cloud-five-day-observation.md`.
+  This avoids concurrent Git edits while preserving per-task evidence.
 - GitHub rebase merge may replace feature commit SHAs. Use the merged PR,
   current `origin/master`, and deployed source revision as the acceptance
   chain; do not require the pre-merge feature SHA to remain an ancestor.
