@@ -7,6 +7,20 @@ const siteRuntimeSource = readFileSync(
   fromFrontendRoot('src/features/admin/accounts/account-site-runtime.ts'),
   'utf8'
 );
+const operatorProfileSource = [
+  readFileSync(
+    fromFrontendRoot(
+      'src/features/admin/accounts/AccountOperatorProfileEditor.tsx'
+    ),
+    'utf8'
+  ),
+  readFileSync(
+    fromFrontendRoot(
+      'src/features/admin/accounts/account-operator-profile.ts'
+    ),
+    'utf8'
+  ),
+].join('\n');
 const architectureSource = readFileSync(
   fromFrontendRoot('../docs/cloud-admin-information-architecture-v2.md'),
   'utf8'
@@ -84,6 +98,26 @@ assert.match(
   source,
   /admin\.account_detail\.more_account_actions[\s\S]*admin\.accounts\.suspend_account_action/,
   'account suspension must stay behind an explicit more-actions disclosure'
+);
+assert.match(
+  source,
+  /useAccountOperatorProfile\([\s\S]*<AccountOperatorProfileEditor/,
+  'the route must compose the operator-profile controller and presentation boundary'
+);
+assert.doesNotMatch(
+  source,
+  /accountMetaForm|handleSaveAccountMeta|isSavingAccountMeta/,
+  'the route must not retain operator-profile draft or submit lifecycle state'
+);
+assert.match(
+  operatorProfileSource,
+  /data-ui="operator-profile-editor"[\s\S]*controller\.values\.operator_display_name[\s\S]*controller\.values\.operator_note/,
+  'the feature component must preserve the collapsed operator-profile editor'
+);
+assert.match(
+  operatorProfileSource,
+  /buildAccountOperatorProfilePayload[\s\S]*bind_default_free: false[\s\S]*accountDetailClient\.request[\s\S]*'\/api\/admin\/accounts'/,
+  'the feature API must preserve the bounded account metadata payload'
 );
 assert.match(source, /useToast\(\)/, 'customer and commercial success feedback must use global Toast');
 assert.doesNotMatch(

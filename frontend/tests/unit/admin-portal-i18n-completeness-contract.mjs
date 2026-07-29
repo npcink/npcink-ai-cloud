@@ -72,6 +72,7 @@ const translationLockedFiles = [
   resolve(root, 'src/app/admin/page.tsx'),
   resolve(root, 'src/app/admin/accounts/page.tsx'),
   resolve(root, 'src/app/admin/accounts/[accountId]/page.tsx'),
+  resolve(root, 'src/features/admin/accounts/AccountOperatorProfileEditor.tsx'),
   resolve(root, 'src/app/admin/ai-advisor/page.tsx'),
   resolve(root, 'src/app/admin/portal-users/page.tsx'),
   resolve(root, 'src/app/admin/service-settings/page.tsx'),
