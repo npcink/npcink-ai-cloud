@@ -324,7 +324,8 @@ that its API and active feature work are stable.
    not justify it for this pilot.
 3. Keep the accepted responsive task list, status badges, toolbar, copy,
    inspector, and geometry.
-4. Move DTOs, query keys, columns, and filters into one feature module.
+4. Move DTOs, query keys, directory models, and filters into one feature
+   module.
 5. Preserve behavior and appearance; this is an engineering pilot, not a
    redesign.
 
