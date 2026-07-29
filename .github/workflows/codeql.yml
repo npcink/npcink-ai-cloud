@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, production]
   pull_request:
-    branches: [master]
+    branches: [master, production]
   schedule:
     - cron: "28 3 * * 1"
 
