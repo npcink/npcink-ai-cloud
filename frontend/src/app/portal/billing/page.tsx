@@ -293,7 +293,7 @@ function PortalBillingContent() {
     }
   };
 
-  if (sessionLoading) {
+  if (sessionLoading && !session) {
     return <PortalLoadingState message={t('portal.loading_session', {}, 'Loading session...')} />;
   }
 

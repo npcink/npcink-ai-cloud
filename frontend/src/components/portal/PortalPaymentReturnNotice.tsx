@@ -105,10 +105,10 @@ export function PortalPaymentReturnNotice({
       const status = normalizePaymentText(nextOrder?.status);
       if (status && status !== 'pending') {
         setReconciled(false);
-        window.history.replaceState(window.history.state, '', '/portal/billing');
         await reconcile();
         if (canceled || pollContextSiteId !== contextSiteIdRef.current) return;
         setReconciled(true);
+        window.history.replaceState(window.history.state, '', '/portal/billing');
         return;
       }
       attempts += 1;
