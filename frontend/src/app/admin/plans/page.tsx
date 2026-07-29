@@ -484,7 +484,7 @@ function PlansContent() {
       </div>
 
       {missingShellCount > 0 ? (
-      <details id="package-maintenance" className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/40">
+      <details id="package-maintenance" className="border-t border-slate-200 pt-4 dark:border-slate-800">
         <summary className="cursor-pointer list-none">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -512,7 +512,7 @@ function PlansContent() {
           </div>
         ) : null}
 
-      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">
+      <div className="mt-6">
         <BackofficeLayer
           eyebrow={t('admin.quick_actions')}
           title={t('admin.package_shell_bootstrap_title', {}, 'Create missing standard packages')}
@@ -605,7 +605,7 @@ function PlansContent() {
         </BackofficeSectionPanel>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">
+      <div className="mt-6">
         <BackofficeLayer
           eyebrow={t('admin.quick_actions')}
           title={t('admin.create_plan_title', {}, 'Create package record')}

@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
@@ -15,6 +15,12 @@
     "sidebarCollapsedPx": 64,
     "workbenchMaxWidthPx": 1152,
     "workbenchCompactMaxWidthPx": 960
+  },
+  "surfacePolicy": {
+    "configurationTableBoundary": "rows",
+    "dialogBoundary": "solid",
+    "formControlBoundary": "solid",
+    "dashedBoundaryPrimitive": "AdminEmptyState"
   },
   "pageModels": [
     "overview",

@@ -2248,7 +2248,7 @@ function AccountDetailContent() {
             {activeDetailTab === 'commercial' ? (
             <details
               data-ui="advanced-coverage-controls"
-              className="mt-5 rounded-2xl border border-dashed border-gray-200 px-4 py-4 dark:border-gray-800"
+              className="mt-5 border-t border-gray-200 pt-4 dark:border-gray-800"
             >
               <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
               {t('admin.account_detail.package_actions_reveal', undefined, 'Repair subscription record')}

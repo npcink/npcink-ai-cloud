@@ -165,7 +165,11 @@ test('stored credentials require explicit replacement and clearing needs confirm
   await dialog.getByRole('button', { name: /Cancel replacement|取消替换/i }).click();
   await expect(dialog.getByLabel(/API key|API Key|Token/i)).toHaveCount(0);
 
-  await expect(dialog.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
+  const configurationTable = dialog.locator('[data-ui="admin-configuration-table"]');
+  await expect(configurationTable).toBeVisible();
+  await expect(configurationTable).toHaveAttribute('data-boundary', 'rows');
+  await expect(configurationTable).toHaveCSS('border-top-width', '0px');
+  await expect(dialog.locator('[data-ui="admin-workbench-close"]')).toHaveCSS('border-top-width', '0px');
   await expect(dialog.locator('[data-configuration-row="service-url"]')).toContainText('https://api.tavily.com');
   await dialog.getByRole('button', { name: /Clear credential and disable|清除凭据并停用/i }).click();
   await expect(dialog.getByText(/Clear the credential for Tavily|确认清除 Tavily/i)).toBeVisible();

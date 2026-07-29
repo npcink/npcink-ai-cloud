@@ -141,6 +141,11 @@ credential reveal behavior, or repeated admin geometry literals. Use the
 shared admin primitives and `--admin-*` tokens. Existing route-local dialogs
 are migration debt recorded in `frontend/admin-ui-manifest.json`; reduce that
 list over time and never grow it without an explicit reviewed exception.
+Admin routes must not add `border-dashed` directly. Dashed boundaries are
+reserved for the approved shared empty-state or drop-target primitive; normal
+tables, dialogs, controls, disclosures, loading states, and status surfaces use
+whitespace or quiet solid dividers as defined by
+`docs/cloud-admin-ui-standard-v1.md`.
 
 ## M4 Preview Completion Protocol
 
