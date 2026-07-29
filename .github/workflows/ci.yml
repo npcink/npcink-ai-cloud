@@ -485,7 +485,7 @@ jobs:
           tests/e2e/admin-operator-path.spec.ts
           tests/e2e/portal-workspace-path.spec.ts
           --grep
-          'admin operator path smoke|portal workspace interaction path'
+          'admin operator path smoke|portal workspace interaction path|Alipay return polls|account projections stay idle|account-level support stays available'
 
       - name: Docs-only frontend acknowledgement
         if: needs.classify.outputs.docs_only == 'true'
