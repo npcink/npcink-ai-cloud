@@ -17,6 +17,10 @@ This document composes with:
 If a visual preference conflicts with product ownership, security, audit, or
 accessibility, preserve the stronger boundary first.
 
+Implementation history, rejected alternatives, branch/runtime diagnosis, and
+the reusable boundary-review workflow are recorded in
+[Cloud Admin Surface Boundary Closeout And Development Retrospective](cloud-admin-surface-boundary-closeout-and-development-retrospective-2026-07-29.md).
+
 ## 1. Reference Implementation
 
 `/admin/ai-resources` is the accepted PC reference for a `queue` page:
