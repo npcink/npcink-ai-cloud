@@ -4,9 +4,12 @@
 
 更新：2026-07-28，补充向量设置落地证据和平台管理员设置页的后续表格化路线。
 
-范围：2026-07-26 至 2026-07-27 期间，围绕 Cloud Admin 的信息架构、
-模型供应商、外部服务、运行配置和服务设置完成的 PC 端界面审查、迭代、
-治理、验证和 M4 验收。
+更新：2026-07-29，补充站点合规与积分包页面落地证据，并固化候选恢复、
+共享 M4 协调、人工视觉确认和合并后 promotion 的闭环方法。
+
+范围：2026-07-26 至 2026-07-29 期间，围绕 Cloud Admin 的信息架构、
+模型供应商、外部服务、运行配置、服务设置、站点合规和积分包完成的 PC
+端界面审查、迭代、治理、验证和 M4 验收。
 
 本文是开发历史和工作方法记录，不替代
 [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)，不增加新的
@@ -46,6 +49,8 @@ Cloudflare Access、边缘网络和开发预览链路可能让部分页面打开
 | 工具栏比例修正 | PR `#313`, `9782864f` | 重新平衡标签、下拉框和搜索框宽度，消除“挤在一起”的观感 |
 | 服务设置工作台 | PR `#315`, `fbb667a3` | 建立稳定设置目录、单一活动面板、语义配置表和共享邮件预览弹窗 |
 | 向量设置工作台 | PR `#317`, `e01057a5` | 将固定档案、连接凭据和验证证据整理为连续配置表，并清除最后一个 route-local credential 例外 |
+| 站点合规工作台 | PR `#338`, `5297fcb4` | 将异构合规域整理为单一活动编辑区，并保持保存、验证和发布边界 |
+| 积分包目录工作台 | PR `#364`, `b4867e53` | 将积分包整理为紧凑比较表和单一共享编辑工作台，保留完整目录原子保存契约 |
 
 第一阶段收口时，PR `#315` 从干净 `master=fbb667a3` 完成 M4 promotion：
 
@@ -57,6 +62,23 @@ Cloudflare Access、边缘网络和开发预览链路可能让部分页面打开
 - `/` 与 `/health/live` 返回 `200`。
 
 这证明合并后的开发预览已接受，不代表生产发布或外部用户验收。
+
+积分包阶段从用户确认的候选继续完成独立 PR 和 accepted promotion：
+
+- 最终候选提交：`43ec5e5c6035040c3aa2d842eeff0f53ea3cea48`;
+- PR：`#364`;
+- 合并后 `master`：`b4867e53abc0b09f871989d5d51a8f400fcfc7db`;
+- `acceptance_state=accepted`;
+- `promotion_pr=364`;
+- `source_branch=master`;
+- `source_dirty=false`;
+- `source_revision=b4867e53abc0b09f871989d5d51a8f400fcfc7db`;
+- Frontend、API、PostgreSQL、Redis 和 Proxy 健康。
+
+该状态只表示 clean `master` 已被 M4 开发预览接受，不表示 production 或
+GA。合并后另一会话只读运行两条 focused M4 API 测试并取得 `2/2` 通过；
+它没有 sync、deploy、restart 或 migrate，因此没有改变上述 accepted
+来源或共享运行态所有权。
 
 ## 3. 从参考产品中学到了什么
 
@@ -309,20 +331,22 @@ PR `#317` 已将 `/admin/vector-settings` 整理为本路线的固定配置参�
 `legacyRouteLocalCredentials` 已清空。后续不得重新增加 route-local
 密码框作为捷径。
 
-### 9.3 后续页面优先级
+### 9.3 当前状态和后续候选
 
-| 优先级 | 页面 | 推荐结构 | 为什么 |
+| 状态 | 页面 | 已采用或建议结构 | 约束 |
 | --- | --- | --- | --- |
-| P1 | `/admin/credit-packs` | 积分包目录表 + 共享编辑工作台 | 对象字段重复且需要比较，当前最适合直接获得表格效率 |
-| P2 | `/admin/site-compliance` | 设置目录 + 单一活动面板 + 版本/验证表 | 设置域异构，只有元数据、版本和验证问题适合表格 |
-| P3 | `/admin/plans/[planId]` | 版本目录表 + 共享编辑工作台 | 可清理现存 route-local dialog，但商业风险更高，应在前两项稳定后处理 |
+| 已完成 | `/admin/credit-packs` | 积分包目录表 + 共享编辑工作台 | PR `#364` 和 M4 accepted 已闭环 |
+| 已完成 | `/admin/site-compliance` | 设置目录 + 单一活动面板 + 版本/验证表 | PR `#338` 已合并，不得混入后续页面修改 |
+| 待单独授权 | `/admin/plans` | 先审计真实列表任务，再决定紧凑目录表 | 必须使用独立会话、分支、候选和 PR |
+| 待单独授权 | `/admin/plans/[planId]` | 版本目录表 + 共享编辑工作台 | 与列表页是不同冲突域；商业风险更高，不默认捆绑 |
 
 `/admin/layout.tsx` 的命令面板虽然仍记录为 route-local dialog debt，但它
 不是设置页的主要操作阻力，不应仅为了清零清单而抢占设置页资源。
 
-### 9.4 下一页试点：积分包配置
+### 9.4 已接受参考页：积分包配置
 
-积分包目录建议使用以下稳定列：
+PR `#364` 验证了积分包适合使用紧凑比较表，而不是让目录、检查器和编辑表单
+同时争夺首屏。目录稳定呈现以下信息：
 
 | 列 | 内容 |
 | --- | --- |
@@ -332,12 +356,17 @@ PR `#317` 已将 `/admin/vector-settings` 整理为本路线的固定配置参�
 | 有效期 | 固定期限或长期有效 |
 | 推荐层级 | 适用套餐或客户层级 |
 | 门户可见 | 是否允许客户门户展示 |
-| 状态 | 启用、停用或待处理 |
 | 操作 | 一个明确的“配置”入口 |
 
-目录负责比较和选择，创建或编辑进入共享工作台。保存是唯一主操作；停用、
-删除和其他危险操作不与默认保存共用 footer。长名称、金额、层级和状态必须
-在 PC 目标宽度下完整可辨，不依赖 hover 才能理解主要事实。
+目录负责比较和选择，编辑进入共享 `AdminWorkbenchDialog`。保存是唯一
+主操作；筛选、刷新和前往套餐目录是次操作。页面不新增删除入口，也不把
+停用或其他危险动作放入默认保存区。长名称、金额、层级和可见性在 PC 目标
+宽度下完整可辨，不依赖 hover 才能理解主要事实。
+
+实现继续复用 `AdminDataTableFrame`、`AdminConfigurationTable` 和
+`AdminWorkbenchDialog`。编辑一次只改变一个可见草稿，但服务仍校验并
+原子保存完整目录；Admin 展示层没有成为支付订单、AI 积分、计费或套餐
+entitlement 的真相源。已有订单继续保留购买时快照。
 
 ### 9.5 实施和验收约束
 
@@ -365,11 +394,169 @@ PC 验收以目标工作面为准：
 本路线不批准全站批量翻新、API 或数据所有权合并、生产部署、凭据回显，
 也不把 M4 `200`、CI 绿色或截图单独当成人工可用性验收。
 
-## 10. 权威参考
+## 10. 积分包候选恢复与闭环方法
+
+本节是既有协作、验证和 M4 标准在真实 Admin UI 候选上的应用记录。若与
+权威标准冲突，以第 11 节列出的 active policy 和 ADR 为准。
+
+### 10.1 先恢复证据，不先恢复文件
+
+积分包工作从一个旧 worktree 路径缺失、Git 登记可清理、候选分支落后
+`origin/master` 的状态继续。正确顺序是：
+
+1. 只读检查共享主检出、worktree 登记、旧路径、候选分支和目标提交；
+2. 确认候选提交的父提交、完整 diff、未跟踪文件和相对 master 的领先/
+   落后关系；
+3. 保留共享主检出的脏改动，不 reset、stash、切换分支或覆盖；
+4. 只有旧路径真实缺失、登记精确属于目标分支且确实阻塞新 worktree 时，
+   才允许移除这一条登记；不得全局 `worktree prune`；
+5. 在独立 worktree 中恢复候选，并在每次 rebase 前创建指向原提交的备份
+   分支；
+6. 先比较 master 与候选的重叠文件和具体 hunk，再决定是否 rebase。
+
+这次最新 master 与候选只有 `frontend/src/lib/i18n.ts` 文件级重叠，实际
+hunk 分别属于 overview readiness 和 credit-packs 文案。确认语义独立后才
+执行最小线性 rebase，并同时保留双方内容。文件名重叠不是冲突结论，hunk
+和契约所有权才是。
+
+### 10.2 master 漂移是调度问题
+
+候选等待期间，其他 Admin PR 先后合并。处理方式不是让旧绿灯继续排队，也
+不是反复强推：
+
+1. 当前人类 PR 占用 merge lane 时，后续候选保持本地和 M4 candidate；
+2. lane 释放后 fetch 最新 `origin/master`；
+3. 检查新增提交和候选文件的交集；
+4. 在隔离 worktree 中 rebase，确认 `HEAD^ == origin/master`；
+5. 只重跑受新基线影响的聚焦门；
+6. 刷新 M4 到最终候选 revision 后再发布 PR。
+
+PR `#363` 合并后，本候选重放到 `790b63d1`，最终 feature revision 为
+`43ec5e5c`。required checks 全绿后 PR `#364` squash 合并为 `b4867e53`。
+feature SHA 被 merge SHA 替换是正常事实；accepted authority 是 merged PR、
+当前 `origin/master` 和 M4 `source_revision` 三者一致。
+
+### 10.3 一个共享 M4 只能展示一个来源
+
+不同会话修改不同页面，不代表它们可以同时向同一 M4 Compose 栈同步。
+source sync 会替换整份来源标记并重建或重启受影响服务，因此共享运行态仍
+必须只有一个 operation owner：
+
+- 不覆盖别人的 candidate；
+- 不抢 relay、deployment 或 operation lock；
+- 不 kill、替换或接管非托管 Ollama listener；
+- owner 释放后，下一会话重新读取 status 和锁再操作；
+- 对 accepted runtime 的非变更性 focused 测试可在协调后运行，但不得把
+  只读测试描述为新 deployment 或 promotion。
+
+`https://cloud.mqzjmax.top` 和 `http://127.0.0.1:18010` 是同一 M4 运行态的
+不同访问路径，不是两个可并存候选。前者用于受 Cloudflare Access 保护的
+人工浏览器预览；后者是作者机的 loopback tunnel，适合本机浏览器和需要
+JSON 的自动化连接器。未登录访问 Admin 路由出现 `307` 登录跳转是正常
+鉴权行为，不能据此判断页面未部署。
+
+### 10.4 UI 验收要证明任务，不只证明页面存活
+
+积分包候选的 PC 验收检查了：
+
+- `1440px` 文档宽度与视口一致，没有页面级横向溢出；
+- 三行目录数据可直接比较，没有默认展开的输入表单；
+- 编辑工作台可打开，未修改时保存禁用；
+- 取消不发起写请求；
+- 控制台没有错误；
+- 用户在真实浏览器中明确确认视觉效果。
+
+本阶段人工验收只要求 PC。自动化仍保留现有 mobile-safe 行为，但没有把
+移动端截图描述为人工接受。人工确认后源码若发生变化，必须刷新受影响
+门禁和 M4 candidate；不能沿用旧截图替新 revision 背书。
+
+HTTP `200`、健康容器、截图、保存契约和人工可用性回答不同问题，不能互相
+替代。
+
+### 10.5 分层验证和五轴审查
+
+最终候选按风险运行：
+
+```text
+两个 credit-packs unit/contract
+  -> check:admin-ui
+  -> 聚焦 credit-packs Playwright（2/2）
+  -> check:admin-ui:visual（24/24）
+  -> git diff --check
+  -> M4 source sync、status 和 1440px 人工浏览器确认
+  -> 五轴代码审查
+  -> PR required checks
+  -> clean master promotion
+```
+
+五轴审查必须覆盖：
+
+1. 正确性：loading、empty、error、stale retained data、URL 状态和完整目录
+   原子 PATCH 没有被视觉重构破坏；
+2. 可读性与架构：页面复用共享 Admin primitive，没有 route-local dialog、
+   新导航或重复几何常量；
+3. 安全与边界：无密钥、鉴权、API、支付、计费、积分或 entitlement
+   所有权变化；
+4. 性能：目录有界，没有 N+1、无界请求或为视觉效果引入新运行服务；
+5. 测试：contract、类型、lint、浏览器交互和视觉证据覆盖真实变更。
+
+五轴审查不是为了制造修改。没有真实问题时应保留已验证候选，避免在人工
+确认后做无价值“顺手优化”并使证据失效。
+
+### 10.6 发布和 accepted 闭环
+
+发布前必须精确读取：
+
+```bash
+git status --short --branch
+git diff --stat origin/master...HEAD
+git diff --cached --stat
+git diff --cached --name-only
+git show --name-status --stat HEAD
+```
+
+已有完整候选提交时，不创建空提交或重复提交。PR body 从仓库模板开始，
+记录 Scope、Boundary、Verification、Risk 和 Admin UI 证据，再使用
+`pnpm run pr:publish`。required checks 是 merge authority，不得绕过。
+
+合并后必须从独立、干净、真实的 `master` 分支工作树 promotion。共享脏
+主检出和 detached HEAD 都不能冒充 master。只有 status 同时显示以下字段，
+才能报告 accepted：
+
+```text
+acceptance_state=accepted
+promotion_pr=364
+source_branch=master
+source_dirty=false
+source_revision=b4867e53abc0b09f871989d5d51a8f400fcfc7db
+```
+
+source-only 变更优先 promotion sync；只有指纹工具指出 dependency、
+Dockerfile、lock、Compose、proxy 或部署输入变化时才使用 `--deploy`。
+accepted 是开发预览证据，不是 production 或 GA。
+
+### 10.7 下一页必须重新开始
+
+一个页面完成 accepted 后，应释放冲突域、merge lane 和 shared runtime。
+下一页不能继承上一个页面的授权、候选或 PR：
+
+- `/admin/plans` 列表页和 `/admin/plans/[planId]` 详情页分别声明范围；
+- 从最新 `origin/master` 建立新分支和独立 worktree；
+- 重新读取真实 API、页面模型、操作者任务和边界；
+- 使用新的 change envelope、M4 candidate、人工确认和独立 PR；
+- 不为“统一收尾”把多个 Admin 页面合并进同一 diff。
+
+这项限制会增加一次会话和分支切换，但换来可审计回滚、清晰人工验收和不
+含糊的 M4 来源，成本是值得的。
+
+## 11. 权威参考
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md)
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md)
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md)
 - [Development and Validation Operating Model v1](development-validation-operating-model-v1.md)
 - [M4 Preview AI Development Standard v1](m4-preview-ai-development-standard-v1.md)
+- [Parallel AI Collaboration Standard v1](parallel-ai-collaboration-standard-v1.md)
 - [ADR-002: Cloud Admin Task-Oriented Information Architecture](decisions/002-cloud-admin-task-oriented-information-architecture.md)
+- [ADR-023: M4 Preview Candidate and Accepted Promotion](decisions/023-m4-preview-candidate-acceptance-promotion.md)
+- [ADR-024: Risk-Tiered Development Validation Authority](decisions/024-risk-tiered-development-validation-authority.md)
