@@ -163,7 +163,9 @@ class SiteKnowledgeService:
         documents = documents if isinstance(documents, list) else []
         comments = input_payload.get("comments")
         comments = comments if isinstance(comments, list) else []
-        total_documents = len(documents) + len(comments)
+        media_items = input_payload.get("media_items")
+        media_items = media_items if isinstance(media_items, list) else []
+        total_documents = len(documents) + len(comments) + len(media_items)
 
         deleted_entries = 0
         self._emit_sync_progress(
@@ -264,7 +266,7 @@ class SiteKnowledgeService:
         remaining_run_chunks = int(self.settings.site_knowledge_max_sync_chunks_per_run)
         quota_limited = False
 
-        for raw_document in [*documents, *comments]:
+        for raw_document in [*documents, *comments, *media_items]:
             document = raw_document if isinstance(raw_document, dict) else {}
             self._emit_sync_progress(
                 status="running",
@@ -281,11 +283,12 @@ class SiteKnowledgeService:
                 skipped_due_to_quota=skipped_due_to_quota,
                 deleted_entries=deleted_entries,
             )
-            normalized = (
-                _normalize_public_comment(document)
-                if _looks_like_comment_document(document)
-                else _normalize_public_document(document)
-            )
+            if _looks_like_media_document(document):
+                normalized = _normalize_public_media(document)
+            elif _looks_like_comment_document(document):
+                normalized = _normalize_public_comment(document)
+            else:
+                normalized = _normalize_public_document(document)
             if normalized is None:
                 failed_documents += 1
                 processed_documents += 1
@@ -430,6 +433,9 @@ class SiteKnowledgeService:
                     "taxonomies": normalized.get("taxonomies")
                     if isinstance(normalized.get("taxonomies"), dict)
                     else {"category": [], "post_tag": []},
+                    "media_fingerprint": str(
+                        normalized.get("media_fingerprint") or ""
+                    )[:128],
                 },
                 chunks=chunks,
             )
@@ -1332,6 +1338,107 @@ def _normalize_public_document(document: dict[str, Any]) -> dict[str, object] | 
     }
 
 
+def _normalize_public_media(document: dict[str, Any]) -> dict[str, object] | None:
+    attachment_id = _coerce_int(
+        document.get("attachment_id") or document.get("post_id"),
+        default=0,
+    )
+    mime_type = str(document.get("mime_type") or "").strip().lower()
+    if attachment_id <= 0 or not mime_type.startswith("image/"):
+        return None
+
+    title = _normalize_site_knowledge_text(document.get("title"), max_chars=500)
+    url = str(document.get("url") or "").strip()
+    alt = _normalize_site_knowledge_text(document.get("alt"), max_chars=1000)
+    caption = _normalize_site_knowledge_text(document.get("caption"), max_chars=2000)
+    description = _normalize_site_knowledge_text(
+        document.get("description"),
+        max_chars=4000,
+        remove_markup_noise=True,
+    )
+    visual_summary = _normalize_site_knowledge_text(
+        document.get("visual_summary"),
+        max_chars=2000,
+        remove_markup_noise=True,
+    )
+    alt_text_basis = _normalize_site_knowledge_text(
+        document.get("alt_text_basis"),
+        max_chars=1500,
+        remove_markup_noise=True,
+    )
+    visible_text = " ".join(
+        _filter_media_text_list(document.get("visible_text"), max_items=20, max_chars=200)
+    )
+    subject_tags = " ".join(
+        _filter_media_text_list(document.get("subject_tags"), max_items=30, max_chars=100)
+    )
+    content_excerpt = " ".join(
+        part
+        for part in (
+            title,
+            alt,
+            caption,
+            description,
+            visual_summary,
+            alt_text_basis,
+            visible_text,
+            subject_tags,
+        )
+        if part
+    )[:MAX_DOCUMENT_CONTENT_CHARS]
+    if not url or not content_excerpt:
+        return None
+
+    media_fingerprint = str(
+        document.get("media_fingerprint") or document.get("content_hash") or ""
+    ).strip()
+    if not media_fingerprint:
+        media_fingerprint = hashlib.sha256(
+            f"{attachment_id}|{url}|{mime_type}|{content_excerpt}".encode()
+        ).hexdigest()
+
+    return {
+        "post_id": attachment_id,
+        "source_type": "media",
+        "source_id": attachment_id,
+        "parent_post_id": attachment_id,
+        "post_type": "attachment",
+        "post_status": "publish",
+        "title": title or f"Media attachment {attachment_id}",
+        "url": url[:2000],
+        "modified_gmt": str(document.get("modified_gmt") or "").strip()[:64],
+        "excerpt": visual_summary or alt or caption,
+        "content_excerpt": content_excerpt,
+        "source_content_chars": len(content_excerpt),
+        "indexed_content_chars": len(content_excerpt),
+        "content_truncated": False,
+        "taxonomies": {"category": [], "post_tag": []},
+        "content_hash": media_fingerprint[:128],
+        "media_fingerprint": media_fingerprint[:128],
+    }
+
+
+def _filter_media_text_list(value: Any, *, max_items: int, max_chars: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    seen: set[str] = set()
+    for raw_item in value:
+        item = _normalize_site_knowledge_text(
+            raw_item,
+            max_chars=max_chars,
+            remove_markup_noise=True,
+        )
+        key = item.casefold()
+        if not item or key in seen:
+            continue
+        items.append(item)
+        seen.add(key)
+        if len(items) >= max_items:
+            break
+    return items
+
+
 def _normalize_public_taxonomies(value: Any) -> dict[str, list[str]]:
     raw_taxonomies = value if isinstance(value, dict) else {}
     normalized: dict[str, list[str]] = {"category": [], "post_tag": []}
@@ -1427,6 +1534,14 @@ def _remove_markup_noise(text: str) -> str:
 
 def _looks_like_comment_document(document: dict[str, Any]) -> bool:
     return "comment_id" in document or "comment_status" in document
+
+
+def _looks_like_media_document(document: dict[str, Any]) -> bool:
+    return (
+        "attachment_id" in document
+        or str(document.get("source_type") or "").strip().lower() == "media"
+        or str(document.get("post_type") or "").strip().lower() == "attachment"
+    )
 
 
 def _coerce_post_ids(value: Any) -> list[int]:
@@ -1763,6 +1878,8 @@ def _reason_for_intent(intent: str) -> str:
         )
     if intent == "image_context":
         return "The indexed passage can inform image context or media planning."
+    if intent == "media_library_search":
+        return "The indexed visual evidence matches the requested media-library scene."
     return "Topic and intent are closely related."
 
 
@@ -1776,6 +1893,7 @@ def _suggested_use_for_intent(intent: str) -> str:
         "content_gap_analysis": "gap_evidence",
         "duplicate_check": "duplicate_or_conflict_candidate",
         "writing_support_plan": "writing_support_evidence",
+        "media_library_search": "media_library_candidate",
     }.get(intent, "reference_snippet")
 
 
