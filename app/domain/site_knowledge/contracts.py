@@ -33,6 +33,7 @@ ALLOWED_SEARCH_INTENTS = frozenset(
         "internal_links",
         "refresh_suggestions",
         "image_context",
+        "media_library_search",
         "faq_candidates",
         "content_gap_analysis",
         "duplicate_check",
@@ -42,9 +43,9 @@ ALLOWED_SEARCH_INTENTS = frozenset(
 ALLOWED_RESULT_GRANULARITIES = frozenset({"chunk", "document"})
 ALLOWED_SYNC_MODES = frozenset({"refresh", "rebuild", "delete"})
 PUBLIC_POST_STATUSES = frozenset({"publish"})
-PUBLIC_POST_TYPES = frozenset({"post", "page"})
+PUBLIC_POST_TYPES = frozenset({"post", "page", "attachment"})
 PUBLIC_COMMENT_STATUSES = frozenset({"approved", "approve", "1"})
-PUBLIC_SOURCE_TYPES = frozenset({"post", "page", "comment"})
+PUBLIC_SOURCE_TYPES = frozenset({"post", "page", "comment", "media"})
 
 FORBIDDEN_WRITE_KEYS = frozenset(
     {
