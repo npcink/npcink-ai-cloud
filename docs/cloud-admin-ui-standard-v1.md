@@ -110,9 +110,11 @@ The executable projection of the route matrix and accepted dimensions lives in
   radius, and focus treatment together. Do not place the standard `44px`
   control padding inside a forced `32px` height; clipped labels are a failed
   density implementation.
-- Compact tables use one structural boundary at a time. Prefer a quiet header
-  and low-contrast row dividers over an outer rounded frame plus equally strong
-  inner lines. Interactive controls keep their own visible boundary.
+- Compact tables use one structural boundary at a time. Comparison-heavy data
+  tables use a quiet header and low-contrast row dividers. Short, fixed
+  configuration tables use a quiet header boundary plus whitespace between
+  rows. Neither restores an outer rounded frame, and interactive controls keep
+  their own visible boundary.
 - Mobile remains accessible, but mobile-specific redesign is not required by
   a PC-only change unless the changed primitive breaks the core task.
 
@@ -157,7 +159,8 @@ state. Do not add a border only to make ordinary content resemble a card.
 | --- | --- | --- |
 | Dialog or drawer shell | shadow plus one quiet solid perimeter; solid header and footer dividers | forbidden |
 | Input, select, textarea, or other editable control | visible solid control boundary and focus treatment | forbidden |
-| Data or configuration table | quiet header and low-contrast solid row dividers; no repeated outer frame when the parent already owns the surface | forbidden |
+| Data or comparison table | quiet header and low-contrast solid row dividers; no repeated outer frame when the parent already owns the surface | forbidden |
+| Short, fixed configuration table (normally six rows or fewer) | quiet header divider and whitespace between body rows; no body row dividers or repeated outer frame | forbidden |
 | Section inside an existing panel | whitespace first, then at most one solid divider when spacing is insufficient | forbidden |
 | Selected or interactive row | quiet background plus text, status, or solid focus/selection treatment | forbidden |
 | Success, warning, error, pending, or destructive state | state text plus tint, icon, or solid side/perimeter treatment | forbidden |
@@ -214,7 +217,9 @@ new route-local table shell.
 - One stable footer contains cancel and the one save/apply action.
 - Destructive actions do not share the default save footer.
 - Short, fixed service configuration uses `AdminConfigurationTable` instead of
-  stacked field cards or a low-frequency disclosure.
+  stacked field cards or a low-frequency disclosure. Its boundary is
+  `header-only`: retain the header divider, remove body row dividers, and rely
+  on alignment and vertical whitespace between normally six or fewer rows.
 
 ## 7. Credentials And Capability-Specific Settings
 
