@@ -34,6 +34,7 @@ jobs:
       deploy_required: ${{ steps.changed.outputs.deploy_required }}
       static_terms_only: ${{ steps.changed.outputs.static_terms_only }}
       docs_only: ${{ steps.changed.outputs.docs_only }}
+      frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -467,6 +468,24 @@ jobs:
       - name: Frontend Contracts
         if: needs.classify.outputs.docs_only != 'true'
         run: pnpm --dir frontend run test:contracts
+
+      - name: Install Playwright Chromium
+        if: needs.classify.outputs.frontend_e2e_required == 'true'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Critical frontend paths
+        if: needs.classify.outputs.frontend_e2e_required == 'true'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
+        run: >-
+          node scripts/run-cloud-frontend-playwright.js
+          test -c playwright.config.ts
+          tests/e2e/admin-operator-path.spec.ts
+          tests/e2e/portal-workspace-path.spec.ts
+          --grep
+          'admin operator path smoke|portal workspace interaction path'
 
       - name: Docs-only frontend acknowledgement
         if: needs.classify.outputs.docs_only == 'true'

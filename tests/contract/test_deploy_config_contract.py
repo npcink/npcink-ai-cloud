@@ -2334,9 +2334,8 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     ci_classifier = (
         cloud_root / "scripts" / "classify-ci-changes.sh"
     ).read_text()
-    assert ".github/workflows/ci.yml|.github/workflows/deploy-production.yml" in (
-        ci_classifier
-    )
+    assert ".github/workflows/ci.yml|frontend/*" in ci_classifier
+    assert ".github/workflows/deploy-production.yml|docker-compose*.yml" in ci_classifier
     assert "docker-compose*.yml|Dockerfile*|*/Dockerfile*|deploy/*.sh" in ci_classifier
     assert "needs: [classify, backend-scope]" in ci_workflow
     assert "needs['backend-scope'].outputs.requires_full_backend == '1'" in ci_workflow
