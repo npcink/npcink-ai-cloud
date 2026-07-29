@@ -54,6 +54,8 @@ type ServiceOption = {
   capabilityIds: string[];
   runtimeProfileIds: string[];
   role: 'primary' | 'enhancer' | 'parallel';
+  credentialName?: string;
+  credentialHelpUrl?: string;
   secretless?: boolean;
 };
 
@@ -63,15 +65,15 @@ type RowFeedback = {
 };
 
 const SERVICE_OPTIONS: ServiceOption[] = [
-  { id: 'tavily', category: 'search', label: 'Tavily', description: 'Primary general web search.', descriptionZh: '通用网页搜索主服务。', kind: 'web_search_provider', baseUrl: 'https://api.tavily.com', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary' },
-  { id: 'bocha', category: 'search', label: 'Bocha', description: 'Primary search service for Chinese and public sources.', descriptionZh: '面向中文和公开来源的主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://api.bochaai.com/v1', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary' },
-  { id: 'doubao_search', category: 'search', label: 'Doubao Search', description: 'Primary Doubao Search Custom web search.', descriptionZh: '豆包搜索 Custom 版主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://open.feedcoopapi.com', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary' },
-  { id: 'apify', category: 'search', label: 'Apify', description: 'Primary actor-backed search service.', descriptionZh: '基于 Actor 的主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://api.apify.com/v2', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary' },
-  { id: 'zhihu', category: 'search', label: 'Zhihu Search', description: 'Primary Zhihu Open Platform search.', descriptionZh: '知乎开放平台主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://developer.zhihu.com', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary' },
+  { id: 'tavily', category: 'search', label: 'Tavily', description: 'Primary general web search.', descriptionZh: '通用网页搜索主服务。', kind: 'web_search_provider', baseUrl: 'https://api.tavily.com', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary', credentialName: 'API Key', credentialHelpUrl: 'https://app.tavily.com/home' },
+  { id: 'bocha', category: 'search', label: 'Bocha', description: 'Primary search service for Chinese and public sources.', descriptionZh: '面向中文和公开来源的主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://api.bochaai.com/v1', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary', credentialName: 'API Key', credentialHelpUrl: 'https://open.bochaai.com/dashboard' },
+  { id: 'doubao_search', category: 'search', label: 'Doubao Search', description: 'Primary Doubao Search Custom web search.', descriptionZh: '豆包搜索 Custom 版主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://open.feedcoopapi.com', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary', credentialName: 'API Key', credentialHelpUrl: 'https://console.volcengine.com/search-infinity/api-key' },
+  { id: 'apify', category: 'search', label: 'Apify', description: 'Primary actor-backed search service.', descriptionZh: '基于 Actor 的主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://api.apify.com/v2', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary', credentialName: 'API Token', credentialHelpUrl: 'https://console.apify.com/settings/integrations' },
+  { id: 'zhihu', category: 'search', label: 'Zhihu Search', description: 'Primary Zhihu Open Platform search.', descriptionZh: '知乎开放平台主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://developer.zhihu.com', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.managed'], role: 'primary', credentialName: 'Access Secret', credentialHelpUrl: 'https://developer.zhihu.com/docs' },
   { id: 'jina_reader', category: 'search', label: 'Jina Reader', description: 'Optional result-page reader enhancement; it is not a primary search service.', descriptionZh: '可选的结果页读取增强，不作为主搜索服务。', kind: 'web_search_provider', baseUrl: 'https://r.jina.ai', capabilityIds: ['web_search'], runtimeProfileIds: ['web-search.reader'], role: 'enhancer', secretless: true },
-  { id: 'unsplash', category: 'image', label: 'Unsplash', description: 'Stock image source used in parallel with other enabled sources.', descriptionZh: '可与其他已启用来源并行使用的图库。', kind: 'image_source_provider', baseUrl: 'https://api.unsplash.com', capabilityIds: ['image_source'], runtimeProfileIds: ['image-source.managed'], role: 'parallel' },
-  { id: 'pixabay', category: 'image', label: 'Pixabay', description: 'Stock image source used in parallel with other enabled sources.', descriptionZh: '可与其他已启用来源并行使用的图库。', kind: 'image_source_provider', baseUrl: 'https://pixabay.com/api', capabilityIds: ['image_source'], runtimeProfileIds: ['image-source.managed'], role: 'parallel' },
-  { id: 'pexels', category: 'image', label: 'Pexels', description: 'Stock image source used in parallel with other enabled sources.', descriptionZh: '可与其他已启用来源并行使用的图库。', kind: 'image_source_provider', baseUrl: 'https://api.pexels.com/v1', capabilityIds: ['image_source'], runtimeProfileIds: ['image-source.managed'], role: 'parallel' },
+  { id: 'unsplash', category: 'image', label: 'Unsplash', description: 'Stock image source used in parallel with other enabled sources.', descriptionZh: '可与其他已启用来源并行使用的图库。', kind: 'image_source_provider', baseUrl: 'https://api.unsplash.com', capabilityIds: ['image_source'], runtimeProfileIds: ['image-source.managed'], role: 'parallel', credentialName: 'Access Key', credentialHelpUrl: 'https://unsplash.com/oauth/applications' },
+  { id: 'pixabay', category: 'image', label: 'Pixabay', description: 'Stock image source used in parallel with other enabled sources.', descriptionZh: '可与其他已启用来源并行使用的图库。', kind: 'image_source_provider', baseUrl: 'https://pixabay.com/api', capabilityIds: ['image_source'], runtimeProfileIds: ['image-source.managed'], role: 'parallel', credentialName: 'API Key', credentialHelpUrl: 'https://pixabay.com/api/docs/' },
+  { id: 'pexels', category: 'image', label: 'Pexels', description: 'Stock image source used in parallel with other enabled sources.', descriptionZh: '可与其他已启用来源并行使用的图库。', kind: 'image_source_provider', baseUrl: 'https://api.pexels.com/v1', capabilityIds: ['image_source'], runtimeProfileIds: ['image-source.managed'], role: 'parallel', credentialName: 'API Key', credentialHelpUrl: 'https://www.pexels.com/api/key/' },
 ];
 
 function connectionFor(option: ServiceOption, connections: ProviderConnection[]) {
@@ -433,9 +435,29 @@ export default function ExternalServicesPage() {
               ) : copy('admin.external_services.no_credential', '无需凭据', 'Not required')}
               detail={editingOption.secretless
                 ? copy('admin.external_services.secretless_notice', '可直接启用并保存。', 'Enable and save directly.')
-                : editingConnection?.configured
-                  ? copy('admin.external_services.credential_saved', '已保存，不会显示原值', 'Saved; the original value is never shown')
-                  : copy('admin.external_services.credential_missing', '尚未配置', 'Not configured')}
+                : (
+                  <div className="grid gap-1">
+                    <span>
+                      {editingConnection?.configured
+                        ? copy('admin.external_services.credential_saved', '已保存，不会显示原值', 'Saved; the original value is never shown')
+                        : copy('admin.external_services.credential_missing', '尚未配置', 'Not configured')}
+                    </span>
+                    {editingOption.credentialHelpUrl && editingOption.credentialName ? (
+                      <a
+                        data-external-credential-link={editingOption.id}
+                        href={editingOption.credentialHelpUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="w-fit font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                      >
+                        {editingConnection?.configured
+                          ? copy('admin.external_services.manage_credential', `管理 ${editingOption.credentialName}`, `Manage ${editingOption.credentialName}`)
+                          : copy('admin.external_services.get_credential', `获取 ${editingOption.credentialName}`, `Get ${editingOption.credentialName}`)}
+                        {' ↗'}
+                      </a>
+                    ) : null}
+                  </div>
+                )}
             />
             <AdminConfigurationRow
               rowId="runtime-enabled"

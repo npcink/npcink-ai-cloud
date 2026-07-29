@@ -84,8 +84,33 @@ assert.match(tablesSource, /className="btn btn-secondary btn-sm shrink-0 whitesp
 assert.doesNotMatch(tablesSource, /CapabilitySupplierTable|capability-supplier-directory|CapabilityProviderCategory/);
 assert.match(tableFrameSource, /headerActions\?: ReactNode/);
 
-for (const providerId of ['tavily', 'bocha', 'apify', 'zhihu', 'jina_reader', 'unsplash', 'pixabay', 'pexels']) {
+for (const providerId of ['tavily', 'bocha', 'doubao_search', 'apify', 'zhihu', 'jina_reader', 'unsplash', 'pixabay', 'pexels']) {
   assert.match(externalServicesSource, new RegExp(`id: '${providerId}'`), `${providerId} must remain a fixed external-service option`);
+}
+for (const [providerId, credentialName, credentialHelpUrl] of [
+  ['tavily', 'API Key', 'https://app.tavily.com/home'],
+  ['bocha', 'API Key', 'https://open.bochaai.com/dashboard'],
+  ['doubao_search', 'API Key', 'https://console.volcengine.com/search-infinity/api-key'],
+  ['apify', 'API Token', 'https://console.apify.com/settings/integrations'],
+  ['zhihu', 'Access Secret', 'https://developer.zhihu.com/docs'],
+  ['unsplash', 'Access Key', 'https://unsplash.com/oauth/applications'],
+  ['pixabay', 'API Key', 'https://pixabay.com/api/docs/'],
+  ['pexels', 'API Key', 'https://www.pexels.com/api/key/'],
+]) {
+  assert.ok(
+    externalServicesSource.includes(
+      `{ id: '${providerId}', category: `
+    ) &&
+      externalServicesSource
+        .split('\n')
+        .some(
+          (line) =>
+            line.includes(`{ id: '${providerId}', category: `) &&
+            line.includes(`credentialName: '${credentialName}'`) &&
+            line.includes(`credentialHelpUrl: '${credentialHelpUrl}'`)
+        ),
+    `${providerId} must keep its verified ${credentialName} management URL`
+  );
 }
 assert.match(externalServicesSource, /type ServiceCategory = 'search' \| 'image'/);
 assert.match(externalServicesSource, /role: 'primary'/);
@@ -104,6 +129,9 @@ assert.match(externalServicesSource, /AdminWorkbenchDialog[\s\S]*width="compact"
 assert.match(externalServicesSource, /AdminConfigurationTable[\s\S]*AdminConfigurationRow/);
 assert.match(externalServicesSource, /rowId="service-url"[\s\S]*editingOption\.baseUrl/);
 assert.match(externalServicesSource, /AdminCredentialField/);
+assert.match(externalServicesSource, /data-external-credential-link=\{editingOption\.id\}/);
+assert.match(externalServicesSource, /target="_blank"/);
+assert.match(externalServicesSource, /rel="noreferrer noopener"/);
 assert.doesNotMatch(externalServicesSource, /AdminSettingsDisclosure/);
 assert.match(externalServicesSource, /Clear credential and disable/);
 assert.match(externalServicesSource, /Clear and disable/);
