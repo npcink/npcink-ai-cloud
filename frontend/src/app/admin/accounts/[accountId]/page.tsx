@@ -28,6 +28,10 @@ import {
   type CoverageState,
   type PackageKind,
 } from '@/lib/customer-package-display';
+import {
+  useAccountSiteRuntime,
+  type SiteRuntimeData,
+} from '@/features/admin/accounts/account-site-runtime';
 import { localizePackageAlias } from '@/lib/admin-plan-copy';
 import { createApiClient } from '@/lib/api-client';
 import { formatAdminCurrency } from '@/lib/currency';
@@ -142,27 +146,6 @@ const TOPUP_PACK_OPTIONS: TopUpPackOption[] = [
   },
 ];
 
-type BudgetStateMetric = {
-  current_total?: number;
-  limit?: number;
-  over_limit?: boolean;
-};
-
-type SiteRuntimeData = {
-  totalRuns: number;
-  failedRuns: number;
-  lastRunAt: string | null;
-  costEstimate: number;
-  tokensTotal: number;
-  providerCalls: number;
-  budgetState: Record<string, BudgetStateMetric>;
-  siteLimit: number;
-  activeKeyCount: number;
-  subscriptionStatus: string;
-  coverageState: string;
-  packageLabel: string;
-};
-
 type AccountBudgetSummary = {
   used: number;
   limit: number;
@@ -275,36 +258,6 @@ type AccountDetailApiPayload = {
   subscriptions?: Array<
     { subscription?: Record<string, unknown> } | Record<string, unknown>
   >;
-};
-
-type SiteRuntimeApiPayload = {
-  usage_summary?: {
-    cost_estimate?: number;
-    tokens_total?: number;
-  };
-  runtime_summary?: {
-    total_runs?: number;
-    failed_runs?: number;
-    last_run_at?: string | null;
-  };
-  commercial_policy?: {
-    usage_totals?: {
-      cost_usd?: number;
-      cost_cny?: number;
-      tokens_total?: number;
-      provider_calls?: number;
-    };
-    budget_state?: Record<string, BudgetStateMetric>;
-    entitlement_snapshot?: { site_limit?: number };
-  };
-  coverage?: {
-    site_limit?: number;
-    subscription_status?: string;
-    coverage_state?: string;
-    display_package_label?: string;
-  };
-  site_keys?: Array<{ status?: string }>;
-  subscription?: { status?: string };
 };
 
 type AccountQuotaSummaryPayload = Omit<Partial<AccountQuotaSummary>, 'credit'> & {
@@ -572,7 +525,6 @@ function AccountDetailContent() {
   const [creditAdjustmentPending, setCreditAdjustmentPending] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
-  const [siteRuntimeData, setSiteRuntimeData] = useState<Record<string, SiteRuntimeData>>({});
   const [quotaSummary, setQuotaSummary] = useState<AccountQuotaSummary | null>(null);
   const [creditLedger, setCreditLedger] = useState<AccountCreditLedger | null>(null);
   const [nowMs] = useState(() => Date.now());
@@ -581,7 +533,21 @@ function AccountDetailContent() {
   const packagePlansRequestedRef = useRef(false);
   const quotaSummaryRequestedRef = useRef(false);
   const creditLedgerRequestedRef = useRef(false);
-  const siteRuntimeRequestKeyRef = useRef('');
+  const accountSiteIds =
+    account?.sites?.map((site) => site.site_id).filter(Boolean) || [];
+  const siteRuntimeQuery = useAccountSiteRuntime(
+    accountId,
+    accountSiteIds,
+    activeDetailTab === 'audit'
+  );
+  const siteRuntimeData = siteRuntimeQuery.isError
+    ? {}
+    : siteRuntimeQuery.data?.items || {};
+  const failedSiteRuntimeIds = siteRuntimeQuery.data?.failedSiteIds || [];
+  const siteRuntimeEvidenceComplete =
+    Boolean(siteRuntimeQuery.data) &&
+    !siteRuntimeQuery.isError &&
+    failedSiteRuntimeIds.length === 0;
 
   const loadPackagePlans = useCallback(async (force = false) => {
     if (!force && packagePlansRequestedRef.current) {
@@ -600,83 +566,6 @@ function AccountDetailContent() {
       }
       setPackagePlans([]);
     }
-  }, []);
-
-  const loadSiteRuntimeData = useCallback(async (siteIds: string[], force = false) => {
-    if (siteIds.length === 0) {
-      setSiteRuntimeData({});
-      siteRuntimeRequestKeyRef.current = '';
-      return;
-    }
-    const requestKey = [...siteIds].sort().join('|');
-    if (!force && siteRuntimeRequestKeyRef.current === requestKey) {
-      return;
-    }
-    siteRuntimeRequestKeyRef.current = requestKey;
-    const results: Record<string, SiteRuntimeData> = {};
-    await Promise.all(
-      siteIds.map(async (siteId) => {
-        try {
-          const siteData = (await accountDetailClient.request<SiteRuntimeApiPayload>(
-            `/api/admin/sites/${encodeURIComponent(siteId)}`
-          )).data;
-          const usageSummary = siteData.usage_summary || {};
-          const runtimeSummary = siteData.runtime_summary || {};
-          const commercialPolicy = siteData.commercial_policy || {};
-          const policyUsageTotals = commercialPolicy.usage_totals || {};
-          const budgetState =
-            commercialPolicy.budget_state && typeof commercialPolicy.budget_state === 'object'
-              ? (commercialPolicy.budget_state as Record<string, BudgetStateMetric>)
-              : {};
-          const entitlementSnapshot = commercialPolicy.entitlement_snapshot || {};
-          const coverage = siteData.coverage || {};
-          const siteKeys = Array.isArray(siteData.site_keys) ? siteData.site_keys : [];
-          results[siteId] = {
-            totalRuns: Number(runtimeSummary.total_runs ?? 0),
-            failedRuns: Number(runtimeSummary.failed_runs ?? 0),
-            lastRunAt: runtimeSummary.last_run_at || null,
-            costEstimate: Number(
-              budgetState.cost?.current_total ??
-                usageSummary.cost_estimate ??
-                policyUsageTotals.cost_cny ??
-                0
-            ),
-            tokensTotal: Number(
-              budgetState.tokens?.current_total ??
-                usageSummary.tokens_total ??
-                policyUsageTotals.tokens_total ??
-                0
-            ),
-            providerCalls: Number(policyUsageTotals.provider_calls ?? 0),
-            budgetState,
-            siteLimit: Number(entitlementSnapshot.site_limit ?? coverage.site_limit ?? 0),
-            activeKeyCount: siteKeys.filter((key: { status?: string }) => key.status === 'active').length,
-            subscriptionStatus: String(siteData.subscription?.status || coverage.subscription_status || 'unknown'),
-            coverageState: String(coverage.coverage_state || 'unknown'),
-            packageLabel: String(coverage.display_package_label || ''),
-          };
-        } catch (error) {
-          if (error instanceof ApiError && error.statusCode > 0) {
-            return;
-          }
-          results[siteId] = {
-            totalRuns: 0,
-            failedRuns: 0,
-            lastRunAt: null,
-            costEstimate: 0,
-            tokensTotal: 0,
-            providerCalls: 0,
-            budgetState: {},
-            siteLimit: 0,
-            activeKeyCount: 0,
-            subscriptionStatus: 'unknown',
-            coverageState: 'unknown',
-            packageLabel: '',
-          };
-        }
-      })
-    );
-    setSiteRuntimeData(results);
   }, []);
 
   const loadQuotaSummary = useCallback(async (force = false) => {
@@ -972,11 +861,11 @@ function AccountDetailContent() {
             : 'Customer package coverage has been updated.'
         )
       );
-      siteRuntimeRequestKeyRef.current = '';
       await Promise.all([
         loadAccount(selectedSiteId, true),
         loadQuotaSummary(true),
         loadCreditLedger(true),
+        siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
       setPackageActionError(
@@ -1014,11 +903,11 @@ function AccountDetailContent() {
               'Customer coverage has been canceled.'
             )
       );
-      siteRuntimeRequestKeyRef.current = '';
       await Promise.all([
         loadAccount(selectedSiteId, true),
         loadQuotaSummary(true),
         loadCreditLedger(true),
+        siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
       setPackageActionError(
@@ -1057,11 +946,11 @@ function AccountDetailContent() {
           ? t('admin.account_detail.agency_quote_created', undefined, 'Agency quote is ready in the customer Portal.')
           : t('admin.account_detail.agency_trial_approved', undefined, 'Agency trial has been approved for 14 days.')
       );
-      siteRuntimeRequestKeyRef.current = '';
       await Promise.all([
         loadAccount(selectedSiteId, true),
         loadQuotaSummary(true),
         loadCreditLedger(true),
+        siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
       setAgencyActionError(
@@ -1158,11 +1047,11 @@ function AccountDetailContent() {
           `${pack.fallback_label} has been applied to the current period.`
         )
       );
-      siteRuntimeRequestKeyRef.current = '';
       await Promise.all([
         loadAccount(selectedSiteId, true),
         loadQuotaSummary(true),
         loadCreditLedger(true),
+        siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
       setPackageActionError(
@@ -1229,11 +1118,11 @@ function AccountDetailContent() {
         reason: '',
         note: '',
       }));
-      siteRuntimeRequestKeyRef.current = '';
       await Promise.all([
         loadAccount(selectedSiteId, true),
         loadQuotaSummary(true),
         loadCreditLedger(true),
+        siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
       setPackageActionError(
@@ -1257,11 +1146,7 @@ function AccountDetailContent() {
       void Promise.all([loadQuotaSummary(), loadCreditLedger()]);
       return;
     }
-    if (activeDetailTab === 'audit' && account) {
-      const siteIds = account.sites?.map((site) => site.site_id).filter(Boolean) || [];
-      void loadSiteRuntimeData(siteIds);
-    }
-  }, [account, activeDetailTab, loadCreditLedger, loadPackagePlans, loadQuotaSummary, loadSiteRuntimeData]);
+  }, [activeDetailTab, loadCreditLedger, loadPackagePlans, loadQuotaSummary]);
 
   useEffect(() => {
     if (!accountStatusNotice) {
@@ -1355,10 +1240,15 @@ function AccountDetailContent() {
         name: site.name || '',
       }))
     : [];
-  const siteRuntimeItems = Object.values(siteRuntimeData);
+  const trustedSiteRuntimeData = siteRuntimeEvidenceComplete
+    ? siteRuntimeData
+    : {};
+  const siteRuntimeItems = Object.values(trustedSiteRuntimeData);
   const resourceMetricByKey = new Map((quotaSummary?.resource_limits || []).map((item) => [item.key, item]));
   const creditMetric = quotaSummary?.ai_credits || null;
-  const runBudgetSummary = creditMetric ? metricToBudgetSummary(creditMetric) : summarizeBudget(siteRuntimeData, 'runs');
+  const runBudgetSummary = creditMetric
+    ? metricToBudgetSummary(creditMetric)
+    : summarizeBudget(trustedSiteRuntimeData, 'runs');
   const activeKeySiteCount = siteRuntimeItems.filter((item) => item.activeKeyCount > 0).length;
   const boundSitesMetric = resourceMetricByKey.get('bound_sites') || null;
   const vectorDocumentsMetric = resourceMetricByKey.get('vector_documents') || null;
@@ -1376,7 +1266,10 @@ function AccountDetailContent() {
       ? 0
       : account.site_count / accountSiteLimit;
   const hasSiteLimitPressure = !siteLimitUnlimited && siteUsageRatio >= 0.8;
-  const hasApiKeyGap = account.site_count > 0 && activeKeySiteCount < account.site_count;
+  const hasApiKeyGap =
+    siteRuntimeEvidenceComplete &&
+    account.site_count > 0 &&
+    activeKeySiteCount < account.site_count;
   const quotaNeedsAttention =
     quotaSummary?.status === 'limited' ||
     quotaSummary?.status === 'near_limit' ||
@@ -1593,7 +1486,7 @@ function AccountDetailContent() {
   const accountTitle = resolveAccountTitle(account, t);
   const showPostureBadge = postureTone !== 'ok';
   const showAccountStatusBadge = account.status !== 'active' && account.status !== 'unknown';
-  const hasAdvancedChecks = Object.keys(siteRuntimeData).length > 0;
+  const hasAdvancedChecks = siteOptions.length > 0;
   const detailTabs: Array<{ id: AccountDetailTab; label: string; detail: string; href: string }> = [
     {
       id: 'overview',
@@ -2845,7 +2738,7 @@ function AccountDetailContent() {
             />
           </BackofficeSectionPanel>
         {hasAdvancedChecks ? (
-        <BackofficeSectionPanel id="advanced-checks">
+        <BackofficeSectionPanel id="advanced-checks" data-ui="account-site-runtime-diagnostics">
           <details className="group">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
               <div>
@@ -2862,8 +2755,38 @@ function AccountDetailContent() {
               <span className="text-sm font-medium text-blue-600 dark:text-blue-300">
                 {t('common.view', {}, 'View')}
               </span>
-            </summary>
+          </summary>
           <div className="mt-5 space-y-3">
+            {siteRuntimeQuery.isPending ? (
+              <p
+                role="status"
+                data-ui="account-site-runtime-loading"
+                className="text-sm text-gray-600 dark:text-gray-400"
+              >
+                {t('common.loading')}
+              </p>
+            ) : null}
+            {siteRuntimeQuery.isError ? (
+              <div data-ui="account-site-runtime-error">
+                <BackofficeDiagnosticNotice
+                  message={resolveUiErrorMessage(
+                    siteRuntimeQuery.error,
+                    t('error.failed_load')
+                  )}
+                  retryLabel={t('common.retry')}
+                  onRetry={() => void siteRuntimeQuery.refetch()}
+                />
+              </div>
+            ) : null}
+            {failedSiteRuntimeIds.length > 0 ? (
+              <div data-ui="account-site-runtime-partial-error">
+                <BackofficeDiagnosticNotice
+                  message={`${t('error.failed_load')}: ${failedSiteRuntimeIds.join(', ')}`}
+                  retryLabel={t('common.retry')}
+                  onRetry={() => void siteRuntimeQuery.refetch()}
+                />
+              </div>
+            ) : null}
             {Object.entries(siteRuntimeData).map(([siteId, runtime]) => {
               const failureRate = runtime.totalRuns > 0
                 ? Math.round((runtime.failedRuns / runtime.totalRuns) * 100)
@@ -2871,7 +2794,12 @@ function AccountDetailContent() {
               const healthStatus = failureRate >= 50 ? 'error' : failureRate >= 20 ? 'warning' : 'ok';
               const siteName = account?.sites?.find((s) => s.site_id === siteId)?.name || siteId;
               return (
-                <BackofficeStackCard key={siteId} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <BackofficeStackCard
+                  key={siteId}
+                  data-ui="account-site-runtime-card"
+                  data-site-id={siteId}
+                  className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <Link href={`/admin/sites/${siteId}`} className="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
