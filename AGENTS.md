@@ -18,10 +18,14 @@ Every AI development session should start with:
 
 For any change under `frontend/src/app/admin/**` or
 `frontend/src/components/admin/**`, also read
-`docs/cloud-admin-ui-standard-v1.md` and inspect
+`docs/cloud-admin-ui-standard-v1.md`,
+`docs/cloud-admin-frontend-engineering-standard-v1.md`, and inspect
 `frontend/admin-ui-manifest.json`. Before editing, report the route's declared
 page model, operator job, primary/secondary/destructive action hierarchy,
-shared primitives, low-frequency disclosure plan, and PC browser gate.
+shared primitives, current and target state ownership, low-frequency
+disclosure plan, and PC browser gate. A complete visual component-library
+migration is not the default remedy for page complexity; follow the bounded
+pilot and stop conditions in the frontend engineering standard.
 
 ## Product Boundary
 

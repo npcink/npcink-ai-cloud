@@ -460,6 +460,10 @@ jobs:
         if: needs.classify.outputs.docs_only != 'true'
         run: pnpm --dir frontend run type-check
 
+      - name: Unit Tests
+        if: needs.classify.outputs.docs_only != 'true'
+        run: pnpm --dir frontend run test:unit
+
       - name: Frontend Contracts
         if: needs.classify.outputs.docs_only != 'true'
         run: pnpm --dir frontend run test:contracts
