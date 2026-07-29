@@ -4,7 +4,13 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const receiptSource = readFileSync(fromFrontendRoot('src/components/admin/AdminMutationReceipt.tsx'), 'utf8');
 const accountDetailSource = readFileSync(fromFrontendRoot('src/app/admin/accounts/[accountId]/page.tsx'), 'utf8');
-const portalUsersSource = readFileSync(fromFrontendRoot('src/app/admin/portal-users/page.tsx'), 'utf8');
+const portalUsersSource = [
+  readFileSync(fromFrontendRoot('src/app/admin/portal-users/page.tsx'), 'utf8'),
+  readFileSync(
+    fromFrontendRoot('src/features/admin/portal-users/PortalUsersWorkspace.tsx'),
+    'utf8'
+  ),
+].join('\n');
 const subscriptionDetailSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
 const aiResourcesSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const supplierToolbarSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierToolbar.tsx'), 'utf8');

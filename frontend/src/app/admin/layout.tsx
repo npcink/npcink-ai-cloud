@@ -8,6 +8,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
+import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { createApiClient } from '@/lib/api-client';
@@ -679,9 +680,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Main Content */}
         <main className="flex-1 bg-transparent">
-          <AdminRouteTransition>
-            {children}
-          </AdminRouteTransition>
+          <AdminQueryProvider>
+            <AdminRouteTransition>
+              {children}
+            </AdminRouteTransition>
+          </AdminQueryProvider>
         </main>
 
         {/* Admin Footer */}
