@@ -17,6 +17,7 @@ import {
   AdminConfigurationTable,
 } from '@/components/admin/AdminConfigurationTable';
 import { AdminCredentialField } from '@/components/admin/AdminCredentialField';
+import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionDialog';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
@@ -2270,7 +2271,10 @@ function AiResourcesContent() {
                     </div>
 
                     {loadingModelReferences ? (
-                        <div className="rounded-lg border border-dashed border-slate-300 p-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        <div
+                          data-surface-state="loading"
+                          className="border-y border-slate-200 bg-slate-50/60 px-3 py-3 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900/30 dark:text-slate-400"
+                        >
                           {aiText('loading_model_references', 'Loading model reference data...')}
                         </div>
                       ) : modelVisibilityRows.length ? (
@@ -2397,9 +2401,9 @@ function AiResourcesContent() {
                           </table>
                         </div>
                       ) : (
-                        <div className="rounded-lg border border-dashed border-slate-300 p-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        <AdminEmptyState>
                           {aiText('model_visibility_empty', 'No models match the current filters. Sync a catalog, sync reference intelligence, or add a model manually.')}
-                        </div>
+                        </AdminEmptyState>
                     )}
                   </div>
                 </section>

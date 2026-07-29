@@ -6,6 +6,8 @@ import { fromFrontendRoot } from './_paths.mjs';
 const frontendRoot = fromFrontendRoot('.');
 const repositoryRoot = fromFrontendRoot('..');
 const adminRoot = fromFrontendRoot('src/app/admin');
+const adminComponentsRoot = fromFrontendRoot('src/components/admin');
+const backofficeComponentsRoot = fromFrontendRoot('src/components/backoffice');
 const manifest = JSON.parse(readFileSync(fromFrontendRoot('admin-ui-manifest.json'), 'utf8'));
 const standardSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-ui-standard-v1.md'), 'utf8');
 const architectureSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-information-architecture-v2.md'), 'utf8');
@@ -15,6 +17,7 @@ const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'),
 const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
 const workbenchSource = readFileSync(fromFrontendRoot('src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const configurationTableSource = readFileSync(fromFrontendRoot('src/components/admin/AdminConfigurationTable.tsx'), 'utf8');
+const emptyStateSource = readFileSync(fromFrontendRoot('src/components/admin/AdminEmptyState.tsx'), 'utf8');
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
 const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
@@ -36,7 +39,7 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 2, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 3, 'admin UI manifest version must be explicit');
 assert.equal(manifest.referenceRoute, '/admin/ai-resources', 'the accepted provider queue must remain the reference route');
 assert.equal(manifest.routes[manifest.referenceRoute], 'queue', 'the reference route must remain a queue page');
 assert.deepEqual(
@@ -89,6 +92,16 @@ assert.deepEqual(
   },
   'accepted PC geometry must change through a reviewed manifest update'
 );
+assert.deepEqual(
+  manifest.surfacePolicy,
+  {
+    configurationTableBoundary: 'rows',
+    dialogBoundary: 'solid',
+    formControlBoundary: 'solid',
+    dashedBoundaryPrimitive: 'AdminEmptyState',
+  },
+  'admin surface boundaries must change through a reviewed manifest update'
+);
 assert.match(
   globalStylesSource,
   /--admin-sidebar-expanded:\s*13rem[\s\S]*--admin-sidebar-collapsed:\s*4rem[\s\S]*--admin-workbench-max-width:\s*72rem[\s\S]*--admin-workbench-compact-max-width:\s*60rem/,
@@ -120,10 +133,21 @@ assert.match(
   /grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto/,
   'workbench sections must keep natural row height and scroll instead of overlapping under dense data'
 );
+assert.match(
+  workbenchSource,
+  /data-ui="admin-workbench-close"[\s\S]*?'h-9 w-9 rounded-lg'/,
+  'the shared workbench close action must remain a quiet ghost control'
+);
+assert.doesNotMatch(
+  workbenchSource,
+  /data-ui="admin-workbench-close"[\s\S]*?rounded-full border border-slate-200/,
+  'the shared workbench close action must not add another circular framed surface'
+);
 
 for (const primitive of [
   'AdminConfigurationTable',
   'AdminDataTableFrame',
+  'AdminEmptyState',
   'AdminWorkbenchDialog',
   'AdminCredentialField',
   'AdminSettingsWorkbench',
@@ -171,8 +195,32 @@ assert.match(
 );
 assert.match(
   configurationTableSource,
-  /data-ui="admin-configuration-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
-  'the shared configuration table must retain semantic table structure'
+  /data-ui="admin-configuration-table"[\s\S]*data-boundary="rows"[\s\S]*className="overflow-hidden"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
+  'the shared configuration table must retain semantic rows without a repeated outer frame'
+);
+assert.doesNotMatch(
+  configurationTableSource,
+  /rounded-lg border border-slate-200/,
+  'the shared configuration table must not restore a default rounded outer frame'
+);
+assert.match(
+  emptyStateSource,
+  /data-ui="admin-empty-state"[\s\S]*data-surface-state="empty"[\s\S]*border-dashed/,
+  'the shared empty-state primitive must own the approved dashed boundary'
+);
+
+const dashedBoundaryFiles = [
+  ...listFiles(adminRoot, (path) => path.endsWith('.tsx')),
+  ...listFiles(adminComponentsRoot, (path) => path.endsWith('.tsx')),
+  ...listFiles(backofficeComponentsRoot, (path) => path.endsWith('.tsx')),
+]
+  .filter((path) => /border-dashed/.test(readFileSync(path, 'utf8')))
+  .map((path) => relative(frontendRoot, path).split(sep).join('/'))
+  .sort();
+assert.deepEqual(
+  dashedBoundaryFiles,
+  ['src/components/admin/AdminEmptyState.tsx'],
+  'dashed Admin boundaries are reserved for the shared semantic empty-state primitive'
 );
 
 const routeLocalDialogFiles = listFiles(adminRoot, (path) => path.endsWith('.tsx'))
@@ -202,6 +250,7 @@ for (const requiredEntry of [
   'frontend/admin-ui-manifest.json',
   'pnpm run check:admin-ui',
   'pnpm run check:admin-ui:visual',
+  'border-dashed',
 ]) {
   assert.ok(agentsSource.includes(requiredEntry), `AGENTS.md must require ${requiredEntry}`);
 }

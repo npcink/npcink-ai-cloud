@@ -982,7 +982,7 @@ function AdminOverviewContent() {
         </div>
       </details>
 
-      <details className="rounded-2xl border border-dashed border-slate-200 px-5 py-4 dark:border-slate-800">
+      <details className="border-t border-slate-200 pt-4 dark:border-slate-800">
         <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
           {t('admin.home_secondary_title', {}, 'Supporting evidence')}
           <span className="ml-3 font-normal text-slate-500 dark:text-slate-400">
