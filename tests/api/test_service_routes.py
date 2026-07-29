@@ -6724,7 +6724,8 @@ def test_admin_account_credit_adjustment_updates_ledger_and_quota_summary(
 
     assert quota_response.status_code == 200
     quota = quota_response.json()["data"]
-    assert quota["ai_credits"]["used"] == 7.0
+    assert quota["ai_credits"]["used"] == 12.0
+    assert quota["ai_credits"]["limit"] == 25.0
     assert quota["ai_credits"]["remaining"] == 13.0
     assert quota["ai_credits"]["estimated"] is False
     assert quota["ai_credit_ledger_summary"]["net_used_ai_credits"] == 7.0
@@ -6776,6 +6777,82 @@ def test_admin_account_credit_grant_expands_current_period_available_balance(
     assert credit["package_remaining"] == 1300.0
     assert credit["paid_remaining"] == 0.0
     assert credit["total_remaining"] == 1300.0
+
+    dispose_engine(database_url)
+
+
+def test_account_quota_summary_keeps_grants_and_adjustments_out_of_used_credits(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    seed_site_auth(
+        database_url,
+        site_id="site_credit_summary_semantics",
+        scopes=["runtime:execute", "runtime:read", "stats:read"],
+        budgets={"max_ai_credits_per_period": 300},
+    )
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        subscription = session.scalar(
+            select(AccountSubscription)
+            .where(AccountSubscription.account_id == "acct_site_credit_summary_semantics")
+            .order_by(AccountSubscription.created_at.desc())
+        )
+        assert subscription is not None
+        repository = CommercialRepository(session)
+        for event_type, source_id, delta in (
+            ("grant", "credit-summary-grant", 9000.0),
+            ("adjustment", "credit-summary-adjustment", 1000.0),
+            ("consume", "credit-summary-consumption", -740.0),
+        ):
+            repository.record_credit_ledger_entry(
+                account_id=subscription.account_id,
+                site_id="site_credit_summary_semantics",
+                subscription_id=subscription.subscription_id,
+                plan_version_id=subscription.plan_version_id,
+                run_id=(
+                    "run-credit-summary-consumption"
+                    if event_type == "consume"
+                    else None
+                ),
+                provider_call_id=None,
+                event_type=event_type,
+                source_type=(
+                    "tokens_total"
+                    if event_type == "consume"
+                    else "operator_credit_adjustment"
+                ),
+                source_id=source_id,
+                ai_credit_delta=delta,
+                quantity=abs(delta),
+                unit="ai_credits",
+                rate=1,
+                rate_unit=None,
+                rate_version="ai-credit-ledger-v2",
+                idempotency_key=f"{source_id}-001",
+                created_at=now,
+            )
+        session.commit()
+
+    response = client.get(
+        "/internal/service/admin/accounts/"
+        "acct_site_credit_summary_semantics/quota-summary",
+        headers=build_internal_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["ai_credit_ledger_summary"]["consumed_ai_credits"] == 740.0
+    assert data["ai_credit_ledger_summary"]["granted_ai_credits"] == 9000.0
+    assert data["ai_credit_ledger_summary"]["adjustment_ai_credits"] == 1000.0
+    assert data["ai_credit_ledger_summary"]["net_ai_credit_delta"] == 9260.0
+    assert data["ai_credit_ledger_summary"]["net_used_ai_credits"] == 0.0
+    assert data["ai_credits"]["used"] == 740.0
+    assert data["ai_credits"]["limit"] == 10300.0
+    assert data["ai_credits"]["remaining"] == 9560.0
+    assert data["ai_credits"]["package_limit"] == 300.0
+    assert data["ai_credits"]["package_remaining"] == 9560.0
+    assert data["ai_credits"]["total_remaining"] == 9560.0
 
     dispose_engine(database_url)
 
