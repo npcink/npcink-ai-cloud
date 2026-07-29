@@ -3,8 +3,9 @@
 `npcink-cloud/image-context-evidence` is a Cloud hosted vision runtime ability for
 WordPress media review surfaces.
 
-It accepts bounded public media metadata and image URLs from a connected local
-plugin, calls the configured `vision.ai` hosted model profile, and returns
+It accepts bounded public media URLs or same-site short-TTL source artifacts
+from a connected local plugin, calls the configured `vision.ai` hosted model
+profile, and returns
 `image_context_evidence.v1` evidence for ALT/caption suggestion workflows.
 
 ## Runtime Boundary
@@ -22,12 +23,23 @@ plugin, calls the configured `vision.ai` hosted model profile, and returns
 - `profile_id`: `vision.ai`
 - `execution_kind`: `image_context_evidence`
 - `execution_pattern`: `inline`
-- `data_classification`: `public_site_media_metadata`
+- `data_classification`: `public_site_media_metadata` for URL-only requests or
+  `internal` when any item uses a source artifact
 - `storage_mode`: `result_only`
 
 Input may be the request object directly or under
 `image_context_evidence_request`. It must include 1 to 10 items. Each item must
-include `attachment_id` and either `source_url` or `thumbnail_url`.
+include `attachment_id` and exactly one source mode:
+
+- `source_url` and/or `thumbnail_url`; or
+- one canonical `source_artifact_id` created by the same authenticated site.
+
+Artifact inputs are admitted before run creation, revalidated and
+checksum-read immediately before Provider preparation, and converted to a
+transient data URL only at the private Provider edge. Artifact bytes, Base64,
+storage keys, and local filesystem paths do not enter the runtime request,
+result, ordinary diagnostics, or relational storage. Existing per-image 8 MiB
+validation applies, with a 24 MiB aggregate Artifact budget per request.
 
 Forbidden input includes provider secrets, confirmation tokens, approval
 decisions, and any WordPress write/control fields.

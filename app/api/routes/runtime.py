@@ -31,9 +31,11 @@ from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_ABILITIES,
     IMAGE_CONTEXT_EVIDENCE_ABILITY_FAMILY,
+    IMAGE_CONTEXT_EVIDENCE_ARTIFACT_DATA_CLASSIFICATION,
     IMAGE_CONTEXT_EVIDENCE_DATA_CLASSIFICATION,
     IMAGE_CONTEXT_EVIDENCE_EXECUTION_KIND,
     IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
+    image_context_evidence_artifact_ids,
 )
 from app.domain.image_generation.contracts import (
     IMAGE_GENERATION_ABILITIES,
@@ -482,6 +484,9 @@ def _resolve_data_classification(payload: RuntimePayload) -> str:
     if _is_media_batch_plan_payload(payload):
         return MEDIA_BATCH_PLAN_DATA_CLASSIFICATION
     if _is_image_context_evidence_payload(payload):
+        input_payload = payload.input if isinstance(payload.input, dict) else {}
+        if image_context_evidence_artifact_ids(input_payload):
+            return IMAGE_CONTEXT_EVIDENCE_ARTIFACT_DATA_CLASSIFICATION
         return IMAGE_CONTEXT_EVIDENCE_DATA_CLASSIFICATION
     if _is_audio_generation_payload(payload):
         return _resolve_feature_data_classification(payload, AUDIO_GENERATION_DATA_CLASSIFICATION)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -17,9 +18,11 @@ from app.core.config import Settings
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_REQUEST_CONTRACT,
     IMAGE_CONTEXT_EVIDENCE_RESULT_CONTRACT,
+    ImageContextEvidenceContractViolation,
     extract_image_context_evidence_request,
     validate_image_context_evidence_runtime_contract,
 )
+from app.domain.media_artifacts.input_loading import LoadedArtifactInput
 
 MAX_PROMPT_METADATA_CHARS = 500
 
@@ -81,6 +84,7 @@ class ImageContextEvidenceService:
         timeout_ms: int,
         price_input: float | None = None,
         price_output: float | None = None,
+        artifact_inputs: dict[str, LoadedArtifactInput] | None = None,
     ) -> ImageContextEvidenceExecutionResult:
         validate_image_context_evidence_runtime_contract(
             ability_name=ability_name,
@@ -88,7 +92,10 @@ class ImageContextEvidenceService:
             input_payload=input_payload,
         )
         evidence_request = extract_image_context_evidence_request(input_payload)
-        provider_input = _build_provider_input(evidence_request)
+        provider_input = _build_provider_input(
+            evidence_request,
+            artifact_inputs=artifact_inputs or {},
+        )
         request = ProviderExecutionRequest(
             run_id=run_id,
             site_id=site_id,
@@ -150,8 +157,13 @@ class ImageContextEvidenceService:
         return ImageContextEvidenceExecutionResult(result_json=result_json, usage=usage)
 
 
-def _build_provider_input(evidence_request: dict[str, Any]) -> dict[str, Any]:
+def _build_provider_input(
+    evidence_request: dict[str, Any],
+    *,
+    artifact_inputs: dict[str, LoadedArtifactInput] | None = None,
+) -> dict[str, Any]:
     items = [_normalize_request_item(item) for item in _list(evidence_request.get("items"))]
+    loaded_inputs = artifact_inputs or {}
     prompt_context = {
         "contract_version": IMAGE_CONTEXT_EVIDENCE_REQUEST_CONTRACT,
         "locale": _text(evidence_request.get("locale"), limit=32) or "zh_CN",
@@ -203,6 +215,15 @@ def _build_provider_input(evidence_request: dict[str, Any]) -> dict[str, Any]:
             f"filename={item['filename']}"
         ).strip()
         image_url = item["source_url"] or item["thumbnail_url"]
+        if item["source_artifact_id"]:
+            loaded = loaded_inputs.get(item["source_artifact_id"])
+            if loaded is None:
+                raise ImageContextEvidenceContractViolation(
+                    "image_context_evidence.source_artifact_unavailable",
+                    "image context evidence source artifact is unavailable",
+                )
+            encoded_image = base64.b64encode(loaded.content_bytes).decode("ascii")
+            image_url = f"data:{loaded.content_type};base64,{encoded_image}"
         responses_content.extend(
             [
                 {"type": "input_text", "text": label},
@@ -361,6 +382,7 @@ def _normalize_request_item(item: Any) -> dict[str, str]:
     raw = item if isinstance(item, dict) else {}
     return {
         "attachment_id": _text(raw.get("attachment_id"), limit=120),
+        "source_artifact_id": _text(raw.get("source_artifact_id"), limit=36),
         "source_url": _text(raw.get("source_url") or raw.get("url"), limit=2048),
         "thumbnail_url": _text(raw.get("thumbnail_url"), limit=2048),
         "title": _text(raw.get("title"), limit=MAX_PROMPT_METADATA_CHARS),

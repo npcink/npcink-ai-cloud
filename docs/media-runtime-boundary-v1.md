@@ -245,6 +245,13 @@ one required `source_artifact_id`:
   suggestion. WordPress still owns attachment choice, review, metadata write,
   and local audit.
 
+The image-context evidence runtime reuses the same artifact admission and
+verified byte-loading boundary for an additive
+`image_context_evidence_request.v1` source mode. Each evidence item uses either
+public image URLs or one same-site `source_artifact_id`, never both. Artifact
+requests use `data_classification=internal`; Cloud returns structured
+suggestion-only visual evidence and never stores the transient data URL.
+
 Historical run-result metadata remains a creation-time snapshot. P3-B4A now
 projects current `expired`/`purged` state across run-result reads, execution
 responses, idempotent replay, and delayed callbacks without rewriting that
