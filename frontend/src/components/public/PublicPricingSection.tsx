@@ -70,14 +70,14 @@ const tierCopy: Record<TierId, TierCopy> = {
     href: '/portal/register?plan=plus',
   },
   pro: {
-    zhPositioning: '适合多站点使用的个人与小团队。',
+    zhPositioning: '适合多站点个人与小团队。',
     enPositioning: 'For individuals and small teams using multiple sites.',
     zhAction: '选择 Pro',
     enAction: 'Choose Pro',
     href: '/portal/register?plan=pro',
   },
   agency: {
-    zhPositioning: '适合需要更高运行余量的团队。',
+    zhPositioning: '适合需要更多运行余量的团队。',
     enPositioning: 'For teams needing higher runtime headroom.',
     zhAction: '申请方案',
     enAction: 'Request a plan',
@@ -321,13 +321,13 @@ export function PublicPricingSection() {
       className="border-b border-slate-200 bg-[#0b1424] text-white dark:border-white/10"
     >
       <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-20">
-        <div className="grid gap-6 border-b border-white/15 pb-8 lg:grid-cols-[.8fr_1.2fr]">
+        <div className="grid gap-6 border-b border-white/15 pb-8 lg:grid-cols-[.9fr_1.1fr]">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#9eb3ff]">
               {zh ? '套餐与权益' : 'Plans & access'}
             </p>
-            <h2 className="mt-5 text-4xl font-black leading-tight tracking-[-0.04em] sm:text-5xl">
-              {zh ? '从一个站点开始，按使用规模升级。' : 'Start with one site. Scale as usage grows.'}
+            <h2 className="mt-5 max-w-xl text-4xl font-black leading-[1.12] tracking-[-0.035em]">
+              {zh ? '从一个站点开始，按需升级。' : 'Start with one site. Scale as usage grows.'}
             </h2>
           </div>
           <div className="flex items-end">
