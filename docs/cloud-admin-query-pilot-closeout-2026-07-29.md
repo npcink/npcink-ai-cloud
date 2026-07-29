@@ -1,6 +1,7 @@
 # Cloud Admin Query Pilot Closeout
 
-Status: accepted first queue pilot; expansion is bounded to one second queue.
+Status: accepted queue baseline; the bounded second queue and form decision are
+also complete.
 
 Date: 2026-07-29.
 
@@ -146,22 +147,31 @@ hydrates one principal while still returning the three-row filtered total. It
 also covers stable offset pagination, site search, package filtering, QQ
 filtering, and literal SQL wildcard characters.
 
-Required order:
+The required sequence is complete:
 
-1. keep PostgreSQL query-plan and index behavior in the M4 acceptance evidence;
-2. adopt Query-first in Support requests without visual redesign;
-3. reassess bundle cost, adapter/product-logic boundary, and behavior evidence;
-4. only then select one bounded form group for a React Hook Form pilot.
+1. PR #350 closed the Query pilot evidence at accepted `master` revision
+   `b2a0eb6396ffd5c7ea0967fd878c44b3391b3e96`;
+2. PR #352 moved Portal users filtering, counts, stable pagination, and
+   current-page selection into the repository and was accepted at
+   `69a195fc6a568f67e330963f38e00055358182bc`;
+3. PR #353 reused Query for Support requests without a visual redesign and was
+   accepted at `4532c53341a8685501822add55ccea4ff1d84286`;
+4. PR #356 completed the bounded account-create form decision and was accepted
+   at `0b3119c3725550ccf737a78b966b707ce2d68db7`.
+
+No wider queue, table, or form migration is authorized by this evidence.
 
 Rollback remains revision-based. Neither the Query pilot nor this closeout
 requires a database migration, data rewrite, backend contract break, or
 WordPress-side change.
 
-The production dependency audit remains red for the inherited
+At the recorded pilot baseline, the production dependency audit remained red
+for the inherited
 `frontend > next > postcss` path (`GHSA-r28c-9q8g-f849`). The same finding is
 present at the Stage 1 baseline, so it was not introduced by the coverage
 provider or this closeout. It remains a separate dependency-remediation item
-and is not represented as a green security gate here.
+and is not represented as a green security gate here. Revalidate current
+dependency state before relying on this historical finding.
 
 ## 7. Reproduction Commands
 

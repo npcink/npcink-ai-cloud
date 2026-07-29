@@ -1,7 +1,6 @@
 # Cloud Admin Support Requests Query Closeout
 
-Status: candidate evidence complete; merge and clean-master M4 promotion remain
-separate acceptance gates.
+Status: accepted bounded second Query-first queue.
 
 Date: 2026-07-29.
 
@@ -100,14 +99,24 @@ the intended reuse case. This is acceptable for the removed request lifecycle
 and safer mutation scope, but it remains evidence for two queues only—not
 permission for a repository-wide migration.
 
-## 6. Boundaries And Next Step
+## 6. Final Acceptance And Boundaries
 
 The backend API contract, WordPress ownership, support conversation detail,
 public replies, attachments, database schema, and production environment do
 not change.
 
-After merge, the candidate must be promoted from a clean current `master` and
-show the merged PR, `acceptance_state=accepted`, `source_branch=master`, and
-`source_dirty=false`. Only then should the next independent pilot select one
-small form whose validation and dirty-state burden can justify React Hook Form
-plus the existing Zod contract.
+PR #353 merged and the clean current `master` revision was promoted through the
+governed M4 lane:
+
+```text
+acceptance_state=accepted
+promotion_pr=353
+source_revision=4532c53341a8685501822add55ccea4ff1d84286
+source_branch=master
+source_dirty=false
+```
+
+The next independent account-create form pilot was completed separately in PR
+#356. It rejected React Hook Form after bundle measurement and retained a
+dependency-free feature form. This queue record does not authorize wider Query
+or form migration.

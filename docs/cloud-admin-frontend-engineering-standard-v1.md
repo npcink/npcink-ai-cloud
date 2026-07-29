@@ -1,7 +1,7 @@
 # Cloud Admin Frontend Engineering Standard v1
 
-Status: active engineering standard; Stages 1 and 2 accepted; Stage 3
-dependency decision validated.
+Status: active engineering standard; Stages 1 through 3 accepted and frozen
+pending new operator evidence.
 
 Date: 2026-07-29.
 
@@ -21,6 +21,9 @@ The information-architecture and UI standards remain authoritative for page
 models, operator jobs, density, status, actions, credentials, and PC evidence.
 This document owns frontend code structure, state ownership, dependency
 adoption, behavior tests, and the bounded remediation sequence.
+
+The completed sequence and final work review are recorded in
+[Cloud Admin Frontend Remediation Final Closeout](cloud-admin-frontend-remediation-final-closeout-2026-07-29.md).
 
 Current implementation evidence:
 

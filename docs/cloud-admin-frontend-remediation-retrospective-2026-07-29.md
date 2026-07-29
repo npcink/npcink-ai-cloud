@@ -1,6 +1,11 @@
 # Cloud Admin Frontend Remediation Retrospective
 
-Status: durable handoff after the bounded 2026-07-29 remediation sequence.
+Status: final accepted retrospective after the bounded 2026-07-29 remediation
+sequence.
+
+Final accepted revision: `0b3119c3725550ccf737a78b966b707ce2d68db7`
+through PR #356. The consolidated evidence and work review are recorded in
+[Cloud Admin Frontend Remediation Final Closeout](cloud-admin-frontend-remediation-final-closeout-2026-07-29.md).
 
 ## Objective And Result
 
