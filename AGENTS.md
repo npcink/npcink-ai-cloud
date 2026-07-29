@@ -210,6 +210,18 @@ whitespace or quiet solid dividers as defined by
 - Final evidence must show `acceptance_state=accepted`, the merged PR number,
   `source_branch=master`, `source_dirty=false`, and the current
   `origin/master` revision in `m4:preview:status`.
+- Every task that uses M4 MUST end its final report with one compact observation
+  receipt beginning with `M4_OBSERVATION_RECEIPT`. Include the observation
+  date, connection path, ordinary sync duration, focused-feedback duration,
+  promotion duration, sync/deploy count, accepted-stable-window non-health
+  `502` count, M4-only defects, and coordination loss. Use `not measured` or
+  `not occurred` for unknown or absent values; never infer exact human time
+  from logs. Use one semicolon-delimited line:
+  `M4_OBSERVATION_RECEIPT date=...; route=...; sync=...; focused=...; promotion=...; operations=...; stable_502=...; m4_only=...; coordination=...`.
+- Ordinary task sessions MUST NOT edit the shared five-day observation table.
+  The scheduled daily collector is its single writer and aggregates the
+  receipts into `ai-doc/mac mini M4/2026-07-29-npcink-ai-cloud-five-day-observation.md`.
+  This avoids concurrent Git edits while preserving per-task evidence.
 - GitHub rebase merge may replace feature commit SHAs. Use the merged PR,
   current `origin/master`, and deployed source revision as the acceptance
   chain; do not require the pre-merge feature SHA to remain an ancestor.
