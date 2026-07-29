@@ -830,7 +830,9 @@ config_fingerprint() {
 	local files=(
 		docker-compose.dev.yml
 		docker-compose.m4-preview.yml
+		docker-compose.m4-frontend-slot.yml
 		deploy/nginx.m4-preview.conf
+		deploy/nginx.m4-frontend-slot.conf.template
 		scripts/redact-m4-preview-logs.py
 	)
 	local file=""
@@ -2385,4 +2387,6 @@ main() {
 	esac
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+	main "$@"
+fi

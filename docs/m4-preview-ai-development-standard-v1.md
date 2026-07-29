@@ -24,6 +24,9 @@ The documents have separate responsibilities:
   endpoint-to-endpoint SFTP session.
 - [ADR-027](decisions/027-m4-package-proxy-streaming-cache.md) records why
   public package artifacts stream through a bounded disposable M4 cache.
+- [ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md) records why
+  two normal, frontend-only leases may share the accepted primary runtime
+  without creating another backend or persistence stack.
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.
@@ -93,6 +96,22 @@ change before selecting commands.
 | Local-only | documentation; repository policy; WordPress-only PHP/UI behavior; tests that do not need the Cloud runtime | no M4 sync by default; run the narrowest local gate |
 | Cloud source | ordinary `app/**`, `frontend/**`, worker, migration, or runtime integration behavior | focused local gate, then `pnpm run m4:preview:sync` |
 | Build/runtime | dependency manifests or locks; Dockerfiles; Compose, proxy, base-image, or M4 deployment-script inputs | focused local gate, then `pnpm run m4:preview:deploy` |
+
+Frontend-only visual work MAY use an ephemeral frontend slot instead of
+replacing the primary candidate when all of these are true:
+
+- the change needs no API, migration, worker, persistence, dependency, image,
+  proxy, or shared runtime-config change;
+- the primary runtime is accepted, clean, unlocked, fingerprint-compatible,
+  and healthy;
+- the slot owner and TTL are explicit;
+- product mutations are not required;
+- the browser uses the slot's foreground loopback tunnel.
+
+Use `m4:frontend:up` for the first checkpoint and `m4:frontend:sync` for later
+coherent checkpoints. A slot is frontend candidate evidence only. It does not
+change the primary `acceptance_state` and cannot be promoted. If any condition
+above is false, use or wait for the serialized primary lane.
 
 Risk and command choice are related but not identical:
 
@@ -181,6 +200,13 @@ pnpm run m4:preview:tunnel
 
 # Ordinary Cloud source update
 pnpm run m4:preview:sync
+
+# Frontend-only appearance work against the accepted primary backend
+pnpm run m4:frontend:up -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:sync -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:tunnel -- --slot 1 --auto
+pnpm run m4:frontend:status -- --slot 1
+pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
 
 # Dependency, image, Compose, proxy, or deployment-script update
 pnpm run m4:preview:deploy
@@ -408,7 +434,8 @@ Without separate explicit authorization, an AI agent MUST NOT:
 - print, commit, or copy secrets into logs, commands, documentation, or source;
 - put M4 SSH credentials in GitHub-hosted CI;
 - add a second permanent preview stack, deployment controller, or control
-  plane;
+  plane; ADR-035's bounded ephemeral frontend-only leases are not a second
+  backend runtime and are the only approved exception;
 - migrate WordPress approval, write, ability, workflow, prompt, preset, or
   router truth into Cloud;
 - perform source development or Git operations on M4;
@@ -443,6 +470,8 @@ Cloud integration runtime while:
   working day;
 - the full gate is reserved for closeout or high-risk changes;
 - single-operator use does not create material queueing.
+- two normal frontend-only visual slots absorb bounded UI concurrency without
+  multiplying the backend, database, workers, or accepted-state authority.
 
 Reassess the setup when the thresholds are repeatedly exceeded, M4 downtime
 costs more than 30-60 minutes per week, multiple developers need concurrent
