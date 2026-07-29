@@ -43,6 +43,10 @@ ability registry.
   site knowledge.
 - Public `post` and `page` sources may be indexed by default. Public approved
   comments may be indexed only when Cloud explicitly enables comment indexing.
+- Public WordPress image attachments may be indexed only through the bounded
+  `media_items` projection described below. Cloud stores derived retrieval
+  text and an opaque local attachment identity; WordPress remains attachment,
+  permission, deletion, and final-use truth.
 - Cloud must not publish, update, delete, or otherwise mutate WordPress content.
 - Cloud must not return article bodies, article titles, SEO copy,
   `article_write_plan` candidates, full article drafts, ready-to-publish
@@ -51,6 +55,36 @@ ability registry.
   request headers, or full sensitive request payloads.
 - Long `site-knowledge-sync` runs use the existing runtime worker path and
   `run_records`; no second queue, scheduler, or workflow engine is introduced.
+
+## Rebuildable Image-Attachment Projection
+
+`site_knowledge_sync.v1` additively accepts a bounded `media_items` list. Each
+eligible row requires:
+
+- a positive local `attachment_id`;
+- an `image/*` MIME type and current local URL;
+- a local revision `media_fingerprint`;
+- bounded local metadata (`title`, `alt`, `caption`, `description`);
+- optional derived visual evidence (`visual_summary`, `alt_text_basis`,
+  `visible_text`, and `subject_tags`).
+
+Cloud deterministically joins those text fields into one retrieval document
+with `source_type=media`, `post_type=attachment`, and the original attachment
+ID as `source_id`. This is one rebuildable projection in the existing Site
+Knowledge vector subsystem, not a second media library or vector database.
+Raw image bytes are not persisted by this contract.
+
+`site_knowledge_search.v1` accepts the additive
+`intent=media_library_search`. Consumers must filter to
+`source_types=["media"]`, `post_types=["attachment"]`, and document
+granularity. A returned attachment ID is only a search candidate: the
+WordPress caller must re-read the attachment, verify that it still exists, is
+an image, and is authorized for the current operator before display or use.
+
+Visual recognition is optional enrichment. If it is unavailable, callers may
+index metadata-only text and must expose that degraded state rather than
+claiming visual evidence. Attachment deletion, identity/revision change, or
+consent withdrawal invalidates the projection and requires refresh or removal.
 
 ## Metering Boundary
 

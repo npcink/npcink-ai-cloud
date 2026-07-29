@@ -234,10 +234,11 @@ def _search_payload(
     current_post_id: int = 0,
     intent: str = "internal_links",
     source_types: list[str] | None = None,
+    post_types: list[str] | None = None,
     result_granularity: str | None = None,
 ) -> dict[str, object]:
     filters: dict[str, object] = {
-        "post_types": ["post", "page"],
+        "post_types": post_types or ["post", "page"],
         "status": ["publish"],
         "language": "zh-CN",
     }
@@ -406,6 +407,68 @@ def test_sync_remains_available_after_ordinary_ai_credits_are_exhausted(
             )
         )
     assert sync_credit_entries == []
+
+
+def test_media_projection_sync_and_natural_language_search(tmp_path: Path) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    payload = _sync_payload()
+    payload["input"] = {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "refresh",
+        "post_ids": [501],
+        "media_items": [
+            {
+                "attachment_id": 501,
+                "mime_type": "image/jpeg",
+                "title": "Mountain lake at sunrise",
+                "url": "https://example.test/uploads/mountain-lake.jpg",
+                "modified_gmt": "2026-07-29 08:00:00",
+                "alt": "",
+                "caption": "",
+                "description": "",
+                "visual_summary": "清晨金色阳光照亮雪山和安静湖面",
+                "visible_text": [],
+                "subject_tags": ["雪山", "湖泊", "日出", "自然风景"],
+                "alt_text_basis": "雪山、湖泊和金色晨光",
+                "media_fingerprint": "media-501-revision-1",
+            }
+        ],
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+    sync_result = _execute(client, payload, idempotency_key="media-library-sync")
+    run_id = sync_result["json"]["data"]["run_id"]
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+    worker_result = RuntimeService(
+        database_url,
+        settings=settings,
+        providers={},
+    ).get_run_result(run_id, site_id="site_alpha")
+    assert worker_result["result"]["sync"]["indexed_documents"] == 1
+
+    result = _execute(
+        client,
+        _search_payload(
+            "清晨雪山湖泊",
+            intent="media_library_search",
+            source_types=["media"],
+            post_types=["attachment"],
+            result_granularity="document",
+        ),
+        idempotency_key="media-library-search",
+    )["json"]["data"]["result"]
+
+    assert result["status"] == "ready"
+    assert result["intent"] == "media_library_search"
+    assert result["results"][0]["source_type"] == "media"
+    assert result["results"][0]["source_id"] == 501
+    assert result["results"][0]["suggested_use"] == "media_library_candidate"
+    assert result["results"][0]["url"].endswith("/mountain-lake.jpg")
 
 
 def test_sync_then_search_and_status_coverage(tmp_path: Path) -> None:
