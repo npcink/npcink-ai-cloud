@@ -1,0 +1,701 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "local_read": {
+      "environments": ["authoring_mac"],
+      "effect": "read_only",
+      "approval": "none"
+    },
+    "local_state": {
+      "environments": ["authoring_mac"],
+      "effect": "local_state_mutation",
+      "approval": "none"
+    },
+    "local_source": {
+      "environments": ["authoring_mac"],
+      "effect": "source_tree_mutation",
+      "approval": "none"
+    },
+    "local_docker_read": {
+      "environments": ["authoring_mac", "local_docker"],
+      "effect": "read_only",
+      "approval": "none"
+    },
+    "local_docker_state": {
+      "environments": ["authoring_mac", "local_docker"],
+      "effect": "local_state_mutation",
+      "approval": "none"
+    },
+    "local_browser_read": {
+      "environments": ["authoring_mac", "local_browser"],
+      "effect": "read_only",
+      "approval": "none"
+    },
+    "local_browser_state": {
+      "environments": ["authoring_mac", "local_browser"],
+      "effect": "local_state_mutation",
+      "approval": "none"
+    },
+    "provider_budget": {
+      "environments": ["authoring_mac", "external_provider"],
+      "effect": "external_call_or_quota",
+      "approval": "provider_budget_required"
+    },
+    "github_publish": {
+      "environments": ["authoring_mac", "github_ci"],
+      "effect": "remote_state_mutation",
+      "approval": "coordinate_if_occupied"
+    },
+    "remote_read": {
+      "environments": ["authoring_mac", "remote_host"],
+      "effect": "read_only",
+      "approval": "operator_target_required"
+    },
+    "remote_state": {
+      "environments": ["authoring_mac", "remote_host"],
+      "effect": "remote_state_mutation",
+      "approval": "operator_target_required"
+    },
+    "production_state": {
+      "environments": ["authoring_mac", "remote_host", "production"],
+      "effect": "production_mutation",
+      "approval": "production_approval_required"
+    },
+    "m4_read": {
+      "environments": ["authoring_mac", "shared_m4"],
+      "effect": "read_only",
+      "approval": "coordinate_if_occupied"
+    },
+    "m4_state": {
+      "environments": ["authoring_mac", "shared_m4"],
+      "effect": "shared_runtime_mutation",
+      "approval": "shared_runtime_owner_required"
+    },
+    "ci_read": {
+      "environments": ["authoring_mac", "github_ci"],
+      "effect": "read_only",
+      "approval": "none"
+    }
+  },
+  "groups": [
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "scripts/dev-compose.sh"],
+      "commands": {
+        "dev": "Start the core local Docker development stack.",
+        "dev:runtime": "Start the local stack with the queued runtime worker.",
+        "dev:callback": "Start the local stack with runtime and callback workers.",
+        "dev:ops": "Start the local stack with runtime, callback, and ops workers."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_read",
+      "owner_doc": "docs/development-validation-operating-model-v1.md",
+      "used_by": ["ci", "runbook", "contract", "automation"],
+      "status": "active",
+      "evidence": ["README.md", "Makefile", ".github/workflows/ci.yml"],
+      "commands": {
+        "test": "Run the full Cloud pytest suite in local Docker.",
+        "test:contract": "Run Cloud contract tests in local Docker.",
+        "test:api": "Run Cloud API tests in local Docker.",
+        "test:domain": "Run Cloud domain tests in local Docker.",
+        "check:fast": "Run the default contract and domain integration gate."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_read",
+      "owner_doc": "docs/development-validation-operating-model-v1.md",
+      "used_by": ["ci", "runbook", "automation"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "README.md", "Makefile"],
+      "commands": {
+        "check:seam": "Run API tests and the deployment perimeter gate.",
+        "check:perimeter": "Run the deployment, auth, health, and perimeter guard."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "docs/image-processing-fc-oss-readiness-2026-07-20.md",
+      "used_by": ["runbook", "manual"],
+      "status": "active",
+      "evidence": ["docs/image-processing-fc-oss-readiness-2026-07-20.md", "scripts/media-runtime-staging-rehearsal.sh"],
+      "commands": {
+        "check:media:corpus": "Run the representative media runtime corpus proof.",
+        "check:media:staging": "Run the disposable local media staging rehearsal.",
+        "diagnose:media:staging:quick": "Run a partial quick media staging diagnostic."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/media-derivative-operations-runbook-v1.md",
+      "used_by": ["runbook", "automation", "contract"],
+      "status": "active",
+      "evidence": ["docs/media-derivative-operations-runbook-v1.md", "tests/contract/test_media_artifact_orphan_isolation_proof_contract.py"],
+      "commands": {
+        "check:artifact-orphan-isolation-proof": "Verify media artifact orphan cleanup isolation."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md",
+      "used_by": ["runbook", "contract"],
+      "status": "active",
+      "evidence": ["README.md", "docs/python-3-14-cve-upstream-checkpoint-2026-07-24.md"],
+      "commands": {
+        "check:python-dependency-audit": "Audit locked Python dependencies and supported indexes.",
+        "check:python-cve-upstream": "Inspect the recorded upstream Python CVE checkpoint."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "provider_budget",
+      "owner_doc": "docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "docs/provider-call-ledger-and-next-stage-deferral-2026-07-25.md"],
+      "commands": {
+        "provider:call-ledger": "Inspect or record governed real-provider call budget evidence."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "ci_read",
+      "owner_doc": "docs/pr-and-dependency-update-policy.md",
+      "used_by": ["ci", "runbook", "contract", "automation"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "docs/pr-and-dependency-update-policy.md", "scripts/check-release-policy.sh"],
+      "commands": {
+        "check:release-policy": "Verify production release and repository policy contracts.",
+        "test:pr-body-contract": "Test the protected pull-request body contract.",
+        "check:pr-backend": "Classify and run the risk-appropriate PR backend gate."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "github_publish",
+      "owner_doc": "docs/parallel-ai-collaboration-standard-v1.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "README.md", "docs/parallel-ai-collaboration-standard-v1.md"],
+      "commands": {
+        "pr:publish": "Publish a template-complete PR and request protected auto-merge."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-agent-workflow-metadata-projection-v1.md",
+      "used_by": ["ci", "runbook", "automation", "contract"],
+      "status": "active",
+      "evidence": [".github/pull_request_template.md", "AGENTS.md", "Makefile"],
+      "commands": {
+        "check:anti-drift": "Verify Cloud and provider ownership anti-drift rules.",
+        "test:anti-drift": "Run the anti-drift checkers' self-tests."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_read",
+      "owner_doc": "docs/development-validation-operating-model-v1.md",
+      "used_by": ["ci", "runbook", "automation"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "README.md", "Makefile"],
+      "commands": {
+        "lint": "Run repository Ruff and mypy checks in local Docker."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "docker-compose.prod.yml"],
+      "commands": {
+        "build": "Build the production Docker Compose images locally."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook", "manual"],
+      "status": "active",
+      "evidence": ["README.md", "docs/ai-provider-env-config-retirement-2026-06-26.md"],
+      "commands": {
+        "seed:dev": "Seed the fixed local runtime development baseline.",
+        "seed:smoke": "Run the supported local runtime smoke seed alias.",
+        "providers:import-env": "Import legacy provider environment configuration into managed storage.",
+        "login:seed:dev": "Seed stable local Admin and Portal login data."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "docs/internal-alpha-operator-checklist.md",
+      "used_by": ["runbook", "automation", "contract"],
+      "status": "active",
+      "evidence": ["README.md", "docs/internal-alpha-operator-checklist.md"],
+      "commands": {
+        "smoke:provider-env-retirement": "Verify the provider environment fallback remains retired.",
+        "smoke:local-alpha": "Run the local hosted-runtime alpha smoke.",
+        "smoke:internal-alpha-onboarding": "Run the focused internal-alpha onboarding smoke.",
+        "smoke:site-knowledge": "Run the real-chain Site Knowledge smoke.",
+        "smoke:media-derivative:wp": "Run the WordPress media derivative end-to-end smoke.",
+        "drill:provider-failure": "Exercise the local provider failure drill.",
+        "drill:callback-failure": "Exercise the local callback failure drill.",
+        "drill:auth-failure": "Exercise the local authentication failure drill."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_state",
+      "owner_doc": "docs/ai-provider-connections-and-dev-frontend-history-2026-06-26.md",
+      "used_by": ["runbook", "automation", "manual"],
+      "status": "active",
+      "evidence": ["README.md", "Makefile", "docs/ai-provider-connections-and-dev-frontend-history-2026-06-26.md"],
+      "commands": {
+        "frontend:sync": "Synchronize local frontend dependencies and generated state.",
+        "frontend:watch": "Run the local frontend auto-sync watch loop.",
+        "frontend:doctor": "Diagnose local frontend dependency and lock consistency.",
+        "frontend:recover": "Repair the local frontend dependency installation."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
+      "used_by": ["runbook", "automation"],
+      "status": "active",
+      "evidence": ["frontend/DEVELOPMENT.md", "docs/cloud-admin-frontend-engineering-standard-v1.md"],
+      "commands": {
+        "check:frontend-locks": "Verify root and frontend dependency locks stay synchronized.",
+        "frontend:type-check": "Run the frontend TypeScript check from the repository root.",
+        "frontend:lint": "Run frontend ESLint from the repository root.",
+        "frontend:measure:route-bundle": "Measure a frontend route's client bundle.",
+        "frontend:test:i18n-contract": "Run the frontend internationalization contract.",
+        "check:agent-workflow-metadata": "Run the Agent/Workflow metadata browser seam check."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_browser_state",
+      "owner_doc": "docs/development-validation-operating-model-v1.md",
+      "used_by": ["runbook", "automation", "manual"],
+      "status": "active",
+      "evidence": ["README.md", "docs/development-validation-operating-model-v1.md", "frontend/playwright.config.ts"],
+      "commands": {
+        "frontend:test:e2e:agent-workflow-metadata": "Run the Agent/Workflow metadata Playwright smoke.",
+        "frontend:test:e2e:admin-operator-path": "Run the critical Admin operator Playwright path.",
+        "frontend:test:e2e:portal-workspace-path": "Run the critical Portal workspace Playwright path.",
+        "frontend:test:e2e:portal-addon-binding": "Run the Portal Addon binding Playwright path."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "dev/bootstrap-portal-site-dev.sh"],
+      "commands": {
+        "portal:bind:dev": "Bind a Portal member to an existing local development site."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "remote_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "deploy/WORKSPACE_TARGET.md"],
+      "commands": {
+        "portal:bind:ssh": "Bind a Portal member to a real site on the configured SSH target.",
+        "portal:smoke:ssh": "Run Portal smoke against the configured SSH target.",
+        "smoke:small-trial-preflight": "Run the remote small-customer trial preflight."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "deploy/bundle-images.sh"],
+      "commands": {
+        "bundle": "Build the governed production deployment bundle."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "production_state",
+      "owner_doc": "docs/cloud-production-release-policy-v1.md",
+      "used_by": ["release", "runbook"],
+      "status": "active",
+      "evidence": ["README.md", "deploy/OPS_PLAYBOOK.md", "docs/cloud-production-release-policy-v1.md"],
+      "commands": {
+        "deploy:ssh": "Run the governed SSH production deployment transaction.",
+        "deploy:static-terms:ssh": "Deploy the bounded static terms surface to the SSH target."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "remote_state",
+      "owner_doc": "README.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "deploy/wp-cron-to-ssh-host.sh"],
+      "commands": {
+        "wp-cron:ssh": "Install, inspect, or remove the managed remote WordPress cron entry."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "remote_state",
+      "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
+      "used_by": ["manual"],
+      "status": "deprecated",
+      "replacement": "Use the corresponding m4:preview:* command.",
+      "removal_condition": "Remove after repository and operator review confirms no bounded recovery caller still depends on the legacy remote-preview scripts.",
+      "evidence": ["docs/development-validation-operating-model-v1.md", "scripts/remote-preview-mini.sh"],
+      "commands": {
+        "sync:mini": "Legacy alias for remote Mac mini frontend preview sync.",
+        "sync:mini:local-build": "Legacy alias for local-build Mac mini frontend preview sync.",
+        "mini:preview": "Legacy remote Mac mini full preview build.",
+        "mini:preview:local-build": "Legacy local-build remote Mac mini preview.",
+        "mini:preview:frontend": "Legacy remote Mac mini frontend-only preview.",
+        "mini:preview:frontend:local-build": "Legacy local-build Mac mini frontend preview.",
+        "mini:preview:logs": "Inspect logs from the legacy remote Mac mini preview.",
+        "mini:preview:restart": "Restart services in the legacy remote Mac mini preview.",
+        "mini:preview:stop": "Stop the legacy remote Mac mini preview."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "m4_read",
+      "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["docs/m4-preview-ai-development-standard-v1.md", "docs/m4-preview-development-v1.md"],
+      "commands": {
+        "m4:preview:status": "Inspect shared M4 preview state and acceptance metadata.",
+        "m4:preview:logs": "Inspect bounded shared M4 preview logs.",
+        "m4:preview:test": "Run a focused or explicitly broader test inside M4.",
+        "m4:preview:ollama:status": "Inspect the M4 Ollama runtime status."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "m4_state",
+      "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
+      "used_by": ["runbook", "contract", "automation"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "docs/m4-preview-ai-development-standard-v1.md", "docs/m4-preview-development-v1.md"],
+      "commands": {
+        "m4:preview:prepare": "Prepare the governed M4 preview environment.",
+        "m4:preview:deploy": "Deploy an M4 candidate with the required image rebuild.",
+        "m4:preview:sync": "Synchronize a source-only M4 candidate.",
+        "m4:preview:promote": "Promote clean merged master to accepted M4 state.",
+        "m4:preview:tunnel": "Open the foreground local connector tunnel to M4.",
+        "m4:preview:auto": "Open the bounded auto-routed M4 preview tunnel.",
+        "m4:preview:recover": "Recover the expected M4 preview containers and state.",
+        "m4:preview:ollama:install": "Install the governed Ollama runtime on M4.",
+        "m4:preview:ollama:configure": "Configure the governed Ollama runtime on M4.",
+        "m4:preview:ollama:restart": "Restart the governed Ollama runtime on M4.",
+        "m4:preview:restart": "Restart the shared M4 preview stack.",
+        "m4:preview:stop": "Stop the shared M4 preview stack."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "m4_read",
+      "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["README.md", "docs/m4-preview-development-v1.md"],
+      "commands": {
+        "m4:frontend:status": "Inspect an owned read-only M4 frontend slot.",
+        "m4:frontend:logs": "Inspect logs for an owned M4 frontend slot."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "m4_state",
+      "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
+      "used_by": ["runbook", "automation"],
+      "status": "active",
+      "evidence": ["README.md", "docs/m4-preview-ai-development-standard-v1.md", "docs/m4-preview-development-v1.md"],
+      "commands": {
+        "m4:frontend:up": "Start an owned read-only M4 frontend slot.",
+        "m4:frontend:sync": "Synchronize source to an owned M4 frontend slot.",
+        "m4:frontend:tunnel": "Open the foreground browser tunnel for an M4 frontend slot.",
+        "m4:frontend:release": "Release an owned M4 frontend slot."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "production_state",
+      "owner_doc": "docs/cloud-production-release-policy-v1.md",
+      "used_by": ["runbook", "manual"],
+      "status": "active",
+      "evidence": ["README.md", "scripts/mini-cloud-deploy.sh", "docs/cloud-production-release-policy-v1.md"],
+      "commands": {
+        "mini:deploy": "Use the remote Mac mini only as a governed production deploy jump host."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
+      "used_by": ["ci", "runbook", "automation", "contract"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "docs/cloud-admin-frontend-engineering-standard-v1.md", "scripts/check-cloud-frontend-handoff.js"],
+      "commands": {
+        "check:frontend-handoff": "Verify the Cloud frontend handoff contract.",
+        "check:frontend-scope": "Verify the bounded Cloud frontend scope.",
+        "check:agent-feedback-quality": "Verify the Agent feedback quality evidence gate.",
+        "check:editor-assist-quality": "Verify Editor Assist quality evidence.",
+        "check:runtime-stability-plan": "Verify the runtime stability evidence plan."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_browser_read",
+      "owner_doc": "docs/cloud-admin-ui-standard-v1.md",
+      "used_by": ["ci", "runbook", "contract", "automation"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "frontend/DEVELOPMENT.md", "docs/cloud-admin-ui-standard-v1.md"],
+      "commands": {
+        "check:visual:frontend": "Run the bounded frontend visual test suite.",
+        "check:admin-ui": "Run the required Admin UI governance and static gate.",
+        "check:admin-ui:visual": "Run the required material Admin UI browser gate."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_state",
+      "owner_doc": "deploy/RELEASE_CHECKLIST.md",
+      "used_by": ["runbook", "automation", "contract"],
+      "status": "active",
+      "evidence": ["README.md", "deploy/RELEASE_CHECKLIST.md"],
+      "commands": {
+        "check:e2e:deploy-bundle:smoke": "Replay the exact deployment bundle in a local smoke environment.",
+        "check:pg18-proof": "Verify the PostgreSQL 18 installation proof.",
+        "smoke:prod-python-extras": "Smoke the locked production Python extras image."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "production_state",
+      "owner_doc": "docs/cloud-first-install-rds-pg18-runbook.md",
+      "used_by": ["runbook", "contract", "manual"],
+      "status": "active",
+      "evidence": ["deploy/OPS_PLAYBOOK.md", "docs/cloud-first-install-rds-pg18-runbook.md"],
+      "commands": {
+        "setup-code-rotate": "Rotate and reveal a one-time setup code from an attached operator TTY.",
+        "admin-key-rotate": "Rotate the protected platform administrator key."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_docker_read",
+      "owner_doc": "docs/runtime-stability-performance-evidence-v1.md",
+      "used_by": ["runbook", "automation", "contract"],
+      "status": "active",
+      "evidence": ["docs/runtime-stability-performance-evidence-v1.md", "tests/contract/test_runtime_performance_tooling_contract.py"],
+      "commands": {
+        "perf:runtime-hot-path": "Report local runtime hot-path query plans.",
+        "perf:runtime-hot-path:require-indexes": "Require expected indexes in local runtime hot-path plans.",
+        "perf:production-baseline": "Generate the production performance baseline from the current environment."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "remote_read",
+      "owner_doc": "docs/runtime-stability-performance-evidence-v1.md",
+      "used_by": ["runbook", "manual"],
+      "status": "active",
+      "evidence": ["docs/runtime-stability-performance-evidence-v1.md", "deploy/production-performance-baseline-to-ssh-host.sh"],
+      "commands": {
+        "perf:production-baseline:ssh": "Run the read-only production performance baseline on the SSH target."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "deploy/RELEASE_CHECKLIST.md",
+      "used_by": ["release", "runbook"],
+      "status": "active",
+      "evidence": ["deploy/PRODUCTION_GITHUB_DEPLOY.md", "deploy/RELEASE_CHECKLIST.md"],
+      "commands": {
+        "release:timing": "Report release workflow timing evidence.",
+        "release:junit-timing": "Report pytest JUnit timing evidence."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_source",
+      "owner_doc": "docs/ci-pytest-sharding-v1.md",
+      "used_by": ["runbook", "automation"],
+      "status": "active",
+      "evidence": ["docs/ci-pytest-sharding-v1.md", "docs/development-validation-operating-model-v1.md"],
+      "commands": {
+        "ci:pytest:weights:refresh": "Refresh variance-aware pytest shard weights for human review."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_source",
+      "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
+      "used_by": ["runbook", "automation", "manual"],
+      "status": "active",
+      "evidence": ["README.md", "scripts/scaffold-cloud-route.js", "scripts/scaffold-cloud-portal-route.js"],
+      "commands": {
+        "scaffold:route": "Scaffold a bounded Cloud API route pack.",
+        "scaffold:portal-route": "Scaffold a bounded Portal route pack.",
+        "scaffold:frontend-handoff": "Scaffold a bounded Cloud frontend handoff record."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_state",
+      "owner_doc": "frontend/DEVELOPMENT.md",
+      "used_by": ["runbook", "manual"],
+      "status": "active",
+      "evidence": ["frontend/README.md", "frontend/DEVELOPMENT.md"],
+      "commands": {
+        "dev": "Start the Next.js frontend development server.",
+        "start": "Start a built Next.js frontend server."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_state",
+      "owner_doc": "docs/frontend-public-portal-release-checklist-v1.md",
+      "used_by": ["runbook"],
+      "status": "active",
+      "evidence": ["docs/frontend-public-portal-release-checklist-v1.md", "frontend/DEVELOPMENT.md"],
+      "commands": {
+        "build": "Build the production Next.js frontend."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
+      "used_by": ["ci", "runbook", "automation"],
+      "status": "active",
+      "evidence": [".github/workflows/ci.yml", "docs/cloud-admin-frontend-engineering-standard-v1.md"],
+      "commands": {
+        "lint": "Run frontend ESLint with zero warnings.",
+        "type-check": "Run the frontend TypeScript type check."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_read",
+      "owner_doc": "frontend/DEVELOPMENT.md",
+      "used_by": ["manual"],
+      "status": "active",
+      "evidence": ["frontend/DEVELOPMENT.md", "scripts/prune-cloud-frontend-playwright-cache.js"],
+      "commands": {
+        "playwright:browsers:check": "List installed Playwright browser assets.",
+        "playwright:browsers:prune:check": "Report disposable Playwright browser cache candidates."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_state",
+      "owner_doc": "frontend/DEVELOPMENT.md",
+      "used_by": ["manual"],
+      "status": "active",
+      "evidence": ["frontend/DEVELOPMENT.md", "scripts/prune-cloud-frontend-playwright-cache.js"],
+      "commands": {
+        "playwright:browsers:install:chromium": "Install the governed local Playwright Chromium asset.",
+        "playwright:browsers:prune": "Remove only the reported disposable Playwright browser cache."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
+      "used_by": ["ci", "runbook", "automation", "manual"],
+      "status": "active",
+      "evidence": [".github/workflows/ci.yml", "docs/cloud-admin-frontend-engineering-standard-v1.md", "frontend/tests/unit"],
+      "commands": {
+        "test:i18n-contract": "Run the composed Admin and Portal i18n contracts.",
+        "test:i18n:admin-portal-completeness": "Run the Admin and Portal translation completeness contract.",
+        "test:admin-dev-autologin-contract": "Run the development Admin auto-login contract.",
+        "test:portal-proxy-contract": "Run the Portal proxy contract.",
+        "test:portal-package-contract": "Run the Portal package presentation contract.",
+        "test:public-entitlement-copy-contract": "Run the public entitlement copy contract.",
+        "test:copy-surface": "Run the Admin and Portal copy-surface contract.",
+        "test:proxy-csp-contract": "Run the frontend proxy CSP contract.",
+        "guard:portal-boundary": "Run the Portal product-boundary guard.",
+        "test:contracts": "Run every frontend source contract test."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_browser_state",
+      "owner_doc": "docs/development-validation-operating-model-v1.md",
+      "used_by": ["ci", "runbook", "automation", "manual"],
+      "status": "active",
+      "evidence": [".github/workflows/ci.yml", "docs/development-validation-operating-model-v1.md", "frontend/playwright.config.ts"],
+      "commands": {
+        "test:e2e": "Run the full frontend Playwright suite.",
+        "test:e2e:admin-operator-path": "Run the critical Admin operator Playwright path.",
+        "test:e2e:admin-operator-path:ci": "Run the CI-configured Admin operator Playwright path.",
+        "test:e2e:portal-workspace-path": "Run the critical Portal workspace Playwright path.",
+        "test:e2e:portal-addon-binding": "Run the Portal Addon binding Playwright path.",
+        "test:e2e:setup": "Run first-install pending and complete Playwright gates.",
+        "test:e2e:agent-workflow-metadata": "Run the Agent/Workflow metadata Playwright smoke.",
+        "test:visual": "Run the bounded frontend visual regression suite."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_source",
+      "owner_doc": "frontend/DEVELOPMENT.md",
+      "used_by": ["manual"],
+      "status": "active",
+      "evidence": ["frontend/DEVELOPMENT.md", "frontend/playwright.config.ts"],
+      "commands": {
+        "test:visual:marketing:baseline": "Update the marketing visual baseline snapshots.",
+        "test:visual:baseline": "Update the shared frontend visual baseline snapshots."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_read",
+      "owner_doc": "docs/cloud-admin-frontend-engineering-standard-v1.md",
+      "used_by": ["ci", "runbook"],
+      "status": "active",
+      "evidence": [".github/workflows/ci.yml", "docs/cloud-admin-frontend-engineering-standard-v1.md"],
+      "commands": {
+        "test:unit": "Run all frontend Vitest unit tests.",
+        "test:unit:coverage:portal-users": "Generate the focused Portal Users unit coverage report."
+      }
+    },
+    {
+      "package": "frontend",
+      "profile": "local_state",
+      "owner_doc": "frontend/DEVELOPMENT.md",
+      "used_by": ["manual"],
+      "status": "active",
+      "evidence": ["frontend/DEVELOPMENT.md", "frontend/vitest.config.ts"],
+      "commands": {
+        "test:unit:watch": "Run Vitest in the foreground watch loop."
+      }
+    }
+  ]
+}
