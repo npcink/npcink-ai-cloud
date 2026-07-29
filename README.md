@@ -342,7 +342,13 @@ Still deferred in the current phase:
     RSA2 signing/verification configuration, while WeChat Pay remains deferred
     until provider signature verification, callback replay, and amount/currency
     matching are implemented
-- richer platform admin directory/session inventory remains deferred
+- richer platform admin capabilities remain deferred while the service is
+  intentionally operated by one `platform_admin`:
+  - trusted administrator identity propagation through the Admin BFF into
+    backend audit receipts;
+  - named administrator directory, active-session inventory, and per-session
+    revocation;
+  - both are required before operations expand beyond one administrator
 
 Commercial acceptance freeze:
 

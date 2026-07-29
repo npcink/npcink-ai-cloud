@@ -31,6 +31,10 @@ assert.doesNotMatch(overview, /\bfetch\s*\(/, 'overview must not bypass the shar
 assert.doesNotMatch(overview, /platformCreditSummary|platform_credit_summary/, 'overview must not load deep platform credit detail');
 assert.match(overview, /overviewRuntimeAlertTitle\(overview\.runtimeTelemetry\.alerts\[0\], t\)/, 'overview watch items must localize known runtime alerts');
 assert.match(overview, /overviewRuntimeAlertSummary\(alert, t\)/, 'overview evidence must localize known runtime summaries');
+assert.match(overview, /operationalReadiness\.status === 'error'/, 'overview conclusion must fail closed on formal readiness');
+assert.match(overview, /admin\.home_readiness_unknown_desc/, 'overview must distinguish unavailable readiness from a ready platform');
+assert.match(overview, /admin\.home_primary_action_readiness/, 'blocked readiness must lead to the diagnostic surface');
+assert.match(i18n, /'admin\.home_readiness_blocked': '未达到运营就绪'/, 'formal readiness status must be localized');
 
 for (const route of [
   '/admin/plugin-observability',

@@ -337,6 +337,49 @@ def _runtime_service_settings(database_url: str) -> Settings:
     )
 
 
+def test_admin_operational_readiness_projection_is_bounded_and_fail_closed() -> None:
+    ready = service_routes._build_admin_operational_readiness_projection(
+        {
+            "ok": True,
+            "generated_at": "2026-07-29T08:00:00Z",
+            "checks": {
+                "dependencies.ready": True,
+                "providers.fresh": True,
+                "worker.runtime_queue.fresh": True,
+                "cadence.provider_health_scan.fresh": True,
+            },
+            "summary": {"must_not_escape": True},
+        }
+    )
+    blocked = service_routes._build_admin_operational_readiness_projection(
+        {
+            "ok": False,
+            "generated_at": "2026-07-29T08:01:00Z",
+            "checks": {
+                "dependencies.ready": True,
+                "providers.fresh": False,
+                "worker.runtime_queue.fresh": False,
+                "cadence.provider_health_scan.fresh": False,
+            },
+        }
+    )
+
+    assert ready == {
+        "status": "ok",
+        "ok": True,
+        "generated_at": "2026-07-29T08:00:00Z",
+        "checks_total": 4,
+        "checks_failed": 0,
+        "failed_checks": [],
+        "failure_scopes": [],
+        "href": "/admin/troubleshooting",
+    }
+    assert blocked["status"] == "error"
+    assert blocked["checks_failed"] == 3
+    assert blocked["failure_scopes"] == ["providers", "workers", "cadence"]
+    assert "summary" not in blocked
+
+
 def _request_portal_registration_code(
     client: TestClient,
     *,
@@ -5841,6 +5884,12 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert overview["recent_usage"]["event_count"] >= 1
     assert "platform_credit_summary" not in overview
     assert "runtime_diagnostics" in overview
+    assert overview["operational_readiness"]["status"] == "error"
+    assert overview["operational_readiness"]["ok"] is False
+    assert overview["operational_readiness"]["checks_failed"] >= 1
+    assert "providers" in overview["operational_readiness"]["failure_scopes"]
+    assert overview["operational_readiness"]["href"] == "/admin/troubleshooting"
+    assert "summary" not in overview["operational_readiness"]
     assert overview["runtime_telemetry"]["filters"]["recent_minutes"] == 1440
     assert overview["runtime_telemetry"]["alert_summary"]["status"] in {
         "ok",
