@@ -33,17 +33,25 @@ def test_abuse_guard_diagnostics_exposes_watchlist_and_event_breakdown(tmp_path:
                     expires_at=datetime.now(UTC) + timedelta(minutes=9),
                 )
             )
-        for index in range(3):
+        guard_events = [
+            ("site_watch", "auth.rate_limit_exceeded"),
+            ("site_watch", "auth.replay_blocked"),
+            ("site_watch", "auth.payload_too_large"),
+            ("site_watch_nonce", "auth.rate_limit_exceeded"),
+            ("site_watch_nonce", "auth.invalid_nonce"),
+            ("site_watch_nonce", "auth.invalid_idempotency_key"),
+        ]
+        for index, (scope_id, event_code) in enumerate(guard_events):
             session.add(
                 RuntimeGuardEvent(
                     auth_surface="public_runtime",
                     scope_kind=REPLAY_SCOPE_PUBLIC_POST_SITE,
-                    scope_id="site_watch",
-                    site_id="site_watch",
+                    scope_id=scope_id,
+                    site_id=scope_id,
                     key_id="key_watch",
                     client_ref="127.0.0.1",
-                    event_code="auth.rate_limit_exceeded" if index < 2 else "auth.replay_blocked",
-                    status_code=429 if index < 2 else 409,
+                    event_code=event_code,
+                    status_code=429 if event_code == "auth.rate_limit_exceeded" else 409,
                     method="POST",
                     path="/v1/runtime/execute",
                     trace_id=f"trace-watch-guard-{index}",
@@ -78,10 +86,18 @@ def test_abuse_guard_diagnostics_exposes_watchlist_and_event_breakdown(tmp_path:
     assert request_item["scope_id"] == "site_watch"
     assert request_item["severity"] == "critical"
     assert "request_burst_limit_exceeded" in request_item["reason_codes"]
-    cooldown_item = site_scope["cooldown_items"][0]
-    assert cooldown_item["scope_id"] == "site_watch"
+    cooldown_item = next(
+        item for item in site_scope["cooldown_items"] if item["scope_id"] == "site_watch"
+    )
     assert cooldown_item["severity"] == "critical"
     assert "rejects_include_rate_limits" in cooldown_item["reason_codes"]
+    assert "rejects_include_replay_blocks" in cooldown_item["reason_codes"]
+    assert "rejects_include_payload_limits" in cooldown_item["reason_codes"]
+    nonce_cooldown_item = next(
+        item for item in site_scope["cooldown_items"] if item["scope_id"] == "site_watch_nonce"
+    )
+    assert "rejects_include_invalid_nonce" in nonce_cooldown_item["reason_codes"]
+    assert "rejects_include_invalid_idempotency_key" in nonce_cooldown_item["reason_codes"]
     assert any(
         item["event_code"] == "auth.replay_blocked"
         for item in cooldown_item["event_code_breakdown"]
