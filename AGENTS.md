@@ -6,14 +6,18 @@ Every AI development session should start with:
 
 1. Run `git status --short --branch`.
 2. Read `README.md`.
-3. For feature, bug-fix, M4, or CI work, read
+3. Read `docs/parallel-ai-collaboration-standard-v1.md`. When another session
+   may be active, inspect worktrees, open human PRs, and available task
+   ownership, then report the conflict-domain owner, merge-lane intent, and
+   shared-runtime intent before editing.
+4. For feature, bug-fix, M4, or CI work, read
    `docs/development-validation-operating-model-v1.md`.
-4. Read the relevant boundary docs before editing:
+5. Read the relevant boundary docs before editing:
    - `docs/cloud-content-generation-boundary-v1.md`
    - `docs/cloud-task-pack-boundary-v1.md`
    - `docs/cloud-agent-workflow-metadata-projection-v1.md`
    - `docs/cloud-agent-feedback-quality-gate-v1.md`
-5. Briefly report the focused module, relevant Cloud boundary, and intended
+6. Briefly report the focused module, relevant Cloud boundary, and intended
    verification gate before editing.
 
 For any change under `frontend/src/app/admin/**` or
@@ -44,6 +48,11 @@ prompt/router/preset local truth, or WordPress write owner.
   module, intended change, explicit non-goals, public contracts touched,
   expected files, files or areas that must not change, required gates,
   cross-repo matrix requirement, and rollback plan.
+- When sessions run in parallel, follow the Three Uniques in
+  `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
+  conflict domain, one human-authored PR in the protected merge lane, and one
+  shared-runtime operation owner. Parallel investigation and disjoint local
+  work remain allowed.
 - Keep changes scoped to one module per session.
 - Before staging, inspect `git status --short --branch` and `git diff --stat`.
   Stage only files changed for the current task. Do not use `git add -A` in a

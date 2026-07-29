@@ -102,6 +102,7 @@ Operational references:
 
 - [deploy/OPS_PLAYBOOK.md](deploy/OPS_PLAYBOOK.md)
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
+- [docs/parallel-ai-collaboration-standard-v1.md](docs/parallel-ai-collaboration-standard-v1.md)
 - [docs/development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md)
 - [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
 - [docs/image-processing-fc-oss-readiness-2026-07-20.md](docs/image-processing-fc-oss-readiness-2026-07-20.md)
