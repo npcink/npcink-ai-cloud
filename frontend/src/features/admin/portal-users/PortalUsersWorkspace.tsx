@@ -481,7 +481,16 @@ export function PortalUsersWorkspace() {
                 );
               })}
             </div>
-          ) : <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.portal_users.empty_title', {}, 'No self-registered users')} description={t('admin.portal_users.empty_desc', {}, 'New users will appear here after they register through Portal and open the Free package.')} action={hasFilters ? <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null} />}
+          ) : <BackofficeEmptyState
+            className="m-5 md:m-6"
+            title={hasFilters
+              ? t('admin.portal_users.filtered_empty_title', {}, 'No users match these filters')
+              : t('admin.portal_users.empty_title', {}, 'No self-registered users')}
+            description={hasFilters
+              ? t('admin.portal_users.filtered_empty_desc', {}, 'Clear or change the current filters to return to the self-registered user directory.')
+              : t('admin.portal_users.empty_desc', {}, 'New users will appear here after they register through Portal and open the Free package.')}
+            action={hasFilters ? <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
+          />}
           <ListPagination offset={offset} limit={PORTAL_USER_PAGE_SIZE} total={total} isLoading={refreshing} onOffsetChange={(nextOffset) => updateDirectoryUrl({ offset: String(nextOffset), focus: null })} />
         </BackofficeSectionPanel>
 

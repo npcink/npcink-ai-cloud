@@ -246,6 +246,8 @@ test('Portal user directory persists filters and focus while retaining results o
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect(rows).toHaveCount(0);
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /No users match these filters|没有用户符合当前筛选/i })).toBeVisible();
+  await expect(page.getByText(/Clear or change the current filters|清除或调整当前筛选条件/i)).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);
