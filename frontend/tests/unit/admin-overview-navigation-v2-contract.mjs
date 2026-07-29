@@ -37,6 +37,7 @@ assert.match(overview, /admin\.home_primary_action_readiness/, 'blocked readines
 assert.match(i18n, /'admin\.home_readiness_blocked': '未达到运营就绪'/, 'formal readiness status must be localized');
 
 for (const route of [
+  '/admin/portal-users',
   '/admin/plugin-observability',
   '/admin/media-observability',
   '/admin/vector-observability',
@@ -45,6 +46,11 @@ for (const route of [
 ]) {
   assert.match(layout, new RegExp(`href: '${route}'`), `${route} must be discoverable in the quick switcher`);
 }
+assert.match(
+  layout,
+  /href: '\/admin\/portal-users'[\s\S]*secondary: true/,
+  'portal users must remain visibly subordinate to the customer directory'
+);
 assert.match(layout, /admin\.nav_group_diagnostics/, 'contextual diagnostic commands must share a Diagnostics group');
 assert.match(i18n, /'admin\.home_loading_desc': '正在加载当前平台结论和运营队列。'/, 'overview loading copy must be localized');
 assert.match(i18n, /'admin\.home_error_desc': '无法加载平台概览，系统未执行任何运营操作。'/, 'overview error copy must be localized');

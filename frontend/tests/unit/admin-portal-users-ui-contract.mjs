@@ -144,16 +144,16 @@ assert.doesNotMatch(
   'portal users page must use the shared admin sidebar instead of duplicate customer tabs'
 );
 
-assert.doesNotMatch(
-  layoutSource,
-  /admin\.nav_group_customer_service[\s\S]*href: '\/admin\/portal-users'/,
-  'portal users must not return as a top-level customer-ops sidebar entry'
-);
-
 assert.match(
   layoutSource,
+  /admin\.nav_group_customer_service[\s\S]*href: '\/admin\/portal-users'[\s\S]*secondary: true/,
+  'portal users must remain a stable secondary entry in the customer-ops group'
+);
+
+assert.doesNotMatch(
+  layoutSource,
   /pathname\.startsWith\('\/admin\/portal-users'\)[\s\S]*admin\.nav_portal_users/,
-  'portal users must still have an accurate secondary-route breadcrumb label'
+  'portal users label and active state must come from the shared navigation model'
 );
 
 assert.match(
