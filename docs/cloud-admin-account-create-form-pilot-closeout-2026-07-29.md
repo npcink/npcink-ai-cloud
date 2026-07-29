@@ -1,7 +1,6 @@
 # Cloud Admin Account Create Form Pilot Closeout
 
-Status: candidate source evidence complete; merge and clean-master M4
-acceptance remain separate.
+Status: accepted dependency-free form baseline.
 
 Date: 2026-07-29.
 
@@ -68,7 +67,17 @@ to assistive technology or browser selectors.
 
 ## Acceptance Boundary
 
-This record proves candidate source behavior and measured dependency rejection.
-It does not prove merge, M4 acceptance, production deployment, or human
-acceptance. Final closeout requires the normal PR checks and a clean current
-`master` M4 promotion.
+PR #356 passed the protected GitHub checks, merged, and was promoted from clean
+current `master`:
+
+```text
+acceptance_state=accepted
+promotion_pr=356
+source_revision=0b3119c3725550ccf737a78b966b707ce2d68db7
+source_branch=master
+source_dirty=false
+```
+
+This proves reviewed source and M4 acceptance. It does not prove production
+deployment, GA, or external human acceptance. No production deployment was
+performed.
