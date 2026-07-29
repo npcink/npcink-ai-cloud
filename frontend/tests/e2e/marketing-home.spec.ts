@@ -105,7 +105,9 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
       name: /Run AI.*cloud.*control.*WordPress|让 AI.*云端.*控制权.*WordPress/i,
     })
   ).toBeVisible();
-  await expect(page.getByText(/Public entry is operational|公开入口运行正常/i)).toBeVisible();
+  await expect(
+    page.getByText(/Website and Portal API entry are operational|官网与服务中心 API 入口正常/i)
+  ).toBeVisible();
 
   await expect(
     page.getByRole('link', {
@@ -121,7 +123,7 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
 
   await expect(
     page.getByRole('heading', {
-      name: /Start with one site.*Scale as usage grows|从一个站点开始.*按使用规模升级/i,
+      name: /Start with one site.*Scale as usage grows|从一个站点开始.*按需升级/i,
     })
   ).toBeVisible();
   await expect(page.getByText('¥').first()).toBeVisible();
@@ -152,7 +154,7 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
     page.getByRole('heading', {
-      name: /Start with one site.*Scale as usage grows|从一个站点开始.*按使用规模升级/i,
+      name: /Start with one site.*Scale as usage grows|从一个站点开始.*按需升级/i,
     })
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Pro plan details|Pro 套餐详情/i })).toHaveAttribute(
@@ -203,7 +205,11 @@ test('public status explains impact and offers a fresh check', async ({ page }) 
   });
 
   await page.goto('/status');
-  await expect(page.getByRole('heading', { name: /Public entry is operational|公开入口运行正常/i })).toBeVisible();
+  await expect(
+    page.getByRole('heading', {
+      name: /Website and Portal API entry are operational|官网与服务中心 API 入口正常/i,
+    })
+  ).toBeVisible();
   await expect(page.getByText(/no public-entry outage detected|未发现公开入口故障/i)).toBeVisible();
   await expect(page.getByRole('button', { name: /Check again|重新检查/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Sign in to view|登录后查看/i }).first()).toBeVisible();

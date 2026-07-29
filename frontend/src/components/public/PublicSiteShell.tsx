@@ -111,9 +111,9 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 sm:grid-cols-[1fr_auto] lg:px-8">
           <div>
             <p className="text-sm font-extrabold tracking-[0.18em]">NPCINK AI CLOUD</p>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 [text-wrap:pretty] dark:text-slate-400">
               {zh
-                ? '为 WordPress 提供托管 AI 运行、用量与服务诊断。内容最终确认与发布仍由站点管理员完成。'
+                ? '为 WordPress 提供托管 AI 运行、用量记录和服务诊断。内容确认与发布仍由站点管理员完成。'
                 : 'Hosted AI runtime, usage evidence, and service diagnostics for WordPress. Site owners retain final review and publishing control.'}
             </p>
           </div>

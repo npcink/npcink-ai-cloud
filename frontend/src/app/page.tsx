@@ -43,12 +43,12 @@ export default function HomePage() {
         >
           <div className="absolute inset-0 opacity-60 [background-image:linear-gradient(rgba(255,255,255,.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.045)_1px,transparent_1px)] [background-size:56px_56px]" />
           <div className="absolute -right-24 top-24 h-80 w-80 rounded-full bg-[#2357ff]/35 blur-3xl" />
-          <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 py-12 sm:py-16 lg:min-h-[610px] lg:grid-cols-[1.1fr_.9fr] lg:px-8 lg:py-20">
+          <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 py-12 sm:py-16 lg:min-h-[610px] lg:grid-cols-[1.2fr_.8fr] lg:px-8 lg:py-20">
             <div>
               <p className="public-home-enter text-xs font-bold uppercase tracking-[0.3em] text-[#9eb3ff]">
                 WordPress × Hosted AI Runtime
               </p>
-              <h1 className="public-home-enter public-home-enter-delay-1 mt-6 max-w-4xl text-[2.8rem] font-black leading-[1.02] tracking-[-0.055em] sm:text-6xl lg:text-[4.5rem]">
+              <h1 className="public-home-enter public-home-enter-delay-1 mt-6 max-w-4xl text-[2.65rem] font-black leading-[1.08] tracking-[-0.04em] sm:text-[3.5rem]">
                 {zh ? (
                   <>
                     <span className="block">让 AI 在云端运行，</span>
@@ -134,8 +134,8 @@ export default function HomePage() {
               <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#2357ff]">
                 {zh ? '清晰边界' : 'Clear boundary'}
               </p>
-              <h2 className="mt-5 text-4xl font-black leading-tight tracking-[-0.04em]">
-                {zh ? '一条运行链，两边各自负责。' : 'One runtime path. Clear ownership on both sides.'}
+              <h2 className="mt-5 text-3xl font-black leading-tight tracking-[-0.035em] sm:text-4xl">
+                {zh ? '一条运行链，各负其责。' : 'One runtime path. Clear ownership on both sides.'}
               </h2>
               <p className="mt-5 max-w-xl leading-7 text-slate-600 dark:text-slate-300">
                 {zh
@@ -182,9 +182,9 @@ export default function HomePage() {
               <h2 className="mt-4 max-w-3xl text-3xl font-black leading-tight tracking-[-0.035em] sm:text-4xl">
                 {zh ? '免费接入托管运行，控制权仍留在 WordPress。' : 'Start hosted execution for free. Keep control in WordPress.'}
               </h2>
-              <p className="mt-4 max-w-2xl leading-7 text-slate-600 dark:text-slate-300">
+              <p className="mt-4 max-w-3xl leading-7 text-slate-600 [text-wrap:pretty] dark:text-slate-300">
                 {zh
-                  ? '注册页支持 QQ 快捷登录和邮箱验证码；账号创建后，从 WordPress Addon 完成连接即可激活 Free 服务。'
+                  ? '支持 QQ 快捷登录和邮箱验证码；创建账号后，从 WordPress Addon 连接即可激活 Free 服务。'
                   : 'Registration supports QQ quick sign-in and email codes. Connect from the WordPress addon afterward to activate Free service.'}
               </p>
             </div>
