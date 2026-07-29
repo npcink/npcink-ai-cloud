@@ -48,7 +48,7 @@ export default function HomePage() {
               <p className="public-home-enter text-xs font-bold uppercase tracking-[0.3em] text-[#9eb3ff]">
                 WordPress × Hosted AI Runtime
               </p>
-              <h1 className="public-home-enter public-home-enter-delay-1 mt-6 max-w-4xl text-[2.65rem] font-black leading-[1.08] tracking-[-0.04em] sm:text-[3.5rem]">
+              <h1 className="public-home-enter public-home-enter-delay-1 mt-6 max-w-4xl text-[2.65rem] font-black leading-[1.08] tracking-[-0.04em] sm:text-5xl xl:text-[3.5rem]">
                 {zh ? (
                   <>
                     <span className="block">让 AI 在云端运行，</span>
@@ -111,7 +111,7 @@ export default function HomePage() {
         >
           <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
             <PublicStatusSummary />
-            <div className="mt-7 grid border-l border-t border-slate-200 dark:border-white/10 md:grid-cols-3">
+            <div className="mt-7 grid border-l border-t border-slate-200 dark:border-white/10 lg:grid-cols-3">
               {trustFacts.map((item) => (
                 <article
                   key={item.index}
@@ -129,7 +129,7 @@ export default function HomePage() {
         </section>
 
         <section id="boundary" className="bg-[#e9edff] dark:bg-[#101c32]">
-          <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 lg:grid-cols-[.72fr_1.28fr] lg:px-8 lg:py-20">
+          <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 lg:px-8 lg:py-20 xl:grid-cols-[.72fr_1.28fr]">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#2357ff]">
                 {zh ? '清晰边界' : 'Clear boundary'}
@@ -174,13 +174,13 @@ export default function HomePage() {
           data-home-final-cta
           className="border-b border-slate-200 bg-white dark:border-white/10 dark:bg-[#0d1625]"
         >
-          <div className="mx-auto grid max-w-7xl items-center gap-8 px-5 py-16 lg:grid-cols-[1fr_auto] lg:px-8 lg:py-20">
+          <div className="mx-auto grid max-w-7xl items-center gap-8 px-5 py-16 lg:px-8 lg:py-20 xl:grid-cols-[1fr_auto]">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#2357ff]">
                 {zh ? '从一个站点开始' : 'Start with one site'}
               </p>
               <h2 className="mt-4 max-w-3xl text-3xl font-black leading-tight tracking-[-0.035em] sm:text-4xl">
-                {zh ? '免费接入托管运行，控制权仍留在 WordPress。' : 'Start hosted execution for free. Keep control in WordPress.'}
+                {zh ? '免费接入托管运行，控制权仍留在 WordPress。' : 'Start free. Keep control in WordPress.'}
               </h2>
               <p className="mt-4 max-w-3xl leading-7 text-slate-600 [text-wrap:pretty] dark:text-slate-300">
                 {zh
@@ -188,7 +188,7 @@ export default function HomePage() {
                   : 'Registration supports QQ quick sign-in and email codes. Connect from the WordPress addon afterward to activate Free service.'}
               </p>
             </div>
-            <div className="flex flex-col items-start gap-4 lg:items-end">
+            <div className="flex flex-col items-start gap-4 xl:items-end">
               <Link
                 href="/portal/register"
                 className="inline-flex h-12 min-w-40 items-center justify-center bg-[#2357ff] px-6 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#4773ff]"

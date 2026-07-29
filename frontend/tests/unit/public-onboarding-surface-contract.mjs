@@ -72,6 +72,16 @@ assert.match(help, /<summary[\s\S]*item\.question/, 'each FAQ question must be t
 assert.doesNotMatch(help, /<details[^>]* open/, 'help FAQs must be collapsed by default');
 assert.match(publicShell, /PUBLIC_HEADER_NAV_ITEMS/, 'desktop and mobile navigation must use the shared header config');
 assert.match(publicShell, /PUBLIC_FOOTER_NAV_ITEMS/, 'footer navigation must use the shared footer config');
+assert.match(
+  publicShell,
+  /data-public-desktop-nav[\s\S]*lg:flex/,
+  'tablet widths must keep the compact public navigation instead of squeezing desktop links'
+);
+assert.match(
+  publicShell,
+  /data-public-mobile-menu[\s\S]*lg:hidden/,
+  'the compact public navigation trigger must remain available below the desktop breakpoint'
+);
 assert.doesNotMatch(publicShell, /const navItems =/, 'public navigation must not drift into a page-local menu');
 assert.doesNotMatch(
   publicNavigation,
