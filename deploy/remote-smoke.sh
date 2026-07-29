@@ -512,19 +512,61 @@ if [ "${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}" = "1" ]; then
 else
 	http_request "GET" "${BASE_URL%/}/" ""
 	assert_status "${HTTP_STATUS}" "200" "buyer-facing home page should succeed"
-	assert_body_contains "${HTTP_BODY}" "_next/" "buyer-facing home page should be served by Next frontend"
+	assert_body_contains "${HTTP_BODY}" "WordPress × Hosted AI Runtime" "buyer-facing home page should contain the current product marker"
 
 	http_request "GET" "${BASE_URL%/}/portal/login" ""
 	assert_status "${HTTP_STATUS}" "200" "portal login page should succeed"
-	assert_body_contains "${HTTP_BODY}" "_next/" "portal login page should be served by Next frontend"
+	assert_body_contains "${HTTP_BODY}" "连接后激活 Free" "portal login page should contain the current activation contract"
+
+	http_request "GET" "${BASE_URL%/}/help" ""
+	assert_status "${HTTP_STATUS}" "200" "public help page should succeed"
+	assert_body_contains "${HTTP_BODY}" "从这里开始" "public help page should contain the current help marker"
+
+	http_request "GET" "${BASE_URL%/}/status" ""
+	assert_status "${HTTP_STATUS}" "200" "public status page should succeed"
+	assert_body_contains "${HTTP_BODY}" "服务状态" "public status page should contain the current status marker"
+
+	http_request "GET" "${BASE_URL%/}/privacy" ""
+	assert_status "${HTTP_STATUS}" "200" "public privacy page should succeed"
+	assert_body_contains "${HTTP_BODY}" "隐私政策" "public privacy page should contain the current privacy marker"
+
+	http_request "GET" "${BASE_URL%/}/terms" ""
+	assert_status "${HTTP_STATUS}" "200" "canonical public terms page should succeed"
+	assert_body_contains "${HTTP_BODY}" "服务条款" "canonical public terms page should contain the current terms marker"
+
+	http_request "GET" "${BASE_URL%/}/robots.txt" ""
+	assert_status "${HTTP_STATUS}" "200" "robots.txt should succeed"
+	assert_body_contains "${HTTP_BODY}" "Sitemap:" "robots.txt should advertise the sitemap"
+
+	http_request "GET" "${BASE_URL%/}/sitemap.xml" ""
+	assert_status "${HTTP_STATUS}" "200" "sitemap.xml should succeed"
+	assert_body_contains "${HTTP_BODY}" "<loc>" "sitemap.xml should contain public URLs"
+
+	http_request "GET" "${BASE_URL%/}/icon.svg" ""
+	assert_status "${HTTP_STATUS}" "200" "public icon should succeed"
+	assert_body_contains "${HTTP_BODY}" "<svg" "public icon should contain SVG markup"
+
+	http_request "GET" "${BASE_URL%/}/opengraph-image" ""
+	assert_status "${HTTP_STATUS}" "200" "Open Graph image should succeed"
+
+	http_request "GET" "${BASE_URL%/}/favicon.ico" ""
+	assert_status "${HTTP_STATUS}" "200" "favicon should succeed"
+
+	http_request "GET" "${BASE_URL%/}/api/health" ""
+	assert_status "${HTTP_STATUS}" "200" "frontend health should succeed"
+	assert_json_equals "${HTTP_BODY}" "status" "healthy" "frontend health should verify the website and Portal API entry"
+	assert_json_non_empty "${HTTP_BODY}" "revision" "frontend health should identify the exact source revision"
+	FRONTEND_REVISION="$(json_read_path "${HTTP_BODY}" "revision")"
+	printf '%s' "${FRONTEND_REVISION}" | grep -Eq '^[0-9a-f]{40}$' ||
+		fail "frontend health revision must be a full hexadecimal Git revision"
 fi
 
 if [ "${SKIP_TERMS_CHECKS}" = "1" ]; then
 	ok "Skipping static terms checks because --skip-terms-checks was set"
 else
-	http_request "GET" "${BASE_URL%/}/terms" ""
-	assert_status "${HTTP_STATUS}" "200" "terms index should be served by the production static path without exposing internal proxy redirects"
-	assert_body_contains "${HTTP_BODY}" "Npcink Cloud Legal Documents" "terms index should include the expected title"
+	http_request "GET" "${BASE_URL%/}/terms/index.html" ""
+	assert_status "${HTTP_STATUS}" "200" "legacy terms index should remain available for existing external links"
+	assert_body_contains "${HTTP_BODY}" "Npcink Cloud Legal Documents" "legacy terms index should include the expected title"
 
 	http_request "GET" "${BASE_URL%/}/terms/en/terms.html" ""
 	assert_status "${HTTP_STATUS}" "200" "English terms page should be served by the production static path"

@@ -107,6 +107,8 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert "--max-time 120" in source
     assert "--speed-time 20" in source
     assert "source_dirty_paths" in source
+    assert 'export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"' in source
+    assert '"${compose[@]}" up -d --no-build --pull never frontend' in source
     assert "acceptance_state" in source
     assert "promotion_pr" in source
     assert "deployed_at_utc" in source
@@ -492,6 +494,11 @@ def test_m4_overlay_is_loopback_only_and_starts_the_complete_runtime() -> None:
     assert "npcink-ai-cloud-runtime:m4-dev" in overlay
     assert "npcink-ai-cloud-frontend:m4-dev" in overlay
     assert "NEXT_PUBLIC_ENV: development" in overlay
+    assert (
+        "NPCINK_CLOUD_FRONTEND_REVISION: "
+        "${NPCINK_CLOUD_FRONTEND_REVISION:-unknown}"
+        in overlay
+    )
     assert (
         "NEXT_PUBLIC_MINI_DEV_HOST_ALLOWLIST: "
         "${NPCINK_CLOUD_M4_MINI_DEV_HOST_ALLOWLIST:-cloud.mqzjmax.top,127.0.0.1,localhost}"

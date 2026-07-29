@@ -1157,6 +1157,7 @@ acceptance_state="${16}"
 promotion_pr="${17}"
 source_transfer_mode="${18}"
 source_relay_url="${19}"
+export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"
 
 case "${acceptance_state}" in
 	candidate)
@@ -1770,6 +1771,9 @@ elif [ "${mode}" = "deploy" ]; then
 		postgres redis api frontend proxy worker callback-worker ops-worker
 else
 	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
+	# The development frontend live-mounts source, but its source-revision
+	# environment still requires a recreate for each candidate sync.
+	"${compose[@]}" up -d --no-build --pull never frontend
 	"${compose[@]}" restart worker callback-worker ops-worker
 	proxy_id="$("${compose[@]}" ps -q proxy)"
 	if [ -n "${proxy_id}" ]; then

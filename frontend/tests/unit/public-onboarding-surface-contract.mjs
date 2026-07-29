@@ -52,6 +52,16 @@ assert.match(
 );
 assert.match(health, /status: 'degraded'/, 'public health must fail visibly when the Cloud API entry is unavailable');
 assert.match(health, /checked_at:/, 'machine health must expose its check time');
+assert.match(
+  health,
+  /NPCINK_CLOUD_FRONTEND_REVISION[\s\S]*revision/,
+  'machine health must expose the exact frontend source revision'
+);
+assert.match(
+  health,
+  /X-Npcink-Frontend-Revision/,
+  'machine health must return the frontend source revision as an inspectable response header'
+);
 assert.match(home, /<PublicStatusSummary/, 'home must expose a public service-status summary');
 assert.match(publicStatus, /fetch\('\/api\/health'/, 'home status must reuse the minimal public health endpoint');
 assert.match(publicStatus, /AbortSignal\.timeout\(5_000\)/, 'home status must not remain checking forever');
