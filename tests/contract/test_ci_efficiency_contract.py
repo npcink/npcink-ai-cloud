@@ -14,6 +14,7 @@ BACKEND_GATE = ROOT / "scripts" / "check-pr-backend-gate.sh"
 WEIGHT_REFRESH = ROOT / "scripts" / "refresh-pytest-duration-weights.sh"
 BALANCE_REPORT = ROOT / "scripts" / "report-pytest-shard-balance.py"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 
 
 def _classify(*paths: str) -> dict[str, str]:
@@ -78,6 +79,13 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "docs_only": "false",
         "frontend_e2e_required": "true",
     }
+
+
+def test_codeql_runs_for_master_and_production_pull_requests() -> None:
+    workflow = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "push:\n    branches: [master, production]" in workflow
+    assert "pull_request:\n    branches: [master, production]" in workflow
 
 
 def test_ci_change_classifier_selects_only_relevant_frontend_e2e_paths() -> None:
