@@ -8,7 +8,7 @@ test('package management workbench contains PC keyboard focus and restores the i
   await page.goto('/admin/plans');
 
   const proRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Pro' });
-  const manageButton = proRow.getByRole('button', { name: /Manage package|管理套餐/i });
+  const manageButton = proRow.getByRole('button', { name: /^Manage Pro$|^管理 Pro$/i });
   await manageButton.click();
   const editor = page.getByRole('dialog', { name: /Manage Pro|管理 Pro/i });
   await expect(editor).toBeVisible();

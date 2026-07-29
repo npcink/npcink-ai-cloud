@@ -181,7 +181,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/plans/pro"]')).toHaveCount(0);
   await expect(page.getByText(/checkout|buy points|storefront/i)).toHaveCount(0);
 
-  const freeManageButton = freePackageRow.getByRole('button', { name: /Manage package|管理套餐/i });
+  const freeManageButton = freePackageRow.getByRole('button', { name: /^Manage Free$|^管理 Free$/i });
   await freeManageButton.click();
   const packageEditor = page.getByRole('dialog', { name: /Manage Free|管理 Free/i });
   await expect(packageEditor).toBeVisible();
@@ -246,7 +246,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
 
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
   const proPackageRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Pro' });
-  await proPackageRow.getByRole('button', { name: /Manage package|管理套餐/i }).click();
+  await proPackageRow.getByRole('button', { name: /^Manage Pro$|^管理 Pro$/i }).click();
   const packageEditor = page.getByRole('dialog', { name: /Manage Pro|管理 Pro/i });
   await expect(packageEditor.getByRole('button', { name: /Restore .* suggested values|恢复 .* 建议值/i })).toBeVisible();
   await expect(packageEditor.getByRole('button', { name: /Restore saved values|还原当前已保存值|還原目前已儲存值/i })).toBeVisible();

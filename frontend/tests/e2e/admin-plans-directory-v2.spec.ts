@@ -50,7 +50,7 @@ test('package directory keeps filters and modal focus while retaining the catalo
   await expect(page).toHaveURL(/q=Free/);
   await expect(rows).toHaveCount(1);
 
-  const manage = page.getByRole('button', { name: /^Manage package$|^管理套餐$/i });
+  const manage = page.getByRole('button', { name: /^Manage Free$|^管理 Free$/i });
   await manage.focus();
   await manage.press('Enter');
   await expect(page).toHaveURL(/focus=free/);
@@ -81,9 +81,12 @@ test('package management combines readable limits, descriptions, and editing whi
 
   await expect(page.getByRole('heading', { name: /Create package record|创建套餐记录/i })).toHaveCount(0);
   const freeRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
-  await expect(freeRow.getByRole('button', { name: 'Free', exact: true })).toBeVisible();
-  await expect(freeRow.getByRole('link', { name: /Open subscriptions.*Free|打开订阅.*Free/i })).toHaveAttribute('href', '/admin/subscriptions?plan_id=free');
-  await freeRow.getByRole('button', { name: /^Manage package$|^管理套餐$/i }).click();
+  await expect(freeRow.getByText('Free', { exact: true })).toBeVisible();
+  await expect(freeRow.getByText('free', { exact: true })).toHaveCount(0);
+  const freeSubscriptions = freeRow.getByRole('link', { name: /Open subscriptions.*Free|打开订阅.*Free/i });
+  await expect(freeSubscriptions).toHaveAttribute('href', '/admin/subscriptions?plan_id=free');
+  await expect(freeSubscriptions).toContainText('›');
+  await freeRow.getByRole('button', { name: /^Manage Free$|^管理 Free$/i }).click();
   const inspector = page.locator('[data-ui="admin-workbench-dialog"]');
   await expect(page).toHaveURL(/focus=free/);
   await expect(inspector.getByRole('heading', { name: /Manage Free|管理 Free/i })).toBeVisible();
