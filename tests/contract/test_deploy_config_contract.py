@@ -2167,6 +2167,10 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
         in frontend_dockerfile
     )
     assert "pnpm install --frozen-lockfile --filter frontend..." in frontend_dockerfile
+    assert "ARG NPCINK_CLOUD_SOURCE_REVISION=unknown" in frontend_dockerfile
+    assert "ENV NPCINK_CLOUD_FRONTEND_REVISION=${NPCINK_CLOUD_SOURCE_REVISION}" in (
+        frontend_dockerfile
+    )
 
     assert "CLOUD_API_BASE_URL: process.env.CLOUD_API_BASE_URL" not in next_config
     assert "CLOUD_PUBLIC_BASE_URL: process.env.CLOUD_PUBLIC_BASE_URL" not in next_config
@@ -2182,6 +2186,8 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert 'if [ "${NPCINK_CLOUD_SKIP_FRONTEND_IMAGE:-0}" = "1" ]; then' in (remote_smoke_script)
     assert "Skipping frontend page checks" in remote_smoke_script
     assert "buyer-facing home page should succeed" in remote_smoke_script
+    assert "WordPress × Hosted AI Runtime" in remote_smoke_script
+    assert "frontend health should identify the exact source revision" in remote_smoke_script
 
     assert "upstream npcink_ai_cloud_frontend" not in nginx_prod_conf
     assert "resolver 127.0.0.11" in nginx_prod_conf
@@ -2232,10 +2238,29 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "proxy_pass http://npcink_ai_cloud_api;" in nginx_prod_conf
     assert "./site:/usr/share/nginx/html/npcink-site:ro" in runtime_compose_text
     assert 'git -C "${CLOUD_DIR}" archive HEAD --' in bundle_script
+    assert '--build-arg "NPCINK_CLOUD_SOURCE_REVISION=${REVISION}"' in bundle_script
     archive_paths_block = bundle_script.split("ARCHIVE_PATHS=(", 1)[1].split("\n)", 1)[0]
     assert "\n\tsite\n" in archive_paths_block
-    assert "location = /terms" in nginx_prod_conf
-    assert "try_files /terms/index.html =404;" in nginx_prod_conf
+    for public_frontend_path in (
+        "/help",
+        "/privacy",
+        "/status",
+        "/terms",
+        "/robots.txt",
+        "/sitemap.xml",
+        "/icon.svg",
+        "/opengraph-image",
+        "/favicon.ico",
+    ):
+        public_block = nginx_prod_conf.split(
+            f"location = {public_frontend_path} {{", 1
+        )[1].split("\n    }", 1)[0]
+        assert "proxy_pass http://$npcink_ai_cloud_frontend;" in public_block
+    for canonical_public_path in ("/help", "/privacy", "/status", "/terms"):
+        slash_block = nginx_prod_conf.split(
+            f"location = {canonical_public_path}/ {{", 1
+        )[1].split("\n    }", 1)[0]
+        assert f"return 308 {canonical_public_path};" in slash_block
     assert "location /terms/" in nginx_prod_conf
     assert "root /usr/share/nginx/html/npcink-site;" in nginx_prod_conf
     assert "./site:/usr/share/nginx/html/npcink-site:ro" in compose_text
@@ -2243,6 +2268,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "/terms/en/terms.html" in remote_smoke_script
     assert "/terms/zh/terms.html" in remote_smoke_script
     assert "/terms/styles.css" in remote_smoke_script
+    assert "/terms/index.html" in remote_smoke_script
     assert "--skip-terms-checks" in remote_smoke_script
     assert "Npcink Cloud Legal Documents" in remote_smoke_script
     assert "data.result.images" in remote_smoke_script
@@ -2365,7 +2391,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "release:junit-timing" in package_json
     assert 'CURRENT_LINK="${REMOTE_DIR}/current"' in static_terms_deploy_script
     assert 'tar czf "${TERMS_BUNDLE}" -C "${ROOT_DIR}/site" terms' in (static_terms_deploy_script)
-    assert 'assert_public_static_page "/terms"' in static_terms_deploy_script
+    assert 'assert_public_static_page "/terms/index.html"' in static_terms_deploy_script
     assert "Static terms deploy completed" in static_terms_deploy_script
 
     assert "name: Production Maintenance" in maintenance_workflow

@@ -150,7 +150,7 @@ if [ -n "${FAKE_STATIC_TERMS_CURL_FAIL_PATH:-}" ] &&
 fi
 if [ -n "${output}" ]; then
     case "${url}" in
-        */terms|*/terms/) printf '%s\n' 'Npcink Cloud Legal Documents' >"${output}" ;;
+        */terms/index.html) printf '%s\n' 'Npcink Cloud Legal Documents' >"${output}" ;;
         */terms/en/terms.html) printf '%s\n' 'Npcink Cloud Terms of Service' >"${output}" ;;
         */terms/zh/terms.html) printf '%s\n' 'Npcink Cloud 服务条款' >"${output}" ;;
         */terms/styles.css) printf '%s\n' 'site-header' >"${output}" ;;
