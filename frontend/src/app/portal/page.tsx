@@ -188,17 +188,19 @@ export default function PortalPage() {
       href: selectedSiteRecordHref,
       action: t('portal.home.onboarding_site_action', {}, 'View site'),
     },
-    {
-      key: 'package',
-      done: Boolean(currentSubscription?.status === 'active' || hasPackageLabel),
-      title: t('portal.home.onboarding_package_title', {}, 'Review Free package'),
-      detail:
-        currentSubscription?.status === 'active'
-          ? t('portal.home.onboarding_package_ready', {}, 'The current package is available.')
-          : t('portal.home.onboarding_package_needed', {}, 'Review the current package and what remains this period.'),
-      href: '/portal/billing',
-      action: t('portal.home.onboarding_package_action', {}, 'View package'),
-    },
+    ...(isSelectedSiteConnected
+      ? [{
+          key: 'package',
+          done: Boolean(currentSubscription?.status === 'active' || hasPackageLabel),
+          title: t('portal.home.onboarding_package_title', {}, 'Review Free package'),
+          detail:
+            currentSubscription?.status === 'active'
+              ? t('portal.home.onboarding_package_ready', {}, 'The current package is available.')
+              : t('portal.home.onboarding_package_needed', {}, 'Review the current package and what remains this period.'),
+          href: '/portal/billing',
+          action: t('portal.home.onboarding_package_action', {}, 'View package'),
+        }]
+      : []),
   ];
   const requiredAttentionItems = setupChecklistItems.filter((item) => !item.done);
   const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0;

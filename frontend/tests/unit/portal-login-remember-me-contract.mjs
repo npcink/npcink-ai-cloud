@@ -69,8 +69,8 @@ assert.match(
 
 assert.match(
   loginSource,
-  /if \(isLoading \|\| isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'the login form must remain hidden while the session is resolving or redirecting'
+  /if \(isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
+  'the login form must stay available during session discovery and hide only after authentication is confirmed'
 );
 
 assert.match(

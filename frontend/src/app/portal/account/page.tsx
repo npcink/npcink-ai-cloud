@@ -520,8 +520,13 @@ function AccountPageContent() {
 
 export default function PortalAccountPage() {
   return (
-    <Suspense fallback={<PortalLoadingState message="Loading Account Center" />}>
+    <Suspense fallback={<AccountPageFallback />}>
       <AccountPageContent />
     </Suspense>
   );
+}
+
+function AccountPageFallback() {
+  const { t } = useLocale();
+  return <PortalLoadingState message={t('common.loading', {}, 'Loading...')} />;
 }

@@ -22,4 +22,23 @@ test('public navigation is deduplicated and help FAQs disclose on demand', async
   await firstQuestion.locator('summary').click();
   await expect(firstQuestion).toHaveAttribute('open', '');
   await expect(firstAnswer).toBeVisible();
+  await expect(firstAnswer).not.toContainText(/development environment|开发环境/i);
+  await expect(firstAnswer).toContainText(
+    /published public support channel|已发布的公开支持渠道/i
+  );
+});
+
+test('unknown public routes provide localized recovery destinations', async ({ page }) => {
+  const response = await page.goto('/this-page-does-not-exist');
+
+  expect(response?.status()).toBe(404);
+  const recoveryMain = page.locator('#main-content');
+  await expect(
+    recoveryMain.getByRole('heading', { name: /This page could not be found|没有找到这个页面/i })
+  ).toBeVisible();
+  await expect(recoveryMain.getByRole('link', { name: /Return home|返回首页/i })).toBeVisible();
+  await expect(recoveryMain.getByRole('link', { name: /Open Help|打开帮助中心/i })).toBeVisible();
+  await expect(
+    recoveryMain.getByRole('link', { name: /Sign in to the Portal|登录服务中心/i })
+  ).toBeVisible();
 });
