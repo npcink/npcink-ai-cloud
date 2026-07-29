@@ -61,6 +61,11 @@ from app.domain.commercial.identity import (
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.mixins._billing_mixin import (
+    COMMERCIAL_COVERED_SUBSCRIPTION_STATUSES,
+    DEFAULT_FREE_PLAN_ID,
+    DEFAULT_FREE_PLAN_KIND,
+    DEFAULT_PLAN_TIER_ID,
+    PLAN_TIER_REGISTRY,
     SHADOW_PRICING_TARIFF_REGISTRY,
     SHADOW_PRICING_TARIFF_VERSION,
 )
@@ -705,11 +710,36 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
 
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            principals = repository.list_principals(
-                status=normalized_status or None,
-                limit=None,
+            tier_package_aliases = [
+                (
+                    tier_id,
+                    str(template.get("package_alias") or template.get("label") or tier_id.title()),
+                )
+                for tier_id, template in PLAN_TIER_REGISTRY.items()
+            ]
+            directory_page = repository.query_admin_portal_user_directory_page(
+                q=normalized_q,
+                source=normalized_source,
+                status=normalized_status,
+                package_alias=normalized_package,
+                qq_bound=qq_bound,
+                offset=normalized_offset,
+                limit=resolved_limit,
+                covered_subscription_statuses=COMMERCIAL_COVERED_SUBSCRIPTION_STATUSES,
+                free_plan_id=DEFAULT_FREE_PLAN_ID,
+                free_plan_kind=DEFAULT_FREE_PLAN_KIND,
+                tier_package_aliases=tier_package_aliases,
+                default_tier_package_alias=str(
+                    PLAN_TIER_REGISTRY[DEFAULT_PLAN_TIER_ID].get("package_alias")
+                    or PLAN_TIER_REGISTRY[DEFAULT_PLAN_TIER_ID].get("label")
+                    or DEFAULT_PLAN_TIER_ID.title()
+                ),
             )
-            principal_ids = [str(principal.principal_id or "") for principal in principals]
+            principal_ids = list(directory_page["principal_ids"])
+            principals = repository.list_principals(
+                principal_ids=principal_ids,
+                limit=resolved_limit,
+            )
             memberships = repository.list_account_user_memberships(
                 principal_ids=principal_ids,
                 statuses=None,
@@ -785,7 +815,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 site,
             )
             if normalized_source != "all" and source_value != normalized_source:
-                continue
+                raise RuntimeError("portal user directory source projection drift")
             account_subscriptions = (
                 subscriptions_by_account.get(str(getattr(account, "account_id", "") or ""), [])
                 if account is not None
@@ -809,7 +839,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ]
             is_qq_bound = bool(active_qq_bindings)
             if qq_bound is not None and is_qq_bound is not qq_bound:
-                continue
+                raise RuntimeError("portal user directory QQ projection drift")
             package_blob = " ".join(
                 [
                     str(package_summary.get("package_alias") or ""),
@@ -818,7 +848,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ]
             ).lower()
             if normalized_package and normalized_package not in package_blob:
-                continue
+                raise RuntimeError("portal user directory package projection drift")
             site_url = str(getattr(site, "site_url", "") or "").strip()
             search_blob = " ".join(
                 [
@@ -833,7 +863,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ]
             ).lower()
             if normalized_q and normalized_q not in search_blob:
-                continue
+                raise RuntimeError("portal user directory search projection drift")
             latest_qq_login_at = next(
                 (
                     getattr(binding, "last_login_at", None)
@@ -877,13 +907,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             }
             items.append(item)
 
-        summary_counts = Counter(str(item.get("status") or "") for item in items)
-        qq_bound_total = sum(1 for item in items if bool(item.get("qq_bound")))
-        self_registered_total = sum(
-            1 for item in items if str(item.get("source") or "") == "portal_self_registration"
-        )
-        filtered_total = len(items)
-        items = items[normalized_offset : normalized_offset + resolved_limit]
+        filtered_total = directory_page["total"]
+        summary = directory_page["summary"]
         return {
             "filters": {
                 "q": normalized_q,
@@ -897,10 +922,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "items": items,
             "total": filtered_total,
             "summary": {
-                "active": int(summary_counts.get(PRINCIPAL_STATUS_ACTIVE, 0)),
-                "disabled": int(summary_counts.get(PRINCIPAL_STATUS_DISABLED, 0)),
-                "qq_bound": qq_bound_total,
-                "self_registered": self_registered_total,
+                "active": int(summary.get("active") or 0),
+                "disabled": int(summary.get("disabled") or 0),
+                "qq_bound": int(summary.get("qq_bound") or 0),
+                "self_registered": int(summary.get("self_registered") or 0),
             },
             "pagination": {
                 "offset": normalized_offset,

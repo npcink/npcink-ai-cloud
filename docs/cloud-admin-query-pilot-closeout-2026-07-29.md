@@ -127,21 +127,31 @@ The filtered-empty copy defect found in that pass has a focused Playwright
 assertion in the closeout change and requires candidate/runtime revalidation
 before that follow-up revision is accepted.
 
-## 6. Known Limit And Required Next Order
+## 6. Resolved Backend Prerequisite And Required Next Order
 
-The Portal users backend currently materializes too much directory state before
-applying filters, count, and pagination. Expanding the frontend pattern before
-fixing that seam would improve browser lifecycle ownership while leaving the
-larger data-path risk in place.
+The Portal users backend no longer materializes the complete principal,
+membership, QQ binding, account, site, and subscription directory before
+pagination. The repository now:
+
+- selects the preferred membership, site, primary subscription, and active QQ
+  binding projection in SQL;
+- applies source, status, package, QQ, and escaped substring filters in SQL;
+- computes filtered totals and summary counts in SQL;
+- orders principals by `created_at DESC, principal_id ASC`;
+- returns only the requested principal IDs for current-page detail hydration.
+
+The API response shape and existing filter semantics remain unchanged. A
+focused regression creates three Portal users and proves that a one-row page
+hydrates one principal while still returning the three-row filtered total. It
+also covers stable offset pagination, site search, package filtering, QQ
+filtering, and literal SQL wildcard characters.
 
 Required order:
 
-1. move Portal users filtering, total count, stable sorting, and pagination
-   into the repository query;
-2. prove API compatibility and relevant query-plan/index behavior;
-3. adopt Query-first in Support requests without visual redesign;
-4. reassess bundle cost, adapter/product-logic boundary, and behavior evidence;
-5. only then select one bounded form group for a React Hook Form pilot.
+1. keep PostgreSQL query-plan and index behavior in the M4 acceptance evidence;
+2. adopt Query-first in Support requests without visual redesign;
+3. reassess bundle cost, adapter/product-logic boundary, and behavior evidence;
+4. only then select one bounded form group for a React Hook Form pilot.
 
 Rollback remains revision-based. Neither the Query pilot nor this closeout
 requires a database migration, data rewrite, backend contract break, or
