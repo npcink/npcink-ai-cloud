@@ -420,16 +420,22 @@ Milestone A execution evidence is recorded in
 That inventory froze 58 Local image candidates. The operator subsequently
 confirmed that the cohort contains no sensitive information and approved a
 short-TTL Artifact pilot, avoiding public exposure of the loopback-only site.
-Read-only M4 resolution identified the exact `vision.ai` connection and three
-healthy Qwen3-Omni 30B candidates, but all candidate price fields are null.
-Charged execution therefore remains closed until trusted tariff or bounded
-call-ledger evidence is recorded.
+The initial read-only M4 resolution identified the exact `vision.ai`
+connection and three healthy Qwen3-Omni 30B candidates, but all candidate price
+fields were null. Charged execution remained closed at that checkpoint pending
+trusted tariff or bounded call-ledger evidence.
+
+The trusted-price and single-image compatibility gate is now satisfied by
+[MQZJ GPT-5.4 Mini Vision Validation — 2026-07-29](mqzj-gpt54-mini-vision-validation-2026-07-29.md).
+The controlled M4 call returned structured, attachment-matched evidence at an
+estimated USD `0.00205` using the operator-selected official OpenAI tariff.
 
 The remaining Milestone A actions are:
 
-1. obtain trusted price or bounded call-ledger evidence;
-2. recompute the corpus fingerprint and select the first 20 rows;
-3. run the bounded evidence pilot under the frozen rubric and CNY 50 cap.
+1. recompute the corpus fingerprint and select the first 20 rows;
+2. run the bounded evidence pilot under the frozen rubric and CNY 50 cap;
+3. record per-image relevance, attachment matching, latency, token usage, and
+   estimated cost before proposing persistent indexing.
 
 This preserves the current product priority, gets real cost and relevance
 evidence quickly, and leaves a cheap rollback: discard the corpus projection
