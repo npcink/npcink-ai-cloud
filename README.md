@@ -113,6 +113,7 @@ Operational references:
 - [docs/decisions/026-private-source-relay-transfer.md](docs/decisions/026-private-source-relay-transfer.md)
 - [docs/m4-source-relay-transfer-validation-2026-07-24.md](docs/m4-source-relay-transfer-validation-2026-07-24.md)
 - [docs/decisions/027-m4-package-proxy-streaming-cache.md](docs/decisions/027-m4-package-proxy-streaming-cache.md)
+- [docs/decisions/035-ephemeral-m4-frontend-preview-slots.md](docs/decisions/035-ephemeral-m4-frontend-preview-slots.md)
 - [docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 - [docs/ci-pytest-sharding-v1.md](docs/ci-pytest-sharding-v1.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
@@ -474,6 +475,20 @@ pnpm run check:fast
 pnpm run check:seam
 pnpm run check:perimeter
 ```
+
+Frontend-only visual tasks may use one of the bounded read-only M4 slots
+without replacing the primary candidate:
+
+```bash
+pnpm run m4:frontend:up -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:sync -- --slot 1 --owner <task-id>
+pnpm run m4:frontend:tunnel -- --slot 1 --auto
+pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
+```
+
+Slots share the accepted primary API and start no database, Redis, API, or
+worker copy. Use the primary M4 lane for backend, mutation, migration,
+dependency, proxy, and persistence work.
 
 - `test:contract`
   - contract truth for response shape and seam drift in `tests/contract/**`

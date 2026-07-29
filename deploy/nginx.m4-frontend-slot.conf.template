@@ -1,0 +1,139 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+log_format npcink_slot_uri_only '$remote_addr [$time_local] '
+                                '"$request_method $uri $server_protocol" '
+                                '$status $body_bytes_sent $request_time';
+
+server {
+    listen 8080 default_server;
+    server_name _;
+    access_log /var/log/nginx/access.log npcink_slot_uri_only;
+    client_max_body_size 2m;
+
+    resolver 127.0.0.11 ipv6=off valid=10s;
+    set $npcink_slot_api ${NPCINK_SLOT_API_HOST}:8000;
+    set $npcink_slot_frontend ${NPCINK_SLOT_FRONTEND_HOST}:3000;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+
+    location = /docs {
+        return 404;
+    }
+
+    location = /redoc {
+        return 404;
+    }
+
+    location = /health/ready {
+        return 404;
+    }
+
+    location = /health/operational-ready {
+        return 404;
+    }
+
+    location /internal/ {
+        return 404;
+    }
+
+    location = /health/live {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_api;
+    }
+
+    location /open/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_api;
+    }
+
+    location /static/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_api;
+    }
+
+    location /v1/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_api;
+    }
+
+    location /portal/v1/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_api;
+    }
+
+    # Session lifecycle is allowed so a designer can inspect authenticated
+    # screens. Product and service-plane mutations remain blocked below.
+    location = /admin/auth/login {
+        limit_except POST {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_frontend;
+    }
+
+    location = /api/portal/auth/code/request {
+        limit_except POST {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_frontend;
+    }
+
+    location = /api/portal/auth/code/verify {
+        limit_except POST {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_frontend;
+    }
+
+    location = /api/portal/logout {
+        limit_except POST {
+            deny all;
+        }
+        proxy_pass http://$npcink_slot_frontend;
+    }
+
+    location /_next/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass http://$npcink_slot_frontend;
+    }
+
+    location /api/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass http://$npcink_slot_frontend;
+    }
+
+    location / {
+        limit_except GET HEAD {
+            deny all;
+        }
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass http://$npcink_slot_frontend;
+    }
+}
