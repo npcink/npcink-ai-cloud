@@ -185,6 +185,16 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(page).toHaveURL(/q=Missing/);
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
   await expect(rows).toHaveCount(1);
+  await expect(page.locator('#support-request-inspector').getByRole('button', { name: /Update ticket|更新工单/i })).toBeDisabled();
+  await expect(page.locator('#support-request-inspector').getByRole('combobox', { name: /^Status$|^状态$/i })).toBeDisabled();
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toHaveCount(0);
+  await expect(page.locator('#support-request-inspector').getByRole('button', { name: /Update ticket|更新工单/i })).toBeEnabled();
+  await page.getByLabel(/Search tickets|搜索工单/i).fill('NeverMatches');
+  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  await expect(page.getByRole('heading', { name: /No tickets match these filters|没有符合当前筛选条件的工单/i })).toBeVisible();
+  await page.getByRole('button', { name: /Clear filters|清除筛选/i }).last().click();
+  await expect(rows).toHaveCount(4);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);

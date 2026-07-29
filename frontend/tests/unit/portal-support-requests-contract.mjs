@@ -10,7 +10,12 @@ const portalBillingPagePath = resolve(root, 'src/app/portal/billing/page.tsx');
 const portalPackagePanelPath = resolve(root, 'src/components/portal/PortalPackageChangePanel.tsx');
 const portalClientPath = resolve(root, 'src/lib/portal-client.ts');
 const adminLayoutPath = resolve(root, 'src/app/admin/layout.tsx');
-const adminSupportPagePath = resolve(root, 'src/app/admin/support-requests/page.tsx');
+const adminSupportPagePaths = [
+  resolve(root, 'src/app/admin/support-requests/page.tsx'),
+  resolve(root, 'src/features/admin/support-requests/api.ts'),
+  resolve(root, 'src/features/admin/support-requests/directory-model.ts'),
+  resolve(root, 'src/features/admin/support-requests/SupportRequestsWorkspace.tsx'),
+];
 const adminSupportDetailPagePath = resolve(root, 'src/app/admin/support-requests/[requestId]/page.tsx');
 const adminProxyPath = resolve(root, 'src/app/api/admin/[...path]/route.ts');
 const i18nPath = resolve(root, 'src/lib/i18n.ts');
@@ -22,7 +27,9 @@ const portalBillingPageSource = readFileSync(portalBillingPagePath, 'utf8');
 const portalPackagePanelSource = readFileSync(portalPackagePanelPath, 'utf8');
 const portalClientSource = readFileSync(portalClientPath, 'utf8');
 const adminLayoutSource = readFileSync(adminLayoutPath, 'utf8');
-const adminSupportPageSource = readFileSync(adminSupportPagePath, 'utf8');
+const adminSupportPageSource = adminSupportPagePaths
+  .map((path) => readFileSync(path, 'utf8'))
+  .join('\n');
 const adminSupportDetailPageSource = readFileSync(adminSupportDetailPagePath, 'utf8');
 const adminProxySource = readFileSync(adminProxyPath, 'utf8');
 const i18nSource = readFileSync(i18nPath, 'utf8');
@@ -158,12 +165,12 @@ assert.match(
 );
 assert.match(
   adminSupportPageSource,
-  /\/api\/admin\/support-requests\/\$\{encodeURIComponent\((?:item\.request_id|requestId)\)\}[\s\S]*method: 'PATCH'/,
+  /\/api\/admin\/support-requests\/\$\{encodeURIComponent\((?:item\.request_id|requestId|input\.requestId)\)\}[\s\S]*method: 'PATCH'/,
   'Admin support page must update ticket status through the admin proxy'
 );
 assert.match(
   adminSupportPageSource,
-  /params\.set\('topic', (?:appliedTopic|topic)\)[\s\S]*value=\{(?:appliedTopic|topicFilter)\}/,
+  /params\.set\('topic', (?:appliedTopic|topic|filters\.topic)\)[\s\S]*value=\{(?:appliedTopic|topicFilter)\}/,
   'Admin support queue must expose the backend topic filter'
 );
 assert.match(

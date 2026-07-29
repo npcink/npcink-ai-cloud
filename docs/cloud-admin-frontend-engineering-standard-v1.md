@@ -1,6 +1,7 @@
 # Cloud Admin Frontend Engineering Standard v1
 
-Status: active engineering standard; Stages 1 and 2 accepted.
+Status: active engineering standard; Stages 1 and 2 accepted; Stage 2 reuse
+candidate implemented.
 
 Date: 2026-07-29.
 
@@ -30,6 +31,10 @@ Current implementation evidence:
   hydrates related details only for that page.
 - The measured acceptance record is
   [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md).
+- `/admin/support-requests` is the bounded second Query-first queue. It reuses
+  the existing provider and adapter, keeps its accepted operator layout, and
+  makes retained or placeholder result scopes read-only. Its measured record
+  is [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md).
 - A headless table library and React Hook Form remain unadopted. They require
   their own burden-removal evidence; the Query pilot does not pre-approve them.
 
@@ -462,14 +467,14 @@ A new implementation session should:
 5. treat Portal users repository pagination as the accepted backend baseline
    and revalidate its response contract rather than restoring full-directory
    hydration;
-6. use Support requests as the only approved second Query-first queue, then
-   record whether the shared provider cost and adapter remain justified;
+6. preserve Support requests as the bounded second Query-first queue and use
+   its measured reuse evidence before considering another queue;
 7. select at most one independent form group for the Stage 3 pilot; do not
    install React Hook Form or a table library until that pilot removes measured
    route-local burden;
 8. preserve all unrelated dirty work and all Cloud/WordPress ownership
    boundaries.
 
-This document records the approved direction and accepted Query pilot. It does
-not authorize a broad dependency migration, production deployment, or GA
-claim.
+This document records the approved direction, accepted Query pilot, and bounded
+Support requests reuse candidate. It does not authorize a broad dependency
+migration, production deployment, or GA claim.
