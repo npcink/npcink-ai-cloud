@@ -188,6 +188,9 @@ test('Portal user directory persists filters and focus while retaining results o
   const mocks = await installPortalUsersMocks(page);
   await page.goto('/admin/portal-users');
 
+  await expect(
+    page.locator('[data-ui="admin-primary-nav"] a[href="/admin/portal-users"]')
+  ).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: /Portal user directory|Portal 用户目录/i })).toBeVisible();
   await expect(page.locator('[data-ui="portal-user-directory-item"]')).toHaveCount(4);
   await expect(page.locator('table')).toHaveCount(0);
