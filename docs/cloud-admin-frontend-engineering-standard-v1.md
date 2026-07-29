@@ -1,6 +1,6 @@
 # Cloud Admin Frontend Engineering Standard v1
 
-Status: active engineering standard; Stage 1 behavior gate introduced.
+Status: active engineering standard; Stages 1 and 2 accepted.
 
 Date: 2026-07-29.
 
@@ -20,6 +20,15 @@ The information-architecture and UI standards remain authoritative for page
 models, operator jobs, density, status, actions, credentials, and PC evidence.
 This document owns frontend code structure, state ownership, dependency
 adoption, behavior tests, and the bounded remediation sequence.
+
+Current implementation evidence:
+
+- Stage 1 added the existing Vitest suite to frontend CI.
+- Stage 2 remediated `/admin/portal-users` as the first Query-first queue.
+- The measured acceptance record is
+  [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md).
+- A headless table library and React Hook Form remain unadopted. They require
+  their own burden-removal evidence; the Query pilot does not pre-approve them.
 
 ## 1. Problem Statement
 
@@ -315,8 +324,7 @@ paths. Do not delete tests or lower behavioral evidence to improve a number.
 
 ### Stage 2: one queue pilot
 
-Preferred first candidate: `/admin/portal-users`, if fresh inspection confirms
-that its API and active feature work are stable.
+The accepted first candidate is `/admin/portal-users`.
 
 1. Introduce the query capability for that feature.
 2. Introduce the headless table capability only if it deletes real route-local
@@ -447,13 +455,17 @@ A new implementation session should:
 2. read `AGENTS.md`, `README.md`, this document, the Admin UI standard, the
    route manifest, and the development-validation model;
 3. revalidate the evidence instead of trusting the 2026-07-29 snapshot;
-4. implement Stage 1 before adopting dependencies;
-5. stop after one accepted queue pilot unless the user explicitly expands the
-   scope;
-6. preserve all unrelated dirty work and all Cloud/WordPress ownership
+4. treat Stages 1 and 2 as accepted baselines, not work to repeat;
+5. remove the Portal users backend in-memory filtering, counting, and
+   pagination before expanding the frontend pattern;
+6. use Support requests as the only approved second Query-first queue, then
+   record whether the shared provider cost and adapter remain justified;
+7. select at most one independent form group for the Stage 3 pilot; do not
+   install React Hook Form or a table library until that pilot removes measured
+   route-local burden;
+8. preserve all unrelated dirty work and all Cloud/WordPress ownership
    boundaries.
 
-This document records the approved direction and the Stage 1 CI behavior gate
-introduced in the same revision. It does not claim that the preferred
-dependencies are installed, the queue pilot is merged, M4 runs the result, or
-production has changed.
+This document records the approved direction and accepted Query pilot. It does
+not authorize a broad dependency migration, production deployment, or GA
+claim.
