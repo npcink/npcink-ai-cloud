@@ -71,7 +71,9 @@ from app.domain.hosted_model_defaults import FREE_GPT55_TEXT_PROFILE_ID
 from app.domain.image_context_evidence.contracts import (
     IMAGE_CONTEXT_EVIDENCE_ABILITIES,
     IMAGE_CONTEXT_EVIDENCE_PROFILE_ID,
+    MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES,
     ImageContextEvidenceContractViolation,
+    image_context_evidence_artifact_ids,
 )
 from app.domain.image_context_evidence.service import (
     ImageContextEvidenceProviderError,
@@ -4121,6 +4123,12 @@ class RuntimeService:
                     idempotent_replay=True,
                 )
 
+            self._admit_image_context_evidence_artifact_inputs(
+                repository,
+                site_id=request.site_id,
+                input_payload=request.input_payload,
+            )
+
             commercial_decision = self.commercial_service.authorize_runtime_request(
                 session=session,
                 site_id=request.site_id,
@@ -4348,6 +4356,11 @@ class RuntimeService:
         policy = run.policy_json if isinstance(run.policy_json, dict) else {}
         timeout_ms = max(1, self._coerce_int(policy.get("timeout_ms"), default=30_000))
         try:
+            artifact_inputs = self._load_image_context_evidence_artifact_inputs(
+                repository,
+                site_id=run.site_id,
+                input_payload=payload,
+            )
             execution = ImageContextEvidenceService(self.settings).execute(
                 site_id=run.site_id,
                 ability_name=run.ability_name,
@@ -4366,6 +4379,7 @@ class RuntimeService:
                 timeout_ms=timeout_ms,
                 price_input=selected_candidate.price_input,
                 price_output=selected_candidate.price_output,
+                artifact_inputs=artifact_inputs,
             )
         except ImageContextEvidenceContractViolation as error:
             self.run_lifecycle_service.fail_run(
@@ -4436,6 +4450,58 @@ class RuntimeService:
             instance_id=execution.usage.instance_id,
             fallback_used=False,
         )
+
+    def _admit_image_context_evidence_artifact_inputs(
+        self,
+        repository: RuntimeRepository,
+        *,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> None:
+        total_bytes = 0
+        for artifact_id in image_context_evidence_artifact_ids(input_payload):
+            try:
+                reference = admit_artifact_input(
+                    repository.session,
+                    site_id=site_id,
+                    artifact_id=artifact_id,
+                )
+            except ArtifactInputError as error:
+                raise RuntimeExecutionContractError(
+                    "image_context_evidence.source_artifact_unavailable",
+                    "image context evidence source artifact is unavailable",
+                ) from error
+            total_bytes += reference.byte_size
+            if total_bytes > MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES:
+                raise RuntimeExecutionContractError(
+                    "image_context_evidence.source_artifacts_too_large",
+                    "image context evidence source artifacts exceed the aggregate byte limit",
+                )
+
+    def _load_image_context_evidence_artifact_inputs(
+        self,
+        repository: RuntimeRepository,
+        *,
+        site_id: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, LoadedArtifactInput]:
+        loaded: dict[str, LoadedArtifactInput] = {}
+        for artifact_id in image_context_evidence_artifact_ids(input_payload):
+            if artifact_id in loaded:
+                continue
+            try:
+                loaded[artifact_id] = load_artifact_input(
+                    repository.session,
+                    self.artifact_store,
+                    site_id=site_id,
+                    artifact_id=artifact_id,
+                )
+            except ArtifactInputError as error:
+                raise ImageContextEvidenceContractViolation(
+                    "image_context_evidence.source_artifact_unavailable",
+                    "image context evidence source artifact is unavailable",
+                ) from error
+        return loaded
 
     def _execute_cloud_batch_runtime_run(
         self,
