@@ -12,6 +12,7 @@ from app.core.security import (
     REPLAY_SCOPE_PUBLIC_POST_KEY,
     REPLAY_SCOPE_PUBLIC_POST_SITE,
 )
+from app.domain.runtime.diagnostics_projection import RuntimeDiagnosticsProjector
 from app.domain.runtime.models import (
     ABUSE_GUARD_ATTENTION_RATIO,
     ABUSE_GUARD_CRITICAL_RATIO,
@@ -31,6 +32,93 @@ class RuntimeDiagnosticsQueryService:
     ) -> None:
         self.database_url = database_url
         self.run_projector = run_projector
+        self.diagnostics_projector = RuntimeDiagnosticsProjector(
+            run_projector=run_projector,
+        )
+
+    def get_runtime_diagnostics_summary(
+        self,
+        *,
+        site_id: str | None = None,
+        recent_minutes: int = 60,
+    ) -> dict[str, object]:
+        current_time = datetime.now(UTC)
+        recent_since = current_time - timedelta(minutes=max(1, recent_minutes))
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            summary = repository.get_runtime_diagnostics_summary(
+                site_id=site_id,
+                now=current_time,
+                recent_since=recent_since,
+            )
+            guard_summary = {
+                "recent_events": repository.count_runtime_guard_events(
+                    since=recent_since,
+                    site_id=site_id,
+                ),
+                "recent_rate_limit_exceeded": repository.count_runtime_guard_events(
+                    since=recent_since,
+                    site_id=site_id,
+                    event_code="auth.rate_limit_exceeded",
+                ),
+                "recent_replay_blocked": repository.count_runtime_guard_events(
+                    since=recent_since,
+                    site_id=site_id,
+                    event_code="auth.replay_blocked",
+                ),
+                "recent_payload_too_large": repository.count_runtime_guard_events(
+                    since=recent_since,
+                    site_id=site_id,
+                    event_code="auth.payload_too_large",
+                ),
+                "recent_invalid_nonce": repository.count_runtime_guard_events(
+                    since=recent_since,
+                    site_id=site_id,
+                    event_code="auth.invalid_nonce",
+                ),
+                "recent_invalid_idempotency_key": repository.count_runtime_guard_events(
+                    since=recent_since,
+                    site_id=site_id,
+                    event_code="auth.invalid_idempotency_key",
+                ),
+                "event_codes": repository.summarize_runtime_guard_event_codes(
+                    since=recent_since,
+                    site_id=site_id,
+                    limit=10,
+                ),
+            }
+        summary = self.diagnostics_projector.augment_runtime_diagnostics_summary(
+            summary,
+            current_time,
+        )
+        return {
+            "filters": {
+                "site_id": site_id or "",
+                "recent_minutes": recent_minutes,
+            },
+            "generated_at": self.run_projector.serialize_timestamp(current_time),
+            "guard": guard_summary,
+            **summary,
+        }
+
+    def get_runtime_backlog_diagnostics(
+        self,
+        *,
+        scope_kind: str,
+        site_id: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        current_time = datetime.now(UTC)
+        with get_session(self.database_url) as session:
+            repository = RuntimeRepository(session)
+            runs = repository.list_runtime_backlog_runs(site_id=site_id)
+        return self.diagnostics_projector.build_runtime_backlog_diagnostics(
+            runs=runs,
+            scope_kind=scope_kind,
+            site_id=site_id,
+            limit=limit,
+            current_time=current_time,
+        )
 
     def get_provider_runtime_evidence_summary(
         self,
