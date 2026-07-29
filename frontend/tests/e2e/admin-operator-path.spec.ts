@@ -96,7 +96,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await page.goto('/admin');
   await expect(page.getByText(/加载中\.\.\./)).not.toBeVisible();
   await expect(page.getByRole('heading', { name: /Platform state comes first|先看平台概况/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Review service status|检查服务状态|檢查服務狀態/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Open service status|打开服务状态|打開服務狀態/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Open customer service status|打开客户服务状态|打開客戶服務狀態/i })).toHaveCount(0);
   await page.getByText(/Platform usage and extended evidence|平台用量与扩展证据|平台用量與擴展證據/i).click();

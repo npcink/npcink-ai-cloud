@@ -88,6 +88,37 @@ def _dict_list(value: object) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
+def _build_admin_operational_readiness_projection(
+    report: dict[str, object],
+) -> dict[str, object]:
+    checks = {
+        str(check_id): bool(passed)
+        for check_id, passed in _dict_value(report.get("checks")).items()
+    }
+    failed_checks = sorted(check_id for check_id, passed in checks.items() if not passed)
+    failure_scopes: list[str] = []
+    for scope, prefix in (
+        ("dependencies", "dependencies."),
+        ("providers", "providers."),
+        ("workers", "worker."),
+        ("cadence", "cadence."),
+    ):
+        if any(check_id.startswith(prefix) for check_id in failed_checks):
+            failure_scopes.append(scope)
+
+    is_ready = bool(report.get("ok")) and not failed_checks
+    return {
+        "status": "ok" if is_ready else "error",
+        "ok": is_ready,
+        "generated_at": str(report.get("generated_at") or ""),
+        "checks_total": len(checks),
+        "checks_failed": len(failed_checks),
+        "failed_checks": failed_checks,
+        "failure_scopes": failure_scopes,
+        "href": "/admin/troubleshooting",
+    }
+
+
 def _coerce_int(value: object, *, default: int) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -2373,10 +2404,17 @@ async def get_admin_overview(
         )
     except CommercialServiceError as error:
         return _service_error_response(error, request=request)
-    runtime_service = RuntimeService(services.settings.database_url)
-    result["runtime_diagnostics"] = runtime_service.get_runtime_diagnostics_summary(
-        recent_minutes=runtime_recent_minutes,
+    ready_report = await services.get_ready_report()
+    operational_readiness = ObservabilityService(
+        services.settings
+    ).build_operational_readiness(ready_report=ready_report)
+    result["operational_readiness"] = _build_admin_operational_readiness_projection(
+        operational_readiness
     )
+    operational_summary = _dict_value(operational_readiness.get("summary"))
+    operational_runtime = _dict_value(operational_summary.get("runtime"))
+    runtime_service = RuntimeService(services.settings.database_url)
+    result["runtime_diagnostics"] = _dict_value(operational_runtime.get("summary"))
     runtime_telemetry = runtime_service.get_runtime_telemetry_diagnostics(
         recent_minutes=hosted_model_recent_minutes,
         limit=10,
