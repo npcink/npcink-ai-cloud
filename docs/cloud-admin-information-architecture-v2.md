@@ -215,8 +215,7 @@ consolidation.
 | `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Service queue | Keep; one reconciliation action and contextual evidence |
 | `/admin/support-requests` | Customer Operations | `queue` | Tickets | Keep; split customer conversation from internal handling |
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Tickets | Keep; timeline-first ticket detail |
-| `/admin/plans` | Customer Operations | `queue` | Packages and credits | Canonical catalog view |
-| `/admin/plans/[planId]` | Customer Operations | `detail` | Packages and credits | Keep; edit in contextual drawer |
+| `/admin/plans` | Customer Operations | `queue` | Packages and credits | Canonical catalog plus shared package-management workbench |
 | `/admin/credit-packs` | Customer Operations | `configuration` | Packages and credits | Keep route; edit one pack at a time |
 | `/admin/portal-users` | Customer Operations | `queue` | Portal users | Add as stable secondary navigation entry |
 | `/admin/ai-resources` | Runtime Operations | `queue` | Model suppliers | Keep model-provider connections and model visibility together |

@@ -1487,6 +1487,7 @@ export async function installAdminMocks(page: Page) {
                 status: 'published',
                 currency: 'CNY',
                 budgets: {
+                  max_ai_credits_per_period: 300,
                   max_runs_per_period: 500,
                   max_tokens_per_period: 200000,
                   max_cost_cny_per_period: 5,
@@ -1502,6 +1503,7 @@ export async function installAdminMocks(page: Page) {
               status: 'published',
               currency: 'CNY',
               budgets: {
+                max_ai_credits_per_period: 300,
                 max_runs_per_period: 500,
                 max_tokens_per_period: 200000,
                 max_cost_cny_per_period: 5,
