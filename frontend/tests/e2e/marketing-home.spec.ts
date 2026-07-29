@@ -1,4 +1,24 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function expectMainScreenshot(page: Page, name: string) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const header = page.locator('[data-public-header]');
+  await header.evaluate((element) => {
+    element.style.visibility = 'hidden';
+  });
+  try {
+    await expect(page.locator('main')).toHaveScreenshot(name, {
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      maxDiffPixelRatio: 0,
+    });
+  } finally {
+    await header.evaluate((element) => {
+      element.style.removeProperty('visibility');
+    });
+  }
+}
 
 test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -123,7 +143,7 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
 
   await expect(
     page.getByRole('heading', {
-      name: /Start with one site.*Scale as usage grows|从一个站点开始.*按需升级/i,
+      name: /Start with one site.*Scale as needed|从一个站点开始.*按需升级/i,
     })
   ).toBeVisible();
   await expect(page.getByText('¥').first()).toBeVisible();
@@ -154,7 +174,7 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
     page.getByRole('heading', {
-      name: /Start with one site.*Scale as usage grows|从一个站点开始.*按需升级/i,
+      name: /Start with one site.*Scale as needed|从一个站点开始.*按需升级/i,
     })
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Pro plan details|Pro 套餐详情/i })).toHaveAttribute(
@@ -190,6 +210,54 @@ test('marketing home visual smoke: hero and CTA render', async ({ page }) => {
     scale: 'css',
     maxDiffPixelRatio: 0.02,
   });
+
+  await page.evaluate(() => window.localStorage.setItem('locale', 'en-US'));
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.reload();
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expect(page.locator('[data-public-desktop-nav]')).toBeHidden();
+  await expect(page.locator('[data-public-mobile-menu]')).toBeVisible();
+  await expect(page.getByText('NPCINK AI CLOUD').first()).toHaveCSS('white-space', 'nowrap');
+  await expect(page.getByRole('link', { name: 'Sign in' }).first()).toHaveCSS('white-space', 'nowrap');
+  await page.locator('[data-public-mobile-menu]').click();
+  await expect(page.locator('#public-mobile-nav').getByRole('link', { name: 'Help' })).toBeVisible();
+  await expect(page.locator('#public-mobile-nav').getByRole('link', { name: 'Sign in' })).toBeHidden();
+  await page.locator('[data-public-mobile-menu]').click();
+  await expect(page.locator('[data-public-header]')).toHaveScreenshot(
+    'marketing-home-tablet-header-en.png',
+    {
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      maxDiffPixelRatio: 0.02,
+    }
+  );
+  await expectMainScreenshot(page, 'marketing-home-tablet-en.png');
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(page.locator('[data-public-desktop-nav]')).toBeVisible();
+  await expect(page.locator('[data-public-mobile-menu]')).toBeHidden();
+  for (const heading of [
+    page.locator('[data-home-hero] h1'),
+    page.locator('[data-home-pricing] h2'),
+    page.locator('[data-home-final-cta] h2'),
+  ]) {
+    const renderedLines = await heading.evaluate((element) => {
+      const style = window.getComputedStyle(element);
+      return element.getBoundingClientRect().height / Number.parseFloat(style.lineHeight);
+    });
+    expect(renderedLines).toBeLessThanOrEqual(2.1);
+  }
+  await expectMainScreenshot(page, 'marketing-home-laptop-en.png');
+
+  await page.evaluate(() => window.localStorage.setItem('locale', 'zh-CN'));
+  await page.reload();
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expectMainScreenshot(page, 'marketing-home-laptop-zh.png');
 });
 
 test('public status explains impact and offers a fresh check', async ({ page }) => {
