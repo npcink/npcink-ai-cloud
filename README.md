@@ -86,6 +86,7 @@ Evidence records (not target-contract completion proof):
 - [docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md](docs/post-refactor-runtime-stack-and-ga-readiness-retrospective-2026-07-25.md)
 - [docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md](docs/cloud-infrastructure-platform-strategy-and-next-stage-closeout-2026-07-25.md)
 - [docs/public-frontend-development-retrospective-and-standard-2026-07-25.md](docs/public-frontend-development-retrospective-and-standard-2026-07-25.md)
+- [docs/public-homepage-navigation-and-responsive-typography-retrospective-2026-07-29.md](docs/public-homepage-navigation-and-responsive-typography-retrospective-2026-07-29.md)
 - [docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md](docs/account-entitlement-site-relink-and-frontend-release-retrospective-2026-07-26.md)
 - [docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md](docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md)
 - [docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md](docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md)
@@ -94,6 +95,7 @@ Evidence records (not target-contract completion proof):
 - [docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md](docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)
 - [docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md](docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md)
 - [docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md](docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md)
+- [docs/doubao-search-and-external-service-credential-links-closeout-and-development-retrospective-2026-07-29.md](docs/doubao-search-and-external-service-credential-links-closeout-and-development-retrospective-2026-07-29.md)
 
 Operational references:
 
