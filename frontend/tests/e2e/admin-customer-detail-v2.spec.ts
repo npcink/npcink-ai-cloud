@@ -55,3 +55,84 @@ test('customer detail failure preserves the PC shell and bounded retry', async (
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(new RegExp(`/admin/accounts/${LONG_ACCOUNT_ID}$`));
 });
+
+test('customer detail operator profile keeps the draft when the bounded save fails', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/accounts', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        buildAdminApiErrorEnvelope(
+          'operator profile rejected',
+          'admin.operator_profile_rejected'
+        )
+      ),
+    });
+  });
+
+  await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
+  await page
+    .getByText(/Edit customer info|编辑客户信息|編輯客戶資訊/i)
+    .click();
+  const operatorNote = page.getByLabel(
+    /Operator note|运营备注|營運備註/i
+  );
+  await operatorNote.fill('Keep this unsaved note');
+  await page
+    .locator('[data-ui="operator-profile-editor"]')
+    .getByRole('button', { name: /Save|保存|儲存/i })
+    .click();
+
+  await expect(page.getByText('operator profile rejected')).toBeVisible();
+  await expect(operatorNote).toHaveValue('Keep this unsaved note');
+});
+
+test('customer detail operator profile preserves the save payload and success receipt', async ({ page }) => {
+  await installAdminMocks(page);
+  let savedPayload: Record<string, unknown> | null = null;
+  await page.route('**/api/admin/accounts', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    savedPayload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fallback();
+  });
+
+  await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
+  await page
+    .getByText(/Edit customer info|编辑客户信息|編輯客戶資訊/i)
+    .click();
+  const editor = page.locator('[data-ui="operator-profile-editor"]');
+  await editor
+    .getByLabel(/Operator name|运营显示名|營運顯示名稱/i)
+    .fill('  Updated customer  ');
+  await editor
+    .getByLabel(/Operator note|运营备注|營運備註/i)
+    .fill('  Updated detail note  ');
+  await editor.getByRole('button', { name: /Save|保存|儲存/i }).click();
+
+  await expect(
+    page.getByText(
+      /Operator note has been saved|运营备注已保存|營運備註已儲存/i
+    )
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Updated customer' }).first()
+  ).toBeVisible();
+  expect(savedPayload).toMatchObject({
+    account_id: LONG_ACCOUNT_ID,
+    name: 'MVP Account',
+    status: 'active',
+    bind_default_free: false,
+    metadata: {
+      operator_display_name: 'Updated customer',
+      operator_note: 'Updated detail note',
+    },
+  });
+});

@@ -32,8 +32,13 @@ import {
   useAccountSiteRuntime,
   type SiteRuntimeData,
 } from '@/features/admin/accounts/account-site-runtime';
+import { AccountOperatorProfileEditor } from '@/features/admin/accounts/AccountOperatorProfileEditor';
+import {
+  accountDetailClient,
+  useAccountOperatorProfile,
+  type SavedAccountOperatorProfile,
+} from '@/features/admin/accounts/account-operator-profile';
 import { localizePackageAlias } from '@/lib/admin-plan-copy';
-import { createApiClient } from '@/lib/api-client';
 import { formatAdminCurrency } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
@@ -295,7 +300,6 @@ function selectPrimarySubscription(account: AccountDetail | null): AccountDetail
 }
 
 const MALFORMED_ACCOUNT_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty/i;
-const accountDetailClient = createApiClient({ idempotencyPrefix: 'admin_account_detail' });
 
 function prettifyAccountId(accountId: string): string {
   if (MALFORMED_ACCOUNT_TEXT_RE.test(accountId)) {
@@ -483,13 +487,6 @@ function AccountDetailContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState('');
-  const [accountMetaForm, setAccountMetaForm] = useState({
-    operator_display_name: '',
-    operator_note: '',
-  });
-  const [accountMetaNotice, setAccountMetaNotice] = useState<string | null>(null);
-  const [accountMetaError, setAccountMetaError] = useState<string | null>(null);
-  const [isSavingAccountMeta, setIsSavingAccountMeta] = useState(false);
   const [accountStatusNotice, setAccountStatusNotice] = useState<string | null>(null);
   const [accountStatusError, setAccountStatusError] = useState<string | null>(null);
   const [accountStatusReceipt, setAccountStatusReceipt] = useState<AdminMutationReceiptPayload | null>(null);
@@ -548,6 +545,29 @@ function AccountDetailContent() {
     Boolean(siteRuntimeQuery.data) &&
     !siteRuntimeQuery.isError &&
     failedSiteRuntimeIds.length === 0;
+  const handleOperatorProfileSaved = useCallback(
+    (profile: SavedAccountOperatorProfile) => {
+      setAccount((current) =>
+        current
+          ? {
+              ...current,
+              ...profile,
+            }
+          : current
+      );
+    },
+    []
+  );
+  const operatorProfileController = useAccountOperatorProfile({
+    account,
+    errorFallback: t('error.failed_save'),
+    savedNotice: t(
+      'admin.account_detail.operator_profile_saved_notice',
+      undefined,
+      'Operator note has been saved.'
+    ),
+    onSaved: handleOperatorProfileSaved,
+  });
 
   const loadPackagePlans = useCallback(async (force = false) => {
     if (!force && packagePlansRequestedRef.current) {
@@ -706,10 +726,6 @@ function AccountDetailContent() {
         }),
       };
       setAccount(nextAccount);
-      setAccountMetaForm({
-        operator_display_name: operatorDisplayName,
-        operator_note: operatorNote,
-      });
       const defaultSubscription =
         nextAccount.subscriptions.find((subscription) =>
           ['active', 'trialing', 'past_due', 'suspended'].includes(subscription.status)
@@ -748,60 +764,6 @@ function AccountDetailContent() {
       setIsLoading(false);
     }
   }, [accountId, t]);
-
-  const handleSaveAccountMeta = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!account) {
-      return;
-    }
-
-    const operatorDisplayName = accountMetaForm.operator_display_name.trim();
-    const operatorNote = accountMetaForm.operator_note.trim();
-    const metadata = { ...(account.metadata || {}) };
-    if (operatorDisplayName) {
-      metadata.operator_display_name = operatorDisplayName;
-    } else {
-      delete metadata.operator_display_name;
-    }
-    if (operatorNote) {
-      metadata.operator_note = operatorNote;
-    } else {
-      delete metadata.operator_note;
-    }
-
-    setIsSavingAccountMeta(true);
-    setAccountMetaNotice(null);
-    setAccountMetaError(null);
-    try {
-      await accountDetailClient.request<Record<string, unknown>>('/api/admin/accounts', {
-        method: 'POST',
-        body: {
-          account_id: account.account_id,
-          name: account.name || account.account_id,
-          status: account.status || 'active',
-          metadata,
-          bind_default_free: false,
-        },
-      });
-      setAccount((current) =>
-        current
-          ? {
-              ...current,
-              metadata,
-              operator_display_name: operatorDisplayName,
-              operator_note: operatorNote,
-            }
-          : current
-      );
-      setAccountMetaNotice(
-        t('admin.account_detail.operator_profile_saved_notice', undefined, 'Operator note has been saved.')
-      );
-    } catch (err) {
-      setAccountMetaError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setIsSavingAccountMeta(false);
-    }
-  };
 
   const handleChangePackage = async (quickPackage?: QuickPackageOption) => {
     const selectedPlanId = (quickPackage?.plan_id || packageForm.plan_id).trim();
@@ -1664,61 +1626,10 @@ function AccountDetailContent() {
             {t('admin.accounts.suspend_reason_label', {}, 'Suspension reason')}: {account.account_status_note}
           </p>
         ) : null}
-        <details
-          data-ui="operator-profile-editor"
-          className="rounded-lg border border-slate-200/80 bg-white/75 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40"
-        >
-          <summary className="cursor-pointer list-none text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {t('admin.account_detail.edit_operator_profile', undefined, 'Edit customer info')}
-            <span className="ml-3 font-normal text-slate-500 dark:text-slate-400">
-              {t(
-                'admin.account_detail.operator_profile_desc',
-                undefined,
-                'Internal display name and note; user workspace is not affected.'
-              )}
-            </span>
-          </summary>
-          <form
-            onSubmit={handleSaveAccountMeta}
-            className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-end"
-          >
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
-                {t('admin.accounts.operator_display_name_label', {}, 'Operator name')}
-              </span>
-              <input
-                type="text"
-                value={accountMetaForm.operator_display_name}
-                onChange={(event) =>
-                  setAccountMetaForm((current) => ({ ...current, operator_display_name: event.target.value }))
-                }
-                placeholder={accountTitle}
-                className="input"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
-                {t('admin.accounts.operator_note_label', {}, 'Operator note')}
-              </span>
-              <input
-                type="text"
-                value={accountMetaForm.operator_note}
-                onChange={(event) => setAccountMetaForm((current) => ({ ...current, operator_note: event.target.value }))}
-                placeholder={t('admin.accounts.operator_note_placeholder', {}, 'Internal follow-up note')}
-                className="input"
-              />
-            </label>
-            <button type="submit" className="btn btn-secondary whitespace-nowrap" disabled={isSavingAccountMeta}>
-              {isSavingAccountMeta ? t('common.saving', {}, 'Saving...') : t('common.save', {}, 'Save')}
-            </button>
-            {accountMetaNotice ? (
-              <p className="text-sm text-emerald-700 dark:text-emerald-300 md:col-span-3">{accountMetaNotice}</p>
-            ) : null}
-            {accountMetaError ? (
-              <p className="text-sm text-red-600 dark:text-red-300 md:col-span-3">{accountMetaError}</p>
-            ) : null}
-          </form>
-        </details>
+        <AccountOperatorProfileEditor
+          accountTitle={accountTitle}
+          controller={operatorProfileController}
+        />
         <div
           role="tablist"
           aria-label={t('admin.account_detail.tabs_label', undefined, 'Customer detail sections')}
