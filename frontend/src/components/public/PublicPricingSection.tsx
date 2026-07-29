@@ -70,14 +70,14 @@ const tierCopy: Record<TierId, TierCopy> = {
     href: '/portal/register?plan=plus',
   },
   pro: {
-    zhPositioning: '适合多站点使用的个人与小团队。',
+    zhPositioning: '适合多站点个人与小团队。',
     enPositioning: 'For individuals and small teams using multiple sites.',
     zhAction: '选择 Pro',
     enAction: 'Choose Pro',
     href: '/portal/register?plan=pro',
   },
   agency: {
-    zhPositioning: '适合需要更高运行余量的团队。',
+    zhPositioning: '适合需要更多运行余量的团队。',
     enPositioning: 'For teams needing higher runtime headroom.',
     zhAction: '申请方案',
     enAction: 'Request a plan',
@@ -273,16 +273,18 @@ export function PublicPricingSection() {
   const zh = locale === 'zh-CN';
   const [catalog, setCatalog] = useState<PublicPlanCatalog | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [catalogRetryVersion, setCatalogRetryVersion] = useState(0);
   const [expandedTier, setExpandedTier] = useState<TierId | null>('pro');
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function loadCatalog() {
+      setLoadFailed(false);
       try {
         const response = await fetch('/open/plan-catalog', {
           headers: { Accept: 'application/json' },
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]),
         });
         if (!response.ok) {
           throw new Error('public plan catalog request failed');
@@ -301,7 +303,7 @@ export function PublicPricingSection() {
 
     void loadCatalog();
     return () => controller.abort();
-  }, []);
+  }, [catalogRetryVersion]);
 
   const tiers = useMemo<TierView[]>(() => {
     const byId = new Map(catalog?.tiers.map((tier) => [tier.tier_id, tier]));
@@ -321,13 +323,13 @@ export function PublicPricingSection() {
       className="border-b border-slate-200 bg-[#0b1424] text-white dark:border-white/10"
     >
       <div className="mx-auto max-w-7xl px-5 py-16 lg:px-8 lg:py-20">
-        <div className="grid gap-6 border-b border-white/15 pb-8 lg:grid-cols-[.8fr_1.2fr]">
+        <div className="grid gap-6 border-b border-white/15 pb-8 xl:grid-cols-[.9fr_1.1fr]">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.26em] text-[#9eb3ff]">
               {zh ? '套餐与权益' : 'Plans & access'}
             </p>
-            <h2 className="mt-5 text-4xl font-black leading-tight tracking-[-0.04em] sm:text-5xl">
-              {zh ? '从一个站点开始，按使用规模升级。' : 'Start with one site. Scale as usage grows.'}
+            <h2 className="mt-5 max-w-xl text-4xl font-black leading-[1.12] tracking-[-0.035em]">
+              {zh ? '从一个站点开始，按需升级。' : 'Start with one site. Scale as needed.'}
             </h2>
           </div>
           <div className="flex items-end">
@@ -339,9 +341,34 @@ export function PublicPricingSection() {
           </div>
         </div>
 
+        {loadFailed ? (
+          <div
+            className="mt-6 flex flex-col gap-3 border border-amber-300/35 bg-amber-300/10 px-5 py-4 text-sm text-amber-50 sm:flex-row sm:items-center sm:justify-between"
+            role="alert"
+          >
+            <div>
+              <p className="font-bold">
+                {zh ? '套餐信息暂时加载失败' : 'Plan information could not be loaded'}
+              </p>
+              <p className="mt-1 text-amber-100/80">
+                {zh
+                  ? '当前无法确认价格与权益，购买入口已暂时停用。'
+                  : 'Current prices and access could not be confirmed, so purchase actions are temporarily disabled.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="h-11 shrink-0 border border-amber-100/45 px-4 font-bold text-white transition hover:bg-white/10"
+              onClick={() => setCatalogRetryVersion((current) => current + 1)}
+            >
+              {zh ? '重新加载套餐' : 'Reload plans'}
+            </button>
+          </div>
+        ) : null}
+
         <div
           data-plan-comparison="desktop"
-          className="hidden border-l border-white/15 md:grid md:grid-cols-2 xl:grid-cols-4"
+          className={`${loadFailed ? 'mt-6 ' : ''}hidden border-l border-white/15 md:grid md:grid-cols-2 xl:grid-cols-4`}
           aria-label={zh ? '套餐比较' : 'Plan comparison'}
           role="list"
         >
@@ -408,7 +435,7 @@ export function PublicPricingSection() {
 
         <div
           data-plan-comparison="mobile"
-          className="border-l border-t border-white/15 md:hidden"
+          className={`${loadFailed ? 'mt-6 ' : ''}border-l border-t border-white/15 md:hidden`}
           aria-label={zh ? '移动端套餐比较' : 'Mobile plan comparison'}
           role="list"
         >
@@ -438,23 +465,18 @@ export function PublicPricingSection() {
                   aria-expanded={expanded}
                   aria-controls={panelId}
                   onClick={() => setExpandedTier(expanded ? null : tierId)}
-                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-5 text-left transition hover:bg-white/[.045] ${
+                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-2 px-5 py-5 text-left transition hover:bg-white/[.045] ${
                     recommended ? 'bg-[#2357ff]/10' : ''
                   }`}
                 >
                   <span className="font-mono text-xs text-[#9eb3ff]">0{index + 1}</span>
-                  <span>
-                    <span className="flex items-center gap-2 text-xl font-black">
-                      {planLabel(view)}
-                      {recommended ? (
-                        <span className="bg-[#2357ff] px-2 py-1 text-[10px] font-black tracking-[0.12em] text-white">
-                          {zh ? '推荐' : 'Recommended'}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="mt-1 block text-sm leading-6 text-slate-400">
-                      {zh ? copy.zhPositioning : copy.enPositioning}
-                    </span>
+                  <span className="flex items-center gap-2 text-xl font-black">
+                    {planLabel(view)}
+                    {recommended ? (
+                      <span className="bg-[#2357ff] px-2 py-1 text-[10px] font-black tracking-[0.12em] text-white">
+                        {zh ? '推荐' : 'Recommended'}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="text-right">
                     <PlanPrice
@@ -468,6 +490,9 @@ export function PublicPricingSection() {
                     <span className="mt-2 block text-xs text-[#9eb3ff]" aria-hidden="true">
                       {expanded ? '−' : '+'}
                     </span>
+                  </span>
+                  <span className="col-span-2 col-start-2 block text-sm leading-6 text-slate-400 [text-wrap:pretty]">
+                    {zh ? copy.zhPositioning : copy.enPositioning}
                   </span>
                 </button>
                 {expanded ? (
@@ -497,14 +522,14 @@ export function PublicPricingSection() {
           })}
         </div>
 
-        <div className="grid gap-4 border-x border-b border-white/15 px-5 py-5 text-sm leading-6 text-slate-400 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="grid gap-4 border-x border-b border-white/15 px-5 py-5 text-sm leading-6 text-slate-400 xl:grid-cols-[1fr_auto] xl:items-center">
           <div className="space-y-2">
-            <p data-plan-entitlement-notice>
+            <p data-plan-entitlement-notice className="[text-wrap:pretty]">
               {zh
                 ? 'Free 服务和额度归 Cloud 账户，不随站点转移；更换账户连接时，必须先释放站点并遵守 Cloud 显示的冷却期。'
                 : 'Free service and credits belong to the Cloud account and do not move with a site. Connecting the site to another account requires release and the cooldown shown by Cloud.'}
             </p>
-            <p>
+            <p className="[text-wrap:pretty]">
               {zh
                 ? `Plus、Pro 与 Agency 共享一次 ${trialDays} 天付费套餐试用资格；Agency 需要审核。`
                 : `Plus, Pro, and Agency share one ${trialDays}-day paid-plan trial. Agency requires approval.`}

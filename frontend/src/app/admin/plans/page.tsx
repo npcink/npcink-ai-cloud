@@ -15,9 +15,10 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
+import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { PlanManagementWorkbench } from '@/components/admin/PlanManagementWorkbench';
 import { useLocale } from '@/contexts/LocaleContext';
 import {
-  localizeFeatureGroup,
   localizeOperatorNote,
   localizePackageAlias,
   localizePositioning,
@@ -416,7 +417,9 @@ function PlansContent() {
     }),
     sort
   );
-  const selectedEntry = filteredCatalog.find((entry) => entry.shell.tier_id === focusedTierId) || filteredCatalog[0] || null;
+  const selectedEntry = focusedTierId
+    ? filteredCatalog.find((entry) => entry.shell.tier_id === focusedTierId) || null
+    : null;
   const hasFilters = Boolean(appliedQuery || appliedState || sort !== 'attention');
 
   return (
@@ -447,44 +450,234 @@ function PlansContent() {
         { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
       ]} />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.72fr)]">
-        <BackofficeSectionPanel className="overflow-hidden p-0">
-          <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold text-slate-950 dark:text-white">{t('admin.plans.directory_title', {}, 'Standard package catalog')}</h2><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.plans.directory_desc', {}, 'Compare current publication and subscription posture, then inspect one package before opening maintenance detail.')}</p></div><p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">{t('admin.plans.result_count', { visible: formatInteger(filteredCatalog.length), total: formatInteger(canonicalTierCoverage.length) }, `${formatInteger(filteredCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`)}</p></div>
-            <div className="flex flex-wrap gap-2" aria-label={t('admin.plans.state_filter_label', {}, 'Package readiness')}>{['', 'ready', 'unpublished', 'missing'].map((state) => <button key={state || 'all'} type="button" aria-pressed={appliedState === state} onClick={() => updateCatalogUrl({ state: state || null, focus: null })} className={cn('cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition', appliedState === state ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200' : 'border-slate-200/80 bg-white/80 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-slate-600')}>{state ? t(`admin.plans.state_${state}`, {}, state) : t('common.all', {}, 'All')}</button>)}</div>
-            <form className="grid gap-3 md:grid-cols-[minmax(13rem,1fr)_minmax(10rem,0.65fr)_auto]" onSubmit={(event) => { event.preventDefault(); updateCatalogUrl({ q: queryDraft.trim() || null, focus: null }); }}>
-              <label className="text-sm text-slate-700 dark:text-slate-200"><span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.plans.search_label', {}, 'Search packages')}</span><input type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.plans.search_placeholder', {}, 'Package name or ID')} /></label>
-              <label className="text-sm text-slate-700 dark:text-slate-200"><span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.plans.sort_label', {}, 'Sort')}</span><select className="input w-full" value={sort} onChange={(event) => updateCatalogUrl({ sort: normalizePlanSort(event.target.value), focus: null })}><option value="attention">{t('admin.plans.sort_attention', {}, 'Needs attention')}</option><option value="tier">{t('admin.plans.sort_tier', {}, 'Tier order')}</option><option value="subscriptions">{t('admin.plans.sort_subscriptions', {}, 'Active subscriptions')}</option></select></label>
-              <div className="flex items-end gap-2 md:flex-col md:justify-end lg:flex-row"><button type="submit" className="btn btn-primary flex-1 md:flex-none">{t('common.apply', {}, 'Apply')}</button><button type="button" className="btn btn-secondary flex-1 md:flex-none" disabled={!hasFilters && !queryDraft} onClick={() => { setQueryDraft(''); updateCatalogUrl({ q: null, state: null, sort: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button></div>
-            </form>
-          </div>
+      <div className="min-w-0">
+          <AdminDataTableFrame
+            title={t('admin.plans.directory_title', {}, 'Standard package catalog')}
+            resultLabel={t(
+              'admin.plans.result_count',
+              { visible: formatInteger(filteredCatalog.length), total: formatInteger(canonicalTierCoverage.length) },
+              `${formatInteger(filteredCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`
+            )}
+            dataUi="plan-catalog-table"
+            density="compact"
+            headerActions={(
+              <div className="flex flex-wrap gap-1.5" aria-label={t('admin.plans.state_filter_label', {}, 'Package readiness')}>
+                {['', 'ready', 'unpublished', 'missing'].map((state) => (
+                  <button
+                    key={state || 'all'}
+                    type="button"
+                    aria-pressed={appliedState === state}
+                    onClick={() => updateCatalogUrl({ state: state || null, focus: null })}
+                    className={cn(
+                      'cursor-pointer rounded border px-2.5 py-1 text-xs font-medium transition',
+                      appliedState === state
+                        ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-600'
+                    )}
+                  >
+                    {state ? t(`admin.plans.state_${state}`, {}, state) : t('common.all', {}, 'All')}
+                  </button>
+                ))}
+              </div>
+            )}
+          >
+            <p className="sr-only" role="status" aria-live="polite">
+              {t(
+                'admin.plans.result_count',
+                { visible: formatInteger(filteredCatalog.length), total: formatInteger(canonicalTierCoverage.length) },
+                `${formatInteger(filteredCatalog.length)} visible · ${formatInteger(canonicalTierCoverage.length)} standard packages`
+              )}
+            </p>
+            <div className="border-b border-slate-200 bg-slate-50/55 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/25">
+              <form
+                className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_minmax(9rem,0.55fr)_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  updateCatalogUrl({ q: queryDraft.trim() || null, focus: null });
+                }}
+              >
+                <label className="text-xs text-slate-600 dark:text-slate-300">
+                  <span className="sr-only">{t('admin.plans.search_label', {}, 'Search packages')}</span>
+                  <input
+                    type="search"
+                    className="input input-sm w-full"
+                    value={queryDraft}
+                    onChange={(event) => setQueryDraft(event.target.value)}
+                    placeholder={t('admin.plans.search_placeholder', {}, 'Package name or ID')}
+                  />
+                </label>
+                <label className="text-xs text-slate-600 dark:text-slate-300">
+                  <span className="sr-only">{t('admin.plans.sort_label', {}, 'Sort')}</span>
+                  <select
+                    className="input input-sm w-full"
+                    value={sort}
+                    aria-label={t('admin.plans.sort_label', {}, 'Sort')}
+                    onChange={(event) => updateCatalogUrl({ sort: normalizePlanSort(event.target.value), focus: null })}
+                  >
+                    <option value="attention">{t('admin.plans.sort_attention', {}, 'Needs attention')}</option>
+                    <option value="tier">{t('admin.plans.sort_tier', {}, 'Tier order')}</option>
+                    <option value="subscriptions">{t('admin.plans.sort_subscriptions', {}, 'Active subscriptions')}</option>
+                  </select>
+                </label>
+                <div className="flex gap-2">
+                  <button type="submit" className="btn btn-secondary btn-sm">{t('common.apply', {}, 'Apply')}</button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!hasFilters && !queryDraft}
+                    onClick={() => {
+                      setQueryDraft('');
+                      updateCatalogUrl({ q: null, state: null, sort: null, focus: null });
+                    }}
+                  >
+                    {t('common.clear_filters', {}, 'Clear filters')}
+                  </button>
+                </div>
+              </form>
+            </div>
 
-          {filteredCatalog.length ? <div role="list" aria-label={t('admin.plans.list_label', {}, 'Package list')}>{filteredCatalog.map((entry) => {
-            const { shell, item } = entry;
-            const state = catalogState(entry);
-            const latestVersion = item?.latest_version || item?.versions?.[0] || null;
-            const budgets = (latestVersion?.budgets || shell.budgets_template || {}) as Record<string, unknown>;
-            const concurrency = (latestVersion?.concurrency || shell.concurrency_template || {}) as Record<string, unknown>;
-            const sourceTier = item?.tier_summary || shell;
-            const packageAlias = localizePackageAlias(t, shell.tier_id, sourceTier.package_alias);
-            const selected = selectedEntry?.shell.tier_id === shell.tier_id;
-            const reason = state === 'missing' ? t('admin.plans.reason_missing', {}, 'The standard package record does not exist and cannot be assigned.') : state === 'unpublished' ? t('admin.plans.reason_unpublished', {}, 'The package exists but has no published version for subscription assignment.') : t('admin.plans.reason_ready', {}, 'The package has a published version and can carry customer subscriptions.');
-            return <article key={shell.tier_id} role="listitem" data-ui="plan-catalog-item" className={cn('grid gap-4 border-b border-slate-200/80 px-5 py-5 transition last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(11rem,0.9fr)_minmax(13rem,1.1fr)] md:items-center md:px-6 2xl:grid-cols-[minmax(12rem,1fr)_minmax(14rem,1.2fr)_minmax(9rem,0.75fr)_auto]', selected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
-              <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{localizeTierLabel(t, shell.tier_id, sourceTier.label)}</p><h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{packageAlias}</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item?.plan?.plan_id || shell.tier_id}</p></div>
-              <div><div className="flex flex-wrap items-center gap-2"><span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', catalogStateToneClassName(state))}>{t(`admin.plans.state_${state}`, {}, state)}</span><span className="text-xs text-slate-500 dark:text-slate-400">{formatInteger(item?.published_version_count || 0)} {t('admin.plans.published_versions_short', {}, 'published')}</span></div><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{reason}</p></div>
-              <dl className="grid gap-2 text-xs text-slate-600 dark:text-slate-300"><div className="flex justify-between gap-3"><dt>{t('admin.active_subscriptions')}</dt><dd className="font-semibold text-slate-950 dark:text-white">{formatInteger(item?.subscription_counts?.active || 0)}</dd></div><div className="flex justify-between gap-3"><dt>{t('admin.site_limit', {}, 'Site limit')}</dt><dd className="font-semibold text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))}</dd></div><div className="flex justify-between gap-3"><dt>{t('admin.concurrency', {}, 'Concurrency')}</dt><dd className="font-semibold text-slate-950 dark:text-white">{formatInteger(numericValue(concurrency.max_active_runs))}</dd></div><div className="flex justify-between gap-3"><dt>{t('admin.run_ceiling', {}, 'Run ceiling')}</dt><dd className="font-semibold text-slate-950 dark:text-white">{formatInteger(numericValue(budgets.max_runs_per_period))}</dd></div></dl>
-              <div className="flex flex-wrap gap-2 md:justify-end"><button type="button" className="btn btn-secondary btn-sm" aria-pressed={selected} aria-controls="plan-catalog-inspector" onClick={() => updateCatalogUrl({ focus: shell.tier_id })}>{t('admin.plans.inspect_action', {}, 'Inspect')}</button>{item?.plan?.plan_id ? <Link href={`/admin/plans/${item.plan.plan_id}`} className="btn btn-primary btn-sm">{t('common.details', {}, 'Details')}</Link> : null}</div>
-            </article>;
-          })}</div> : <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.plans.empty_title', {}, 'No packages match these filters')} description={t('admin.plans.empty_desc', {}, 'Clear the package name, readiness, or sort filters. No package record has been changed.')} action={hasFilters ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setQueryDraft(''); updateCatalogUrl({ q: null, state: null, sort: null, focus: null }); }}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null} />}
-        </BackofficeSectionPanel>
-
-        <aside id="plan-catalog-inspector" className="xl:sticky xl:top-24" aria-live="polite"><BackofficeSectionPanel className="space-y-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t('admin.plans.inspector_eyebrow', {}, 'Inspector')}</p><h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.plans.inspector_title', {}, 'Current package')}</h2></div>{selectedEntry ? <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', catalogStateToneClassName(catalogState(selectedEntry)))}>{t(`admin.plans.state_${catalogState(selectedEntry)}`, {}, catalogState(selectedEntry))}</span> : null}</div>
-          {selectedEntry ? (() => { const shell = selectedEntry.shell; const item = selectedEntry.item; const latestVersion = item?.latest_version || item?.versions?.[0] || null; const sourceTier = item?.tier_summary || shell; const alias = localizePackageAlias(t, shell.tier_id, sourceTier.package_alias); return <div className="space-y-5"><div><p className="text-base font-semibold text-slate-950 dark:text-white">{alias}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item?.plan?.plan_id || shell.tier_id}</p></div><dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">{[[t('common.status'), item?.plan?.status || t('common.not_available', {}, 'N/A')],[t('admin.plans.latest_version_label', {}, 'Latest version'), latestVersion?.version_label || t('common.not_available', {}, 'N/A')],[t('admin.plans.published_versions_label', {}, 'Published versions'), formatInteger(item?.published_version_count || 0)],[t('admin.active_subscriptions'), formatInteger(item?.subscription_counts?.active || 0)],[t('admin.site_limit', {}, 'Site limit'), formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))],[t('admin.included_points', {}, 'Included AI credits'), formatInteger(latestMetadataValue(latestVersion, sourceTier.monthly_included_points, 'monthly_included_points'))],[t('common.currency', {}, 'Currency'), latestVersion?.currency || ADMIN_CURRENCY]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800"><dt>{label}</dt><dd className="text-right font-semibold text-slate-950 dark:text-white">{value}</dd></div>)}</dl><div className="flex flex-wrap gap-2">{item?.plan?.plan_id ? <Link href={`/admin/plans/${item.plan.plan_id}`} className="btn btn-primary btn-sm">{t('common.details', {}, 'Details')}</Link> : <a href="#package-maintenance" className="btn btn-primary btn-sm">{t('admin.plans.open_advanced_setup', {}, 'Advanced setup')}</a>}<Link href={`/admin/subscriptions?plan_id=${encodeURIComponent(item?.plan?.plan_id || shell.tier_id)}`} className="btn btn-secondary btn-sm">{t('admin.plans.open_subscriptions_action', {}, 'Open subscriptions')}</Link></div><details className="border-t border-slate-200/80 pt-4 text-sm dark:border-slate-800"><summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-100">{t('admin.plans.package_context_title', {}, 'Package context')}</summary><div className="mt-3 space-y-2 text-slate-600 dark:text-slate-300"><p>{localizePositioning(t, shell.tier_id, sourceTier.positioning)}</p><p>{localizeUsageBand(t, shell.tier_id, sourceTier.usage_band)}</p><p>{sourceTier.feature_groups.map((group) => localizeFeatureGroup(t, group)).join(' · ') || t('common.not_available', {}, 'N/A')}</p></div></details><p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.plans.inspector_boundary', {}, 'This catalog reads plans and published plan versions as Cloud commercial truth. Price, limits, release state, and exceptional creation remain in package detail or advanced maintenance; no WordPress control is created.')}</p></div>; })() : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.plans.inspector_empty', {}, 'No package is visible in this catalog view.')}</p>}
-        </BackofficeSectionPanel></aside>
+            {filteredCatalog.length ? (
+              <table className="w-full min-w-[48rem] table-fixed text-left text-xs" aria-label={t('admin.plans.list_label', {}, 'Package list')}>
+                <thead className="bg-slate-50/70 text-slate-500 dark:bg-slate-900/35 dark:text-slate-400">
+                  <tr>
+                    <th scope="col" className="w-[16%] px-3 py-2 font-semibold">{t('admin.nav_plan_catalog', {}, 'Package')}</th>
+                    <th scope="col" className="w-[30%] px-3 py-2 font-semibold">{t('common.status')}</th>
+                    <th scope="col" className="w-[11%] px-3 py-2 text-right font-semibold">{t('admin.active_subscriptions')}</th>
+                    <th scope="col" className="w-[13%] px-3 py-2 text-right font-semibold">{t('admin.included_points', {}, 'Package AI credits')}</th>
+                    <th scope="col" className="w-[22%] px-3 py-2 font-semibold">{t('common.limit', {}, 'Limits')}</th>
+                    <th scope="col" className="w-[8%] px-3 py-2 text-right font-semibold">{t('common.actions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCatalog.map((entry) => {
+                    const { shell, item } = entry;
+                    const state = catalogState(entry);
+                    const latestVersion = item?.latest_version || item?.versions?.[0] || null;
+                    const concurrency = (latestVersion?.concurrency || shell.concurrency_template || {}) as Record<string, unknown>;
+                    const sourceTier = item?.tier_summary || shell;
+                    const packageAlias = localizePackageAlias(t, shell.tier_id, sourceTier.package_alias);
+                    const selected = selectedEntry?.shell.tier_id === shell.tier_id;
+                    const attentionReason = state === 'missing'
+                      ? t('admin.plans.reason_missing', {}, 'The standard package record does not exist and cannot be assigned.')
+                      : state === 'unpublished'
+                        ? t('admin.plans.reason_unpublished', {}, 'The package exists but has no published version for subscription assignment.')
+                        : null;
+                    const planId = item?.plan?.plan_id || '';
+                    const subscriptionsHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId || shell.tier_id)}`;
+                    return (
+                      <tr
+                        key={shell.tier_id}
+                        data-ui="plan-catalog-item"
+                        aria-selected={selected}
+                        className={cn(
+                          'border-b border-slate-200/80 align-middle transition last:border-b-0 dark:border-slate-800',
+                          selected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35'
+                        )}
+                      >
+                        <td className="px-3 py-2.5">
+                          <p className="font-semibold text-slate-950 dark:text-white">{packageAlias}</p>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className={cn('inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold', catalogStateToneClassName(state))}>
+                              {t(`admin.plans.state_${state}`, {}, state)}
+                            </span>
+                            <span className="text-[0.68rem] text-slate-500 dark:text-slate-400">
+                              {formatInteger(item?.published_version_count || 0)} {t('admin.plans.published_versions_short', {}, 'published')}
+                            </span>
+                          </div>
+                          {attentionReason ? <p className="mt-1 line-clamp-2 leading-4 text-slate-600 dark:text-slate-300">{attentionReason}</p> : null}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
+                          {planId ? (
+                            <Link
+                              href={subscriptionsHref}
+                              aria-label={`${t('admin.plans.open_subscriptions_action', {}, 'Open subscriptions')} · ${packageAlias}`}
+                              className="inline-flex min-w-8 cursor-pointer items-center justify-end gap-1 rounded px-1 py-0.5 text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                            >
+                              {formatInteger(item?.subscription_counts?.active || 0)}
+                              <span aria-hidden="true">›</span>
+                            </Link>
+                          ) : formatInteger(item?.subscription_counts?.active || 0)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-slate-950 dark:text-white">
+                          {formatInteger(latestMetadataValue(latestVersion, sourceTier.monthly_included_points, 'monthly_included_points'))}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <p className="whitespace-nowrap text-[0.68rem] text-slate-600 dark:text-slate-300">
+                            <span>{t('admin.site_limit', {}, 'Sites')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.site_limit, 'site_limit'))}</strong></span>
+                            <span className="mx-1.5 text-slate-300 dark:text-slate-700">·</span>
+                            <span>{t('admin.concurrency', {}, 'Concurrency')} <strong className="text-slate-950 dark:text-white">{formatInteger(numericValue(concurrency.max_active_runs))}</strong></span>
+                            <span className="mx-1.5 text-slate-300 dark:text-slate-700">·</span>
+                            <span>{t('admin.batch_ceiling', {}, 'Batch')} <strong className="text-slate-950 dark:text-white">{formatInteger(latestMetadataValue(latestVersion, sourceTier.max_batch_items, 'max_batch_items'))}</strong></span>
+                          </p>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            aria-label={planId
+                              ? t('admin.plans.manage_title', { package: packageAlias }, `Manage ${packageAlias}`)
+                              : undefined}
+                            aria-pressed={selected}
+                            aria-haspopup={planId ? 'dialog' : undefined}
+                            aria-controls={planId ? 'plan-management-workbench-title' : undefined}
+                            onClick={() => {
+                              if (planId) {
+                                updateCatalogUrl({ focus: shell.tier_id });
+                                return;
+                              }
+                              document.getElementById('package-maintenance')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                          >
+                            {planId
+                              ? t('admin.plans.manage_action', {}, 'Manage')
+                              : t('admin.plans.open_advanced_setup', {}, 'Initialize')}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <BackofficeEmptyState
+                className="m-4"
+                title={t('admin.plans.empty_title', {}, 'No packages match these filters')}
+                description={t('admin.plans.empty_desc', {}, 'Clear the package name, readiness, or sort filters. No package record has been changed.')}
+                action={hasFilters ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setQueryDraft('');
+                      updateCatalogUrl({ q: null, state: null, sort: null, focus: null });
+                    }}
+                  >
+                    {t('common.clear_filters', {}, 'Clear filters')}
+                  </button>
+                ) : null}
+              />
+            )}
+          </AdminDataTableFrame>
       </div>
 
+      {selectedEntry?.item?.plan?.plan_id ? (
+        <PlanManagementWorkbench
+          open
+          planId={selectedEntry.item.plan.plan_id}
+          fallbackName={localizePackageAlias(
+            t,
+            selectedEntry.shell.tier_id,
+            (selectedEntry.item.tier_summary || selectedEntry.shell).package_alias
+          )}
+          onClose={() => updateCatalogUrl({ focus: null })}
+          onSaved={() => loadPlans(true)}
+        />
+      ) : null}
+
       {missingShellCount > 0 ? (
-      <details id="package-maintenance" className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/40">
+      <details id="package-maintenance" className="border-t border-slate-200 pt-4 dark:border-slate-800">
         <summary className="cursor-pointer list-none">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -512,7 +705,7 @@ function PlansContent() {
           </div>
         ) : null}
 
-      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">
+      <div className="mt-6">
         <BackofficeLayer
           eyebrow={t('admin.quick_actions')}
           title={t('admin.package_shell_bootstrap_title', {}, 'Create missing standard packages')}
@@ -605,7 +798,7 @@ function PlansContent() {
         </BackofficeSectionPanel>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-4 dark:border-slate-800">
+      <div className="mt-6">
         <BackofficeLayer
           eyebrow={t('admin.quick_actions')}
           title={t('admin.create_plan_title', {}, 'Create package record')}

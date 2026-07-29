@@ -415,6 +415,52 @@ def test_vision_ai_profile_filters_to_vision_model(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
+def test_evidence_backed_vision_override_survives_catalog_refresh(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "gpt-5.4-mini"},
+                    {"id": "Qwen/Qwen3-Omni-30B-A3B-Instruct"},
+                ]
+            },
+        )
+
+    service = CatalogService(
+        database_url,
+        providers={
+            "openai": OpenAIProviderAdapter(
+                api_key="test-api-key",
+                model_metadata_overrides={
+                    "gpt-5.4-mini": {
+                        "feature": "vision",
+                        "source": "official model documentation",
+                        "revision": "verified-2026-07-29",
+                    }
+                },
+                transport=httpx.MockTransport(handler),
+            )
+        },
+    )
+
+    service.refresh_catalog()
+    service.refresh_catalog()
+
+    models = service.list_models(recommended_for=VISION_AI_PROFILE_ID)
+    recommended_set = models["recommended_sets"][VISION_AI_PROFILE_ID]
+    assert recommended_set["model_ids"][0] == "gpt-5.4-mini"
+    assert recommended_set["instance_ids"][0] == "openai-global-gpt-5-4-mini"
+
+    dispose_engine(database_url)
+
+
 def test_get_model_exposes_platform_model_alias(tmp_path: Path) -> None:
     database_url = _sqlite_url(tmp_path)
     init_schema(database_url)

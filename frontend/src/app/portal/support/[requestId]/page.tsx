@@ -10,7 +10,6 @@ import {
 } from '@/components/portal/PortalScaffold';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import {
-  PortalEmptyState,
   PortalErrorState,
   PortalLoadingState,
   PortalSignedOutState,
@@ -25,7 +24,10 @@ import {
   type PortalSupportRequestFeedback,
   type PortalSupportRequestMessage,
 } from '@/lib/portal-client';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import {
+  formatPortalErrorMessage,
+  formatPortalWriteErrorMessage,
+} from '@/lib/portal-error';
 import { formatDate } from '@/lib/utils';
 
 function statusTone(status: string): 'ok' | 'warning' | 'neutral' | 'danger' {
@@ -93,7 +95,7 @@ export default function PortalSupportRequestDetailPage() {
   const loadDetail = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId || !capturedRequestId) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     const contextRequestVersion = contextRequestVersionRef.current;
     const detailRequestVersion = ++detailRequestVersionRef.current;
     setIsDetailLoading(true);
@@ -147,7 +149,7 @@ export default function PortalSupportRequestDetailPage() {
     setFeedbackResolved(true);
     setFeedbackRating(5);
     setFeedbackComment('');
-    setIsDetailLoading(Boolean(isAuthenticated && contextSiteId && requestId));
+    setIsDetailLoading(Boolean(isAuthenticated && requestId));
     setIsSubmitting(false);
     setIsUploadingAttachment(false);
     setIsSubmittingFeedback(false);
@@ -156,7 +158,7 @@ export default function PortalSupportRequestDetailPage() {
   }, [contextSiteId, isAuthenticated, requestId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId || !requestId) return;
+    if (!isAuthenticated || !requestId) return;
     void loadDetail();
     return () => {
       detailRequestVersionRef.current += 1;
@@ -167,12 +169,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     const body = reply.trim();
     if (!body) return;
     setIsSubmitting(true);
@@ -195,7 +192,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
         contextRequestVersion === contextRequestVersionRef.current
@@ -209,12 +206,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     if (!attachmentFile) return;
     setIsUploadingAttachment(true);
     setError('');
@@ -246,7 +238,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
         contextRequestVersion === contextRequestVersionRef.current
@@ -260,12 +252,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     setError('');
     try {
       const response = await portalClient.getSupportRequestAttachment(
@@ -292,12 +279,7 @@ export default function PortalSupportRequestDetailPage() {
     const requestContextSiteId = contextSiteIdRef.current;
     const capturedRequestId = requestIdRef.current;
     const contextRequestVersion = contextRequestVersionRef.current;
-    if (
-      !contextSiteId
-      || !requestContextSiteId
-      || contextSiteId !== requestContextSiteId
-      || !capturedRequestId
-    ) return;
+    if (!isAuthenticated || !capturedRequestId) return;
     setIsSubmittingFeedback(true);
     setError('');
     setNotice('');
@@ -321,7 +303,7 @@ export default function PortalSupportRequestDetailPage() {
         || requestContextSiteId !== contextSiteIdRef.current
         || capturedRequestId !== requestIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      setError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
     } finally {
       if (
         contextRequestVersion === contextRequestVersionRef.current
@@ -342,28 +324,6 @@ export default function PortalSupportRequestDetailPage() {
         description={t('auth.please_sign_in')}
         actionLabel={t('nav.sign_in')}
       />
-    );
-  }
-
-  if (!contextSiteId || !session.selected_context) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          eyebrow={t('portal.support_requests_title', {}, 'Tickets')}
-          title={t('portal.support_request_detail_title', {}, 'Ticket detail')}
-          currentPage="support"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing this support ticket.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
     );
   }
 
@@ -389,7 +349,7 @@ export default function PortalSupportRequestDetailPage() {
         title={supportRequest?.title || t('portal.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
         currentPage="support"
-        sites={[session.selected_context.site]}
+        sites={session.selected_context ? [session.selected_context.site] : []}
         actions={
           <Link className="btn btn-secondary" href="/portal/support">
             {t('common.back', {}, 'Back')}
@@ -398,12 +358,12 @@ export default function PortalSupportRequestDetailPage() {
       />
 
       {notice ? (
-        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
+        <div role="status" className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
           {notice}
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
+        <div role="alert" className="rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
           {error}
         </div>
       ) : null}

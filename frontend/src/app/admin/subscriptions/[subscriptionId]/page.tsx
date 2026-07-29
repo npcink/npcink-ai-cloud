@@ -487,7 +487,7 @@ function SubscriptionDetailContent() {
           </BackofficeStackCard>
         </div>
 
-        <details className="rounded-2xl border border-dashed border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <details className="border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
           <summary className="cursor-pointer font-medium">
             {t('portal.support_information', {}, 'Support information')}
           </summary>

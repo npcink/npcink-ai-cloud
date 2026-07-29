@@ -236,6 +236,11 @@ class Settings(BaseSettings):
     web_search_bocha_api_key: str | None = Field(default=None)
     web_search_bocha_timeout_seconds: float = Field(default=15.0)
     web_search_bocha_cost_per_query: float = Field(default=0.0)
+    web_search_doubao_base_url: str = Field(default="https://open.feedcoopapi.com")
+    web_search_doubao_api_key: str | None = Field(default=None)
+    web_search_doubao_search_path: str = Field(default="/search_api/web_search")
+    web_search_doubao_timeout_seconds: float = Field(default=15.0)
+    web_search_doubao_cost_per_query: float = Field(default=0.02)
     web_search_jina_reader_enabled: bool = Field(default=False)
     web_search_jina_reader_base_url: str = Field(default="https://r.jina.ai")
     web_search_jina_reader_api_key: str | None = Field(default=None)
@@ -615,12 +620,14 @@ class Settings(BaseSettings):
             "auto",
             "tavily",
             "bocha",
+            "doubao_search",
             "apify",
             "zhihu",
         }
         if web_search_provider not in allowed_web_search_providers:
             raise ValueError(
-                "web_search_provider must be disabled, auto, tavily, bocha, apify, or zhihu"
+                "web_search_provider must be disabled, auto, tavily, bocha, doubao_search, "
+                "apify, or zhihu"
             )
         self.web_search_provider = web_search_provider
         if self.web_search_tavily_timeout_seconds <= 0:
@@ -631,6 +638,13 @@ class Settings(BaseSettings):
             raise ValueError("web_search_bocha_timeout_seconds must be greater than 0")
         if self.web_search_bocha_cost_per_query < 0:
             raise ValueError("web_search_bocha_cost_per_query must be zero or greater")
+        if self.web_search_doubao_timeout_seconds <= 0:
+            raise ValueError("web_search_doubao_timeout_seconds must be greater than 0")
+        if self.web_search_doubao_cost_per_query < 0:
+            raise ValueError("web_search_doubao_cost_per_query must be zero or greater")
+        doubao_search_path = str(self.web_search_doubao_search_path or "").strip()
+        if doubao_search_path and not doubao_search_path.startswith("/"):
+            raise ValueError("web_search_doubao_search_path must be empty or start with /")
         if self.web_search_jina_reader_timeout_seconds <= 0:
             raise ValueError("web_search_jina_reader_timeout_seconds must be greater than 0")
         if self.web_search_jina_reader_max_pages <= 0:
@@ -677,6 +691,20 @@ class Settings(BaseSettings):
             if not str(self.web_search_bocha_api_key or "").strip():
                 raise ValueError(
                     "web_search_bocha_api_key is required when web_search_provider=bocha"
+                )
+        if web_search_provider == "doubao_search":
+            if not str(self.web_search_doubao_base_url or "").strip():
+                raise ValueError(
+                    "web_search_doubao_base_url is required when web_search_provider=doubao_search"
+                )
+            if not str(self.web_search_doubao_api_key or "").strip():
+                raise ValueError(
+                    "web_search_doubao_api_key is required when web_search_provider=doubao_search"
+                )
+            if not doubao_search_path:
+                raise ValueError(
+                    "web_search_doubao_search_path is required when "
+                    "web_search_provider=doubao_search"
                 )
         if web_search_provider == "apify":
             if not str(self.web_search_apify_base_url or "").strip():

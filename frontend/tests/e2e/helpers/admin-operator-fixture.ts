@@ -350,6 +350,16 @@ export async function installAdminMocks(page: Page) {
           callback: { failed: 0, pending: 1 },
           guard: { recent_events: 1 },
         },
+        operational_readiness: {
+          status: 'error',
+          ok: false,
+          generated_at: '2026-04-06T10:00:00Z',
+          checks_total: 12,
+          checks_failed: 2,
+          failed_checks: ['worker.runtime_queue.fresh', 'cadence.provider_health_scan.fresh'],
+          failure_scopes: ['workers', 'cadence'],
+          href: '/admin/troubleshooting',
+        },
         runtime_operator_explanations: [
           {
             state: 'policy_gated',
@@ -1477,6 +1487,7 @@ export async function installAdminMocks(page: Page) {
                 status: 'published',
                 currency: 'CNY',
                 budgets: {
+                  max_ai_credits_per_period: 300,
                   max_runs_per_period: 500,
                   max_tokens_per_period: 200000,
                   max_cost_cny_per_period: 5,
@@ -1492,6 +1503,7 @@ export async function installAdminMocks(page: Page) {
               status: 'published',
               currency: 'CNY',
               budgets: {
+                max_ai_credits_per_period: 300,
                 max_runs_per_period: 500,
                 max_tokens_per_period: 200000,
                 max_cost_cny_per_period: 5,

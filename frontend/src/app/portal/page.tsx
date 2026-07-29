@@ -31,6 +31,8 @@ type RestrictionItem = {
   detail: string;
 };
 
+type AccountEntitlementsState = 'idle' | 'loading' | 'loaded' | 'error';
+
 function buildRestrictionItems({
   t,
   siteStatus,
@@ -70,6 +72,9 @@ export default function PortalPage() {
   const { t } = useLocale();
   const { session, isLoading, isAuthenticated } = useSession();
   const [accountEntitlements, setAccountEntitlements] = useState<Entitlements | null>(null);
+  const [accountEntitlementsState, setAccountEntitlementsState] =
+    useState<AccountEntitlementsState>('idle');
+  const [accountEntitlementsRetryVersion, setAccountEntitlementsRetryVersion] = useState(0);
   const contextSiteId = session?.selected_context?.site.site_id || '';
   const contextSiteIdRef = useRef(contextSiteId);
   const accountEntitlementsRequestVersionRef = useRef(0);
@@ -78,7 +83,9 @@ export default function PortalPage() {
     contextSiteIdRef.current = contextSiteId;
     const requestVersion = ++accountEntitlementsRequestVersionRef.current;
     setAccountEntitlements(null);
+    setAccountEntitlementsState('idle');
     if (!isAuthenticated || !contextSiteId) return;
+    setAccountEntitlementsState('loading');
 
     void portalClient
       .getAccountEntitlements()
@@ -88,15 +95,16 @@ export default function PortalPage() {
           && contextSiteId === contextSiteIdRef.current
         ) {
           setAccountEntitlements(response.data);
+          setAccountEntitlementsState('loaded');
         }
       })
-      .catch((error) => {
+      .catch(() => {
         if (
           requestVersion === accountEntitlementsRequestVersionRef.current
           && contextSiteId === contextSiteIdRef.current
         ) {
-          console.error('Failed to load account entitlements:', error);
           setAccountEntitlements(null);
+          setAccountEntitlementsState('error');
         }
       });
 
@@ -105,7 +113,7 @@ export default function PortalPage() {
         accountEntitlementsRequestVersionRef.current += 1;
       }
     };
-  }, [contextSiteId, isAuthenticated]);
+  }, [accountEntitlementsRetryVersion, contextSiteId, isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -180,17 +188,19 @@ export default function PortalPage() {
       href: selectedSiteRecordHref,
       action: t('portal.home.onboarding_site_action', {}, 'View site'),
     },
-    {
-      key: 'package',
-      done: Boolean(currentSubscription?.status === 'active' || hasPackageLabel),
-      title: t('portal.home.onboarding_package_title', {}, 'Review Free package'),
-      detail:
-        currentSubscription?.status === 'active'
-          ? t('portal.home.onboarding_package_ready', {}, 'The current package is available.')
-          : t('portal.home.onboarding_package_needed', {}, 'Review the current package and what remains this period.'),
-      href: '/portal/billing',
-      action: t('portal.home.onboarding_package_action', {}, 'View package'),
-    },
+    ...(isSelectedSiteConnected
+      ? [{
+          key: 'package',
+          done: Boolean(currentSubscription?.status === 'active' || hasPackageLabel),
+          title: t('portal.home.onboarding_package_title', {}, 'Review Free package'),
+          detail:
+            currentSubscription?.status === 'active'
+              ? t('portal.home.onboarding_package_ready', {}, 'The current package is available.')
+              : t('portal.home.onboarding_package_needed', {}, 'Review the current package and what remains this period.'),
+          href: '/portal/billing',
+          action: t('portal.home.onboarding_package_action', {}, 'View package'),
+        }]
+      : []),
   ];
   const requiredAttentionItems = setupChecklistItems.filter((item) => !item.done);
   const shouldShowOnboardingChecklist = requiredAttentionItems.length > 0;
@@ -198,6 +208,9 @@ export default function PortalPage() {
       ? t('portal.home.package_available_label', {}, 'Available')
       : t('portal.home.package_pending_label', {}, 'To confirm');
   const remainingCredits = Number(accountEntitlements?.quota_summary?.ai_credits?.remaining ?? 0);
+  const accountEntitlementsUnavailable = accountEntitlementsState === 'error';
+  const accountEntitlementsPending =
+    accountEntitlementsState === 'idle' || accountEntitlementsState === 'loading';
   const creditUnavailable =
     String(accountEntitlements?.quota_summary?.ai_credits?.status || '') === 'limited';
   const resourceOverLimit = Boolean(
@@ -212,6 +225,7 @@ export default function PortalPage() {
     restrictedCount > 0 ||
     creditUnavailable ||
     resourceOverLimit ||
+    accountEntitlementsState !== 'loaded' ||
     (currentSubscription?.status && currentSubscription.status !== 'active')
       ? 'warning'
       : 'active';
@@ -228,8 +242,26 @@ export default function PortalPage() {
     },
     {
       label: t('portal.usage.remaining_ai_credits', {}, 'Remaining'),
-      value: remainingCredits > 0 ? formatNumber(remainingCredits) : t('portal.home.package_pending_label', {}, 'To confirm'),
-      detail: t('portal.home.account_points_detail', {}, 'Account package AI credits remaining this period.'),
+      value: accountEntitlementsUnavailable ? (
+        <button
+          type="button"
+          className="text-left text-sm font-semibold text-blue-700 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
+          onClick={() => setAccountEntitlementsRetryVersion((current) => current + 1)}
+        >
+          {t('portal.home.entitlements_retry', {}, 'Unavailable · Retry')}
+        </button>
+      ) : accountEntitlementsPending ? (
+        t('common.loading')
+      ) : (
+        formatNumber(remainingCredits)
+      ),
+      detail: accountEntitlementsUnavailable
+        ? t(
+            'portal.home.entitlements_failed_desc',
+            {},
+            'Package usage could not be loaded. Retry before relying on the service status.'
+          )
+        : t('portal.home.account_points_detail', {}, 'Account package AI credits remaining this period.'),
       size: 'compact' as const,
     },
     {
@@ -241,7 +273,20 @@ export default function PortalPage() {
       size: 'compact' as const,
     },
   ];
-  const operationFocusItems = restrictionItems;
+  const operationFocusItems = [
+    ...restrictionItems,
+    ...(accountEntitlementsUnavailable
+      ? [{
+          tone: 'warn' as const,
+          label: t('portal.home.entitlements_failed_title', {}, 'Package usage is unavailable'),
+          detail: t(
+            'portal.home.entitlements_failed_desc',
+            {},
+            'Package usage could not be loaded. Retry before relying on the service status.'
+          ),
+        }]
+      : []),
+  ];
   const shouldShowFollowUpSection =
     operationFocusItems.length > 0 || shouldShowOnboardingChecklist;
 

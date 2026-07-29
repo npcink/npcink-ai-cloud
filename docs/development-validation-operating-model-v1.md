@@ -20,6 +20,7 @@ The approved topology is:
 | Authoring Mac | source editing, narrow source/static checks, Git, PR, and operator commands |
 | GitHub `master` | reviewed development integration truth |
 | M4 | disposable Docker build, runtime, migration, focused integration test, and preview evidence |
+| M4 frontend slots | bounded, read-only visual candidates sharing the accepted primary backend |
 | Cloudflare Access preview | protected human browser access to the M4 preview |
 | Local WordPress | abilities, workflows, settings, approval, preflight, and final-write truth |
 | Production | a separate operator-approved release target, never an automatic consequence of development |
@@ -103,6 +104,13 @@ ownership after unrelated changes are mixed.
 | Dependency, lock, Dockerfile, Compose, proxy, or deployment input | focused source/static gate | `pnpm run m4:preview:deploy` |
 | Migration, persistence, worker, recovery, or network behavior | focused contract plus risk-specific checks | M4 runtime evidence; full gate only when justified |
 | CI-only change | focused script/contract replay | GitHub Actions is the runtime; do not deploy M4 |
+
+For a frontend-only appearance change, an owned ephemeral slot may replace the
+primary `sync` checkpoint when it needs no mutation, dependency, API,
+migration, worker, persistence, proxy, or runtime-config change. The slot must
+attach to a clean accepted primary runtime and use its foreground loopback
+tunnel. This is a concurrency exception for rendering only, not a second
+integration stack.
 
 `sync` is the default for ordinary source. It must fail closed when a changed
 fingerprint requires `deploy`. Do not choose a cold rebuild merely because it
@@ -308,7 +316,7 @@ First diagnose transfer, tunnel, rebuild frequency, test scope, resource
 pressure, or architecture parity when these thresholds fail.
 
 A dedicated cloud development server becomes justified when persistent uptime,
-public webhook reachability, multiple concurrent isolated environments,
+public webhook reachability, multiple concurrent stateful isolated environments,
 x86_64 production parity, or weekly M4 downtime is the dominant constraint.
 It should not be purchased merely to avoid using the focused workflow already
 available.

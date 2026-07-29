@@ -14,7 +14,7 @@ export function PublicStatusSummary() {
   useEffect(() => {
     let active = true;
 
-    fetch('/api/health', { cache: 'no-store' })
+    fetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(5_000) })
       .then(async (response) => {
         const payload = await response.json() as { status?: string };
         if (!active) return;
@@ -31,8 +31,8 @@ export function PublicStatusSummary() {
 
   const copy = state === 'healthy'
     ? {
-        label: zh ? '公开入口运行正常' : 'Public entry is operational',
-        detail: zh ? '刚刚完成可用性检查。' : 'Availability was checked moments ago.',
+        label: zh ? '官网与服务中心 API 入口正常' : 'Website and Portal API entry are operational',
+        detail: zh ? '刚刚完成前端与服务中心 API 存活检查。' : 'Frontend and Portal API liveness were checked moments ago.',
         dot: 'bg-emerald-500',
         text: 'text-emerald-700 dark:text-emerald-400',
       }

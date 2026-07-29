@@ -18,6 +18,20 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
+async function fulfillError(route: Route, errorCode: string) {
+  await route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      status: 'error',
+      error_code: errorCode,
+      message: 'internal backend detail',
+      data: {},
+      meta: { trace_id: 'portal-workspace-error-trace', revision: 'm6' },
+    }),
+  });
+}
+
 function buildPortalSession(selectedSiteId: string) {
   const sites = [
     {
@@ -102,15 +116,18 @@ async function installPortalMocks(
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
     delayInitialEntitlements?: boolean;
+    zeroEntitlements?: boolean;
+    failInitialEntitlements?: boolean;
   } = {}
 ) {
   let selectedSiteId = 'site_attention';
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
-  let accountRequestCount = 0;
+  let accountProjectionRequestCount = 0;
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
+  let initialEntitlementsFailed = false;
   let releaseInitialEntitlementsGate: (() => void) | null = null;
   const initialEntitlementsGate = new Promise<void>((resolve) => {
     releaseInitialEntitlementsGate = resolve;
@@ -151,8 +168,8 @@ async function installPortalMocks(
       return;
     }
 
-    if (pathname.startsWith('/account/') || pathname.startsWith('/support-requests')) {
-      accountRequestCount += 1;
+    if (pathname.startsWith('/account/')) {
+      accountProjectionRequestCount += 1;
     }
 
     if (pathname === '/auth/identity-providers') {
@@ -205,6 +222,11 @@ async function installPortalMocks(
 
     if (pathname === '/account/entitlements') {
       const requestSiteId = selectedSiteId;
+      if (options.failInitialEntitlements && !initialEntitlementsFailed) {
+        initialEntitlementsFailed = true;
+        await fulfillError(route, 'service.entitlements_temporarily_unavailable');
+        return;
+      }
       const shouldDelayThisResponse = Boolean(
         options.delayInitialEntitlements
         && !initialEntitlementsDelayed
@@ -217,7 +239,7 @@ async function installPortalMocks(
       const paidRemaining = paymentReturnConfirmed ? 10000 : 0;
       const packageRemaining = options.delayInitialEntitlements
         ? requestSiteId === 'site_attention' ? 987654 : 4242
-        : 2419;
+        : options.zeroEntitlements ? 0 : 2419;
       const totalRemaining = packageRemaining + paidRemaining;
       await fulfillJson(route, {
         site_id: '',
@@ -799,6 +821,33 @@ async function installPortalMocks(
             updated_at: '2026-04-07T09:05:00Z',
           },
         ],
+      });
+      return;
+    }
+
+    if (pathname === '/support-requests/ticket_portal_e2e_open') {
+      await fulfillJson(route, {
+        request: {
+          request_id: 'ticket_portal_e2e_open',
+          topic: 'billing',
+          status: 'open',
+          priority: 'normal',
+          title: 'Payment order status looks wrong',
+          description: 'Please check the latest account payment order.',
+          created_at: '2026-04-07T09:05:00Z',
+          updated_at: '2026-04-07T09:05:00Z',
+        },
+        messages: [
+          {
+            message_id: 'support_message_portal_e2e_open',
+            request_id: 'ticket_portal_e2e_open',
+            author_kind: 'customer',
+            body: 'Please check the latest account payment order.',
+            created_at: '2026-04-07T09:05:00Z',
+          },
+        ],
+        attachments: [],
+        feedback: null,
       });
       return;
     }
@@ -1463,7 +1512,7 @@ async function installPortalMocks(
   });
 
   return {
-    accountRequestCount: () => accountRequestCount,
+    accountProjectionRequestCount: () => accountProjectionRequestCount,
     delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
   };
@@ -1714,8 +1763,6 @@ test('account projections stay idle until a site context is selected', async ({ 
     '/portal/billing',
     '/portal/usage',
     '/portal/audit',
-    '/portal/support',
-    '/portal/support/ticket_portal_e2e_open',
   ]) {
     await page.goto(path);
     await expect(
@@ -1723,7 +1770,21 @@ test('account projections stay idle until a site context is selected', async ({ 
     ).toBeVisible();
   }
 
-  expect(calls.accountRequestCount()).toBe(0);
+  expect(calls.accountProjectionRequestCount()).toBe(0);
+});
+
+test('account-level support stays available without a selected site context', async ({ page }) => {
+  const calls = await installPortalMocks(page, { withoutSelectedContext: true });
+
+  await page.goto('/portal/support');
+  await expect(page.getByRole('combobox', { name: /Current site|站点记录|站點記錄/i })).toHaveValue('');
+  await expect(page.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
+
+  await page.goto('/portal/support/ticket_portal_e2e_open');
+  await expect(page.getByRole('heading', { level: 1, name: /Payment order status looks wrong/i })).toBeVisible();
+  await expect(page.getByText(/Please check the latest account payment order\./i).first()).toBeVisible();
+
+  expect(calls.accountProjectionRequestCount()).toBe(0);
 });
 
 test('late account entitlements cannot overwrite a newly selected site context', async ({ page }) => {
@@ -1742,7 +1803,26 @@ test('late account entitlements cannot overwrite a newly selected site context',
   await expect(page.getByText(/^4,242$|^4,242 点$/i).first()).toBeVisible();
 });
 
-test('portal usage and workspace stay usable on mobile viewport', async ({ page }) => {
+test('portal home renders a real zero entitlement balance', async ({ page }) => {
+  await installPortalMocks(page, { zeroEntitlements: true });
+  await page.goto('/portal');
+
+  const remainingMetric = page.getByText(/^Remaining$|^剩余$/i).first().locator('../..');
+  await expect(remainingMetric.getByText(/^0$/)).toBeVisible();
+  await expect(remainingMetric.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
+});
+
+test('portal home exposes a safe retry when entitlements fail', async ({ page }) => {
+  await installPortalMocks(page, { failInitialEntitlements: true });
+  await page.goto('/portal');
+  const retryButton = page.getByRole('button', { name: /Unavailable.*Retry|暂不可用.*重试/i });
+  await expect(retryButton).toBeVisible();
+  await expect(page.getByText(/internal backend detail/i)).toHaveCount(0);
+  await retryButton.click();
+  await expect(page.getByText(/^2,419$/).first()).toBeVisible();
+});
+
+test('portal purchase and support tasks stay usable on a 390px viewport', async ({ page }) => {
   await installPortalMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -1754,4 +1834,19 @@ test('portal usage and workspace stay usable on mobile viewport', async ({ page 
   await expect(page.getByRole('heading', { level: 1, name: /^Usage$|^用量$/i })).toBeVisible();
   await page.locator('[data-portal-usage="view-tabs"]').getByRole('tab', { name: /AI credit records|AI 积分记录/i }).click();
   await expect(page.getByRole('heading', { level: 2, name: /^AI credit records$|^AI 积分记录$/i })).toBeVisible();
+
+  await page.goto('/portal/billing');
+  await page.getByRole('button', { name: /Upgrade package|升级套餐/i }).click();
+  const packageDialog = page.getByRole('dialog', { name: /Choose a package|选择套餐/i });
+  await expect(packageDialog.getByRole('link', { name: /Terms|服务条款/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /Privacy|隐私政策/i })).toBeVisible();
+  await expect(packageDialog.getByRole('link', { name: /Tickets|工单/i })).toBeVisible();
+  await expect(packageDialog).toBeInViewport();
+  await page.keyboard.press('Escape');
+
+  await page.goto('/portal/support');
+  await page.getByRole('button', { name: /Submit ticket|提交工单/i }).click();
+  await expect(page.locator('[data-portal-support="new-ticket-dialog"]')).toBeInViewport();
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

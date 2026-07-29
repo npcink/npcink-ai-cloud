@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -11,7 +12,10 @@ IMAGE_CONTEXT_EVIDENCE_EXECUTION_KIND = "image_context_evidence"
 IMAGE_CONTEXT_EVIDENCE_PROFILE_ID = "vision.ai"
 IMAGE_CONTEXT_EVIDENCE_ABILITY_FAMILY = "vision"
 IMAGE_CONTEXT_EVIDENCE_DATA_CLASSIFICATION = "public_site_media_metadata"
+IMAGE_CONTEXT_EVIDENCE_ARTIFACT_DATA_CLASSIFICATION = "internal"
 MAX_IMAGE_CONTEXT_EVIDENCE_ITEMS = 10
+MAX_IMAGE_CONTEXT_EVIDENCE_ARTIFACT_BYTES = 24 * 1024 * 1024
+IMAGE_CONTEXT_EVIDENCE_ARTIFACT_ID_PATTERN = re.compile(r"^art_[0-9a-f]{32}$")
 
 FORBIDDEN_IMAGE_CONTEXT_EVIDENCE_KEYS = frozenset(
     {
@@ -113,12 +117,27 @@ def validate_image_context_evidence_runtime_contract(
                 "image_context_evidence.attachment_id_required",
                 f"image context evidence item {index} requires attachment_id",
             )
+        source_artifact_id = str(item.get("source_artifact_id") or "").strip()
         source_url = str(item.get("source_url") or item.get("url") or "").strip()
         thumbnail_url = str(item.get("thumbnail_url") or "").strip()
-        if not source_url and not thumbnail_url:
+        if source_artifact_id and (source_url or thumbnail_url):
+            raise ImageContextEvidenceContractViolation(
+                "image_context_evidence.image_source_conflict",
+                f"image context evidence item {index} must use either source_artifact_id "
+                "or public image URLs",
+            )
+        if not source_artifact_id and not source_url and not thumbnail_url:
             raise ImageContextEvidenceContractViolation(
                 "image_context_evidence.image_url_required",
-                f"image context evidence item {index} requires source_url or thumbnail_url",
+                f"image context evidence item {index} requires source_artifact_id, "
+                "source_url, or thumbnail_url",
+            )
+        if source_artifact_id and (
+            IMAGE_CONTEXT_EVIDENCE_ARTIFACT_ID_PATTERN.fullmatch(source_artifact_id) is None
+        ):
+            raise ImageContextEvidenceContractViolation(
+                "image_context_evidence.source_artifact_id_invalid",
+                f"image context evidence item {index} source_artifact_id is invalid",
             )
         for field_name, url in (("source_url", source_url), ("thumbnail_url", thumbnail_url)):
             if url:
@@ -130,6 +149,21 @@ def extract_image_context_evidence_request(input_payload: dict[str, Any]) -> dic
     if isinstance(nested, dict):
         return nested
     return input_payload
+
+
+def image_context_evidence_artifact_ids(input_payload: dict[str, Any]) -> list[str]:
+    evidence_request = extract_image_context_evidence_request(input_payload)
+    items = evidence_request.get("items")
+    if not isinstance(items, list):
+        return []
+    artifact_ids: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        artifact_id = str(item.get("source_artifact_id") or "").strip()
+        if artifact_id:
+            artifact_ids.append(artifact_id)
+    return artifact_ids
 
 
 def find_forbidden_image_context_evidence_field(value: Any, *, path: str = "") -> str:

@@ -69,14 +69,19 @@ assert.match(
 
 assert.match(
   loginSource,
-  /if \(isLoading \|\| isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'the login form must remain hidden while the session is resolving or redirecting'
+  /if \(isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
+  'the login form must stay available during session discovery and hide only after authentication is confirmed'
 );
 
 assert.match(
   loginSource,
   /await verifyLoginCode\(normalizedEmail, normalizedCode, \{ rememberMe: form\.rememberMe \}\)[\s\S]*window\.location\.replace\(redirectTo\)/,
   'Portal login page must use a full-page navigation to the requested safe redirect after cookie-backed verification'
+);
+assert.match(
+  loginSource,
+  /aria-invalid=\{form\.status === 'error'[\s\S]*portal-login-form-message[\s\S]*role=\{form\.status === 'error' \? 'alert' : 'status'\}/,
+  'Portal login errors must be announced and associated with the active field'
 );
 
 console.log('portal_login_remember_me_contract: ok');

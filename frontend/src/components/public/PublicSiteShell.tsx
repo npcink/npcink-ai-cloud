@@ -29,14 +29,19 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
         className="sticky top-0 z-40 border-b border-slate-200/70 bg-[#f6f7f9]/90 backdrop-blur-xl dark:border-white/10 dark:bg-[#09101c]"
       >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
-          <Link href="/" className="group flex items-center gap-3" aria-label="Npcink AI Cloud">
+          <Link href="/" className="group flex shrink-0 items-center gap-3" aria-label="Npcink AI Cloud">
             <span className="grid h-8 w-8 place-items-center bg-[#2357ff] text-sm font-black text-white transition-transform group-hover:-rotate-3">
               N
             </span>
-            <span className="hidden text-sm font-extrabold tracking-[0.18em] sm:inline">NPCINK AI CLOUD</span>
+            <span className="hidden whitespace-nowrap text-sm font-extrabold tracking-[0.18em] sm:inline">
+              NPCINK AI CLOUD
+            </span>
           </Link>
 
-          <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 dark:text-slate-300 md:flex">
+          <nav
+            data-public-desktop-nav
+            className="hidden items-center gap-7 text-sm font-medium text-slate-600 dark:text-slate-300 lg:flex"
+          >
             {PUBLIC_HEADER_NAV_ITEMS.map((item) => (
               <Link key={item.id} href={item.href} className="transition-colors hover:text-[#2357ff]">
                 {publicNavigationLabel(item, locale)}
@@ -51,13 +56,14 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
             </div>
             <Link
               href="/portal/login"
-              className="hidden h-10 items-center bg-[#101828] px-5 text-sm font-bold text-white transition-colors hover:bg-[#2357ff] dark:bg-white dark:text-[#101828] dark:hover:bg-[#9eb3ff] sm:inline-flex"
+              className="hidden h-10 items-center whitespace-nowrap bg-[#101828] px-5 text-sm font-bold text-white transition-colors hover:bg-[#2357ff] dark:bg-white dark:text-[#101828] dark:hover:bg-[#9eb3ff] sm:inline-flex"
             >
               {zh ? '登录服务中心' : 'Sign in'}
             </Link>
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 text-slate-700 transition hover:border-[#2357ff] hover:text-[#2357ff] dark:border-slate-700 dark:text-slate-200 md:hidden"
+              data-public-mobile-menu
+              className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 text-slate-700 transition hover:border-[#2357ff] hover:text-[#2357ff] dark:border-slate-700 dark:text-slate-200 lg:hidden"
               aria-controls="public-mobile-nav"
               aria-expanded={mobileNavOpen}
               aria-label={mobileNavOpen ? (zh ? '关闭菜单' : 'Close menu') : (zh ? '打开菜单' : 'Open menu')}
@@ -77,7 +83,7 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
         </div>
         <div
           id="public-mobile-nav"
-          className={mobileNavOpen ? 'border-t border-slate-200 bg-white dark:border-white/10 dark:bg-[#09101c] md:hidden' : 'hidden'}
+          className={mobileNavOpen ? 'border-t border-slate-200 bg-white dark:border-white/10 dark:bg-[#09101c] lg:hidden' : 'hidden'}
         >
           <nav className="mx-auto grid max-w-7xl gap-1 px-5 py-4 text-sm font-bold">
             {PUBLIC_HEADER_NAV_ITEMS.map((item) => (
@@ -92,12 +98,12 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
             ))}
             <Link
               href="/portal/login"
-              className="mt-2 bg-[#101828] px-3 py-3 text-center text-white dark:bg-white dark:text-[#101828]"
+              className="mt-2 bg-[#101828] px-3 py-3 text-center text-white dark:bg-white dark:text-[#101828] sm:hidden"
               onClick={() => setMobileNavOpen(false)}
             >
               {zh ? '登录服务中心' : 'Sign in'}
             </Link>
-            <div className="mt-3 flex items-center gap-2 border-t border-slate-200 px-3 pt-4 dark:border-white/10">
+            <div className="mt-3 flex items-center gap-2 border-t border-slate-200 px-3 pt-4 dark:border-white/10 sm:hidden">
               <LocaleSwitcher />
               <ThemeToggle />
             </div>
@@ -111,9 +117,9 @@ export function PublicSiteShell({ children }: { children: ReactNode }) {
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 sm:grid-cols-[1fr_auto] lg:px-8">
           <div>
             <p className="text-sm font-extrabold tracking-[0.18em]">NPCINK AI CLOUD</p>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 [text-wrap:pretty] dark:text-slate-400">
               {zh
-                ? '为 WordPress 提供托管 AI 运行、用量与服务诊断。内容最终确认与发布仍由站点管理员完成。'
+                ? '为 WordPress 提供托管 AI 运行、用量记录和服务诊断。内容确认与发布仍由站点管理员完成。'
                 : 'Hosted AI runtime, usage evidence, and service diagnostics for WordPress. Site owners retain final review and publishing control.'}
             </p>
           </div>

@@ -1066,6 +1066,68 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
+def test_portal_account_support_works_before_site_connection(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    email = "portal-account-support@example.com"
+    registration = _request_portal_registration_code(
+        client,
+        email=email,
+        headers={"X-Npcink-Debug-Portal-Link": "1"},
+    )
+    _verify_portal_registration_code(
+        client,
+        email=email,
+        code=str(registration["code"]),
+    )
+
+    session_response = client.get("/portal/v1/session")
+    assert session_response.status_code == 200, session_response.text
+    assert session_response.json()["data"]["sites"] == []
+    assert session_response.json()["data"]["selected_context"] is None
+
+    create_response = client.post(
+        "/portal/v1/support-requests",
+        json={
+            "topic": "account",
+            "title": "WordPress connection needs help",
+            "description": "The addon has not connected a WordPress site to this account yet.",
+            "site_id": "",
+            "source_path": "/portal/support",
+        },
+        headers=_portal_cookie_headers(
+            idempotency_key="portal-account-support-create-001"
+        ),
+    )
+    assert create_response.status_code == 200, create_response.text
+    request_item = create_response.json()["data"]["request"]
+    _assert_no_portal_support_internal_fields(request_item)
+    assert request_item["site_id"] == ""
+
+    list_response = client.get("/portal/v1/support-requests")
+    assert list_response.status_code == 200, list_response.text
+    assert [
+        item["request_id"] for item in list_response.json()["data"]["items"]
+    ] == [request_item["request_id"]]
+
+    detail_response = client.get(
+        f"/portal/v1/support-requests/{request_item['request_id']}"
+    )
+    assert detail_response.status_code == 200, detail_response.text
+    assert detail_response.json()["data"]["request"]["site_id"] == ""
+
+    message_response = client.post(
+        f"/portal/v1/support-requests/{request_item['request_id']}/messages",
+        json={"body": "The WordPress addon still shows the connection as pending."},
+        headers=_portal_cookie_headers(
+            idempotency_key="portal-account-support-message-001"
+        ),
+    )
+    assert message_response.status_code == 200, message_response.text
+    assert message_response.json()["data"]["message"]["author_kind"] == "customer"
+
+    dispose_engine(database_url)
+
+
 def test_portal_remove_site_soft_removes_record_and_revokes_active_keys(
     tmp_path: Path,
 ) -> None:

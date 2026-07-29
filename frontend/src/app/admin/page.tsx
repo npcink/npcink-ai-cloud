@@ -81,6 +81,15 @@ interface AdminOverview {
     nextStepKind: string;
     nextStepRef: string;
   }>;
+  operationalReadiness: {
+    status: 'ok' | 'error' | 'unknown';
+    generatedAt: string;
+    checksTotal: number;
+    checksFailed: number;
+    failedChecks: string[];
+    failureScopes: string[];
+    href: string;
+  };
   runtimeTelemetry: {
     status: string;
     summary: string;
@@ -116,6 +125,7 @@ function normalizeOverview(raw: any): AdminOverview {
   const recentUsage = raw?.recent_usage ?? {};
   const totals = recentUsage?.totals ?? {};
   const runtimeTelemetry = raw?.runtime_telemetry ?? {};
+  const operationalReadiness = raw?.operational_readiness ?? {};
   const runtimeTelemetryAlertSummary = runtimeTelemetry?.alert_summary ?? {};
   const runtimeTelemetryDailyDigest = runtimeTelemetryAlertSummary?.daily_digest ?? {};
 
@@ -190,6 +200,22 @@ function normalizeOverview(raw: any): AdminOverview {
           nextStepRef: String(item?.next_step_ref ?? ''),
         }))
       : [],
+    operationalReadiness: {
+      status:
+        operationalReadiness.status === 'ok' || operationalReadiness.status === 'error'
+          ? operationalReadiness.status
+          : 'unknown',
+      generatedAt: String(operationalReadiness.generated_at ?? ''),
+      checksTotal: Number(operationalReadiness.checks_total ?? 0),
+      checksFailed: Number(operationalReadiness.checks_failed ?? 0),
+      failedChecks: Array.isArray(operationalReadiness.failed_checks)
+        ? operationalReadiness.failed_checks.map(String)
+        : [],
+      failureScopes: Array.isArray(operationalReadiness.failure_scopes)
+        ? operationalReadiness.failure_scopes.map(String)
+        : [],
+      href: String(operationalReadiness.href ?? '/admin/troubleshooting') || '/admin/troubleshooting',
+    },
     runtimeTelemetry: {
       status: String(runtimeTelemetryAlertSummary.status ?? 'inactive'),
       summary: String(runtimeTelemetryAlertSummary.summary ?? ''),
@@ -374,20 +400,27 @@ function AdminOverviewContent() {
     },
   });
 
-  const statusTone =
-    overview.runtimeSummary.callbackFailed > 0
-      ? 'error'
-      : overview.runtimeTelemetry.status === 'error'
-        ? 'error'
-      : overview.attentionSubscriptions.length > 0 ||
-          overview.runtimeTelemetry.status === 'warning' ||
-          overview.expiringSubscriptions.in7Days > 0 ||
-          overview.runtimeSummary.guardEvents > 0 ||
-          overview.runtimeSummary.callbackPending > 0
-        ? 'warning'
-        : overview.totals.sitesActive === 0
-          ? 'inactive'
-          : 'ok';
+  const readinessBlocked = overview.operationalReadiness.status === 'error';
+  const readinessUnknown = overview.operationalReadiness.status === 'unknown';
+  const readinessScopeLabels = overview.operationalReadiness.failureScopes.map((scope) =>
+    t(`admin.home_readiness_scope_${scope}`, {}, scope)
+  );
+  const readinessScopeText = readinessScopeLabels.join(', ') || t('common.unknown');
+  let statusTone: 'error' | 'warning' | 'inactive' | 'ok' = 'ok';
+  if (readinessBlocked || overview.runtimeSummary.callbackFailed > 0 || overview.runtimeTelemetry.status === 'error') {
+    statusTone = 'error';
+  } else if (
+    readinessUnknown ||
+    overview.attentionSubscriptions.length > 0 ||
+    overview.runtimeTelemetry.status === 'warning' ||
+    overview.expiringSubscriptions.in7Days > 0 ||
+    overview.runtimeSummary.guardEvents > 0 ||
+    overview.runtimeSummary.callbackPending > 0
+  ) {
+    statusTone = 'warning';
+  } else if (overview.totals.sitesActive === 0) {
+    statusTone = 'inactive';
+  }
   const statusLabel = t(`status.${statusTone}`, {}, statusTone);
   const statusClasses =
     statusTone === 'error'
@@ -397,30 +430,55 @@ function AdminOverviewContent() {
         : statusTone === 'inactive'
           ? 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
           : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200';
-  const platformConclusion =
-    statusTone === 'error'
-      ? t(
-          'admin.home_status_error',
-          {},
-          'Platform callbacks are failing and need operator intervention now.'
-        )
-      : statusTone === 'warning'
-        ? t(
-            'admin.home_status_warning',
-            {},
-            'Platform is serving traffic, but subscriptions or runtime signals need review before they widen.'
-          )
-        : statusTone === 'inactive'
-          ? t(
-              'admin.home_status_inactive',
-              {},
-              'No active sites are currently provisioned. Confirm whether this is intentional before further operator work.'
-            )
-          : t(
-              'admin.home_status_ok',
-              {},
-              'Platform is nominal. Use this surface to review posture and clear the next operational queue.'
-            );
+  const readinessLabel = readinessBlocked
+    ? t('admin.home_readiness_blocked', {}, 'Not operationally ready')
+    : readinessUnknown
+      ? t('admin.home_readiness_unknown', {}, 'Readiness unknown')
+      : t('admin.home_readiness_ready', {}, 'Operationally ready');
+  const readinessClasses = readinessBlocked
+    ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200'
+    : readinessUnknown
+      ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200';
+  let platformConclusion = t(
+    'admin.home_status_ok',
+    {},
+    'Platform is nominal. Use this surface to review posture and clear the next operational queue.'
+  );
+  if (readinessBlocked) {
+    platformConclusion = t(
+      'admin.home_readiness_blocked_desc',
+      {
+        count: formatInteger(overview.operationalReadiness.checksFailed),
+        scopes: readinessScopeText,
+      },
+      `${formatInteger(overview.operationalReadiness.checksFailed)} formal readiness checks failed across ${readinessScopeText}. Inspect the failing runtime evidence before continuing operations.`
+    );
+  } else if (readinessUnknown) {
+    platformConclusion = t(
+      'admin.home_readiness_unknown_desc',
+      {},
+      'Formal operational readiness evidence is unavailable. Do not treat recent traffic as proof that the platform is ready.'
+    );
+  } else if (statusTone === 'error') {
+    platformConclusion = t(
+      'admin.home_status_error',
+      {},
+      'Platform callbacks are failing and need operator intervention now.'
+    );
+  } else if (statusTone === 'warning') {
+    platformConclusion = t(
+      'admin.home_status_warning',
+      {},
+      'Platform is serving traffic, but subscriptions or runtime signals need review before they widen.'
+    );
+  } else if (statusTone === 'inactive') {
+    platformConclusion = t(
+      'admin.home_status_inactive',
+      {},
+      'No active sites are currently provisioned. Confirm whether this is intentional before further operator work.'
+    );
+  }
   const primaryMetrics = [
     {
       label: t('admin.active_sites'),
@@ -472,9 +530,33 @@ function AdminOverviewContent() {
   );
   const firstOperatorWatchItem = operatorWatchItems[0];
   const firstOperatorWatchScope = firstOperatorWatchItem?.scope || '';
-  const attentionNotes = operatorWatchItems.slice(0, 2);
+  const readinessWatchItem = readinessBlocked || readinessUnknown
+    ? {
+        title: readinessLabel,
+        scope: 'runtime.operational_readiness',
+        severity: readinessBlocked ? 'action-needed' as const : 'warn' as const,
+        reason: readinessBlocked
+          ? t(
+              'admin.home_readiness_watch_reason',
+              { scopes: readinessScopeText },
+              `Formal readiness is blocked in: ${readinessScopeText}.`
+            )
+          : t(
+              'admin.home_readiness_unknown_watch_reason',
+              {},
+              'The overview response did not include a current formal readiness result.'
+            ),
+        value: readinessBlocked ? formatInteger(overview.operationalReadiness.checksFailed) : '?',
+      }
+    : null;
+  const attentionNotes = [
+    ...(readinessWatchItem ? [readinessWatchItem] : []),
+    ...operatorWatchItems,
+  ].slice(0, 2);
   const primaryActionHref =
-    firstOperatorWatchScope.startsWith('runtime.telemetry')
+    readinessBlocked || readinessUnknown
+      ? overview.operationalReadiness.href
+    : firstOperatorWatchScope.startsWith('runtime.telemetry')
       ? '/admin/troubleshooting'
       : firstOperatorWatchScope.startsWith('runtime.') || firstOperatorWatchScope.startsWith('request.')
         ? '/admin/accounts'
@@ -482,7 +564,9 @@ function AdminOverviewContent() {
           ? '/admin/coverage'
           : '/admin/accounts';
   const primaryActionLabel =
-    primaryActionHref === '/admin/troubleshooting'
+    readinessBlocked || readinessUnknown
+      ? t('admin.home_primary_action_readiness', {}, 'Inspect readiness failures')
+    : primaryActionHref === '/admin/troubleshooting'
       ? t('admin.home_primary_action_runtime_telemetry', {}, 'Inspect runtime telemetry')
       : primaryActionHref === '/admin/coverage'
       ? t('admin.home_primary_action_coverage', {}, 'Review service status')
@@ -627,13 +711,17 @@ function AdminOverviewContent() {
             <span
               className={cn(
                 'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em]',
-                statusClasses
+                readinessClasses
               )}
             >
-              {statusLabel}
+              {readinessLabel}
             </span>
             <span className="text-sm text-slate-500 dark:text-slate-400">
-              {overview.generatedAt ? formatDate(overview.generatedAt) : t('common.unknown')}
+              {overview.operationalReadiness.generatedAt
+                ? formatDate(overview.operationalReadiness.generatedAt)
+                : overview.generatedAt
+                  ? formatDate(overview.generatedAt)
+                  : t('common.unknown')}
             </span>
           </div>
           {attentionNotes.length > 0 ? (
@@ -982,7 +1070,7 @@ function AdminOverviewContent() {
         </div>
       </details>
 
-      <details className="rounded-2xl border border-dashed border-slate-200 px-5 py-4 dark:border-slate-800">
+      <details className="border-t border-slate-200 pt-4 dark:border-slate-800">
         <summary className="cursor-pointer list-none text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
           {t('admin.home_secondary_title', {}, 'Supporting evidence')}
           <span className="ml-3 font-normal text-slate-500 dark:text-slate-400">

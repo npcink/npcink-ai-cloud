@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
 
-const source = readFileSync(fromFrontendRoot('src/app/admin/portal-users/page.tsx'), 'utf8');
+const source = [
+  'src/app/admin/portal-users/page.tsx',
+  'src/features/admin/portal-users/PortalUsersWorkspace.tsx',
+  'src/features/admin/portal-users/directory-model.ts',
+  'src/features/admin/portal-users/queries.ts',
+  'src/features/admin/portal-users/api.ts',
+].map((path) => readFileSync(fromFrontendRoot(path), 'utf8')).join('\n');
 
 assert.match(source, /BackofficeLayer/, 'Portal user directory must use the compact operating header');
 assert.match(source, /BackofficeSummaryStrip/, 'Portal user directory must expose a compact status summary');
@@ -19,7 +25,13 @@ assert.match(source, /id="portal-user-inspector"/, 'one user inspector must hold
 assert.match(source, /admin\.portal_users\.open_customer_action/, 'the inspector must open the existing customer record');
 assert.match(source, /admin\.portal_users\.audit_action/, 'audit must remain an explicit inspector action');
 
-assert.match(source, /selectedPrincipalIds\.length > 0/, 'batch destructive actions must appear only after selection');
+assert.match(source, /selectedActiveUsers\.length > 0/, 'batch destructive actions must count active selected users only');
+assert.match(
+  source,
+  /const destructiveActionsDisabled =[\s\S]*displayScope\.isRetainedScope[\s\S]*directoryQuery\.isError[\s\S]*disableMutation\.isPending[\s\S]*batchDisableMutation\.isPending/,
+  'old scopes, directory errors, and either pending disable mutation must fail closed'
+);
+assert.match(source, /disabled=\{destructiveActionsDisabled/, 'destructive controls must consume the shared fail-closed state');
 assert.match(source, /admin\.portal_users\.access_actions_title/, 'single-user disable must stay behind an explicit access-actions disclosure');
 assert.match(source, /AdminLatestOperationButton/, 'auditable mutation receipts must use the compact latest-operation entry');
 assert.match(source, /toast\.success/, 'transient mutation success must use global toast feedback');

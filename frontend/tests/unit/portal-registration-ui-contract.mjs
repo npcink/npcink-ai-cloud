@@ -99,8 +99,8 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /if \(isLoading \|\| isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'the registration form must remain hidden while the existing session is resolving or redirecting'
+  /if \(isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
+  'the registration form must stay available during session discovery and hide only after authentication is confirmed'
 );
 assert.match(
   registerSource,
@@ -134,6 +134,11 @@ assert.match(
   registerSource,
   /<QqLoginButton/,
   'portal registration must expose QQ as a first-class registration entry'
+);
+assert.match(
+  registerSource,
+  /aria-invalid=\{form\.status === 'error'[\s\S]*portal-register-form-message[\s\S]*role=\{form\.status === 'error' \? 'alert' : 'status'\}/,
+  'portal registration errors must be announced and associated with the active field'
 );
 assert.match(
   clientSource,

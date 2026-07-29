@@ -315,7 +315,7 @@ PR `#317` 已将 `/admin/vector-settings` 整理为本路线的固定配置参�
 | --- | --- | --- | --- |
 | P1 | `/admin/credit-packs` | 积分包目录表 + 共享编辑工作台 | 对象字段重复且需要比较，当前最适合直接获得表格效率 |
 | P2 | `/admin/site-compliance` | 设置目录 + 单一活动面板 + 版本/验证表 | 设置域异构，只有元数据、版本和验证问题适合表格 |
-| P3 | `/admin/plans/[planId]` | 版本目录表 + 共享编辑工作台 | 可清理现存 route-local dialog，但商业风险更高，应在前两项稳定后处理 |
+| 已完成 | `/admin/plans` | 套餐目录表 + 共享管理工作台 | 已将参数说明、编辑发布、诊断和版本记录收敛到目录，移除独立详情路由与 route-local dialog |
 
 `/admin/layout.tsx` 的命令面板虽然仍记录为 route-local dialog debt，但它
 不是设置页的主要操作阻力，不应仅为了清零清单而抢占设置页资源。

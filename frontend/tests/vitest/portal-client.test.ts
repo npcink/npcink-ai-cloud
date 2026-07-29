@@ -16,6 +16,60 @@ afterEach(() => {
 });
 
 describe('PortalClient shared transport', () => {
+  it('reuses one write key after an unconfirmed failure and releases it after success', async () => {
+    vi.stubGlobal('crypto', undefined);
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('connection reset'))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'ok',
+          error_code: '',
+          message: 'created',
+          data: { request: { request_id: 'support_1' } },
+          meta: { trace_id: 'trace-support-1', revision: 'm6' },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'ok',
+          error_code: '',
+          message: 'created',
+          data: { request: { request_id: 'support_2' } },
+          meta: { trace_id: 'trace-support-2', revision: 'm6' },
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new PortalClient('/api/portal');
+    const payload = {
+      topic: 'general',
+      title: 'Unable to confirm the change',
+      description: 'The first response was lost after submission.',
+      site_id: '',
+      source_path: '/portal/support',
+      context: { source: 'test' },
+    };
+
+    await expect(client.createSupportRequest(payload)).rejects.toMatchObject({
+      errorCode: 'client.network_error',
+    });
+    await client.createSupportRequest(payload);
+    await client.createSupportRequest(payload);
+
+    const firstKey = new Headers(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).headers
+    ).get('idempotency-key');
+    const retryKey = new Headers(
+      (fetchMock.mock.calls[1]?.[1] as RequestInit).headers
+    ).get('idempotency-key');
+    const nextIntentKey = new Headers(
+      (fetchMock.mock.calls[2]?.[1] as RequestInit).headers
+    ).get('idempotency-key');
+    expect(retryKey).toBe(firstKey);
+    expect(nextIntentKey).not.toBe(retryKey);
+  });
+
   it('uses the canonical ApiClient transport for cookie session reads and writes', async () => {
     const fetchMock = vi
       .fn()

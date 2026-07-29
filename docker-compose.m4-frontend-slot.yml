@@ -1,0 +1,98 @@
+services:
+  frontend-slot:
+    image: npcink-ai-cloud-frontend:m4-dev
+    restart: "no"
+    command:
+      [
+        "node",
+        "node_modules/next/dist/bin/next",
+        "dev",
+        "--webpack",
+        "-H",
+        "0.0.0.0",
+    ]
+    environment:
+      # Use the primary Compose service alias so API Host validation receives
+      # the same internal host used by the canonical frontend.
+      CLOUD_API_BASE_URL: http://api:8000
+      CLOUD_PUBLIC_BASE_URL: http://127.0.0.1:${NPCINK_CLOUD_M4_SLOT_TUNNEL_PORT}
+      NPCINK_CLOUD_INTERNAL_AUTH_TOKEN: ${NPCINK_CLOUD_INTERNAL_AUTH_TOKEN:-}
+      NPCINK_CLOUD_DEV_ADMIN_KEY: ${NPCINK_CLOUD_DEV_ADMIN_KEY:-}
+      NPCINK_CLOUD_FRONTEND_REVISION: ${NPCINK_CLOUD_M4_SLOT_SOURCE_REVISION}
+      NEXT_PUBLIC_ENV: development
+      NEXT_PUBLIC_MINI_DEV_HOST_ALLOWLIST: 127.0.0.1,localhost
+      NPCINK_CLOUD_LOCAL_DEBUG_DOCK_ALLOWED_HOSTS: 127.0.0.1,localhost
+      NPCINK_CLOUD_FRONTEND_DEV_HOST_ALLOWLIST: 127.0.0.1,localhost
+      NPCINK_CLOUD_SETUP_STATE_OVERRIDE: complete
+      NODE_OPTIONS: --max-old-space-size=1024
+      NEXT_TELEMETRY_DISABLED: "1"
+      DISABLE_DEPENDENCY_CHECK: "true"
+    expose:
+      - "3000"
+    volumes:
+      - ./frontend:/app/frontend
+      - cloud-frontend-node-modules-dev:/app/frontend/node_modules:ro
+      - slot-frontend-next-cache:/app/frontend/.next
+    networks:
+      - default
+      - primary-runtime
+    labels:
+      top.mqzj.npcink.preview.kind: frontend-slot
+      top.mqzj.npcink.preview.slot: ${NPCINK_CLOUD_M4_SLOT_NUMBER}
+      top.mqzj.npcink.preview.owner: ${NPCINK_CLOUD_M4_SLOT_OWNER}
+      top.mqzj.npcink.preview.expires-at: ${NPCINK_CLOUD_M4_SLOT_EXPIRES_AT}
+      top.mqzj.npcink.preview.source-revision: ${NPCINK_CLOUD_M4_SLOT_SOURCE_REVISION}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok&&!String(r.status).startsWith('3'))process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  proxy-slot:
+    image: nginx:1.27-alpine
+    restart: "no"
+    depends_on:
+      frontend-slot:
+        condition: service_started
+    environment:
+      NPCINK_SLOT_API_HOST: ${NPCINK_CLOUD_M4_SLOT_API_CONTAINER}
+      NPCINK_SLOT_FRONTEND_HOST: frontend-slot
+    ports:
+      - "127.0.0.1:${NPCINK_CLOUD_M4_SLOT_PORT}:8080"
+    volumes:
+      - ./deploy/nginx.m4-frontend-slot.conf.template:/etc/nginx/templates/default.conf.template:ro
+    networks:
+      - default
+      - primary-runtime
+    labels:
+      top.mqzj.npcink.preview.kind: frontend-slot
+      top.mqzj.npcink.preview.slot: ${NPCINK_CLOUD_M4_SLOT_NUMBER}
+      top.mqzj.npcink.preview.owner: ${NPCINK_CLOUD_M4_SLOT_OWNER}
+      top.mqzj.npcink.preview.expires-at: ${NPCINK_CLOUD_M4_SLOT_EXPIRES_AT}
+      top.mqzj.npcink.preview.source-revision: ${NPCINK_CLOUD_M4_SLOT_SOURCE_REVISION}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  cloud-frontend-node-modules-dev:
+    external: true
+    name: ${NPCINK_CLOUD_M4_SLOT_DEPENDENCY_VOLUME}
+  slot-frontend-next-cache:
+
+networks:
+  primary-runtime:
+    external: true
+    name: ${NPCINK_CLOUD_M4_SLOT_PRIMARY_NETWORK}

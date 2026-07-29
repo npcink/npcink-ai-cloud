@@ -8,6 +8,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { LocaleSwitcher } from '@/components/ui/LocaleSwitcher';
 import { AdminRouteTransition } from '@/components/admin/AdminRouteTransition';
+import { AdminQueryProvider } from '@/components/admin/AdminQueryProvider';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { createApiClient } from '@/lib/api-client';
@@ -21,6 +22,7 @@ type AdminNavItem = {
   labelKey: string;
   fallback: string;
   activePrefixes?: string[];
+  secondary?: boolean;
 };
 
 type AdminNavGroup = {
@@ -190,6 +192,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           activePrefixes: ['/admin/accounts', '/admin/sites'],
         },
         {
+          href: '/admin/portal-users',
+          labelKey: 'admin.nav_portal_users',
+          fallback: 'Portal Users',
+          secondary: true,
+        },
+        {
           href: '/admin/support-requests',
           labelKey: 'admin.nav_support_requests',
           fallback: 'Tickets',
@@ -272,7 +280,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       ],
     },
   ], []);
-  const primaryNavItems = navGroups.flatMap((group) => group.items);
+  const navItems = navGroups.flatMap((group) => group.items);
 
   const isPathMatch = (targetPath: string) => pathname === targetPath || pathname.startsWith(`${targetPath}/`);
 
@@ -283,11 +291,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
     return (item.activePrefixes || [href]).some(isPathMatch);
   };
-  const activePrimaryItem = primaryNavItems.find((item) => isActive(item)) ?? primaryNavItems[0];
-  const secondaryRouteLabel = pathname.startsWith('/admin/portal-users')
-    ? t('admin.nav_portal_users', {}, 'Portal Users')
-    : '';
-  const activePrimaryLabel = secondaryRouteLabel || t(activePrimaryItem.labelKey, {}, activePrimaryItem.fallback);
+  const activeNavItem = navItems.find((item) => isActive(item)) ?? navItems[0];
+  const activeNavLabel = t(activeNavItem.labelKey, {}, activeNavItem.fallback);
   const commandItems = useMemo<AdminCommandItem[]>(
     () => {
       const primaryItems = navGroups.flatMap((group) => {
@@ -362,9 +367,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   href={item.href}
                   title={itemLabel}
                   aria-label={itemLabel}
+                  aria-current={active ? 'page' : undefined}
+                  data-nav-level={item.secondary ? 'secondary' : 'primary'}
                   className={cn(
-                    'admin-nav-link flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+                    'admin-nav-link flex w-full min-w-0 items-center justify-between gap-2 rounded-lg py-2 transition-colors',
                     collapsed && 'h-10 justify-center px-0 text-xs',
+                    !collapsed && (
+                      item.secondary
+                        ? 'pl-5 pr-2.5 text-xs font-medium'
+                        : 'px-2.5 text-sm font-medium'
+                    ),
                     active
                       ? 'admin-nav-link-active bg-slate-200/85 text-slate-950 dark:bg-slate-800 dark:text-white'
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
@@ -510,7 +522,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </span>
               <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">/</span>
               <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                {activePrimaryLabel}
+                {activeNavLabel}
               </span>
             </div>
 
@@ -679,9 +691,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Main Content */}
         <main className="flex-1 bg-transparent">
-          <AdminRouteTransition>
-            {children}
-          </AdminRouteTransition>
+          <AdminQueryProvider>
+            <AdminRouteTransition>
+              {children}
+            </AdminRouteTransition>
+          </AdminQueryProvider>
         </main>
 
         {/* Admin Footer */}

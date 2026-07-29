@@ -28,11 +28,8 @@ export function AdminConfigurationTable({
     <div
       data-ui="admin-configuration-table"
       data-density={density}
-      className={`overflow-hidden ${
-        density === 'compact'
-          ? 'admin-compact-surface'
-          : 'rounded-lg border border-slate-200 dark:border-slate-800'
-      }`}
+      data-boundary="header-only"
+      className="overflow-hidden"
     >
       <table className="w-full table-fixed text-left text-sm" aria-label={ariaLabel}>
         <colgroup>
@@ -40,21 +37,14 @@ export function AdminConfigurationTable({
           <col className="w-[48%]" />
           <col className="w-[30%]" />
         </colgroup>
-        <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
+        <thead className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-400">
           <tr>
             <th className={density === 'compact' ? 'px-3 py-1.5' : 'px-4 py-2.5'} scope="col">{itemHeading}</th>
             <th className={density === 'compact' ? 'px-3 py-1.5' : 'px-4 py-2.5'} scope="col">{valueHeading}</th>
             <th className={density === 'compact' ? 'px-3 py-1.5' : 'px-4 py-2.5'} scope="col">{detailHeading}</th>
           </tr>
         </thead>
-        <tbody
-          data-density={density}
-          className={`divide-y ${
-            density === 'compact'
-              ? 'divide-slate-100 dark:divide-slate-800/70'
-              : 'divide-slate-200 dark:divide-slate-800'
-          }`}
-        >
+        <tbody data-density={density}>
           {children}
         </tbody>
       </table>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { PortalStatusBadge } from '@/components/portal/PortalStatusBadge';
 import type { PortalSiteSummaryRecord, Site } from '@/lib/portal-client';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@/lib/portal-site-display';
 import { translateStatusLabel } from '@/lib/status-display';
 import { cn } from '@/lib/utils';
+import { useDialogFocusManagement } from '@/hooks/useDialogFocusManagement';
 
 type RestrictionItem = {
   tone: 'warn' | 'info';
@@ -44,26 +45,7 @@ export function PortalSiteInspectorDrawer({
   t,
 }: PortalSiteInspectorDrawerProps) {
   const [showDetail, setShowDetail] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen, onClose]);
+  const drawerRef = useDialogFocusManagement<HTMLElement>(isOpen, onClose);
 
   if (!isOpen || !site) {
     return null;
@@ -82,6 +64,8 @@ export function PortalSiteInspectorDrawer({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <aside
+        ref={drawerRef}
+        tabIndex={-1}
         className={cn(
           'absolute right-0 top-0 flex h-full w-full max-w-2xl flex-col border-l border-slate-200 bg-white shadow-2xl transition-transform dark:border-slate-800 dark:bg-slate-950 sm:max-w-xl',
           isOpen ? 'translate-x-0' : 'translate-x-full'

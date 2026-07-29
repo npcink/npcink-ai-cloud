@@ -7,7 +7,10 @@ const read = (path) => readFileSync(fromFrontendRoot(path), 'utf8');
 const layoutSource = read('src/app/admin/layout.tsx');
 const subscriptionSource = read('src/app/admin/subscriptions/[subscriptionId]/page.tsx');
 const siteSource = read('src/app/admin/sites/[siteId]/page.tsx');
-const supportSource = read('src/app/admin/support-requests/page.tsx');
+const supportSource = [
+  read('src/app/admin/support-requests/page.tsx'),
+  read('src/features/admin/support-requests/SupportRequestsWorkspace.tsx'),
+].join('\n');
 const overviewSource = read('src/app/admin/page.tsx');
 const advisorSource = read('src/app/admin/ai-advisor/page.tsx');
 const auditSummarySource = read('src/components/admin/AdminAuditSummaryPanel.tsx');

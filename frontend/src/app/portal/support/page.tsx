@@ -26,7 +26,11 @@ import {
   type PortalSupportRequest,
   type PortalSupportRequestStatus,
 } from '@/lib/portal-client';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import { ApiError } from '@/lib/errors';
+import {
+  formatPortalErrorMessage,
+  formatPortalWriteErrorMessage,
+} from '@/lib/portal-error';
 import {
   getPortalSiteDisplayName,
   getPortalSiteSecondaryLabel,
@@ -48,7 +52,7 @@ function statusTone(status: string): 'ok' | 'warning' | 'neutral' | 'danger' {
 function PortalSupportContent() {
   const searchParams = useSearchParams();
   const { t } = useLocale();
-  const { session, isLoading, isAuthenticated } = useSession();
+  const { session, isLoading, isAuthenticated, selectSite } = useSession();
   const selectedContextSite = session?.selected_context?.site || null;
   const contextSiteId = selectedContextSite?.site_id || '';
   const initialTopic = String(searchParams?.get('topic') || 'general').toLowerCase();
@@ -59,7 +63,9 @@ function PortalSupportContent() {
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<PortalSupportRequestStatus | ''>('');
   const [isListLoading, setIsListLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
+  const [listErrorCode, setListErrorCode] = useState('');
+  const [formError, setFormError] = useState('');
   const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(shouldOpenForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -74,10 +80,11 @@ function PortalSupportContent() {
 
   const loadRequests = useCallback(async () => {
     const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    if (!isAuthenticated) return;
     const requestVersion = ++requestVersionRef.current;
     setIsListLoading(true);
-    setError('');
+    setListError('');
+    setListErrorCode('');
     try {
       const response = await portalClient.listSupportRequests({
         status: statusFilter || undefined,
@@ -95,7 +102,11 @@ function PortalSupportContent() {
         requestVersion !== requestVersionRef.current
         || requestContextSiteId !== contextSiteIdRef.current
       ) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
+      setListError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
+      setListErrorCode(err instanceof ApiError ? err.errorCode : '');
+      if (err instanceof ApiError && err.errorCode === 'portal.site_selection_required') {
+        setShowForm(false);
+      }
     } finally {
       if (
         requestVersion === requestVersionRef.current
@@ -112,13 +123,14 @@ function PortalSupportContent() {
     setTotal(0);
     setOffset(0);
     setStatusFilter('');
-    setError('');
+    setListError('');
+    setListErrorCode('');
+    setFormError('');
     setNotice('');
-    setIsListLoading(Boolean(isAuthenticated && contextSiteId));
+    setIsListLoading(Boolean(isAuthenticated));
     setIsSubmitting(false);
     setShowForm(Boolean(
-      contextSiteId
-      && shouldOpenForm
+      shouldOpenForm
       && (!previousContextSiteId || previousContextSiteId === contextSiteId)
     ));
     setTopic(
@@ -132,7 +144,7 @@ function PortalSupportContent() {
   }, [contextSiteId, initialSiteId, initialTopic, isAuthenticated, shouldOpenForm]);
 
   useEffect(() => {
-    if (!isAuthenticated || !contextSiteId) return;
+    if (!isAuthenticated) return;
     void loadRequests();
     return () => {
       requestVersionRef.current += 1;
@@ -173,33 +185,11 @@ function PortalSupportContent() {
     );
   }
 
-  if (!contextSiteId || !selectedContextSite) {
-    return (
-      <PortalPageStack>
-        <PortalWorkspaceHeader
-          eyebrow={t('portal.support_request_list_title', {}, 'Recent tickets')}
-          title={t('portal.support_requests_title', {}, 'Tickets')}
-          currentPage="support"
-        />
-        <PortalEmptyState
-          title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing or creating support tickets.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
-        />
-      </PortalPageStack>
-    );
-  }
-
   const handleSubmit = async () => {
     const requestContextSiteId = contextSiteIdRef.current;
-    if (!isAuthenticated || !requestContextSiteId) return;
+    if (!isAuthenticated) return;
     setIsSubmitting(true);
-    setError('');
+    setFormError('');
     setNotice('');
     try {
       const response = await portalClient.createSupportRequest({
@@ -221,9 +211,33 @@ function PortalSupportContent() {
       setShowForm(false);
     } catch (err) {
       if (requestContextSiteId !== contextSiteIdRef.current) return;
-      setError(formatPortalErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      if (err instanceof ApiError && err.errorCode === 'portal.site_selection_required') {
+        setShowForm(false);
+        setListErrorCode(err.errorCode);
+        setListError(formatPortalErrorMessage(err, t, t('error.failed_load', {}, 'Failed to load')));
+      } else {
+        setFormError(formatPortalWriteErrorMessage(err, t, t('error.failed_save', {}, 'Failed to save')));
+      }
     } finally {
       if (requestContextSiteId === contextSiteIdRef.current) setIsSubmitting(false);
+    }
+  };
+
+  const handleSiteChange = async (nextSiteId: string) => {
+    if (!nextSiteId || nextSiteId === contextSiteId) return;
+    setListError('');
+    setListErrorCode('');
+    try {
+      await selectSite(nextSiteId);
+    } catch (err) {
+      setListError(
+        formatPortalErrorMessage(
+          err,
+          t,
+          t('portal.site_select_failed', {}, 'Failed to select this site.')
+        )
+      );
+      setListErrorCode(err instanceof ApiError ? err.errorCode : '');
     }
   };
 
@@ -238,23 +252,36 @@ function PortalSupportContent() {
           'Send billing, site, usage, or account issues to the support queue.'
         )}
         currentPage="support"
-        sites={visibleSites}
+        selectedSiteId={contextSiteId}
+        sites={session.sites}
+        onSiteChange={(nextSiteId) => void handleSiteChange(nextSiteId)}
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={listErrorCode === 'portal.site_selection_required'}
+            onClick={() => {
+              setFormError('');
+              setShowForm(true);
+            }}
+          >
             {t('portal.support_request_new_action', {}, 'Submit ticket')}
           </button>
         }
       />
 
       {notice ? (
-        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
+        <div role="status" className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-200">
           {notice}
         </div>
       ) : null}
 
       <Modal
         isOpen={showForm}
-        onClose={() => setShowForm(false)}
+        onClose={() => {
+          setFormError('');
+          setShowForm(false);
+        }}
         closeLabel={t('common.close', {}, 'Close')}
         size="lg"
         title={t('portal.support_request_form_title', {}, 'Submit ticket')}
@@ -265,9 +292,9 @@ function PortalSupportContent() {
         )}
       >
         <div data-portal-support="new-ticket-dialog">
-          {error ? (
-            <p className="mb-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-200" role="alert">
-              {error}
+          {formError ? (
+            <p id="portal-support-form-error" className="mb-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-200" role="alert">
+              {formError}
             </p>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
@@ -297,6 +324,8 @@ function PortalSupportContent() {
             {t('portal.support_request_title_label', {}, 'Title')}
             <input
               className="input mt-2"
+              aria-invalid={Boolean(formError)}
+              aria-describedby={formError ? 'portal-support-form-error' : undefined}
               value={title}
               maxLength={191}
               onChange={(event) => setTitle(event.target.value)}
@@ -306,7 +335,10 @@ function PortalSupportContent() {
           <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">
             {t('portal.support_request_desc_label', {}, 'Description')}
             <textarea
-              aria-describedby="portal-support-description-help"
+              aria-describedby={formError
+                ? 'portal-support-description-help portal-support-form-error'
+                : 'portal-support-description-help'}
+              aria-invalid={Boolean(formError)}
               className="input mt-2 min-h-32"
               value={description}
               maxLength={4000}
@@ -330,17 +362,37 @@ function PortalSupportContent() {
             >
               {isSubmitting ? t('common.saving', {}, 'Saving...') : t('portal.support_request_submit', {}, 'Submit')}
             </button>
-            <button type="button" className="btn btn-secondary" disabled={isSubmitting} onClick={() => setShowForm(false)}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={isSubmitting}
+              onClick={() => {
+                setFormError('');
+                setShowForm(false);
+              }}
+            >
               {t('common.cancel', {}, 'Cancel')}
             </button>
           </div>
         </div>
       </Modal>
 
-      {error ? (
+      {listErrorCode === 'portal.site_selection_required' ? (
+        <PortalEmptyState
+          title={t('portal.support_context_required_title', {}, 'Choose a current site')}
+          description={t(
+            'portal.support_context_required_desc',
+            {},
+            'Select a site above to establish the customer account for these tickets. You can also choose a site from the Service page.'
+          )}
+          actionLabel={t('portal.support_context_required_action', {}, 'Open Service')}
+          actionHref="/portal#sites"
+          diagnosticCode={listErrorCode}
+        />
+      ) : listError ? (
         <PortalErrorState
           title={t('error.failed_load', {}, 'Failed to load')}
-          description={error}
+          description={listError}
           retryLabel={t('common.retry', {}, 'Retry')}
           onRetry={() => void loadRequests()}
         />

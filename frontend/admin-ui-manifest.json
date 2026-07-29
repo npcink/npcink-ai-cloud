@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 4,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
@@ -15,6 +15,13 @@
     "sidebarCollapsedPx": 64,
     "workbenchMaxWidthPx": 1152,
     "workbenchCompactMaxWidthPx": 960
+  },
+  "surfacePolicy": {
+    "configurationTableBoundary": "header-only",
+    "dataTableBoundary": "rows",
+    "dialogBoundary": "solid",
+    "formControlBoundary": "solid",
+    "dashedBoundaryPrimitive": "AdminEmptyState"
   },
   "pageModels": [
     "overview",
@@ -36,7 +43,6 @@
     "/admin/support-requests": "queue",
     "/admin/support-requests/[requestId]": "detail",
     "/admin/plans": "queue",
-    "/admin/plans/[planId]": "detail",
     "/admin/credit-packs": "configuration",
     "/admin/portal-users": "queue",
     "/admin/ai-resources": "queue",
@@ -53,8 +59,7 @@
     "/admin/site-compliance": "configuration"
   },
   "legacyRouteLocalDialogs": [
-    "src/app/admin/layout.tsx",
-    "src/app/admin/plans/[planId]/page.tsx"
+    "src/app/admin/layout.tsx"
   ],
   "legacyRouteLocalCredentials": []
 }

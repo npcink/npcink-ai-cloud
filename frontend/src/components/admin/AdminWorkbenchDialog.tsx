@@ -138,11 +138,12 @@ export function AdminWorkbenchDialog({
           </div>
           <button
             ref={closeButtonRef}
+            data-ui="admin-workbench-close"
             type="button"
             className={`inline-flex shrink-0 items-center justify-center text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white ${
               density === 'compact'
                 ? 'h-8 w-8 rounded'
-                : 'h-9 w-9 rounded-full border border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700'
+                : 'h-9 w-9 rounded-lg'
             }`}
             disabled={saving}
             onClick={onClose}

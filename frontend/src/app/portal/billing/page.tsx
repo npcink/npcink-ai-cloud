@@ -39,7 +39,10 @@ import {
   type PortalPlanOffer,
 } from '@/lib/portal-client';
 import { resolveCustomerPackageDisplay } from '@/lib/customer-package-display';
-import { formatPortalErrorMessage } from '@/lib/portal-error';
+import {
+  formatPortalErrorMessage,
+  formatPortalWriteErrorMessage,
+} from '@/lib/portal-error';
 import { formatDate, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
@@ -132,6 +135,7 @@ function PortalBillingContent() {
     planOffers,
     isLoading,
     error,
+    errorCode,
     load: loadBilling,
   } = usePortalCommercialCatalog({
     contextSiteId,
@@ -144,6 +148,7 @@ function PortalBillingContent() {
     offset: paymentOrderOffset,
     isLoading: paymentOrdersLoading,
     error: paymentOrderError,
+    errorCode: paymentOrderErrorCode,
     cancelPendingOrderId,
     cancelConfirmOrderId,
     load: loadPaymentOrders,
@@ -209,7 +214,7 @@ function PortalBillingContent() {
       await loadBilling();
       setActiveCommercialDialog(null);
     } catch (err) {
-      setPackageError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setPackagePending(null);
     }
@@ -238,7 +243,7 @@ function PortalBillingContent() {
       }
     } catch (err) {
       closePreparedPaymentWindow(paymentWindow);
-      setPackageError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setPackagePending(null);
     }
@@ -253,7 +258,7 @@ function PortalBillingContent() {
       await loadBilling();
       setActiveCommercialDialog(null);
     } catch (err) {
-      setPackageError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setPackageError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setPackagePending(null);
     }
@@ -282,13 +287,13 @@ function PortalBillingContent() {
       }
     } catch (err) {
       closePreparedPaymentWindow(paymentWindow);
-      setCreditPackError(formatPortalErrorMessage(err, t, t('error.failed_save')));
+      setCreditPackError(formatPortalWriteErrorMessage(err, t, t('error.failed_save')));
     } finally {
       setCreditPackPending(null);
     }
   };
 
-  if (sessionLoading) {
+  if (sessionLoading && !session) {
     return <PortalLoadingState message={t('portal.loading_session', {}, 'Loading session...')} />;
   }
 
@@ -302,10 +307,14 @@ function PortalBillingContent() {
     );
   }
 
+  const requestedPlan = searchParams.get('plan');
+  const requestedUpgradePlan = (
+    searchParams.get('action') === 'upgrade'
+    && (requestedPlan === 'plus' || requestedPlan === 'pro')
+  ) ? requestedPlan : '';
   const siteSelectionRequired = !contextSiteId
-    || [error, paymentOrderError, creditPackError, packageError].some((message) => (
-      String(message || '').includes('portal.site_selection_required')
-    ));
+    || errorCode === 'portal.site_selection_required'
+    || paymentOrderErrorCode === 'portal.site_selection_required';
   if (siteSelectionRequired) {
     return (
       <PortalPageStack>
@@ -317,13 +326,23 @@ function PortalBillingContent() {
         />
         <PortalEmptyState
           title={t('portal.site_selection_required_title', {}, 'Select a site context')}
-          description={t(
-            'portal.site_selection_required_desc',
-            {},
-            'Choose a current site before viewing package, AI credits, or payment details.'
-          )}
-          actionLabel={t('portal.select_site_action', {}, 'Select site')}
-          actionHref="/portal#sites"
+          description={requestedUpgradePlan
+            ? t(
+                'portal.billing.connect_before_upgrade_desc',
+                { plan: requestedUpgradePlan.toUpperCase() },
+                `Connect the WordPress addon first. Then return here to continue with ${requestedUpgradePlan.toUpperCase()}.`
+              )
+            : t(
+                'portal.site_selection_required_desc',
+                {},
+                'Connect or select a current WordPress site before viewing package, AI credits, or payment details.'
+              )}
+          actionLabel={requestedUpgradePlan
+            ? t('portal.billing.check_connection_action', {}, 'Check connection and continue')
+            : t('portal.select_site_action', {}, 'View sites')}
+          actionHref={requestedUpgradePlan
+            ? `/portal/billing?plan=${requestedUpgradePlan}&action=upgrade`
+            : '/portal#sites'}
         />
       </PortalPageStack>
     );

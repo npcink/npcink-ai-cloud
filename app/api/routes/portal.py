@@ -2044,6 +2044,48 @@ def _resolve_selected_portal_account_access(
     return access
 
 
+def _resolve_portal_support_account_access(
+    request: Request,
+    *,
+    principal_id: str,
+    site_id: str,
+) -> dict[str, object] | JSONResponse:
+    normalized_site_id = str(site_id or "").strip()
+    if normalized_site_id:
+        return _resolve_selected_portal_account_access(
+            request,
+            principal_id=principal_id,
+            site_id=normalized_site_id,
+            required_action=None,
+        )
+    try:
+        result = _get_commercial_service(request).list_portal_accounts(
+            principal_id=principal_id,
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    accounts = [
+        item
+        for item in _object_list(result.get("items"))
+        if str(item.get("account_id") or "").strip()
+    ]
+    if len(accounts) == 1:
+        return accounts[0]
+    if not accounts:
+        return portal_json_error(
+            request,
+            status_code=403,
+            error_code="service.portal_account_required",
+            message="portal account access is required",
+        )
+    return portal_json_error(
+        request,
+        status_code=409,
+        error_code="portal.site_selection_required",
+        message="select a site to establish the support account context",
+    )
+
+
 def _resolve_portal_account_commercial_site_scope(
     request: Request,
     *,
@@ -3621,11 +3663,10 @@ async def list_portal_support_requests(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3666,30 +3707,30 @@ async def create_portal_support_request(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
     account_id = str(account_access.get("account_id") or "")
     target_site_id = str(payload.site_id or auth.site_id or "").strip()
-    target_access = _authorize_portal_site_access(
-        request,
-        site_id=target_site_id,
-        principal_id=auth.principal_id,
-    )
-    if isinstance(target_access, JSONResponse):
-        return target_access
-    if str(target_access.get("account_id") or "").strip() != account_id:
-        return portal_json_error(
+    if target_site_id:
+        target_access = _authorize_portal_site_access(
             request,
-            status_code=403,
-            error_code="service.portal_site_account_mismatch",
-            message="support request site is outside the selected account context",
+            site_id=target_site_id,
+            principal_id=auth.principal_id,
         )
+        if isinstance(target_access, JSONResponse):
+            return target_access
+        if str(target_access.get("account_id") or "").strip() != account_id:
+            return portal_json_error(
+                request,
+                status_code=403,
+                error_code="service.portal_site_account_mismatch",
+                message="support request site is outside the selected account context",
+            )
     replay = portal_idempotency_replay_response(request)
     if replay is not None:
         return replay
@@ -3722,11 +3763,10 @@ async def get_portal_support_request(request: Request, request_id: str) -> Any:
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3763,11 +3803,10 @@ async def create_portal_support_request_message(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3816,11 +3855,10 @@ async def create_portal_support_request_attachment(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3866,11 +3904,10 @@ async def get_portal_support_request_attachment(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access
@@ -3915,11 +3952,10 @@ async def submit_portal_support_request_feedback(
     )
     if isinstance(auth, JSONResponse):
         return auth
-    account_access = _resolve_selected_portal_account_access(
+    account_access = _resolve_portal_support_account_access(
         request,
         principal_id=auth.principal_id,
         site_id=auth.site_id,
-        required_action=None,
     )
     if isinstance(account_access, JSONResponse):
         return account_access

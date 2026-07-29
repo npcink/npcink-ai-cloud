@@ -9,6 +9,12 @@ test('admin overview keeps canonical work destinations primary and evidence coll
   await installAdminMocks(page);
   await page.goto('/admin');
 
+  await expect(page.getByText(/Not operationally ready|未达到运营就绪/i).first()).toBeVisible();
+  await expect(page.getByText(/2 formal readiness checks failed|正式运营就绪检查有 2 项失败/i)).toBeVisible();
+  await expect(page.getByRole('link', { name: /Inspect readiness failures|检查就绪失败项/i })).toHaveAttribute(
+    'href',
+    '/admin/troubleshooting'
+  );
   await expect(page.locator('[data-ui="admin-overview-destination"]')).toHaveCount(4);
   await expect(page.locator('[data-ui="admin-overview-destination"][href="/admin/accounts"]')).toBeVisible();
   await expect(page.locator('[data-ui="admin-overview-destination"][href="/admin/coverage"]')).toBeVisible();
@@ -37,10 +43,17 @@ test('quick switcher discovers diagnostic child routes without expanding the sid
   await page.goto('/admin');
 
   await expect(page.locator('[data-ui="admin-primary-nav"] a[href="/admin/media-observability"]')).toHaveCount(0);
+  await expect(
+    page.locator('[data-ui="admin-primary-nav"] a[href="/admin/portal-users"]')
+  ).toHaveAttribute('data-nav-level', 'secondary');
   const switcherButton = page.getByRole('button', { name: /Open quick switcher|打开快速跳转/i });
   await switcherButton.click();
   const dialog = page.getByRole('dialog', { name: /Quick switcher|快速跳转/i });
   const input = dialog.locator('input');
+  await input.fill('portal');
+  await expect(dialog.locator('a[href="/admin/portal-users"]')).toBeVisible();
+  await expect(dialog.getByText(/Customer Ops|客户运营/i)).toBeVisible();
+
   await input.fill('media');
   await expect(dialog.locator('a[href="/admin/media-observability"]')).toBeVisible();
   await expect(dialog.getByText(/Diagnostics|诊断/i)).toBeVisible();
