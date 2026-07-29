@@ -87,3 +87,20 @@ a new table library, form library, visual redesign, or backend contract change.
 Use the current Portal users, Support requests, and account-create modules as
 three different patterns for three different problems; none is a universal
 template.
+
+## Follow-On Evidence: Account Site Runtime Responsibility
+
+Fresh read-only inspection later found a correctness problem in the first
+recommended hotspot: per-site runtime failures could leave incomplete evidence
+available to account-level health and quota conclusions. That evidence
+authorized one responsibility, not a broad account-detail refactor.
+
+PR #360 moved only the site-runtime request lifecycle into the existing Query
+boundary, preserved valid partial evidence, rejected a completely unavailable
+scope, and required complete evidence for derived account conclusions. No new
+dependency, backend API, visual redesign, or Cloud/WordPress boundary change
+was introduced.
+
+The accepted implementation and updated work review are recorded in
+[Cloud Admin Account Site Runtime Evidence Remediation Retrospective](cloud-admin-account-site-runtime-evidence-remediation-retrospective-2026-07-29.md).
+The original freeze remains in force for every other responsibility.

@@ -1,7 +1,7 @@
 # Cloud Admin Frontend Engineering Standard v1
 
-Status: active engineering standard; Stages 1 through 3 accepted and frozen
-pending new operator evidence.
+Status: active engineering standard; Stages 1 through 3 and one bounded Stage
+4 responsibility are accepted and frozen pending new operator evidence.
 
 Date: 2026-07-29.
 
@@ -46,6 +46,13 @@ Current implementation evidence:
   The accepted dependency-free form boundary grew by only `1,272` raw and
   `455` gzip bytes while retaining the behavior fixes. The evidence is
   [Cloud Admin Account Create Form Pilot Closeout](cloud-admin-account-create-form-pilot-closeout-2026-07-29.md).
+- Fresh correctness evidence later authorized one Stage 4 responsibility in
+  `/admin/accounts/[accountId]`: per-site runtime request ownership and
+  incomplete-evidence semantics. PR #360 reused the existing Query provider,
+  preserved partial evidence, rejected a completely unavailable scope, and
+  prevented missing evidence from driving account health or quota conclusions.
+  The route was not broadly split or migrated. The record is
+  [Cloud Admin Account Site Runtime Evidence Remediation Retrospective](cloud-admin-account-site-runtime-evidence-remediation-retrospective-2026-07-29.md).
 
 ## 1. Problem Statement
 
@@ -171,6 +178,12 @@ Hard rules:
 6. In App Router, do not render one mutable fact from both a Server Component
    and a revalidating client query unless their ownership and revalidation
    contract is explicit.
+7. Evidence collection state and measured business values are different
+   facts. A failed or cancelled read must not be normalized into a zero value.
+8. Cross-item health, quota, compliance, eligibility, and credential-gap
+   conclusions require explicit evidence completeness. Partial evidence may
+   remain visible, but it must not silently authorize a complete-scope
+   conclusion or mutation.
 
 ## 5. Page And Feature Structure
 
@@ -287,6 +300,10 @@ Do not use regex against an entire route file as the primary proof of user
 behavior, request lifecycle, form validation, focus return, or mutation
 feedback.
 
+After a safe feature extraction, a structural contract may aggregate the
+declared route and feature sources so it continues to guard architecture. It
+must not require behavior to remain physically inside the route file.
+
 ### 7.2 Vitest behavior
 
 The default frontend CI must run the existing `test:unit` command before the
@@ -396,6 +413,11 @@ Order may change after fresh operator evidence. Do not run several route
 refactors in parallel, and do not combine a structural extraction with a new
 feature or API redesign.
 
+The first accepted account-detail follow-on changed only per-site runtime
+evidence ownership. It is not authorization to convert the rest of the route
+to Query or to split the route by length. Future account-detail work still
+requires new evidence and a separate one-responsibility envelope.
+
 ## 9. Pilot Acceptance And Stop Conditions
 
 Expand the approach only when:
@@ -494,9 +516,15 @@ A new implementation session should:
    dependency-free feature boundary and do not reinstall React Hook Form,
    another form library, or a table library without new measured burden that
    justifies the cost;
-8. preserve all unrelated dirty work and all Cloud/WordPress ownership
+8. preserve the account site-runtime evidence boundary: stable account/site
+   query identity, cancellation, explicit partial failure, total-failure
+   retry, exact invalidation, and completeness-gated derived conclusions;
+9. do not treat that one accepted Stage 4 responsibility as permission for a
+   route-wide Query migration;
+10. preserve all unrelated dirty work and all Cloud/WordPress ownership
    boundaries.
 
-This document records the approved direction, accepted Query pilots, and the
-Stage 3 dependency decision. It does not authorize a broad dependency
-migration, production deployment, or GA claim.
+This document records the approved direction, accepted Query pilots, the Stage
+3 dependency decision, and one evidence-led Stage 4 responsibility. It does
+not authorize a broad dependency migration, route-wide refactor, production
+deployment, or GA claim.
