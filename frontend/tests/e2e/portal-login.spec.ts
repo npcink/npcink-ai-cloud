@@ -71,7 +71,12 @@ async function installLoginFlowMocks(
   {
     initiallyLoggedIn = false,
     withSessionCookie = initiallyLoggedIn,
-  }: { initiallyLoggedIn?: boolean; withSessionCookie?: boolean } = {}
+    sessionDelayMs = 0,
+  }: {
+    initiallyLoggedIn?: boolean;
+    withSessionCookie?: boolean;
+    sessionDelayMs?: number;
+  } = {}
 ) {
   let loggedIn = initiallyLoggedIn;
   let requestCodeCount = 0;
@@ -84,6 +89,9 @@ async function installLoginFlowMocks(
     const pathname = url.pathname.replace(/^\/api\/portal/, '').replace(/^\/portal\/v1/, '');
 
     if (pathname === '/session') {
+      if (sessionDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, sessionDelayMs));
+      }
       if (!loggedIn) {
         await fulfillError(route, 401, 'auth.portal_session_required');
         return;
@@ -197,6 +205,16 @@ async function installLoginFlowMocks(
   };
 }
 
+test('public login and registration stay available while session discovery is slow', async ({ page }) => {
+  await installLoginFlowMocks(page, { sessionDelayMs: 3_000 });
+
+  await page.goto('/portal/login');
+  await expect(page.getByLabel(/Email Address|邮箱地址/i)).toBeVisible({ timeout: 1_000 });
+
+  await page.goto('/portal/register');
+  await expect(page.getByLabel(/Email Address|邮箱地址/i)).toBeVisible({ timeout: 1_000 });
+});
+
 test('QQ is a first-class login entry and preserves the Portal return path', async ({ page }) => {
   const calls = await installLoginFlowMocks(page);
 
@@ -255,6 +273,20 @@ test('an authenticated user is redirected from registration to the Portal defaul
 
   await expect(page).toHaveURL(`${BASE_URL}/portal`);
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
+});
+
+test('a new account offers site connection before package review', async ({ page }) => {
+  await installLoginFlowMocks(page, { initiallyLoggedIn: true });
+
+  await page.goto('/portal');
+
+  const setupChecklist = page.locator('[data-portal-home="setup-checklist"]');
+  await expect(setupChecklist).toBeVisible();
+  await expect(setupChecklist.getByRole('link')).toHaveCount(1);
+  await expect(setupChecklist.locator('a[href="/portal/billing"]')).toHaveCount(0);
+  await expect(setupChecklist).toContainText(
+    /Confirm site connection|确认站点连接|Site setup still needs attention|站点设置仍需处理/i
+  );
 });
 
 test('a stale Portal cookie returns to login without exposing protected navigation', async ({ page }) => {

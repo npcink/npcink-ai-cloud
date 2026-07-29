@@ -22,6 +22,8 @@ const usage = read('src/app/portal/usage/page.tsx');
 assert.match(account, /href="\/portal\/audit"/);
 assert.doesNotMatch(account, /href="\/portal\/login"/);
 assert.match(account, /portal\.account\.settings_eyebrow/);
+assert.match(account, /function AccountPageFallback[\s\S]*t\('common\.loading'/);
+assert.doesNotMatch(account, /Loading Account Center/);
 assert.match(audit, /portal\.audit\.records_title/);
 
 assert.equal(existsSync(monitoringRedirectPath), false);

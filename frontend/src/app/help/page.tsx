@@ -12,8 +12,8 @@ export default function HelpPage() {
     {
       question: zh ? '收不到邮箱验证码怎么办？' : 'What if the email code does not arrive?',
       answer: zh
-        ? '先确认邮箱拼写并检查垃圾邮件；等待一分钟后再重发。开发环境如果未配置邮件，会明确显示配置错误，不代表账号密码错误。'
-        : 'Confirm the address, check spam, and resend after one minute. A development environment without email delivery reports a configuration error; it does not mean the account password is wrong.',
+        ? '先确认邮箱拼写并检查垃圾邮件；等待一分钟后再重发。如果页面提示邮件服务暂不可用，请记录发生时间，稍后重试或使用已发布的公开支持渠道。'
+        : 'Confirm the address, check spam, and resend after one minute. If email delivery is temporarily unavailable, note the time, try again later, or use the published public support channel.',
     },
     {
       question: zh ? '为什么套餐页要求先选择站点？' : 'Why does the package page ask for a site?',

@@ -53,7 +53,9 @@ function RegisterFormContent() {
     }
   }, [isAuthenticated, isLoading, postRegistrationTarget, router]);
 
-  if (isLoading || isAuthenticated) {
+  // Keep account creation available while the cookie-backed session probe is
+  // still resolving. A confirmed authenticated session still redirects away.
+  if (isAuthenticated) {
     return <LoadingFallback />;
   }
 

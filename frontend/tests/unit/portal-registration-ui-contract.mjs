@@ -99,8 +99,8 @@ assert.match(
 );
 assert.match(
   registerSource,
-  /if \(isLoading \|\| isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
-  'the registration form must remain hidden while the existing session is resolving or redirecting'
+  /if \(isAuthenticated\) \{[\s\S]*return <LoadingFallback \/>;/,
+  'the registration form must stay available during session discovery and hide only after authentication is confirmed'
 );
 assert.match(
   registerSource,

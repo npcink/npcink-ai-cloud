@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PublicSiteShell } from '@/components/public/PublicSiteShell';
+import { PublicSupportContact } from '@/components/public/PublicSupportContact';
 import { useLocale } from '@/contexts/LocaleContext';
 
 type HealthState = 'checking' | 'healthy' | 'unavailable';
@@ -116,6 +117,7 @@ export default function StatusPage() {
             {zh ? '重新检查' : 'Check again'}
           </button>
         </div>
+        <PublicSupportContact />
       </main>
     </PublicSiteShell>
   );

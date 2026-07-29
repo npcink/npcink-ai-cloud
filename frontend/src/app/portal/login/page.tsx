@@ -55,9 +55,10 @@ function LoginFormContent() {
     }
   }, [isAuthenticated, isLoading, redirectTo, router]);
 
-  // Do not reveal a login form while the existing cookie-backed session is
-  // being resolved, or while the authenticated user is redirected away.
-  if (isLoading || isAuthenticated) {
+  // Session discovery runs in parallel with the public login form. The server
+  // remains the authentication authority, while a slow session probe does not
+  // block a signed-out visitor from starting the passwordless flow.
+  if (isAuthenticated) {
     return <LoadingFallback />;
   }
 

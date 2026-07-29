@@ -273,12 +273,14 @@ export function PublicPricingSection() {
   const zh = locale === 'zh-CN';
   const [catalog, setCatalog] = useState<PublicPlanCatalog | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [catalogRetryVersion, setCatalogRetryVersion] = useState(0);
   const [expandedTier, setExpandedTier] = useState<TierId | null>('pro');
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function loadCatalog() {
+      setLoadFailed(false);
       try {
         const response = await fetch('/open/plan-catalog', {
           headers: { Accept: 'application/json' },
@@ -301,7 +303,7 @@ export function PublicPricingSection() {
 
     void loadCatalog();
     return () => controller.abort();
-  }, []);
+  }, [catalogRetryVersion]);
 
   const tiers = useMemo<TierView[]>(() => {
     const byId = new Map(catalog?.tiers.map((tier) => [tier.tier_id, tier]));
@@ -339,9 +341,34 @@ export function PublicPricingSection() {
           </div>
         </div>
 
+        {loadFailed ? (
+          <div
+            className="mt-6 flex flex-col gap-3 border border-amber-300/35 bg-amber-300/10 px-5 py-4 text-sm text-amber-50 sm:flex-row sm:items-center sm:justify-between"
+            role="alert"
+          >
+            <div>
+              <p className="font-bold">
+                {zh ? '套餐信息暂时加载失败' : 'Plan information could not be loaded'}
+              </p>
+              <p className="mt-1 text-amber-100/80">
+                {zh
+                  ? '当前无法确认价格与权益，购买入口已暂时停用。'
+                  : 'Current prices and access could not be confirmed, so purchase actions are temporarily disabled.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="h-11 shrink-0 border border-amber-100/45 px-4 font-bold text-white transition hover:bg-white/10"
+              onClick={() => setCatalogRetryVersion((current) => current + 1)}
+            >
+              {zh ? '重新加载套餐' : 'Reload plans'}
+            </button>
+          </div>
+        ) : null}
+
         <div
           data-plan-comparison="desktop"
-          className="hidden border-l border-white/15 md:grid md:grid-cols-2 xl:grid-cols-4"
+          className={`${loadFailed ? 'mt-6 ' : ''}hidden border-l border-white/15 md:grid md:grid-cols-2 xl:grid-cols-4`}
           aria-label={zh ? '套餐比较' : 'Plan comparison'}
           role="list"
         >
@@ -408,7 +435,7 @@ export function PublicPricingSection() {
 
         <div
           data-plan-comparison="mobile"
-          className="border-l border-t border-white/15 md:hidden"
+          className={`${loadFailed ? 'mt-6 ' : ''}border-l border-t border-white/15 md:hidden`}
           aria-label={zh ? '移动端套餐比较' : 'Mobile plan comparison'}
           role="list"
         >
