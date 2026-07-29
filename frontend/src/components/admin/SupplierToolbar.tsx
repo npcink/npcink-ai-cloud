@@ -1,4 +1,4 @@
-import type { ConnectionStatusFilter } from '@/components/admin/SupplierConnectionTables';
+import type { ConnectionStatusFilter } from '@/features/admin/ai-resources/types';
 
 type SupplierToolbarProps = {
   connectionSearch: string;
