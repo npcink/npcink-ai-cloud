@@ -39,7 +39,7 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 3, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 4, 'admin UI manifest version must be explicit');
 assert.equal(manifest.referenceRoute, '/admin/ai-resources', 'the accepted provider queue must remain the reference route');
 assert.equal(manifest.routes[manifest.referenceRoute], 'queue', 'the reference route must remain a queue page');
 assert.deepEqual(
@@ -95,7 +95,8 @@ assert.deepEqual(
 assert.deepEqual(
   manifest.surfacePolicy,
   {
-    configurationTableBoundary: 'rows',
+    configurationTableBoundary: 'header-only',
+    dataTableBoundary: 'rows',
     dialogBoundary: 'solid',
     formControlBoundary: 'solid',
     dashedBoundaryPrimitive: 'AdminEmptyState',
@@ -195,13 +196,18 @@ assert.match(
 );
 assert.match(
   configurationTableSource,
-  /data-ui="admin-configuration-table"[\s\S]*data-boundary="rows"[\s\S]*className="overflow-hidden"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
-  'the shared configuration table must retain semantic rows without a repeated outer frame'
+  /data-ui="admin-configuration-table"[\s\S]*data-boundary="header-only"[\s\S]*className="overflow-hidden"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
+  'the shared short configuration table must retain a header boundary without a repeated outer frame'
 );
 assert.doesNotMatch(
   configurationTableSource,
   /rounded-lg border border-slate-200/,
   'the shared configuration table must not restore a default rounded outer frame'
+);
+assert.doesNotMatch(
+  configurationTableSource,
+  /\bdivide-y\b/,
+  'the shared short configuration table must use whitespace instead of body row dividers'
 );
 assert.match(
   emptyStateSource,
