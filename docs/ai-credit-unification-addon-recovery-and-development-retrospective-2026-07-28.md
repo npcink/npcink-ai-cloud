@@ -81,6 +81,21 @@ is an address, not the contract's unit name. Payload fields and visible copy
 carry the precise `ai_credits` meaning. This avoids route churn while still
 removing ambiguous data aliases.
 
+### Stable summary arithmetic
+
+Customer-facing Portal, entitlement, and Addon summaries use one finite-period
+contract:
+
+- `used` is gross AI-credit consumption from `consume` ledger events;
+- `remaining` is the current spendable package plus paid-credit balance;
+- `limit` is `used + remaining`.
+
+Grant and adjustment entries change available balance and therefore `limit`
+and `remaining`; they never reduce `used`. The ledger-only
+`net_used_ai_credits` diagnostic remains available for reconciliation, but it
+must not replace customer-visible consumption. Addon consumers preserve these
+three Cloud-owned values without recalculating a local balance.
+
 ## Incident and Root Cause
 
 ### Observed symptom

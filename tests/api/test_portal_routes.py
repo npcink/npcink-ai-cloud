@@ -6608,6 +6608,144 @@ def test_portal_selected_site_context_is_order_independent_and_fail_closed(
     dispose_engine(database_url)
 
 
+def test_portal_entitlement_summary_keeps_credit_usage_separate_from_topups(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    client.post(
+        "/internal/service/accounts",
+        json={
+            "account_id": "acct_portal_credit_semantics",
+            "name": "Portal Credit Semantics Account",
+        },
+        headers=build_internal_headers(idempotency_key="portal-credit-semantics-account"),
+    )
+    client.post(
+        "/internal/service/sites",
+        json={
+            "site_id": "site_portal_credit_semantics",
+            "account_id": "acct_portal_credit_semantics",
+            "name": "Portal Credit Semantics Site",
+            "status": "active",
+        },
+        headers=build_internal_headers(idempotency_key="portal-credit-semantics-site"),
+    )
+    access_grant = _grant_account_member_access(
+        client,
+        site_id="site_portal_credit_semantics",
+        email="portal-credit-semantics@example.com",
+        idempotency_key="portal-credit-semantics-member",
+    )
+    client.post(
+        "/internal/service/plans",
+        json={"plan_id": "plan_portal_credit_semantics", "name": "Credit Semantics"},
+        headers=build_internal_headers(idempotency_key="portal-credit-semantics-plan"),
+    )
+    client.post(
+        "/internal/service/plans/plan_portal_credit_semantics/versions",
+        json={
+            "plan_version_id": "plan_portal_credit_semantics_v1",
+            "version_label": "v1",
+        },
+        headers=build_internal_headers(
+            idempotency_key="portal-credit-semantics-plan-version"
+        ),
+    )
+    client.post(
+        "/internal/service/admin/accounts/acct_portal_credit_semantics/subscription",
+        json={
+            "subscription_id": "sub_portal_credit_semantics",
+            "account_id": "acct_portal_credit_semantics",
+            "plan_id": "plan_portal_credit_semantics",
+            "plan_version_id": "plan_portal_credit_semantics_v1",
+            "status": "active",
+        },
+        headers=build_internal_headers(
+            idempotency_key="portal-credit-semantics-subscription"
+        ),
+    )
+
+    now = datetime.now(UTC)
+    with get_session(database_url) as session:
+        subscription = session.get(
+            AccountSubscription,
+            "sub_portal_credit_semantics",
+        )
+        assert subscription is not None
+        plan_version = session.get(PlanVersion, "plan_portal_credit_semantics_v1")
+        assert plan_version is not None
+        plan_version.budgets_json = {
+            **(plan_version.budgets_json or {}),
+            "max_ai_credits_per_period": 300,
+        }
+        snapshot = session.scalar(
+            select(AccountEntitlementSnapshot).where(
+                AccountEntitlementSnapshot.account_id
+                == "acct_portal_credit_semantics",
+                AccountEntitlementSnapshot.status == "active",
+            )
+        )
+        assert snapshot is not None
+        snapshot.budgets_json = {
+            **(snapshot.budgets_json or {}),
+            "max_ai_credits_per_period": 300,
+        }
+        repository = CommercialRepository(session)
+        for event_type, source_id, delta in (
+            ("grant", "portal-credit-grant", 9000.0),
+            ("adjustment", "portal-credit-adjustment", 1000.0),
+            ("consume", "portal-credit-consumption", -740.0),
+        ):
+            repository.record_credit_ledger_entry(
+                account_id=subscription.account_id,
+                site_id="site_portal_credit_semantics",
+                subscription_id=subscription.subscription_id,
+                plan_version_id=subscription.plan_version_id,
+                run_id="run-portal-credit-consumption" if event_type == "consume" else None,
+                provider_call_id=None,
+                event_type=event_type,
+                source_type=(
+                    "tokens_total"
+                    if event_type == "consume"
+                    else "operator_credit_adjustment"
+                ),
+                source_id=source_id,
+                ai_credit_delta=delta,
+                quantity=abs(delta),
+                unit="ai_credits",
+                rate=1,
+                rate_unit=None,
+                rate_version="ai-credit-ledger-v2",
+                idempotency_key=source_id,
+                created_at=now,
+            )
+        session.commit()
+
+    response = client.get(
+        "/portal/v1/account/entitlements",
+        headers=_portal_headers_for_access(
+            access_grant,
+            site_id="site_portal_credit_semantics",
+        ),
+    )
+
+    assert response.status_code == 200
+    quota_summary = response.json()["data"]["quota_summary"]
+    assert quota_summary["ai_credits"]["used"] == 740.0
+    assert quota_summary["ai_credits"]["limit"] == 10300.0
+    assert quota_summary["ai_credits"]["remaining"] == 9560.0
+    assert quota_summary["ai_credit_usage_detail"]["summary"] == {
+        "used": 740.0,
+        "limit": 10300.0,
+        "remaining": 9560.0,
+        "status": "ok",
+        "unit": "ai_credits",
+        "rate_version": "ai-credit-ledger-v2",
+    }
+
+    dispose_engine(database_url)
+
+
 def test_portal_summary_usage_entitlements_and_audit_routes(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 

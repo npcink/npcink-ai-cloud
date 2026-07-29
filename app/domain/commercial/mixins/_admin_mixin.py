@@ -42,7 +42,6 @@ from app.domain.commercial.credits import (
     is_site_knowledge_index_meter_event,
     package_credit_net_delta,
     package_credit_remaining_from_net_delta,
-    package_credit_used_from_net_delta,
     rounded_token_credits,
 )
 from app.domain.commercial.currency import (
@@ -1892,7 +1891,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         package_net_delta = 0.0
         if ledger_source:
             package_net_delta = package_credit_net_delta(credit_ledger_entries)
-            credit_used = package_credit_used_from_net_delta(package_net_delta)
+            credit_used = service._coerce_float(
+                ai_credit_ledger_summary.get("consumed_ai_credits")
+            )
         package_credit_limit = service._coerce_float(
             budgets.get("max_ai_credits_per_period")
         )
