@@ -175,35 +175,24 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByText(/Agency/i).first()).toBeVisible();
   await expect(page.getByText(/Site limit|站点上限/i).first()).toBeVisible();
   const freePackageRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Free' });
-  await expect(freePackageRow.locator('dt').filter({ hasText: /Site limit|站点上限/i }).locator('..').locator('dd')).toHaveText('3');
+  await expect(freePackageRow).toContainText(/Sites 3|站点上限 3/i);
   await expect(page.getByRole('link', { name: /Back to coverage|返回服务状态/i })).toHaveCount(0);
-  await expect(page.locator('a[href="/admin/plans/free"]')).toBeVisible();
-  await expect(page.locator('a[href="/admin/plans/pro"]')).toBeVisible();
+  await expect(page.locator('a[href="/admin/plans/free"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/plans/pro"]')).toHaveCount(0);
   await expect(page.getByText(/checkout|buy points|storefront/i)).toHaveCount(0);
 
-  await page.goto('/admin/plans/free', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /Free|套餐详情/i }).first()).toBeVisible();
-  await expect(page.getByText(/Current package values|当前生效值/i).first()).toBeVisible();
-
-  await page.goto('/admin/plans/pro', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /Pro|套餐详情/i }).first()).toBeVisible();
-  await expect(page.getByText(/Current package values|当前生效值/i).first()).toBeVisible();
-  await expect(page.getByText(/Site limit|站点上限/i).first()).toBeVisible();
-  const editPackageValuesButton = page.getByRole('button', { name: /Edit package values|编辑套餐值/i });
-  await expect(editPackageValuesButton).toHaveCount(1);
-  await expect(page.getByText(/Structured package fields|结构化套餐字段/i)).toHaveCount(0);
-  await expect(page.getByText(/Open advanced diagnostics|查看高级诊断/i)).toHaveCount(0);
-  await expect(page.getByText(/Advanced information|高级信息/i)).toBeVisible();
-  await editPackageValuesButton.click();
-  const packageEditor = page.getByRole('dialog', { name: /Edit current package values|编辑当前套餐值/i });
+  const freeManageButton = freePackageRow.getByRole('button', { name: /Manage package|管理套餐/i });
+  await freeManageButton.click();
+  const packageEditor = page.getByRole('dialog', { name: /Manage Free|管理 Free/i });
   await expect(packageEditor).toBeVisible();
-  await expect(packageEditor.getByText(/Structured package fields|结构化套餐字段/i)).toBeVisible();
+  await expect(packageEditor.getByText(/Current package parameters|当前套餐参数/i)).toBeVisible();
+  await expect(packageEditor.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
   await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toBeVisible();
-  await packageEditor.getByRole('button', { name: /Cancel|取消/i }).click();
-  await expect(page.getByRole('link', { name: /Open subscriptions|查看订阅|查看訂閱/i })).toHaveAttribute(
+  await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveAttribute(
     'href',
-    `/admin/subscriptions?plan_id=${LONG_PLAN_ID}`
+    '/admin/subscriptions?plan_id=free'
   );
+  await packageEditor.locator('[data-ui="admin-workbench-close"]').click();
   await expect(page.getByRole('link', { name: /Inspect detail|查看详情|查看詳情/i })).toHaveCount(0);
 });
 
@@ -256,24 +245,18 @@ test('admin queue pages keep one primary header action and shared identifier tre
   await expect(page.getByText(/Internal launch note/i).first()).toBeVisible();
 
   await page.goto('/admin/plans', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('a[href="/admin/plans/pro"]').first()).toBeVisible();
-  await page.goto('/admin/plans/pro', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText(/Current package values|当前生效值/i).first()).toBeVisible();
-  await expect(page.getByText(/Advanced information|高级信息/i)).toBeVisible();
-  await page.getByText(/Advanced information|高级信息/i).click();
-  await expect(page.getByRole('button', { name: /^Diagnostics$|^诊断$/i })).toBeVisible();
-  await page.getByRole('button', { name: /Release history|发布历史/i }).click();
-  await expect(page.getByText(/Pro v1|pro_v1/i).first()).toBeVisible();
-  await page.getByRole('button', { name: /Edit package values|编辑套餐值/i }).click();
-  const packageEditor = page.getByRole('dialog', { name: /Edit current package values|编辑当前套餐值/i });
+  const proPackageRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Pro' });
+  await proPackageRow.getByRole('button', { name: /Manage package|管理套餐/i }).click();
+  const packageEditor = page.getByRole('dialog', { name: /Manage Pro|管理 Pro/i });
   await expect(packageEditor.getByRole('button', { name: /Restore .* suggested values|恢复 .* 建议值/i })).toBeVisible();
   await expect(packageEditor.getByRole('button', { name: /Restore saved values|还原当前已保存值|還原目前已儲存值/i })).toBeVisible();
-  await packageEditor.getByRole('button', { name: /Cancel|取消/i }).click();
-  await expect(page.getByRole('link', { name: /Open subscriptions|查看订阅|查看訂閱/i })).toHaveAttribute(
+  await packageEditor.getByRole('tab', { name: /Release history|发布历史/i }).click();
+  await expect(packageEditor.getByText(/Pro v1|pro_v1/i).first()).toBeVisible();
+  await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveAttribute(
     'href',
     `/admin/subscriptions?plan_id=${LONG_PLAN_ID}`
   );
-  await expect(page.getByText(/已发布|published/i).first()).toBeVisible();
+  await packageEditor.locator('[data-ui="admin-workbench-close"]').click();
 
   await page.goto('/admin/ai-resources', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Model suppliers$|^模型供应商$|^模型供應商$/i })).toBeVisible();

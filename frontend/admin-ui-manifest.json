@@ -43,7 +43,6 @@
     "/admin/support-requests": "queue",
     "/admin/support-requests/[requestId]": "detail",
     "/admin/plans": "queue",
-    "/admin/plans/[planId]": "detail",
     "/admin/credit-packs": "configuration",
     "/admin/portal-users": "queue",
     "/admin/ai-resources": "queue",
@@ -60,8 +59,7 @@
     "/admin/site-compliance": "configuration"
   },
   "legacyRouteLocalDialogs": [
-    "src/app/admin/layout.tsx",
-    "src/app/admin/plans/[planId]/page.tsx"
+    "src/app/admin/layout.tsx"
   ],
   "legacyRouteLocalCredentials": []
 }

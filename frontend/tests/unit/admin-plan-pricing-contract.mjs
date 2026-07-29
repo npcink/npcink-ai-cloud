@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fromFrontendRoot } from './_paths.mjs';
 
-const root = process.cwd();
-const planPage = readFileSync(resolve(root, 'src/app/admin/plans/[planId]/page.tsx'), 'utf8');
-const i18n = readFileSync(resolve(root, 'src/lib/i18n.ts'), 'utf8');
+const planPage = readFileSync(fromFrontendRoot('src/components/admin/PlanManagementWorkbench.tsx'), 'utf8');
+const i18n = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 
 assert.match(
   planPage,
@@ -13,7 +12,7 @@ assert.match(
 );
 assert.match(
   planPage,
-  /sales_price_cny_detail[\s\S]*model_cost_budget_cny_detail/,
+  /sales_price_cny_detail[\s\S]*period_cost_budget_detail/,
   'Admin package editor must explain customer price and internal cost-budget purposes'
 );
 assert.match(

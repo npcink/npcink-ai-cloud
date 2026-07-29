@@ -7,6 +7,11 @@ const root = frontendRoot;
 const accountsSource = readFileSync(resolve(root, 'src/app/admin/accounts/page.tsx'), 'utf8');
 const subscriptionsSource = readFileSync(resolve(root, 'src/app/admin/subscriptions/page.tsx'), 'utf8');
 const plansSource = readFileSync(resolve(root, 'src/app/admin/plans/page.tsx'), 'utf8');
+const planManagementSource = readFileSync(resolve(root, 'src/components/admin/PlanManagementWorkbench.tsx'), 'utf8');
+const plansTableSource = plansSource.slice(
+  plansSource.indexOf('<AdminDataTableFrame'),
+  plansSource.indexOf('</AdminDataTableFrame>')
+);
 const creditPacksSource = readFileSync(resolve(root, 'src/app/admin/credit-packs/page.tsx'), 'utf8');
 const serviceSettingsSource = readFileSync(resolve(root, 'src/app/admin/service-settings/page.tsx'), 'utf8');
 const workbenchDialogSource = readFileSync(resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
@@ -16,6 +21,41 @@ assert.match(
   plansSource,
   /grid gap-4 lg:grid-cols-2 2xl:grid-cols-4/,
   'The collapsed package-initialization utility must fit the four canonical packages on one row at wide PC breakpoints'
+);
+assert.match(
+  plansSource,
+  /AdminDataTableFrame[\s\S]*dataUi="plan-catalog-table"[\s\S]*density="compact"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/,
+  'The package catalog must use the compact shared semantic table workbench'
+);
+assert.doesNotMatch(
+  plansTableSource,
+  /btn btn-primary btn-sm/,
+  'Package table rows must not compete with the package management primary action'
+);
+assert.doesNotMatch(
+  plansSource,
+  /xl:grid-cols-\[minmax\(0,1\.65fr\)_minmax\(20rem,0\.72fr\)\]|plan-catalog-inspector/,
+  'The package catalog must not reserve permanent horizontal space for an inspector'
+);
+assert.match(
+  plansSource,
+  /PlanManagementWorkbench[\s\S]*focus/,
+  'Package management must open from the URL-backed directory selection'
+);
+assert.match(
+  plansTableSource,
+  /href=\{subscriptionsHref\}[\s\S]*aria-haspopup=\{planId \? 'dialog'/,
+  'Filtered subscriptions and package management must each have a direct table-row entry'
+);
+assert.match(
+  planManagementSource,
+  /ParameterField[\s\S]*sm:grid-cols-2[\s\S]*included_points_detail[\s\S]*site_limit_detail[\s\S]*vector_documents_limit_detail/,
+  'The management workbench must use one two-column field list with corresponding descriptions'
+);
+assert.doesNotMatch(
+  plansSource,
+  /core_limits_summary|reason_ready/,
+  'Ready rows must not repeat readiness or explain that the three visible limits are limits'
 );
 
 assert.match(
