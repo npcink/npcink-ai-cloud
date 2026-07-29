@@ -132,7 +132,11 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     ) == 2
     assert "tests/e2e/admin-operator-path.spec.ts" in workflow
     assert "tests/e2e/portal-workspace-path.spec.ts" in workflow
-    assert "admin operator path smoke|portal workspace interaction path" in workflow
+    assert (
+        "admin operator path smoke|portal workspace interaction path|"
+        "Alipay return polls|account projections stay idle|"
+        "account-level support stays available"
+    ) in workflow
     assert workflow.count(
         "if: needs.classify.outputs.frontend_e2e_required == 'true'"
     ) == 2

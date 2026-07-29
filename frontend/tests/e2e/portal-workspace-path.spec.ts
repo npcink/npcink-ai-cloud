@@ -124,7 +124,7 @@ async function installPortalMocks(
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
-  let accountRequestCount = 0;
+  let accountProjectionRequestCount = 0;
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
   let initialEntitlementsFailed = false;
@@ -168,8 +168,8 @@ async function installPortalMocks(
       return;
     }
 
-    if (pathname.startsWith('/account/') || pathname.startsWith('/support-requests')) {
-      accountRequestCount += 1;
+    if (pathname.startsWith('/account/')) {
+      accountProjectionRequestCount += 1;
     }
 
     if (pathname === '/auth/identity-providers') {
@@ -821,6 +821,33 @@ async function installPortalMocks(
             updated_at: '2026-04-07T09:05:00Z',
           },
         ],
+      });
+      return;
+    }
+
+    if (pathname === '/support-requests/ticket_portal_e2e_open') {
+      await fulfillJson(route, {
+        request: {
+          request_id: 'ticket_portal_e2e_open',
+          topic: 'billing',
+          status: 'open',
+          priority: 'normal',
+          title: 'Payment order status looks wrong',
+          description: 'Please check the latest account payment order.',
+          created_at: '2026-04-07T09:05:00Z',
+          updated_at: '2026-04-07T09:05:00Z',
+        },
+        messages: [
+          {
+            message_id: 'support_message_portal_e2e_open',
+            request_id: 'ticket_portal_e2e_open',
+            author_kind: 'customer',
+            body: 'Please check the latest account payment order.',
+            created_at: '2026-04-07T09:05:00Z',
+          },
+        ],
+        attachments: [],
+        feedback: null,
       });
       return;
     }
@@ -1485,7 +1512,7 @@ async function installPortalMocks(
   });
 
   return {
-    accountRequestCount: () => accountRequestCount,
+    accountProjectionRequestCount: () => accountProjectionRequestCount,
     delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
   };
@@ -1736,8 +1763,6 @@ test('account projections stay idle until a site context is selected', async ({ 
     '/portal/billing',
     '/portal/usage',
     '/portal/audit',
-    '/portal/support',
-    '/portal/support/ticket_portal_e2e_open',
   ]) {
     await page.goto(path);
     await expect(
@@ -1745,7 +1770,21 @@ test('account projections stay idle until a site context is selected', async ({ 
     ).toBeVisible();
   }
 
-  expect(calls.accountRequestCount()).toBe(0);
+  expect(calls.accountProjectionRequestCount()).toBe(0);
+});
+
+test('account-level support stays available without a selected site context', async ({ page }) => {
+  const calls = await installPortalMocks(page, { withoutSelectedContext: true });
+
+  await page.goto('/portal/support');
+  await expect(page.getByRole('combobox', { name: /Current site|站点记录|站點記錄/i })).toHaveValue('');
+  await expect(page.getByText(/Payment order status looks wrong|支付订单状态看起来不对/i)).toBeVisible();
+
+  await page.goto('/portal/support/ticket_portal_e2e_open');
+  await expect(page.getByRole('heading', { level: 1, name: /Payment order status looks wrong/i })).toBeVisible();
+  await expect(page.getByText(/Please check the latest account payment order\./i).first()).toBeVisible();
+
+  expect(calls.accountProjectionRequestCount()).toBe(0);
 });
 
 test('late account entitlements cannot overwrite a newly selected site context', async ({ page }) => {
