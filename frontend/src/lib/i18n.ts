@@ -3016,6 +3016,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.accounts.onboarding_desc':
       'Use this form when a new customer account should start on the formal Free package. Turn it off only for ops or exceptional uncovered accounts.',
     'admin.accounts.customer_name_placeholder': 'User account',
+    'admin.accounts.validation_account_id_required': 'Enter an Account ID.',
+    'admin.accounts.validation_name_required': 'Enter a customer name.',
     'admin.accounts.operator_display_name_label': 'Operator name',
     'admin.accounts.operator_display_name_placeholder': 'Short name shown in admin lists',
     'admin.accounts.operator_note_label': 'Operator note',
@@ -8614,6 +8616,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.accounts.onboarding_title': '创建带有明确覆盖姿态的客户账号',
     'admin.accounts.onboarding_desc': '当新客户应从正式 Free 套餐开始时使用此表单。只有在运维或特殊未覆盖账号场景下才关闭它。',
     'admin.accounts.customer_name_placeholder': '客户账号',
+    'admin.accounts.validation_account_id_required': '请输入账号 ID。',
+    'admin.accounts.validation_name_required': '请输入客户名称。',
     'admin.accounts.operator_display_name_label': '运营显示名',
     'admin.accounts.operator_display_name_placeholder': '用于后台列表的短名称',
     'admin.accounts.operator_note_label': '运营备注',

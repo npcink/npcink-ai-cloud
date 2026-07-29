@@ -1,7 +1,7 @@
 # Cloud Admin Frontend Engineering Standard v1
 
-Status: active engineering standard; Stages 1 and 2 accepted; Stage 2 reuse
-candidate implemented.
+Status: active engineering standard; Stages 1 and 2 accepted; Stage 3
+dependency decision validated.
 
 Date: 2026-07-29.
 
@@ -37,6 +37,12 @@ Current implementation evidence:
   is [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md).
 - A headless table library and React Hook Form remain unadopted. They require
   their own burden-removal evidence; the Query pilot does not pre-approve them.
+- Stage 3 tested React Hook Form plus the Zod resolver on the bounded account
+  creation form. The route grew by `301,210` raw and `75,384` gzip bytes, so
+  the dependency failed the proportionality stop condition and was removed.
+  The accepted dependency-free form boundary grew by only `1,272` raw and
+  `455` gzip bytes while retaining the behavior fixes. The evidence is
+  [Cloud Admin Account Create Form Pilot Closeout](cloud-admin-account-create-form-pilot-closeout-2026-07-29.md).
 
 ## 1. Problem Statement
 
@@ -107,8 +113,8 @@ Use a bounded headless-tool pilot for missing engineering capabilities:
 | --- | --- | --- |
 | Remote/server state | `@tanstack/react-query` | loading, error, cache, refetch, mutation lifecycle, invalidation |
 | Table state | `@tanstack/react-table` | columns, sorting, filtering, pagination, selection, visibility |
-| Form draft state | `react-hook-form` | field values, dirty state, touched state, submit lifecycle |
-| Form validation | existing `zod` through `@hookform/resolvers` | input semantics and typed submit payload |
+| Form draft state | dependency-free feature form by default; headless form tool only after a measured pilot | field values, dirty state, touched state, submit lifecycle |
+| Form validation | feature validation or an existing transport schema; no new client dependency without measured benefit | input semantics and typed submit payload |
 
 These dependencies are approved only through the pilot and stop conditions in
 this document. They are implementation tools, not new product or data owners.
@@ -142,7 +148,7 @@ Every materially changed Admin surface must identify one owner for each state.
 | --- | --- | --- |
 | URL/navigation state | Next.js route/search params | object ID, selected route, shareable filters |
 | Remote server state | query layer | account, sites, subscription, readiness, diagnostics |
-| Form draft | React Hook Form in an accepted form pilot | unsaved field values, dirty fields, client validation |
+| Form draft | one feature-owned form boundary | unsaved field values, dirty fields, client validation |
 | Table interaction state | table adapter or URL when shareable | sorting, page, row selection, column visibility |
 | Ephemeral UI state | local React state | open drawer, active disclosure, current focus target |
 | Semantic validation | Zod and server contract | field shape, typed payload, cross-field rules |
@@ -248,7 +254,11 @@ Default table posture:
 Default form posture:
 
 - one form has one draft owner;
+- prefer native form controls, `FormData`, and a feature-owned validation and
+  payload model for small independent forms;
 - use the existing Zod schema when it already defines the transport contract;
+- do not pull a server-side or otherwise unused schema library into a client
+  route merely to claim schema validation;
 - keep stored credentials concealed and use `AdminCredentialField`;
 - reset explicitly after a successful authoritative response;
 - preserve unsaved-leave protection;
@@ -355,12 +365,20 @@ first dependency pilots.
 After the queue pilot is accepted:
 
 1. select one independent, bounded configuration group;
-2. use React Hook Form with the existing Zod contract;
-3. remove the matching duplicated field state and dirty-state code;
+2. measure the accepted route before introducing a form dependency;
+3. remove the matching duplicated field state and submit-state code;
 4. preserve credential, audit, save, error, and confirmation semantics;
-5. prove reset, server error, unsaved leave, and keyboard behavior.
+5. prove validation, payload transformation, server error, submit lifecycle,
+   and keyboard behavior that apply to the selected form;
+6. build and measure the same route with the candidate dependency. Remove it
+   when its bundle or adapter cost is disproportionate to deleted burden.
 
 Do not convert the entire service-settings route in one pull request.
+
+The completed account-creation pilot hit the dependency stop condition.
+React Hook Form and its Zod resolver were removed; the useful feature boundary,
+validation, payload mapping, accessibility, and behavior tests were retained.
+This is a successful engineering decision, not a failed delivery.
 
 ### Stage 4: incremental hotspot remediation
 
@@ -469,12 +487,13 @@ A new implementation session should:
    hydration;
 6. preserve Support requests as the bounded second Query-first queue and use
    its measured reuse evidence before considering another queue;
-7. select at most one independent form group for the Stage 3 pilot; do not
-   install React Hook Form or a table library until that pilot removes measured
-   route-local burden;
+7. treat the account-create form as the Stage 3 baseline: retain its
+   dependency-free feature boundary and do not reinstall React Hook Form,
+   another form library, or a table library without new measured burden that
+   justifies the cost;
 8. preserve all unrelated dirty work and all Cloud/WordPress ownership
    boundaries.
 
-This document records the approved direction, accepted Query pilot, and bounded
-Support requests reuse candidate. It does not authorize a broad dependency
+This document records the approved direction, accepted Query pilots, and the
+Stage 3 dependency decision. It does not authorize a broad dependency
 migration, production deployment, or GA claim.

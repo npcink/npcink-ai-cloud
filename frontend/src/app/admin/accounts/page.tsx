@@ -16,6 +16,11 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
+import { CreateAccountForm } from '@/features/admin/accounts/CreateAccountForm';
+import {
+  buildCreateAccountPayload,
+  type CreateAccountFormValues,
+} from '@/features/admin/accounts/create-account-form-model';
 import {
   resolveCustomerPackageDisplay,
   translateCoverageStateLabel,
@@ -221,7 +226,6 @@ function AccountsContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [loadedRequestKey, setLoadedRequestKey] = useState('');
@@ -229,13 +233,6 @@ function AccountsContent() {
     q: appliedQuery,
     expires_before: appliedExpiresBefore,
     top_plan_id: appliedTopPlanId,
-  });
-  const [createForm, setCreateForm] = useState({
-    account_id: '',
-    name: '',
-    operator_display_name: '',
-    operator_note: '',
-    bind_default_free: true,
   });
   const mountedRef = useRef(false);
   const hasLoadedRef = useRef(false);
@@ -359,37 +356,23 @@ function AccountsContent() {
     });
   };
 
-  const handleCreateAccount = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSaving(true);
+  const handleCreateAccount = async (values: CreateAccountFormValues) => {
     setActionError('');
     try {
-      const metadata = {
-        ...(createForm.operator_display_name.trim() ? { operator_display_name: createForm.operator_display_name.trim() } : {}),
-        ...(createForm.operator_note.trim() ? { operator_note: createForm.operator_note.trim() } : {}),
-      };
       await accountsClient.request<Record<string, unknown>>('/api/admin/accounts', {
         method: 'POST',
-        body: {
-          account_id: createForm.account_id.trim(),
-          name: createForm.name.trim(),
-          metadata,
-          bind_default_free: createForm.bind_default_free,
-        },
+        body: buildCreateAccountPayload(values),
       });
       showSuccessToast(
-        createForm.bind_default_free
+        values.bind_default_free
           ? t('admin.accounts.onboarding_created_notice', {}, 'Customer account created and bound to the Free package.')
           : t('admin.accounts.account_created_notice', {}, 'Account created without automatic subscription coverage.'),
         t('admin.accounts.account_created_title', {}, 'User created')
       );
-      setCreateForm({ account_id: '', name: '', operator_display_name: '', operator_note: '', bind_default_free: true });
       setIsCreateOpen(false);
       await loadAccounts(true);
     } catch (err) {
       setActionError(resolveUiErrorMessage(err, t('error.failed_save')));
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -472,32 +455,10 @@ function AccountsContent() {
               {t('admin.accounts.create_desc', {}, 'Create the Cloud customer record and optionally bind the formal Free package in one audited service-plane action.')}
             </p>
           </div>
-          <form onSubmit={handleCreateAccount} className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] xl:items-end">
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">{t('admin.account_id', {}, 'Account ID')}</span>
-              <input type="text" value={createForm.account_id} onChange={(event) => setCreateForm((current) => ({ ...current, account_id: event.target.value }))} placeholder="acct_customer_free" className="input w-full" required />
-            </label>
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">{t('common.name', {}, 'Name')}</span>
-              <input type="text" value={createForm.name} onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))} placeholder={t('admin.accounts.customer_name_placeholder', {}, 'Customer Account')} className="input w-full" required />
-            </label>
-            <label className="text-sm">
-              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">{t('admin.accounts.operator_display_name_label', {}, 'Operator name')}</span>
-              <input type="text" value={createForm.operator_display_name} onChange={(event) => setCreateForm((current) => ({ ...current, operator_display_name: event.target.value }))} placeholder={t('admin.accounts.operator_display_name_placeholder', {}, 'Short name shown in admin lists')} className="input w-full" />
-            </label>
-            <button type="submit" className="btn btn-primary" disabled={isSaving}>
-              {isSaving ? t('common.saving', {}, 'Saving...') : t('admin.accounts.create_customer_account', {}, 'Create customer account')}
-            </button>
-            <label className="text-sm md:col-span-2 xl:col-span-3">
-              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">{t('admin.accounts.operator_note_label', {}, 'Operator note')}</span>
-              <input type="text" value={createForm.operator_note} onChange={(event) => setCreateForm((current) => ({ ...current, operator_note: event.target.value }))} placeholder={t('admin.accounts.operator_note_placeholder', {}, 'Internal follow-up note')} className="input w-full" />
-            </label>
-            <label className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200 xl:col-span-1">
-              <input type="checkbox" checked={createForm.bind_default_free} onChange={(event) => setCreateForm((current) => ({ ...current, bind_default_free: event.target.checked }))} />
-              <span>{t('admin.accounts.bind_default_free_label', {}, 'Bind formal Free package on create')}</span>
-            </label>
-            {actionError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300 md:col-span-2 xl:col-span-4">{actionError}</p> : null}
-          </form>
+          <CreateAccountForm
+            actionError={actionError}
+            onSubmit={handleCreateAccount}
+          />
         </BackofficeSectionPanel>
       ) : null}
 

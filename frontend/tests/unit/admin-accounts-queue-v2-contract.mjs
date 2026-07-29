@@ -4,7 +4,11 @@ import { resolve } from 'node:path';
 import { frontendRoot } from './_paths.mjs';
 
 const root = frontendRoot;
-const source = readFileSync(resolve(root, 'src/app/admin/accounts/page.tsx'), 'utf8');
+const source = [
+  'src/app/admin/accounts/page.tsx',
+  'src/features/admin/accounts/CreateAccountForm.tsx',
+  'src/features/admin/accounts/create-account-form-model.ts',
+].map((path) => readFileSync(resolve(root, path), 'utf8')).join('\n');
 const routeSource = readFileSync(resolve(root, '../app/api/routes/service.py'), 'utf8');
 const serviceSource = readFileSync(resolve(root, '../app/domain/commercial/mixins/_admin_mixin.py'), 'utf8');
 
@@ -29,7 +33,11 @@ assert.match(source, /aria-controls="account-inspector"[\s\S]*id="account-inspec
 assert.match(source, /focus: account\.account_id/, 'customer inspector focus must persist in the URL');
 assert.match(source, /href="\/admin\/portal-users"[\s\S]*admin\.accounts\.open_portal_users_action/, 'Portal users must remain a bounded secondary entry');
 
-assert.match(source, /handleCreateAccount[\s\S]*bind_default_free[\s\S]*showSuccessToast/, 'customer creation and formal Free binding must remain explicit with non-shifting success feedback');
+assert.match(source, /handleCreateAccount[\s\S]*showSuccessToast/, 'customer creation must retain non-shifting success feedback');
+assert.match(source, /buildCreateAccountPayload[\s\S]*bind_default_free/, 'customer creation must keep formal Free binding explicit in the bounded payload');
+assert.match(source, /new FormData\(event\.currentTarget\)[\s\S]*validateCreateAccountForm/, 'customer creation must use one bounded, dependency-free form state layer');
+assert.match(source, /if \(!data\.account_id\)[\s\S]*if \(!data\.name\)/, 'customer creation must reject whitespace-only identifiers and names before transport');
+assert.match(source, /setErrors\(result\.errors\)[\s\S]*setIsSubmitting\(true\)/, 'validation and async submit state must remain form-owned');
 assert.match(source, /actionError[\s\S]*role="alert"/, 'customer creation failures must stay contextual');
 assert.match(source, /does not create payment, entitlement, or WordPress write controls/, 'inspector copy must preserve the Cloud service-plane boundary');
 
