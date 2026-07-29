@@ -175,9 +175,9 @@ frontend/src/features/admin/portal-users/
   api.ts
   schemas.ts
   queries.ts
-  portal-user-columns.tsx
+  portal-user-directory-model.ts
   use-portal-user-filters.ts
-  PortalUsersTable.tsx
+  PortalUsersDirectory.tsx
   PortalUserInspector.tsx
   PortalUserEditForm.tsx
 ```
@@ -320,8 +320,10 @@ that its API and active feature work are stable.
 
 1. Introduce the query capability for that feature.
 2. Introduce the headless table capability only if it deletes real route-local
-   sorting, filtering, pagination, or selection logic.
-3. Keep `AdminDataTableFrame`, status badges, toolbar, copy, and geometry.
+   sorting, filtering, pagination, or selection logic. Current inspection does
+   not justify it for this pilot.
+3. Keep the accepted responsive task list, status badges, toolbar, copy,
+   inspector, and geometry.
 4. Move DTOs, query keys, columns, and filters into one feature module.
 5. Preserve behavior and appearance; this is an engineering pilot, not a
    redesign.
