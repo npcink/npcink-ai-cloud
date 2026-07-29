@@ -3,11 +3,22 @@ import assert from 'node:assert/strict';
 import { fromFrontendRoot } from './_paths.mjs';
 
 const pagePath = fromFrontendRoot('src/app/admin/portal-users/page.tsx');
+const workspacePath = fromFrontendRoot('src/features/admin/portal-users/PortalUsersWorkspace.tsx');
+const apiPath = fromFrontendRoot('src/features/admin/portal-users/api.ts');
+const queriesPath = fromFrontendRoot('src/features/admin/portal-users/queries.ts');
+const directoryModelPath = fromFrontendRoot('src/features/admin/portal-users/directory-model.ts');
 const layoutPath = fromFrontendRoot('src/app/admin/layout.tsx');
 const accountsPath = fromFrontendRoot('src/app/admin/accounts/page.tsx');
 const proxyPath = fromFrontendRoot('src/app/api/admin/[...path]/route.ts');
 
-const pageSource = readFileSync(pagePath, 'utf8');
+const workspaceSource = readFileSync(workspacePath, 'utf8');
+const pageSource = [
+  readFileSync(pagePath, 'utf8'),
+  workspaceSource,
+  readFileSync(apiPath, 'utf8'),
+  readFileSync(queriesPath, 'utf8'),
+  readFileSync(directoryModelPath, 'utf8'),
+].join('\n');
 const layoutSource = readFileSync(layoutPath, 'utf8');
 const accountsSource = readFileSync(accountsPath, 'utf8');
 const proxySource = readFileSync(proxyPath, 'utf8');
@@ -21,7 +32,16 @@ assert.match(
 assert.match(pageSource, /id="portal-user-inspector"/, 'portal users page must use a persistent user inspector');
 assert.match(pageSource, /data-ui="portal-user-directory-item"/, 'portal users must render as a responsive directory list');
 assert.doesNotMatch(pageSource, /<table|overflow-x-auto/, 'portal users must not depend on a wide horizontal table');
-assert.match(pageSource, /activeRequestKeyRef[\s\S]*requestSequenceRef[\s\S]*hasLoadedRef/, 'portal user reads must dedupe and reject stale responses');
+assert.match(
+  pageSource,
+  /queryKey: portalUserKeys\.directory\(requestKey\)[\s\S]*queryFn: \(\{ signal \}\) => fetchPortalUsers\(requestKey, signal\)/,
+  'portal user reads must dedupe by stable query key and cancel obsolete requests'
+);
+assert.match(
+  layoutSource,
+  /<AdminQueryProvider>[\s\S]*<AdminRouteTransition>[\s\S]*\{children\}/,
+  'the Admin shell must provide one project-owned query client'
+);
 assert.match(pageSource, /searchParams\.get\('focus'\)/, 'the inspected user must persist in the URL');
 
 assert.match(
@@ -32,13 +52,13 @@ assert.match(
 
 assert.match(
   pageSource,
-  /source', 'portal_self_registration'/,
+  /params\.set\('source', 'portal_self_registration'\)/,
   'portal users page must default to the self-registration source'
 );
 
 assert.match(
   pageSource,
-  /\/api\/admin\/portal-users\/\$\{encodeURIComponent\(user\.principal_id\)\}\/disable/,
+  /\/api\/admin\/portal-users\/\$\{encodeURIComponent\(input\.principalId\)\}\/disable/,
   'portal users page must expose a principal-scoped disable action'
 );
 
@@ -46,6 +66,28 @@ assert.match(
   pageSource,
   /\/api\/admin\/portal-users\/batch-disable/,
   'portal users page must expose the lightweight batch disable endpoint'
+);
+
+assert.ok(
+  Array.from(
+    pageSource.matchAll(/queryKey: portalUserKeys\.directories\(\)/g)
+  ).length >= 2,
+  'single and batch mutations must invalidate the bounded Portal directory prefix'
+);
+assert.doesNotMatch(
+  pageSource,
+  /invalidateQueries\(\{[\s\S]{0,160}queryKey: portalUserKeys\.directory\(requestKey\)/,
+  'portal user mutations must not leave sibling Portal directory filters stale'
+);
+assert.match(
+  pageSource,
+  /useDisablePortalUser[\s\S]*onSuccess: async[\s\S]*queryKey: portalUserKeys\.directories\(\)/,
+  'single disable must keep directory refetch inside the mutation lifecycle'
+);
+assert.doesNotMatch(
+  workspaceSource,
+  /invalidateQueries/,
+  'the workspace must not duplicate mutation-owned invalidation'
 );
 
 assert.match(
@@ -56,7 +98,7 @@ assert.match(
 
 assert.match(
   pageSource,
-  /\/api\/admin\/portal-users\/\$\{encodeURIComponent\(user\.principal_id\)\}\/audit\?limit=50/,
+  /\/api\/admin\/portal-users\/\$\{encodeURIComponent\(principalId\)\}\/audit\?limit=50/,
   'portal users page must load principal-scoped audit details'
 );
 
