@@ -71,6 +71,7 @@ ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "max"})
 ALLOWED_MODEL_METADATA_OVERRIDE_FIELDS = frozenset(
     {
         "context_window",
+        "feature",
         "price_input",
         "price_output",
         "price_cache_read",
@@ -139,9 +140,20 @@ def _normalize_model_metadata_overrides(
                 if math.isfinite(price) and price >= 0:
                     override[key] = price
                 continue
+            if key == "feature":
+                feature = str(raw_value or "").strip().lower()
+                if feature in {"embedding", "text", "vision", "image_generation"}:
+                    override[key] = feature
+                continue
             text = str(raw_value or "").strip()
             if text:
                 override[key] = text[:191]
+        if "feature" in override and not all(
+            isinstance(override.get(evidence_key), str)
+            and bool(str(override[evidence_key]).strip())
+            for evidence_key in ("source", "revision")
+        ):
+            override.pop("feature", None)
         if override:
             normalized[model_id] = override
     return normalized

@@ -82,6 +82,7 @@ def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> N
         model_metadata_overrides={
             "gateway-model": {
                 "context_window": 64000,
+                "feature": "vision",
                 "price_input": 1.25,
                 "price_output": 5,
                 "price_cache_read": 0.125,
@@ -97,6 +98,9 @@ def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> N
     model = adapter.fetch_catalog().models[0]
 
     assert model.context_window == 64000
+    assert model.feature == "vision"
+    assert model.instances[0].endpoint_variant == "responses"
+    assert model.instances[0].capability_tags[0] == "vision"
     assert model.price_input == 1.25
     assert model.price_output == 5.0
     assert model.raw_json["runtime_pricing"] == {
@@ -108,6 +112,32 @@ def test_openai_adapter_applies_bounded_operator_model_metadata_overrides() -> N
         "revision": "2026-07-25",
     }
     assert "ignored_nested" not in model.raw_json
+
+
+def test_openai_adapter_requires_evidence_for_feature_override() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": "gateway-model"}]})
+
+    adapter = OpenAIProviderAdapter(
+        api_key="test-api-key",
+        model_metadata_overrides={
+            "gateway-model": {
+                "feature": "vision",
+                "context_window": 64000,
+            }
+        },
+        transport=httpx.MockTransport(handler),
+    )
+
+    model = adapter.fetch_catalog().models[0]
+
+    assert model.feature == "text"
+    assert model.instances[0].endpoint_variant == "chat_completions"
+    assert model.instances[0].capability_tags == ["text", "balanced"]
+    assert adapter.model_metadata_overrides == {
+        "gateway-model": {"context_window": 64000}
+    }
 
 
 def test_openai_adapter_classifies_bge_catalog_models_as_embeddings() -> None:
