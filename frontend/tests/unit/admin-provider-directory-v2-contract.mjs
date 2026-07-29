@@ -11,6 +11,10 @@ const adminLayoutSource = readFileSync(resolve(root, 'src/app/admin/layout.tsx')
 const globalStyleSource = readFileSync(resolve(root, 'src/app/globals.css'), 'utf8');
 const dialogSource = readFileSync(resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const credentialSource = readFileSync(resolve(root, 'src/components/admin/AdminCredentialField.tsx'), 'utf8');
+const directoryQuerySource = readFileSync(
+  resolve(root, 'src/features/admin/ai-resources/directory.ts'),
+  'utf8'
+);
 
 assert.match(
   pageSource,
@@ -54,8 +58,14 @@ for (const key of ['q', 'status', 'focus']) {
 
 assert.match(
   pageSource,
-  /resourcesRequestActiveRef[\s\S]*resourcesRequestSequenceRef[\s\S]*resourcesLoadedRef[\s\S]*if \(resourcesRequestActiveRef\.current\) return/,
-  'Provider catalog reads must deduplicate development Strict Mode requests and reject stale replacement'
+  /useAiResourcesDirectory\(\)[\s\S]*directoryQuery\.isPending[\s\S]*directoryQuery\.refetch/,
+  'The route must delegate provider directory server state to its feature query'
+);
+
+assert.match(
+  directoryQuerySource,
+  /queryKey:\s*aiResourcesKeys\.directory\(\)[\s\S]*queryFn:\s*\(\{\s*signal\s*\}\)[\s\S]*fetchAiResourcesDirectory\(signal\)/,
+  'Provider directory reads must use one stable query identity and forward cancellation'
 );
 
 assert.match(

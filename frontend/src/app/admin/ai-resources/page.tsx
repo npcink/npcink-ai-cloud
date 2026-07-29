@@ -22,21 +22,24 @@ import { ProviderConnectionDialog } from '@/components/admin/ProviderConnectionD
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import {
   ModelSupplierTable,
-  type ConnectionStatusFilter,
-  type ProviderConnectionTestResult,
-  type SupplierConnection as Connection,
 } from '@/components/admin/SupplierConnectionTables';
 import { SupplierToolbar } from '@/components/admin/SupplierToolbar';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
-import { createApiClient } from '@/lib/api-client';
+import {
+  aiResourcesClient,
+  useAiResourcesDirectory,
+} from '@/features/admin/ai-resources/directory';
+import type {
+  ConnectionStatusFilter,
+  ProviderConnectionTestResult,
+  SupplierConnection as Connection,
+} from '@/features/admin/ai-resources/types';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
-
-const aiResourcesClient = createApiClient({ idempotencyPrefix: 'ai_resources' });
 
 type SupplierCategory = 'ai' | 'capability';
 
@@ -129,10 +132,6 @@ type ModelVisibilityRow = {
   deprecated: boolean;
   reference?: ModelReferenceEntry;
   catalog?: ProviderCatalogPreviewModel;
-};
-
-type AiResources = {
-  connections: Connection[];
 };
 
 type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
@@ -566,13 +565,6 @@ function inferProviderPreset(connection: Connection): string {
   return 'custom';
 }
 
-function normalizeAiResources(raw: any): AiResources {
-  const value = raw && typeof raw === 'object' ? raw : {};
-  return {
-    connections: Array.isArray(value.connections) ? value.connections : [],
-  };
-}
-
 function providerConnectionTestResultFromError(error: unknown): ProviderConnectionTestResponse | undefined {
   if (!(error instanceof ApiError) || !error.details || typeof error.details !== 'object' || Array.isArray(error.details)) {
     return undefined;
@@ -825,10 +817,18 @@ function AiResourcesContent() {
     (key: string, fallback: string, params?: Record<string, string>) => t(`admin.ai_resources.${key}`, params, fallback),
     [t]
   );
-  const [data, setData] = useState<AiResources | null>(null);
+  const directoryQuery = useAiResourcesDirectory();
+  const data = directoryQuery.data || null;
+  const loading = directoryQuery.isPending;
+  const refetchResources = directoryQuery.refetch;
+  const directoryError = directoryQuery.error
+    ? resolveUiErrorMessage(
+      directoryQuery.error,
+      aiText('error_load', 'Failed to load provider management.')
+    )
+    : '';
   const [connectionStatusFilter, setConnectionStatusFilter] = useState<ConnectionStatusFilter>('all');
   const [connectionSearch, setConnectionSearch] = useState('');
-  const [loading, setLoading] = useState(true);
   const [savingConnection, setSavingConnection] = useState(false);
   const [testingConnectionId, setTestingConnectionId] = useState('');
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
@@ -862,9 +862,6 @@ function AiResourcesContent() {
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
-  const resourcesRequestActiveRef = useRef(false);
-  const resourcesRequestSequenceRef = useRef(0);
-  const resourcesLoadedRef = useRef(false);
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -888,30 +885,16 @@ function AiResourcesContent() {
   const handleSelectConnection = useCallback((connectionId: string) => {
     updateWorkspaceParams({ focus: connectionId });
   }, [updateWorkspaceParams]);
-  const loadResources = useCallback(async (options: { showLoading?: boolean } = {}) => {
-    if (resourcesRequestActiveRef.current) return;
-    resourcesRequestActiveRef.current = true;
-    const sequence = ++resourcesRequestSequenceRef.current;
-    if (options.showLoading !== false && !resourcesLoadedRef.current) {
-      setLoading(true);
-    }
+  const loadResources = useCallback(async () => {
     setError('');
-    try {
-      const response = await aiResourcesClient.request<AiResources>('/api/admin/ai-resources');
-      if (sequence !== resourcesRequestSequenceRef.current) return;
-      const normalized = normalizeAiResources(response.data);
-      setData(normalized);
-      resourcesLoadedRef.current = true;
-    } catch (loadError) {
-      if (sequence !== resourcesRequestSequenceRef.current) return;
-      setError(resolveUiErrorMessage(loadError, aiText('error_load', 'Failed to load provider management.')));
-    } finally {
-      if (sequence === resourcesRequestSequenceRef.current) {
-        resourcesRequestActiveRef.current = false;
-        setLoading(false);
-      }
+    const result = await refetchResources();
+    if (result.error) {
+      setError(resolveUiErrorMessage(
+        result.error,
+        aiText('error_load', 'Failed to load provider management.')
+      ));
     }
-  }, [aiText]);
+  }, [aiText, refetchResources]);
 
   const loadModelReferences = useCallback(async (providerId: string) => {
     const normalizedProviderId = providerId.trim().toLowerCase();
@@ -949,10 +932,6 @@ function AiResourcesContent() {
       setLoadingModelReferences(false);
     }
   }, [aiText]);
-
-  useEffect(() => {
-    void loadResources();
-  }, [loadResources]);
 
   useEffect(() => {
     if (!providerFormOpen) return;
@@ -1049,7 +1028,7 @@ function AiResourcesContent() {
           })
         );
       }
-      await loadResources({ showLoading: false });
+      await loadResources();
       if (!testFailed) {
         setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
         setProviderFormMode('create');
@@ -1086,7 +1065,7 @@ function AiResourcesContent() {
         setProviderFormMode('create');
       }
       setConfirmingDeleteConnectionId('');
-      await loadResources({ showLoading: false });
+      await loadResources();
     } catch (deleteError) {
       const deleteMessage = resolveUiErrorMessage(deleteError, aiText('error_delete_connection', 'Failed to delete provider connection.'));
       setError(deleteMessage);
@@ -1299,7 +1278,7 @@ function AiResourcesContent() {
         toast.success(successMessage, t('common.success'));
       }
       if (reload) {
-        await loadResources({ showLoading: false });
+        await loadResources();
       }
       return result;
     } catch (testError) {
@@ -1805,7 +1784,7 @@ function AiResourcesContent() {
           description={aiText('unavailable_desc', 'Cloud runtime provider resources are unavailable.')}
         >
           <BackofficeDiagnosticNotice
-            message={error || aiText('unavailable_message', 'Provider management is unavailable.')}
+            message={error || directoryError || aiText('unavailable_message', 'Provider management is unavailable.')}
             retryLabel={t('common.retry')}
             onRetry={() => void loadResources()}
           />
