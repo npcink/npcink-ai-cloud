@@ -16,6 +16,10 @@ for (const parameter of ['q', 'state', 'sort', 'focus']) {
 assert.match(source, /activeRequestRef[\s\S]*requestSequenceRef[\s\S]*hasLoadedRef/, 'catalog reads must dedupe and reject stale responses');
 assert.match(source, /admin\.plans\.retained_notice/, 'failed refreshes must retain and label the last successful catalog');
 assert.match(source, /data-ui="plan-catalog-item"/, 'standard packages must render as a responsive operating list');
+assert.match(source, /<p className="font-semibold text-slate-950 dark:text-white">\{packageAlias\}<\/p>/, 'package identity must remain plain text');
+assert.doesNotMatch(source, /<button[\s\S]{0,320}>\s*\{packageAlias\}\s*<\/button>/, 'package identity must not duplicate the manage action');
+assert.match(source, /text-blue-700[\s\S]{0,420}<span aria-hidden="true">›<\/span>/, 'active subscription counts must keep a persistent link affordance');
+assert.match(source, /aria-label=\{planId[\s\S]{0,180}admin\.plans\.manage_title/, 'the compact manage button must keep an object-specific accessible name');
 assert.match(source, /PlanManagementWorkbench/, 'one package management workbench must own package context and maintenance');
 assert.match(workbench, /admin\.plans\.open_subscriptions_action/, 'the workbench must open the existing subscription queue');
 assert.match(source, /admin\.plans\.open_advanced_setup/, 'missing packages must open the bounded advanced-maintenance path');

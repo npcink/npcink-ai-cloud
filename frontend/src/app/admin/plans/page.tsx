@@ -575,19 +575,7 @@ function PlansContent() {
                         )}
                       >
                         <td className="px-3 py-2.5">
-                          {planId ? (
-                            <button
-                              type="button"
-                              className="font-semibold text-slate-950 underline-offset-4 hover:text-blue-700 hover:underline dark:text-white dark:hover:text-blue-300"
-                              aria-haspopup="dialog"
-                              onClick={() => updateCatalogUrl({ focus: shell.tier_id })}
-                            >
-                              {packageAlias}
-                            </button>
-                          ) : (
-                            <p className="font-semibold text-slate-950 dark:text-white">{packageAlias}</p>
-                          )}
-                          <p className="mt-0.5 truncate text-[0.68rem] text-slate-500 dark:text-slate-400">{item?.plan?.plan_id || shell.tier_id}</p>
+                          <p className="font-semibold text-slate-950 dark:text-white">{packageAlias}</p>
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
@@ -605,9 +593,10 @@ function PlansContent() {
                             <Link
                               href={subscriptionsHref}
                               aria-label={`${t('admin.plans.open_subscriptions_action', {}, 'Open subscriptions')} · ${packageAlias}`}
-                              className="inline-flex min-w-8 justify-end rounded px-1 py-0.5 underline-offset-4 hover:bg-blue-50 hover:text-blue-700 hover:underline dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+                              className="inline-flex min-w-8 cursor-pointer items-center justify-end gap-1 rounded px-1 py-0.5 text-blue-700 underline-offset-4 hover:bg-blue-50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:text-blue-300 dark:hover:bg-blue-950/30"
                             >
                               {formatInteger(item?.subscription_counts?.active || 0)}
+                              <span aria-hidden="true">›</span>
                             </Link>
                           ) : formatInteger(item?.subscription_counts?.active || 0)}
                         </td>
@@ -627,6 +616,9 @@ function PlansContent() {
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
+                            aria-label={planId
+                              ? t('admin.plans.manage_title', { package: packageAlias }, `Manage ${packageAlias}`)
+                              : undefined}
                             aria-pressed={selected}
                             aria-haspopup={planId ? 'dialog' : undefined}
                             aria-controls={planId ? 'plan-management-workbench-title' : undefined}
@@ -639,7 +631,7 @@ function PlansContent() {
                             }}
                           >
                             {planId
-                              ? t('admin.plans.manage_action', {}, 'Manage package')
+                              ? t('admin.plans.manage_action', {}, 'Manage')
                               : t('admin.plans.open_advanced_setup', {}, 'Initialize')}
                           </button>
                         </td>
