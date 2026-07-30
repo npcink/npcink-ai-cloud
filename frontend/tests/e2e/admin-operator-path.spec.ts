@@ -65,10 +65,10 @@ test('admin coverage page keeps service queue primary and package catalog separa
   await installAdminMocks(page);
 
   await page.goto('/admin/coverage');
-  await expect(page.getByRole('heading', { name: /^Service risk queue$|^服务风险队列$|^服務風險佇列$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$|^服務狀態$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
-  await expect(page.getByText(/Customers needing service follow-up|需要服务跟进的客户|需要服務跟進的客戶/i).first()).toBeVisible();
+  await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Inspect subscription|查看订阅|檢查訂閱/i }).first()).toBeVisible();
 
   await expect(page.locator('a[href="/admin/plans"]').first()).toHaveCount(1);
@@ -112,10 +112,10 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/troubleshooting"]').first()).toBeVisible();
 
   await page.goto('/admin/coverage');
-  await expect(page.getByRole('heading', { name: /^Service risk queue$|^服务风险队列$|^服務風險佇列$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$|^服務狀態$/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /Service status|Follow-up queue|服务状态|跟进队列|服務狀態|跟進隊列/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
-  await expect(page.getByText(/Customers needing service follow-up|需要服务跟进的客户|需要服務跟進的客戶/i).first()).toBeVisible();
+  await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /Open package actions|打开套餐操作|打開方案操作/i }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /Inspect subscription|查看订阅|檢查訂閱/i }).first()).toBeVisible();
   await expect(page.locator('a[href="/admin/plans"]').first()).toHaveCount(1);
