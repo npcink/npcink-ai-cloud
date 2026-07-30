@@ -69,7 +69,10 @@ Before changing this repository, an AI agent MUST:
 4. preserve all existing user changes;
 5. create a clean `codex/*` worktree from current `origin/master` when the
    active worktree is dirty, on another branch, or not synchronized;
-6. report a compact change envelope before editing.
+6. immediately lock any auxiliary worktree created by the session with
+   `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
+   verify its reason in `git worktree list --porcelain`;
+7. report a compact change envelope before editing.
 
 The change envelope MUST state:
 
@@ -85,6 +88,13 @@ The change envelope MUST state:
 
 An agent MUST NOT use `reset`, `stash`, checkout-based cleanup, or overwrite
 user changes merely to obtain a clean worktree.
+
+This Git worktree lock protects the task's authoring state from accidental
+cleanup; it is not the M4 operation lock and does not grant shared-runtime
+ownership. Keep it while the task or PR is open. Unlock it only after the task
+has ended, the PR is confirmed merged, and the worktree is clean, using the
+no-deliverable, handoff, and stale-lock recovery rules in
+[Parallel AI Collaboration Standard Section 4.1](parallel-ai-collaboration-standard-v1.md#41-task-worktree-lifecycle-lock).
 
 ## 4. Select the Smallest Valid Lane
 
@@ -514,6 +524,7 @@ Never collapse these into a single unqualified "done".
 
 ```text
 [ ] Worktree state inspected; user changes preserved
+[ ] Every auxiliary task worktree created by this session was immediately locked as codex:<task-id>
 [ ] README, AGENTS, this standard, and relevant boundaries read
 [ ] Change envelope reported
 [ ] Change classified as local-only, Cloud source, or build/runtime
@@ -526,6 +537,7 @@ Never collapse these into a single unqualified "done".
 [ ] Candidate behavior and status verified
 [ ] Diff reviewed; only task files staged
 [ ] Focused commit pushed; PR reviewed and CI green
+[ ] Task worktree stayed locked while its PR was open and was unlocked only after documented closeout
 [ ] Merged master promoted with status/relevant smoke when M4 acceptance is required
 [ ] Accepted status matches clean current origin/master
 [ ] Production, Cloudflare, unrelated M4 workloads, and secrets untouched

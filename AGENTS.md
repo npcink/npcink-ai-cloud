@@ -53,6 +53,15 @@ prompt/router/preset local truth, or WordPress write owner.
   conflict domain, one human-authored PR in the protected merge lane, and one
   shared-runtime operation owner. Parallel investigation and disjoint local
   work remain allowed.
+- Whenever an AI session creates an auxiliary linked worktree, it must
+  immediately run
+  `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
+  verify the `locked codex:<task-id>` entry with
+  `git worktree list --porcelain`. Keep the worktree locked while the task,
+  review, or merge is still open. Unlock it only after the task has ended, its
+  PR is confirmed merged, and the worktree is clean, subject to the
+  no-deliverable and recovery rules in
+  `docs/parallel-ai-collaboration-standard-v1.md`.
 - Keep changes scoped to one module per session.
 - Before staging, inspect `git status --short --branch` and `git diff --stat`.
   Stage only files changed for the current task. Do not use `git add -A` in a
