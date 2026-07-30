@@ -35,7 +35,12 @@ assert.match(workbench, /t\('common\.save', \{\}, 'Save'\)/, 'the workbench prim
 assert.doesNotMatch(workbench, /admin\.package_advanced_info_history/, 'the workbench must not expose misleading release history');
 assert.doesNotMatch(workbench, /admin\.plan_advanced_json_title/, 'the workbench must not expose raw JSON overrides');
 assert.doesNotMatch(workbench, /entitlements_json|budgets_override_json|concurrency_override_json|policy_override_json|metadata_override_json/, 'the normal workbench must not retain a hidden raw JSON mutation path');
-assert.match(workbench, /data-ui="plan-subscription-impact"/, 'the workbench must state the active-subscription impact before editing');
+assert.doesNotMatch(workbench, /data-ui="plan-subscription-impact"/, 'the workbench must not reserve a prominent top banner for subscription impact');
+assert.match(
+  workbench,
+  /footerNotice=\{hasUnsavedChanges && activeSubscriptionCount > 0[\s\S]{0,520}admin\.plans\.subscription_impact[\s\S]{0,260}: ''\}/,
+  'the workbench must disclose active-subscription impact beside Save only after values change'
+);
 assert.doesNotMatch(workbench, /sm:grid-cols-3/, 'the normal parameter view must not restore the redundant package ID/version metric row');
 assert.match(workbench, /activeTab === 'diagnostics'[\s\S]*admin\.plans\.package_id_label[\s\S]*admin\.plans\.latest_version_label/, 'technical package identity and version must remain diagnostics-only');
 assert.match(workbench, /method: 'PATCH'/, 'the normal workbench must use the structured Admin plan update contract');
@@ -50,7 +55,30 @@ assert.match(
   /admin\.plans\.customer_package_section[\s\S]*admin\.sales_price_cny[\s\S]*admin\.included_points[\s\S]*admin\.site_limit[\s\S]*admin\.vector_documents_limit[\s\S]*admin\.plans\.runtime_limits_section[\s\S]*admin\.concurrency[\s\S]*admin\.batch_ceiling[\s\S]*admin\.model_cost_budget_cny[\s\S]*admin\.grace_period_label/,
   'the workbench must order customer-facing package values before runtime limits'
 );
-assert.match(workbench, /AdminWorkbenchDialog[\s\S]*sm:grid-cols-2/, 'the shared workbench must use a two-column parameter list on PC');
+assert.match(
+  workbench,
+  /data-ui="plan-parameter-grid"[\s\S]{0,180}sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/,
+  'the shared workbench must progressively render two, three, and four compact parameter columns'
+);
+assert.match(
+  workbench,
+  /inputMode=\{step < 1 \? 'decimal' : 'numeric'\}/,
+  'package inputs must expose integer or decimal keyboard hints according to their step'
+);
+assert.match(workbench, /tabular-nums/, 'numeric package inputs must keep stable digit widths');
+assert.match(workbench, /webkit-inner-spin-button/, 'numeric package inputs must hide inconsistent browser steppers');
+for (const unitKey of [
+  'admin.plans.unit_cny_30_days',
+  'admin.plans.unit_credits',
+  'admin.plans.unit_sites',
+  'admin.plans.unit_articles',
+  'admin.plans.unit_runs',
+  'admin.plans.unit_items',
+  'admin.plans.unit_cny_period',
+  'admin.plans.unit_days',
+]) {
+  assert.match(workbench, new RegExp(unitKey.replaceAll('.', '\\.')), `${unitKey} must remain visible beside its numeric value`);
+}
 
 assert.match(source, /id="package-maintenance"/, 'package initialization and exceptional creation must remain in advanced maintenance');
 assert.match(source, /toast\.success/, 'transient plan mutation success must use global toast feedback');
