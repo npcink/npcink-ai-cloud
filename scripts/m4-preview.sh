@@ -1421,6 +1421,7 @@ frontend_volume_marker="${cache_dir}/frontend-volume-image.txt"
 source_bundle_partial="${source_bundle}.partial"
 stack_touched=0
 lock_acquired=0
+frontend_slot_locks_acquired=0
 prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
@@ -1430,6 +1431,18 @@ package_proxy_cache_max_bytes="2147483648"
 package_proxy_cache_max_age_seconds="1209600"
 pip_index_secret=""
 pip_trusted_host_secret=""
+
+release_frontend_slot_operation_locks() {
+	local slot=""
+	local slot_lock_dir=""
+	while [ "${frontend_slot_locks_acquired}" -gt 0 ]; do
+		slot="${frontend_slot_locks_acquired}"
+		slot_lock_dir="${frontend_slot_state_base}/slot-${slot}/operation.lock"
+		rm -f "${slot_lock_dir}/owner.txt"
+		rmdir "${slot_lock_dir}" >/dev/null 2>&1 || true
+		frontend_slot_locks_acquired=$((frontend_slot_locks_acquired - 1))
+	done
+}
 
 cleanup_remote() {
 	status=$?
@@ -1449,10 +1462,6 @@ cleanup_remote() {
 	done
 	if [ -d "${staging}" ]; then
 		find "${staging}" -depth -delete
-	fi
-	if [ "${lock_acquired}" = "1" ]; then
-		rm -f "${lock_dir}/owner.txt"
-		rmdir "${lock_dir}" >/dev/null 2>&1 || true
 	fi
 	if [ "${status}" -ne 0 ] && [ "${stack_touched}" = "1" ]; then
 		for cleanup_service in api frontend proxy worker callback-worker ops-worker; do
@@ -1476,6 +1485,11 @@ cleanup_remote() {
 			done
 		done
 	fi
+	release_frontend_slot_operation_locks
+	if [ "${lock_acquired}" = "1" ]; then
+		rm -f "${lock_dir}/owner.txt"
+		rmdir "${lock_dir}" >/dev/null 2>&1 || true
+	fi
 	exit "${status}"
 }
 trap cleanup_remote EXIT INT TERM
@@ -1498,6 +1512,287 @@ lock_acquired=1
 command -v docker >/dev/null
 command -v rsync >/dev/null
 command -v shasum >/dev/null
+
+# BEGIN frontend dependency volume consumer guard
+read_preview_state_value() {
+	local key="$1"
+	local file="$2"
+	sed -n "s/^${key}=//p" "${file}" | head -n 1
+}
+
+normalize_preview_label() {
+	local value="$1"
+	local sanitized=""
+	case "${value}" in
+		''|'<no value>') printf 'unknown\n' ;;
+		*)
+			sanitized="$(
+				printf '%s' "${value}" | LC_ALL=C tr -cd '[:alnum:]._:@/+-'
+			)"
+			if [ "${sanitized}" = "${value}" ]; then
+				printf '%s\n' "${value}"
+			else
+				printf 'invalid\n'
+			fi
+			;;
+	esac
+}
+
+acquire_frontend_slot_operation_locks() {
+	local slot=""
+	local slot_state_dir=""
+	local slot_lock_dir=""
+	for slot in 1 2 3; do
+		slot_state_dir="${frontend_slot_state_base}/slot-${slot}"
+		slot_lock_dir="${slot_state_dir}/operation.lock"
+		mkdir -p "${slot_state_dir}"
+		if ! mkdir "${slot_lock_dir}" 2>/dev/null; then
+			echo "[m4-preview] another operation holds frontend slot ${slot}; dependency-volume refresh refused" >&2
+			if [ -f "${slot_lock_dir}/owner.txt" ]; then
+				cat "${slot_lock_dir}/owner.txt" >&2
+			fi
+			release_frontend_slot_operation_locks
+			return 75
+		fi
+		frontend_slot_locks_acquired="${slot}"
+		{
+			printf 'pid=%s\n' "$$"
+			printf 'run_id=%s\n' "${run_id}"
+			printf 'owner=primary-dependency-volume-refresh\n'
+			printf 'started_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		} > "${slot_lock_dir}/owner.txt"
+	done
+}
+
+verify_frontend_dependency_volume_labels() {
+	local frontend_volume="$1"
+	local volume_project=""
+	local volume_key=""
+	if ! volume_project="$(
+		docker volume inspect -f '{{index .Labels "com.docker.compose.project"}}' \
+			"${frontend_volume}"
+	)"; then
+		return 1
+	fi
+	if ! volume_key="$(
+		docker volume inspect -f '{{index .Labels "com.docker.compose.volume"}}' \
+			"${frontend_volume}"
+	)"; then
+		return 1
+	fi
+	if [ "${volume_project}" != "${project_name}" ] ||
+		[ "${volume_key}" != "cloud-frontend-node-modules-dev" ]; then
+		return 1
+	fi
+	return 0
+}
+
+resolve_current_primary_frontend_id() {
+	local primary_ids=""
+	local primary_count=0
+	local primary_id=""
+	if ! primary_ids="$("${primary_compose[@]}" ps -a -q frontend)"; then
+		echo '[m4-preview] unable to resolve the current primary frontend container' >&2
+		return 75
+	fi
+	primary_ids="$(printf '%s\n' "${primary_ids}" | sed '/^$/d')"
+	if [ -n "${primary_ids}" ]; then
+		primary_count="$(printf '%s\n' "${primary_ids}" | wc -l | tr -d ' ')"
+	fi
+	case "${primary_count}" in
+		0) return 0 ;;
+		1)
+			if ! primary_id="$(docker inspect -f '{{.Id}}' "${primary_ids}")" ||
+				[ -z "${primary_id}" ]; then
+				echo '[m4-preview] unable to canonicalize the current primary frontend container ID' >&2
+				return 75
+			fi
+			printf '%s\n' "${primary_id}"
+			;;
+		*)
+			echo "[m4-preview] multiple current primary frontend containers found (${primary_count}); deploy refused" >&2
+			return 75
+			;;
+	esac
+}
+
+guard_frontend_dependency_volume_consumers() {
+	local frontend_volume="$1"
+	local volume_names=""
+	local volume_name=""
+	local exact_volume_found=0
+	local expected_primary_id=""
+	local consumer_ids=""
+	local external_consumer_found=0
+	local consumer_id=""
+	local consumer_record=""
+	local consumer_canonical_id=""
+	local consumer_name=""
+	local consumer_project=""
+	local consumer_service=""
+	local consumer_oneoff=""
+	local consumer_kind=""
+	local consumer_slot=""
+	local consumer_owner=""
+	local consumer_expires=""
+	local consumer_revision=""
+	local lease_status=""
+	local backend_lease_status=""
+	local slot_state_file=""
+	local slot_owner=""
+	local slot_expiry=""
+	local slot_primary=""
+	local primary_acceptance=""
+	local primary_revision=""
+	local consumer_status=""
+	if ! volume_names="$(
+		docker volume ls --quiet --filter "name=${frontend_volume}"
+	)"; then
+		echo "[m4-preview] unable to enumerate the exact frontend dependency volume ${frontend_volume}" >&2
+		return 75
+	fi
+	for volume_name in ${volume_names}; do
+		if [ "${volume_name}" = "${frontend_volume}" ]; then
+			exact_volume_found=1
+			break
+		fi
+	done
+	if [ "${exact_volume_found}" = "0" ]; then
+		return 0
+	fi
+	if ! verify_frontend_dependency_volume_labels "${frontend_volume}"; then
+		echo "[m4-preview] unable to verify labels for frontend dependency volume ${frontend_volume}" >&2
+		return 75
+	fi
+	if ! expected_primary_id="$(resolve_current_primary_frontend_id)"; then
+		return 75
+	fi
+	if ! consumer_ids="$(
+		docker ps -a -q --filter "volume=${frontend_volume}"
+	)"; then
+		echo "[m4-preview] unable to enumerate consumers of ${frontend_volume}" >&2
+		return 75
+	fi
+
+	for consumer_id in ${consumer_ids}; do
+		if ! consumer_record="$(
+			docker inspect -f \
+				'{{.Id}}|{{.Name}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.oneoff"}}|{{index .Config.Labels "top.mqzj.npcink.preview.kind"}}|{{index .Config.Labels "top.mqzj.npcink.preview.slot"}}|{{index .Config.Labels "top.mqzj.npcink.preview.owner"}}|{{index .Config.Labels "top.mqzj.npcink.preview.expires-at"}}|{{index .Config.Labels "top.mqzj.npcink.preview.source-revision"}}' \
+				"${consumer_id}"
+		)"; then
+			echo "[m4-preview] unable to inspect a consumer of ${frontend_volume}" >&2
+			return 75
+		fi
+		IFS='|' read -r \
+			consumer_canonical_id consumer_name consumer_project consumer_service consumer_oneoff \
+			consumer_kind consumer_slot consumer_owner consumer_expires consumer_revision \
+			<<<"${consumer_record}"
+		if [ -z "${consumer_canonical_id}" ]; then
+			echo "[m4-preview] unable to canonicalize a consumer of ${frontend_volume}" >&2
+			return 75
+		fi
+		consumer_name="$(normalize_preview_label "${consumer_name#/}")"
+		consumer_project="$(normalize_preview_label "${consumer_project}")"
+		consumer_service="$(normalize_preview_label "${consumer_service}")"
+		consumer_oneoff="$(normalize_preview_label "${consumer_oneoff}")"
+		consumer_kind="$(normalize_preview_label "${consumer_kind}")"
+		consumer_slot="$(normalize_preview_label "${consumer_slot}")"
+		consumer_owner="$(normalize_preview_label "${consumer_owner}")"
+		consumer_expires="$(normalize_preview_label "${consumer_expires}")"
+		consumer_revision="$(normalize_preview_label "${consumer_revision}")"
+
+		lease_status="not_applicable"
+		backend_lease_status="not_applicable"
+		if [ "${consumer_kind}" = "frontend-slot" ]; then
+			lease_status="unknown"
+			backend_lease_status="unknown"
+			case "${consumer_slot}" in
+				1|2|3)
+					slot_state_file="${frontend_slot_state_base}/slot-${consumer_slot}/state.txt"
+					if [ -f "${slot_state_file}" ]; then
+						slot_owner="$(read_preview_state_value owner "${slot_state_file}")"
+						slot_expiry="$(
+							read_preview_state_value expires_at_epoch "${slot_state_file}"
+						)"
+						slot_primary="$(
+							read_preview_state_value primary_source_revision "${slot_state_file}"
+						)"
+						if [ "${consumer_owner}" = "unknown" ] && [ -n "${slot_owner}" ]; then
+							consumer_owner="${slot_owner}"
+						fi
+						case "${slot_expiry}" in
+							''|*[!0-9]*) lease_status="unknown" ;;
+							*)
+								if [ "${slot_expiry}" -gt "$(date +%s)" ]; then
+									lease_status="active"
+								else
+									lease_status="expired"
+								fi
+								;;
+						esac
+						primary_acceptance=""
+						primary_revision=""
+						if [ -f "${state_file}" ]; then
+							primary_acceptance="$(
+								read_preview_state_value acceptance_state "${state_file}"
+							)"
+							primary_revision="$(
+								read_preview_state_value source_revision "${state_file}"
+							)"
+						fi
+						if [ "${primary_acceptance}" = "accepted" ] &&
+							[ -n "${slot_primary}" ] &&
+							[ "${slot_primary}" = "${primary_revision}" ]; then
+							backend_lease_status="stable"
+						else
+							backend_lease_status="drifted"
+						fi
+					fi
+					;;
+			esac
+		fi
+
+		if [ -n "${expected_primary_id}" ] &&
+			[ "${consumer_canonical_id}" = "${expected_primary_id}" ] &&
+			[ "${consumer_project}" = "${project_name}" ] &&
+			[ "${consumer_service}" = "frontend" ] &&
+			[ "${consumer_oneoff}" = "False" ]; then
+			consumer_status="primary_expected"
+		else
+			consumer_status="external_blocking"
+			external_consumer_found=1
+		fi
+		printf '%s\n' \
+			"[m4-preview] frontend_volume_consumer=${consumer_name}|status=${consumer_status}|project=${consumer_project}|service=${consumer_service}|owner=${consumer_owner}|slot=${consumer_slot}|lease_status=${lease_status}|backend_lease_status=${backend_lease_status}|expires_at=${consumer_expires}|source_revision=${consumer_revision}" \
+			>&2
+		if [ "${consumer_status}" = "external_blocking" ]; then
+			case "${consumer_slot}" in
+				1|2|3)
+					printf '%s\n' \
+						"[m4-preview] inspect with: pnpm run m4:frontend:status -- --slot ${consumer_slot}" \
+						>&2
+					if [ "${consumer_owner}" != "unknown" ]; then
+						printf '%s\n' \
+							"[m4-preview] after owner coordination, release only with: pnpm run m4:frontend:release -- --slot ${consumer_slot} --owner ${consumer_owner}" \
+							>&2
+					else
+						printf '%s\n' \
+							"[m4-preview] resolve the slot owner through m4:frontend:status before any controlled release" \
+							>&2
+					fi
+					;;
+			esac
+		fi
+	done
+
+	if [ "${external_consumer_found}" = "1" ]; then
+		echo "[m4-preview] external consumer holds ${frontend_volume}; deploy refused before live source sync, build, or primary runtime mutation" >&2
+		echo '[m4-preview] active, expired, and drifted leases are never released automatically' >&2
+		return 75
+	fi
+	return 0
+}
+# END frontend dependency volume consumer guard
 
 case "${source_transfer_mode}" in
 	relay)
@@ -1558,6 +1853,35 @@ test -f "${remote_dir}/.env.local" || {
 }
 chmod 600 "${remote_dir}/.env" "${remote_dir}/.env.local"
 
+mkdir -p "${docker_config}"
+if [ ! -e "${docker_config}/cli-plugins" ] && [ -d "$HOME/.docker/cli-plugins" ]; then
+	ln -s "$HOME/.docker/cli-plugins" "${docker_config}/cli-plugins"
+fi
+if [ ! -f "${docker_config}/config.json" ]; then
+	printf '{}\n' > "${docker_config}/config.json"
+fi
+export DOCKER_CONFIG="${docker_config}"
+export COMPOSE_PARALLEL_LIMIT=1
+export NPCINK_CLOUD_M4_PORT="${preview_port}"
+export NPCINK_CLOUD_M4_POSTGRES_PORT="${postgres_port}"
+export NPCINK_CLOUD_M4_REDIS_PORT="${redis_port}"
+
+runtime_image='npcink-ai-cloud-runtime:m4-dev'
+frontend_image='npcink-ai-cloud-frontend:m4-dev'
+frontend_volume="${project_name}_cloud-frontend-node-modules-dev"
+frontend_slot_state_base="${HOME}/.cache/npcink-ai-cloud-m4-frontend-slots"
+primary_compose=(
+	docker compose
+	-p "${project_name}"
+	--env-file "${remote_dir}/.env"
+	--env-file "${remote_dir}/.env.local"
+	--profile runtime
+	--profile callback
+	--profile ops
+	-f "${remote_dir}/docker-compose.dev.yml"
+	-f "${remote_dir}/docker-compose.m4-preview.yml"
+)
+
 if [ -e "${staging}" ] || [ -L "${staging}" ]; then
 	echo "[m4-preview] staging path already exists: ${staging}" >&2
 	exit 66
@@ -1570,18 +1894,64 @@ test -f "${staging}/deploy/nginx.m4-preview.conf"
 test -f "${staging}/scripts/m4-package-proxy.py"
 test -f "${staging}/scripts/redact-m4-preview-logs.py"
 
+needs_build=0
+if [ ! -f "${built_image_marker}" ] ||
+	[ "$(cat "${built_image_marker}")" != "${image_input_sha}" ]; then
+	needs_build=1
+fi
+if ! docker image inspect "${runtime_image}" >/dev/null 2>&1 ||
+	! docker image inspect "${frontend_image}" >/dev/null 2>&1; then
+	needs_build=1
+fi
+
 if [ "${mode}" = "sync" ]; then
-	if [ ! -f "${built_image_marker}" ] ||
-		[ "$(cat "${built_image_marker}")" != "${image_input_sha}" ] ||
-		[ ! -f "${deployed_image_marker}" ] ||
+	if [ "${needs_build}" = "1" ]; then
+		if [ "${acceptance_state}" = "accepted" ]; then
+			echo "[m4-preview] dependency inputs changed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
+		else
+			echo '[m4-preview] dependency inputs changed; run m4:preview:deploy' >&2
+		fi
+		exit 42
+	fi
+	if [ ! -f "${deployed_image_marker}" ] ||
 		[ "$(cat "${deployed_image_marker}")" != "${image_input_sha}" ]; then
-		echo '[m4-preview] dependency inputs require m4:preview:deploy' >&2
+		if [ "${acceptance_state}" = "accepted" ]; then
+			echo "[m4-preview] prepared image inputs are not deployed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
+		else
+			echo '[m4-preview] prepared image inputs are not deployed; run m4:preview:deploy' >&2
+		fi
 		exit 42
 	fi
 	if [ ! -f "${deployed_config_marker}" ] ||
 		[ "$(cat "${deployed_config_marker}")" != "${config_input_sha}" ]; then
-		echo '[m4-preview] Compose or proxy inputs require m4:preview:deploy' >&2
+		if [ "${acceptance_state}" = "accepted" ]; then
+			echo "[m4-preview] Compose or proxy inputs changed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
+		else
+			echo '[m4-preview] Compose or proxy inputs changed; run m4:preview:deploy' >&2
+		fi
 		exit 43
+	fi
+fi
+
+frontend_volume_refresh_required=0
+if [ "${mode}" = "deploy" ]; then
+	if [ "${needs_build}" = "1" ]; then
+		frontend_volume_refresh_required=1
+	elif docker image inspect "${frontend_image}" >/dev/null 2>&1; then
+		current_frontend_descriptor="$(
+			docker image inspect -f '{{.Id}}' "${frontend_image}"
+		)"
+		previous_frontend_descriptor=""
+		if [ -f "${frontend_volume_marker}" ]; then
+			previous_frontend_descriptor="$(cat "${frontend_volume_marker}")"
+		fi
+		if [ "${current_frontend_descriptor}" != "${previous_frontend_descriptor}" ]; then
+			frontend_volume_refresh_required=1
+		fi
+	fi
+	if [ "${frontend_volume_refresh_required}" = "1" ]; then
+		acquire_frontend_slot_operation_locks
+		guard_frontend_dependency_volume_consumers "${frontend_volume}"
 	fi
 fi
 
@@ -1613,19 +1983,6 @@ else
 	work_dir="${remote_dir}"
 fi
 
-mkdir -p "${docker_config}"
-if [ ! -e "${docker_config}/cli-plugins" ] && [ -d "$HOME/.docker/cli-plugins" ]; then
-	ln -s "$HOME/.docker/cli-plugins" "${docker_config}/cli-plugins"
-fi
-if [ ! -f "${docker_config}/config.json" ]; then
-	printf '{}\n' > "${docker_config}/config.json"
-fi
-export DOCKER_CONFIG="${docker_config}"
-export COMPOSE_PARALLEL_LIMIT=1
-export NPCINK_CLOUD_M4_PORT="${preview_port}"
-export NPCINK_CLOUD_M4_POSTGRES_PORT="${postgres_port}"
-export NPCINK_CLOUD_M4_REDIS_PORT="${redis_port}"
-
 cd "${work_dir}"
 compose=(
 	docker compose
@@ -1641,8 +1998,6 @@ compose=(
 
 "${compose[@]}" config --quiet
 
-runtime_image='npcink-ai-cloud-runtime:m4-dev'
-frontend_image='npcink-ai-cloud-frontend:m4-dev'
 python_base_image='npcink-ai-cloud-base-python:m4-pinned'
 uv_base_image='npcink-ai-cloud-base-uv:m4-pinned'
 node_base_image='npcink-ai-cloud-base-node:m4-current'
@@ -1872,54 +2227,16 @@ build_frontend_image() {
 			. 2>&1 |
 		python3 -u scripts/redact-m4-preview-logs.py --env-file .env --env-file .env.local
 }
-needs_build=0
-if [ ! -f "${built_image_marker}" ] ||
-	[ "$(cat "${built_image_marker}")" != "${image_input_sha}" ]; then
-	needs_build=1
-fi
-if ! docker image inspect "${runtime_image}" >/dev/null 2>&1 ||
-	! docker image inspect "${frontend_image}" >/dev/null 2>&1; then
-	needs_build=1
-fi
 
-if [ "${mode}" = "sync" ]; then
-	if [ "${needs_build}" = "1" ]; then
-		if [ "${acceptance_state}" = "accepted" ]; then
-			echo "[m4-preview] dependency inputs changed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
-		else
-			echo '[m4-preview] dependency inputs changed; run m4:preview:deploy' >&2
-		fi
-		exit 42
-	fi
-	if [ ! -f "${deployed_image_marker}" ] ||
-		[ "$(cat "${deployed_image_marker}")" != "${image_input_sha}" ]; then
-		if [ "${acceptance_state}" = "accepted" ]; then
-			echo "[m4-preview] prepared image inputs are not deployed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
-		else
-			echo '[m4-preview] prepared image inputs are not deployed; run m4:preview:deploy' >&2
-		fi
-		exit 42
-	fi
-	if [ ! -f "${deployed_config_marker}" ] ||
-		[ "$(cat "${deployed_config_marker}")" != "${config_input_sha}" ]; then
-		if [ "${acceptance_state}" = "accepted" ]; then
-			echo "[m4-preview] Compose or proxy inputs changed; rerun m4:preview:promote -- --pr ${promotion_pr} --deploy" >&2
-		else
-			echo '[m4-preview] Compose or proxy inputs changed; run m4:preview:deploy' >&2
-		fi
-		exit 43
-	fi
-else
-	if [ "${needs_build}" = "1" ]; then
-		prefetch_base_images
-		start_package_proxy
-		echo '[m4-preview] building runtime image on M4'
-		build_runtime_image
-		echo '[m4-preview] building frontend image on M4'
-		build_frontend_image
-		stop_package_proxy
-		printf '%s\n' "${image_input_sha}" > "${built_image_marker}"
-	fi
+if [ "${mode}" != "sync" ] && [ "${needs_build}" = "1" ]; then
+	prefetch_base_images
+	start_package_proxy
+	echo '[m4-preview] building runtime image on M4'
+	build_runtime_image
+	echo '[m4-preview] building frontend image on M4'
+	build_frontend_image
+	stop_package_proxy
+	printf '%s\n' "${image_input_sha}" > "${built_image_marker}"
 fi
 
 refresh_frontend_dependency_volume() {
@@ -1932,20 +2249,20 @@ refresh_frontend_dependency_volume() {
 		return 0
 	fi
 
+	# Re-check after any image build so a slot claimed during the build window
+	# cannot make the following primary frontend stop unsafe.
+	guard_frontend_dependency_volume_consumers "${frontend_volume}"
+	if docker volume inspect "${frontend_volume}" >/dev/null 2>&1; then
+		verify_frontend_dependency_volume_labels "${frontend_volume}"
+	fi
+	stack_touched=1
 	"${compose[@]}" stop frontend >/dev/null 2>&1 || true
 	"${compose[@]}" rm -f frontend >/dev/null 2>&1 || true
-	frontend_volume="${project_name}_cloud-frontend-node-modules-dev"
 	if docker volume inspect "${frontend_volume}" >/dev/null 2>&1; then
-		volume_project="$(
-			docker volume inspect -f '{{index .Labels "com.docker.compose.project"}}' "${frontend_volume}"
-		)"
-		volume_key="$(
-			docker volume inspect -f '{{index .Labels "com.docker.compose.volume"}}' "${frontend_volume}"
-		)"
-		test "${volume_project}" = "${project_name}"
-		test "${volume_key}" = 'cloud-frontend-node-modules-dev'
+		verify_frontend_dependency_volume_labels "${frontend_volume}"
 		docker volume rm "${frontend_volume}" >/dev/null
 	fi
+	release_frontend_slot_operation_locks
 	echo '[m4-preview] frontend dependency volume is ready for image copy-up'
 }
 
@@ -1955,11 +2272,13 @@ if [ "${mode}" = "prepare" ]; then
 	exit 0
 elif [ "${mode}" = "deploy" ]; then
 	refresh_frontend_dependency_volume
+	stack_touched=1
 	"${compose[@]}" up -d --pull never postgres redis
 	"${compose[@]}" run --interactive=false -T --rm --pull never api alembic upgrade head
 	"${compose[@]}" up -d --no-build --pull never \
 		postgres redis api frontend proxy worker callback-worker ops-worker
 else
+	stack_touched=1
 	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
 	# The development frontend live-mounts source, but its source-revision
 	# environment still requires a recreate for each candidate sync.

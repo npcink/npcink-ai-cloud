@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 import time
 from pathlib import Path
 from urllib.request import urlopen
@@ -43,6 +44,166 @@ PACKAGE_PROXY_VALIDATION = (
     / "m4-package-proxy-streaming-cache-validation-2026-07-25.md"
 )
 OLLAMA_LAUNCH_AGENT = ROOT / "deploy" / "top.mqzj.npcink-ollama-preview.plist"
+
+
+def _write_fake_lsof(fake_bin: Path, *, port_is_occupied: bool) -> None:
+    fake_lsof = fake_bin / "lsof"
+    fake_lsof.write_text(
+        f"#!/bin/sh\nexit {0 if port_is_occupied else 1}\n",
+        encoding="utf-8",
+    )
+    fake_lsof.chmod(0o755)
+
+
+def _marked_shell_block(source: str, name: str) -> str:
+    begin = f"# BEGIN {name}"
+    end = f"# END {name}"
+    assert begin in source
+    assert end in source
+    return source.split(begin, 1)[1].split(end, 1)[0].strip()
+
+
+def _run_frontend_volume_guard(
+    tmp_path: Path,
+    *,
+    primary_ids: list[str],
+    consumers: dict[str, str],
+    canonical_ids: dict[str, str] | None = None,
+    volume_exists: bool = True,
+    volume_names: list[str] | None = None,
+    volume_ls_error: bool = False,
+    volume_inspect_error: bool = False,
+    volume_project_label: str = "npcink-ai-cloud-m4-dev",
+    volume_key_label: str = "cloud-frontend-node-modules-dev",
+    primary_state: Path | None = None,
+    slot_state_base: Path | None = None,
+    after_guard: str = "",
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    source = SCRIPT.read_text(encoding="utf-8")
+    guard = _marked_shell_block(source, "frontend dependency volume consumer guard")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    docker_fixture = tmp_path / "docker-fixture.json"
+    resolved_canonical_ids = {
+        container_id: container_id for container_id in (*primary_ids, *consumers)
+    }
+    if canonical_ids is not None:
+        resolved_canonical_ids.update(canonical_ids)
+    listed_volume_names = (
+        volume_names
+        if volume_names is not None
+        else (
+            ["npcink-ai-cloud-m4-dev_cloud-frontend-node-modules-dev"]
+            if volume_exists
+            else []
+        )
+    )
+    docker_fixture.write_text(
+        json.dumps(
+            {
+                "primary_ids": primary_ids,
+                "consumers": consumers,
+                "canonical_ids": resolved_canonical_ids,
+                "volume": {
+                    "exists": volume_exists,
+                    "names": listed_volume_names,
+                    "ls_error": volume_ls_error,
+                    "inspect_error": volume_inspect_error,
+                    "project_label": volume_project_label,
+                    "key_label": volume_key_label,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env python3
+            import json
+            import os
+            import sys
+
+            args = sys.argv[1:]
+            with open(os.environ["FAKE_DOCKER_FIXTURE"], encoding="utf-8") as handle:
+                fixture = json.load(handle)
+            with open(os.environ["FAKE_DOCKER_LOG"], "a", encoding="utf-8") as handle:
+                handle.write(" ".join(args) + "\\n")
+            if args[0] == "compose":
+                print(*fixture["primary_ids"], sep="\\n")
+            elif args[:2] == ["volume", "ls"]:
+                if fixture["volume"]["ls_error"]:
+                    raise SystemExit(76)
+                print(*fixture["volume"]["names"], sep="\\n")
+            elif args[:2] == ["volume", "inspect"]:
+                if fixture["volume"]["inspect_error"]:
+                    raise SystemExit(77)
+                if not fixture["volume"]["exists"]:
+                    raise SystemExit(1)
+                if "-f" in args:
+                    template = args[args.index("-f") + 1]
+                    if "com.docker.compose.project" in template:
+                        print(fixture["volume"]["project_label"])
+                    elif "com.docker.compose.volume" in template:
+                        print(fixture["volume"]["key_label"])
+                    else:
+                        raise SystemExit(97)
+            elif args[:2] == ["ps", "-a"]:
+                print(*fixture["consumers"], sep="\\n")
+            elif args[:2] == ["inspect", "-f"]:
+                container_id = args[-1]
+                template = args[2]
+                canonical_id = fixture["canonical_ids"][container_id]
+                if template == "{{.Id}}":
+                    print(canonical_id)
+                elif template.startswith("{{.Id}}|"):
+                    print(canonical_id + "|" + fixture["consumers"][container_id])
+                else:
+                    print(fixture["consumers"][container_id])
+            else:
+                raise SystemExit(97)
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    state_file = primary_state or (tmp_path / "primary-state.txt")
+    state_base = slot_state_base or (tmp_path / "slots")
+    harness = tmp_path / "guard.sh"
+    harness.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            {guard}
+            project_name=npcink-ai-cloud-m4-dev
+            state_file={state_file}
+            frontend_slot_state_base={state_base}
+            primary_compose=(docker compose)
+            guard_frontend_dependency_volume_consumers \
+              npcink-ai-cloud-m4-dev_cloud-frontend-node-modules-dev
+            {after_guard}
+            """
+        ),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_DOCKER_FIXTURE": str(docker_fixture),
+            "FAKE_DOCKER_LOG": str(docker_log),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed, docker_log
 
 
 def test_m4_preview_commands_are_explicit() -> None:
@@ -178,6 +339,474 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert source.index("wait_for_http") < source.index('> "${deployed_image_marker}"')
 
 
+def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    guard_function = source.split(
+        "guard_frontend_dependency_volume_consumers() {",
+        1,
+    )[1].split("\n}\n# END frontend dependency volume consumer guard", 1)[0]
+    volume_discovery = guard_function.index("docker volume ls --quiet")
+    early_label_proof = guard_function.index(
+        'verify_frontend_dependency_volume_labels "${frontend_volume}"'
+    )
+    consumer_discovery = guard_function.index(
+        'docker ps -a -q --filter "volume=${frontend_volume}"'
+    )
+    assert volume_discovery < early_label_proof < consumer_discovery
+
+    slot_lock_call = source.index(
+        "\t\tacquire_frontend_slot_operation_locks\n"
+    )
+    guard_call = source.index(
+        'guard_frontend_dependency_volume_consumers "${frontend_volume}"'
+    )
+    live_rsync = source.index("\trs" + "ync -a --delete")
+    live_stack_touched = source.rindex("\tstack_touched=1", guard_call, live_rsync)
+    build_call = source.index(
+        "\tprefetch_base_images\n"
+        "\tstart_package_proxy\n"
+        "\techo '[m4-preview] building runtime image on M4'",
+        guard_call,
+    )
+    refresh_call = source.index("\trefresh_frontend_dependency_volume", build_call)
+    migrate = source.index(
+        '"${compose[@]}" run --interactive=false -T --rm --pull never api '
+        "alembic upgrade head",
+        refresh_call,
+    )
+
+    assert slot_lock_call < guard_call < live_stack_touched < live_rsync
+    assert live_rsync < build_call < refresh_call < migrate
+
+    refresh_function = source.split(
+        "refresh_frontend_dependency_volume() {",
+        1,
+    )[1].split('\n}\n\nif [ "${mode}" = "prepare" ]; then', 1)[0]
+    race_guard = refresh_function.index(
+        'guard_frontend_dependency_volume_consumers "${frontend_volume}"'
+    )
+    first_label_proof = refresh_function.index(
+        'verify_frontend_dependency_volume_labels "${frontend_volume}"'
+    )
+    stack_touched = refresh_function.index("stack_touched=1")
+    stop_frontend = refresh_function.index('"${compose[@]}" stop frontend')
+    remove_frontend = refresh_function.index('"${compose[@]}" rm -f frontend')
+    second_label_proof = refresh_function.index(
+        'verify_frontend_dependency_volume_labels "${frontend_volume}"',
+        first_label_proof + 1,
+    )
+    remove_volume = refresh_function.index('docker volume rm "${frontend_volume}"')
+    release_slot_locks = refresh_function.index(
+        "release_frontend_slot_operation_locks"
+    )
+    assert race_guard < first_label_proof < stack_touched < stop_frontend
+    assert stop_frontend < remove_frontend < second_label_proof < remove_volume
+    assert remove_volume < release_slot_locks
+
+    cleanup_block = source.split("cleanup_remote() {", 1)[1].split(
+        "\n}\ntrap cleanup_remote",
+        1,
+    )[0]
+    failure_cleanup = cleanup_block.index(
+        'if [ "${status}" -ne 0 ] && [ "${stack_touched}" = "1" ]; then'
+    )
+    cleanup_slot_locks = cleanup_block.index(
+        "release_frontend_slot_operation_locks"
+    )
+    cleanup_primary_lock = cleanup_block.index('rm -f "${lock_dir}/owner.txt"')
+    assert failure_cleanup < cleanup_slot_locks < cleanup_primary_lock
+
+    deploy_block = source.split('elif [ "${mode}" = "deploy" ]; then', 1)[1].split(
+        "\nelse\n",
+        1,
+    )[0]
+    refresh = deploy_block.index("refresh_frontend_dependency_volume")
+    start_data = deploy_block.index('"${compose[@]}" up -d --pull never postgres redis')
+    migrate_data = deploy_block.index("alembic upgrade head")
+    start_stack = deploy_block.index(
+        '"${compose[@]}" up -d --no-build --pull never'
+    )
+    assert refresh < start_data < migrate_data < start_stack
+
+
+def test_m4_deploy_refuses_an_inflight_slot_before_live_source_mutation(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    release_slot_locks = (
+        "release_frontend_slot_operation_locks() {"
+        + source.split("release_frontend_slot_operation_locks() {", 1)[1].split(
+            "\n}\n\ncleanup_remote()",
+            1,
+        )[0]
+        + "\n}"
+    )
+    guard = _marked_shell_block(source, "frontend dependency volume consumer guard")
+    slot_state_base = tmp_path / "slots"
+    active_lock = slot_state_base / "slot-2" / "operation.lock"
+    active_lock.mkdir(parents=True)
+    (active_lock / "owner.txt").write_text(
+        "owner=codex:slot-sync\n",
+        encoding="utf-8",
+    )
+    remote_sentinel = tmp_path / "remote-sentinel.txt"
+    remote_sentinel.write_text("accepted\n", encoding="utf-8")
+    harness = tmp_path / "slot-lock-guard.sh"
+    harness.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            frontend_slot_locks_acquired=0
+            {release_slot_locks}
+            {guard}
+            frontend_slot_state_base={slot_state_base}
+            run_id=contract-race
+            acquire_frontend_slot_operation_locks
+            printf 'candidate\\n' > {remote_sentinel}
+            """
+        ),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 75
+    assert "another operation holds frontend slot 2" in completed.stderr
+    assert "owner=codex:slot-sync" in completed.stderr
+    assert remote_sentinel.read_text(encoding="utf-8") == "accepted\n"
+    assert not (slot_state_base / "slot-1" / "operation.lock").exists()
+    assert active_lock.is_dir()
+
+
+@pytest.mark.parametrize("acquired_count", (0, 1, 2, 3))
+def test_m4_slot_lock_release_is_bash3_safe_idempotent_and_exact(
+    tmp_path: Path,
+    acquired_count: int,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    release_slot_locks = (
+        "release_frontend_slot_operation_locks() {"
+        + source.split("release_frontend_slot_operation_locks() {", 1)[1].split(
+            "\n}\n\ncleanup_remote()",
+            1,
+        )[0]
+        + "\n}"
+    )
+    slot_state_base = tmp_path / "slots"
+    for slot in range(1, acquired_count + 1):
+        lock_dir = slot_state_base / f"slot-{slot}" / "operation.lock"
+        lock_dir.mkdir(parents=True)
+        (lock_dir / "owner.txt").write_text(
+            "owner=primary-dependency-volume-refresh\n",
+            encoding="utf-8",
+        )
+    foreign_lock = slot_state_base / "slot-foreign" / "operation.lock"
+    foreign_lock.mkdir(parents=True)
+    foreign_owner = foreign_lock / "owner.txt"
+    foreign_owner.write_text("owner=codex:other-task\n", encoding="utf-8")
+    harness = tmp_path / "release-slot-locks.sh"
+    harness.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/bin/bash
+            set -euo pipefail
+            frontend_slot_state_base={slot_state_base}
+            frontend_slot_locks_acquired={acquired_count}
+            {release_slot_locks}
+            release_frontend_slot_operation_locks
+            release_frontend_slot_operation_locks
+            test "${{frontend_slot_locks_acquired}}" = "0"
+            """
+        ),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    completed = subprocess.run(
+        ["/bin/bash", str(harness)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    for slot in range(1, acquired_count + 1):
+        assert not (slot_state_base / f"slot-{slot}" / "operation.lock").exists()
+    assert foreign_lock.is_dir()
+    assert foreign_owner.read_text(encoding="utf-8") == "owner=codex:other-task\n"
+
+
+def test_m4_deploy_refuses_expired_drifted_slot_consumer_without_cleanup(
+    tmp_path: Path,
+) -> None:
+    primary_state = tmp_path / "primary-state.txt"
+    primary_state.write_text(
+        "acceptance_state=accepted\nsource_revision=current-master\n",
+        encoding="utf-8",
+    )
+    slot_state_base = tmp_path / "slots"
+    slot_state = slot_state_base / "slot-1" / "state.txt"
+    slot_state.parent.mkdir(parents=True)
+    slot_state.write_text(
+        "\n".join(
+            (
+                "owner=codex:stale-ui",
+                "expires_at_epoch=1",
+                "primary_source_revision=old-master",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    remote_source = tmp_path / "remote-source"
+    remote_source.mkdir()
+    (remote_source / "revision.txt").write_text("accepted\n", encoding="utf-8")
+    candidate_source = tmp_path / "candidate-source"
+    candidate_source.mkdir()
+    (candidate_source / "revision.txt").write_text("candidate\n", encoding="utf-8")
+    completed, docker_log = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["primary-frontend"],
+        consumers={
+            "primary-frontend": (
+                "/npcink-ai-cloud-m4-dev-frontend-1|"
+                "npcink-ai-cloud-m4-dev|frontend|False|||||"
+            ),
+            "stale-slot": (
+                "/npcink-ai-cloud-m4-ui-1-frontend-slot-1|"
+                "npcink-ai-cloud-m4-ui-1|frontend-slot|False|frontend-slot|1|"
+                "codex:stale-ui|2026-07-29T20:00:00Z|old-ui"
+            ),
+        },
+        primary_state=primary_state,
+        slot_state_base=slot_state_base,
+        after_guard=f"rsync -a --delete {candidate_source}/ {remote_source}/",
+    )
+
+    assert completed.returncode == 75
+    assert "project=npcink-ai-cloud-m4-ui-1" in completed.stderr
+    assert "service=frontend-slot" in completed.stderr
+    assert "owner=codex:stale-ui" in completed.stderr
+    assert "slot=1" in completed.stderr
+    assert "lease_status=expired" in completed.stderr
+    assert "backend_lease_status=drifted" in completed.stderr
+    assert "m4:frontend:status -- --slot 1" in completed.stderr
+    assert (
+        "m4:frontend:release -- --slot 1 --owner codex:stale-ui"
+        in completed.stderr
+    )
+    docker_events = docker_log.read_text(encoding="utf-8")
+    assert " stop " not in f" {docker_events} "
+    assert " rm " not in f" {docker_events} "
+    assert (remote_source / "revision.txt").read_text(encoding="utf-8") == "accepted\n"
+
+
+def test_m4_deploy_allows_only_the_expected_primary_frontend_consumer(
+    tmp_path: Path,
+) -> None:
+    completed, docker_log = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["primary-frontend"],
+        consumers={
+            "primary-frontend": (
+                "/npcink-ai-cloud-m4-dev-frontend-1|"
+                "npcink-ai-cloud-m4-dev|frontend|False|||||"
+            )
+        },
+    )
+
+    assert completed.returncode == 0
+    assert "external consumer" not in completed.stderr
+    assert " stop " not in f" {docker_log.read_text(encoding='utf-8')} "
+    assert " rm " not in f" {docker_log.read_text(encoding='utf-8')} "
+
+
+def test_m4_deploy_compares_canonical_primary_container_ids(tmp_path: Path) -> None:
+    primary_id = "a" * 64
+    completed, _ = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=[primary_id],
+        consumers={
+            primary_id[:12]: (
+                "/npcink-ai-cloud-m4-dev-frontend-1|"
+                "npcink-ai-cloud-m4-dev|frontend|False|||||"
+            )
+        },
+        canonical_ids={primary_id[:12]: primary_id},
+    )
+
+    assert completed.returncode == 0
+    assert "status=primary_expected" in completed.stderr
+    assert "status=external_blocking" not in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_diagnostic"),
+    (
+        ("list", "unable to enumerate the exact frontend dependency volume"),
+        ("inspect", "unable to verify labels for frontend dependency volume"),
+    ),
+)
+def test_m4_deploy_fails_closed_when_volume_state_cannot_be_proven(
+    tmp_path: Path,
+    failure_kind: str,
+    expected_diagnostic: str,
+) -> None:
+    remote_sentinel = tmp_path / "remote-sentinel.txt"
+    remote_sentinel.write_text("accepted\n", encoding="utf-8")
+    completed, docker_log = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["primary-frontend"],
+        consumers={
+            "primary-frontend": (
+                "/npcink-ai-cloud-m4-dev-frontend-1|"
+                "npcink-ai-cloud-m4-dev|frontend|False|||||"
+            )
+        },
+        volume_ls_error=failure_kind == "list",
+        volume_inspect_error=failure_kind == "inspect",
+        after_guard=f"printf 'candidate\\n' > {remote_sentinel}",
+    )
+
+    assert completed.returncode == 75
+    assert expected_diagnostic in completed.stderr
+    assert remote_sentinel.read_text(encoding="utf-8") == "accepted\n"
+    docker_events = docker_log.read_text(encoding="utf-8")
+    assert " build " not in f" {docker_events} "
+    assert " stop " not in f" {docker_events} "
+    assert " rm " not in f" {docker_events} "
+
+
+@pytest.mark.parametrize(
+    ("volume_project_label", "volume_key_label"),
+    (
+        ("unexpected-project", "cloud-frontend-node-modules-dev"),
+        ("npcink-ai-cloud-m4-dev", "unexpected-volume-key"),
+    ),
+)
+def test_m4_deploy_rejects_wrong_volume_labels_before_live_sync(
+    tmp_path: Path,
+    volume_project_label: str,
+    volume_key_label: str,
+) -> None:
+    remote_sentinel = tmp_path / "remote-sentinel.txt"
+    remote_sentinel.write_text("accepted\n", encoding="utf-8")
+    completed, docker_log = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["primary-frontend"],
+        consumers={
+            "primary-frontend": (
+                "/npcink-ai-cloud-m4-dev-frontend-1|"
+                "npcink-ai-cloud-m4-dev|frontend|False|||||"
+            )
+        },
+        volume_project_label=volume_project_label,
+        volume_key_label=volume_key_label,
+        after_guard=f"printf 'candidate\\n' > {remote_sentinel}",
+    )
+
+    assert completed.returncode == 75
+    assert "unable to verify labels for frontend dependency volume" in completed.stderr
+    assert remote_sentinel.read_text(encoding="utf-8") == "accepted\n"
+    docker_events = docker_log.read_text(encoding="utf-8")
+    assert " build " not in f" {docker_events} "
+    assert " stop " not in f" {docker_events} "
+    assert " rm " not in f" {docker_events} "
+
+
+def test_m4_deploy_allows_recovery_when_dependency_volume_is_absent(
+    tmp_path: Path,
+) -> None:
+    after_guard = tmp_path / "after-guard.txt"
+    completed, docker_log = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["must-not-be-queried"],
+        consumers={},
+        volume_exists=False,
+        after_guard=f"printf 'continued\\n' > {after_guard}",
+    )
+
+    assert completed.returncode == 0
+    assert after_guard.read_text(encoding="utf-8") == "continued\n"
+    docker_events = docker_log.read_text(encoding="utf-8")
+    assert "volume ls --quiet" in docker_events
+    assert "volume inspect" not in docker_events
+    assert "compose" not in docker_events
+
+
+def test_m4_deploy_does_not_treat_a_partial_name_match_as_the_target_volume(
+    tmp_path: Path,
+) -> None:
+    after_guard = tmp_path / "after-guard.txt"
+    completed, docker_log = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["must-not-be-queried"],
+        consumers={},
+        volume_exists=False,
+        volume_names=[
+            "npcink-ai-cloud-m4-dev_cloud-frontend-node-modules-dev-backup"
+        ],
+        after_guard=f"printf 'continued\\n' > {after_guard}",
+    )
+
+    assert completed.returncode == 0
+    assert after_guard.read_text(encoding="utf-8") == "continued\n"
+    docker_events = docker_log.read_text(encoding="utf-8")
+    assert "volume ls --quiet" in docker_events
+    assert "volume inspect" not in docker_events
+    assert "compose" not in docker_events
+
+
+def test_m4_deploy_blocks_label_spoofed_primary_consumer(tmp_path: Path) -> None:
+    expected_labels = "npcink-ai-cloud-m4-dev|frontend|False|||||"
+    completed, _ = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["current-primary"],
+        consumers={
+            "current-primary": f"/current-primary|{expected_labels}",
+            "stale-label-spoof": f"/stale-label-spoof|{expected_labels}",
+        },
+    )
+
+    assert completed.returncode == 75
+    assert "frontend_volume_consumer=stale-label-spoof" in completed.stderr
+    assert "status=external_blocking" in completed.stderr
+
+
+def test_m4_deploy_blocks_ambiguous_duplicate_compose_primary(tmp_path: Path) -> None:
+    completed, _ = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=["primary-one", "primary-two"],
+        consumers={},
+    )
+
+    assert completed.returncode == 75
+    assert "multiple current primary frontend containers" in completed.stderr
+
+
+def test_m4_deploy_allows_recovery_when_primary_frontend_is_absent(
+    tmp_path: Path,
+) -> None:
+    completed, _ = _run_frontend_volume_guard(
+        tmp_path,
+        primary_ids=[],
+        consumers={},
+    )
+
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+
+
 @pytest.mark.skipif(
     not (ROOT / ".git").exists(),
     reason="source transfer dry-run requires Git worktree metadata",
@@ -265,6 +894,7 @@ def test_m4_auto_tunnel_prefers_lan_and_falls_back_to_tailscale(
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _write_fake_lsof(fake_bin, port_is_occupied=False)
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         """#!/bin/sh
@@ -339,6 +969,7 @@ def test_m4_tunnel_reports_ready_only_after_local_health_is_usable(
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _write_fake_lsof(fake_bin, port_is_occupied=False)
     event_log = tmp_path / "events.log"
     health_attempts = tmp_path / "health-attempts"
     fake_ssh = fake_bin / "ssh"
@@ -398,9 +1029,7 @@ def test_m4_tunnel_does_not_count_an_unowned_existing_health_listener(
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     ssh_started = tmp_path / "ssh-started"
-    fake_lsof = fake_bin / "lsof"
-    fake_lsof.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    fake_lsof.chmod(0o755)
+    _write_fake_lsof(fake_bin, port_is_occupied=True)
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         '#!/bin/sh\nprintf "started\\n" > "${FAKE_SSH_STARTED}"\nsleep 5\n',
@@ -438,6 +1067,7 @@ def test_m4_browser_preflight_marks_peer_relay_and_low_throughput_not_counted(
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _write_fake_lsof(fake_bin, port_is_occupied=False)
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         """#!/bin/sh
@@ -512,6 +1142,7 @@ def test_m4_browser_preflight_keeps_direct_usable_transport_countable(
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _write_fake_lsof(fake_bin, port_is_occupied=False)
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         """#!/bin/sh
@@ -580,6 +1211,7 @@ def test_m4_tunnel_fails_closed_and_stops_ssh_when_local_health_times_out(
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
+    _write_fake_lsof(fake_bin, port_is_occupied=False)
     event_log = tmp_path / "events.log"
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
@@ -1224,6 +1856,9 @@ def test_m4_runbook_preserves_source_cloudflare_and_recovery_boundaries() -> Non
     assert "Candidate and Accepted States" in runbook
     assert "pnpm run m4:preview:promote -- --pr" in runbook
     assert "acceptance_state=accepted" in runbook
+    assert "failed Docker query is not treated as an absent volume" in runbook
+    assert "deliberately stops the application services" in runbook
+    assert "partially synchronized source" in runbook
     assert "receives no M4 SSH credential" in runbook
     assert "m4:preview:test -- --focused" in runbook
     assert "GitHub required" in runbook
