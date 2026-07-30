@@ -981,7 +981,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "summary": {
                 "events": len(items),
                 "succeeded": int(outcomes.get("succeeded", 0)),
-                "failed": int(outcomes.get("failed", 0)),
+                "failed": int(outcomes.get("failed", 0)) + int(outcomes.get("error", 0)),
                 "registration_events": int(event_kinds.get("portal.registration", 0)),
                 "disable_events": int(event_kinds.get("portal_user.disable", 0)),
                 "latest_disable_reason": str(latest_payload.get("reason") or ""),
@@ -1012,6 +1012,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "principal id is required",
             )
         normalized_reason = str(reason or "").strip()[:500]
+        if not normalized_reason:
+            raise CommercialValidationError(
+                "service.portal_user_disable_reason_required",
+                "portal user disable reason is required",
+            )
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             identity = repository.get_principal_identity_by_ref(
@@ -1022,13 +1027,17 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     "service.principal_not_found",
                     f"principal '{normalized_principal_id}' was not found",
                 )
-            identity.status = PRINCIPAL_STATUS_DISABLED
-            identity = (
-                repository.increment_principal_session_version(
-                    principal_id=normalized_principal_id,
-                )
-                or identity
+            was_disabled = (
+                str(getattr(identity, "status", "") or "") == PRINCIPAL_STATUS_DISABLED
             )
+            identity.status = PRINCIPAL_STATUS_DISABLED
+            if not was_disabled:
+                identity = (
+                    repository.increment_principal_session_version(
+                        principal_id=normalized_principal_id,
+                    )
+                    or identity
+                )
             revoked_memberships = repository.revoke_account_user_memberships(
                 principal_id=normalized_principal_id,
             )
@@ -1044,6 +1053,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "revoked_account_memberships": revoked_memberships,
                 "revoked_identity_provider_bindings": revoked_bindings,
                 "reason": normalized_reason,
+                "outcome": "already_disabled" if was_disabled else "disabled",
             }
             self._record_service_audit_in_session(
                 repository=repository,

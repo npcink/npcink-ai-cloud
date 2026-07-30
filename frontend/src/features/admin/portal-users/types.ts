@@ -112,7 +112,14 @@ export type BatchDisableResult = {
 
 export type PortalUserDisableResult = {
   receipt?: AdminMutationReceiptPayload;
-  session_version?: number;
+  principal_id: string;
+  email: string;
+  status: string;
+  session_version: number;
+  revoked_account_memberships: number;
+  revoked_identity_provider_bindings: number;
+  reason: string;
+  outcome: 'disabled' | 'already_disabled';
 };
 
 export type PortalUserFilters = {

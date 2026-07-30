@@ -35,6 +35,13 @@ assert.match(source, /disabled=\{destructiveActionsDisabled/, 'destructive contr
 assert.match(source, /admin\.portal_users\.access_actions_title/, 'single-user disable must stay behind an explicit access-actions disclosure');
 assert.match(source, /AdminLatestOperationButton/, 'auditable mutation receipts must use the compact latest-operation entry');
 assert.match(source, /toast\.success/, 'transient mutation success must use global toast feedback');
+assert.match(source, /data\.outcome === 'already_disabled'/, 'repeat disable outcomes must be reported honestly');
+assert.match(
+  source,
+  /data\.outcome === 'already_disabled'[\s\S]*data\.revoked_account_memberships[\s\S]*data\.revoked_identity_provider_bindings/,
+  'repeat disable notices must report residual memberships and bindings repaired by the backend'
+);
+assert.match(source, /toast\.warning/, 'partial batch outcomes must use warning feedback');
 assert.match(source, /does not create roles, permissions, payments, entitlements, or WordPress users/, 'the inspector must state the external-user boundary');
 
 console.log('admin_portal_users_directory_v2_contract: ok');

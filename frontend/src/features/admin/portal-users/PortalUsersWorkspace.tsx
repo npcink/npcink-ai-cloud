@@ -17,7 +17,7 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
-import { ConfirmModal, Modal } from '@/components/ui/Modal';
+import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
@@ -133,10 +133,12 @@ export function PortalUsersWorkspace() {
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [pendingUser, setPendingUser] = useState<PortalUserItem | null>(null);
   const [disableReason, setDisableReason] = useState('');
+  const [disableDialogError, setDisableDialogError] = useState<string | null>(null);
   const [auditUser, setAuditUser] = useState<PortalUserItem | null>(null);
   const [selectedPrincipalIds, setSelectedPrincipalIds] = useState<string[]>([]);
   const [batchDisableOpen, setBatchDisableOpen] = useState(false);
   const [batchDisableReason, setBatchDisableReason] = useState('');
+  const [batchDisableError, setBatchDisableError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const requestKey = useMemo(
     () => buildPortalUsersQuery(appliedFilters, offset),
@@ -284,6 +286,7 @@ export function PortalUsersWorkspace() {
   };
 
   const disableUser = async (user: PortalUserItem) => {
+    const reason = disableReason.trim();
     if (
       destructiveActionsDisabled ||
       !activePrincipalIds.has(user.principal_id)
@@ -291,23 +294,67 @@ export function PortalUsersWorkspace() {
       setPendingUser(null);
       return;
     }
+    if (!reason) {
+      setDisableDialogError(
+        t(
+          'admin.portal_users.disable_reason_required',
+          {},
+          'Enter a reason before disabling this user.'
+        )
+      );
+      return;
+    }
     setActionError(null);
+    setDisableDialogError(null);
     setLastReceipt(null);
     try {
       const data = await disableMutation.mutateAsync({
         principalId: user.principal_id,
-        reason: disableReason.trim(),
+        reason,
       });
       setLastReceipt(data.receipt || null);
       updateDirectoryUrl({ focus: user.principal_id });
-      toast.success(
-        t('admin.portal_users.disable_notice', { user: user.email || user.principal_id }, '{{user}} was disabled. Existing Portal sessions and QQ bindings were revoked.'),
-        t('admin.portal_users.disable_success_title', {}, 'User disabled')
-      );
+      const message =
+        data.outcome === 'already_disabled'
+          ? t(
+              'admin.portal_users.already_disabled_notice',
+              {
+                user: user.email || user.principal_id,
+                memberships: String(data.revoked_account_memberships || 0),
+                bindings: String(data.revoked_identity_provider_bindings || 0),
+              },
+              '{{user}} was already disabled. Portal access remains revoked. Repaired {{memberships}} active account membership(s) and {{bindings}} QQ binding(s).'
+            )
+          : t(
+              'admin.portal_users.disable_notice',
+              {
+                user: user.email || user.principal_id,
+                memberships: String(data.revoked_account_memberships || 0),
+                bindings: String(data.revoked_identity_provider_bindings || 0),
+              },
+              '{{user}} was disabled. Revoked {{memberships}} account membership(s) and {{bindings}} QQ binding(s).'
+            );
+      if (data.outcome === 'already_disabled') {
+        toast.info(
+          message,
+          t('admin.portal_users.already_disabled_title', {}, 'User already disabled')
+        );
+      } else {
+        toast.success(
+          message,
+          t('admin.portal_users.disable_success_title', {}, 'User disabled')
+        );
+      }
       setDisableReason('');
+      setDisableDialogError(null);
       setPendingUser(null);
     } catch (err) {
-      setActionError(resolveUiErrorMessage(err, t('admin.portal_users.disable_failed', {}, 'Failed to disable user.')));
+      setDisableDialogError(
+        resolveUiErrorMessage(
+          err,
+          t('admin.portal_users.disable_failed', {}, 'Failed to disable user.')
+        )
+      );
     }
   };
 
@@ -337,14 +384,15 @@ export function PortalUsersWorkspace() {
       return;
     }
     if (!reason) {
-      setActionError(t('admin.portal_users.batch_reason_required', {}, 'Batch disable requires a reason.'));
+      setBatchDisableError(t('admin.portal_users.batch_reason_required', {}, 'Batch disable requires a reason.'));
       return;
     }
     if (principalIds.length === 0) {
-      setActionError(t('admin.portal_users.batch_select_required', {}, 'Select at least one active user.'));
+      setBatchDisableError(t('admin.portal_users.batch_select_required', {}, 'Select at least one active user.'));
       return;
     }
     setActionError(null);
+    setBatchDisableError(null);
     setLastReceipt(null);
     try {
       const data = await batchDisableMutation.mutateAsync({ principalIds, reason });
@@ -354,12 +402,25 @@ export function PortalUsersWorkspace() {
       const attempted = Number(data.totals?.attempted || principalIds.length);
       const failed = Number(data.totals?.failed || 0);
       setLastReceipt(data.receipt || null);
-      toast.success(
-        t('admin.portal_users.batch_disable_notice', { attempted: String(attempted), failed: String(failed) }, 'Batch disable processed {{attempted}} user(s), failed {{failed}}.'),
-        t('admin.portal_users.batch_disable_success_title', {}, 'Batch disable complete')
-      );
+      const message = t('admin.portal_users.batch_disable_notice', { attempted: String(attempted), failed: String(failed) }, 'Batch disable processed {{attempted}} user(s), failed {{failed}}.');
+      if (failed > 0) {
+        toast.warning(
+          message,
+          t('admin.portal_users.batch_disable_partial_title', {}, 'Batch disable partially completed')
+        );
+      } else {
+        toast.success(
+          message,
+          t('admin.portal_users.batch_disable_success_title', {}, 'Batch disable complete')
+        );
+      }
     } catch (err) {
-      setActionError(resolveUiErrorMessage(err, t('admin.portal_users.batch_disable_failed', {}, 'Batch disable failed.')));
+      setBatchDisableError(
+        resolveUiErrorMessage(
+          err,
+          t('admin.portal_users.batch_disable_failed', {}, 'Batch disable failed.')
+        )
+      );
     }
   };
 
@@ -422,7 +483,7 @@ export function PortalUsersWorkspace() {
           <span>{t('admin.portal_users.batch_selected_count', { count: String(selectedActiveUsers.length) }, '{{count}} active users selected.')}</span>
           <div className="flex gap-2">
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedPrincipalIds([])}>{t('common.clear', {}, 'Clear')}</button>
-            <button type="button" className="btn btn-danger btn-sm" disabled={destructiveActionsDisabled} onClick={() => setBatchDisableOpen(true)}>{t('admin.portal_users.batch_disable', {}, 'Batch disable')}</button>
+            <button type="button" className="btn btn-danger btn-sm" disabled={destructiveActionsDisabled} onClick={() => { setBatchDisableError(null); setBatchDisableOpen(true); }}>{t('admin.portal_users.batch_disable', {}, 'Batch disable')}</button>
           </div>
         </div>
       ) : null}
@@ -515,7 +576,7 @@ export function PortalUsersWorkspace() {
                 <dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">{[[t('common.status'), selectedUser.status === 'disabled' ? t('admin.portal_users.status_disabled', {}, 'Disabled') : t('admin.portal_users.status_active', {}, 'Active')],[t('common.account', {}, 'Account'), selectedUser.account_name || t('admin.portal_users.account_unbound', {}, 'No account bound')],[t('admin.portal_users.membership_label', {}, 'Membership'), selectedUser.membership_status || t('admin.portal_users.no_membership_status', {}, 'No membership status')],[t('common.site', {}, 'Site'), selectedUser.site_name || t('admin.portal_users.site_unbound', {}, 'No site bound')],[t('common.package', {}, 'Package'), selectedUser.display_package_label || selectedUser.package_alias || t('admin.portal_users.no_coverage', {}, 'No coverage')],[t('common.subscription', {}, 'Subscription'), selectedUser.subscription_status || t('admin.portal_users.no_subscription', {}, 'No subscription')],['QQ', selectedUser.qq_bound ? t('admin.portal_users.qq_bound', {}, 'Bound') : t('admin.portal_users.qq_unbound', {}, 'Not bound')],[t('admin.portal_users.logged_in_at', {}, 'Login'), dateLabel(selectedUser.last_login_at, t)],[t('admin.portal_users.session_version_label', {}, 'Session version'), String(selectedUser.session_version)]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800"><dt>{label}</dt><dd className="max-w-48 truncate text-right font-semibold text-slate-950 dark:text-white">{value}</dd></div>)}</dl>
                 <div className="flex flex-wrap gap-2">{selectedUser.account_id ? <Link href={`/admin/accounts/${encodeURIComponent(selectedUser.account_id)}`} className="btn btn-primary btn-sm">{t('admin.portal_users.open_customer_action', {}, 'Open customer')}</Link> : null}<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadAuditDetail(selectedUser)}>{t('admin.portal_users.audit_action', {}, 'Audit')}</button>{selectedUser.site_id ? <Link href={`/admin/sites/${encodeURIComponent(selectedUser.site_id)}`} className="btn btn-secondary btn-sm">{t('admin.portal_users.open_site', {}, 'Open site')}</Link> : null}</div>
                 <details className="border-t border-slate-200/80 pt-4 text-sm dark:border-slate-800"><summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-100">{t('portal.support_information', {}, 'Support information')}</summary><div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400"><BackofficeIdentifier value={selectedUser.principal_id} full />{selectedUser.account_id ? <BackofficeIdentifier value={selectedUser.account_id} full /> : null}{selectedUser.site_id ? <BackofficeIdentifier value={selectedUser.site_id} full /> : null}{selectedUser.site_url ? <p className="break-all">{selectedUser.site_url}</p> : null}</div></details>
-                {selectedUser.status !== 'disabled' ? <details className="border-t border-rose-200/80 pt-4 text-sm dark:border-rose-900/50"><summary className="cursor-pointer font-semibold text-rose-700 dark:text-rose-300">{t('admin.portal_users.access_actions_title', {}, 'Access actions')}</summary><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.portal_users.disable_boundary', {}, 'Disabling revokes Portal sessions, account memberships, and QQ quick-login bindings. It does not delete the customer or WordPress user.')}</p><button type="button" className="btn btn-danger btn-sm mt-3" disabled={destructiveActionsDisabled} onClick={() => setPendingUser(selectedUser)}>{savingPrincipalId === selectedUser.principal_id ? t('admin.portal_users.processing', {}, 'Processing') : t('admin.portal_users.disable_action', {}, 'Disable')}</button></details> : null}
+                {selectedUser.status !== 'disabled' ? <details className="border-t border-rose-200/80 pt-4 text-sm dark:border-rose-900/50"><summary className="cursor-pointer font-semibold text-rose-700 dark:text-rose-300">{t('admin.portal_users.access_actions_title', {}, 'Access actions')}</summary><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.portal_users.disable_boundary', {}, 'Disabling revokes Portal sessions, account memberships, and QQ quick-login bindings. It does not delete the customer or WordPress user.')}</p><button type="button" className="btn btn-danger btn-sm mt-3" disabled={destructiveActionsDisabled} onClick={() => { setDisableDialogError(null); setPendingUser(selectedUser); }}>{savingPrincipalId === selectedUser.principal_id ? t('admin.portal_users.processing', {}, 'Processing') : t('admin.portal_users.disable_action', {}, 'Disable')}</button></details> : null}
                 <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.portal_users.inspector_boundary', {}, 'This directory manages the external Cloud user identity and its Portal access evidence only. It does not create roles, permissions, payments, entitlements, or WordPress users.')}</p>
               </div>
             ) : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.portal_users.inspector_empty', {}, 'No Portal user is visible on this page.')}</p>}
@@ -523,33 +584,81 @@ export function PortalUsersWorkspace() {
         </aside>
       </div>
 
-      {pendingUser && !destructiveActionsDisabled && activePrincipalIds.has(pendingUser.principal_id) ? (
-        <ConfirmModal
+      {pendingUser && activePrincipalIds.has(pendingUser.principal_id) ? (
+        <Modal
           isOpen={Boolean(pendingUser)}
           title={t('admin.portal_users.confirm_disable_title', {}, 'Confirm disable user')}
-          message={t(
-            'admin.portal_users.confirm_disable_message',
-            { user: pendingUser.email || pendingUser.principal_id },
-            'After disabling {{user}}, existing Portal sessions, account memberships, and QQ quick-login bindings will be revoked.'
-          )}
-          confirmLabel={t('common.confirm', {}, 'Confirm')}
-          cancelLabel={t('common.cancel', {}, 'Cancel')}
-          variant="danger"
+          description={pendingUser.email || pendingUser.principal_id}
+          closeOnOverlay={!disableMutation.isPending}
+          showCloseButton={!disableMutation.isPending}
           onClose={() => {
-            setPendingUser(null);
-            setDisableReason('');
+            if (!disableMutation.isPending) {
+              setPendingUser(null);
+              setDisableReason('');
+              setDisableDialogError(null);
+            }
           }}
-          onConfirm={() => {
-            void disableUser(pendingUser);
-          }}
+          footer={(
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={disableMutation.isPending}
+                onClick={() => {
+                  setPendingUser(null);
+                  setDisableReason('');
+                  setDisableDialogError(null);
+                }}
+              >
+                {t('common.cancel', {}, 'Cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={disableMutation.isPending || !disableReason.trim()}
+                onClick={() => {
+                  void disableUser(pendingUser);
+                }}
+              >
+                {disableMutation.isPending
+                  ? t('admin.portal_users.processing', {}, 'Processing')
+                  : t('admin.portal_users.confirm_disable', {}, 'Confirm disable')}
+              </button>
+            </>
+          )}
         >
-          <textarea
-            value={disableReason}
-            onChange={(event) => setDisableReason(event.target.value)}
-            className="input min-h-[5.5rem]"
-            placeholder={t('admin.portal_users.reason_optional', {}, 'Reason, optional')}
-          />
-        </ConfirmModal>
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+              {t(
+                'admin.portal_users.confirm_disable_message',
+                { user: pendingUser.email || pendingUser.principal_id },
+                'After disabling {{user}}, existing Portal sessions, account memberships, and QQ quick-login bindings will be revoked.'
+              )}
+            </p>
+            <label className="block text-sm text-slate-700 dark:text-slate-200">
+              <span className="mb-1.5 block font-medium">
+                {t('admin.portal_users.disable_reason_label', {}, 'Disable reason')}
+              </span>
+              <textarea
+                value={disableReason}
+                onChange={(event) => {
+                  setDisableReason(event.target.value);
+                  if (disableDialogError) setDisableDialogError(null);
+                }}
+                className="input min-h-[5.5rem] w-full"
+                maxLength={500}
+                required
+                disabled={disableMutation.isPending}
+                placeholder={t('admin.portal_users.reason_required', {}, 'Reason, required')}
+              />
+            </label>
+            {disableDialogError ? (
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
+                {disableDialogError}
+              </div>
+            ) : null}
+          </div>
+        </Modal>
       ) : null}
 
       {batchDisableOpen ? (
@@ -558,10 +667,13 @@ export function PortalUsersWorkspace() {
           title={t('admin.portal_users.batch_disable_title', {}, 'Batch disable users')}
           description={t('admin.portal_users.batch_disable_desc', { count: String(selectedActiveUsers.length) }, 'Will disable {{count}} user(s).')}
           size="md"
+          closeOnOverlay={!batchSaving}
+          showCloseButton={!batchSaving}
           onClose={() => {
             if (!batchSaving) {
               setBatchDisableOpen(false);
               setBatchDisableReason('');
+              setBatchDisableError(null);
             }
           }}
           footer={
@@ -573,6 +685,7 @@ export function PortalUsersWorkspace() {
                 onClick={() => {
                   setBatchDisableOpen(false);
                   setBatchDisableReason('');
+                  setBatchDisableError(null);
                 }}
               >
                 {t('common.cancel', {}, 'Cancel')}
@@ -594,12 +707,28 @@ export function PortalUsersWorkspace() {
             <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
               {t('admin.portal_users.batch_disable_body', {}, 'Batch disable invalidates selected users Portal sessions and revokes account memberships and QQ quick-login bindings.')}
             </p>
-            <textarea
-              value={batchDisableReason}
-              onChange={(event) => setBatchDisableReason(event.target.value)}
-              className="input min-h-[5.5rem]"
-              placeholder={t('admin.portal_users.reason_required', {}, 'Reason, required')}
-            />
+            <label className="block text-sm text-slate-700 dark:text-slate-200">
+              <span className="mb-1.5 block font-medium">
+                {t('admin.portal_users.disable_reason_label', {}, 'Disable reason')}
+              </span>
+              <textarea
+                value={batchDisableReason}
+                onChange={(event) => {
+                  setBatchDisableReason(event.target.value);
+                  if (batchDisableError) setBatchDisableError(null);
+                }}
+                className="input min-h-[5.5rem] w-full"
+                maxLength={500}
+                required
+                disabled={batchSaving}
+                placeholder={t('admin.portal_users.reason_required', {}, 'Reason, required')}
+              />
+            </label>
+            {batchDisableError ? (
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
+                {batchDisableError}
+              </div>
+            ) : null}
           </div>
         </Modal>
       ) : null}

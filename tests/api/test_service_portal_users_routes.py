@@ -140,6 +140,28 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
         "has_more": False,
     }
 
+    oversized_reason_response = client.post(
+        f"/internal/service/admin/portal-users/{principal_id}/disable",
+        json={"reason": "x" * 501},
+        headers=build_internal_headers(
+            idempotency_key="admin-portal-user-disable-oversized-reason"
+        ),
+    )
+    assert oversized_reason_response.status_code == 422
+
+    blank_reason_response = client.post(
+        f"/internal/service/admin/portal-users/{principal_id}/disable",
+        json={"reason": "   "},
+        headers=build_internal_headers(
+            idempotency_key="admin-portal-user-disable-blank-reason"
+        ),
+    )
+    assert blank_reason_response.status_code == 400
+    assert (
+        blank_reason_response.json()["error_code"]
+        == "service.portal_user_disable_reason_required"
+    )
+
     disable_response = client.post(
         f"/internal/service/admin/portal-users/{principal_id}/disable",
         json={"reason": "operator test disable"},
@@ -148,7 +170,23 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert disable_response.status_code == 200, disable_response.text
     disable_data = disable_response.json()["data"]
     assert disable_data["status"] == PRINCIPAL_STATUS_DISABLED
+    assert disable_data["outcome"] == "disabled"
     assert disable_data["revoked_account_memberships"] == 1
+    disabled_session_version = disable_data["session_version"]
+
+    repeated_disable_response = client.post(
+        f"/internal/service/admin/portal-users/{principal_id}/disable",
+        json={"reason": "confirm access remains disabled"},
+        headers=build_internal_headers(
+            idempotency_key="admin-portal-user-disable-002"
+        ),
+    )
+    assert repeated_disable_response.status_code == 200, repeated_disable_response.text
+    repeated_disable_data = repeated_disable_response.json()["data"]
+    assert repeated_disable_data["outcome"] == "already_disabled"
+    assert repeated_disable_data["session_version"] == disabled_session_version
+    assert repeated_disable_data["revoked_account_memberships"] == 0
+    assert repeated_disable_data["revoked_identity_provider_bindings"] == 0
 
     revoked_session_response = client.get("/portal/v1/session")
     assert revoked_session_response.status_code == 401
@@ -163,9 +201,13 @@ def test_admin_portal_users_lists_self_registered_users_and_disables_access(
     assert audit_data["principal"]["principal_id"] == principal_id
     assert audit_data["principal"]["email"] == email
     assert audit_data["summary"]["registration_events"] == 1
-    assert audit_data["summary"]["disable_events"] == 1
-    assert audit_data["summary"]["latest_disable_reason"] == "operator test disable"
-    assert audit_data["summary"]["latest_disable_revoked_account_memberships"] == 1
+    assert audit_data["summary"]["disable_events"] == 3
+    assert audit_data["summary"]["failed"] == 1
+    assert (
+        audit_data["summary"]["latest_disable_reason"]
+        == "confirm access remains disabled"
+    )
+    assert audit_data["summary"]["latest_disable_revoked_account_memberships"] == 0
     event_kinds = {item["event_kind"] for item in audit_data["items"]}
     assert "portal.registration" in event_kinds
     assert "portal_user.disable" in event_kinds

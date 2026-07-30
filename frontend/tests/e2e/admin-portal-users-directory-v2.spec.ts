@@ -52,9 +52,12 @@ async function installPortalUsersMocks(page: Page) {
   await installAdminMocks(page);
   let users = fixtures();
   let requestCount = 0;
+  let disableRequestCount = 0;
   let failNext = false;
   let failNextDisable = false;
+  let repairOnNextDisable = false;
   let waitForNextRequest: Promise<void> | null = null;
+  let waitForNextDisableRequest: Promise<void> | null = null;
 
   await page.route('**/api/admin/portal-users?*', async (route) => {
     requestCount += 1;
@@ -103,8 +106,19 @@ async function installPortalUsersMocks(page: Page) {
       await route.fallback();
       return;
     }
+    const payload = route.request().postDataJSON() as { reason?: string };
+    const reason = payload.reason?.trim() || '';
+    if (!reason) {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify(buildAdminApiErrorEnvelope('portal user disable reason is required')),
+      });
+      return;
+    }
     if (failNextDisable) {
       failNextDisable = false;
+      disableRequestCount += 1;
       await route.fulfill({
         status: 503,
         contentType: 'application/json',
@@ -112,15 +126,44 @@ async function installPortalUsersMocks(page: Page) {
       });
       return;
     }
+    disableRequestCount += 1;
+    if (waitForNextDisableRequest) {
+      const pendingRequest = waitForNextDisableRequest;
+      waitForNextDisableRequest = null;
+      await pendingRequest;
+    }
     const principalId = decodeURIComponent(route.request().url().split('/').at(-2) || '');
-    users = users.map((user) => user.principal_id === principalId ? { ...user, status: 'disabled', membership_status: 'revoked', qq_bound: false, qq_binding_count: 0, session_version: user.session_version + 1 } : user);
+    const previous = users.find((user) => user.principal_id === principalId)!;
+    const repairResidualAccess = repairOnNextDisable;
+    const outcome = repairResidualAccess || previous.status === 'disabled'
+      ? 'already_disabled'
+      : 'disabled';
+    repairOnNextDisable = false;
+    const revokedMemberships = repairResidualAccess
+      ? 2
+      : previous.membership_status === 'active' ? 1 : 0;
+    const revokedBindings = repairResidualAccess ? 1 : previous.qq_bound ? 1 : 0;
+    users = users.map((user) => user.principal_id === principalId ? {
+      ...user,
+      status: 'disabled',
+      membership_status: 'revoked',
+      qq_bound: false,
+      qq_binding_count: 0,
+      session_version: outcome === 'disabled' ? user.session_version + 1 : user.session_version,
+    } : user);
     const updated = users.find((user) => user.principal_id === principalId)!;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
+        principal_id: principalId,
+        email: updated.email,
         status: 'disabled',
         session_version: updated.session_version,
+        revoked_account_memberships: revokedMemberships,
+        revoked_identity_provider_bindings: revokedBindings,
+        reason,
+        outcome,
         receipt: {
           audit_event_id: 901,
           event_kind: 'portal_user.disable',
@@ -167,15 +210,26 @@ async function installPortalUsersMocks(page: Page) {
 
   return {
     getRequestCount: () => requestCount,
+    getDisableRequestCount: () => disableRequestCount,
     failNextRequest: () => {
       failNext = true;
     },
     failNextDisableRequest: () => {
       failNextDisable = true;
     },
+    returnAlreadyDisabledRepairNext: () => {
+      repairOnNextDisable = true;
+    },
     holdNextRequest: () => {
       let release = () => {};
       waitForNextRequest = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+    holdNextDisableRequest: () => {
+      let release = () => {};
+      waitForNextDisableRequest = new Promise<void>((resolve) => {
         release = resolve;
       });
       return release;
@@ -221,8 +275,10 @@ test('Portal user directory persists filters and focus while retaining results o
   await page.getByLabel(/Select issue@example.com|选择 issue@example.com/i).check();
   const releasePendingRequest = mocks.holdNextRequest();
   const requestCountBeforePendingScope = mocks.getRequestCount();
-  await page.getByLabel(/Search users|搜索用户/i).fill('active');
-  await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
+  const pendingScopeSearch = page.getByLabel(/Search users|搜索用户/i);
+  await pendingScopeSearch.fill('active');
+  await pendingScopeSearch.press('Enter');
+  await expect(page).toHaveURL(/q=active/);
   await expect.poll(() => mocks.getRequestCount()).toBe(requestCountBeforePendingScope + 1);
   await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
   await expect(rows.first().locator('input[type="checkbox"]')).toBeDisabled();
@@ -273,22 +329,34 @@ test('Portal user inspector keeps audit and disable actions contextual and audit
   await inspector.getByText(/Access actions|访问操作/i).click();
   mocks.failNextDisableRequest();
   await inspector.getByRole('button', { name: /^Disable$|^禁用$/i }).click();
-  await page.getByRole('dialog', { name: /Confirm disable user|确认禁用用户/i }).getByRole('button', { name: /^Confirm$|^确认$/i }).click();
-  await expect(page.getByText('temporary disable failure')).toBeVisible();
+  const disableDialog = page.getByRole('dialog', { name: /Confirm disable user|确认禁用用户/i });
+  const disableReason = disableDialog.getByLabel(/Disable reason|禁用原因/i);
+  const confirmDisable = disableDialog.locator('button.btn-danger');
+  await expect(confirmDisable).toBeDisabled();
+  await disableReason.fill('suspected account compromise');
+  await expect(confirmDisable).toBeEnabled();
+  await confirmDisable.click();
+  await expect(disableDialog.getByText('temporary disable failure')).toBeVisible();
+  await expect(disableReason).toHaveValue('suspected account compromise');
   await expect(inspector).toContainText(/Active|正常/i);
 
-  const requestCountBeforeDisableRefetch = mocks.getRequestCount();
+  const disableRequestCountBeforeRetry = mocks.getDisableRequestCount();
   mocks.failNextRequest();
-  const releaseDisableRefetch = mocks.holdNextRequest();
-  await inspector.getByRole('button', { name: /^Disable$|^禁用$/i }).click();
-  await page.getByRole('dialog', { name: /Confirm disable user|确认禁用用户/i }).getByRole('button', { name: /^Confirm$|^确认$/i }).click();
-  await expect.poll(() => mocks.getRequestCount()).toBe(requestCountBeforeDisableRefetch + 1);
-  await expect(inspector.getByRole('button', { name: /^Disable$|^禁用$/i })).toBeDisabled();
+  mocks.returnAlreadyDisabledRepairNext();
+  const releaseDisableRequest = mocks.holdNextDisableRequest();
+  await confirmDisable.click();
+  await expect.poll(() => mocks.getDisableRequestCount()).toBe(disableRequestCountBeforeRetry + 1);
+  await expect(confirmDisable).toBeDisabled();
+  await expect(disableReason).toBeDisabled();
+  await expect(inspector.locator('button.btn-danger')).toBeDisabled();
   await expect(page.getByLabel(/Select issue@example.com|选择 issue@example.com/i)).toBeDisabled();
   await expect(page.getByLabel(/Select all active users|选择本页全部正常用户/i)).toBeDisabled();
-  releaseDisableRefetch();
+  releaseDisableRequest();
 
-  await expect(page.getByText(/was disabled|已禁用/i).first()).toBeVisible();
+  await expect(disableDialog).toHaveCount(0);
+  await expect(
+    page.getByText(/Repaired 2 active account membership.*1 QQ binding|本次修复了 2 条活跃账户成员关系和 1 条 QQ 绑定/i)
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: /^Retry$|^重试$/i })).toBeVisible();
   await expect(inspector.getByRole('button', { name: /^Disable$|^禁用$/i })).toBeDisabled();
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
