@@ -180,17 +180,31 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.locator('a[href="/admin/plans/free"]')).toHaveCount(0);
   await expect(page.locator('a[href="/admin/plans/pro"]')).toHaveCount(0);
   await expect(page.getByText(/checkout|buy points|storefront/i)).toHaveCount(0);
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: /Sort|排序/i })).toHaveCount(0);
 
+  const freeActiveSubscriptionCount =
+    (await freePackageRow.locator('td').nth(2).innerText()).match(/\d+/)?.[0] || '0';
   const freeManageButton = freePackageRow.getByRole('button', { name: /^Manage Free$|^管理 Free$/i });
   await freeManageButton.click();
   const packageEditor = page.getByRole('dialog', { name: /Manage Free|管理 Free/i });
   await expect(packageEditor).toBeVisible();
+  await expect(packageEditor.locator('[data-ui="plan-subscription-impact"]')).toContainText(
+    new RegExp(`${freeActiveSubscriptionCount} (?:active subscriptions|个活跃订阅)`, 'i')
+  );
   await expect(packageEditor.getByText(/Current package parameters|当前套餐参数/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^Customer package$|^客户套餐$/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^Runtime limits$|^运行限制$/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^Package ID$|^套餐 ID$/i)).toHaveCount(0);
+  await expect(packageEditor.getByText(/^Latest version$|^最新版本$/i)).toHaveCount(0);
   await expect(packageEditor.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
   await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toHaveCount(0);
   await expect(packageEditor.getByRole('tab', { name: /Release history|发布历史/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('button', { name: /^Save$|^保存$|^儲存$/i })).toBeVisible();
+  await packageEditor.getByRole('tab', { name: /Diagnostics|诊断|診斷/i }).click();
+  await expect(packageEditor.getByText(/^Package ID$|^套餐 ID$/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^Latest version$|^最新版本$/i)).toBeVisible();
   await packageEditor.locator('[data-ui="admin-workbench-close"]').click();
   await expect(page.getByRole('link', { name: /Inspect detail|查看详情|查看詳情/i })).toHaveCount(0);
 });

@@ -73,7 +73,6 @@ type PlanDetailPayload = {
   } | null;
   tier_summary: TierSummary;
   package_fit_cues: PackageFitCue[];
-  subscriptions: Array<unknown>;
 };
 
 type PlanVersionFormState = {
@@ -93,6 +92,7 @@ type PlanManagementWorkbenchProps = {
   open: boolean;
   planId: string;
   fallbackName: string;
+  activeSubscriptionCount: number;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 };
@@ -189,6 +189,7 @@ export function PlanManagementWorkbench({
   open,
   planId,
   fallbackName,
+  activeSubscriptionCount,
   onClose,
   onSaved,
 }: PlanManagementWorkbenchProps) {
@@ -319,7 +320,7 @@ export function PlanManagementWorkbench({
       footerNotice={t(
         'admin.plans.workbench_notice',
         {},
-        'Saving publishes these values as the current package version.'
+        'Saved values take effect for this package and its active subscriptions.'
       )}
       footerActions={(
         <div className="flex flex-wrap justify-end gap-2">
@@ -351,18 +352,22 @@ export function PlanManagementWorkbench({
 
       {detail ? (
         <>
-          <dl className="grid gap-px overflow-hidden rounded border border-slate-200 bg-slate-200 sm:grid-cols-3 dark:border-slate-800 dark:bg-slate-800">
-            {[
-              [t('admin.plans.package_id_label', {}, 'Package ID'), detail.plan.plan_id],
-              [t('admin.plans.latest_version_label', {}, 'Latest version'), latestVersion?.version_label || '—'],
-              [t('admin.active_subscriptions'), formatInteger(detail.subscriptions.length)],
-            ].map(([label, value]) => (
-              <div key={label} className="bg-white px-3 py-2 dark:bg-slate-950">
-                <dt className="text-[0.68rem] text-slate-500 dark:text-slate-400">{label}</dt>
-                <dd className="mt-1 font-semibold text-slate-950 dark:text-white">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <p
+            data-ui="plan-subscription-impact"
+            className="border-l-2 border-blue-300 bg-blue-50/60 px-3 py-2 text-sm text-slate-700 dark:border-blue-700 dark:bg-blue-950/20 dark:text-slate-200"
+          >
+            {activeSubscriptionCount > 0
+              ? t(
+                  'admin.plans.subscription_impact',
+                  { count: formatInteger(activeSubscriptionCount) },
+                  `${formatInteger(activeSubscriptionCount)} active subscriptions will use the new values after saving.`
+                )
+              : t(
+                  'admin.plans.subscription_impact_empty',
+                  {},
+                  'No active subscriptions are affected by this change.'
+                )}
+          </p>
 
           <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800" role="tablist">
             {tabs.map((tab) => (
@@ -408,58 +413,73 @@ export function PlanManagementWorkbench({
                 </div>
               </div>
 
-              <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
-                <ParameterField
-                  label={t('admin.included_points', {}, 'Package AI credits')}
-                  detail={t('admin.included_points_detail', {}, 'Current-period package AI credits shared by all sites on this account.')}
-                  value={form.monthly_included_points}
-                  onChange={(value) => updateField('monthly_included_points', value)}
-                />
-                <ParameterField
-                  label={t('admin.site_limit', {}, 'Site limit')}
-                  detail={t('admin.site_limit_detail', {}, 'Maximum sites covered by the current customer subscription.')}
-                  value={form.site_limit}
-                  min={1}
-                  onChange={(value) => updateField('site_limit', value)}
-                />
-                <ParameterField
-                  label={t('admin.vector_documents_limit', {}, 'Knowledge articles')}
-                  detail={t('admin.vector_documents_limit_detail', {}, 'Account-level article capacity for Site Knowledge indexing.')}
-                  value={form.max_vector_documents}
-                  onChange={(value) => updateField('max_vector_documents', value)}
-                />
-                <ParameterField
-                  label={t('admin.sales_price_cny', {}, 'Sales price (CNY / 30 days)')}
-                  detail={t('admin.sales_price_cny_detail', {}, 'Customer-facing 30-day price used for new Alipay orders.')}
-                  value={form.sales_price_cny}
-                  step={0.01}
-                  onChange={(value) => updateField('sales_price_cny', value)}
-                />
-                <ParameterField
-                  label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
-                  detail={t('admin.period_cost_budget_detail', {}, 'Internal provider-cost monitoring threshold; it does not change the sales price.')}
-                  value={form.max_cost_cny_per_period}
-                  step={0.01}
-                  onChange={(value) => updateField('max_cost_cny_per_period', value)}
-                />
-                <ParameterField
-                  label={t('admin.concurrency', {}, 'Concurrency')}
-                  detail={t('admin.plan_template_concurrency_detail', {}, 'Maximum tasks that may run at the same time for this package.')}
-                  value={form.max_active_runs}
-                  onChange={(value) => updateField('max_active_runs', value)}
-                />
-                <ParameterField
-                  label={t('admin.batch_ceiling', {}, 'Batch ceiling')}
-                  detail={t('admin.batch_ceiling_detail', {}, 'Maximum tasks allowed in one operator batch.')}
-                  value={form.max_batch_items}
-                  onChange={(value) => updateField('max_batch_items', value)}
-                />
-                <ParameterField
-                  label={t('admin.grace_period_label', {}, 'Grace period')}
-                  detail={t('admin.plans.grace_period_detail', {}, 'Days the subscription may remain available after the current period ends.')}
-                  value={form.grace_period_days}
-                  onChange={(value) => updateField('grace_period_days', value)}
-                />
+              <div className="mt-4 space-y-5">
+                <section aria-labelledby="plan-customer-package-title">
+                  <h5 id="plan-customer-package-title" className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t('admin.plans.customer_package_section', {}, 'Customer package')}
+                  </h5>
+                  <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
+                    <ParameterField
+                      label={t('admin.sales_price_cny', {}, 'Sales price (CNY / 30 days)')}
+                      detail={t('admin.sales_price_cny_detail', {}, 'Customer-facing 30-day price used for new Alipay orders.')}
+                      value={form.sales_price_cny}
+                      step={0.01}
+                      onChange={(value) => updateField('sales_price_cny', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.included_points', {}, 'Package AI credits')}
+                      detail={t('admin.included_points_detail', {}, 'Current-period package AI credits shared by all sites on this account.')}
+                      value={form.monthly_included_points}
+                      onChange={(value) => updateField('monthly_included_points', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.site_limit', {}, 'Site limit')}
+                      detail={t('admin.site_limit_detail', {}, 'Maximum sites covered by the current customer subscription.')}
+                      value={form.site_limit}
+                      min={1}
+                      onChange={(value) => updateField('site_limit', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.vector_documents_limit', {}, 'Knowledge articles')}
+                      detail={t('admin.vector_documents_limit_detail', {}, 'Account-level article capacity for Site Knowledge indexing.')}
+                      value={form.max_vector_documents}
+                      onChange={(value) => updateField('max_vector_documents', value)}
+                    />
+                  </div>
+                </section>
+
+                <section aria-labelledby="plan-runtime-limits-title">
+                  <h5 id="plan-runtime-limits-title" className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t('admin.plans.runtime_limits_section', {}, 'Runtime limits')}
+                  </h5>
+                  <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
+                    <ParameterField
+                      label={t('admin.concurrency', {}, 'Concurrency')}
+                      detail={t('admin.plan_template_concurrency_detail', {}, 'Maximum tasks that may run at the same time for this package.')}
+                      value={form.max_active_runs}
+                      onChange={(value) => updateField('max_active_runs', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.batch_ceiling', {}, 'Batch ceiling')}
+                      detail={t('admin.batch_ceiling_detail', {}, 'Maximum tasks allowed in one operator batch.')}
+                      value={form.max_batch_items}
+                      onChange={(value) => updateField('max_batch_items', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
+                      detail={t('admin.period_cost_budget_detail', {}, 'Internal provider-cost monitoring threshold; it does not change the sales price.')}
+                      value={form.max_cost_cny_per_period}
+                      step={0.01}
+                      onChange={(value) => updateField('max_cost_cny_per_period', value)}
+                    />
+                    <ParameterField
+                      label={t('admin.grace_period_label', {}, 'Grace period')}
+                      detail={t('admin.plans.grace_period_detail', {}, 'Days the subscription may remain available after the current period ends.')}
+                      value={form.grace_period_days}
+                      onChange={(value) => updateField('grace_period_days', value)}
+                    />
+                  </div>
+                </section>
               </div>
 
               {lastReceipt ? (
@@ -477,9 +497,27 @@ export function PlanManagementWorkbench({
                   {t('admin.package_advanced_info_diagnostics', {}, 'Diagnostics')}
                 </h4>
                 <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {t('admin.package_advanced_info_desc', {}, 'Use this only for diagnostics, audit, or release review.')}
+                  {t(
+                    'admin.plans.diagnostics_desc',
+                    {},
+                    'Technical identifiers and package posture are available here for support and audit review.'
+                  )}
                 </p>
               </div>
+              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="border-b border-slate-200 pb-2 dark:border-slate-800">
+                  <dt className="text-xs text-slate-500 dark:text-slate-400">
+                    {t('admin.plans.package_id_label', {}, 'Package ID')}
+                  </dt>
+                  <dd className="mt-1 font-mono text-slate-950 dark:text-white">{detail.plan.plan_id}</dd>
+                </div>
+                <div className="border-b border-slate-200 pb-2 dark:border-slate-800">
+                  <dt className="text-xs text-slate-500 dark:text-slate-400">
+                    {t('admin.plans.latest_version_label', {}, 'Latest version')}
+                  </dt>
+                  <dd className="mt-1 font-mono text-slate-950 dark:text-white">{latestVersion?.version_label || '—'}</dd>
+                </div>
+              </dl>
               {packageFitCue ? (
                 <div className="border-l-2 border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-700 dark:bg-amber-950/20">
                   <p className="text-sm font-semibold text-slate-950 dark:text-white">{packageFitCue.title}</p>
