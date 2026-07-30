@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -86,11 +87,15 @@ def portal_json_error(
     status_code: int,
     error_code: str,
     message: str,
+    data: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
+        headers=headers,
         content=build_envelope(
             status="error",
+            data=data,
             error_code=error_code,
             message=_safe_portal_error_message(error_code),
             trace_id=extract_trace_id(request.headers.get("traceparent", "")),

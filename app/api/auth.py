@@ -77,11 +77,19 @@ class PortalAuthContext:
 
 
 class PortalBearerTokenError(ValueError):
-    def __init__(self, status_code: int, error_code: str, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        message: str,
+        *,
+        retry_after_seconds: int = 0,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.message = message
+        self.retry_after_seconds = max(0, int(retry_after_seconds))
 
 
 def normalize_portal_site_id(value: object) -> str:
@@ -517,15 +525,25 @@ def _enforce_portal_request_rate_limit(
                         ),
                         {"lock_material": f"{scope_kind}\0{scope_id}"},
                     )
+            rate_limit_error: RequestAuthError | None = None
             for scope_kind, scope_id, max_requests in bounded_scopes:
-                _enforce_short_window_rate_limit(
-                    session=session,
-                    scope_kind=scope_kind,
-                    scope_id=scope_id,
-                    now=now,
-                    window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
-                    max_requests=max_requests,
-                )
+                try:
+                    _enforce_short_window_rate_limit(
+                        session=session,
+                        scope_kind=scope_kind,
+                        scope_id=scope_id,
+                        now=now,
+                        window_seconds=PORTAL_LOGIN_CODE_REQUEST_WINDOW_SECONDS,
+                        max_requests=max_requests,
+                    )
+                except RequestAuthError as error:
+                    if (
+                        rate_limit_error is None
+                        or error.retry_after_seconds > rate_limit_error.retry_after_seconds
+                    ):
+                        rate_limit_error = error
+            if rate_limit_error is not None:
+                raise rate_limit_error
             for scope_kind, scope_id, _max_requests in bounded_scopes:
                 _reserve_replay_receipt(
                     session=session,
@@ -544,6 +562,7 @@ def _enforce_portal_request_rate_limit(
             429,
             error_code,
             error.message,
+            retry_after_seconds=error.retry_after_seconds,
         ) from error
 
 

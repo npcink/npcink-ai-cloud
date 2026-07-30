@@ -7,12 +7,14 @@ const proxyPath = resolve(process.cwd(), 'src/proxy.ts');
 const loginPagePath = resolve(process.cwd(), 'src/app/portal/login/page.tsx');
 const registerPagePath = resolve(process.cwd(), 'src/app/portal/register/page.tsx');
 const authShellPath = resolve(process.cwd(), 'src/components/portal/PortalAuthShell.tsx');
+const cooldownHookPath = resolve(process.cwd(), 'src/hooks/useVerificationCodeCooldown.ts');
 
 const clientSource = readFileSync(clientPath, 'utf8');
 const proxySource = readFileSync(proxyPath, 'utf8');
 const loginSource = readFileSync(loginPagePath, 'utf8');
 const registerSource = readFileSync(registerPagePath, 'utf8');
 const authShellSource = readFileSync(authShellPath, 'utf8');
+const cooldownHookSource = readFileSync(cooldownHookPath, 'utf8');
 
 assert.match(
   clientSource,
@@ -68,6 +70,21 @@ assert.match(
   registerSource,
   /portalClient\.requestRegistrationCode/,
   'portal registration page must request registration codes through the shared client'
+);
+assert.match(
+  loginSource,
+  /useVerificationCodeCooldown/,
+  'portal login must use the shared verification-code resend cooldown'
+);
+assert.match(
+  registerSource,
+  /useVerificationCodeCooldown/,
+  'portal registration must use the shared verification-code resend cooldown'
+);
+assert.match(
+  cooldownHookSource,
+  /retry_after_seconds[\s\S]*Date\.now\(\)[\s\S]*remainingSeconds/,
+  'the shared cooldown must honor backend retry-after evidence and use an absolute deadline'
 );
 
 assert.match(

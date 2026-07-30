@@ -9,6 +9,7 @@ import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { useSession } from '@/hooks/useSession';
+import { useVerificationCodeCooldown } from '@/hooks/useVerificationCodeCooldown';
 import { portalClient } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ function RegisterFormContent() {
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const { isAuthenticated, isLoading, refresh } = useSession();
+  const verificationCooldown = useVerificationCodeCooldown();
   const requestedPlan = searchParams.get('plan') === 'plus'
     ? 'plus'
     : searchParams.get('plan') === 'pro'
@@ -63,8 +65,16 @@ function RegisterFormContent() {
     setForm((prev) => ({ ...prev, [key]: value, status: 'idle', message: '' }));
   };
 
+  const handleEmailChange = (email: string) => {
+    verificationCooldown.resetCooldown();
+    setField('email', email);
+  };
+
   const handleRequestCode = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (verificationCooldown.isCoolingDown) {
+      return;
+    }
     const email = form.email.trim().toLowerCase();
     if (!email) {
       setForm((prev) => ({
@@ -84,6 +94,7 @@ function RegisterFormContent() {
       const response = await portalClient.requestRegistrationCode({
         email,
       });
+      verificationCooldown.startCooldown(response.data?.resend_cooldown_seconds);
       setForm((prev) => ({
         ...prev,
         step: 'verify',
@@ -96,6 +107,7 @@ function RegisterFormContent() {
         ),
       }));
     } catch (error) {
+      verificationCooldown.startCooldownFromError(error);
       setForm((prev) => ({
         ...prev,
         status: 'error',
@@ -147,6 +159,9 @@ function RegisterFormContent() {
   };
 
   const handleResendCode = async () => {
+    if (verificationCooldown.isCoolingDown) {
+      return;
+    }
     const email = form.email.trim().toLowerCase();
     if (!email) {
       setForm((prev) => ({
@@ -166,6 +181,7 @@ function RegisterFormContent() {
       const response = await portalClient.requestRegistrationCode({
         email,
       });
+      verificationCooldown.startCooldown(response.data?.resend_cooldown_seconds);
       setForm((prev) => ({
         ...prev,
         step: 'verify',
@@ -178,6 +194,7 @@ function RegisterFormContent() {
         ),
       }));
     } catch (error) {
+      verificationCooldown.startCooldownFromError(error);
       setForm((prev) => ({
         ...prev,
         status: 'error',
@@ -191,6 +208,7 @@ function RegisterFormContent() {
   };
 
   const resetFlow = () => {
+    verificationCooldown.resetCooldown();
     setForm((prev) => ({
       ...prev,
       step: 'request',
@@ -285,7 +303,7 @@ function RegisterFormContent() {
                         : undefined
                     }
                     value={form.email}
-                    onChange={(event) => setField('email', event.target.value)}
+                    onChange={(event) => handleEmailChange(event.target.value)}
                     placeholder={t('auth.email_placeholder')}
                     className={cn('input', form.status === 'error' && 'border-red-500 focus:ring-red-500')}
                     disabled={form.status === 'submitting' || form.status === 'verifying' || form.step === 'verify'}
@@ -339,12 +357,22 @@ function RegisterFormContent() {
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <button
                     type="submit"
-                    disabled={form.status === 'submitting' || form.status === 'verifying'}
+                    disabled={
+                      form.status === 'submitting'
+                      || form.status === 'verifying'
+                      || (form.step === 'request' && verificationCooldown.isCoolingDown)
+                    }
                     className="btn btn-primary flex-1 justify-center"
                   >
                     {form.step === 'request'
                       ? form.status === 'submitting'
                         ? t('auth.sending')
+                        : verificationCooldown.isCoolingDown
+                          ? t(
+                              'auth.send_code_in',
+                              { seconds: String(verificationCooldown.remainingSeconds) },
+                              `Send in ${verificationCooldown.remainingSeconds}s`
+                            )
                         : t('portal.register.send_code', undefined, 'Send verification code')
                       : form.status === 'verifying'
                         ? t('portal.register.opening', undefined, 'Opening...')
@@ -356,11 +384,21 @@ function RegisterFormContent() {
                       <button
                         type="button"
                         className="btn btn-secondary justify-center"
-                        disabled={form.status === 'submitting' || form.status === 'verifying'}
+                        disabled={
+                          form.status === 'submitting'
+                          || form.status === 'verifying'
+                          || verificationCooldown.isCoolingDown
+                        }
                         onClick={handleResendCode}
                       >
                         {form.status === 'submitting'
                           ? t('auth.sending')
+                          : verificationCooldown.isCoolingDown
+                            ? t(
+                                'auth.resend_code_in',
+                                { seconds: String(verificationCooldown.remainingSeconds) },
+                                `Resend in ${verificationCooldown.remainingSeconds}s`
+                              )
                           : t('auth.resend_code', undefined, 'Resend code')}
                       </button>
 

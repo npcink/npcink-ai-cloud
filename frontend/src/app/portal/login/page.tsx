@@ -10,6 +10,7 @@ import { QqLoginButton } from '@/components/portal/QqLoginButton';
 import { useLocale } from '@/contexts/LocaleContext';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import { useSession } from '@/hooks/useSession';
+import { useVerificationCodeCooldown } from '@/hooks/useVerificationCodeCooldown';
 import { cn } from '@/lib/utils';
 
 interface FormState {
@@ -39,6 +40,7 @@ function LoginFormContent() {
   const router = useRouter();
   const { t } = useLocale();
   const { isAuthenticated, isLoading, requestLoginCode, verifyLoginCode } = useSession();
+  const verificationCooldown = useVerificationCodeCooldown();
   const redirectTo = resolvePortalLoginRedirect(searchParams.get('redirect'));
   const [form, setForm] = useState<FormState>({
     email: '',
@@ -62,8 +64,21 @@ function LoginFormContent() {
     return <LoadingFallback />;
   }
 
+  const handleEmailChange = (email: string) => {
+    verificationCooldown.resetCooldown();
+    setForm((prev) => ({
+      ...prev,
+      email,
+      status: 'idle',
+      message: '',
+    }));
+  };
+
   const handleRequestCode = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (verificationCooldown.isCoolingDown) {
+      return;
+    }
     const normalizedEmail = form.email.trim().toLowerCase();
     if (!normalizedEmail) {
       setForm((prev) => ({
@@ -83,6 +98,7 @@ function LoginFormContent() {
 
     try {
       const response = await requestLoginCode(normalizedEmail);
+      verificationCooldown.startCooldown(response.resendCooldownSeconds);
       setForm((prev) => ({
         ...prev,
         status: 'idle',
@@ -95,6 +111,7 @@ function LoginFormContent() {
         ),
       }));
     } catch (error) {
+      verificationCooldown.startCooldownFromError(error);
       setForm((prev) => ({
         ...prev,
         status: 'error',
@@ -147,6 +164,9 @@ function LoginFormContent() {
   };
 
   const handleResendCode = async () => {
+    if (verificationCooldown.isCoolingDown) {
+      return;
+    }
     const normalizedEmail = form.email.trim().toLowerCase();
     if (!normalizedEmail) {
       setForm((prev) => ({
@@ -166,6 +186,7 @@ function LoginFormContent() {
 
     try {
       const response = await requestLoginCode(normalizedEmail);
+      verificationCooldown.startCooldown(response.resendCooldownSeconds);
       setForm((prev) => ({
         ...prev,
         status: 'idle',
@@ -178,6 +199,7 @@ function LoginFormContent() {
         ),
       }));
     } catch (error) {
+      verificationCooldown.startCooldownFromError(error);
       setForm((prev) => ({
         ...prev,
         status: 'error',
@@ -191,6 +213,7 @@ function LoginFormContent() {
   };
 
   const resetFlow = () => {
+    verificationCooldown.resetCooldown();
     setForm((prev) => ({
       ...prev,
       code: '',
@@ -269,14 +292,7 @@ function LoginFormContent() {
                         : undefined
                     }
                     value={form.email}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        email: event.target.value,
-                        status: 'idle',
-                        message: '',
-                      }))
-                    }
+                    onChange={(event) => handleEmailChange(event.target.value)}
                     placeholder={t('auth.email_placeholder')}
                     className={cn('input', form.status === 'error' && 'border-red-500 focus:ring-red-500')}
                     disabled={form.status === 'submitting' || form.status === 'verifying' || form.step === 'verify'}
@@ -360,12 +376,22 @@ function LoginFormContent() {
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <button
                     type="submit"
-                    disabled={form.status === 'submitting' || form.status === 'verifying'}
+                    disabled={
+                      form.status === 'submitting'
+                      || form.status === 'verifying'
+                      || (form.step === 'request' && verificationCooldown.isCoolingDown)
+                    }
                     className="btn btn-primary flex-1 justify-center"
                   >
                     {form.step === 'request'
                       ? form.status === 'submitting'
                         ? t('auth.sending')
+                        : verificationCooldown.isCoolingDown
+                          ? t(
+                              'auth.send_code_in',
+                              { seconds: String(verificationCooldown.remainingSeconds) },
+                              `Send in ${verificationCooldown.remainingSeconds}s`
+                            )
                         : t('auth.send_login_code', undefined, 'Send verification code')
                       : form.status === 'verifying'
                         ? t('auth.signing_in')
@@ -377,11 +403,21 @@ function LoginFormContent() {
                       <button
                         type="button"
                         className="btn btn-secondary justify-center"
-                        disabled={form.status === 'submitting' || form.status === 'verifying'}
+                        disabled={
+                          form.status === 'submitting'
+                          || form.status === 'verifying'
+                          || verificationCooldown.isCoolingDown
+                        }
                         onClick={handleResendCode}
                       >
                         {form.status === 'submitting'
                           ? t('auth.sending')
+                          : verificationCooldown.isCoolingDown
+                            ? t(
+                                'auth.resend_code_in',
+                                { seconds: String(verificationCooldown.remainingSeconds) },
+                                `Resend in ${verificationCooldown.remainingSeconds}s`
+                              )
                           : t('auth.resend_code', undefined, 'Resend code')}
                       </button>
 

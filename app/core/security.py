@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -78,11 +79,19 @@ RequestBodyEvidenceLoader = Callable[[], Awaitable[PrehashedRequestBody]]
 
 
 class RequestAuthError(ValueError):
-    def __init__(self, status_code: int, error_code: str, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str,
+        message: str,
+        *,
+        retry_after_seconds: int = 0,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.message = message
+        self.retry_after_seconds = max(0, int(retry_after_seconds))
 
 
 def build_body_digest(payload: bytes) -> str:
@@ -494,10 +503,35 @@ def _enforce_short_window_rate_limit(
     if recent_count < max_requests:
         return
 
+    release_offset = max(0, recent_count - max_requests)
+    release_created_at = session.scalar(
+        select(ReplayReceipt.created_at)
+        .where(
+            ReplayReceipt.scope_kind == scope_kind,
+            ReplayReceipt.scope_id == scope_id,
+            ReplayReceipt.created_at >= window_start,
+        )
+        .order_by(ReplayReceipt.created_at.asc())
+        .offset(release_offset)
+        .limit(1)
+    )
+    if release_created_at is None:
+        return
+    retry_after_seconds = max(
+        1,
+        math.ceil(
+            (
+                _normalize_datetime(release_created_at)
+                + timedelta(seconds=window_seconds)
+                - now
+            ).total_seconds()
+        ),
+    )
     raise RequestAuthError(
         429,
         "auth.rate_limit_exceeded",
         "request rate limit exceeded for the current short window",
+        retry_after_seconds=retry_after_seconds,
     )
 
 
