@@ -19,6 +19,9 @@ M4_RELAY_SSH_HOST="${NPCINK_CLOUD_M4_RELAY_SSH_HOST:-root@100.90.87.36}"
 M4_RELAY_TAILSCALE_IP="${NPCINK_CLOUD_M4_RELAY_TAILSCALE_IP:-100.90.87.36}"
 M4_RELAY_HTTP_PORT="${NPCINK_CLOUD_M4_RELAY_HTTP_PORT:-18080}"
 M4_RELAY_BASE_DIR="/var/tmp/npcink-ai-cloud-m4-source-relay"
+M4_TUNNEL_READY_TIMEOUT_SECONDS="${NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS:-120}"
+M4_BROWSER_PREFLIGHT_SAMPLE_BYTES=262144
+M4_BROWSER_PREFLIGHT_MIN_BYTES_PER_SECOND=65536
 
 DRY_RUN=0
 TMP_DIR=""
@@ -30,6 +33,7 @@ SOURCE_RELAY_BUNDLE=""
 SOURCE_RELAY_LOCK_DIR="${M4_RELAY_BASE_DIR}/operation.lock"
 SOURCE_RELAY_UNIT=""
 SOURCE_RELAY_URL=""
+TUNNEL_PID=""
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 SSH_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
 SCP_ARGS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ConnectionAttempts=3)
@@ -43,7 +47,7 @@ Usage:
   scripts/m4-preview.sh deploy [--dry-run]
   scripts/m4-preview.sh sync [--dry-run]
   scripts/m4-preview.sh promote --pr N [--deploy] [--dry-run]
-  scripts/m4-preview.sh tunnel [--auto] [--dry-run] [--local-port N]
+  scripts/m4-preview.sh tunnel [--auto] [--browser-preflight] [--dry-run] [--local-port N]
   scripts/m4-preview.sh status
   scripts/m4-preview.sh logs [--follow] [--tail N] <service> [...]
   scripts/m4-preview.sh test [--dry-run] [--full|--contract|--domain]
@@ -68,6 +72,7 @@ Environment overrides:
   NPCINK_CLOUD_M4_POSTGRES_PORT
   NPCINK_CLOUD_M4_REDIS_PORT
   NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT
+  NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS
   NPCINK_CLOUD_M4_OLLAMA_PORT
   NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE
   NPCINK_CLOUD_M4_RELAY_SSH_HOST
@@ -211,6 +216,11 @@ REMOTE_RELAY_CLEANUP
 cleanup() {
 	local status=$?
 	trap - EXIT INT TERM
+	if [ -n "${TUNNEL_PID}" ] && kill -0 "${TUNNEL_PID}" 2>/dev/null; then
+		kill "${TUNNEL_PID}" >/dev/null 2>&1 || true
+		wait "${TUNNEL_PID}" >/dev/null 2>&1 || true
+	fi
+	TUNNEL_PID=""
 	cleanup_source_relay || true
 	if [ -n "${REMOTE_SOURCE_BUNDLE}" ]; then
 		ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" \
@@ -394,10 +404,168 @@ select_auto_tunnel_host() {
 	fail "M4 preview is unavailable through both LAN and Tailscale; verify M4 power, SSH, Docker, and Tailscale"
 }
 
+ensure_local_tunnel_port_available() {
+	local local_port="$1"
+	local health_url="http://127.0.0.1:${local_port}/health/live"
+
+	require_cmd curl
+	if command -v lsof >/dev/null 2>&1; then
+		if lsof -nP -iTCP:"${local_port}" -sTCP:LISTEN >/dev/null 2>&1; then
+			fail "local tunnel port ${local_port} is already in use; choose another --local-port"
+		fi
+		return 0
+	fi
+	if command -v nc >/dev/null 2>&1; then
+		if nc -z -w 1 127.0.0.1 "${local_port}" >/dev/null 2>&1; then
+			fail "local tunnel port ${local_port} is already in use; choose another --local-port"
+		fi
+		return 0
+	fi
+	if curl --silent --show-error --max-time 1 "${health_url}" >/dev/null 2>&1; then
+		fail "local tunnel port ${local_port} already serves health; choose another --local-port"
+	fi
+}
+
+wait_for_local_tunnel() {
+	local local_port="$1"
+	local deadline=0
+	local health_url="http://127.0.0.1:${local_port}/health/live"
+
+	require_cmd curl
+	validate_number "M4 tunnel ready timeout" "${M4_TUNNEL_READY_TIMEOUT_SECONDS}"
+	[ "${M4_TUNNEL_READY_TIMEOUT_SECONDS}" -gt 0 ] ||
+		fail "M4 tunnel ready timeout must be greater than zero"
+	deadline=$((SECONDS + M4_TUNNEL_READY_TIMEOUT_SECONDS))
+
+	while true; do
+		if ! kill -0 "${TUNNEL_PID}" 2>/dev/null; then
+			wait "${TUNNEL_PID}" >/dev/null 2>&1 || true
+			TUNNEL_PID=""
+			fail "SSH tunnel exited before local health became usable"
+		fi
+		if curl --fail --silent --show-error --max-time 3 "${health_url}" >/dev/null 2>&1; then
+			if ! kill -0 "${TUNNEL_PID}" 2>/dev/null; then
+				wait "${TUNNEL_PID}" >/dev/null 2>&1 || true
+				TUNNEL_PID=""
+				fail "SSH tunnel exited before local health became usable"
+			fi
+			log "local_health_url=${health_url}"
+			log "tunnel_ready=true"
+			return 0
+		fi
+		if [ "${SECONDS}" -ge "${deadline}" ]; then
+			fail "SSH tunnel did not expose local health within ${M4_TUNNEL_READY_TIMEOUT_SECONDS}s"
+		fi
+		sleep 1
+	done
+}
+
+classify_tailscale_path() {
+	local ssh_host="$1"
+	local tailscale_target="${ssh_host#*@}"
+	local selected_route="${TUNNEL_SELECTED_ROUTE:-configured}"
+	local ping_output=""
+
+	if [ "${selected_route}" != "tailscale" ] &&
+		{ [ "${selected_route}" != "configured" ] || [ "${ssh_host}" != "${M4_SSH_HOST}" ]; }; then
+		printf 'not-applicable\n'
+		return 0
+	fi
+	if ! command -v tailscale >/dev/null 2>&1; then
+		printf 'unknown\n'
+		return 0
+	fi
+	if ! ping_output="$(tailscale ping --c 3 --timeout 5s "${tailscale_target}" 2>&1)"; then
+		printf 'unknown\n'
+		return 0
+	fi
+	ping_output="${ping_output##*$'\n'}"
+	case "${ping_output}" in
+		*peer-relay*|*DERP*|*"direct connection not established"*)
+			printf 'peer-relay\n'
+			;;
+		*)
+			printf 'direct\n'
+			;;
+	esac
+}
+
+run_browser_preflight() {
+	local local_port="$1"
+	local ssh_host="$2"
+	local tailscale_path=""
+	local metrics=""
+	local curl_status=0
+	local speed_raw=""
+	local speed_bytes=0
+	local size_bytes=0
+	local http_code=0
+	local reasons=""
+	local sample_url="http://127.0.0.1:${local_port}/_next/static/chunks/main-app.js"
+
+	tailscale_path="$(classify_tailscale_path "${ssh_host}")"
+	log "tailscale_path=${tailscale_path}"
+	if metrics="$(
+		curl \
+			--fail \
+			--silent \
+			--show-error \
+			--max-time 15 \
+			--max-filesize "${M4_BROWSER_PREFLIGHT_SAMPLE_BYTES}" \
+			--range "0-$((M4_BROWSER_PREFLIGHT_SAMPLE_BYTES - 1))" \
+			--header "Accept-Encoding: identity" \
+			--output /dev/null \
+			--write-out '%{speed_download} %{size_download} %{http_code}' \
+			"${sample_url}" 2>/dev/null
+	)"; then
+		curl_status=0
+	else
+		curl_status=$?
+	fi
+	read -r speed_raw size_bytes http_code <<<"${metrics:-0 0 0}"
+	speed_bytes="${speed_raw%%.*}"
+	case "${speed_bytes}" in
+		''|*[!0-9]*) speed_bytes=0 ;;
+	esac
+	case "${size_bytes}" in
+		''|*[!0-9]*) size_bytes=0 ;;
+	esac
+	case "${http_code}" in
+		''|*[!0-9]*) http_code=0 ;;
+	esac
+
+	log "browser_sample_bytes=${size_bytes}"
+	log "browser_sample_bytes_per_second=${speed_bytes}"
+	if [ "${tailscale_path}" = "peer-relay" ]; then
+		reasons="peer-relay"
+	fi
+	if [ "${curl_status}" -ne 0 ] ||
+		[ "${http_code}" -ne 206 ] ||
+		[ "${size_bytes}" -lt "${M4_BROWSER_PREFLIGHT_SAMPLE_BYTES}" ]; then
+		reasons="${reasons:+${reasons},}sample-unavailable"
+	fi
+	if [ "${speed_bytes}" -lt "${M4_BROWSER_PREFLIGHT_MIN_BYTES_PER_SECOND}" ]; then
+		reasons="${reasons:+${reasons},}low-throughput"
+	fi
+
+	if [ -n "${reasons}" ]; then
+		log "browser_transport=degraded"
+		log "browser_transport_reason=${reasons}"
+		log "browser_evidence=not_counted"
+		log "browser_guidance=Use the same revision with local production Playwright, or use an existing-authenticated Cloudflare browser for manual evidence."
+		return 0
+	fi
+
+	log "browser_transport=ready"
+	log "browser_evidence=requires_actual_browser_assertions"
+}
+
 open_tunnel() {
 	local local_port="${M4_TUNNEL_LOCAL_PORT}"
 	local tunnel_dry_run=0
 	local auto_route=0
+	local browser_preflight=0
+	local tunnel_status=0
 	local forward=""
 	local ssh_host="${M4_SSH_HOST}"
 
@@ -409,6 +577,10 @@ open_tunnel() {
 				;;
 			--dry-run)
 				tunnel_dry_run=1
+				shift
+				;;
+			--browser-preflight)
+				browser_preflight=1
 				shift
 				;;
 			--local-port)
@@ -444,7 +616,6 @@ open_tunnel() {
 		log "selected_route=configured"
 	fi
 	log "ssh_target=${ssh_host}"
-	log "the tunnel stays in the foreground; press Ctrl+C to close it"
 
 	if [ "${tunnel_dry_run}" = "1" ]; then
 		printf '[m4-preview] dry-run: ssh'
@@ -461,14 +632,31 @@ open_tunnel() {
 	fi
 
 	require_cmd ssh
-	exec ssh \
+	ensure_local_tunnel_port_available "${local_port}"
+	ssh \
 		"${SSH_ARGS[@]}" \
 		-o ExitOnForwardFailure=yes \
 		-o ServerAliveInterval=15 \
 		-o ServerAliveCountMax=3 \
 		-N \
 		-L "${forward}" \
-		"${ssh_host}"
+		"${ssh_host}" &
+	TUNNEL_PID=$!
+	wait_for_local_tunnel "${local_port}"
+	if [ "${browser_preflight}" = "1" ]; then
+		run_browser_preflight "${local_port}" "${ssh_host}"
+	fi
+	log "the tunnel stays in the foreground; press Ctrl+C to close it"
+	if wait "${TUNNEL_PID}"; then
+		tunnel_status=0
+	else
+		tunnel_status=$?
+	fi
+	TUNNEL_PID=""
+	if [ "${tunnel_status}" = "0" ]; then
+		return 0
+	fi
+	return "${tunnel_status}"
 }
 
 remote_ollama_status() {

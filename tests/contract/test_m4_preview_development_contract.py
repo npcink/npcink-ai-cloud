@@ -273,11 +273,14 @@ case "$*" in
   *192.168.10.200*health/live*) exit "${FAKE_LAN_STATUS:-0}" ;;
   *100.102.170.79*health/live*) exit "${FAKE_TAILSCALE_STATUS:-0}" ;;
 esac
-exit 0
+sleep 1
 """,
         encoding="utf-8",
     )
     fake_ssh.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_curl.chmod(0o755)
 
     for lan_status, expected_route, expected_host in (
         ("0", "lan", "muze@192.168.10.200"),
@@ -329,6 +332,292 @@ def test_m4_auto_tunnel_fails_when_both_routes_are_unhealthy(tmp_path: Path) -> 
 
     assert completed.returncode != 0
     assert "both LAN and Tailscale" in completed.stderr
+
+
+def test_m4_tunnel_reports_ready_only_after_local_health_is_usable(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    event_log = tmp_path / "events.log"
+    health_attempts = tmp_path / "health-attempts"
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        """#!/bin/sh
+printf 'tunnel-started\n' >> "${FAKE_EVENT_LOG}"
+sleep 3
+""",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        """#!/bin/sh
+attempts=0
+if [ -f "${FAKE_HEALTH_ATTEMPTS}" ]; then
+  attempts="$(cat "${FAKE_HEALTH_ATTEMPTS}")"
+fi
+attempts=$((attempts + 1))
+printf '%s\n' "${attempts}" > "${FAKE_HEALTH_ATTEMPTS}"
+printf 'health-attempt-%s\n' "${attempts}" >> "${FAKE_EVENT_LOG}"
+test "${attempts}" -ge 2
+""",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_EVENT_LOG": str(event_log),
+        "FAKE_HEALTH_ATTEMPTS": str(health_attempts),
+        "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
+    }
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "tunnel", "--local-port", "18042"],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=8,
+    )
+
+    assert "tunnel_ready=true" in completed.stdout
+    assert "local_health_url=http://127.0.0.1:18042/health/live" in completed.stdout
+    assert event_log.read_text(encoding="utf-8").splitlines()[:3] == [
+        "tunnel-started",
+        "health-attempt-1",
+        "health-attempt-2",
+    ]
+
+
+def test_m4_tunnel_does_not_count_an_unowned_existing_health_listener(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    ssh_started = tmp_path / "ssh-started"
+    fake_lsof = fake_bin / "lsof"
+    fake_lsof.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_lsof.chmod(0o755)
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        '#!/bin/sh\nprintf "started\\n" > "${FAKE_SSH_STARTED}"\nsleep 5\n',
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_curl.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_SSH_STARTED": str(ssh_started),
+        "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "2",
+    }
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "tunnel", "--local-port", "18046"],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+
+    assert completed.returncode != 0
+    assert "local tunnel port 18046 is already in use" in completed.stderr
+    assert "tunnel_ready=true" not in completed.stdout
+    assert not ssh_started.exists()
+
+
+def test_m4_browser_preflight_marks_peer_relay_and_low_throughput_not_counted(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        """#!/bin/sh
+case "$*" in
+  *192.168.10.200*health/live*) exit 1 ;;
+  *100.102.170.79*health/live*) exit 0 ;;
+esac
+sleep 2
+""",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        """#!/bin/sh
+case "$*" in
+  *main-app.js*) printf '32768 262144 206'; exit 0 ;;
+  *health/live*) exit 0 ;;
+esac
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    fake_tailscale = fake_bin / "tailscale"
+    fake_tailscale.write_text(
+        """#!/bin/sh
+printf 'pong from preview via peer-relay(example) in 140ms\n'
+printf 'direct connection not established\n'
+""",
+        encoding="utf-8",
+    )
+    fake_tailscale.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
+    }
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT),
+            "tunnel",
+            "--auto",
+            "--browser-preflight",
+            "--local-port",
+            "18043",
+        ],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=8,
+    )
+
+    assert "selected_route=tailscale" in completed.stdout
+    assert "tunnel_ready=true" in completed.stdout
+    assert "tailscale_path=peer-relay" in completed.stdout
+    assert "browser_transport=degraded" in completed.stdout
+    assert "browser_transport_reason=peer-relay,low-throughput" in completed.stdout
+    assert "browser_evidence=not_counted" in completed.stdout
+    assert "local production Playwright" in completed.stdout
+    assert "existing-authenticated Cloudflare" in completed.stdout
+    assert "docker" not in completed.stdout
+    assert "rsync" not in completed.stdout
+
+
+def test_m4_browser_preflight_keeps_direct_usable_transport_countable(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        """#!/bin/sh
+case "$*" in
+  *192.168.10.200*health/live*) exit 1 ;;
+  *100.102.170.79*health/live*) exit 0 ;;
+esac
+sleep 2
+""",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        """#!/bin/sh
+case "$*" in
+  *main-app.js*) printf '131072 262144 206'; exit 0 ;;
+  *health/live*) exit 0 ;;
+esac
+exit 1
+""",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    fake_tailscale = fake_bin / "tailscale"
+    fake_tailscale.write_text(
+        """#!/bin/sh
+printf 'pong from preview via DERP(hkg) in 140ms\n'
+printf 'pong from preview via 100.102.170.79:41641 in 45ms\n'
+""",
+        encoding="utf-8",
+    )
+    fake_tailscale.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "5",
+    }
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT),
+            "tunnel",
+            "--browser-preflight",
+            "--local-port",
+            "18044",
+        ],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=8,
+    )
+
+    assert "selected_route=configured" in completed.stdout
+    assert "tailscale_path=direct" in completed.stdout
+    assert "browser_transport=ready" in completed.stdout
+    assert "browser_evidence=requires_actual_browser_assertions" in completed.stdout
+    assert "browser_evidence=not_counted" not in completed.stdout
+
+
+def test_m4_tunnel_fails_closed_and_stops_ssh_when_local_health_times_out(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    event_log = tmp_path / "events.log"
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        """#!/bin/sh
+trap 'printf "tunnel-stopped\\n" >> "${FAKE_EVENT_LOG}"; exit 0' TERM
+printf 'tunnel-started\n' >> "${FAKE_EVENT_LOG}"
+while :; do :; done
+""",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_curl.chmod(0o755)
+    runtime_env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_EVENT_LOG": str(event_log),
+        "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS": "1",
+    }
+
+    completed = subprocess.run(
+        ["bash", str(SCRIPT), "tunnel", "--local-port", "18045"],
+        cwd=ROOT,
+        env=runtime_env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=6,
+    )
+
+    assert completed.returncode != 0
+    assert "did not expose local health within 1s" in completed.stderr
+    assert "tunnel_ready=true" not in completed.stdout
+    assert event_log.read_text(encoding="utf-8").splitlines() == [
+        "tunnel-started",
+        "tunnel-stopped",
+    ]
 
 
 def test_m4_test_scopes_are_explicit_and_dry_run_is_non_mutating(
@@ -940,6 +1229,15 @@ def test_m4_runbook_preserves_source_cloudflare_and_recovery_boundaries() -> Non
     assert "GitHub required" in runbook
     assert "checks are the merge authority" in runbook
     assert "same revision" in runbook
+    assert "tunnel_ready=true" in runbook
+    assert "NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS" in runbook
+    assert "pnpm run m4:preview:auto -- --browser-preflight" in runbook
+    assert "browser_transport=degraded" in runbook
+    assert "browser_evidence=not_counted" in runbook
+    assert "transport classification, not a product failure" in runbook
+    assert "local production Playwright" in runbook
+    assert "existing-authenticated Cloudflare browser" in runbook
+    assert "do not silently treat either as an automatic substitute" in runbook
     assert "source bundle intentionally omits `.git`" in runbook
     assert "Private Source Relay Contract" in runbook
     assert "root@100.90.87.36" in runbook
