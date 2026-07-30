@@ -118,8 +118,8 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   const coverageQueueItems = page.locator('[data-ui="coverage-queue-item"]');
   const coverageInspector = page.locator('#coverage-inspector');
-  await expect(coverageQueueItems.getByRole('link')).toHaveCount(2);
-  await expect(coverageQueueItems.nth(0).getByRole('link', { name: 'MVP Account' })).toHaveAttribute(
+  await expect(coverageQueueItems.getByRole('link')).toHaveCount(0);
+  await expect(coverageInspector.getByRole('link', { name: /Customer details|客户详情|客戶詳情/i })).toHaveAttribute(
     'href',
     `/admin/accounts/${LONG_ACCOUNT_ID}`
   );
@@ -128,6 +128,10 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await coverageQueueItems.nth(1).focus();
   await coverageQueueItems.nth(1).press('Enter');
   await expect(coverageInspector.getByRole('link')).toHaveCount(2);
+  await expect(coverageInspector.getByRole('link', { name: /Customer details|客户详情|客戶詳情/i })).toHaveAttribute(
+    'href',
+    '/admin/accounts/acct_uncovered'
+  );
   await expect(coverageInspector.getByRole('link', { name: /Open package actions|打开套餐操作|打開方案操作/i })).toBeVisible();
   await expect(page.locator('a[href="/admin/plans"]').first()).toHaveCount(1);
 

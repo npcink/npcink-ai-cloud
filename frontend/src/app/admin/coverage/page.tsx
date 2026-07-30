@@ -211,6 +211,7 @@ function AdminCoverageContent() {
   const queueParamsRef = useRef(new URLSearchParams(searchParamsKey));
   const coverageRequestActiveRef = useRef(false);
   const coverageRequestSequenceRef = useRef(0);
+  const customerDetailLinkRef = useRef<HTMLAnchorElement>(null);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(queueParamsRef.current.toString());
@@ -403,7 +404,7 @@ function AdminCoverageContent() {
     .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))
     .slice(0, 6);
   const selectedPrimaryActionHref = selectedQueueItem
-    ? selectedQueueItem.action_href || `/admin/accounts/${selectedQueueItem.account.account_id}`
+    ? selectedQueueItem.action_href
     : '';
   const selectedCustomerLabel = selectedQueueItem
     ? customerDisplayName(
@@ -413,7 +414,8 @@ function AdminCoverageContent() {
       )
     : '';
   const showSelectedPrimaryAction =
-    selectedQueueItem?.severity === 'error' || selectedQueueItem?.severity === 'warning';
+    Boolean(selectedPrimaryActionHref) &&
+    (selectedQueueItem?.severity === 'error' || selectedQueueItem?.severity === 'warning');
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
@@ -467,9 +469,9 @@ function AdminCoverageContent() {
 
             <div
               data-ui="coverage-filter-toolbar"
-              className="grid gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(13rem,1fr)_minmax(9rem,0.55fr)_minmax(9rem,0.55fr)_minmax(9rem,0.5fr)_auto]"
+              className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(12.5rem,1.35fr)_minmax(7.25rem,0.72fr)_minmax(7.25rem,0.72fr)_minmax(7.25rem,0.68fr)_auto]"
             >
-              <label>
+              <label className="min-w-0">
                 <span className="sr-only">
                   {t('common.search', {}, 'Search')}
                 </span>
@@ -492,7 +494,7 @@ function AdminCoverageContent() {
                   }}
                 />
               </label>
-              <label>
+              <label className="min-w-0">
                 <span className="sr-only">
                   {t('admin.coverage.status_filter_label', {}, 'Service status')}
                 </span>
@@ -519,7 +521,7 @@ function AdminCoverageContent() {
                   ))}
                 </select>
               </label>
-              <label>
+              <label className="min-w-0">
                 <span className="sr-only">
                   {t('admin.coverage.reason_filter_label', {}, 'Reason')}
                 </span>
@@ -547,7 +549,7 @@ function AdminCoverageContent() {
                   ))}
                 </select>
               </label>
-              <label>
+              <label className="min-w-0">
                 <span className="sr-only">
                   {t('admin.coverage.sort_label', {}, 'Sort')}
                 </span>
@@ -572,21 +574,40 @@ function AdminCoverageContent() {
                 </select>
               </label>
               <div className="flex">
-                <button
-                  type="button"
-                  className="btn btn-secondary w-full md:w-auto"
-                  disabled={!searchQuery && !reasonFilter && view === 'needs_action' && sort === 'priority'}
-                  onClick={() => {
-                    setSearchQuery('');
-                    setReasonFilter('');
-                    setView('needs_action');
-                    setSort('priority');
-                    setSelectedKey('');
-                    updateQueueUrl({ q: null, reason: null, status: null, sort: null, focus: null });
-                  }}
+                <span
+                  className="inline-flex"
+                  title={t('common.clear_filters', {}, 'Clear filters')}
+                  data-ui="coverage-clear-filters-tooltip"
                 >
-                  {t('common.clear_filters', {}, 'Clear filters')}
-                </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary h-11 w-11 shrink-0 p-0"
+                    aria-label={t('common.clear_filters', {}, 'Clear filters')}
+                    disabled={!searchQuery && !reasonFilter && view === 'needs_action' && sort === 'priority'}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setReasonFilter('');
+                      setView('needs_action');
+                      setSort('priority');
+                      setSelectedKey('');
+                      updateQueueUrl({ q: null, reason: null, status: null, sort: null, focus: null });
+                    }}
+                  >
+                    <svg
+                      className="h-5 w-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
+                      <path d="m16.5 16.5 4 4m0-4-4 4" />
+                    </svg>
+                  </button>
+                </span>
               </div>
             </div>
           </div>
@@ -669,6 +690,9 @@ function AdminCoverageContent() {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();
                             selectQueueItem();
+                            window.requestAnimationFrame(() => {
+                              customerDetailLinkRef.current?.focus();
+                            });
                           }
                         }}
                         className={cn(
@@ -685,12 +709,9 @@ function AdminCoverageContent() {
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <Link
-                            href={`/admin/accounts/${encodeURIComponent(item.account.account_id)}`}
-                            className="block max-w-full break-words font-semibold text-blue-700 hover:underline dark:text-blue-300"
-                          >
+                          <span className="block max-w-full break-words font-semibold text-slate-950 dark:text-slate-100">
                             {customerLabel}
-                          </Link>
+                          </span>
                         </td>
                         <td
                           className="px-4 py-3"
@@ -782,12 +803,9 @@ function AdminCoverageContent() {
             {selectedQueueItem ? (
               <div className="space-y-4">
                 <div>
-                  <Link
-                    href={`/admin/accounts/${encodeURIComponent(selectedQueueItem.account.account_id)}`}
-                    className="break-words text-base font-semibold text-blue-700 hover:underline dark:text-blue-300"
-                  >
+                  <p className="break-words text-base font-semibold text-slate-950 dark:text-white">
                     {selectedCustomerLabel}
-                  </Link>
+                  </p>
                   {selectedQueueItem.severity === 'error' || selectedQueueItem.severity === 'warning' ? (
                     <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
                       {translateReasonCode(t, selectedQueueItem.reason_code, selectedQueueItem.reason_label)}
@@ -809,6 +827,16 @@ function AdminCoverageContent() {
                     </div>
                   ))}
                 </dl>
+
+                <div className="flex justify-end">
+                  <Link
+                    ref={customerDetailLinkRef}
+                    href={`/admin/accounts/${encodeURIComponent(selectedQueueItem.account.account_id)}`}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    {t('admin.coverage.inspector_title', {}, 'Customer details')}
+                  </Link>
+                </div>
 
                 <AdminSettingsDisclosure
                   dataUi="coverage-technical-info"

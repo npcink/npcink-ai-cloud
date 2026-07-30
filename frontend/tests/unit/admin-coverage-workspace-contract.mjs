@@ -50,14 +50,26 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}[\s\S]*break-words[\s\S]*admin\.coverage\.next_action/,
-  'Coverage rows must show complete readable customer identities as customer-detail links and keep actionable next steps scannable'
+  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*data-ui="coverage-queue-item"[\s\S]*<span className="block max-w-full break-words font-semibold[\s\S]*admin\.coverage\.next_action/,
+  'Coverage rows must show complete readable customer identities without duplicating the inspector customer-detail link'
 );
 
 assert.match(
   coverageSource,
-  /value: 'inactive'[\s\S]*admin\.coverage\.status_filter_label[\s\S]*<select[\s\S]*filters\.map\(\(filter\)[\s\S]*admin\.coverage\.reason_filter_label[\s\S]*admin\.coverage\.sort_label/,
-  'Coverage status, including inactive records, reason, and sort filters must share the compact filter toolbar'
+  /value: 'inactive'[\s\S]*coverage-filter-toolbar[\s\S]*xl:grid-cols-\[minmax\(12\.5rem,1\.35fr\)[\s\S]*admin\.coverage\.status_filter_label[\s\S]*filters\.map\(\(filter\)[\s\S]*admin\.coverage\.reason_filter_label[\s\S]*admin\.coverage\.sort_label[\s\S]*title=\{t\('common\.clear_filters'[\s\S]*coverage-clear-filters-tooltip[\s\S]*aria-label=\{t\('common\.clear_filters'/,
+  'Coverage search, status, reason, sort, and accessible clear action must share one compact PC toolbar'
+);
+
+assert.match(
+  coverageSource,
+  /<p className="break-words text-base font-semibold[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(selectedQueueItem\.account\.account_id\)\}`\}[\s\S]*admin\.coverage\.inspector_title/,
+  'Coverage inspector must own the only explicit customer-detail link'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}/,
+  'Coverage queue rows must select the inspector instead of navigating away'
 );
 
 assert.match(
@@ -92,8 +104,8 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /<tbody>[\s\S]*data-ui="coverage-queue-item"[\s\S]*tabIndex=\{0\}[\s\S]*aria-selected=\{isSelected\}[\s\S]*aria-controls="coverage-inspector"[\s\S]*event\.key === 'Enter' \|\| event\.key === ' '/,
-  'Coverage table rows must select the connected customer inspector with pointer and keyboard input'
+  /<tbody>[\s\S]*data-ui="coverage-queue-item"[\s\S]*tabIndex=\{0\}[\s\S]*aria-selected=\{isSelected\}[\s\S]*aria-controls="coverage-inspector"[\s\S]*event\.key === 'Enter' \|\| event\.key === ' '[\s\S]*customerDetailLinkRef\.current\?\.focus\(\)/,
+  'Coverage table rows must select the connected customer inspector and move keyboard users to its detail action'
 );
 
 assert.doesNotMatch(
