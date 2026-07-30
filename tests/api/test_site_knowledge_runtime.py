@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.adapters.providers.base import (
     ProviderAdapter,
@@ -421,6 +421,21 @@ def test_media_projection_sync_and_natural_language_search(tmp_path: Path) -> No
         },
         providers={"tei": embedding_provider},
     )
+    _execute(client, _sync_payload(), idempotency_key="legacy-post-space-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        providers={"tei": embedding_provider},
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+    with get_session(database_url) as session:
+        session.execute(
+            update(SiteKnowledgeChunk)
+            .where(SiteKnowledgeChunk.source_type == "post")
+            .values(embedding_model="deterministic:BAAI/bge-m3")
+        )
+        session.commit()
+
     media_item = {
         "attachment_id": 501,
         "mime_type": "image/jpeg",
@@ -797,6 +812,66 @@ def test_search_fails_closed_when_index_and_query_embedding_spaces_differ(
         "query_embedding_model": "openai:BAAI/bge-m3",
         "indexed_embedding_models": ["deterministic:BAAI/bge-m3"],
         "action": "rebuild_index_with_current_embedding_model",
+    }
+    assert result["result_grouping"]["returned_count"] == 0
+
+
+def test_media_search_rejects_deterministic_placeholder_embeddings(
+    tmp_path: Path,
+) -> None:
+    database_url, settings, runtime_queue, client = _build_client(tmp_path)
+    payload = _sync_payload()
+    payload["input"] = {
+        "contract_version": "site_knowledge_sync.v1",
+        "sync_mode": "refresh",
+        "post_ids": [501],
+        "media_items": [
+            {
+                "attachment_id": 501,
+                "mime_type": "image/jpeg",
+                "title": "Cat on a windowsill",
+                "url": "https://example.test/uploads/cat.jpg",
+                "modified_gmt": "2026-07-29 08:00:00",
+                "visual_summary": "一只猫咪坐在窗台上",
+                "subject_tags": ["猫咪", "宠物"],
+                "media_fingerprint": "media-501-cat",
+            }
+        ],
+        "write_posture": "suggestion_only",
+        "direct_wordpress_write": False,
+    }
+    _execute(client, payload, idempotency_key="deterministic-media-sync")
+    RuntimeService(
+        database_url,
+        settings=settings,
+        runtime_queue=runtime_queue,
+    ).process_next_queued_run(timeout_seconds=0)
+
+    result = _execute(
+        client,
+        _search_payload(
+            "猫咪",
+            intent="media_library_search",
+            source_types=["media"],
+            post_types=["attachment"],
+            result_granularity="document",
+        ),
+        idempotency_key="deterministic-media-search",
+    )["json"]["data"]["result"]
+
+    assert result["status"] == "not_ready"
+    assert result["results"] == []
+    assert result["evidence_gate"]["status"] == "insufficient_evidence"
+    assert result["rerank"] == {
+        "status": "skipped",
+        "reason": "semantic_embedding_required",
+        "candidate_count": 0,
+    }
+    assert result["retrieval_readiness"] == {
+        "status": "semantic_embedding_required",
+        "query_embedding_model": "deterministic:BAAI/bge-m3",
+        "indexed_embedding_models": ["deterministic:BAAI/bge-m3"],
+        "action": "configure_semantic_embedding_and_rebuild_index",
     }
     assert result["result_grouping"]["returned_count"] == 0
 

@@ -20,6 +20,14 @@ from app.domain.provider_connections.service import (
     ProviderConnectionAdminError,
     ProviderConnectionAdminService,
 )
+from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
+    SITE_KNOWLEDGE_VECTOR_METRIC,
+    SITE_KNOWLEDGE_VECTOR_PROFILE_ID,
+    SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+    SITE_KNOWLEDGE_VECTOR_STORE_PROBE_REVISION,
+)
+from scripts.configure_m4_ollama_preview import _embedding_connection_payload
 from tests.conftest import (
     TEST_ADMIN_SESSION_SECRET,
     TEST_INTERNAL_AUTH_TOKEN,
@@ -627,6 +635,98 @@ def test_runtime_settings_reject_generic_embedding_connection_without_profile_pr
     assert settings.site_knowledge_embedding_provider == "deterministic"
     assert settings.site_knowledge_embedding_model == "BAAI/bge-m3"
     assert settings.site_knowledge_embedding_dimensions == 1024
+
+    dispose_engine(database_url)
+
+
+def test_runtime_settings_accept_m4_ollama_embedding_only_in_development(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.environment = "development"
+    service = ProviderConnectionAdminService(database_url, settings)
+    service.save_connection(_embedding_connection_payload())
+    with get_session(database_url) as session:
+        row = session.get(ProviderConnection, "ollama_m4_embedding")
+        assert row is not None
+        row.status = "ready"
+        session.commit()
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.embedding_count == 1
+    assert settings.site_knowledge_embedding_provider == "ollama-m4-embedding"
+    assert settings.site_knowledge_embedding_model == "qwen3-embedding:0.6b"
+    assert settings.site_knowledge_embedding_dimensions == 1024
+    providers = resolve_execution_provider_adapters(settings)
+    assert "ollama-m4-embedding" in providers
+    assert isinstance(providers["ollama-m4-embedding"], OpenAIProviderAdapter)
+
+    settings.environment = "production"
+    production_projection = apply_provider_connection_runtime_settings(settings)
+
+    assert production_projection.embedding_count == 0
+    assert settings.site_knowledge_embedding_provider == "deterministic"
+    assert settings.site_knowledge_embedding_model == "BAAI/bge-m3"
+
+    dispose_engine(database_url)
+
+
+def test_runtime_settings_keep_m4_ollama_embedding_on_postgres_json(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    settings = _settings(database_url)
+    settings.environment = "development"
+    service = ProviderConnectionAdminService(database_url, settings)
+    service.save_connection(_embedding_connection_payload())
+    service.save_connection(
+        {
+            "connection_id": "site_knowledge_vector_zilliz",
+            "provider_id": "zilliz",
+            "provider_type": "vector_store_provider",
+            "kind": "vector_store_provider",
+            "display_name": "Zilliz Cloud",
+            "enabled": True,
+            "base_url": "https://zilliz.example",
+            "capability_ids": ["vector_store"],
+            "runtime_profile_ids": ["site-knowledge.vector-store"],
+            "config": {
+                "site_knowledge_vector_store_profile_id": (
+                    SITE_KNOWLEDGE_VECTOR_PROFILE_ID
+                ),
+                "site_knowledge_vector_store_probe_revision": (
+                    SITE_KNOWLEDGE_VECTOR_STORE_PROBE_REVISION
+                ),
+                "site_knowledge_vector_store_dimensions": (
+                    SITE_KNOWLEDGE_VECTOR_DIMENSIONS
+                ),
+                "site_knowledge_vector_store_metric": SITE_KNOWLEDGE_VECTOR_METRIC,
+                "collection": SITE_KNOWLEDGE_VECTOR_STORE_COLLECTION,
+                "uri": "https://zilliz.example",
+            },
+            "credential": "zilliz-token",
+        }
+    )
+    with get_session(database_url) as session:
+        for connection_id in (
+            "ollama_m4_embedding",
+            "site_knowledge_vector_zilliz",
+        ):
+            row = session.get(ProviderConnection, connection_id)
+            assert row is not None
+            row.status = "ready"
+        session.commit()
+
+    projection = apply_provider_connection_runtime_settings(settings)
+
+    assert projection.embedding_count == 1
+    assert projection.vector_store_count == 0
+    assert settings.site_knowledge_embedding_provider == "ollama-m4-embedding"
+    assert settings.site_knowledge_vector_backend == "postgres_json"
 
     dispose_engine(database_url)
 
