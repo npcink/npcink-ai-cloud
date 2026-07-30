@@ -1228,6 +1228,57 @@ export async function installAdminMocks(page: Page) {
       return;
     }
 
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`) {
+      await fulfillJson(route, {
+        status: 'ok',
+        generated_at: '2026-04-08T10:00:00Z',
+        ai_credits: {
+          key: 'ai_credits',
+          used: 250,
+          limit: 2000,
+          remaining: 1750,
+          usage_ratio: 0.125,
+          unlimited: false,
+          status: 'ok',
+          unit: 'ai_credits',
+          estimated: false,
+          source: 'ledger',
+        },
+        ai_credit_ledger_summary: {
+          consumed_ai_credits: 250,
+          granted_ai_credits: 0,
+          net_used_ai_credits: 250,
+        },
+        resource_limits: [],
+        internal_limits: [],
+        breakdown: [],
+        totals: {},
+      });
+      return;
+    }
+
+    if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/credit-ledger`) {
+      await fulfillJson(route, {
+        account_id: LONG_ACCOUNT_ID,
+        generated_at: '2026-04-08T10:00:00Z',
+        rate_version: 'ai-credit-ledger-v1',
+        pagination: {
+          limit: 12,
+          offset: 0,
+          total: 0,
+          has_more: false,
+        },
+        summary: {
+          consumed_ai_credits: 250,
+          granted_ai_credits: 0,
+          net_used_ai_credits: 250,
+          entry_count: 0,
+        },
+        items: [],
+      });
+      return;
+    }
+
     if (pathname === `/api/admin/accounts/${LONG_ACCOUNT_ID}/member-plan-coverage`) {
       await fulfillJson(route, {
         account: {
