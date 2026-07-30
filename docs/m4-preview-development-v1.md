@@ -434,6 +434,40 @@ volume labels, removes only
 the new image dependencies into that disposable volume. PostgreSQL, Redis,
 artifacts, and unrelated M4 volumes are never part of this refresh.
 
+Before a deploy that may refresh this shared dependency volume, the script
+first lists matching volume names and compares the returned name exactly. A
+failed Docker query is not treated as an absent volume. If the exact volume is
+present, its Compose project and volume-key labels must verify before live
+source synchronization or image build. The script then resolves the current
+Compose frontend container and enumerates every container that consumes the
+volume. The absence of a current frontend is allowed for recovery; one current
+frontend must match the exact consumer container ID and expected Compose
+labels; an ambiguous duplicate primary or any other consumer fails closed.
+Before that first consumer check, a refresh also acquires the repository's
+operation lock for each managed frontend slot. If a slot update or release is
+already in flight, deploy refuses before live source synchronization. The
+primary deploy holds all three slot locks through the post-build consumer
+re-check, frontend stop/removal, label proof, and dependency-volume removal;
+its existing primary operation lock prevents a slot from entering after those
+slot locks are released. These coordination locks never release a lease or
+remove a slot container.
+This includes a stale label-matching container and a frontend-only preview
+slot. Refusal happens before the candidate is synchronized into the live
+source mirror, before image build, and before frontend stop/removal, volume
+removal, or migration. The diagnostic records the consumer's Compose
+project/service and, for a managed slot, its owner/slot/lease/backend-lease
+state. Inspect it with
+`m4:frontend:status`; after coordinating with the recorded owner, use only the
+repository-controlled `m4:frontend:release` command. Active, expired, and
+drifted slot leases are never released or deleted automatically. The later
+consumer re-check closes the image-build claim window; exact Compose
+volume-label verification still runs before the primary stop and again before
+volume removal. After the first guard passes, the script marks the stack
+touched immediately before live source synchronization. A later build or
+deploy failure therefore deliberately stops the application services rather
+than leaving partially synchronized source running under accepted-state
+evidence.
+
 The overlay explicitly marks the frontend as development and uses the
 repository's development-only completed-installation override. This keeps the
 first-install gate from asking the development API for production setup state;
