@@ -898,7 +898,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             items.append(
                 {
                     "plan": self._serialize_plan(plan),
-                    "versions": serialized_versions,
                     "tier_summary": tier_summary,
                     "latest_version": latest_version,
                     "published_version_count": sum(
@@ -958,7 +957,6 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         )
         return {
             "plan": self._serialize_plan(plan),
-            "versions": serialized_versions,
             "tier_summary": tier_summary,
             "latest_version": latest_version,
             "sales_offer": sales_offer,
@@ -983,6 +981,69 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 for subscription in subscriptions
             ],
         }
+
+    def update_admin_plan_parameters(
+        self,
+        *,
+        plan_id: str,
+        monthly_included_points: float,
+        site_limit: int,
+        max_vector_documents: int,
+        max_cost_cny_per_period: float,
+        sales_price_cny: float,
+        max_active_runs: int,
+        max_batch_items: int,
+        grace_period_days: int,
+        audit_context: ServiceAuditContext | None = None,
+    ) -> dict[str, object]:
+        def _copy_mapping(value: object) -> dict[str, object]:
+            return dict(value) if isinstance(value, dict) else {}
+
+        detail = self.get_admin_plan(plan_id)
+        latest_version = _copy_mapping(detail.get("latest_version"))
+        if not latest_version:
+            raise CommercialNotFoundError(
+                "service.plan_version_not_found",
+                f"plan '{plan_id}' has no current version to update",
+            )
+
+        budgets = _copy_mapping(latest_version.get("budgets"))
+        budgets.update(
+            {
+                "max_ai_credits_per_period": monthly_included_points,
+                "max_cost_cny_per_period": max_cost_cny_per_period,
+            }
+        )
+        concurrency = _copy_mapping(latest_version.get("concurrency"))
+        concurrency["max_active_runs"] = max_active_runs
+        policy = _copy_mapping(latest_version.get("policy"))
+        subscription_policy = _copy_mapping(policy.get("subscription"))
+        subscription_policy["grace_period_days"] = grace_period_days
+        policy["subscription"] = subscription_policy
+        metadata = _copy_mapping(latest_version.get("metadata"))
+        metadata.update(
+            {
+                "monthly_included_points": monthly_included_points,
+                "site_limit": site_limit,
+                "max_vector_documents": max_vector_documents,
+                "max_batch_items": max_batch_items,
+            }
+        )
+
+        return self.publish_plan_version(
+            plan_id=plan_id,
+            plan_version_id=str(latest_version.get("plan_version_id") or ""),
+            version_label=str(latest_version.get("version_label") or ""),
+            status=str(latest_version.get("status") or PLAN_VERSION_STATUS_PUBLISHED),
+            currency=str(latest_version.get("currency") or "CNY"),
+            entitlements_json=_copy_mapping(latest_version.get("entitlements")),
+            budgets_json=budgets,
+            concurrency_json=concurrency,
+            policy_json=policy,
+            metadata_json=metadata,
+            sales_price_cny=sales_price_cny,
+            audit_context=audit_context,
+        )
 
     def list_admin_subscriptions(
         self,

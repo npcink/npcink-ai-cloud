@@ -169,6 +169,35 @@ decisions used by the implementation.
 | PORT-01 | Current review candidates are `app/api/routes/portal.py`, commercial Portal/Admin mixins, and `frontend/src/app/portal`; no specific page deletion is pre-approved here. | review, then delete | Delete only duplicated implementation truth or write controls. Retain read-only run, usage, entitlement, health, diagnostic, and media-expiry/purge evidence. WordPress remains the CMS apply owner. | P4 | Complete a surface inventory, contract tests, and screenshot/browser smoke. Proof shows Cloud exposes no CMS apply control. |
 | ADM-01 | Current review candidates are `app/api/routes/service.py`, `app/domain/commercial/mixins/_admin_mixin.py`, and `frontend/src/app/admin`; no specific page deletion is pre-approved here. | review, then delete | Retain operator, provider, commercial, health, and diagnostic truth. Delete only duplicated controls or truth for local abilities, workflows, prompts, presets, approval, preflight, audit, or WordPress writes. | P4 | Complete a surface inventory, contract tests, and screenshot/browser smoke. Proof shows no local registry or approval truth moved into Cloud. |
 
+### Admin plan maintenance contraction
+
+Status: implemented on 2026-07-30.
+
+The normal `/admin/plans` workbench no longer exposes release-history rows or
+raw entitlement, budget, concurrency, policy, and metadata JSON overrides.
+The Admin list and detail projections no longer return the full `versions`
+collection. Normal edits use the structured
+`PATCH /internal/service/admin/plans/{plan_id}` contract; unknown raw override
+objects fail request validation, and the domain service preserves supported
+unexposed commercial fields while updating only the accepted structured fields.
+
+The generic plan-version publishing contract, `PlanVersion` identity, and its
+JSON persistence are retained deliberately. Package initialization, active
+subscriptions, checkout, entitlement snapshots, runtime budgets, and audit
+evidence depend on that commercial truth. They are not compatibility aliases
+for the removed Admin features and must not be deleted merely because their raw
+editor and history table are gone.
+
+Executable proof requires:
+
+- Admin list/detail responses omit `versions` while retaining
+  `latest_version` and `published_version_count`;
+- the structured update rejects extra raw JSON objects;
+- structured updates preserve supported unexposed entitlement, budget,
+  concurrency, policy, and metadata fields;
+- subscription, checkout, entitlement, and audit behavior remains unchanged;
+- PC browser evidence shows no release-history tab or advanced JSON disclosure.
+
 ## Deferred And Retained Items
 
 | Retain | Ownership reason |
