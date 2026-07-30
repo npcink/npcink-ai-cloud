@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
@@ -331,7 +330,6 @@ export function PlanManagementWorkbench({
         detail.tier_summary?.package_operator_note || ''
       )
     : '';
-  const subscriptionHref = `/admin/subscriptions?plan_id=${encodeURIComponent(planId)}`;
   const baselinePatch = useMemo(
     () => detail ? buildBaselineFieldPatch(detail.tier_summary) : {},
     [detail]
@@ -439,7 +437,7 @@ export function PlanManagementWorkbench({
       saving={isSaving}
       closeLabel={t('common.close', {}, 'Close')}
       cancelLabel={t('common.close', {}, 'Close')}
-      saveLabel={t('admin.save_package_changes', {}, 'Save package changes')}
+      saveLabel={t('common.save', {}, 'Save')}
       savingLabel={t('common.saving', {}, 'Saving...')}
       footerNotice={t(
         'admin.plans.workbench_notice',
@@ -448,16 +446,11 @@ export function PlanManagementWorkbench({
       )}
       footerActions={(
         <div className="flex flex-wrap justify-end gap-2">
-          {detail ? (
-            <Link href={subscriptionHref} className="btn btn-secondary">
-              {t('admin.plans.open_subscriptions_action', {}, 'Open subscriptions')}
-            </Link>
-          ) : null}
           <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={onClose}>
             {t('common.close', {}, 'Close')}
           </button>
           <button type="submit" className="btn btn-primary" disabled={!detail || isLoading || isSaving}>
-            {isSaving ? t('common.saving', {}, 'Saving...') : t('admin.save_package_changes', {}, 'Save package changes')}
+            {isSaving ? t('common.saving', {}, 'Saving...') : t('common.save', {}, 'Save')}
           </button>
         </div>
       )}
