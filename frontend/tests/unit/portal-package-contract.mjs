@@ -130,6 +130,16 @@ assert.match(
   'Payment success notice must remain visible after return query parameters are cleaned'
 );
 assert.match(
+  paymentReturnNoticeSource,
+  /isPaidPaymentStatus[\s\S]*isClosedPaymentStatus[\s\S]*Promise\.allSettled/,
+  'Payment return polling must use explicit terminal states and tolerate partial refresh failure'
+);
+assert.doesNotMatch(
+  paymentReturnNoticeSource,
+  /status && status !== 'pending'/,
+  'Payment return polling must not treat every unknown non-pending status as terminal'
+);
+assert.match(
   packagePanelSource,
   /function formatOfferAmount[\s\S]*from: normalizePortalCurrency\(offer\.currency\)[\s\S]*paid_offer_desc[\s\S]*formatOfferAmount\(plusOffer\)[\s\S]*formatOfferAmount\(proOffer\)/,
   'Portal paid package copy must render live CNY offer prices without USD conversion'

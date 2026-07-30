@@ -44,7 +44,7 @@ export function usePortalPaymentOrders({
       if (!isAuthenticated || !requestContextSiteId) {
         loadRequestVersionRef.current += 1;
         setIsLoading(false);
-        return;
+        return false;
       }
       const requestVersion = ++loadRequestVersionRef.current;
       setIsLoading(true);
@@ -59,7 +59,7 @@ export function usePortalPaymentOrders({
         if (
           requestVersion !== loadRequestVersionRef.current
           || requestContextSiteId !== contextSiteIdRef.current
-        ) return;
+        ) return false;
         setPayload(response.data);
         if (!tabInitialized.current) {
           tabInitialized.current = true;
@@ -69,13 +69,15 @@ export function usePortalPaymentOrders({
             setOffset(0);
           }
         }
+        return true;
       } catch (loadError) {
         if (
           requestVersion !== loadRequestVersionRef.current
           || requestContextSiteId !== contextSiteIdRef.current
-        ) return;
+        ) return false;
         setError(formatPortalErrorMessage(loadError, t, t('error.failed_load')));
         setErrorCode(loadError instanceof ApiError ? loadError.errorCode : '');
+        return false;
       } finally {
         if (
           requestVersion === loadRequestVersionRef.current

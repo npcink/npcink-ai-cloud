@@ -1,6 +1,15 @@
 'use client';
 
-import { createContext, createElement, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { portalClient, type PortalSession, type Site } from '@/lib/portal-client';
 import { ApiError } from '@/lib/errors';
 
@@ -34,53 +43,83 @@ function useSessionController(): UseSessionReturn {
     error: null,
     sessionInvalid: false,
   });
+  const sessionRequestVersionRef = useRef(0);
+  const sessionLoadPromiseRef = useRef<Promise<void> | null>(null);
 
   /**
    * 加载 Session
    */
-  const loadSession = useCallback(async () => {
+  const loadSession = useCallback((): Promise<void> => {
+    if (sessionLoadPromiseRef.current) return sessionLoadPromiseRef.current;
+    const requestVersion = ++sessionRequestVersionRef.current;
     setState((previous) => ({
       ...previous,
-      isLoading: true,
+      isLoading: !previous.session,
       error: null,
       sessionInvalid: false,
     }));
-    try {
-      const response = await portalClient.getSession();
-      let nextSession = response.data;
-      const activeSites = nextSession.sites.filter((site) => site.status === 'active');
-      if (!nextSession.selected_context && activeSites.length === 1) {
-        try {
-          const selected = await portalClient.selectSite(activeSites[0].site_id);
-          nextSession = selected.data;
-        } catch {
-          // Keep the authenticated session usable if automatic context
-          // selection is temporarily unavailable. The site can still be
-          // selected explicitly from the workspace.
+    const loadPromise = (async () => {
+      try {
+        const response = await portalClient.getSession();
+        let nextSession = response.data;
+        const activeSites = nextSession.sites.filter((site) => site.status === 'active');
+        if (!nextSession.selected_context && activeSites.length === 1) {
+          try {
+            const selected = await portalClient.selectSite(activeSites[0].site_id);
+            nextSession = selected.data;
+          } catch {
+            // Keep the authenticated session usable if automatic context
+            // selection is temporarily unavailable. The site can still be
+            // selected explicitly from the workspace.
+          }
+        }
+        if (requestVersion !== sessionRequestVersionRef.current) return;
+        setState({
+          session: nextSession,
+          isLoading: false,
+          isAuthenticated: true,
+          error: null,
+          sessionInvalid: false,
+        });
+      } catch (error) {
+        const normalizedError = error instanceof Error
+          ? error
+          : new Error('Failed to load session');
+        const sessionInvalid = error instanceof ApiError && (
+          error.statusCode === 401
+          || error.errorCode === 'auth.portal_session_required'
+          || error.errorCode === 'auth.portal_session_expired'
+          || error.errorCode === 'auth.portal_token_required'
+        );
+        if (requestVersion === sessionRequestVersionRef.current) {
+          setState((previous) => {
+            if (!sessionInvalid && previous.session) {
+              return {
+                ...previous,
+                isLoading: false,
+                isAuthenticated: true,
+                error: normalizedError,
+                sessionInvalid: false,
+              };
+            }
+            return {
+              session: null,
+              isLoading: false,
+              isAuthenticated: false,
+              error: normalizedError,
+              sessionInvalid,
+            };
+          });
+        }
+        throw normalizedError;
+      } finally {
+        if (requestVersion === sessionRequestVersionRef.current) {
+          sessionLoadPromiseRef.current = null;
         }
       }
-      setState({
-        session: nextSession,
-        isLoading: false,
-        isAuthenticated: true,
-        error: null,
-        sessionInvalid: false,
-      });
-    } catch (error) {
-      const sessionInvalid = error instanceof ApiError && (
-        error.statusCode === 401
-        || error.errorCode === 'auth.portal_session_required'
-        || error.errorCode === 'auth.portal_session_expired'
-        || error.errorCode === 'auth.portal_token_required'
-      );
-      setState({
-        session: null,
-        isLoading: false,
-        isAuthenticated: false,
-        error: error instanceof Error ? error : new Error('Failed to load session'),
-        sessionInvalid,
-      });
-    }
+    })();
+    sessionLoadPromiseRef.current = loadPromise;
+    return loadPromise;
   }, []);
 
   /**
@@ -117,6 +156,8 @@ function useSessionController(): UseSessionReturn {
    * 登出
    */
   const logout = useCallback(async (): Promise<void> => {
+    sessionRequestVersionRef.current += 1;
+    sessionLoadPromiseRef.current = null;
     try {
       await portalClient.logout();
     } catch (error) {
@@ -135,8 +176,11 @@ function useSessionController(): UseSessionReturn {
    * 选择站点
    */
   const selectSite = useCallback(async (siteId: string): Promise<void> => {
+    const requestVersion = ++sessionRequestVersionRef.current;
+    sessionLoadPromiseRef.current = null;
     try {
       const response = await portalClient.selectSite(siteId);
+      if (requestVersion !== sessionRequestVersionRef.current) return;
       setState((prev) => ({
         ...prev,
         session: response.data,
@@ -155,7 +199,7 @@ function useSessionController(): UseSessionReturn {
 
   // 初始加载
   useEffect(() => {
-    loadSession();
+    void loadSession().catch(() => undefined);
   }, [loadSession]);
 
   return {
