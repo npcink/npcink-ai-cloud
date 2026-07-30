@@ -147,12 +147,12 @@ class AccountStatusPayload(BaseModel):
 
 
 class PortalUserDisablePayload(BaseModel):
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
 class PortalUsersBatchDisablePayload(BaseModel):
     principal_ids: list[str] = Field(default_factory=list)
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
 class AdminSupportRequestUpdatePayload(BaseModel):
@@ -3258,6 +3258,12 @@ async def disable_admin_portal_user(
             payload_json=_build_audit_payload(payload),
         )
         return _service_error_response(error, request=request)
+    disable_outcome = str(result.get("outcome") or "disabled")
+    effective_summary = (
+        f"Principal {principal_id} was already disabled; active portal access remains revoked."
+        if disable_outcome == "already_disabled"
+        else f"Principal {principal_id} was disabled and active portal access was revoked."
+    )
     return build_envelope(
         status="ok",
         message="admin portal user disabled",
@@ -3268,9 +3274,7 @@ async def disable_admin_portal_user(
                 scope_kind="principal",
                 scope_id=principal_id,
                 outcome="succeeded",
-                effective_summary=(
-                    f"Principal {principal_id} was disabled and active portal access was revoked."
-                ),
+                effective_summary=effective_summary,
             ),
         ),
         revision="m6",

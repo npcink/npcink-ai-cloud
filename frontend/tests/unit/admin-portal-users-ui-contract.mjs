@@ -98,6 +98,30 @@ assert.match(
 
 assert.match(
   pageSource,
+  /const disableUser[\s\S]*if \(!reason\)[\s\S]*admin\.portal_users\.disable_reason_required/,
+  'single-user disable must require an operator reason'
+);
+
+assert.match(
+  pageSource,
+  /disableDialogError[\s\S]*role="alert"/,
+  'single-user disable failures must remain visible inside the confirmation dialog'
+);
+
+assert.doesNotMatch(
+  workspaceSource,
+  /ConfirmModal/,
+  'single-user disable must keep the shared modal open until the async operation succeeds'
+);
+
+assert.match(
+  pageSource,
+  /failed > 0[\s\S]*toast\.warning[\s\S]*batch_disable_partial_title/,
+  'partial batch disable outcomes must use warning feedback instead of success feedback'
+);
+
+assert.match(
+  pageSource,
   /\/api\/admin\/portal-users\/\$\{encodeURIComponent\(principalId\)\}\/audit\?limit=50/,
   'portal users page must load principal-scoped audit details'
 );
