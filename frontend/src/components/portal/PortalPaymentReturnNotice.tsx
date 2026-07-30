@@ -276,14 +276,16 @@ export function PortalPaymentReturnNotice({
           {error ? <p className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</p> : null}
           {reconcileError ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">{reconcileError}</p> : null}
         </div>
-        {!paid && !closed ? (
+        {(!paid && !closed) || Boolean(reconcileError) ? (
           <button
             type="button"
             className="btn btn-secondary shrink-0"
             disabled={isRefreshing}
             onClick={() => void handleRefresh()}
           >
-            {t('common.refresh', {}, 'Refresh')}
+            {reconcileError
+              ? t('common.retry', {}, 'Retry')
+              : t('common.refresh', {}, 'Refresh')}
           </button>
         ) : null}
       </div>
