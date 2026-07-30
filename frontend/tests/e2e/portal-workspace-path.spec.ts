@@ -113,6 +113,9 @@ async function installPortalMocks(
   page: Page,
   options: {
     paymentReturnFlow?: boolean;
+    paymentReturnProcessingStep?: boolean;
+    delaySessionRefresh?: boolean;
+    failPaymentReturnEntitlements?: boolean;
     emptyCreditTrend?: boolean;
     withoutSelectedContext?: boolean;
     delayInitialEntitlements?: boolean;
@@ -124,6 +127,8 @@ async function installPortalMocks(
   const canceledPaymentOrderIds = new Set<string>();
   let paymentReturnPollCount = 0;
   let paymentReturnConfirmed = false;
+  let paymentReturnEntitlementsFailed = false;
+  let sessionRequestCount = 0;
   let accountProjectionRequestCount = 0;
   let delayedEntitlementsCompleted = false;
   let initialEntitlementsDelayed = false;
@@ -131,6 +136,10 @@ async function installPortalMocks(
   let releaseInitialEntitlementsGate: (() => void) | null = null;
   const initialEntitlementsGate = new Promise<void>((resolve) => {
     releaseInitialEntitlementsGate = resolve;
+  });
+  let releaseSessionRefreshGate: (() => void) | null = null;
+  const sessionRefreshGate = new Promise<void>((resolve) => {
+    releaseSessionRefreshGate = resolve;
   });
 
   await page.context().addCookies([
@@ -154,6 +163,10 @@ async function installPortalMocks(
     const pathname = url.pathname.replace(/^\/api\/portal/, '').replace(/^\/portal\/v1/, '');
 
     if (pathname === '/session') {
+      sessionRequestCount += 1;
+      if (options.delaySessionRefresh && sessionRequestCount > 1) {
+        await sessionRefreshGate;
+      }
       const portalSession = buildPortalSession(selectedSiteId);
       await fulfillJson(route, options.withoutSelectedContext
         ? { ...portalSession, selected_context: null }
@@ -222,6 +235,15 @@ async function installPortalMocks(
 
     if (pathname === '/account/entitlements') {
       const requestSiteId = selectedSiteId;
+      if (
+        options.failPaymentReturnEntitlements
+        && paymentReturnConfirmed
+        && !paymentReturnEntitlementsFailed
+      ) {
+        paymentReturnEntitlementsFailed = true;
+        await fulfillError(route, 'service.entitlements_temporarily_unavailable');
+        return;
+      }
       if (options.failInitialEntitlements && !initialEntitlementsFailed) {
         initialEntitlementsFailed = true;
         await fulfillError(route, 'service.entitlements_temporarily_unavailable');
@@ -597,7 +619,11 @@ async function installPortalMocks(
       const orderId = decodeURIComponent(paymentOrderDetail[1]);
       if (options.paymentReturnFlow && orderId === 'pay_return_polling') {
         paymentReturnPollCount += 1;
-        const status = paymentReturnPollCount >= 2 ? 'paid' : 'pending';
+        const status = paymentReturnPollCount === 1
+          ? 'pending'
+          : options.paymentReturnProcessingStep && paymentReturnPollCount === 2
+            ? 'processing'
+            : 'paid';
         paymentReturnConfirmed = status === 'paid';
         await fulfillJson(route, {
           account_id: 'acct_portal',
@@ -1515,6 +1541,8 @@ async function installPortalMocks(
     accountProjectionRequestCount: () => accountProjectionRequestCount,
     delayedEntitlementsCompleted: () => delayedEntitlementsCompleted,
     releaseInitialEntitlements: () => releaseInitialEntitlementsGate?.(),
+    sessionRequestCount: () => sessionRequestCount,
+    releaseSessionRefresh: () => releaseSessionRefreshGate?.(),
   };
 }
 
@@ -1666,7 +1694,35 @@ test('portal workspace interaction path: account overview to site detail and ser
 test('Alipay return polls from pending to paid and shows reconciled credit details', async ({
   page,
 }) => {
-  await installPortalMocks(page, { paymentReturnFlow: true });
+  const calls = await installPortalMocks(page, {
+    paymentReturnFlow: true,
+    paymentReturnProcessingStep: true,
+    delaySessionRefresh: true,
+  });
+
+  await page.goto(
+    '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
+  );
+
+  const notice = page.locator('[data-ui="payment-return-notice"]');
+  await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 15_000 });
+  await expect.poll(calls.sessionRequestCount).toBe(2);
+  await expect(page.getByRole('heading', { level: 1, name: /Package|套餐/i })).toBeVisible();
+  await expect(page).toHaveURL('/portal/billing');
+  calls.releaseSessionRefresh();
+  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
+  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
+  await expect(page).toHaveURL('/portal/billing');
+});
+
+test('confirmed Alipay return stays visible when account totals fail to refresh', async ({
+  page,
+}) => {
+  await installPortalMocks(page, {
+    paymentReturnFlow: true,
+    failPaymentReturnEntitlements: true,
+  });
 
   await page.goto(
     '/portal/billing?payment_return=alipay&out_trade_no=pay_return_polling'
@@ -1674,10 +1730,14 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
 
   const notice = page.locator('[data-ui="payment-return-notice"]');
   await expect(notice.getByText(/^(Payment confirmed|支付已确认)$/i)).toBeVisible({ timeout: 10_000 });
-  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
-  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
-  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
   await expect(page).toHaveURL('/portal/billing');
+  await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
+    /Not available|暂无数据|不适用/i
+  );
+  await expect(
+    notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
+  ).toBeVisible();
 });
 
 test('portal account page hides internal identifiers and duplicate summary metrics', async ({ page }) => {
