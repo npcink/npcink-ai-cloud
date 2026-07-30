@@ -562,6 +562,16 @@ function AdminCoverageContent() {
                     const isSelected = selectedQueueItem ? queueItemKey(selectedQueueItem) === itemKey : false;
                     const customerLabel =
                       item.account.name || t('admin.subscription_detail.current_customer_label', {}, 'Current customer');
+                    const selectQueueItem = () => {
+                      setSelectedKey(itemKey);
+                      updateQueueUrl({
+                        status: view,
+                        q: searchQuery.trim() || null,
+                        reason: reasonFilter || null,
+                        sort,
+                        focus: itemKey,
+                      });
+                    };
                     const daysUntilEnd = item.evidence.days_until_end;
                     const missingKeySites = Number(item.evidence.missing_key_site_count || 0);
                     const siteCount = Number(item.evidence.site_count || 0);
@@ -589,10 +599,30 @@ function AdminCoverageContent() {
                       <tr
                         key={itemKey}
                         data-ui="coverage-queue-item"
+                        tabIndex={0}
+                        aria-selected={isSelected}
+                        aria-controls="coverage-inspector"
+                        onClick={(event) => {
+                          const interactiveTarget = (event.target as HTMLElement).closest(
+                            'a, button, input, select, textarea, [role="button"]'
+                          );
+                          if (!interactiveTarget) {
+                            selectQueueItem();
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) {
+                            return;
+                          }
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            selectQueueItem();
+                          }
+                        }}
                         className={cn(
-                          'border-t border-slate-200/80 align-middle transition dark:border-slate-800',
+                          'cursor-pointer border-t border-slate-200/80 align-middle transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 dark:border-slate-800',
                           isSelected
-                            ? 'bg-blue-50/65 dark:bg-blue-950/15'
+                            ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-400/40 dark:bg-blue-950/25'
                             : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35'
                         )}
                       >
@@ -603,24 +633,9 @@ function AdminCoverageContent() {
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            className="max-w-full cursor-pointer text-left font-semibold text-slate-950 hover:text-blue-700 hover:underline dark:text-white dark:hover:text-blue-300"
-                            aria-pressed={isSelected}
-                            aria-controls="coverage-inspector"
-                            onClick={() => {
-                              setSelectedKey(itemKey);
-                              updateQueueUrl({
-                                status: view,
-                                q: searchQuery.trim() || null,
-                                reason: reasonFilter || null,
-                                sort,
-                                focus: itemKey,
-                              });
-                            }}
-                          >
+                          <span className="block max-w-full font-semibold text-slate-950 dark:text-white">
                             <span className="block truncate">{customerLabel}</span>
-                          </button>
+                          </span>
                           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             <BackofficeIdentifier value={item.account.account_id} />
                           </div>

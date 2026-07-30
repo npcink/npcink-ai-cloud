@@ -62,8 +62,8 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /<tbody>[\s\S]*data-ui="coverage-queue-item"[\s\S]*aria-controls="coverage-inspector"/,
-  'Coverage table must keep an explicitly connected customer inspector'
+  /<tbody>[\s\S]*data-ui="coverage-queue-item"[\s\S]*tabIndex=\{0\}[\s\S]*aria-selected=\{isSelected\}[\s\S]*aria-controls="coverage-inspector"[\s\S]*event\.key === 'Enter' \|\| event\.key === ' '/,
+  'Coverage table rows must select the connected customer inspector with pointer and keyboard input'
 );
 
 assert.doesNotMatch(
