@@ -32,6 +32,12 @@ import {
   useAccountSiteRuntime,
   type SiteRuntimeData,
 } from '@/features/admin/accounts/account-site-runtime';
+import {
+  useAccountCreditEvidence,
+  type AccountCreditBreakdownItem,
+  type AccountCreditLedgerEntry,
+  type AccountQuotaMetric,
+} from '@/features/admin/accounts/account-credit-evidence';
 import { AccountOperatorProfileEditor } from '@/features/admin/accounts/AccountOperatorProfileEditor';
 import {
   accountDetailClient,
@@ -160,97 +166,6 @@ type AccountBudgetSummary = {
   unlimited: boolean;
 };
 
-type AccountQuotaMetric = {
-  key: string;
-  label?: string;
-  used: number;
-  limit: number;
-  remaining: number;
-  usage_ratio: number;
-  unlimited: boolean;
-  status: string;
-  unit: string;
-  estimated?: boolean;
-  rate_version?: string;
-  source?: string;
-  limit_source?: string;
-};
-
-type AccountCreditBreakdownItem = {
-  key: string;
-  label?: string;
-  quantity: number;
-  unit: string;
-  rate: number;
-  rate_unit?: string;
-  ai_credits: number;
-};
-
-type AccountQuotaSummary = {
-  status: string;
-  generated_at?: string;
-  period_start_at?: string;
-  period_end_at?: string;
-  ai_credits: AccountQuotaMetric;
-  ai_credit_ledger_summary?: {
-    consumed_ai_credits?: number;
-    granted_ai_credits?: number;
-    adjustment_ai_credits?: number;
-    refund_ai_credits?: number;
-    net_ai_credit_delta?: number;
-    net_used_ai_credits?: number;
-  };
-  resource_limits: AccountQuotaMetric[];
-  internal_limits: AccountQuotaMetric[];
-  breakdown: AccountCreditBreakdownItem[];
-  totals?: Record<string, number>;
-};
-
-type AccountCreditLedgerEntry = {
-  ledger_entry_id: string;
-  site_id?: string;
-  event_type?: string;
-  source_type: string;
-  source_id?: string;
-  run_id?: string;
-  ai_credit_delta: number;
-  consumed_ai_credits: number;
-  granted_ai_credits?: number;
-  net_ai_credit_delta?: number;
-  quantity: number;
-  unit: string;
-  rate?: number;
-  rate_unit?: string;
-  rate_version?: string;
-  created_at?: string;
-};
-
-type AccountCreditLedger = {
-  account_id: string;
-  generated_at?: string;
-  period_start_at?: string;
-  period_end_at?: string;
-  rate_version?: string;
-  pagination?: {
-    limit?: number;
-    offset?: number;
-    total?: number;
-    has_more?: boolean;
-  };
-  summary?: {
-    total_ai_credits?: number;
-    consumed_ai_credits?: number;
-    granted_ai_credits?: number;
-    adjustment_ai_credits?: number;
-    refund_ai_credits?: number;
-    net_ai_credit_delta?: number;
-    net_used_ai_credits?: number;
-    entry_count?: number;
-    breakdown?: AccountCreditBreakdownItem[];
-  };
-  items: AccountCreditLedgerEntry[];
-};
-
 type AccountDetailApiPayload = {
   account?: {
     account_id?: string;
@@ -264,12 +179,6 @@ type AccountDetailApiPayload = {
     { subscription?: Record<string, unknown> } | Record<string, unknown>
   >;
 };
-
-type AccountQuotaSummaryPayload = Omit<Partial<AccountQuotaSummary>, 'credit'> & {
-  credit?: AccountQuotaMetric;
-};
-
-type AccountCreditLedgerPayload = Partial<AccountCreditLedger>;
 
 type AdminMutationPayload = {
   receipt?: AdminMutationReceiptPayload | null;
@@ -522,14 +431,10 @@ function AccountDetailContent() {
   const [creditAdjustmentPending, setCreditAdjustmentPending] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
-  const [quotaSummary, setQuotaSummary] = useState<AccountQuotaSummary | null>(null);
-  const [creditLedger, setCreditLedger] = useState<AccountCreditLedger | null>(null);
   const [nowMs] = useState(() => Date.now());
   const [activeDetailTab, setActiveDetailTab] = useState<AccountDetailTab>('overview');
   const accountRequestedRef = useRef(false);
   const packagePlansRequestedRef = useRef(false);
-  const quotaSummaryRequestedRef = useRef(false);
-  const creditLedgerRequestedRef = useRef(false);
   const accountSiteIds =
     account?.sites?.map((site) => site.site_id).filter(Boolean) || [];
   const siteRuntimeQuery = useAccountSiteRuntime(
@@ -537,6 +442,21 @@ function AccountDetailContent() {
     accountSiteIds,
     activeDetailTab === 'audit'
   );
+  const creditEvidenceQuery = useAccountCreditEvidence(
+    accountId,
+    activeDetailTab === 'credits'
+  );
+  const quotaSummary = creditEvidenceQuery.quotaSummary;
+  const creditLedger = creditEvidenceQuery.creditLedger;
+  const creditEvidencePending =
+    activeDetailTab === 'credits' &&
+    (creditEvidenceQuery.quotaQuery.isPending ||
+      creditEvidenceQuery.ledgerQuery.isPending);
+  const creditEvidenceError =
+    creditEvidenceQuery.quotaQuery.isError ||
+    creditEvidenceQuery.ledgerQuery.isError;
+  const creditEvidenceReady =
+    Boolean(quotaSummary) && Boolean(creditLedger) && !creditEvidenceError;
   const siteRuntimeData = siteRuntimeQuery.isError
     ? {}
     : siteRuntimeQuery.data?.items || {};
@@ -587,75 +507,6 @@ function AccountDetailContent() {
       setPackagePlans([]);
     }
   }, []);
-
-  const loadQuotaSummary = useCallback(async (force = false) => {
-    if (!force && quotaSummaryRequestedRef.current) {
-      return;
-    }
-    quotaSummaryRequestedRef.current = true;
-    try {
-      const payload = (await accountDetailClient.request<AccountQuotaSummaryPayload>(
-        `/api/admin/accounts/${encodeURIComponent(accountId)}/quota-summary`
-      )).data;
-      if (!payload.ai_credits) {
-        quotaSummaryRequestedRef.current = false;
-        setQuotaSummary(null);
-        return;
-      }
-      setQuotaSummary({
-        status: String(payload.status || 'ok'),
-        generated_at: String(payload.generated_at || ''),
-        period_start_at: String(payload.period_start_at || ''),
-        period_end_at: String(payload.period_end_at || ''),
-        ai_credits: payload.ai_credits as AccountQuotaMetric,
-        ai_credit_ledger_summary:
-          payload.ai_credit_ledger_summary && typeof payload.ai_credit_ledger_summary === 'object'
-            ? (payload.ai_credit_ledger_summary as AccountQuotaSummary['ai_credit_ledger_summary'])
-            : undefined,
-        resource_limits: Array.isArray(payload.resource_limits)
-          ? (payload.resource_limits as AccountQuotaMetric[])
-          : [],
-        internal_limits: Array.isArray(payload.internal_limits)
-          ? (payload.internal_limits as AccountQuotaMetric[])
-          : [],
-        breakdown: Array.isArray(payload.breakdown)
-          ? (payload.breakdown as AccountCreditBreakdownItem[])
-          : [],
-        totals:
-          payload.totals && typeof payload.totals === 'object'
-            ? (payload.totals as Record<string, number>)
-            : {},
-      });
-    } catch {
-      quotaSummaryRequestedRef.current = false;
-      setQuotaSummary(null);
-    }
-  }, [accountId]);
-
-  const loadCreditLedger = useCallback(async (force = false) => {
-    if (!force && creditLedgerRequestedRef.current) {
-      return;
-    }
-    creditLedgerRequestedRef.current = true;
-    try {
-      const payload = (await accountDetailClient.request<AccountCreditLedgerPayload>(
-        `/api/admin/accounts/${encodeURIComponent(accountId)}/credit-ledger?limit=12`
-      )).data;
-      setCreditLedger({
-        account_id: String(payload.account_id || accountId),
-        generated_at: String(payload.generated_at || ''),
-        period_start_at: String(payload.period_start_at || ''),
-        period_end_at: String(payload.period_end_at || ''),
-        rate_version: String(payload.rate_version || ''),
-        pagination: payload.pagination || {},
-        summary: payload.summary || {},
-        items: Array.isArray(payload.items) ? (payload.items as AccountCreditLedgerEntry[]) : [],
-      });
-    } catch {
-      creditLedgerRequestedRef.current = false;
-      setCreditLedger(null);
-    }
-  }, [accountId]);
 
   const loadAccount = useCallback(async (preferredSiteId = '', force = false) => {
     if (!force && accountRequestedRef.current) {
@@ -825,8 +676,7 @@ function AccountDetailContent() {
       );
       await Promise.all([
         loadAccount(selectedSiteId, true),
-        loadQuotaSummary(true),
-        loadCreditLedger(true),
+        creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
@@ -867,8 +717,7 @@ function AccountDetailContent() {
       );
       await Promise.all([
         loadAccount(selectedSiteId, true),
-        loadQuotaSummary(true),
-        loadCreditLedger(true),
+        creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
@@ -910,8 +759,7 @@ function AccountDetailContent() {
       );
       await Promise.all([
         loadAccount(selectedSiteId, true),
-        loadQuotaSummary(true),
-        loadCreditLedger(true),
+        creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
@@ -1011,8 +859,7 @@ function AccountDetailContent() {
       );
       await Promise.all([
         loadAccount(selectedSiteId, true),
-        loadQuotaSummary(true),
-        loadCreditLedger(true),
+        creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
@@ -1082,8 +929,7 @@ function AccountDetailContent() {
       }));
       await Promise.all([
         loadAccount(selectedSiteId, true),
-        loadQuotaSummary(true),
-        loadCreditLedger(true),
+        creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
     } catch (err) {
@@ -1102,13 +948,8 @@ function AccountDetailContent() {
   useEffect(() => {
     if (activeDetailTab === 'commercial') {
       void loadPackagePlans();
-      return;
     }
-    if (activeDetailTab === 'credits') {
-      void Promise.all([loadQuotaSummary(), loadCreditLedger()]);
-      return;
-    }
-  }, [activeDetailTab, loadCreditLedger, loadPackagePlans, loadQuotaSummary]);
+  }, [activeDetailTab, loadPackagePlans]);
 
   useEffect(() => {
     if (!accountStatusNotice) {
@@ -1465,7 +1306,15 @@ function AccountDetailContent() {
     {
       id: 'credits',
       label: t('admin.account_detail.credits_tab', undefined, 'Credits and usage'),
-      detail: quotaNeedsAttention ? translateStatusLabel('warning', t) : translateStatusLabel('ok', t),
+      detail: creditEvidencePending
+        ? t('common.loading')
+        : creditEvidenceError
+          ? t('common.error')
+          : !creditEvidenceReady
+            ? t('common.unknown')
+            : quotaNeedsAttention
+              ? translateStatusLabel('warning', t)
+              : translateStatusLabel('ok', t),
       href: '#quota-posture',
     },
     {
@@ -2275,12 +2124,51 @@ function AccountDetailContent() {
             </p>
           </div>
           <BackofficeStatusBadge
-            status={quotaNeedsAttention ? 'warning' : 'ok'}
-            label={quotaNeedsAttention ? translateStatusLabel('warning', t) : translateStatusLabel('ok', t)}
+            status={
+              creditEvidencePending
+                ? 'pending'
+                : creditEvidenceError
+                  ? 'error'
+                  : !creditEvidenceReady
+                    ? 'unknown'
+                    : quotaNeedsAttention
+                      ? 'warning'
+                      : 'ok'
+            }
+            label={
+              creditEvidencePending
+                ? t('common.loading')
+                : creditEvidenceError
+                  ? t('common.error')
+                  : !creditEvidenceReady
+                    ? t('common.unknown')
+                    : quotaNeedsAttention
+                      ? translateStatusLabel('warning', t)
+                      : translateStatusLabel('ok', t)
+            }
           />
         </div>
 
-        <BackofficeMetricStrip
+        {creditEvidencePending ? (
+          <LoadingFallback />
+        ) : creditEvidenceError || !creditEvidenceReady ? (
+          <BackofficeDiagnosticNotice
+            message={t(
+              'admin.account_detail.load_error_desc',
+              undefined,
+              'Retry this bounded customer read without leaving the current operator route.'
+            )}
+            retryLabel={t('common.retry')}
+            onRetry={() => {
+              void Promise.all([
+                creditEvidenceQuery.quotaQuery.refetch(),
+                creditEvidenceQuery.ledgerQuery.refetch(),
+              ]);
+            }}
+          />
+        ) : (
+          <>
+            <BackofficeMetricStrip
           columnsClassName="md:grid-cols-2 xl:grid-cols-4"
           items={[
             {
@@ -2565,6 +2453,8 @@ function AccountDetailContent() {
             </div>
           </BackofficeStackCard>
         </div>
+          </>
+        )}
       </BackofficeSectionPanel>
       ) : null}
 

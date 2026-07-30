@@ -56,6 +56,49 @@ test('customer detail failure preserves the PC shell and bounded retry', async (
   await expect(page).toHaveURL(new RegExp(`/admin/accounts/${LONG_ACCOUNT_ID}$`));
 });
 
+test('customer credit evidence fails closed and keeps bounded retry', async ({ page }) => {
+  await installAdminMocks(page);
+  let attempts = 0;
+  await page.route(
+    `**/api/admin/accounts/${LONG_ACCOUNT_ID}/quota-summary`,
+    async (route) => {
+      attempts += 1;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          buildAdminApiErrorEnvelope('credit evidence unavailable')
+        ),
+      });
+    }
+  );
+
+  await page.goto(`/admin/accounts/${LONG_ACCOUNT_ID}`);
+  const creditsTab = page.getByRole('tab', {
+    name: /Credits and usage|积分与用量|積分與用量/i,
+  });
+  await creditsTab.click();
+
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({
+        hasText:
+          /Retry this bounded customer read|可在不离开当前运营路径|可在不離開目前營運路徑/i,
+      })
+  ).toBeVisible();
+  await expect(creditsTab).toContainText(/Error|错误|錯誤/i);
+  await expect(
+    page.getByRole('heading', {
+      name: /AI credit usage|AI 积分用量|AI 積分用量/i,
+    })
+  ).toHaveCount(0);
+
+  const attemptsBeforeRetry = attempts;
+  await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
+  await expect.poll(() => attempts).toBeGreaterThan(attemptsBeforeRetry);
+});
+
 test('customer detail operator profile keeps the draft when the bounded save fails', async ({ page }) => {
   await installAdminMocks(page);
   await page.route('**/api/admin/accounts', async (route) => {

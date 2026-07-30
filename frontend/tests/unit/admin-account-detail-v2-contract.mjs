@@ -7,6 +7,12 @@ const siteRuntimeSource = readFileSync(
   fromFrontendRoot('src/features/admin/accounts/account-site-runtime.ts'),
   'utf8'
 );
+const creditEvidenceSource = readFileSync(
+  fromFrontendRoot(
+    'src/features/admin/accounts/account-credit-evidence.ts'
+  ),
+  'utf8'
+);
 const operatorProfileSource = [
   readFileSync(
     fromFrontendRoot(
@@ -53,7 +59,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(activeDetailTab === 'commercial'\)[\s\S]*loadPackagePlans\(\)[\s\S]*if \(activeDetailTab === 'credits'\)[\s\S]*loadQuotaSummary\(\)[\s\S]*loadCreditLedger\(\)/,
+  /useAccountCreditEvidence\([\s\S]*activeDetailTab === 'credits'/,
   'low-frequency commercial, quota, and ledger data must load from their owning tabs'
 );
 assert.match(
@@ -64,8 +70,6 @@ assert.match(
 for (const requestGuard of [
   'accountRequestedRef',
   'packagePlansRequestedRef',
-  'quotaSummaryRequestedRef',
-  'creditLedgerRequestedRef',
 ]) {
   assert.match(
     source,
@@ -73,6 +77,26 @@ for (const requestGuard of [
     `${requestGuard} must prevent duplicate tab or Strict Mode requests`
   );
 }
+assert.doesNotMatch(
+  source,
+  /quotaSummaryRequestedRef|creditLedgerRequestedRef|loadQuotaSummary|loadCreditLedger/,
+  'the route must not retain a second quota or credit-ledger request lifecycle'
+);
+assert.match(
+  creditEvidenceSource,
+  /useQuery\(\{[\s\S]*accountCreditEvidenceKeys\.quota[\s\S]*\{ signal \}[\s\S]*useQuery\(\{[\s\S]*accountCreditEvidenceKeys\.ledger[\s\S]*\{ signal \}/,
+  'the account credit feature must own exact quota and ledger query identity and cancellation'
+);
+assert.match(
+  creditEvidenceSource,
+  /invalidateQueries\(\{[\s\S]*accountCreditEvidenceKeys\.account\(accountId\)/,
+  'commercial mutations must invalidate only the affected account credit evidence'
+);
+assert.match(
+  source,
+  /creditEvidencePending[\s\S]*<LoadingFallback \/>[\s\S]*creditEvidenceError[\s\S]*<BackofficeDiagnosticNotice[\s\S]*quotaQuery\.refetch\(\)[\s\S]*ledgerQuery\.refetch\(\)/,
+  'unavailable credit evidence must render loading or retry state instead of zero-value conclusions'
+);
 assert.doesNotMatch(
   source,
   /siteRuntimeRequestKeyRef|loadSiteRuntimeData/,
