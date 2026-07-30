@@ -337,6 +337,104 @@ test('public status shows only operator-published support contact details', asyn
   await expect(page.getByText('Published support channel')).toBeVisible();
 });
 
+test('public plan catalog stays non-actionable until published terms are loaded', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'en-US');
+  });
+  await page.route('**/api/health', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'healthy',
+        checked_at: '2026-07-25T08:00:00Z',
+      }),
+    });
+  });
+  let releaseCatalog: (() => void) | undefined;
+  const catalogGate = new Promise<void>((resolve) => {
+    releaseCatalog = resolve;
+  });
+  await page.route('**/open/plan-catalog', async (route) => {
+    await catalogGate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        data: {
+          tiers: [
+            {
+              tier_id: 'free',
+              label: 'Free',
+              availability: 'available',
+              comparison_rights: {
+                monthly_points: { state: 'limited', value: 300 },
+                site_limit: { state: 'limited', value: 1 },
+                knowledge_article_limit: { state: 'limited', value: 1 },
+                concurrency_limit: { state: 'limited', value: 1 },
+                batch_item_limit: { state: 'limited', value: 1 },
+              },
+              amount: 0,
+              currency: 'CNY',
+              billing_cycle: null,
+              purchase_mode: 'included',
+              trial_enabled: false,
+              trial_days: 0,
+              trial_requires_approval: false,
+            },
+          ],
+          shared_paid_trial: {
+            days: 9,
+            one_per_customer: true,
+            self_serve_tiers: ['plus', 'pro'],
+            approval_required_tiers: ['agency'],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto('/');
+
+  const pricing = page.locator('[data-home-pricing]');
+  const desktopPlans = pricing.locator('[data-plan-comparison="desktop"]');
+  for (const tierId of ['free', 'plus', 'pro', 'agency']) {
+    const tier = desktopPlans.locator(`[data-plan-tier="${tierId}"]`);
+    await expect(tier.getByRole('link')).toHaveCount(0);
+    await expect(tier.locator('[aria-disabled="true"]')).toBeVisible();
+    await expect(tier).toContainText('Loading…');
+  }
+  const agencyTier = desktopPlans.locator('[data-plan-tier="agency"]');
+  await expect(agencyTier).not.toContainText('Custom quote');
+  await expect(agencyTier).not.toContainText('Multi-site');
+  await expect(agencyTier).not.toContainText('Custom');
+  await expect(pricing).not.toContainText(/paid-plan trial/i);
+
+  const desktopViewport = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobilePlans = pricing.locator('[data-plan-comparison="mobile"]');
+  for (const tierId of ['free', 'plus', 'pro', 'agency']) {
+    const tier = mobilePlans.locator(`[data-plan-tier="${tierId}"]`);
+    await tier.locator('button[aria-controls]').click();
+    await expect(tier.getByRole('link')).toHaveCount(0);
+    await expect(tier.locator('[aria-disabled="true"]')).toBeVisible();
+  }
+  if (desktopViewport) {
+    await page.setViewportSize(desktopViewport);
+  }
+
+  releaseCatalog?.();
+
+  const freeTier = desktopPlans.locator('[data-plan-tier="free"]');
+  await expect(freeTier.getByRole('link', { name: 'Start free' })).toBeVisible();
+  await expect(freeTier.getByText('1 site', { exact: true })).toBeVisible();
+  await expect(freeTier.getByText('1 article', { exact: true })).toBeVisible();
+  await expect(freeTier.getByText('1 run', { exact: true })).toBeVisible();
+  await expect(freeTier.getByText('1 item', { exact: true })).toBeVisible();
+  await expect(pricing).toContainText('one 9-day paid-plan trial');
+});
+
 test('public plan catalog failure disables stale package actions and supports a safe retry', async ({ page }) => {
   await page.route('**/api/health', async (route) => {
     await route.fulfill({
