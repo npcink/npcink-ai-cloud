@@ -222,7 +222,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect.poll(gridColumnCount).toBe(3);
   await page.setViewportSize({ width: 1600, height: 900 });
-  await expect.poll(gridColumnCount).toBe(4);
+  await expect.poll(gridColumnCount).toBe(3);
   await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toHaveCount(0);
   await expect(packageEditor.getByRole('tab', { name: /Release history|发布历史/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveCount(0);
@@ -286,7 +286,7 @@ test('admin queue pages keep one primary header action and shared identifier tre
   const proPackageRow = page.locator('[data-ui="plan-catalog-item"]').filter({ hasText: 'Pro' });
   await proPackageRow.getByRole('button', { name: /^Manage Pro$|^管理 Pro$/i }).click();
   const packageEditor = page.getByRole('dialog', { name: /Manage Pro|管理 Pro/i });
-  await expect(packageEditor.getByRole('button', { name: /Restore .* suggested values|恢复 .* 建议值/i })).toBeVisible();
+  await expect(packageEditor.getByRole('button', { name: /Apply .* defaults|套用 .* 套餐默认值/i })).toBeVisible();
   await expect(packageEditor.getByRole('button', { name: /Restore saved values|还原当前已保存值|還原目前已儲存值/i })).toBeVisible();
   await expect(packageEditor.getByRole('tab', { name: /Release history|发布历史/i })).toHaveCount(0);
   await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toHaveCount(0);

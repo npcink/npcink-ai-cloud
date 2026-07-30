@@ -174,11 +174,11 @@ function ParameterField({
   return (
     <label className="grid min-w-0 content-start gap-1.5 border-b border-slate-200 py-3 dark:border-slate-800">
       <span className="text-sm font-semibold text-slate-950 dark:text-white">{label}</span>
-      <span className="relative block">
+      <span data-ui="plan-parameter-control" className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto]">
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="input h-10 w-full appearance-none pr-24 text-right tabular-nums [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="input h-10 min-w-0 appearance-none rounded-r-none border-r-0 text-right tabular-nums [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           type="number"
           inputMode={step < 1 ? 'decimal' : 'numeric'}
           min={min}
@@ -186,7 +186,8 @@ function ParameterField({
         />
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-slate-500 dark:text-slate-400"
+          data-ui="plan-parameter-unit"
+          className="flex h-[var(--admin-compact-control-height)] shrink-0 items-center whitespace-nowrap rounded-r-md border border-slate-300 bg-slate-50 px-3 text-xs font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
         >
           {unit}
         </span>
@@ -270,7 +271,25 @@ export function PlanManagementWorkbench({
   }, [detail, form]);
 
   const updateField = (field: keyof PlanVersionFormState, value: string) => {
+    setNotice(null);
     setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const restoreSavedValues = () => {
+    if (!detail) return;
+    setForm(buildInitialForm(detail));
+    setNotice(t('admin.plans.saved_values_restored_notice', {}, 'Saved values restored.'));
+  };
+
+  const applyDefaultValues = () => {
+    setForm((current) => ({ ...current, ...baselinePatch }));
+    setNotice(
+      t(
+        'admin.plans.default_values_applied_notice',
+        { tier: localizedAlias },
+        `${localizedAlias} defaults applied. Sales price is unchanged; save to publish these values.`
+      )
+    );
   };
 
   const handleSave = async () => {
@@ -402,13 +421,31 @@ export function PlanManagementWorkbench({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setForm(buildInitialForm(detail))}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    aria-label={t('admin.plans.restore_saved_full_label', {}, 'Restore saved values')}
+                    title={t('admin.plans.restore_saved_full_label', {}, 'Restore saved values')}
+                    disabled={!hasUnsavedChanges || isSaving}
+                    onClick={restoreSavedValues}
+                  >
                     {t('admin.reset_to_latest_version', {}, 'Restore saved values')}
                   </button>
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    onClick={() => setForm((current) => ({ ...current, ...baselinePatch }))}
+                    aria-label={t(
+                      'admin.plans.apply_defaults_full_label',
+                      { tier: localizedAlias },
+                      `Apply ${localizedAlias} defaults`
+                    )}
+                    title={t(
+                      'admin.plans.apply_defaults_full_label',
+                      { tier: localizedAlias },
+                      `Apply ${localizedAlias} defaults`
+                    )}
+                    disabled={isSaving}
+                    onClick={applyDefaultValues}
                   >
                     {t('admin.apply_tier_baseline', { tier: localizedAlias }, `Restore ${localizedAlias} suggested values`)}
                   </button>
@@ -422,7 +459,7 @@ export function PlanManagementWorkbench({
                   </h5>
                   <div
                     data-ui="plan-parameter-grid"
-                    className="mt-1 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                    className="mt-1 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-3"
                   >
                     <ParameterField
                       label={t('admin.sales_price_cny', {}, 'Sales price (CNY / 30 days)')}
@@ -463,7 +500,7 @@ export function PlanManagementWorkbench({
                   </h5>
                   <div
                     data-ui="plan-parameter-grid"
-                    className="mt-1 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                    className="mt-1 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-3"
                   >
                     <ParameterField
                       label={t('admin.concurrency', {}, 'Concurrency')}
