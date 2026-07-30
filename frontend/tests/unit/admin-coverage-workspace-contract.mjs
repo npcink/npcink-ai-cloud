@@ -50,8 +50,20 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*admin\.coverage\.next_action[\s\S]*translateActionLabel/,
-  'Coverage rows must disambiguate duplicate readable names and keep the next action scannable without adding row links'
+  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}[\s\S]*break-words[\s\S]*admin\.coverage\.next_action/,
+  'Coverage rows must show complete readable customer identities as customer-detail links and keep actionable next steps scannable'
+);
+
+assert.match(
+  coverageSource,
+  /value: 'inactive'[\s\S]*admin\.coverage\.status_filter_label[\s\S]*<select[\s\S]*filters\.map\(\(filter\)[\s\S]*admin\.coverage\.reason_filter_label[\s\S]*admin\.coverage\.sort_label/,
+  'Coverage status, including inactive records, reason, and sort filters must share the compact filter toolbar'
+);
+
+assert.match(
+  coverageSource,
+  /item\.severity === 'error' \|\| item\.severity === 'warning'[\s\S]*translateReasonCode[\s\S]*\) : null/,
+  'Coverage rows must reserve issue copy for warning and error items'
 );
 
 assert.doesNotMatch(

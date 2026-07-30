@@ -392,6 +392,7 @@ function AdminCoverageContent() {
     { value: 'error', label: translateStatusLabel('error', t), count: visibleSummary.error },
     { value: 'warning', label: translateStatusLabel('warning', t), count: visibleSummary.warning },
     { value: 'ok', label: translateStatusLabel('ok', t), count: visibleSummary.ok },
+    { value: 'inactive', label: translateStatusLabel('inactive', t), count: visibleSummary.inactive },
     {
       value: 'all',
       label: t('common.all', {}, 'All'),
@@ -452,38 +453,7 @@ function AdminCoverageContent() {
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.72fr)]">
         <BackofficeSectionPanel className="overflow-hidden p-0">
           <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div
-                className="flex flex-wrap gap-2"
-                aria-label={t('admin.coverage.status_filter_label', {}, 'Service status')}
-              >
-                {filters.map((filter) => (
-                  <button
-                    key={filter.value}
-                    type="button"
-                    aria-pressed={view === filter.value}
-                    onClick={() => {
-                      setView(filter.value);
-                      setSelectedKey('');
-                      updateQueueUrl({
-                        status: filter.value,
-                        q: searchQuery.trim() || null,
-                        reason: reasonFilter || null,
-                        sort,
-                        focus: null,
-                      });
-                    }}
-                    className={cn(
-                      'cursor-pointer rounded-lg border px-3 py-2 text-sm font-medium transition',
-                      view === filter.value
-                        ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:text-white'
-                    )}
-                  >
-                    {filter.label} <span className="ml-1 tabular-nums">{formatInteger(filter.count)}</span>
-                  </button>
-                ))}
-              </div>
+            <div className="flex justify-end">
               <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
                 {t(
                   'admin.coverage.queue_count',
@@ -495,7 +465,10 @@ function AdminCoverageContent() {
               </p>
             </div>
 
-            <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(13rem,1fr)_minmax(9rem,0.55fr)_minmax(9rem,0.5fr)_auto]">
+            <div
+              data-ui="coverage-filter-toolbar"
+              className="grid gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(13rem,1fr)_minmax(9rem,0.55fr)_minmax(9rem,0.55fr)_minmax(9rem,0.5fr)_auto]"
+            >
               <label>
                 <span className="sr-only">
                   {t('common.search', {}, 'Search')}
@@ -518,6 +491,33 @@ function AdminCoverageContent() {
                     });
                   }}
                 />
+              </label>
+              <label>
+                <span className="sr-only">
+                  {t('admin.coverage.status_filter_label', {}, 'Service status')}
+                </span>
+                <select
+                  className="input w-full"
+                  value={view}
+                  onChange={(event) => {
+                    const nextValue = normalizeQueueView(event.target.value);
+                    setView(nextValue);
+                    setSelectedKey('');
+                    updateQueueUrl({
+                      status: nextValue,
+                      q: searchQuery.trim() || null,
+                      reason: reasonFilter || null,
+                      sort,
+                      focus: null,
+                    });
+                  }}
+                >
+                  {filters.map((filter) => (
+                    <option key={filter.value} value={filter.value}>
+                      {filter.label} · {formatInteger(filter.count)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 <span className="sr-only">
@@ -600,7 +600,7 @@ function AdminCoverageContent() {
                 <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
                   <tr>
                     <th className="w-[6.5rem] px-4 py-3">{t('common.status', {}, 'Status')}</th>
-                    <th className="w-[13rem] px-4 py-3">
+                    <th className="w-[19rem] px-4 py-3">
                       {t('admin.coverage.table_customer', {}, 'Customer')}
                     </th>
                     <th className="px-4 py-3">{t('admin.coverage.table_issue', {}, 'Issue')}</th>
@@ -685,28 +685,40 @@ function AdminCoverageContent() {
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <span className="block max-w-full font-semibold text-slate-950 dark:text-white">
-                            <span className="block truncate">{customerLabel}</span>
-                          </span>
+                          <Link
+                            href={`/admin/accounts/${encodeURIComponent(item.account.account_id)}`}
+                            className="block max-w-full break-words font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                          >
+                            {customerLabel}
+                          </Link>
                         </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-slate-800 dark:text-slate-100">
-                            {translateReasonCode(t, item.reason_code, item.reason_label)}
-                          </p>
+                        <td
+                          className="px-4 py-3"
+                          aria-label={
+                            item.severity === 'error' || item.severity === 'warning'
+                              ? undefined
+                              : translateStatusLabel(item.severity, t)
+                          }
+                        >
                           {item.severity === 'error' || item.severity === 'warning' ? (
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {t(
-                                'admin.coverage.next_action',
-                                {
-                                  action: translateActionLabel(
-                                    t,
-                                    item.recommended_action,
-                                    item.action_label || t('common.open', {}, 'Open')
-                                  ),
-                                },
-                                `Next: ${item.action_label || t('common.open', {}, 'Open')}`
-                              )}
-                            </p>
+                            <>
+                              <p className="font-medium text-slate-800 dark:text-slate-100">
+                                {translateReasonCode(t, item.reason_code, item.reason_label)}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {t(
+                                  'admin.coverage.next_action',
+                                  {
+                                    action: translateActionLabel(
+                                      t,
+                                      item.recommended_action,
+                                      item.action_label || t('common.open', {}, 'Open')
+                                    ),
+                                  },
+                                  `Next: ${item.action_label || t('common.open', {}, 'Open')}`
+                                )}
+                              </p>
+                            </>
                           ) : null}
                         </td>
                         <td className="px-4 py-3">
@@ -770,12 +782,17 @@ function AdminCoverageContent() {
             {selectedQueueItem ? (
               <div className="space-y-4">
                 <div>
-                  <p className="text-base font-semibold text-slate-950 dark:text-white">
+                  <Link
+                    href={`/admin/accounts/${encodeURIComponent(selectedQueueItem.account.account_id)}`}
+                    className="break-words text-base font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                  >
                     {selectedCustomerLabel}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {translateReasonCode(t, selectedQueueItem.reason_code, selectedQueueItem.reason_label)}
-                  </p>
+                  </Link>
+                  {selectedQueueItem.severity === 'error' || selectedQueueItem.severity === 'warning' ? (
+                    <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                      {translateReasonCode(t, selectedQueueItem.reason_code, selectedQueueItem.reason_label)}
+                    </p>
+                  ) : null}
                 </div>
 
                 <dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
