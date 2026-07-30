@@ -14,13 +14,20 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
   await initialRows.nth(1).click();
   await expect(initialRows.nth(1)).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('#coverage-inspector')).toContainText('Uncovered Account');
+  const inspector = page.locator('#coverage-inspector');
+  await expect(inspector).toContainText('Uncovered Account');
+  await expect(inspector).toContainText(/Account ID|账户 ID/i);
+  await expect(inspector.getByRole('link')).toHaveCount(1);
+  await expect(inspector.getByRole('link', { name: /Open package actions|打开套餐操作/i })).toBeVisible();
   await expect(page).toHaveURL(/focus=acct_uncovered%3Amissing_package_coverage/);
 
   await initialRows.nth(0).focus();
   await initialRows.nth(0).press('Enter');
   await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('#coverage-inspector')).toContainText('MVP Account');
+  await expect(inspector).toContainText('MVP Account');
+  await expect(inspector.getByRole('link')).toHaveCount(2);
+  await expect(inspector.getByRole('link', { name: /Inspect subscription|查看订阅/i })).toBeVisible();
+  await expect(inspector.getByRole('link', { name: /Open customer|打开客户/i })).toBeVisible();
 
   await page.getByRole('button', { name: /^(All|全部)\s*3$/i }).click();
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(3);

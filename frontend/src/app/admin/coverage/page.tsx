@@ -99,6 +99,15 @@ function queueItemKey(item: CoverageQueueItem): string {
   return `${item.account.account_id}:${item.reason_code}`;
 }
 
+function customerDisplayName(name: string | undefined, accountId: string, unnamedLabel: string): string {
+  const normalizedName = name?.trim();
+  return normalizedName && normalizedName !== accountId ? normalizedName : unnamedLabel;
+}
+
+function actionOpensAccount(actionHref: string, accountId: string): boolean {
+  return actionHref.split(/[?#]/, 1)[0] === `/admin/accounts/${accountId}`;
+}
+
 async function readJsonData<T>(url: string): Promise<T> {
   return (await coverageClient.request<T>(url)).data;
 }
@@ -361,6 +370,22 @@ function AdminCoverageContent() {
   const reasonEntries = Object.entries(visibleSummary.reason_counts || {})
     .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))
     .slice(0, 6);
+  const selectedAccountHref = selectedQueueItem
+    ? `/admin/accounts/${selectedQueueItem.account.account_id}`
+    : '';
+  const selectedPrimaryActionHref = selectedQueueItem
+    ? selectedQueueItem.action_href || selectedAccountHref
+    : '';
+  const selectedCustomerLabel = selectedQueueItem
+    ? customerDisplayName(
+        selectedQueueItem.account.name,
+        selectedQueueItem.account.account_id,
+        t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
+      )
+    : '';
+  const showSelectedCustomerAction = selectedQueueItem
+    ? !actionOpensAccount(selectedPrimaryActionHref, selectedQueueItem.account.account_id)
+    : false;
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
@@ -560,8 +585,11 @@ function AdminCoverageContent() {
                   {visibleItems.map((item) => {
                     const itemKey = queueItemKey(item);
                     const isSelected = selectedQueueItem ? queueItemKey(selectedQueueItem) === itemKey : false;
-                    const customerLabel =
-                      item.account.name || t('admin.subscription_detail.current_customer_label', {}, 'Current customer');
+                    const customerLabel = customerDisplayName(
+                      item.account.name,
+                      item.account.account_id,
+                      t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
+                    );
                     const selectQueueItem = () => {
                       setSelectedKey(itemKey);
                       updateQueueUrl({
@@ -636,8 +664,14 @@ function AdminCoverageContent() {
                           <span className="block max-w-full font-semibold text-slate-950 dark:text-white">
                             <span className="block truncate">{customerLabel}</span>
                           </span>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            <BackofficeIdentifier value={item.account.account_id} />
+                          <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="shrink-0">
+                              {t('admin.coverage.account_id_label', {}, 'Account ID')}:
+                            </span>
+                            <BackofficeIdentifier
+                              value={item.account.account_id}
+                              className="min-w-0 text-xs"
+                            />
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -719,9 +753,12 @@ function AdminCoverageContent() {
               <div className="space-y-4">
                 <div>
                   <p className="text-base font-semibold text-slate-950 dark:text-white">
-                    {selectedQueueItem.account.name || t('admin.subscription_detail.current_customer_label', {}, 'Current customer')}
+                    {selectedCustomerLabel}
                   </p>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    {t('admin.coverage.account_id_label', {}, 'Account ID')}
+                  </p>
+                  <div className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
                     <BackofficeIdentifier value={selectedQueueItem.account.account_id} full />
                   </div>
                   <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -746,14 +783,16 @@ function AdminCoverageContent() {
 
                 <div className="flex flex-wrap gap-2">
                   <Link
-                    href={selectedQueueItem.action_href || `/admin/accounts/${selectedQueueItem.account.account_id}`}
+                    href={selectedPrimaryActionHref}
                     className="btn btn-primary btn-sm"
                   >
                     {translateActionLabel(t, selectedQueueItem.recommended_action, selectedQueueItem.action_label || t('common.open', {}, 'Open'))}
                   </Link>
-                  <Link href={`/admin/accounts/${selectedQueueItem.account.account_id}`} className="btn btn-secondary btn-sm">
-                    {t('admin.coverage_open_customer_action', {}, 'Open customer')}
-                  </Link>
+                  {showSelectedCustomerAction ? (
+                    <Link href={selectedAccountHref} className="btn btn-secondary btn-sm">
+                      {t('admin.coverage_open_customer_action', {}, 'Open customer')}
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             ) : (
