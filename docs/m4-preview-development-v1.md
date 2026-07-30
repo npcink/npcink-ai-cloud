@@ -566,8 +566,19 @@ This development-only command creates or updates the secretless `ollama-m4`
 provider at `http://host.docker.internal:11434/v1`, allows
 `qwen3.5:9b`, sets provider-default `reasoning_effort=none`, refreshes its
 catalog, and points the three WordPress text profiles at the resulting 9B
-instance. The setting is explicit per provider connection; it does not change
-production providers or the generic WordPress operation contract.
+instance. It also creates the development-only, secretless
+`ollama_m4_embedding` connection for `qwen3-embedding:0.6b` with 1024
+dimensions and the existing PostgreSQL JSON development vector backend. The
+embedding connection is accepted only in development or test environments.
+The setting is explicit per provider connection; it does not change production
+providers or the generic WordPress operation contract.
+
+Development and production embedding spaces are deliberately separate.
+Switching to the production SiliconFlow `BAAI/bge-m3` profile requires a full
+Site Knowledge index rebuild even though both profiles use 1024 dimensions.
+Media-library semantic search fails closed while only the deterministic
+placeholder embedding is active; it must not return random nearest-neighbor
+candidates.
 
 Ollama's OpenAI-compatible endpoint maps `reasoning_effort=none` to disabled
 thinking. This is required for `qwen3.5:9b` in the preview because an unbounded

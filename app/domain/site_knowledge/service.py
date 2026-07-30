@@ -685,12 +685,19 @@ class SiteKnowledgeService:
             source_types = [source_type for source_type in source_types if source_type != "comment"]
         current_post_id = _coerce_int(input_payload.get("current_post_id"), default=0)
 
-        indexed_embedding_models = self.repository.list_embedding_models(site_id)
+        indexed_embedding_models = self.repository.list_embedding_models(
+            site_id,
+            source_types=source_types,
+        )
         retrieval_readiness = _embedding_space_readiness(
             indexed_embedding_models=indexed_embedding_models,
             query_embedding_model=self.embedding_space_id,
+            requires_semantic_embedding=intent == "media_library_search",
         )
-        if retrieval_readiness["status"] == "embedding_space_mismatch":
+        if retrieval_readiness["status"] in {
+            "embedding_space_mismatch",
+            "semantic_embedding_required",
+        }:
             workflow_support = _workflow_support_for_intent(intent)
             evidence_gate = _evidence_gate([], evidence_policy)
             return {
@@ -708,7 +715,7 @@ class SiteKnowledgeService:
                 "evidence_gate": evidence_gate,
                 "rerank": {
                     "status": "skipped",
-                    "reason": "embedding_space_mismatch",
+                    "reason": retrieval_readiness["status"],
                     "candidate_count": 0,
                 },
                 "retrieval_readiness": retrieval_readiness,
@@ -1840,11 +1847,19 @@ def _embedding_space_readiness(
     *,
     indexed_embedding_models: list[str],
     query_embedding_model: str,
+    requires_semantic_embedding: bool = False,
 ) -> dict[str, object]:
     indexed_models = sorted(
         {str(model).strip() for model in indexed_embedding_models if str(model).strip()}
     )
     query_model = str(query_embedding_model or "").strip()
+    if requires_semantic_embedding and query_model.startswith("deterministic:"):
+        return {
+            "status": "semantic_embedding_required",
+            "query_embedding_model": query_model,
+            "indexed_embedding_models": indexed_models,
+            "action": "configure_semantic_embedding_and_rebuild_index",
+        }
     if any(model != query_model for model in indexed_models):
         return {
             "status": "embedding_space_mismatch",

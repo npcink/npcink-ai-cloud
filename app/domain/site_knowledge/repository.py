@@ -196,14 +196,21 @@ class SiteKnowledgeRepository:
             or 0
         )
 
-    def list_embedding_models(self, site_id: str) -> list[str]:
+    def list_embedding_models(
+        self,
+        site_id: str,
+        *,
+        source_types: list[str] | None = None,
+    ) -> list[str]:
+        statement = select(SiteKnowledgeChunk.embedding_model).where(
+            SiteKnowledgeChunk.site_id == site_id
+        )
+        if source_types:
+            statement = statement.where(SiteKnowledgeChunk.source_type.in_(source_types))
         return [
             str(model)
             for model in self.session.scalars(
-                select(SiteKnowledgeChunk.embedding_model)
-                .where(SiteKnowledgeChunk.site_id == site_id)
-                .distinct()
-                .order_by(SiteKnowledgeChunk.embedding_model.asc())
+                statement.distinct().order_by(SiteKnowledgeChunk.embedding_model.asc())
             )
             if str(model or "").strip()
         ]

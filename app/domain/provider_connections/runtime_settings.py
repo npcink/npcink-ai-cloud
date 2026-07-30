@@ -11,6 +11,13 @@ from app.core.db import get_session
 from app.core.models import ProviderConnection
 from app.core.secrets import decrypt_provider_connection_secret
 from app.domain.site_knowledge.vector_profile_contract import (
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_BASE_URL,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_DIMENSIONS,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_METRIC,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_PROBE_REVISION,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_PROFILE_ID,
+    SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID,
     SITE_KNOWLEDGE_VECTOR_DIMENSIONS,
     SITE_KNOWLEDGE_VECTOR_METRIC,
     SITE_KNOWLEDGE_VECTOR_MODEL_ID,
@@ -114,9 +121,7 @@ def apply_provider_connection_runtime_settings(
                 image_source_seen = True
             continue
         if kind == "embedding_provider" or (
-            provider_id in {"siliconflow", "openai", "tei"}
-            and "embedding" in capability_ids
-            and "embed.default" in runtime_profile_ids
+            "embedding" in capability_ids and "embed.default" in runtime_profile_ids
         ):
             if embedding_seen:
                 continue
@@ -347,6 +352,12 @@ def _apply_embedding_connection(
     credential: str,
     config: dict[str, Any],
 ) -> bool:
+    if provider_id == SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID:
+        return _apply_local_preview_embedding_connection(
+            settings,
+            row=row,
+            config=config,
+        )
     if provider_id != SITE_KNOWLEDGE_VECTOR_PROVIDER_ID:
         return False
     if row.status != "ready":
@@ -374,6 +385,45 @@ def _apply_embedding_connection(
     settings.siliconflow_base_url = row.base_url or settings.siliconflow_base_url
     if credential:
         settings.siliconflow_api_key = credential
+    return True
+
+
+def _apply_local_preview_embedding_connection(
+    settings: Settings,
+    *,
+    row: ProviderConnection,
+    config: dict[str, Any],
+) -> bool:
+    environment = str(settings.environment or "").strip().lower()
+    if environment not in {"development", "dev", "test"}:
+        return False
+    if row.status != "ready":
+        return False
+    if not bool(config.get("secretless")):
+        return False
+    if str(row.base_url or "").rstrip("/") != SITE_KNOWLEDGE_LOCAL_PREVIEW_BASE_URL:
+        return False
+    if str(config.get("local_preview_profile_id") or "") != (
+        SITE_KNOWLEDGE_LOCAL_PREVIEW_PROFILE_ID
+    ):
+        return False
+    if str(config.get("local_preview_probe_revision") or "") != (
+        SITE_KNOWLEDGE_LOCAL_PREVIEW_PROBE_REVISION
+    ):
+        return False
+    if _site_knowledge_embedding_model(
+        config,
+        fallback=settings.site_knowledge_embedding_model,
+    ) != SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID:
+        return False
+    if _int(config.get("dimensions"), 0) != SITE_KNOWLEDGE_LOCAL_PREVIEW_DIMENSIONS:
+        return False
+    if _string(config.get("metric")).upper() != SITE_KNOWLEDGE_LOCAL_PREVIEW_METRIC:
+        return False
+
+    settings.site_knowledge_embedding_provider = SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID
+    settings.site_knowledge_embedding_model = SITE_KNOWLEDGE_LOCAL_PREVIEW_MODEL_ID
+    settings.site_knowledge_embedding_dimensions = SITE_KNOWLEDGE_LOCAL_PREVIEW_DIMENSIONS
     return True
 
 
@@ -423,6 +473,11 @@ def _apply_vector_store_connection(
     credential: str,
     config: dict[str, Any],
 ) -> bool:
+    if (
+        settings.site_knowledge_embedding_provider
+        == SITE_KNOWLEDGE_LOCAL_PREVIEW_PROVIDER_ID
+    ):
+        return False
     if provider_id != SITE_KNOWLEDGE_VECTOR_STORE_PROVIDER_ID:
         return False
     if row.status != "ready":
