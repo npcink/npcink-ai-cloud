@@ -10,12 +10,16 @@ from sqlalchemy import select
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import dispose_engine, get_session
 from app.core.models import (
+    Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
     BillingSnapshot,
     Site,
     UsageMeterEvent,
 )
+from app.domain.commercial.errors import CommercialValidationError
+from app.domain.commercial.mixins import _billing_mixin as billing_mixin
+from app.domain.commercial.service import CommercialService
 from tests.api.service_routes_test_support import (
     _build_client,
     _seed_openai_text_model_allowlist,
@@ -1256,6 +1260,182 @@ def test_service_routes_plan_tier_fallback_and_package_fit_cues(tmp_path: Path) 
         removed_budget_response.json()["error_code"]
         == "service.plan_budget_legacy_cost_field_removed"
     )
+
+    dispose_engine(database_url)
+
+
+def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_pagination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url, client = _build_client(tmp_path)
+    now = datetime.now(UTC)
+    fixtures = [
+        {
+            "subscription_id": "sub_queue_critical",
+            "account_id": "acct_queue_delta",
+            "account_name": "Delta Critical",
+            "status": "past_due",
+            "period_end_at": now - timedelta(days=1),
+            "created_at": now - timedelta(days=4),
+        },
+        {
+            "subscription_id": "sub_queue_warning",
+            "account_id": "acct_queue_alpha",
+            "account_name": "Alpha Warning",
+            "status": "active",
+            "period_end_at": now + timedelta(days=7),
+            "created_at": now - timedelta(days=3),
+        },
+        {
+            "subscription_id": "sub_queue_monitor",
+            "account_id": "acct_queue_charlie",
+            "account_name": "Charlie Monitor",
+            "status": "trialing",
+            "period_end_at": now + timedelta(days=30),
+            "created_at": now - timedelta(days=2),
+        },
+        {
+            "subscription_id": "sub_queue_stable",
+            "account_id": "acct_queue_bravo",
+            "account_name": "Bravo Stable",
+            "status": "active",
+            "period_end_at": None,
+            "created_at": now - timedelta(days=1),
+        },
+    ]
+    with get_session(database_url) as session:
+        for fixture in fixtures:
+            session.add(
+                Account(
+                    account_id=fixture["account_id"],
+                    name=fixture["account_name"],
+                    status="active",
+                    metadata_json={},
+                )
+            )
+            session.add(
+                AccountSubscription(
+                    subscription_id=fixture["subscription_id"],
+                    account_id=fixture["account_id"],
+                    plan_id="queue_plan",
+                    plan_version_id="queue_plan_v1",
+                    status=fixture["status"],
+                    current_period_start_at=now - timedelta(days=30),
+                    current_period_end_at=fixture["period_end_at"],
+                    started_at=now - timedelta(days=30),
+                    metadata_json={},
+                    created_at=fixture["created_at"],
+                    updated_at=fixture["created_at"],
+                )
+            )
+        session.add(
+            Site(
+                site_id="site_queue_critical",
+                account_id="acct_queue_delta",
+                name="Critical Site",
+                status="active",
+                site_url="https://critical.example.test",
+                platform_kind="wordpress",
+                metadata_json={},
+            )
+        )
+        session.commit()
+
+    priority_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"sort": "priority", "limit": 1},
+        headers=build_internal_headers(),
+    )
+    assert priority_response.status_code == 200
+    priority_data = priority_response.json()["data"]
+    assert priority_data["filters"]["sort"] == "priority"
+    assert priority_data["total"] == 4
+    assert priority_data["pagination"] == {
+        "offset": 0,
+        "limit": 1,
+        "total": 4,
+        "has_more": True,
+    }
+    assert priority_data["summary"] == {
+        "critical": 1,
+        "warning": 1,
+        "monitor": 1,
+        "stable": 1,
+    }
+    assert priority_data["items"][0]["subscription"]["subscription_id"] == ("sub_queue_critical")
+    assert priority_data["items"][0]["operator_risk"] == {
+        "level": "critical",
+        "reason_code": "past_due",
+    }
+
+    customer_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"sort": "customer", "limit": 4},
+        headers=build_internal_headers(),
+    )
+    assert customer_response.status_code == 200
+    assert [item["account"]["name"] for item in customer_response.json()["data"]["items"]] == [
+        "Alpha Warning",
+        "Bravo Stable",
+        "Charlie Monitor",
+        "Delta Critical",
+    ]
+
+    expiry_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"sort": "expiry", "limit": 4},
+        headers=build_internal_headers(),
+    )
+    assert expiry_response.status_code == 200
+    assert [
+        item["subscription"]["subscription_id"] for item in expiry_response.json()["data"]["items"]
+    ] == [
+        "sub_queue_critical",
+        "sub_queue_warning",
+        "sub_queue_monitor",
+        "sub_queue_stable",
+    ]
+
+    active_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"status": "active", "sort": "priority"},
+        headers=build_internal_headers(),
+    )
+    assert active_response.status_code == 200
+    assert active_response.json()["data"]["summary"] == {
+        "critical": 0,
+        "warning": 1,
+        "monitor": 0,
+        "stable": 1,
+    }
+
+    invalid_sort_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"sort": "newest"},
+        headers=build_internal_headers(),
+    )
+    assert invalid_sort_response.status_code == 422
+    with pytest.raises(
+        CommercialValidationError,
+        match="subscription sort must be one of",
+    ):
+        CommercialService(database_url).list_admin_subscriptions(sort="newest")
+
+    monkeypatch.setattr(billing_mixin, "ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS", 3)
+    with pytest.raises(
+        CommercialValidationError,
+        match="subscription queue scope exceeds",
+    ):
+        CommercialService(database_url).list_admin_subscriptions()
+
+    monkeypatch.setattr(billing_mixin, "ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS", 500)
+    monkeypatch.setattr(billing_mixin, "ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES", 0)
+    with pytest.raises(
+        CommercialValidationError,
+        match="subscription queue site scope exceeds",
+    ):
+        CommercialService(database_url).list_admin_subscriptions()
 
     dispose_engine(database_url)
 

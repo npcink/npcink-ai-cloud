@@ -3491,6 +3491,7 @@ async def list_admin_subscriptions(
     account_id: str | None = Query(default=None),
     plan_id: str | None = Query(default=None),
     expires_before: datetime | None = Query(default=None),  # noqa: B008
+    sort: Literal["priority", "expiry", "customer"] = Query(default="priority"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Any:
@@ -3503,6 +3504,7 @@ async def list_admin_subscriptions(
             account_id=account_id,
             plan_id=plan_id,
             expires_before=expires_before,
+            sort=sort,
             offset=offset,
             limit=limit,
         )
