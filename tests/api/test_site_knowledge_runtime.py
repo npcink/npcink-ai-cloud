@@ -874,6 +874,11 @@ def test_media_search_rejects_deterministic_placeholder_embeddings(
         "action": "configure_semantic_embedding_and_rebuild_index",
     }
     assert result["result_grouping"]["returned_count"] == 0
+    assert result["result_grouping"]["duplicate_media_collapsed"] == 0
+    assert (
+        result["result_grouping"]["ranking_strategy"]
+        == "semantic_plus_bounded_lexical"
+    )
 
 
 def test_site_knowledge_postgres_fallback_search_uses_chunk_limit(
