@@ -33,6 +33,11 @@ test('subscription detail keeps one PC conclusion and defers operational evidenc
   await advancedEvidence.locator(':scope > summary').click();
   await expect(page.getByRole('heading', { name: /Package, usage, and service coverage|套餐、用量与服务覆盖/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Covered sites|关联站点/i })).toBeVisible();
+  const costCompleteness = page.locator('[data-ui="cost-snapshot-completeness"]');
+  await expect(costCompleteness).toContainText(/≥\s*¥18\.42/);
+  await expect(costCompleteness).toContainText(
+    /Known CNY minimum.*missing call-time snapshots: 2|已知人民币成本下限.*缺少调用时快照：2/i
+  );
 });
 
 test('subscription detail failure preserves the PC route shell and bounded retry', async ({ page }) => {

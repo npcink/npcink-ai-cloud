@@ -2570,6 +2570,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.subscription_detail.effective_budget': 'Effective budget',
     'admin.subscription_detail.usage_boundary':
       'Base budget plus current-period top-up becomes the effective budget.',
+    'admin.subscription_detail.cost_snapshot_incomplete':
+      'Known CNY minimum · missing call-time snapshots: {{count}}',
     'admin.subscription_detail.follow_up_eyebrow': 'Follow-up',
     'admin.subscription_detail.follow_up_title': 'What needs operator action',
     'admin.subscription_detail.related_evidence_eyebrow': 'Related evidence',
@@ -8258,6 +8260,8 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.subscription_detail.base_budget': '基础预算',
     'admin.subscription_detail.effective_budget': '有效预算',
     'admin.subscription_detail.usage_boundary': '基础预算加上当前周期加量后，形成有效预算。',
+    'admin.subscription_detail.cost_snapshot_incomplete':
+      '这是已知人民币成本下限 · 缺少调用时快照：{{count}}',
     'admin.subscription_detail.follow_up_eyebrow': '待处理',
     'admin.subscription_detail.follow_up_title': '需要运营处理什么',
     'admin.subscription_detail.related_evidence_eyebrow': '关联证据',

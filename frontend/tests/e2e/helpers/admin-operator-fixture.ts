@@ -833,7 +833,12 @@ export async function installAdminMocks(page: Page) {
           next_action: null,
         },
         subscription_grace: { subscription_status: 'past_due', active: true, grace_until_at: '2026-04-15T00:00:00Z' },
-        usage_totals: { runs: 21, tokens: 32000, cost: 18.42 },
+        usage_totals: {
+          runs: 21,
+          tokens: 32000,
+          cost_cny: 18.42,
+          cost_cny_snapshot_missing_count: 2,
+        },
         related_surfaces: {
           site_href: '/admin/sites/site_mvp',
           account_href: `/admin/accounts/${LONG_ACCOUNT_ID}`,

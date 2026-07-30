@@ -96,7 +96,8 @@ type SubscriptionDetailPayload = {
   usage_totals?: {
     runs?: number;
     tokens?: number;
-    cost?: number;
+    cost_cny?: number;
+    cost_cny_snapshot_missing_count?: number;
   };
   related_surfaces?: {
     site_href?: string;
@@ -202,7 +203,11 @@ function SubscriptionDetailContent() {
       runsLimit: Number(budget.runs?.limit ?? 0),
       tokensCurrent: Number(budget.tokens?.current_total ?? usage.tokens ?? 0),
       tokensLimit: Number(budget.tokens?.limit ?? 0),
-      costCurrent: Number(budget.cost?.current_total ?? usage.cost ?? 0),
+      costCurrent: Number(budget.cost?.current_total ?? usage.cost_cny ?? 0),
+      costSnapshotMissingCount: Math.max(
+        0,
+        Number(usage.cost_cny_snapshot_missing_count ?? 0)
+      ),
       costLimit: Number(budget.cost?.limit ?? 0),
       baseRunsLimit: Number(budgetHeadroom.base_budget?.runs ?? 0),
       baseTokensLimit: Number(budgetHeadroom.base_budget?.tokens ?? 0),
@@ -616,7 +621,24 @@ function SubscriptionDetailContent() {
                     <td className="py-2 font-medium tabular-nums">{formatAdminCurrency(normalized.baseCostLimit)}</td>
                     <td className="py-2 font-medium tabular-nums">{formatAdminCurrency(normalized.topupCostDelta)}</td>
                     <td className="py-2 font-semibold tabular-nums text-slate-950 dark:text-white">{formatAdminCurrency(normalized.effectiveCostLimit)}</td>
-                    <td className="py-2 font-medium tabular-nums">{formatAdminCurrency(normalized.costCurrent)}</td>
+                    <td
+                      className="py-2 font-medium tabular-nums"
+                      data-ui="cost-snapshot-completeness"
+                    >
+                      <span>
+                        {normalized.costSnapshotMissingCount > 0 ? '≥ ' : ''}
+                        {formatAdminCurrency(normalized.costCurrent)}
+                      </span>
+                      {normalized.costSnapshotMissingCount > 0 ? (
+                        <span className="mt-1 block max-w-xs text-xs font-normal leading-5 text-amber-700 dark:text-amber-300">
+                          {t(
+                            'admin.subscription_detail.cost_snapshot_incomplete',
+                            { count: formatInteger(normalized.costSnapshotMissingCount) },
+                            `Known CNY minimum · missing call-time snapshots: ${formatInteger(normalized.costSnapshotMissingCount)}`
+                          )}
+                        </span>
+                      ) : null}
+                    </td>
                   </tr>
                 </tbody>
               </table>

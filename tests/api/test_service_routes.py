@@ -1054,6 +1054,7 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert "cost" in subscription_detail["budget_state"]
     assert subscription_detail["subscription_grace"]["subscription_status"] == "active"
     assert subscription_detail["usage_totals"]["runs"] >= 1
+    assert subscription_detail["usage_totals"]["cost_cny_snapshot_missing_count"] == 0.0
     assert subscription_detail["related_surfaces"]["site_href"] in {"", "/admin/sites/site_primary"}
     assert subscription_detail["related_surfaces"]["account_href"] == "/admin/accounts/acct_admin"
     assert subscription_detail["commercial_follow_up"]["next_operator_follow_up"]
