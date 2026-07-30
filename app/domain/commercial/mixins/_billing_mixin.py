@@ -27,7 +27,6 @@ from app.core.models import (
 from app.domain.commercial.currency import (
     SERVICE_SETTING_ACCOUNTING_FX,
     AccountingFxRate,
-    convert_usd_to_cny,
     resolve_accounting_fx_rate,
 )
 from app.domain.commercial.errors import (
@@ -556,11 +555,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             totals = self._aggregate_meter_events(meter_events)
-            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
-            totals.update(self._aggregate_accounting_costs(meter_events, accounting_fx))
+            totals.update(self._aggregate_accounting_costs(meter_events))
             budgets = self._resolve_effective_subscription_budgets(
                 plan_version=plan_version,
                 subscription=subscription,
@@ -637,13 +632,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             ledger_totals = self._aggregate_meter_events(meter_events)
-            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
-            ledger_totals.update(
-                self._aggregate_accounting_costs(meter_events, accounting_fx)
-            )
+            ledger_totals.update(self._aggregate_accounting_costs(meter_events))
             snapshots = repository.list_billing_snapshots(site_id)
             current_snapshot = next(
                 (
@@ -1189,7 +1178,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 rate_row.config_json if rate_row is not None and rate_row.enabled else None
             )
             usage_totals.update(
-                self._aggregate_accounting_costs(meter_events, accounting_fx)
+                self._aggregate_accounting_costs(meter_events)
             )
             budget_state = self._build_budget_policy_state(
                 repository=repository,
@@ -1275,7 +1264,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 rate_row.config_json if rate_row is not None and rate_row.enabled else None
             )
             totals = self._aggregate_meter_events(all_events)
-            totals.update(self._aggregate_accounting_costs(all_events, accounting_fx))
+            totals.update(self._aggregate_accounting_costs(all_events))
             return {
                 "site_id": site_id,
                 "subscription_id": subscription.subscription_id if subscription else "",
@@ -1989,32 +1978,34 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
     def _aggregate_accounting_costs(
         self,
         events: Sequence[object],
-        accounting_fx: AccountingFxRate,
     ) -> dict[str, float]:
-        snapshotted_provider_calls = {
-            int(getattr(event, "provider_call_id", 0) or 0)
-            for event in events
-            if str(getattr(event, "meter_key", "") or "") == "cost_cny"
-            and int(getattr(event, "provider_call_id", 0) or 0) > 0
-        }
         cost_usd = 0.0
         snapshotted_cost_cny = 0.0
-        legacy_cost_usd = 0.0
+        cost_provider_calls: set[int] = set()
+        snapshotted_provider_calls: set[int] = set()
+        cost_events_without_provider_call = 0
         for event in events:
             meter_key = str(getattr(event, "meter_key", "") or "")
             quantity = max(0.0, float(getattr(event, "quantity", 0.0) or 0.0))
             provider_call_id = int(getattr(event, "provider_call_id", 0) or 0)
             if meter_key == "cost":
                 cost_usd += quantity
-                if provider_call_id not in snapshotted_provider_calls:
-                    legacy_cost_usd += quantity
+                if provider_call_id > 0:
+                    cost_provider_calls.add(provider_call_id)
+                else:
+                    cost_events_without_provider_call += 1
             elif meter_key == "cost_cny":
                 snapshotted_cost_cny += quantity
-        converted_legacy_cost = float(convert_usd_to_cny(legacy_cost_usd, accounting_fx))
+                if provider_call_id > 0:
+                    snapshotted_provider_calls.add(provider_call_id)
+        missing_snapshot_count = (
+            len(cost_provider_calls - snapshotted_provider_calls)
+            + cost_events_without_provider_call
+        )
         return {
             "cost_usd": round(cost_usd, 6),
-            "cost_cny": round(snapshotted_cost_cny + converted_legacy_cost, 6),
-            "legacy_cost_usd_converted": round(legacy_cost_usd, 6),
+            "cost_cny": round(snapshotted_cost_cny, 6),
+            "cost_cny_snapshot_missing_count": float(missing_snapshot_count),
         }
 
     def _aggregate_meter_breakdown(self, events: Sequence[object]) -> dict[str, object]:
@@ -2995,7 +2986,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         accounting_fx = resolve_accounting_fx_rate(
             rate_row.config_json if rate_row is not None and rate_row.enabled else None
         )
-        totals.update(self._aggregate_accounting_costs(events, accounting_fx))
+        totals.update(self._aggregate_accounting_costs(events))
         breakdown["accounting_fx"] = accounting_fx.as_dict()
         return repository.upsert_billing_snapshot(
             snapshot_id=self._build_billing_snapshot_id(
