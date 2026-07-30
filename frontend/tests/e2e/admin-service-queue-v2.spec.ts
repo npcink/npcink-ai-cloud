@@ -10,6 +10,18 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态/i })).toBeVisible();
 
+  const initialRows = page.locator('[data-ui="coverage-queue-item"]');
+  await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await initialRows.nth(1).click();
+  await expect(initialRows.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#coverage-inspector')).toContainText('Uncovered Account');
+  await expect(page).toHaveURL(/focus=acct_uncovered%3Amissing_package_coverage/);
+
+  await initialRows.nth(0).focus();
+  await initialRows.nth(0).press('Enter');
+  await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#coverage-inspector')).toContainText('MVP Account');
+
   await page.getByRole('button', { name: /^(All|全部)\s*3$/i }).click();
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(3);
 
@@ -20,9 +32,9 @@ test('service status table keeps filters and customer focus in the URL on PC', a
 
   await page.getByRole('combobox', { name: /Reason|原因/i }).selectOption('missing_package_coverage');
   await page.getByRole('combobox', { name: /Sort|排序/i }).selectOption('customer');
-  const customerButton = page.getByRole('button', { name: 'Uncovered Account' });
-  await customerButton.focus();
-  await customerButton.press('Enter');
+  const customerRow = page.locator('[data-ui="coverage-queue-item"]').first();
+  await customerRow.focus();
+  await customerRow.press(' ');
 
   await expect(page).toHaveURL(/status=all/);
   await expect(page).toHaveURL(/q=Uncovered/);
