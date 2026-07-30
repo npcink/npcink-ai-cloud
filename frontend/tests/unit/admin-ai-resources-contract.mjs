@@ -10,6 +10,9 @@ const layoutSource = read('src/app/admin/layout.tsx');
 const toolbarSource = read('src/components/admin/SupplierToolbar.tsx');
 const tablesSource = read('src/components/admin/SupplierConnectionTables.tsx');
 const tableFrameSource = read('src/components/admin/AdminDataTableFrame.tsx');
+const providerWorkbenchStateSource = read(
+  'src/features/admin/ai-resources/provider-workbench-state.ts'
+);
 const i18nSource = read('src/lib/i18n.ts');
 const aiResourcesTranslationSource = i18nSource
   .split('\n')
@@ -57,8 +60,9 @@ assert.doesNotMatch(pageSource, /isCapabilityProviderForm|capabilityAddDialogOpe
 assert.doesNotMatch(pageSource, /action_add_capability_supplier|capability_channel_form|capability_diagnostics/);
 assert.doesNotMatch(pageSource, /runtime-telemetry|RuntimeTelemetrySummary|provider_model_health|capability_matrix/);
 assert.doesNotMatch(pageSource, /providerConnectionForm\.(priority|note)|field_channel_priority|field_channel_note/);
-assert.match(pageSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
-assert.match(pageSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
+assert.match(pageSource, /buildProviderConnectionForm\(connection, providerPreset\)/);
+assert.match(providerWorkbenchStateSource, /imageResponseFormat: String\(connection\.config\?\.image_response_format \|\| ''\)/);
+assert.match(providerWorkbenchStateSource, /imageOutputHosts: Array\.isArray\(connection\.config\?\.image_output_hosts\)/);
 assert.match(pageSource, /image_response_format: providerConnectionForm\.imageResponseFormat/);
 assert.match(pageSource, /image_output_hosts: imageOutputHosts/);
 assert.match(pageSource, /providerConnectionForm\.imageResponseFormat === 'url' && !imageOutputHosts\.length/);

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
   BackofficePageStack,
@@ -32,6 +32,17 @@ import {
   aiResourcesClient,
   useAiResourcesDirectory,
 } from '@/features/admin/ai-resources/directory';
+import {
+  buildProviderConnectionForm,
+  EMPTY_PROVIDER_CONNECTION_FORM,
+  INITIAL_PROVIDER_WORKBENCH_STATE,
+  providerWorkbenchReducer,
+  type ModelReferenceFeatureFilter,
+  type ModelReferenceVisibilityFilter,
+  type ProviderCatalogPreview,
+  type ProviderCatalogPreviewModel,
+  type ProviderConnectionForm,
+} from '@/features/admin/ai-resources/provider-workbench-state';
 import type {
   ConnectionStatusFilter,
   ProviderConnectionTestResult,
@@ -42,27 +53,6 @@ import { useDialogKeyboard } from '@/hooks/useDialogKeyboard';
 import { formatDate } from '@/lib/utils';
 
 type SupplierCategory = 'ai' | 'capability';
-
-type ProviderCatalogPreview = {
-  provider_id: string;
-  display_name: string;
-  adapter_type: string;
-  model_count: number;
-  model_ids: string[];
-  models?: ProviderCatalogPreviewModel[];
-  truncated: boolean;
-};
-
-type ProviderCatalogPreviewModel = {
-  model_id: string;
-  family: string;
-  feature: string;
-  status: string;
-  is_deprecated: boolean;
-  runtime_supported: boolean;
-  verified: boolean;
-  capability_tags: string[];
-};
 
 type ModelReferenceEntry = {
   source_id: string;
@@ -111,9 +101,6 @@ type ModelReferenceSourceSummary = {
   last_error_message: string;
 };
 
-type ModelReferenceFeatureFilter = 'all' | 'text' | 'image' | 'audio' | 'video' | 'embedding';
-type ModelReferenceVisibilityFilter = 'all' | 'enabled' | 'disabled';
-
 function modelReferenceSourceNeedsSync(source: ModelReferenceSourceSummary | null, total: number): boolean {
   if (total > 0) return false;
   if (!source) return true;
@@ -136,40 +123,6 @@ type ModelVisibilityRow = {
 
 type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
   receipt?: AdminMutationReceiptPayload | null;
-};
-
-type ProviderConnectionForm = {
-  providerPreset: string;
-  connectionId: string;
-  providerId: string;
-  displayName: string;
-  kind: string;
-  baseUrl: string;
-  sourceRole: string;
-  capabilityIds: string;
-  runtimeProfileIds: string;
-  modelIds: string;
-  imageResponseFormat: string;
-  imageOutputHosts: string;
-  credential: string;
-  enabled: boolean;
-};
-
-const EMPTY_PROVIDER_CONNECTION_FORM: ProviderConnectionForm = {
-  providerPreset: 'openai_compatible',
-  connectionId: '',
-  providerId: 'openai',
-  displayName: 'OpenAI Compatible',
-  kind: 'openai_compatible',
-  baseUrl: 'https://api.openai.com/v1',
-  sourceRole: 'execution_source',
-  capabilityIds: 'text_generation, image_generation',
-  runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
-  modelIds: '',
-  imageResponseFormat: '',
-  imageOutputHosts: '',
-  credential: '',
-  enabled: true,
 };
 
 type ProviderPreset = {
@@ -834,7 +787,6 @@ function AiResourcesContent() {
   const [deletingConnectionId, setDeletingConnectionId] = useState('');
   const [confirmingDeleteConnectionId, setConfirmingDeleteConnectionId] = useState('');
   const [fetchingProviderCatalog, setFetchingProviderCatalog] = useState(false);
-  const [providerCatalogPreview, setProviderCatalogPreview] = useState<ProviderCatalogPreview | null>(null);
   const [loadingModelReferences, setLoadingModelReferences] = useState(false);
   const [syncingModelReferences, setSyncingModelReferences] = useState(false);
   const [autoSyncingModelReferences, setAutoSyncingModelReferences] = useState(false);
@@ -843,20 +795,25 @@ function AiResourcesContent() {
   const [modelReferenceTotal, setModelReferenceTotal] = useState(0);
   const [modelReferenceSources, setModelReferenceSources] = useState<ModelReferenceSourceSummary[]>([]);
   const [loadedModelReferenceProviderId, setLoadedModelReferenceProviderId] = useState('');
-  const [modelReferenceProviderId, setModelReferenceProviderId] = useState('openai');
-  const [modelReferenceSearch, setModelReferenceSearch] = useState('');
-  const [modelReferenceFeatureFilter, setModelReferenceFeatureFilter] = useState<ModelReferenceFeatureFilter>('all');
-  const [modelReferenceVisibilityFilter, setModelReferenceVisibilityFilter] = useState<ModelReferenceVisibilityFilter>('all');
-  const [modelReferenceShowDeprecated, setModelReferenceShowDeprecated] = useState(false);
-  const [confirmingClearModels, setConfirmingClearModels] = useState(false);
   const [connectionTestResults, setConnectionTestResults] = useState<Record<string, ProviderConnectionTestResult>>({});
-  const [providerFormOpen, setProviderFormOpen] = useState(false);
-  const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create');
-  const [credentialEditOpen, setCredentialEditOpen] = useState(true);
-  const [providerConnectionForm, setProviderConnectionForm] = useState<ProviderConnectionForm>(
-    EMPTY_PROVIDER_CONNECTION_FORM
+  const [providerWorkbench, dispatchProviderWorkbench] = useReducer(
+    providerWorkbenchReducer,
+    INITIAL_PROVIDER_WORKBENCH_STATE
   );
-  const [customModelInput, setCustomModelInput] = useState('');
+  const {
+    providerFormOpen,
+    providerFormMode,
+    credentialEditOpen,
+    providerConnectionForm,
+    providerCatalogPreview,
+    modelReferenceProviderId,
+    modelReferenceSearch,
+    modelReferenceFeatureFilter,
+    modelReferenceVisibilityFilter,
+    modelReferenceShowDeprecated,
+    confirmingClearModels,
+    customModelInput,
+  } = providerWorkbench;
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
@@ -1030,9 +987,7 @@ function AiResourcesContent() {
       }
       await loadResources();
       if (!testFailed) {
-        setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
-        setProviderFormMode('create');
-        setProviderFormOpen(false);
+        dispatchProviderWorkbench({ type: 'reset_after_save' });
         setMessage('');
         toast.success(successMessage, t('common.success'));
       }
@@ -1060,9 +1015,7 @@ function AiResourcesContent() {
       setMessage('');
       toast.success(successMessage, t('common.success'));
       if (providerConnectionForm.connectionId === connection.connection_id) {
-        setProviderFormOpen(false);
-        setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
-        setProviderFormMode('create');
+        dispatchProviderWorkbench({ type: 'reset_after_save' });
       }
       setConfirmingDeleteConnectionId('');
       await loadResources();
@@ -1132,7 +1085,7 @@ function AiResourcesContent() {
       return;
     }
     setFetchingProviderCatalog(true);
-    setProviderCatalogPreview(null);
+    dispatchProviderWorkbench({ type: 'set_catalog_preview', preview: null });
     setError('');
     setMessage('');
     try {
@@ -1161,7 +1114,7 @@ function AiResourcesContent() {
         },
       });
       const preview = response.data;
-      setProviderCatalogPreview(preview);
+      dispatchProviderWorkbench({ type: 'set_catalog_preview', preview });
       const verifiedModelIds = (preview.models || [])
         .filter((model) => !model.is_deprecated && (model.verified || model.runtime_supported))
         .map((model) => model.model_id);
@@ -1173,7 +1126,10 @@ function AiResourcesContent() {
         defaultReferenceProviderId(normalizedProviderId, providerConnectionForm.providerPreset)
       );
       if (referenceProviderId !== modelReferenceProviderId) {
-        setModelReferenceProviderId(referenceProviderId);
+        dispatchProviderWorkbench({
+          type: 'set_reference_provider',
+          providerId: referenceProviderId,
+        });
       }
       let referenceSyncFailed = '';
       try {
@@ -1211,7 +1167,10 @@ function AiResourcesContent() {
         modelReferenceProviderId
       );
       if (effectiveReferenceProviderId !== modelReferenceProviderId) {
-        setModelReferenceProviderId(effectiveReferenceProviderId);
+        dispatchProviderWorkbench({
+          type: 'set_reference_provider',
+          providerId: effectiveReferenceProviderId,
+        });
       }
       await syncModelReferencesForProvider(effectiveReferenceProviderId, {
         announce: true,
@@ -1306,18 +1265,13 @@ function AiResourcesContent() {
 
   function openNewProviderConnection() {
     setConfirmingDeleteConnectionId('');
-    setProviderConnectionForm(EMPTY_PROVIDER_CONNECTION_FORM);
-    setProviderFormMode('create');
-    setCredentialEditOpen(true);
-    setProviderFormOpen(true);
-    setProviderCatalogPreview(null);
-    setModelReferenceProviderId(defaultReferenceProviderId(EMPTY_PROVIDER_CONNECTION_FORM.providerId, EMPTY_PROVIDER_CONNECTION_FORM.providerPreset));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setConfirmingClearModels(false);
-    setCustomModelInput('');
+    dispatchProviderWorkbench({
+      type: 'open_create',
+      referenceProviderId: defaultReferenceProviderId(
+        EMPTY_PROVIDER_CONNECTION_FORM.providerId,
+        EMPTY_PROVIDER_CONNECTION_FORM.providerPreset
+      ),
+    });
     setError('');
     setMessage('');
   }
@@ -1328,62 +1282,42 @@ function AiResourcesContent() {
     const providerPreset = inferProviderPreset(connection);
     setMessage('');
     setError('');
-    setProviderCatalogPreview(storedCatalogPreview);
-    setModelReferenceProviderId(referenceProviderForConnection(connection));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setConfirmingClearModels(false);
-    setCustomModelInput('');
-    setProviderFormMode('edit');
-    setCredentialEditOpen(false);
-    setProviderConnectionForm({
-      providerPreset,
-      connectionId: connection.connection_id,
-      providerId: connection.provider_id,
-      displayName: connection.display_name,
-      kind: connection.kind,
-      baseUrl: connection.base_url || '',
-      sourceRole: 'execution_source',
-      capabilityIds: connection.capability_ids.join(', '),
-      runtimeProfileIds: connection.runtime_profile_ids.join(', '),
-      modelIds: (connection.model_ids || []).join(', '),
-      imageResponseFormat: String(connection.config?.image_response_format || ''),
-      imageOutputHosts: Array.isArray(connection.config?.image_output_hosts)
-        ? connection.config.image_output_hosts.map(String).join(', ')
-        : '',
-      credential: '',
-      enabled: connection.enabled,
+    dispatchProviderWorkbench({
+      type: 'open_edit',
+      form: buildProviderConnectionForm(connection, providerPreset),
+      catalogPreview: storedCatalogPreview,
+      referenceProviderId: referenceProviderForConnection(connection),
     });
-    setProviderFormOpen(true);
   }
 
   function closeProviderForm() {
-    setProviderFormOpen(false);
-    setCredentialEditOpen(true);
-    setConfirmingClearModels(false);
+    dispatchProviderWorkbench({ type: 'close' });
     setMessage('');
     setError('');
   }
 
   function updateProviderConnectionForm(patch: Partial<ProviderConnectionForm>) {
-    setProviderConnectionForm((current) => ({ ...current, ...patch }));
-    if (patch.providerId !== undefined) {
-      setModelReferenceProviderId(defaultReferenceProviderId(patch.providerId, providerConnectionForm.providerPreset));
-    }
-    if (patch.kind || patch.baseUrl || patch.credential || patch.providerId) {
-      setProviderCatalogPreview(null);
-    }
+    dispatchProviderWorkbench({
+      type: 'patch_form',
+      patch,
+      referenceProviderId: patch.providerId !== undefined
+        ? defaultReferenceProviderId(patch.providerId, providerConnectionForm.providerPreset)
+        : undefined,
+      invalidateCatalog: Boolean(
+        patch.kind || patch.baseUrl || patch.credential || patch.providerId
+      ),
+    });
   }
 
   function setProviderModelIds(modelIds: string[]) {
-    setConfirmingClearModels(false);
     const inferredReferenceProviderId = inferReferenceProviderFromModelIds(modelIds, modelReferenceProviderId);
-    if (modelIds.length && inferredReferenceProviderId !== modelReferenceProviderId) {
-      setModelReferenceProviderId(inferredReferenceProviderId);
-    }
-    updateProviderConnectionForm({ modelIds: joinList(modelIds) });
+    dispatchProviderWorkbench({
+      type: 'set_model_ids',
+      modelIds: joinList(modelIds),
+      referenceProviderId: modelIds.length && inferredReferenceProviderId !== modelReferenceProviderId
+        ? inferredReferenceProviderId
+        : undefined,
+    });
   }
 
   function addProviderModelIds(modelIds: string[]) {
@@ -1398,22 +1332,19 @@ function AiResourcesContent() {
     const modelIds = splitList(customModelInput);
     if (!modelIds.length) return;
     addProviderModelIds(modelIds);
-    setCustomModelInput('');
+    dispatchProviderWorkbench({ type: 'set_custom_model_input', value: '' });
   }
 
   function applyProviderPreset(presetId: string) {
     const preset = providerPresetById(presetId);
-    setProviderCatalogPreview(null);
-    setModelReferenceProviderId(defaultReferenceProviderId(preset.providerId, preset.id));
-    setModelReferenceSearch('');
-    setModelReferenceFeatureFilter('all');
-    setModelReferenceVisibilityFilter('all');
-    setModelReferenceShowDeprecated(true);
-    setCustomModelInput('');
-    setProviderConnectionForm((current) => {
-      const displayName = current.displayName && current.providerPreset === presetId ? current.displayName : preset.displayName;
-      return {
-        ...current,
+    const displayName =
+      providerConnectionForm.displayName && providerConnectionForm.providerPreset === presetId
+        ? providerConnectionForm.displayName
+        : preset.displayName;
+    dispatchProviderWorkbench({
+      type: 'apply_preset',
+      form: {
+        ...providerConnectionForm,
         providerPreset: preset.id,
         providerId: preset.providerId,
         displayName,
@@ -1422,8 +1353,11 @@ function AiResourcesContent() {
         capabilityIds: preset.capabilityIds,
         runtimeProfileIds: preset.runtimeProfileIds,
         modelIds: preset.modelIds,
-        connectionId: current.connectionId || slugifyProviderValue(displayName || preset.providerId),
-      };
+        connectionId:
+          providerConnectionForm.connectionId ||
+          slugifyProviderValue(displayName || preset.providerId),
+      },
+      referenceProviderId: defaultReferenceProviderId(preset.providerId, preset.id),
     });
   }
 
@@ -1943,11 +1877,13 @@ function AiResourcesContent() {
                         cancelReplacementLabel={aiText('action_cancel_credential_replacement', 'Cancel replacement')}
                         keepCurrentPlaceholder={aiText('placeholder_keep_current_credential', 'Leave blank to keep current')}
                         onChange={(credential) => updateProviderConnectionForm({ credential })}
-                        onReveal={() => setCredentialEditOpen(true)}
-                        onCancelReplacement={() => {
-                          setCredentialEditOpen(false);
-                          updateProviderConnectionForm({ credential: '' });
-                        }}
+                        onReveal={() => dispatchProviderWorkbench({
+                          type: 'set_credential_edit_open',
+                          open: true,
+                        })}
+                        onCancelReplacement={() => dispatchProviderWorkbench({
+                          type: 'cancel_credential_edit',
+                        })}
                         density="compact"
                         hideLabel
                       />
@@ -2097,14 +2033,20 @@ function AiResourcesContent() {
                         <input
                           className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           value={modelReferenceSearch}
-                          onChange={(event) => setModelReferenceSearch(event.target.value)}
+                          onChange={(event) => dispatchProviderWorkbench({
+                            type: 'set_reference_search',
+                            search: event.target.value,
+                          })}
                           placeholder={aiText('placeholder_search_models', 'model, family, provider')}
                         />
                       </label>
                       <select
                         className="h-10 min-w-28 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                         value={modelReferenceVisibilityFilter}
-                        onChange={(event) => setModelReferenceVisibilityFilter(event.target.value as ModelReferenceVisibilityFilter)}
+                        onChange={(event) => dispatchProviderWorkbench({
+                          type: 'set_reference_visibility_filter',
+                          filter: event.target.value as ModelReferenceVisibilityFilter,
+                        })}
                         aria-label={aiText('field_visibility_filter', 'Visibility')}
                       >
                         <option value="all">{aiText('filter_all', 'All')}</option>
@@ -2114,7 +2056,10 @@ function AiResourcesContent() {
                       <select
                         className="h-10 min-w-32 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                         value={modelReferenceFeatureFilter}
-                        onChange={(event) => setModelReferenceFeatureFilter(event.target.value as ModelReferenceFeatureFilter)}
+                        onChange={(event) => dispatchProviderWorkbench({
+                          type: 'set_reference_feature_filter',
+                          filter: event.target.value as ModelReferenceFeatureFilter,
+                        })}
                         aria-label={aiText('field_feature_filter', 'Feature')}
                       >
                         <option value="all">{aiText('filter_all', 'All')}</option>
@@ -2128,7 +2073,10 @@ function AiResourcesContent() {
                         <input
                           type="checkbox"
                           checked={modelReferenceShowDeprecated}
-                          onChange={(event) => setModelReferenceShowDeprecated(event.target.checked)}
+                          onChange={(event) => dispatchProviderWorkbench({
+                            type: 'set_show_deprecated',
+                            show: event.target.checked,
+                          })}
                         />
                         {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
                       </label>
@@ -2160,7 +2108,10 @@ function AiResourcesContent() {
                               <select
                                 className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                                 value={modelReferenceProviderId}
-                                onChange={(event) => setModelReferenceProviderId(event.target.value)}
+                                onChange={(event) => dispatchProviderWorkbench({
+                                  type: 'set_reference_provider',
+                                  providerId: event.target.value,
+                                })}
                                 aria-label={aiText('field_reference_provider', 'Reference source')}
                               >
                                 {modelReferenceProviderOptions.map((providerId) => (
@@ -2181,7 +2132,10 @@ function AiResourcesContent() {
                               <input
                                 className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                                 value={customModelInput}
-                                onChange={(event) => setCustomModelInput(event.target.value)}
+                                onChange={(event) => dispatchProviderWorkbench({
+                                  type: 'set_custom_model_input',
+                                  value: event.target.value,
+                                })}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter') {
                                     event.preventDefault();
@@ -2228,7 +2182,10 @@ function AiResourcesContent() {
                                 <button
                                   type="button"
                                   className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
-                                  onClick={() => setConfirmingClearModels(false)}
+                                  onClick={() => dispatchProviderWorkbench({
+                                    type: 'set_confirming_clear_models',
+                                    confirming: false,
+                                  })}
                                 >
                                   {aiText('action_cancel', 'Cancel')}
                                 </button>
@@ -2240,7 +2197,10 @@ function AiResourcesContent() {
                               data-ui="model-clear-all-request"
                               className="font-semibold text-rose-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
                               disabled={!selectedProviderModelIds.length || savingConnection}
-                              onClick={() => setConfirmingClearModels(true)}
+                              onClick={() => dispatchProviderWorkbench({
+                                type: 'set_confirming_clear_models',
+                                confirming: true,
+                              })}
                             >
                               {aiText('action_clear_all_models', 'Clear all')}
                             </button>
