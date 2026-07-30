@@ -57,8 +57,24 @@ assert.match(
 );
 assert.match(
   workbench,
-  /data-ui="plan-parameter-grid"[\s\S]{0,180}sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/,
-  'the shared workbench must progressively render two, three, and four compact parameter columns'
+  /data-ui="plan-parameter-grid"[\s\S]{0,180}sm:grid-cols-2 xl:grid-cols-3/,
+  'the shared workbench must progressively render two and three compact parameter columns without a cramped fourth column'
+);
+assert.doesNotMatch(workbench, /2xl:grid-cols-4/, 'package parameters must not restore the cramped four-column layout');
+assert.match(
+  workbench,
+  /grid-cols-\[minmax\(0,1fr\)_auto\][\s\S]{0,900}rounded-r-none border-r-0[\s\S]{0,900}whitespace-nowrap/,
+  'numeric values and units must use separate grid cells instead of an overlapping suffix overlay'
+);
+assert.doesNotMatch(
+  workbench,
+  /pointer-events-none absolute inset-y-0 right-3/,
+  'numeric units must not return to the overlapping absolute-positioned suffix'
+);
+assert.match(
+  workbench,
+  /restore_saved_full_label[\s\S]*disabled=\{!hasUnsavedChanges \|\| isSaving\}[\s\S]*apply_defaults_full_label/,
+  'short recovery labels must retain explicit accessible names and disable restore when no draft exists'
 );
 assert.match(
   workbench,
