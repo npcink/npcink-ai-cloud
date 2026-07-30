@@ -1,5 +1,6 @@
 import type { Entitlements } from '@/lib/portal-client';
-import { cn, formatNumber } from '@/lib/utils';
+import type { Locale } from '@/lib/i18n';
+import { cn, formatDateOnly, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 type QuotaSummary = NonNullable<Entitlements['quota_summary']>;
@@ -21,6 +22,7 @@ type EntitlementMetric = {
 type PortalEntitlementUsageProps = {
   quotaSummary?: QuotaSummary | null;
   t: TranslateFn;
+  locale: Locale;
 };
 
 function quotaStatusTone(status: string | undefined): 'ok' | 'warning' | 'error' {
@@ -79,6 +81,7 @@ function normalizeMetrics(quotaSummary?: QuotaSummary | null): EntitlementMetric
 export function PortalEntitlementUsage({
   quotaSummary,
   t,
+  locale,
 }: PortalEntitlementUsageProps) {
   const unlimitedLabel = t('common.unlimited', {}, 'Unlimited');
   const metrics = normalizeMetrics(quotaSummary);
@@ -123,6 +126,9 @@ export function PortalEntitlementUsage({
             const usedLabel = formatQuotaValue(used, { unlimited: false, unlimitedLabel });
             const remainingLabel = formatQuotaValue(displayRemaining, { unlimited, unlimitedLabel });
             const isCredit = key === 'ai_credits';
+            const paidExpiryDate = metric.paid_next_expires_at
+              ? formatDateOnly(metric.paid_next_expires_at, locale)
+              : '';
 
             return (
               <div
@@ -179,12 +185,12 @@ export function PortalEntitlementUsage({
                         </p>
                       </div>
                     ))}
-                    {metric.paid_next_expires_at ? (
+                    {paidExpiryDate ? (
                       <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-3">
                         {t(
                           'portal.usage.paid_credit_expiry_hint',
-                          { date: new Date(metric.paid_next_expires_at).toLocaleDateString() },
-                          `The next paid credit grant expires on ${new Date(metric.paid_next_expires_at).toLocaleDateString()}.`
+                          { date: paidExpiryDate },
+                          `The next paid credit grant expires on ${paidExpiryDate}.`
                         )}
                       </p>
                     ) : null}

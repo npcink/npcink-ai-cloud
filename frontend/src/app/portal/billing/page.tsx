@@ -574,6 +574,7 @@ function PortalBillingContent() {
 
       <PortalPaymentReturnNotice
         t={t}
+        locale={locale}
         provider={paymentReturnProvider}
         orderId={paymentReturnOrderId}
         isAuthenticated={isAuthenticated}
@@ -619,6 +620,7 @@ function PortalBillingContent() {
         <PortalEntitlementUsage
           quotaSummary={quotaSummary}
           t={t}
+          locale={locale}
         />
       </PortalCard>
 

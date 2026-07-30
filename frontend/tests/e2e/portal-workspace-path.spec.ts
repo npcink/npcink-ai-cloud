@@ -1709,7 +1709,21 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   calls.releaseSessionRefresh();
   await expect(notice.locator('[data-payment-return-metric="credited"]')).toContainText('10,000');
   await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText('12,419');
-  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
+  const expiryMetric = notice.locator('[data-payment-return-metric="next-expiry"]');
+  const expiryAt = new Date('2027-04-07T10:00:00Z');
+  const expiryFormatOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  };
+  const expectedChineseExpiry = new Intl.DateTimeFormat('zh-CN', expiryFormatOptions).format(expiryAt);
+  const expectedEnglishExpiry = new Intl.DateTimeFormat('en-US', expiryFormatOptions).format(expiryAt);
+  await expect(expiryMetric).toContainText(expectedChineseExpiry);
+  await page.getByRole('button', { name: /Language|语言/i }).click();
+  await page.getByRole('option', { name: 'English' }).click();
+  await expect(expiryMetric).toContainText(expectedEnglishExpiry);
   await expect(page).toHaveURL('/portal/billing');
 });
 
