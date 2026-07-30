@@ -47,6 +47,10 @@ interface Subscription {
     stale_site_count: number;
     missing_site_count: number;
   };
+  operator_risk: {
+    level: RiskLevel;
+    reason_code: string;
+  };
 }
 
 interface SubscriptionApiItem {
@@ -87,11 +91,16 @@ interface SubscriptionApiItem {
     stale_site_count?: number;
     missing_site_count?: number;
   };
+  operator_risk?: {
+    level?: string;
+    reason_code?: string;
+  };
 }
 
 interface SubscriptionsPayload {
   items?: SubscriptionApiItem[];
   total?: number;
+  summary?: Partial<Record<RiskLevel, number>>;
 }
 
 type QueueSort = 'priority' | 'expiry' | 'customer';
@@ -100,6 +109,7 @@ type RiskLevel = 'critical' | 'warning' | 'monitor' | 'stable';
 const PAGE_SIZE = 20;
 const ALLOWED_STATUSES = new Set(['', 'past_due', 'expired', 'trialing', 'active', 'suspended', 'canceled']);
 const ALLOWED_SORTS = new Set<QueueSort>(['priority', 'expiry', 'customer']);
+const ALLOWED_RISK_LEVELS = new Set<RiskLevel>(['critical', 'warning', 'monitor', 'stable']);
 const subscriptionsClient = createApiClient({ idempotencyPrefix: 'admin_subscriptions' });
 
 function daysUntil(raw?: string): number | null {
@@ -143,7 +153,15 @@ function normalizeSubscription(item: SubscriptionApiItem): Subscription {
       stale_site_count: Number(item.billing_snapshot_status?.stale_site_count || 0),
       missing_site_count: Number(item.billing_snapshot_status?.missing_site_count || 0),
     },
+    operator_risk: {
+      level: normalizeRiskLevel(item.operator_risk?.level),
+      reason_code: item.operator_risk?.reason_code || 'snapshot_unknown',
+    },
   };
+}
+
+function normalizeRiskLevel(value?: string): RiskLevel {
+  return value && ALLOWED_RISK_LEVELS.has(value as RiskLevel) ? (value as RiskLevel) : 'monitor';
 }
 
 function normalizeStatus(value: string | null): string {
@@ -157,31 +175,6 @@ function normalizeSort(value: string | null): QueueSort {
 function normalizeOffset(value: string | null): number {
   const parsed = Number(value || 0);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
-}
-
-function subscriptionRiskLevel(item: Subscription): RiskLevel {
-  const remaining = daysUntil(item.current_period_end);
-  const snapshotStatus = item.billing_snapshot_status?.status || 'unknown';
-  if (item.status === 'past_due' || item.status === 'expired' || item.status === 'suspended') {
-    return 'critical';
-  }
-  if (
-    snapshotStatus === 'stale' ||
-    snapshotStatus === 'missing' ||
-    (remaining !== null && remaining >= 0 && remaining <= 14)
-  ) {
-    return 'warning';
-  }
-  if (item.status === 'trialing' || item.status === 'canceled' || snapshotStatus === 'unknown') {
-    return 'monitor';
-  }
-  return 'stable';
-}
-
-function subscriptionPriority(item: Subscription): number {
-  const riskRank: Record<RiskLevel, number> = { critical: 0, warning: 1, monitor: 2, stable: 3 };
-  const remaining = daysUntil(item.current_period_end) ?? Number.MAX_SAFE_INTEGER;
-  return riskRank[subscriptionRiskLevel(item)] * 100000 + remaining;
 }
 
 function riskToneClassName(level: RiskLevel): string {
@@ -213,11 +206,16 @@ function SubscriptionsContent() {
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<Record<RiskLevel, number>>({
+    critical: 0,
+    warning: 0,
+    monitor: 0,
+    stable: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
-  const [loadedRequestKey, setLoadedRequestKey] = useState('');
   const [draftFilters, setDraftFilters] = useState({
     account_id: appliedAccountId,
     plan_id: appliedPlanId,
@@ -235,10 +233,11 @@ function SubscriptionsContent() {
     if (appliedAccountId) params.set('account_id', appliedAccountId);
     if (appliedPlanId) params.set('plan_id', appliedPlanId);
     if (appliedExpiresBefore) params.set('expires_before', appliedExpiresBefore);
+    params.set('sort', sort);
     params.set('limit', String(PAGE_SIZE));
     if (offset > 0) params.set('offset', String(offset));
     return params.toString();
-  }, [appliedAccountId, appliedExpiresBefore, appliedPlanId, appliedStatus, offset]);
+  }, [appliedAccountId, appliedExpiresBefore, appliedPlanId, appliedStatus, offset, sort]);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(searchParamsKey);
@@ -267,11 +266,17 @@ function SubscriptionsContent() {
       )).data;
       const nextItems = (payload.items || []).map(normalizeSubscription);
       const nextTotal = Number(payload.total ?? nextItems.length);
+      const nextSummary = {
+        critical: Number(payload.summary?.critical || 0),
+        warning: Number(payload.summary?.warning || 0),
+        monitor: Number(payload.summary?.monitor || 0),
+        stable: Number(payload.summary?.stable || 0),
+      };
       if (mountedRef.current && requestSequenceRef.current === sequence) {
         setSubscriptions(nextItems);
         setTotal(nextTotal);
+        setSummary(nextSummary);
         setLoadedAt(new Date());
-        setLoadedRequestKey(requestKey);
         hasLoadedRef.current = true;
         setHasLoaded(true);
       }
@@ -306,32 +311,12 @@ function SubscriptionsContent() {
     });
   }, [appliedAccountId, appliedExpiresBefore, appliedPlanId]);
 
-  const queuedSubscriptions = useMemo(() => {
-    return [...subscriptions].sort((left, right) => {
-      if (sort === 'customer') {
-        return String(left.account_name || left.account_id).localeCompare(String(right.account_name || right.account_id));
-      }
-      if (sort === 'expiry') {
-        return (daysUntil(left.current_period_end) ?? Number.MAX_SAFE_INTEGER) -
-          (daysUntil(right.current_period_end) ?? Number.MAX_SAFE_INTEGER);
-      }
-      return subscriptionPriority(left) - subscriptionPriority(right) ||
-        String(left.account_name || left.account_id).localeCompare(String(right.account_name || right.account_id));
-    });
-  }, [sort, subscriptions]);
+  const queuedSubscriptions = subscriptions;
 
   const selectedSubscription =
     queuedSubscriptions.find((item) => item.subscription_id === focusedSubscriptionId) ||
     queuedSubscriptions[0] ||
     null;
-
-  const pageSummary = useMemo(() => {
-    const summary = { critical: 0, warning: 0, monitor: 0, stable: 0 };
-    subscriptions.forEach((item) => {
-      summary[subscriptionRiskLevel(item)] += 1;
-    });
-    return summary;
-  }, [subscriptions]);
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -375,7 +360,19 @@ function SubscriptionsContent() {
 
   const statusFilters = ['', 'past_due', 'expired', 'trialing', 'active'];
   const hasFilters = Boolean(appliedStatus || appliedAccountId || appliedPlanId || appliedExpiresBefore || sort !== 'priority');
-  const isShowingRetainedResults = Boolean(error && loadedRequestKey && loadedRequestKey !== requestKey);
+  const isShowingRetainedResults = Boolean(error && hasLoaded);
+  const riskReasonByCode: Record<string, string> = {
+    past_due: t('admin.subscriptions.reason_past_due', {}, 'Billing follow-up is already active and may affect service continuity.'),
+    expired: t('admin.subscriptions.reason_expired', {}, 'The subscription has ended and needs a renewal or closure decision.'),
+    suspended: t('admin.subscriptions.reason_suspended', {}, 'Service is suspended and requires an explicit operator decision.'),
+    snapshot_stale: t('admin.subscriptions.reason_snapshot_stale', {}, 'This period billing statistics need refresh before the account is treated as reconciled.'),
+    snapshot_missing: t('admin.subscriptions.reason_snapshot_missing', {}, 'This period billing statistics are missing for at least one covered site.'),
+    expiring: t('admin.subscriptions.reason_expiring', {}, 'Current period ends soon, so renewal or follow-up should happen before support load increases.'),
+    trialing: t('admin.subscriptions.reason_trialing', {}, 'Trial coverage is still active and should be checked before converting or ending.'),
+    canceled: t('admin.subscriptions.reason_canceled', {}, 'The subscription is canceled and should remain visible until its service posture is closed.'),
+    snapshot_unknown: t('admin.subscriptions.reason_snapshot_unknown', {}, 'Billing statistics are not yet classifiable, so the subscription needs monitoring.'),
+    stable: t('admin.subscriptions.reason_active', {}, 'Service coverage is currently stable and remains here as lower-priority review context.'),
+  };
 
   return (
     <BackofficePageStack className="space-y-5">
@@ -418,7 +415,7 @@ function SubscriptionsContent() {
                 {t(
                   'admin.subscriptions.retained_results_notice',
                   {},
-                  'Showing the last successfully loaded page; it may not match the current filters.'
+                  'Showing the last successfully loaded results; refresh failed, so they may be stale or may not match the current filters.'
                 )}
               </span>
             ) : null}
@@ -432,17 +429,17 @@ function SubscriptionsContent() {
       <BackofficeSummaryStrip
         items={[
           {
-            label: t('admin.subscriptions.page_critical_metric', {}, 'Page critical'),
-            value: formatInteger(pageSummary.critical),
-            toneClassName: pageSummary.critical > 0 ? 'text-rose-600 dark:text-rose-300' : undefined,
+            label: t('admin.subscriptions.summary_critical_metric', {}, 'Critical'),
+            value: formatInteger(summary.critical),
+            toneClassName: summary.critical > 0 ? 'text-rose-600 dark:text-rose-300' : undefined,
           },
           {
-            label: t('admin.subscriptions.page_warning_metric', {}, 'Page warning'),
-            value: formatInteger(pageSummary.warning),
-            toneClassName: pageSummary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
+            label: t('admin.subscriptions.summary_warning_metric', {}, 'Warning'),
+            value: formatInteger(summary.warning),
+            toneClassName: summary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
           },
-          { label: t('admin.subscriptions.page_monitor_metric', {}, 'Page monitor'), value: formatInteger(pageSummary.monitor) },
-          { label: t('admin.subscriptions.page_stable_metric', {}, 'Page service normal'), value: formatInteger(pageSummary.stable) },
+          { label: t('admin.subscriptions.summary_monitor_metric', {}, 'Monitor'), value: formatInteger(summary.monitor) },
+          { label: t('admin.subscriptions.summary_stable_metric', {}, 'Service normal'), value: formatInteger(summary.stable) },
           {
             label: t('common.updated_at', {}, 'Updated'),
             value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown'),
@@ -462,7 +459,7 @@ function SubscriptionsContent() {
                   {t(
                     'admin.subscriptions.queue_list_desc_v2',
                     {},
-                    'Status filters are applied by the service API. Risk and expiry sorting apply to the current page of records.'
+                    'Filters, risk classification, and sorting are applied across all matching subscriptions by the service API.'
                   )}
                 </p>
               </div>
@@ -535,7 +532,7 @@ function SubscriptionsContent() {
               </label>
               <label className="text-sm text-slate-700 dark:text-slate-200">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                  {t('admin.subscriptions.sort_label', {}, 'Sort page')}
+                  {t('admin.subscriptions.sort_label', {}, 'Sort')}
                 </span>
                 <select
                   className="input w-full"
@@ -566,7 +563,7 @@ function SubscriptionsContent() {
           {queuedSubscriptions.length ? (
             <div role="list" aria-label={t('admin.subscriptions.queue_region_label', {}, 'Subscription risk queue')}>
               {queuedSubscriptions.map((subscription) => {
-                const riskLevel = subscriptionRiskLevel(subscription);
+                const riskLevel = subscription.operator_risk.level;
                 const remaining = daysUntil(subscription.current_period_end);
                 const snapshotStatus = subscription.billing_snapshot_status?.status || 'unknown';
                 const isSelected = selectedSubscription?.subscription_id === subscription.subscription_id;
@@ -576,21 +573,8 @@ function SubscriptionsContent() {
                   fallback: subscription.package_alias || subscription.plan_id,
                 }) || t('common.unknown');
                 const riskReason =
-                  subscription.status === 'past_due'
-                    ? t('admin.subscriptions.reason_past_due', {}, 'Billing follow-up is already active and may affect service continuity.')
-                    : subscription.status === 'expired'
-                      ? t('admin.subscriptions.reason_expired', {}, 'The subscription has ended and needs a renewal or closure decision.')
-                      : subscription.status === 'suspended'
-                        ? t('admin.subscriptions.reason_suspended', {}, 'Service is suspended and requires an explicit operator decision.')
-                        : snapshotStatus === 'stale'
-                          ? t('admin.subscriptions.reason_snapshot_stale', {}, 'This period billing statistics need refresh before the account is treated as reconciled.')
-                          : snapshotStatus === 'missing'
-                            ? t('admin.subscriptions.reason_snapshot_missing', {}, 'This period billing statistics are missing for at least one covered site.')
-                            : remaining !== null && remaining >= 0 && remaining <= 14
-                              ? t('admin.subscriptions.reason_expiring', {}, 'Current period ends soon, so renewal or follow-up should happen before support load increases.')
-                              : subscription.status === 'trialing'
-                                ? t('admin.subscriptions.reason_trialing', {}, 'Trial coverage is still active and should be checked before converting or ending.')
-                                : t('admin.subscriptions.reason_active', {}, 'Service coverage is currently stable and remains here as lower-priority review context.');
+                  riskReasonByCode[subscription.operator_risk.reason_code] ||
+                  riskReasonByCode.snapshot_unknown;
 
                 return (
                   <article
@@ -708,8 +692,8 @@ function SubscriptionsContent() {
                 </h2>
               </div>
               {selectedSubscription ? (
-                <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(subscriptionRiskLevel(selectedSubscription)))}>
-                  {t(`admin.subscriptions.risk_${subscriptionRiskLevel(selectedSubscription)}`, undefined, subscriptionRiskLevel(selectedSubscription))}
+                <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(selectedSubscription.operator_risk.level))}>
+                  {t(`admin.subscriptions.risk_${selectedSubscription.operator_risk.level}`, undefined, selectedSubscription.operator_risk.level)}
                 </span>
               ) : null}
             </div>

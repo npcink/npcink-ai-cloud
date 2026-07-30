@@ -93,6 +93,15 @@ DEFAULT_RUNTIME_COMMERCIAL_POLICY = {
     },
 }
 SHADOW_PRICING_TARIFF_VERSION = "shadow-pricing-v1"
+ADMIN_SUBSCRIPTION_RISK_RANK = {
+    "critical": 0,
+    "warning": 1,
+    "monitor": 2,
+    "stable": 3,
+}
+ADMIN_SUBSCRIPTION_SORTS = frozenset({"priority", "expiry", "customer"})
+ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS = 500
+ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES = 500
 SHADOW_PRICING_TARIFF_REGISTRY: dict[str, dict[str, dict[str, float | str]]] = {
     "ability": {
         "npcink-abilities-toolkit/build-article-block-plan": {
@@ -1041,11 +1050,19 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         account_id: str | None = None,
         plan_id: str | None = None,
         expires_before: datetime | None = None,
+        sort: str = "priority",
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, object]:
         normalized_offset = max(0, int(offset or 0))
         resolved_limit = max(1, int(limit or 100))
+        normalized_sort = str(sort or "priority").strip().lower()
+        if normalized_sort not in ADMIN_SUBSCRIPTION_SORTS:
+            raise CommercialValidationError(
+                "service.admin_subscription_sort_invalid",
+                "subscription sort must be one of: priority, expiry, customer",
+            )
+        now = self._normalize_datetime(self.now_factory())
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             total = repository.count_subscriptions(
@@ -1054,20 +1071,33 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 plan_id=plan_id,
                 current_period_end_before=expires_before,
             )
+            if total > ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS:
+                raise CommercialValidationError(
+                    "service.admin_subscription_queue_scope_too_broad",
+                    "subscription queue scope exceeds 500 records; narrow the filters",
+                )
             subscriptions = repository.list_subscriptions(
                 status=status,
                 account_id=account_id,
                 plan_id=plan_id,
                 current_period_end_before=expires_before,
-                offset=normalized_offset,
-                limit=resolved_limit,
+                limit=ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS,
             )
             account_ids = [subscription.account_id for subscription in subscriptions]
             accounts = {
                 account.account_id: account
                 for account in repository.list_accounts(account_ids=account_ids, limit=None)
             }
-            sites = repository.list_sites(account_ids=account_ids, limit=None)
+            site_counts = repository.count_sites_by_account(account_ids=account_ids)
+            if sum(site_counts.values()) > ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES:
+                raise CommercialValidationError(
+                    "service.admin_subscription_queue_site_scope_too_broad",
+                    "subscription queue site scope exceeds 500 records; narrow the filters",
+                )
+            sites = repository.list_sites(
+                account_ids=account_ids,
+                limit=ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES,
+            )
             sites_by_account: dict[str, list[Site]] = defaultdict(list)
             for site in sites:
                 if site.account_id:
@@ -1076,47 +1106,114 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 site_ids=[site.site_id for site in sites],
             )
 
-        items = []
-        now = self.now_factory()
+        enriched_items: list[tuple[dict[str, object], AccountSubscription]] = []
         for subscription in subscriptions:
             account_sites = sites_by_account.get(subscription.account_id, [])
             period_start_at, period_end_at = self._resolve_period(subscription, now)
-            items.append(
-                {
-                    "subscription": self._serialize_subscription(subscription),
-                    "account": cast(Any, self)._serialize_account(accounts[subscription.account_id])
-                    if subscription.account_id in accounts
-                    else None,
-                    "covered_sites": [
-                        cast(Any, self)._serialize_site(site) for site in account_sites
-                    ],
-                    "coverage": self._build_subscription_coverage_summary(
-                        subscription,
-                        site_count=len(account_sites),
-                    ),
-                    "expiry": self._serialize_expiry_state(subscription),
-                    "latest_billing_snapshots": [
-                        self._serialize_billing_snapshot(latest_billing_by_site[site.site_id])
-                        for site in account_sites
-                        if site.site_id in latest_billing_by_site
-                    ],
-                    "billing_snapshot_status": self._build_subscription_billing_snapshot_status(
-                        subscription=subscription,
-                        sites=account_sites,
-                        latest_billing_snapshots=latest_billing_by_site,
-                        period_start_at=period_start_at,
-                        period_end_at=period_end_at,
-                    ),
-                }
+            billing_snapshot_status = self._build_subscription_billing_snapshot_status(
+                subscription=subscription,
+                sites=account_sites,
+                latest_billing_snapshots=latest_billing_by_site,
+                period_start_at=period_start_at,
+                period_end_at=period_end_at,
             )
+            operator_risk = self._build_admin_subscription_operator_risk(
+                subscription=subscription,
+                billing_snapshot_status=billing_snapshot_status,
+                now=now,
+            )
+            enriched_items.append(
+                (
+                    {
+                        "subscription": self._serialize_subscription(subscription),
+                        "account": (
+                            cast(Any, self)._serialize_account(accounts[subscription.account_id])
+                            if subscription.account_id in accounts
+                            else None
+                        ),
+                        "covered_sites": [
+                            cast(Any, self)._serialize_site(site) for site in account_sites
+                        ],
+                        "coverage": self._build_subscription_coverage_summary(
+                            subscription,
+                            site_count=len(account_sites),
+                        ),
+                        "expiry": self._serialize_expiry_state(subscription),
+                        "latest_billing_snapshots": [
+                            self._serialize_billing_snapshot(latest_billing_by_site[site.site_id])
+                            for site in account_sites
+                            if site.site_id in latest_billing_by_site
+                        ],
+                        "billing_snapshot_status": billing_snapshot_status,
+                        "operator_risk": operator_risk,
+                    },
+                    subscription,
+                )
+            )
+
+        def _expiry_sort_value(subscription: AccountSubscription) -> float:
+            period_end_at = subscription.current_period_end_at
+            if period_end_at is None:
+                return float("inf")
+            return self._normalize_datetime(period_end_at).timestamp()
+
+        def _customer_sort_value(item: dict[str, object]) -> tuple[str, str]:
+            account = item.get("account")
+            account_mapping = account if isinstance(account, dict) else {}
+            subscription = item.get("subscription")
+            subscription_mapping = subscription if isinstance(subscription, dict) else {}
+            account_id_value = str(subscription_mapping.get("account_id") or "")
+            customer_value = str(account_mapping.get("name") or account_id_value)
+            return customer_value.casefold(), account_id_value.casefold()
+
+        def _sort_key(
+            entry: tuple[dict[str, object], AccountSubscription],
+        ) -> tuple[object, ...]:
+            item, subscription = entry
+            customer_name, account_id_value = _customer_sort_value(item)
+            subscription_id = str(subscription.subscription_id or "")
+            expiry_value = _expiry_sort_value(subscription)
+            if normalized_sort == "customer":
+                return customer_name, account_id_value, subscription_id
+            if normalized_sort == "expiry":
+                return expiry_value, customer_name, account_id_value, subscription_id
+            operator_risk = item.get("operator_risk")
+            operator_risk_mapping = operator_risk if isinstance(operator_risk, dict) else {}
+            risk_level = str(operator_risk_mapping.get("level") or "monitor")
+            return (
+                ADMIN_SUBSCRIPTION_RISK_RANK.get(risk_level, 2),
+                expiry_value,
+                customer_name,
+                account_id_value,
+                subscription_id,
+            )
+
+        enriched_items.sort(key=_sort_key)
+        summary_counts = Counter(
+            str(cast(dict[str, object], item["operator_risk"]).get("level") or "monitor")
+            for item, _subscription in enriched_items
+        )
+        items = [
+            item
+            for item, _subscription in enriched_items[
+                normalized_offset : normalized_offset + resolved_limit
+            ]
+        ]
         return {
             "filters": {
                 "status": status or "",
                 "account_id": account_id or "",
                 "plan_id": plan_id or "",
                 "expires_before": self._serialize_datetime(expires_before),
+                "sort": normalized_sort,
                 "offset": normalized_offset,
                 "limit": resolved_limit,
+            },
+            "summary": {
+                "critical": summary_counts["critical"],
+                "warning": summary_counts["warning"],
+                "monitor": summary_counts["monitor"],
+                "stable": summary_counts["stable"],
             },
             "items": items,
             "total": total,
@@ -1126,6 +1223,48 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "total": total,
                 "has_more": normalized_offset + len(items) < total,
             },
+        }
+
+    def _build_admin_subscription_operator_risk(
+        self,
+        *,
+        subscription: AccountSubscription,
+        billing_snapshot_status: dict[str, object],
+        now: datetime,
+    ) -> dict[str, str]:
+        subscription_status = str(subscription.status or "").strip().lower()
+        snapshot_status = str(billing_snapshot_status.get("status") or "unknown").strip().lower()
+        if subscription_status in {"past_due", "expired", "suspended"}:
+            return {
+                "level": "critical",
+                "reason_code": subscription_status,
+            }
+        if snapshot_status in {"stale", "missing"}:
+            return {
+                "level": "warning",
+                "reason_code": f"snapshot_{snapshot_status}",
+            }
+        period_end_at = subscription.current_period_end_at
+        if period_end_at is not None:
+            seconds_until_end = (self._normalize_datetime(period_end_at) - now).total_seconds()
+            if 0 <= seconds_until_end <= 14 * 86400:
+                return {
+                    "level": "warning",
+                    "reason_code": "expiring",
+                }
+        if subscription_status in {"trialing", "canceled"}:
+            return {
+                "level": "monitor",
+                "reason_code": subscription_status,
+            }
+        if snapshot_status == "unknown":
+            return {
+                "level": "monitor",
+                "reason_code": "snapshot_unknown",
+            }
+        return {
+            "level": "stable",
+            "reason_code": "stable",
         }
 
     def get_admin_subscription(self, subscription_id: str) -> dict[str, object]:

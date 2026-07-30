@@ -27,6 +27,7 @@ const SUBSCRIPTIONS = [
       stale_site_count: 0,
       missing_site_count: 0,
     },
+    operator_risk: { level: 'critical', reason_code: 'past_due' },
   },
   {
     subscription: {
@@ -49,6 +50,7 @@ const SUBSCRIPTIONS = [
       stale_site_count: 1,
       missing_site_count: 0,
     },
+    operator_risk: { level: 'warning', reason_code: 'snapshot_stale' },
   },
   {
     subscription: {
@@ -71,6 +73,7 @@ const SUBSCRIPTIONS = [
       stale_site_count: 0,
       missing_site_count: 0,
     },
+    operator_risk: { level: 'stable', reason_code: 'stable' },
   },
 ];
 
@@ -80,6 +83,7 @@ test('subscription risk queue persists server filters and inspector focus while 
 
   let requestCount = 0;
   let failNextRefresh = false;
+  const requestedSorts: string[] = [];
   await page.route('**/api/admin/subscriptions?*', async (route) => {
     requestCount += 1;
     if (failNextRefresh) {
@@ -96,15 +100,34 @@ test('subscription risk queue persists server filters and inspector focus while 
     const status = url.searchParams.get('status') || '';
     const accountId = url.searchParams.get('account_id') || '';
     const planId = url.searchParams.get('plan_id') || '';
-    const items = SUBSCRIPTIONS.filter((item) => {
+    const sort = url.searchParams.get('sort') || '';
+    requestedSorts.push(sort);
+    const matchingItems = SUBSCRIPTIONS.filter((item) => {
       return (!status || item.subscription.status === status) &&
         (!accountId || item.subscription.account_id.includes(accountId)) &&
         (!planId || item.subscription.plan_id.includes(planId));
     });
+    const riskRank: Record<string, number> = { critical: 0, warning: 1, monitor: 2, stable: 3 };
+    const items = [...matchingItems].sort((left, right) => {
+      if (sort === 'customer') {
+        return left.account.name.localeCompare(right.account.name);
+      }
+      if (sort === 'expiry') {
+        return left.subscription.current_period_end_at.localeCompare(right.subscription.current_period_end_at);
+      }
+      return riskRank[left.operator_risk.level] - riskRank[right.operator_risk.level];
+    });
+    const summary = matchingItems.reduce<Record<string, number>>(
+      (current, item) => ({
+        ...current,
+        [item.operator_risk.level]: current[item.operator_risk.level] + 1,
+      }),
+      { critical: 0, warning: 0, monitor: 0, stable: 0 }
+    );
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(buildAdminApiEnvelope({ items, total: items.length })),
+      body: JSON.stringify(buildAdminApiEnvelope({ items, total: items.length, summary })),
     });
   });
 
@@ -113,6 +136,10 @@ test('subscription risk queue persists server filters and inspector focus while 
   await expect(page.locator('[data-ui="subscription-queue-item"]')).toHaveCount(3);
   await expect(page.locator('table')).toHaveCount(0);
   expect(requestCount).toBe(1);
+  expect(requestedSorts).toEqual(['priority']);
+  const summaryStrip = page.locator('[data-density="standard"]').first();
+  await expect(summaryStrip.getByText(/^Critical$|^严重风险$/i)).toBeVisible();
+  await expect(summaryStrip.getByText(/^Warning$|^警告$/i)).toBeVisible();
 
   const queueItems = page.locator('[data-ui="subscription-queue-item"]');
   await expect(queueItems.nth(0)).toContainText('Zeta Customer');
@@ -130,8 +157,9 @@ test('subscription risk queue persists server filters and inspector focus while 
   await expect(page).toHaveURL(/plan_id=plus/);
   await expect(queueItems).toHaveCount(1);
 
-  await page.getByRole('combobox', { name: /Sort page|当前页排序|目前頁排序/i }).selectOption('customer');
+  await page.getByRole('combobox', { name: /^Sort$|^排序$/i }).selectOption('customer');
   await expect(page).toHaveURL(/sort=customer/);
+  await expect.poll(() => requestedSorts.at(-1)).toBe('customer');
   const inspectButton = page.getByRole('button', { name: /^Inspect$|^检查$|^檢查$/i });
   await inspectButton.focus();
   await inspectButton.press('Enter');
@@ -141,19 +169,20 @@ test('subscription risk queue persists server filters and inspector focus while 
   await page.reload();
   await expect(page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i)).toHaveValue('acct_beta');
   await expect(page.getByPlaceholder(/Plan ID|套餐 ID|方案 ID/i)).toHaveValue('plus');
-  await expect(page.getByRole('combobox', { name: /Sort page|当前页排序|目前頁排序/i })).toHaveValue('customer');
+  await expect(page.getByRole('combobox', { name: /^Sort$|^排序$/i })).toHaveValue('customer');
   await expect(page.locator('#subscription-inspector')).toContainText('Beta Customer');
 
   failNextRefresh = true;
   await page.getByRole('button', { name: /Refresh subscriptions|刷新订阅|刷新訂閱/i }).click();
-  await expect(page.getByText('temporary subscription refresh failure', { exact: true })).toBeVisible();
+  await expect(page.getByRole('alert').first()).toContainText('temporary subscription refresh failure');
+  await expect(page.getByText(/last successfully loaded results|最近一次成功加载的结果/i)).toBeVisible();
   await expect(queueItems).toHaveCount(1);
   await expect(page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i)).toHaveValue('acct_beta');
 
   failNextRefresh = true;
   await page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i).fill('acct_missing');
   await page.getByRole('button', { name: /^Apply$|^应用$|^套用$/i }).click();
-  await expect(page.getByText(/last successfully loaded page|最近一次成功加载的页面/i)).toBeVisible();
+  await expect(page.getByText(/last successfully loaded results|最近一次成功加载的结果/i)).toBeVisible();
   await expect(queueItems).toHaveCount(1);
   await expect(page.locator('#subscription-inspector')).toContainText('Beta Customer');
 
