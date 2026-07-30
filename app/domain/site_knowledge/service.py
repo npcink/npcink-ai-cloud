@@ -52,6 +52,10 @@ from app.domain.site_knowledge.maintenance import (
     record_maintenance_batch,
     validate_maintenance_batch,
 )
+from app.domain.site_knowledge.media_search_quality import (
+    collapse_media_search_duplicates,
+    rank_media_search_results,
+)
 from app.domain.site_knowledge.repository import SiteKnowledgeRepository
 from app.domain.site_knowledge.rerankers import (
     SiteKnowledgeReranker,
@@ -729,6 +733,12 @@ class SiteKnowledgeService:
                     "candidate_count": 0,
                     "returned_count": 0,
                     "duplicate_chunks_collapsed": 0,
+                    "duplicate_media_collapsed": 0,
+                    "ranking_strategy": (
+                        "semantic_plus_bounded_lexical"
+                        if intent == "media_library_search"
+                        else "semantic"
+                    ),
                 },
                 "results": [],
                 "write_posture": "suggestion_only",
@@ -754,6 +764,7 @@ class SiteKnowledgeService:
         )
         if results is not None:
             results, rerank, result_grouping = self._prepare_search_results(
+                intent=intent,
                 query=query,
                 results=results,
                 evidence_policy=evidence_policy,
@@ -795,7 +806,11 @@ class SiteKnowledgeService:
         ):
             embedding = chunk.embedding_json if isinstance(chunk.embedding_json, list) else []
             score = cosine_similarity(query_embedding, [float(value) for value in embedding])
-            lexical_bonus = _lexical_bonus(query, chunk.chunk_text, chunk.title)
+            lexical_bonus = (
+                0.0
+                if intent == "media_library_search"
+                else _lexical_bonus(query, chunk.chunk_text, chunk.title)
+            )
             scored.append((min(1.0, score + lexical_bonus), chunk))
 
         scored.sort(key=lambda item: (-item[0], item[1].post_id, item[1].chunk_index))
@@ -816,6 +831,7 @@ class SiteKnowledgeService:
             for score, chunk in scored
         ]
         results, rerank, result_grouping = self._prepare_search_results(
+            intent=intent,
             query=query,
             results=results,
             evidence_policy=evidence_policy,
@@ -1013,6 +1029,7 @@ class SiteKnowledgeService:
     def _prepare_search_results(
         self,
         *,
+        intent: str,
         query: str,
         results: list[dict[str, object]],
         evidence_policy: dict[str, object],
@@ -1021,11 +1038,16 @@ class SiteKnowledgeService:
     ) -> tuple[list[dict[str, object]], dict[str, object], dict[str, object]]:
         filtered = _apply_evidence_policy(results, evidence_policy)
         ranked = _rank_search_results_for_query(query, filtered)
+        if intent == "media_library_search":
+            ranked = rank_media_search_results(query, ranked)
         reranked, rerank = self._maybe_rerank_results(query=query, results=ranked)
         candidate_count = len(reranked)
         collapsed_count = 0
+        duplicate_media_count = 0
         if result_granularity == "document":
             reranked, collapsed_count = _collapse_search_results_by_document(reranked)
+        if intent == "media_library_search":
+            reranked, duplicate_media_count = collapse_media_search_duplicates(reranked)
         returned = reranked[:max_results]
         return returned, rerank, {
             "strategy": (
@@ -1036,6 +1058,12 @@ class SiteKnowledgeService:
             "candidate_count": candidate_count,
             "returned_count": len(returned),
             "duplicate_chunks_collapsed": collapsed_count,
+            "duplicate_media_collapsed": duplicate_media_count,
+            "ranking_strategy": (
+                "semantic_plus_bounded_lexical"
+                if intent == "media_library_search"
+                else "semantic"
+            ),
         }
 
     def _maybe_rerank_results(
