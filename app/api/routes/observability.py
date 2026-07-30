@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.api.auth import authorize_public_request, get_cloud_services
 from app.api.envelope import build_envelope
-from app.domain.observability.plugin_events import PluginObservabilityService
+from app.domain.observability.plugin_events import (
+    MONITORING_STATE_CONTRACT_VERSION,
+    MONITORING_STATE_EVENT_KIND,
+    MONITORING_STATE_PLUGIN_SLUG,
+    PluginObservabilityService,
+)
 
 router = APIRouter(prefix="/v1/observability", tags=["observability"])
 
@@ -54,6 +59,27 @@ class PluginEventPayload(BaseModel):
     time_to_outcome_bucket: str = Field(default="", max_length=32)
     generation_sequence: int | None = Field(default=None, ge=1, le=100_000)
     content_storage: str = Field(default="", max_length=64)
+    monitoring_state_contract: str = Field(default="", max_length=64)
+    monitoring_enabled: bool | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def validate_monitoring_state_projection(self) -> Self:
+        is_projection = self.event_kind == MONITORING_STATE_EVENT_KIND
+        has_projection_fields = (
+            bool(self.monitoring_state_contract) or self.monitoring_enabled is not None
+        )
+        if not is_projection:
+            if has_projection_fields:
+                raise ValueError("monitoring state fields require the monitoring state event kind")
+            return self
+        if (
+            self.plugin_slug != MONITORING_STATE_PLUGIN_SLUG
+            or self.monitoring_state_contract != MONITORING_STATE_CONTRACT_VERSION
+            or self.monitoring_enabled is None
+            or self.content_storage != "omitted_metadata_only"
+        ):
+            raise ValueError("monitoring state projection contract is invalid")
+        return self
 
 
 class PluginEventBatchPayload(BaseModel):

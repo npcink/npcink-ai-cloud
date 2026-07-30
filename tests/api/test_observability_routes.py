@@ -103,6 +103,128 @@ def test_plugin_observability_batch_is_signed_and_metadata_only(tmp_path: Path) 
         assert events[1].route == "/npcink-governance-core/v1/proposals"
 
 
+def test_plugin_observability_accepts_monitoring_state_projection(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    payload = {
+        "contract_version": "magick-plugin-observability-v1",
+        "source": "npcink-cloud-addon",
+        "events": [
+            {
+                "schema_version": "2026-07-30",
+                "plugin_slug": "npcink-cloud-addon",
+                "plugin_version": "0.1.3",
+                "source": "local",
+                "event_kind": "addon.monitoring.state_projected",
+                "event_id": "evt_monitoring_state_1",
+                "status": "ok",
+                "monitoring_state_contract": "wordpress_monitoring_state.v1",
+                "monitoring_enabled": False,
+                "content_storage": "omitted_metadata_only",
+            }
+        ],
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+
+    response = client.post(
+        "/v1/observability/plugin-events",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/observability/plugin-events",
+                site_id="site_obs",
+                body=body,
+                idempotency_key="obs-monitoring-state-1",
+                trace_id="traceobsmonitoringstate00000001",
+            )
+        ),
+    )
+
+    assert response.status_code == 200
+    with get_session(database_url) as session:
+        event = session.scalar(
+            select(PluginObservabilityEvent).where(
+                PluginObservabilityEvent.event_id == "evt_monitoring_state_1"
+            )
+        )
+        assert event is not None
+        assert event.payload_json == {
+            "content_storage": "omitted_metadata_only",
+            "monitoring_enabled": False,
+            "monitoring_state_contract": "wordpress_monitoring_state.v1",
+        }
+
+
+def test_plugin_observability_rejects_string_monitoring_state(tmp_path: Path) -> None:
+    _, client = _build_client(tmp_path)
+    payload = {
+        "contract_version": "magick-plugin-observability-v1",
+        "events": [
+            {
+                "plugin_slug": "npcink-cloud-addon",
+                "event_kind": "addon.monitoring.state_projected",
+                "event_id": "evt_monitoring_state_string",
+                "monitoring_state_contract": "wordpress_monitoring_state.v1",
+                "monitoring_enabled": "false",
+            }
+        ],
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+
+    response = client.post(
+        "/v1/observability/plugin-events",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/observability/plugin-events",
+                site_id="site_obs",
+                body=body,
+                idempotency_key="obs-monitoring-state-string",
+                trace_id="traceobsmonitoringstate00000002",
+            )
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+def test_plugin_observability_rejects_incomplete_monitoring_state_contract(
+    tmp_path: Path,
+) -> None:
+    _, client = _build_client(tmp_path)
+    payload = {
+        "contract_version": "magick-plugin-observability-v1",
+        "events": [
+            {
+                "plugin_slug": "npcink-cloud-addon",
+                "event_kind": "addon.monitoring.state_projected",
+                "event_id": "evt_monitoring_state_incomplete",
+                "monitoring_state_contract": "wordpress_monitoring_state.v1",
+                "monitoring_enabled": True,
+            }
+        ],
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+
+    response = client.post(
+        "/v1/observability/plugin-events",
+        content=body,
+        headers=merge_json_headers(
+            build_auth_headers(
+                "POST",
+                "/v1/observability/plugin-events",
+                site_id="site_obs",
+                body=body,
+                idempotency_key="obs-monitoring-state-incomplete",
+                trace_id="traceobsmonitoringstate00000003",
+            )
+        ),
+    )
+
+    assert response.status_code == 422
+
+
 def test_plugin_observability_requires_stats_scope(tmp_path: Path) -> None:
     _, client = _build_client(tmp_path)
     seed_site_auth(

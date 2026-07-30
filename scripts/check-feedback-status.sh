@@ -21,6 +21,7 @@ fi
 
 echo "[feedback-status] Running focused tests"
 "${PYTHON_BIN}" -m pytest \
+	tests/api/test_observability_routes.py \
 	tests/domain/test_feedback_status.py \
 	tests/dev/test_feedback_status_cli.py \
 	-q
@@ -28,7 +29,10 @@ echo "[feedback-status] Running focused tests"
 echo "[feedback-status] Running targeted Python lint"
 "${RUFF_CMD[@]}" check \
 	app/domain/feedback_status \
+	app/domain/observability/plugin_events.py \
+	app/api/routes/observability.py \
 	app/dev/feedback_status.py \
+	tests/api/test_observability_routes.py \
 	tests/domain/test_feedback_status.py \
 	tests/dev/test_feedback_status_cli.py
 
