@@ -1771,20 +1771,17 @@ export async function installAdminMocks(page: Page) {
       return;
     }
 
-    if (pathname === `/api/admin/plans/${LONG_PLAN_ID}/versions` && route.request().method() === 'POST') {
-      const payload = route.request().postDataJSON() as Record<string, unknown>;
+    if (pathname === `/api/admin/plans/${LONG_PLAN_ID}` && route.request().method() === 'PATCH') {
       await fulfillJson(route, {
-        plan_version: {
-          plan_version_id: String(payload.plan_version_id || LONG_PLAN_VERSION_ID),
-          version_label: String(payload.version_label || 'Pro v2'),
-          status: String(payload.status || 'published'),
-          currency: 'CNY',
-          created_at: '2026-04-08T00:00:00Z',
-        },
+        plan_version_id: LONG_PLAN_VERSION_ID,
+        version_label: 'Pro v2',
+        status: 'published',
+        currency: 'CNY',
+        created_at: '2026-04-08T00:00:00Z',
         receipt: {
           event_kind: 'plan_version.publish',
           scope_kind: 'plan_version',
-          scope_id: String(payload.plan_version_id || LONG_PLAN_VERSION_ID),
+          scope_id: LONG_PLAN_VERSION_ID,
           outcome: 'succeeded',
           effective_summary: 'Plan version is now published.',
         },

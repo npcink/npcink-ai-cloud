@@ -72,7 +72,6 @@ type TierSummary = {
 
 type PlanListItem = {
   plan: PlanRecord;
-  versions: PlanVersionRecord[];
   tier_summary: TierSummary;
   latest_version?: PlanVersionRecord | null;
   published_version_count: number;
@@ -552,7 +551,7 @@ function PlansContent() {
                   {filteredCatalog.map((entry) => {
                     const { shell, item } = entry;
                     const state = catalogState(entry);
-                    const latestVersion = item?.latest_version || item?.versions?.[0] || null;
+                    const latestVersion = item?.latest_version || null;
                     const concurrency = (latestVersion?.concurrency || shell.concurrency_template || {}) as Record<string, unknown>;
                     const sourceTier = item?.tier_summary || shell;
                     const packageAlias = localizePackageAlias(t, shell.tier_id, sourceTier.package_alias);

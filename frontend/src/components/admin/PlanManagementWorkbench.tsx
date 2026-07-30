@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
@@ -14,10 +13,9 @@ import {
   localizePackageFitCue,
 } from '@/lib/admin-plan-copy';
 import { createApiClient } from '@/lib/api-client';
-import { ADMIN_CURRENCY } from '@/lib/currency';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
-import { formatCurrency, formatDate, formatNumber as formatInteger } from '@/lib/utils';
+import { formatNumber as formatInteger } from '@/lib/utils';
 
 type PlanRecord = {
   plan_id: string;
@@ -28,11 +26,8 @@ type PlanRecord = {
 };
 
 type PlanVersionRecord = {
-  plan_version_id: string;
   version_label: string;
   status: string;
-  currency: string;
-  entitlements: Record<string, unknown>;
   budgets: Record<string, unknown>;
   concurrency: Record<string, unknown>;
   policy: Record<string, unknown>;
@@ -71,7 +66,6 @@ type PackageFitCue = {
 
 type PlanDetailPayload = {
   plan: PlanRecord;
-  versions: PlanVersionRecord[];
   latest_version?: PlanVersionRecord | null;
   sales_offer?: {
     amount: number;
@@ -83,9 +77,6 @@ type PlanDetailPayload = {
 };
 
 type PlanVersionFormState = {
-  plan_version_id: string;
-  version_label: string;
-  status: string;
   monthly_included_points: string;
   site_limit: string;
   max_vector_documents: string;
@@ -94,14 +85,9 @@ type PlanVersionFormState = {
   max_active_runs: string;
   max_batch_items: string;
   grace_period_days: string;
-  entitlements_json: string;
-  metadata_override_json: string;
-  budgets_override_json: string;
-  concurrency_override_json: string;
-  policy_override_json: string;
 };
 
-type ManagementTab = 'parameters' | 'diagnostics' | 'history';
+type ManagementTab = 'parameters' | 'diagnostics';
 
 type PlanManagementWorkbenchProps = {
   open: boolean;
@@ -112,46 +98,6 @@ type PlanManagementWorkbenchProps = {
 };
 
 const planManagementClient = createApiClient({ idempotencyPrefix: 'admin_plan_management' });
-
-function prettyJson(value: unknown): string {
-  return JSON.stringify(value ?? {}, null, 2);
-}
-
-function parseJsonObject(raw: string, label: string): Record<string, unknown> {
-  const value = raw.trim();
-  if (!value) return {};
-  const parsed = JSON.parse(value);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object.`);
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function mergeJsonObjects(
-  base: Record<string, unknown>,
-  override: Record<string, unknown>
-): Record<string, unknown> {
-  const result: Record<string, unknown> = { ...base };
-  Object.entries(override).forEach(([key, value]) => {
-    const current = result[key];
-    if (
-      current &&
-      typeof current === 'object' &&
-      !Array.isArray(current) &&
-      value &&
-      typeof value === 'object' &&
-      !Array.isArray(value)
-    ) {
-      result[key] = mergeJsonObjects(
-        current as Record<string, unknown>,
-        value as Record<string, unknown>
-      );
-      return;
-    }
-    result[key] = value;
-  });
-  return result;
-}
 
 function numberField(value: unknown): string {
   const numeric = Number(value ?? 0);
@@ -164,7 +110,7 @@ function numericValue(value: unknown): number {
 }
 
 function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormState {
-  const latestVersion = detail?.latest_version || detail?.versions?.[0] || null;
+  const latestVersion = detail?.latest_version || null;
   const tierSummary = detail?.tier_summary;
   const canonicalShell = tierSummary?.canonical_shell;
   const canonicalBudgets = canonicalShell?.budgets || {};
@@ -176,12 +122,8 @@ function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormStat
   const policy = latestVersion?.policy || canonicalPolicy;
   const metadata = latestVersion?.metadata || canonicalMetadata;
   const policySubscription = (policy.subscription || canonicalPolicy.subscription || {}) as Record<string, unknown>;
-  const nextVersionNumber = Number(detail?.versions?.length || 0) + 1;
 
   return {
-    plan_version_id: latestVersion?.plan_version_id || `${detail?.plan?.plan_id || 'plan'}_v${nextVersionNumber}`,
-    version_label: latestVersion?.version_label || `v${nextVersionNumber}`,
-    status: latestVersion?.status || 'published',
     monthly_included_points: numberField(
       budgets.max_ai_credits_per_period ??
         metadata.monthly_included_points ??
@@ -194,11 +136,6 @@ function buildInitialForm(detail: PlanDetailPayload | null): PlanVersionFormStat
     max_active_runs: numberField(concurrency.max_active_runs),
     max_batch_items: numberField(metadata.max_batch_items ?? tierSummary?.max_batch_items),
     grace_period_days: numberField(policySubscription.grace_period_days),
-    entitlements_json: prettyJson(latestVersion?.entitlements || canonicalShell?.entitlements || {}),
-    metadata_override_json: '{}',
-    budgets_override_json: '{}',
-    concurrency_override_json: '{}',
-    policy_override_json: '{}',
   };
 }
 
@@ -215,27 +152,6 @@ function buildBaselineFieldPatch(tierSummary: TierSummary): Partial<PlanVersionF
     max_batch_items: numberField(tierSummary.max_batch_items),
     grace_period_days: numberField(policySubscription.grace_period_days),
   };
-}
-
-function JsonField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="text-sm">
-      <span className="mb-1.5 block font-medium text-slate-700 dark:text-slate-300">{label}</span>
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="input min-h-28 w-full font-mono text-xs"
-      />
-    </label>
-  );
 }
 
 function ParameterField({
@@ -312,7 +228,7 @@ export function PlanManagementWorkbench({
     void loadDetail();
   }, [loadDetail, open, planId]);
 
-  const latestVersion = detail?.latest_version || detail?.versions?.[0] || null;
+  const latestVersion = detail?.latest_version || null;
   const localizedAlias = detail
     ? localizePackageAlias(
         t,
@@ -346,57 +262,19 @@ export function PlanManagementWorkbench({
     setNotice(null);
     setLastReceipt(null);
     try {
-      const currentVersion = detail.latest_version || detail.versions[0] || null;
-      const baseMetadata = mergeJsonObjects(
-        mergeJsonObjects(
-          {
-            tier_id: detail.tier_summary?.tier_id || '',
-            source: (currentVersion?.metadata?.source as string | undefined) || 'operator_plan_management_workbench',
-          },
-          currentVersion?.metadata || {}
-        ),
-        {
-          monthly_included_points: Number(form.monthly_included_points || 0),
-          site_limit: Number(form.site_limit || 0),
-          max_vector_documents: Number(form.max_vector_documents || 0),
-          max_batch_items: Number(form.max_batch_items || 0),
-        }
-      );
       const payload = {
-        plan_version_id: form.plan_version_id,
-        version_label: form.version_label,
-        status: form.status,
-        currency: ADMIN_CURRENCY,
-        entitlements: parseJsonObject(form.entitlements_json, 'Entitlements'),
-        budgets: mergeJsonObjects(
-          {
-            max_ai_credits_per_period: Number(form.monthly_included_points || 0),
-            max_runs_per_period: 0,
-            max_tokens_per_period: 0,
-            max_cost_cny_per_period: Number(form.max_cost_cny_per_period || 0),
-          },
-          parseJsonObject(form.budgets_override_json, 'Budgets override')
-        ),
-        concurrency: mergeJsonObjects(
-          { max_active_runs: Number(form.max_active_runs || 0) },
-          parseJsonObject(form.concurrency_override_json, 'Concurrency override')
-        ),
-        policy: mergeJsonObjects(
-          {
-            subscription: { grace_period_days: Number(form.grace_period_days || 0) },
-            budgets: {},
-          },
-          parseJsonObject(form.policy_override_json, 'Policy override')
-        ),
-        metadata: mergeJsonObjects(
-          baseMetadata,
-          parseJsonObject(form.metadata_override_json, 'Metadata override')
-        ),
+        monthly_included_points: Number(form.monthly_included_points || 0),
+        site_limit: Number(form.site_limit || 0),
+        max_vector_documents: Number(form.max_vector_documents || 0),
+        max_cost_cny_per_period: Number(form.max_cost_cny_per_period || 0),
         sales_price_cny: Number(form.sales_price_cny || 0),
+        max_active_runs: Number(form.max_active_runs || 0),
+        max_batch_items: Number(form.max_batch_items || 0),
+        grace_period_days: Number(form.grace_period_days || 0),
       };
       const data = (await planManagementClient.request<{ receipt?: AdminMutationReceiptPayload | null }>(
-        `/api/admin/plans/${encodeURIComponent(planId)}/versions`,
-        { method: 'POST', body: payload }
+        `/api/admin/plans/${encodeURIComponent(planId)}`,
+        { method: 'PATCH', body: payload }
       )).data;
       setNotice(
         t(
@@ -418,7 +296,6 @@ export function PlanManagementWorkbench({
   const tabs: Array<{ id: ManagementTab; label: string }> = [
     { id: 'parameters', label: t('admin.plans.parameters_tab', {}, 'Package parameters') },
     { id: 'diagnostics', label: t('admin.package_advanced_info_diagnostics', {}, 'Diagnostics') },
-    { id: 'history', label: t('admin.package_advanced_info_history', {}, 'Release history') },
   ];
 
   return (
@@ -585,26 +462,6 @@ export function PlanManagementWorkbench({
                 />
               </div>
 
-              <details className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-800">
-                <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  {t('admin.plan_advanced_json_title', {}, 'Advanced JSON overrides')}
-                </summary>
-                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {t(
-                    'admin.plan_advanced_json_rare',
-                    {},
-                    'Rare override only. Normal package maintenance should not require raw entitlement or policy JSON.'
-                  )}
-                </p>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <JsonField label={t('admin.entitlements', {}, 'Entitlements')} value={form.entitlements_json} onChange={(value) => updateField('entitlements_json', value)} />
-                  <JsonField label={t('admin.metadata_override', {}, 'Metadata override')} value={form.metadata_override_json} onChange={(value) => updateField('metadata_override_json', value)} />
-                  <JsonField label={t('admin.budgets_override', {}, 'Budgets override')} value={form.budgets_override_json} onChange={(value) => updateField('budgets_override_json', value)} />
-                  <JsonField label={t('admin.concurrency_override', {}, 'Concurrency override')} value={form.concurrency_override_json} onChange={(value) => updateField('concurrency_override_json', value)} />
-                  <JsonField label={t('admin.policy_override', {}, 'Policy override')} value={form.policy_override_json} onChange={(value) => updateField('policy_override_json', value)} />
-                </div>
-              </details>
-
               {lastReceipt ? (
                 <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-800">
                   <AdminMutationReceipt receipt={lastReceipt} title={t('admin.latest_receipt', {}, 'Latest receipt')} />
@@ -652,51 +509,6 @@ export function PlanManagementWorkbench({
             </section>
           ) : null}
 
-          {activeTab === 'history' ? (
-            <section aria-labelledby="plan-history-title">
-              <h4 id="plan-history-title" className="text-sm font-semibold text-slate-950 dark:text-white">
-                {t('admin.package_advanced_info_history', {}, 'Release history')}
-              </h4>
-              {detail.versions.length ? (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full min-w-[36rem] text-left text-sm">
-                    <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                      <tr>
-                        <th className="px-2 py-2 font-semibold">{t('admin.plans.latest_version_label', {}, 'Version')}</th>
-                        <th className="px-2 py-2 font-semibold">{t('common.status')}</th>
-                        <th className="px-2 py-2 font-semibold">{t('common.created')}</th>
-                        <th className="px-2 py-2 font-semibold">{t('common.currency', {}, 'Currency')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.versions.map((version) => (
-                        <tr key={version.plan_version_id} className="border-b border-slate-200 last:border-b-0 dark:border-slate-800">
-                          <td className="px-2 py-2">
-                            <p className="font-semibold text-slate-950 dark:text-white">{version.version_label}</p>
-                            <BackofficeIdentifier value={version.plan_version_id} />
-                          </td>
-                          <td className="px-2 py-2">
-                            <BackofficeStatusBadge status={version.status} label={translateStatusLabel(version.status, t)} />
-                          </td>
-                          <td className="px-2 py-2 text-slate-600 dark:text-slate-300">{formatDate(version.created_at)}</td>
-                          <td className="px-2 py-2 text-slate-600 dark:text-slate-300">{version.currency}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                  {t('admin.plans.history_empty', {}, 'No package versions have been published yet.')}
-                </p>
-              )}
-              {detail.sales_offer ? (
-                <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                  {t('admin.sales_price_cny', {}, 'Sales price')}: {formatCurrency(detail.sales_offer.amount, detail.sales_offer.currency || ADMIN_CURRENCY)}
-                </p>
-              ) : null}
-            </section>
-          ) : null}
         </>
       ) : null}
     </AdminWorkbenchDialog>

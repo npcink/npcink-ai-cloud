@@ -239,6 +239,19 @@ class PlanVersionPayload(BaseModel):
     sales_price_cny: float | None = Field(default=None, ge=0)
 
 
+class AdminPlanParametersPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    monthly_included_points: float = Field(ge=0)
+    site_limit: int = Field(ge=1)
+    max_vector_documents: int = Field(ge=0)
+    max_cost_cny_per_period: float = Field(ge=0)
+    sales_price_cny: float = Field(ge=0)
+    max_active_runs: int = Field(ge=0)
+    max_batch_items: int = Field(ge=0)
+    grace_period_days: int = Field(ge=0)
+
+
 class SubscriptionPayload(BaseModel):
     subscription_id: str | None = None
     account_id: str
@@ -3630,6 +3643,50 @@ async def get_admin_plan(
         status="ok",
         message="admin plan loaded",
         data=result,
+        revision="m6",
+    )
+
+
+@router.patch("/admin/plans/{plan_id}")
+async def update_admin_plan_parameters(
+    request: Request,
+    plan_id: str,
+    payload: AdminPlanParametersPayload,
+) -> Any:
+    auth = await authorize_internal_request(request, require_idempotency=True)
+    if auth is not None:
+        return auth
+    try:
+        result = _get_commercial_service(request).update_admin_plan_parameters(
+            plan_id=plan_id,
+            monthly_included_points=payload.monthly_included_points,
+            site_limit=payload.site_limit,
+            max_vector_documents=payload.max_vector_documents,
+            max_cost_cny_per_period=payload.max_cost_cny_per_period,
+            sales_price_cny=payload.sales_price_cny,
+            max_active_runs=payload.max_active_runs,
+            max_batch_items=payload.max_batch_items,
+            grace_period_days=payload.grace_period_days,
+            audit_context=_build_audit_context(request),
+        )
+    except CommercialServiceError as error:
+        return _service_error_response(error, request=request)
+    return build_envelope(
+        status="ok",
+        message="admin plan parameters updated",
+        data=_merge_receipt(
+            result,
+            _build_operator_receipt(
+                event_kind="plan_version.publish",
+                scope_kind="plan_version",
+                scope_id=str(result.get("plan_version_id") or ""),
+                outcome="succeeded",
+                effective_summary=(
+                    f"Plan {plan_id} structured parameters are now published. "
+                    "Unexposed commercial policy fields were preserved."
+                ),
+            ),
+        ),
         revision="m6",
     )
 

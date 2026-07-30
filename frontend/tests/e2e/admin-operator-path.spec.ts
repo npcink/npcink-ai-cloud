@@ -187,7 +187,8 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(packageEditor).toBeVisible();
   await expect(packageEditor.getByText(/Current package parameters|当前套餐参数/i)).toBeVisible();
   await expect(packageEditor.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
-  await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toBeVisible();
+  await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toHaveCount(0);
+  await expect(packageEditor.getByRole('tab', { name: /Release history|发布历史/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('button', { name: /^Save$|^保存$|^儲存$/i })).toBeVisible();
   await packageEditor.locator('[data-ui="admin-workbench-close"]').click();
@@ -248,8 +249,8 @@ test('admin queue pages keep one primary header action and shared identifier tre
   const packageEditor = page.getByRole('dialog', { name: /Manage Pro|管理 Pro/i });
   await expect(packageEditor.getByRole('button', { name: /Restore .* suggested values|恢复 .* 建议值/i })).toBeVisible();
   await expect(packageEditor.getByRole('button', { name: /Restore saved values|还原当前已保存值|還原目前已儲存值/i })).toBeVisible();
-  await packageEditor.getByRole('tab', { name: /Release history|发布历史/i }).click();
-  await expect(packageEditor.getByText(/Pro v1|pro_v1/i).first()).toBeVisible();
+  await expect(packageEditor.getByRole('tab', { name: /Release history|发布历史/i })).toHaveCount(0);
+  await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toHaveCount(0);
   await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('button', { name: /^Save$|^保存$|^儲存$/i })).toBeVisible();
   await packageEditor.locator('[data-ui="admin-workbench-close"]').click();
