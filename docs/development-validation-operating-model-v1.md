@@ -76,7 +76,10 @@ Before editing:
 4. preserve all existing user changes;
 5. create a clean `codex/*` worktree from current `origin/master` when the
    active checkout is dirty, stale, or on unrelated work;
-6. state the change envelope before modifying files.
+6. immediately lock any auxiliary worktree created by the session with
+   `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
+   verify its reason in `git worktree list --porcelain`;
+7. state the change envelope before modifying files.
 
 The change envelope records:
 
@@ -93,6 +96,14 @@ The change envelope records:
 Never obtain a clean tree by resetting, stashing, checking out over, or broadly
 staging user work. A clean focused worktree is cheaper than reconstructing
 ownership after unrelated changes are mixed.
+
+The worktree lock is a lifecycle guard, not a substitute for conflict-domain,
+merge-lane, or shared-runtime ownership. Keep it through implementation,
+review, and merge. Unlock only after the task has ended, the PR is confirmed
+merged, and the worktree is clean. No-deliverable closeout, handoff, and
+stale-lock recovery follow
+[Parallel AI Collaboration Standard Section 4.1](parallel-ai-collaboration-standard-v1.md#41-task-worktree-lifecycle-lock);
+path names and modification times are not cleanup authority.
 
 ## 4. Select the Smallest Valid Development Lane
 
@@ -346,6 +357,8 @@ Before reporting a feature or fix complete:
 
 - [ ] focused module and product boundary remained intact;
 - [ ] unrelated dirty work was preserved;
+- [ ] every auxiliary task worktree created by this session recorded
+      `locked codex:<task-id>` immediately after creation;
 - [ ] the narrowest meaningful gate passed;
 - [ ] candidate M4 behavior was verified when the Cloud runtime was involved;
 - [ ] the actual browser, worker, API, or WordPress consumer was checked;
@@ -354,6 +367,8 @@ Before reporting a feature or fix complete:
 - [ ] GitHub required checks passed and the PR merged into `master`;
 - [ ] current clean `master` was promoted when M4 acceptance was required;
 - [ ] status shows the expected revision, clean source, and acceptance state;
+- [ ] the task worktree remained locked while its PR was open, or was unlocked
+      only after the documented merged/clean closeout conditions were met;
 - [ ] production and external human acceptance were reported separately;
 - [ ] known limitations and rollback were recorded.
 

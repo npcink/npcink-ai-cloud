@@ -6,6 +6,8 @@ Purpose: allow several AI sessions to investigate and implement independent
 Cloud work without mixing source ownership, repeatedly invalidating protected
 merge checks, or overwriting the shared M4 candidate. This standard applies
 whenever two or more human or AI sessions are active against this repository.
+The task-worktree lifecycle rule in Section 4.1 also applies when a single AI
+session creates an auxiliary linked worktree.
 
 This document governs coordination only. It does not change Cloud product
 ownership, GitHub branch protection, M4 acceptance authority, production
@@ -62,9 +64,12 @@ Parallel coordination
 - dependencies or known peer owners: <tasks/PRs/scopes>
 ```
 
-This declaration is coordination evidence, not a permanent lock. Do not add a
-mutable ownership registry, background daemon, Git hook, or second deployment
-controller to the repository. Stale local lock files are not authority.
+This declaration is coordination evidence, not conflict-domain authority by
+itself. The Git worktree lifecycle lock required by Section 4.1 protects a
+task worktree from accidental pruning, moving, or removal, but it also does not
+grant edit, merge-lane, or shared-runtime ownership. Do not add a mutable
+ownership registry, background daemon, Git hook, or second deployment
+controller to the repository. Ad hoc local lock files are not authority.
 
 Use this authority order when declarations disagree:
 
@@ -93,7 +98,9 @@ At session start:
 5. inspect open human-authored PRs and available active-task ownership;
 6. use a clean isolated `codex/*` worktree when the visible checkout is dirty,
    stale, or owned by another task;
-7. publish the required coordination declaration and change envelope.
+7. immediately lock any worktree created by the session as specified in
+   Section 4.1;
+8. publish the required coordination declaration and change envelope.
 
 Refresh the ownership and baseline check:
 
@@ -106,6 +113,68 @@ Refresh the ownership and baseline check:
 
 Do not reset, stash, switch, overwrite, or broadly stage another session's
 work to create a clean baseline.
+
+### 4.1 Task Worktree Lifecycle Lock
+
+Whenever an AI session creates an auxiliary linked worktree, it MUST lock that
+worktree immediately after `git worktree add` succeeds:
+
+```bash
+git worktree lock \
+  --reason "codex:<task-id>" \
+  <absolute-worktree-path>
+git worktree list --porcelain
+```
+
+`<task-id>` MUST be the stable task identifier supplied by Codex or the
+orchestrator. When no system identifier is exposed, use one unique task
+identifier declared in the session's coordination record and keep it unchanged
+through handoff and closeout. The reason MUST use the exact
+`codex:<task-id>` form and MUST NOT contain secrets, credentials, customer
+content, or prompts.
+
+The session MUST verify that the target entry contains
+`locked codex:<task-id>` before editing. This common-Git-directory metadata is
+the durable lifecycle marker; a worktree's path, branch name, directory
+modification time, or apparent age is not ownership or cleanup evidence.
+
+The lock prevents accidental cleanup of an in-flight task. It does not replace
+the Three Uniques, prove that a session is still running, reserve the merge
+lane, or authorize a shared-runtime mutation. Existing long-lived main and
+operations worktrees are outside this create-and-lock action unless a task
+created them as auxiliary worktrees.
+
+For normal closeout, keep the worktree locked until all of the following are
+true:
+
+1. the task has ended and its handoff evidence is recorded;
+2. the task PR is confirmed merged, using PR state rather than ancestry alone
+   because protected squash or rebase merge may replace topic commits;
+3. the worktree is clean and contains no unpreserved task output.
+
+Only then may the owner or an acknowledged cleanup session run:
+
+```bash
+git worktree unlock <absolute-worktree-path>
+```
+
+Unlocking and removing are separate operations. After unlock, inspect
+`git worktree list --porcelain` again; remove only the exact clean auxiliary
+worktree and delete its topic branch only under the repository's post-merge
+cleanup policy.
+
+If a task produced no commit or PR, merge confirmation is not applicable. The
+worktree may be unlocked only after verifying that it is clean, has no unique
+commit or untracked deliverable, and the no-deliverable closeout is recorded.
+An unmerged, closed, abandoned, interrupted, or handed-off task remains locked;
+a handoff keeps the same task ID. Do not unlock because the path looks old or
+its modification time is stale.
+
+For suspected stale-lock recovery, first inspect the exact worktree status,
+branch, unique commits, PR state, recorded task ID, and available session or
+handoff evidence. Preserve or transfer any recoverable work. Only the recorded
+owner, an acknowledged successor, or an operator may authorize unlock after
+that inventory; do not use a forced remove or unlock as a discovery mechanism.
 
 ## 5. Unique Conflict-Domain Owner
 
@@ -217,6 +286,8 @@ Every parallel task closeout reports:
 
 - owned conflict domain and files actually changed;
 - branch, PR, source revision, and merge revision separately;
+- task worktree lock reason and whether it remains locked or met the documented
+  unlock conditions;
 - local, CI, M4 candidate, accepted M4, and production states separately;
 - whether the merge lane and shared runtime were released;
 - remaining peer dependencies and the next owner, if any;
