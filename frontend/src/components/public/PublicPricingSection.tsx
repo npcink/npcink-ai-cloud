@@ -107,11 +107,13 @@ function planLabel(view: TierView): string {
 function PlanValue({
   right,
   suffix,
+  singularSuffix,
   unavailable,
   zh,
 }: {
   right: PlanComparisonRight | undefined;
   suffix: string;
+  singularSuffix?: string;
   unavailable: boolean;
   zh: boolean;
 }) {
@@ -129,7 +131,12 @@ function PlanValue({
     <span>
       {formatNumber(right.value)}
       {right.value !== null ? (
-        <span className="ml-1 text-slate-400">{suffix}</span>
+        <>
+          {' '}
+          <span className="text-slate-400">
+            {!zh && right.value === 1 && singularSuffix ? singularSuffix : suffix}
+          </span>
+        </>
       ) : null}
     </span>
   );
@@ -150,11 +157,11 @@ function PlanPrice({
   zh: boolean;
   compact?: boolean;
 }) {
-  if (agency) {
-    return <span className={compact ? 'text-lg font-black' : 'text-3xl font-black'}>{zh ? '按需报价' : 'Custom quote'}</span>;
-  }
   if (loading) {
     return <span className="text-sm font-bold text-slate-400">{zh ? '正在读取…' : 'Loading…'}</span>;
+  }
+  if (agency) {
+    return <span className={compact ? 'text-lg font-black' : 'text-3xl font-black'}>{zh ? '按需报价' : 'Custom quote'}</span>;
   }
   if (unavailable || amount === null) {
     return <span className="text-sm font-black text-slate-300">{zh ? '暂未开放' : 'Not available'}</span>;
@@ -189,12 +196,14 @@ function PlanDetails({
   unavailable: boolean;
   zh: boolean;
 }) {
+  const showAgencyFallback = agency && !loading && (!data || unavailable);
+
   return (
     <dl className="divide-y divide-white/10 text-sm">
       <div className="flex items-center justify-between gap-4 py-3">
         <dt className="text-slate-400">{zh ? '每月 AI 用量' : 'Monthly AI allowance'}</dt>
         <dd className="font-bold">
-          {agency && (!data || unavailable) ? (
+          {showAgencyFallback ? (
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
@@ -209,12 +218,29 @@ function PlanDetails({
       <div className="flex items-center justify-between gap-4 py-3">
         <dt className="text-slate-400">{zh ? '可连接站点' : 'Connected sites'}</dt>
         <dd className="font-bold">
-          {agency && (!data || unavailable) ? (
+          {showAgencyFallback ? (
             zh ? '多站点' : 'Multi-site'
           ) : (
             <PlanValue
               right={data?.comparison_rights?.site_limit}
               suffix={zh ? '个' : 'sites'}
+              singularSuffix="site"
+              unavailable={loading || unavailable}
+              zh={zh}
+            />
+          )}
+        </dd>
+      </div>
+      <div className="flex items-center justify-between gap-4 py-3">
+        <dt className="text-slate-400">{zh ? '知识库文章' : 'Knowledge articles'}</dt>
+        <dd className="font-bold">
+          {showAgencyFallback ? (
+            zh ? '按方案' : 'Custom'
+          ) : (
+            <PlanValue
+              right={data?.comparison_rights?.knowledge_article_limit}
+              suffix={zh ? '篇' : 'articles'}
+              singularSuffix="article"
               unavailable={loading || unavailable}
               zh={zh}
             />
@@ -224,12 +250,13 @@ function PlanDetails({
       <div className="flex items-center justify-between gap-4 py-3">
         <dt className="text-slate-400">{zh ? '同时处理任务' : 'Concurrent runs'}</dt>
         <dd className="font-bold">
-          {agency && (!data || unavailable) ? (
+          {showAgencyFallback ? (
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
               right={data?.comparison_rights?.concurrency_limit}
               suffix={zh ? '项' : 'runs'}
+              singularSuffix="run"
               unavailable={loading || unavailable}
               zh={zh}
             />
@@ -239,12 +266,13 @@ function PlanDetails({
       <div className="flex items-center justify-between gap-4 py-3">
         <dt className="text-slate-400">{zh ? '单次批量数量' : 'Batch size'}</dt>
         <dd className="font-bold">
-          {agency && (!data || unavailable) ? (
+          {showAgencyFallback ? (
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
               right={data?.comparison_rights?.batch_item_limit}
               suffix={zh ? '项' : 'items'}
+              singularSuffix="item"
               unavailable={loading || unavailable}
               zh={zh}
             />
@@ -258,21 +286,25 @@ function PlanDetails({
 function PlanAction({
   copy,
   recommended,
+  loading,
   unavailable,
   zh,
 }: {
   copy: TierCopy;
   recommended: boolean;
+  loading: boolean;
   unavailable: boolean;
   zh: boolean;
 }) {
-  if (unavailable) {
+  if (loading || unavailable) {
     return (
       <span
         aria-disabled="true"
         className="flex h-12 items-center border border-white/15 px-4 text-sm font-black text-slate-500"
       >
-        {zh ? '暂未开放' : 'Not available'}
+        {loading
+          ? zh ? '正在读取…' : 'Loading…'
+          : zh ? '暂未开放' : 'Not available'}
       </span>
     );
   }
@@ -337,8 +369,6 @@ export function PublicPricingSection() {
       copy: tierCopy[tierId],
     }));
   }, [catalog]);
-
-  const trialDays = catalog?.shared_paid_trial.days || 14;
 
   return (
     <section
@@ -448,6 +478,7 @@ export function PublicPricingSection() {
                   <PlanAction
                     copy={copy}
                     recommended={recommended}
+                    loading={loading}
                     unavailable={unavailable && !agency}
                     zh={zh}
                   />
@@ -535,6 +566,7 @@ export function PublicPricingSection() {
                       <PlanAction
                         copy={copy}
                         recommended={recommended}
+                        loading={loading}
                         unavailable={unavailable && !agency}
                         zh={zh}
                       />
@@ -553,11 +585,13 @@ export function PublicPricingSection() {
                 ? 'Free 服务和额度归 Cloud 账户，不随站点转移；更换账户连接时，必须先释放站点并遵守 Cloud 显示的冷却期。'
                 : 'Free service and credits belong to the Cloud account and do not move with a site. Connecting the site to another account requires release and the cooldown shown by Cloud.'}
             </p>
-            <p className="[text-wrap:pretty]">
-              {zh
-                ? `Plus、Pro 与 Agency 共享一次 ${trialDays} 天付费套餐试用资格；Agency 需要审核。`
-                : `Plus, Pro, and Agency share one ${trialDays}-day paid-plan trial. Agency requires approval.`}
-            </p>
+            {catalog ? (
+              <p className="[text-wrap:pretty]">
+                {zh
+                  ? `Plus、Pro 与 Agency 共享一次 ${catalog.shared_paid_trial.days} 天付费套餐试用资格；Agency 需要审核。`
+                  : `Plus, Pro, and Agency share one ${catalog.shared_paid_trial.days}-day paid-plan trial. Agency requires approval.`}
+              </p>
+            ) : null}
           </div>
           <p className="font-bold text-slate-300">
             {zh
