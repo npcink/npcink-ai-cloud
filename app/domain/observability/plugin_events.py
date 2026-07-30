@@ -51,7 +51,13 @@ ALLOWED_EVENT_FIELDS = {
     "time_to_outcome_bucket",
     "generation_sequence",
     "content_storage",
+    "monitoring_state_contract",
+    "monitoring_enabled",
 }
+
+MONITORING_STATE_CONTRACT_VERSION = "wordpress_monitoring_state.v1"
+MONITORING_STATE_EVENT_KIND = "addon.monitoring.state_projected"
+MONITORING_STATE_PLUGIN_SLUG = "npcink-cloud-addon"
 
 EXPECTED_PLUGIN_SLUGS = (
     "npcink-abilities-toolkit",

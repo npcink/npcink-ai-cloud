@@ -23,8 +23,13 @@ from app.domain.observability.editor_assist_quality import (
 from app.domain.observability.editor_assist_quality import (
     CONTRACT_VERSION as EDITOR_ASSIST_QUALITY_CONTRACT_VERSION,
 )
+from app.domain.observability.plugin_events import (
+    MONITORING_STATE_CONTRACT_VERSION,
+    MONITORING_STATE_EVENT_KIND,
+    MONITORING_STATE_PLUGIN_SLUG,
+)
 
-STATUS_CONTRACT_VERSION = "cloud_feedback_operational_status.v1"
+STATUS_CONTRACT_VERSION = "cloud_feedback_operational_status.v2"
 MINIMUM_VALIDATION_SAMPLE = 5
 MINIMUM_OBSERVATION_SAMPLE = 50
 MINIMUM_DECISION_SAMPLE = 200
@@ -47,9 +52,8 @@ class FeedbackOperationalStatusService:
         start_at = current_time - timedelta(hours=bounded_hours)
 
         with get_session(self.database_url) as session:
-            connected_sites = self._count(
-                session,
-                select(func.count(func.distinct(Site.site_id)))
+            connected_site_ids = (
+                select(Site.site_id)
                 .join(SiteApiKey, SiteApiKey.site_id == Site.site_id)
                 .where(
                     Site.status == SITE_STATUS_ACTIVE,
@@ -59,7 +63,12 @@ class FeedbackOperationalStatusService:
                         SiteApiKey.expires_at.is_(None),
                         SiteApiKey.expires_at > current_time,
                     ),
-                ),
+                )
+                .distinct()
+            )
+            connected_sites = self._count(
+                session,
+                select(func.count()).select_from(connected_site_ids.subquery()),
             )
             active_runtime_sites = self._count(
                 session,
@@ -74,6 +83,37 @@ class FeedbackOperationalStatusService:
                 PluginObservabilityEvent.received_at,
                 start_at=start_at,
                 end_at=current_time,
+                conditions=(PluginObservabilityEvent.event_kind != MONITORING_STATE_EVENT_KIND,),
+            )
+            (
+                monitoring_projection_events,
+                monitoring_projection_last_at,
+                monitoring_enabled_sites,
+                monitoring_disabled_sites,
+                monitoring_reported_sites,
+            ) = self._monitoring_state_summary(
+                session,
+                connected_site_ids=connected_site_ids,
+                start_at=start_at,
+                end_at=current_time,
+            )
+            monitoring_unknown_sites = max(
+                0,
+                connected_sites - monitoring_reported_sites,
+            )
+            plugin_observability_site_ids = set(
+                session.scalars(
+                    select(PluginObservabilityEvent.site_id)
+                    .where(
+                        PluginObservabilityEvent.received_at >= start_at,
+                        PluginObservabilityEvent.received_at <= current_time,
+                        PluginObservabilityEvent.event_kind != MONITORING_STATE_EVENT_KIND,
+                    )
+                    .distinct()
+                )
+            )
+            plugin_observability_on_enabled_sites = len(
+                plugin_observability_site_ids.intersection(monitoring_enabled_sites)
             )
             feedback_events, feedback_sites, feedback_last_at = self._event_summary(
                 session,
@@ -102,9 +142,7 @@ class FeedbackOperationalStatusService:
                 select(
                     func.count(
                         func.distinct(
-                            PluginObservabilityEvent.payload_json[
-                                "quality_session_id"
-                            ].as_string()
+                            PluginObservabilityEvent.payload_json["quality_session_id"].as_string()
                         )
                     )
                 ).where(
@@ -126,12 +164,20 @@ class FeedbackOperationalStatusService:
             "sites": {
                 "connected_total": connected_sites,
                 "active_runtime_window": active_runtime_sites,
-                "monitoring_enabled_window": None,
+                "monitoring_state_reported_window": monitoring_reported_sites,
+                "monitoring_enabled_window": len(monitoring_enabled_sites),
+                "monitoring_disabled_window": monitoring_disabled_sites,
+                "monitoring_state_unknown_total": monitoring_unknown_sites,
                 "plugin_observability_window": plugin_sites,
+                "plugin_observability_on_enabled_window": (plugin_observability_on_enabled_sites),
                 "agent_feedback_window": feedback_sites,
                 "editor_assist_quality_window": quality_sites,
             },
             "events": {
+                "monitoring_state_projection_total": monitoring_projection_events,
+                "monitoring_state_projection_last_at": self._format_datetime(
+                    monitoring_projection_last_at
+                ),
                 "plugin_observability_total": plugin_events,
                 "plugin_observability_last_at": self._format_datetime(plugin_last_at),
                 "agent_feedback_total": feedback_events,
@@ -142,6 +188,14 @@ class FeedbackOperationalStatusService:
             },
             "coverage": {
                 "active_over_connected": self._ratio(active_runtime_sites, connected_sites),
+                "monitoring_enabled_over_connected": self._ratio(
+                    len(monitoring_enabled_sites),
+                    connected_sites,
+                ),
+                "plugin_observability_over_monitoring_enabled": self._ratio(
+                    plugin_observability_on_enabled_sites,
+                    len(monitoring_enabled_sites),
+                ),
                 "plugin_observability_over_active": self._ratio(
                     plugin_sites,
                     active_runtime_sites,
@@ -167,15 +221,21 @@ class FeedbackOperationalStatusService:
                     "stage": self._sample_stage(quality_sessions),
                 },
             },
-            "known_gaps": [
-                {
-                    "code": "monitoring_consent_projection_unavailable",
-                    "meaning": (
-                        "Cloud does not own or currently receive the WordPress-local "
-                        "monitoring consent state."
-                    ),
-                }
-            ],
+            "known_gaps": (
+                [
+                    {
+                        "code": "monitoring_state_projection_incomplete",
+                        "meaning": (
+                            "One or more connected sites have no fresh "
+                            "WordPress-local monitoring state projection in the "
+                            "selected window."
+                        ),
+                        "site_count": monitoring_unknown_sites,
+                    }
+                ]
+                if monitoring_unknown_sites > 0
+                else []
+            ),
             "read_only": True,
             "content_storage": "none",
             "boundary": {
@@ -216,6 +276,70 @@ class FeedbackOperationalStatusService:
             )
         ).one()
         return int(row[0] or 0), int(row[1] or 0), row[2]
+
+    @staticmethod
+    def _monitoring_state_summary(
+        session: Any,
+        *,
+        connected_site_ids: Any,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> tuple[int, datetime | None, set[str], int, int]:
+        identity_conditions = (
+            PluginObservabilityEvent.site_id.in_(connected_site_ids),
+            PluginObservabilityEvent.plugin_slug == MONITORING_STATE_PLUGIN_SLUG,
+            PluginObservabilityEvent.event_kind == MONITORING_STATE_EVENT_KIND,
+            PluginObservabilityEvent.payload_json["monitoring_state_contract"].as_string()
+            == MONITORING_STATE_CONTRACT_VERSION,
+            PluginObservabilityEvent.payload_json["content_storage"].as_string()
+            == "omitted_metadata_only",
+        )
+        conditions = (
+            *identity_conditions,
+            PluginObservabilityEvent.received_at >= start_at,
+            PluginObservabilityEvent.received_at <= end_at,
+        )
+        event_count, _, last_at = FeedbackOperationalStatusService._event_summary(
+            session,
+            PluginObservabilityEvent,
+            PluginObservabilityEvent.received_at,
+            start_at=start_at,
+            end_at=end_at,
+            conditions=identity_conditions,
+        )
+        latest_ids = (
+            select(func.max(PluginObservabilityEvent.id).label("event_id"))
+            .where(*conditions)
+            .group_by(PluginObservabilityEvent.site_id)
+            .subquery()
+        )
+        latest_events = list(
+            session.scalars(
+                select(PluginObservabilityEvent).join(
+                    latest_ids,
+                    PluginObservabilityEvent.id == latest_ids.c.event_id,
+                )
+            )
+        )
+        enabled_site_ids: set[str] = set()
+        disabled_sites = 0
+        for event in latest_events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            enabled = payload.get("monitoring_enabled")
+            if not isinstance(enabled, bool):
+                continue
+            if enabled:
+                enabled_site_ids.add(str(event.site_id))
+            else:
+                disabled_sites += 1
+        reported_sites = len(enabled_site_ids) + disabled_sites
+        return (
+            event_count,
+            last_at,
+            enabled_site_ids,
+            disabled_sites,
+            reported_sites,
+        )
 
     @staticmethod
     def _ratio(numerator: int, denominator: int) -> float | None:

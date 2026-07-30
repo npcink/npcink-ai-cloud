@@ -8,10 +8,11 @@ active site counts, event and site coverage, last ingestion times, and
 sample-readiness stages without exposing site identities, user content,
 credentials, prompts, or generated text.
 
-It does not project WordPress-local monitoring consent. That missing numerator
-is returned explicitly as `monitoring_enabled_window: null` with the gap code
-`monitoring_consent_projection_unavailable`; it must not be inferred from
-Cloud traffic.
+It consumes an explicit, metadata-only projection of the WordPress-local
+monitoring setting. The projection is versioned as
+`wordpress_monitoring_state.v1`; Cloud does not own or change the setting.
+Sites without a fresh projection remain `unknown` and are reported with the
+gap code `monitoring_state_projection_incomplete`.
 
 ## Design decisions
 
@@ -21,8 +22,9 @@ Cloud traffic.
   justified.
 - Return counts, ratios, stages, and timestamps only. Site IDs, account IDs,
   prompts, generated text, and WordPress content are intentionally excluded.
-- Keep consent unknown instead of treating an active key, a Cloud run, or an
-  observability event as consent. WordPress remains the owner of that state.
+- Keep monitoring state unknown instead of treating an active key, a Cloud run,
+  or an ordinary observability event as permission. WordPress remains the
+  owner of that state.
 - Keep feedback event counts and editor-assist quality session counts as
   separate sample units. Adding them together would overstate evidence.
 
@@ -50,13 +52,21 @@ python -m app.dev.feedback_status --window-hours 168
 - `connected_total`: active sites with at least one usable Cloud API key.
 - `active_runtime_window`: distinct sites that started a Cloud run in the
   selected window.
+- `monitoring_state_reported_window`: distinct connected sites with a fresh,
+  valid WordPress-local monitoring state projection.
+- `monitoring_enabled_window` / `monitoring_disabled_window`: the latest
+  projected state for those sites in the selected window.
+- `monitoring_state_unknown_total`: connected sites without a fresh projection.
 - `plugin_observability_window`: distinct sites that sent any plugin
-  observability event.
+  observability event, excluding monitoring-state heartbeat events.
+- `plugin_observability_on_enabled_window`: monitoring-enabled sites that also
+  sent at least one ordinary plugin observability event.
 - `agent_feedback_window`: distinct sites that sent governed agent feedback.
 - `editor_assist_quality_window`: distinct sites that sent metadata-only
   editor-assist quality events under `editor_assist_quality.v1`.
-- `coverage`: ratios use active runtime sites as the denominator; `null` means
-  the denominator is zero.
+- `coverage.plugin_observability_over_monitoring_enabled` uses the explicit
+  monitoring-enabled population as its denominator. Active-runtime ratios
+  remain available for comparison; `null` means the denominator is zero.
 - `sample_readiness`: `insufficient` below 5 samples, `validation` from 5,
   `observation` from 50, and `decision` from 200. Agent feedback events and
   editor-assist quality sessions remain separate sample units.
@@ -67,8 +77,8 @@ routers, presets, WordPress content, or approval state.
 
 ## Product boundary
 
-Cloud owns the runtime evidence and this read-only projection. WordPress
-remains the local control plane and the source of truth for consent, review,
-preflight, approval, insertion, and final writes. Any future consent projection
-must be explicit, versioned, metadata-only, and separately reviewed across the
-WordPress-to-Cloud contract.
+Cloud owns the runtime evidence and this read-only aggregate. WordPress remains
+the local control plane and the source of truth for the monitoring setting,
+review, preflight, approval, insertion, and final writes. The projection
+contains only its contract version and boolean state; it does not transfer
+control-plane ownership to Cloud.
