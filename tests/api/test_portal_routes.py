@@ -20,7 +20,10 @@ from app.adapters.providers.base import (
     ProviderExecutionResult,
 )
 from app.adapters.repositories.commercial_repository import CommercialRepository
-from app.api.auth import build_portal_session_token
+from app.api.auth import (
+    PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL,
+    build_portal_session_token,
+)
 from app.api.main import create_app
 from app.api.portal_session import COOKIE_PORTAL_SESSION_TOKEN
 from app.api.routes import portal as portal_routes
@@ -45,6 +48,7 @@ from app.core.models import (
     PortalOAuthState,
     Principal,
     PrincipalSiteBinding,
+    ReplayReceipt,
     RunRecord,
     ServiceAuditEvent,
     Site,
@@ -5861,6 +5865,7 @@ def test_portal_registration_code_request_is_rate_limited(
         assert response.status_code == 200, response.text
         assert response.json()["data"]["delivery"] == "email"
         assert response.json()["data"]["code"] == ""
+        assert response.json()["data"]["resend_cooldown_seconds"] == 60
 
     limited_response = client.post(
         "/portal/v1/register/code/request",
@@ -5870,6 +5875,11 @@ def test_portal_registration_code_request_is_rate_limited(
     )
     assert limited_response.status_code == 429
     assert limited_response.json()["error_code"] == "portal.login_code_rate_limited"
+    retry_after_seconds = int(limited_response.headers["retry-after"])
+    assert 895 <= retry_after_seconds <= 900
+    assert limited_response.json()["data"] == {
+        "retry_after_seconds": retry_after_seconds,
+    }
 
     missing_payload_response = client.post(
         "/portal/v1/register/verify",
@@ -5877,6 +5887,61 @@ def test_portal_registration_code_request_is_rate_limited(
     )
     assert missing_payload_response.status_code == 400
     assert missing_payload_response.json()["error_code"] == "auth.portal_registration_code_required"
+
+    dispose_engine(database_url)
+
+
+def test_portal_registration_code_rate_limit_returns_the_longest_blocked_scope_retry(
+    tmp_path: Path,
+) -> None:
+    database_url, client = _build_client(
+        tmp_path,
+        settings_overrides={
+            "portal_jwt_secret": TEST_PORTAL_JWT_SECRET,
+            "portal_login_code_ttl_seconds": 300,
+        },
+        portal_email_sender=FakePortalEmailSender(),
+    )
+    limited_email = "multi-scope-limited@example.com"
+
+    for _index in range(5):
+        response = client.post(
+            "/portal/v1/register/code/request",
+            json={"email": limited_email},
+        )
+        assert response.status_code == 200, response.text
+    for index in range(5):
+        response = client.post(
+            "/portal/v1/register/code/request",
+            json={"email": f"client-scope-{index}@example.com"},
+        )
+        assert response.status_code == 200, response.text
+
+    with get_session(database_url) as session:
+        email_receipts = list(
+            session.scalars(
+                select(ReplayReceipt).where(
+                    ReplayReceipt.scope_kind == PORTAL_LOGIN_CODE_REQUEST_SCOPE_EMAIL,
+                    ReplayReceipt.scope_id == limited_email,
+                )
+            )
+        )
+        assert len(email_receipts) == 5
+        older_created_at = datetime.now(UTC) - timedelta(minutes=14, seconds=30)
+        for receipt in email_receipts:
+            receipt.created_at = older_created_at
+        session.commit()
+
+    limited_response = client.post(
+        "/portal/v1/register/code/request",
+        json={"email": limited_email},
+    )
+    assert limited_response.status_code == 429
+    retry_after_seconds = int(limited_response.headers["retry-after"])
+    assert 895 <= retry_after_seconds <= 900
+    assert limited_response.json()["data"] == {
+        "retry_after_seconds": retry_after_seconds,
+    }
 
     dispose_engine(database_url)
 
@@ -5916,6 +5981,7 @@ def test_portal_registration_and_login_code_requests_share_email_rate_limit_with
         assert login_response.status_code == 200, login_response.text
         assert login_response.json()["data"]["delivery"] == "email"
         assert login_response.json()["data"]["code"] == ""
+        assert login_response.json()["data"]["resend_cooldown_seconds"] == 60
 
     limited_response = client.post(
         "/portal/v1/auth/code/request",
@@ -5923,6 +5989,9 @@ def test_portal_registration_and_login_code_requests_share_email_rate_limit_with
     )
     assert limited_response.status_code == 429
     assert limited_response.json()["error_code"] == "portal.login_code_rate_limited"
+    retry_after_seconds = int(limited_response.headers["retry-after"])
+    assert 895 <= retry_after_seconds <= 900
+    assert limited_response.json()["data"]["retry_after_seconds"] == retry_after_seconds
 
     assert [message["kind"] for message in fake_sender.messages].count("registration_code") == 1
     assert [message["kind"] for message in fake_sender.messages].count("login_code") == 4

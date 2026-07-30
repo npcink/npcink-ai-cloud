@@ -23,15 +23,22 @@ async function fulfillJson(route: Route, data: unknown, headers: Record<string, 
   });
 }
 
-async function fulfillError(route: Route, status: number, errorCode: string) {
+async function fulfillError(
+  route: Route,
+  status: number,
+  errorCode: string,
+  data: Record<string, unknown> = {},
+  headers: Record<string, string> = {}
+) {
   await route.fulfill({
     status,
     contentType: 'application/json',
+    headers,
     body: JSON.stringify({
       status: 'error',
       error_code: errorCode,
       message: errorCode,
-      data: {},
+      data,
       meta: { trace_id: 'portal-login-e2e', revision: 'm6' },
     }),
   });
@@ -72,10 +79,14 @@ async function installLoginFlowMocks(
     initiallyLoggedIn = false,
     withSessionCookie = initiallyLoggedIn,
     sessionDelayMs = 0,
+    initialRateLimitSeconds = 0,
+    resendRateLimitSeconds = 0,
   }: {
     initiallyLoggedIn?: boolean;
     withSessionCookie?: boolean;
     sessionDelayMs?: number;
+    initialRateLimitSeconds?: number;
+    resendRateLimitSeconds?: number;
   } = {}
 ) {
   let loggedIn = initiallyLoggedIn;
@@ -112,10 +123,55 @@ async function installLoginFlowMocks(
       const body = route.request().postDataJSON() as { email?: string } | null;
       expect(body?.email).toBe(LOGIN_EMAIL);
       requestCodeCount += 1;
+      if (requestCodeCount === 1 && initialRateLimitSeconds > 0) {
+        await fulfillError(
+          route,
+          429,
+          'portal.login_code_rate_limited',
+          { retry_after_seconds: initialRateLimitSeconds },
+          { 'Retry-After': String(initialRateLimitSeconds) }
+        );
+        return;
+      }
+      if (requestCodeCount > 1 && resendRateLimitSeconds > 0) {
+        await fulfillError(
+          route,
+          429,
+          'portal.login_code_rate_limited',
+          { retry_after_seconds: resendRateLimitSeconds },
+          { 'Retry-After': String(resendRateLimitSeconds) }
+        );
+        return;
+      }
       await fulfillJson(route, {
         email: LOGIN_EMAIL,
         delivery: 'development_code',
         expires_in_seconds: 300,
+        resend_cooldown_seconds: 1,
+        code: LOGIN_CODE,
+      });
+      return;
+    }
+
+    if (pathname === '/register/code/request') {
+      const body = route.request().postDataJSON() as { email?: string } | null;
+      expect(body?.email).toBe(LOGIN_EMAIL);
+      requestCodeCount += 1;
+      if (requestCodeCount === 1 && initialRateLimitSeconds > 0) {
+        await fulfillError(
+          route,
+          429,
+          'portal.login_code_rate_limited',
+          { retry_after_seconds: initialRateLimitSeconds },
+          { 'Retry-After': String(initialRateLimitSeconds) }
+        );
+        return;
+      }
+      await fulfillJson(route, {
+        email: LOGIN_EMAIL,
+        delivery: 'development_code',
+        expires_in_seconds: 300,
+        resend_cooldown_seconds: 1,
         code: LOGIN_CODE,
       });
       return;
@@ -245,16 +301,72 @@ test('portal email-code login enters the dashboard after verification', async ({
   await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
   await expect(page.getByLabel(/Verification code|验证码/i)).toBeVisible();
 
-  await page.getByRole('button', { name: /Resend code|重发验证码/i }).click();
-  await expect(page.getByText(new RegExp(`Verification code resent to ${LOGIN_EMAIL}|验证码已重新发送至 ${LOGIN_EMAIL}`))).toBeVisible();
-
   await page.getByLabel(/Verification code|验证码/i).fill(LOGIN_CODE);
   await page.getByRole('button', { name: /Verify and continue|验证并继续/i }).click();
 
   await expect(page).toHaveURL(/\/portal$/);
   await expect(page.getByRole('heading', { name: /No Connected Sites|没有已连接站点/i })).toBeVisible();
-  expect(calls.requestCodeCount()).toBe(2);
+  expect(calls.requestCodeCount()).toBe(1);
   expect(calls.verifyCodeCalled()).toBe(true);
+});
+
+test('login resend uses the server cooldown and exact rate-limit retry time', async ({ page }) => {
+  const calls = await installLoginFlowMocks(page, { resendRateLimitSeconds: 4 });
+
+  await page.goto('/portal/login');
+  await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+
+  const resendButton = page.getByRole('button', {
+    name: /Resend in 1s|1 秒后重发/i,
+  });
+  await expect(resendButton).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Resend code|重发验证码/i })).toBeEnabled({
+    timeout: 2_000,
+  });
+  await page.getByRole('button', { name: /Resend code|重发验证码/i }).click();
+
+  await expect(page.getByText(/Try again in 4 seconds|请在 4 秒后重试/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Resend in 4s|4 秒后重发/i })).toBeDisabled();
+  expect(calls.requestCodeCount()).toBe(2);
+});
+
+test('login clears a request cooldown when the visitor changes email', async ({ page }) => {
+  await installLoginFlowMocks(page, { initialRateLimitSeconds: 900 });
+
+  await page.goto('/portal/login');
+  const emailInput = page.getByLabel(/Email Address|邮箱地址/i);
+  await emailInput.fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+
+  await expect(page.getByRole('button', { name: /Send in \d+s|\d+ 秒后发送/i })).toBeDisabled();
+  await emailInput.fill('another-login@example.com');
+  await expect(page.getByRole('button', { name: /Send verification code|发送验证码/i })).toBeEnabled();
+});
+
+test('registration clears a request cooldown when the visitor changes email', async ({ page }) => {
+  await installLoginFlowMocks(page, { initialRateLimitSeconds: 900 });
+
+  await page.goto('/portal/register');
+  const emailInput = page.getByLabel(/Email Address|邮箱地址/i);
+  await emailInput.fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+
+  await expect(page.getByRole('button', { name: /Send in \d+s|\d+ 秒后发送/i })).toBeDisabled();
+  await emailInput.fill('another-registration@example.com');
+  await expect(page.getByRole('button', { name: /Send verification code|发送验证码/i })).toBeEnabled();
+});
+
+test('registration uses the shared resend cooldown and clears it for another email', async ({ page }) => {
+  await installLoginFlowMocks(page);
+
+  await page.goto('/portal/register');
+  await page.getByLabel(/Email Address|邮箱地址/i).fill(LOGIN_EMAIL);
+  await page.getByRole('button', { name: /Send verification code|发送验证码/i }).click();
+
+  await expect(page.getByRole('button', { name: /Resend in 1s|1 秒后重发/i })).toBeDisabled();
+  await page.getByRole('button', { name: /Try Another Email|尝试其他邮箱/i }).click();
+  await expect(page.getByRole('button', { name: /Send verification code|发送验证码/i })).toBeEnabled();
 });
 
 test('an authenticated user is redirected from the login page to the Portal default', async ({ page }) => {

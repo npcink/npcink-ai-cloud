@@ -22,7 +22,10 @@ export interface SessionState {
 }
 
 export interface UseSessionReturn extends SessionState {
-  requestLoginCode: (email: string) => Promise<{ code?: string }>;
+  requestLoginCode: (email: string) => Promise<{
+    code?: string;
+    resendCooldownSeconds: number;
+  }>;
   verifyLoginCode: (email: string, code: string, options?: { rememberMe?: boolean }) => Promise<void>;
   logout: () => Promise<void>;
   selectSite: (siteId: string) => Promise<void>;
@@ -125,11 +128,15 @@ function useSessionController(): UseSessionReturn {
   /**
    * 请求邮箱验证码
    */
-  const requestLoginCode = useCallback(async (email: string): Promise<{ code?: string }> => {
+  const requestLoginCode = useCallback(async (email: string): Promise<{
+    code?: string;
+    resendCooldownSeconds: number;
+  }> => {
     try {
       const response = await portalClient.requestLoginCode({ email });
       return {
         code: response.data?.code,
+        resendCooldownSeconds: response.data?.resend_cooldown_seconds || 0,
       };
     } catch (error) {
       throw error instanceof Error ? error : new Error('Failed to request login code');
