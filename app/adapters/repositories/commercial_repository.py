@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, TypedDict, cast
 from uuid import uuid4
@@ -27,6 +27,8 @@ from app.core.models import (
     PRINCIPAL_STATUS_ACTIVE,
     PRINCIPAL_STATUS_DISABLED,
     SITE_STATUS_ACTIVE,
+    SUPPORT_REQUEST_STATUS_IN_PROGRESS,
+    SUPPORT_REQUEST_STATUS_OPEN,
     Account,
     AccountEntitlementSnapshot,
     AccountSubscription,
@@ -299,6 +301,8 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         status: str | None = None,
         topic: str | None = None,
         query: str | None = None,
+        sort: str = "updated_at",
+        risk_as_of: datetime | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[SupportRequest]:
@@ -312,11 +316,46 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
                 query=query,
             )
         )
-        statement = statement.order_by(
-            SupportRequest.updated_at.desc(),
-            SupportRequest.created_at.desc(),
-            SupportRequest.request_id.desc(),
-        )
+        if sort == "risk":
+            cutoff = (risk_as_of or datetime.now(UTC)) - timedelta(hours=48)
+            risk_rank = self._support_request_risk_rank(cutoff=cutoff)
+            active_rank = case(
+                (
+                    SupportRequest.status.in_(
+                        [
+                            SUPPORT_REQUEST_STATUS_OPEN,
+                            SUPPORT_REQUEST_STATUS_IN_PROGRESS,
+                        ]
+                    ),
+                    0,
+                ),
+                else_=1,
+            )
+            active_updated_at = case(
+                (
+                    SupportRequest.status.in_(
+                        [
+                            SUPPORT_REQUEST_STATUS_OPEN,
+                            SUPPORT_REQUEST_STATUS_IN_PROGRESS,
+                        ]
+                    ),
+                    SupportRequest.updated_at,
+                ),
+                else_=None,
+            )
+            statement = statement.order_by(
+                risk_rank.asc(),
+                active_rank.asc(),
+                active_updated_at.asc(),
+                SupportRequest.updated_at.desc(),
+                SupportRequest.request_id.desc(),
+            )
+        else:
+            statement = statement.order_by(
+                SupportRequest.updated_at.desc(),
+                SupportRequest.created_at.desc(),
+                SupportRequest.request_id.desc(),
+            )
         if offset > 0:
             statement = statement.offset(offset)
         if limit is not None and limit > 0:
@@ -344,6 +383,87 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             )
         )
         return int(self.session.scalar(statement) or 0)
+
+    def summarize_support_request_queue(
+        self,
+        *,
+        account_id: str | None = None,
+        site_id: str | None = None,
+        principal_id: str | None = None,
+        status: str | None = None,
+        topic: str | None = None,
+        query: str | None = None,
+        risk_as_of: datetime | None = None,
+    ) -> dict[str, int]:
+        cutoff = (risk_as_of or datetime.now(UTC)) - timedelta(hours=48)
+        risk_rank = self._support_request_risk_rank(cutoff=cutoff)
+        statement = select(
+            func.sum(
+                case((SupportRequest.status == SUPPORT_REQUEST_STATUS_OPEN, 1), else_=0)
+            ),
+            func.sum(
+                case(
+                    (
+                        SupportRequest.status == SUPPORT_REQUEST_STATUS_IN_PROGRESS,
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            func.sum(case((risk_rank == 0, 1), else_=0)),
+            func.sum(case((risk_rank == 1, 1), else_=0)),
+            func.sum(case((risk_rank == 2, 1), else_=0)),
+            func.sum(case((risk_rank == 3, 1), else_=0)),
+        ).where(
+            *self._support_request_filters(
+                account_id=account_id,
+                site_id=site_id,
+                principal_id=principal_id,
+                status=status,
+                topic=topic,
+                query=query,
+            )
+        )
+        row = self.session.execute(statement).one()
+        return {
+            "open": int(row[0] or 0),
+            "in_progress": int(row[1] or 0),
+            "critical": int(row[2] or 0),
+            "warning": int(row[3] or 0),
+            "monitor": int(row[4] or 0),
+            "stable": int(row[5] or 0),
+        }
+
+    def _support_request_risk_rank(
+        self,
+        *,
+        cutoff: datetime,
+    ) -> ColumnElement[int]:
+        priority = func.lower(SupportRequest.priority)
+        return case(
+            (
+                or_(
+                    priority.in_(["critical", "urgent"]),
+                    and_(
+                        SupportRequest.status == SUPPORT_REQUEST_STATUS_OPEN,
+                        SupportRequest.created_at <= cutoff,
+                    ),
+                ),
+                0,
+            ),
+            (
+                or_(
+                    SupportRequest.status == SUPPORT_REQUEST_STATUS_OPEN,
+                    priority == "high",
+                ),
+                1,
+            ),
+            (
+                SupportRequest.status == SUPPORT_REQUEST_STATUS_IN_PROGRESS,
+                2,
+            ),
+            else_=3,
+        )
 
     def _support_request_filters(
         self,

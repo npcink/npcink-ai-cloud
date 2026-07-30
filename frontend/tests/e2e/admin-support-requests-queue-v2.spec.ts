@@ -102,19 +102,37 @@ async function installSupportQueueMocks(page: Page) {
     }
     const status = url.searchParams.get('status') || '';
     const topic = url.searchParams.get('topic') || '';
-    const items = tickets.filter((ticket) => {
+    const filteredItems = tickets.filter((ticket) => {
       const searchable = [ticket.request_id, ticket.email, ticket.title, ticket.account_id, ticket.site_id].join(' ').toLowerCase();
       return (!status || ticket.status === status) && (!topic || ticket.topic === topic) && (!query || searchable.includes(query));
     });
+    const sort = url.searchParams.get('sort') || 'risk';
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const riskRank = (ticket: TicketFixture) => {
+      if (['critical', 'urgent'].includes(ticket.priority) || ticket.status === 'open') return 0;
+      if (ticket.priority === 'high') return 1;
+      if (ticket.status === 'in_progress') return 2;
+      return 3;
+    };
+    const orderedItems = [...filteredItems].sort((left, right) => {
+      const updatedDifference = new Date(left.updated_at).getTime() - new Date(right.updated_at).getTime();
+      if (sort === 'updated_at') return -updatedDifference;
+      return riskRank(left) - riskRank(right) || updatedDifference;
+    });
+    const items = orderedItems.slice(offset, offset + 20);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
         items,
-        pagination: { total: items.length, limit: 20, offset: 0, has_more: false },
+        pagination: { total: filteredItems.length, limit: 20, offset, has_more: offset + items.length < filteredItems.length },
         summary: {
-          open: tickets.filter((ticket) => ticket.status === 'open').length,
-          in_progress: tickets.filter((ticket) => ticket.status === 'in_progress').length,
+          open: filteredItems.filter((ticket) => ticket.status === 'open').length,
+          in_progress: filteredItems.filter((ticket) => ticket.status === 'in_progress').length,
+          critical: filteredItems.filter((ticket) => riskRank(ticket) === 0).length,
+          warning: filteredItems.filter((ticket) => riskRank(ticket) === 1).length,
+          monitor: filteredItems.filter((ticket) => riskRank(ticket) === 2).length,
+          stable: filteredItems.filter((ticket) => riskRank(ticket) === 3).length,
         },
       })),
     });
@@ -219,5 +237,7 @@ test('ticket inspector separates customer submission from bounded internal handl
   await expect(page.getByText(/Ticket updated|工单已更新/i).first()).toBeVisible();
   await expect(statusSelect).toHaveValue('in_progress');
   await expect(inspector.getByLabel(/Internal handling note|内部处理备注/i)).toHaveValue('Provider confirmation is being reconciled.');
-  await expect(inspector.getByRole('link', { name: /Open conversation|打开会话/i })).toHaveAttribute('href', '/admin/support-requests/sr_overdue_payment');
+  await expect(inspector.getByRole('link', { name: /Open conversation|打开会话/i })).toHaveAttribute('href', /\/admin\/support-requests\/sr_overdue_payment\?return_to=/);
+  await expect(inspector.getByRole('link', { name: 'acct_beta' })).toHaveAttribute('href', '/admin/accounts/acct_beta');
+  await expect(inspector.getByRole('link', { name: 'site_beta' })).toHaveAttribute('href', '/admin/sites/site_beta');
 });

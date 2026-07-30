@@ -24,12 +24,13 @@ import {
   SUPPORT_REQUEST_STATUS_FILTERS,
   SUPPORT_REQUEST_TOPICS,
   ageHours,
+  buildSupportRequestDetailHref,
+  buildSupportRequestQueueReturnPath,
   buildSupportRequestsQuery,
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
   requestRisk,
   riskToneClassName,
-  sortSupportRequests,
   supportRequestsDisplayScope,
 } from './directory-model';
 import {
@@ -73,9 +74,10 @@ export function SupportRequestsWorkspace() {
     () =>
       buildSupportRequestsQuery(
         { q: appliedQuery, status: appliedStatus, topic: appliedTopic },
+        sort,
         offset
       ),
-    [appliedQuery, appliedStatus, appliedTopic, offset]
+    [appliedQuery, appliedStatus, appliedTopic, offset, sort]
   );
   const directoryQuery = useSupportRequestsDirectory(requestKey);
   const updateRequest = useSupportRequestUpdate();
@@ -122,11 +124,8 @@ export function SupportRequestsWorkspace() {
     setQueryDraft(appliedQuery);
   }, [appliedQuery]);
 
-  const sortedItems = useMemo(
-    () => sortSupportRequests(directory?.items || [], sort),
-    [directory?.items, sort]
-  );
-  const selectedRequest = sortedItems.find((item) => item.request_id === focusedRequestId) || sortedItems[0] || null;
+  const items = directory?.items || [];
+  const selectedRequest = items.find((item) => item.request_id === focusedRequestId) || items[0] || null;
 
   useEffect(() => {
     if (!selectedRequest) return;
@@ -134,11 +133,6 @@ export function SupportRequestsWorkspace() {
     setNoteDraft(selectedRequest.admin_note || '');
     setActionError('');
   }, [selectedRequest]);
-
-  const pageSummary = useMemo(() => sortedItems.reduce(
-    (counts, item) => ({ ...counts, [requestRisk(item)]: counts[requestRisk(item)] + 1 }),
-    { critical: 0, warning: 0, monitor: 0, stable: 0 }
-  ), [sortedItems]);
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -186,6 +180,7 @@ export function SupportRequestsWorkspace() {
   const hasFilters = Boolean(appliedStatus || appliedTopic || appliedQuery || sort !== 'risk');
   const openCount = Number(summary?.open || 0);
   const inProgressCount = Number(summary?.in_progress || 0);
+  const criticalCount = Number(summary?.critical || 0);
 
   return (
     <BackofficePageStack className="space-y-5">
@@ -218,7 +213,7 @@ export function SupportRequestsWorkspace() {
       <BackofficeSummaryStrip items={[
         { label: t('admin.support_requests_open', {}, 'Open'), value: formatInteger(openCount), toneClassName: openCount ? 'text-amber-600 dark:text-amber-300' : undefined },
         { label: t('admin.support_requests_in_progress', {}, 'In progress'), value: formatInteger(inProgressCount) },
-        { label: t('admin.support_requests_page_critical', {}, 'Page overdue'), value: formatInteger(pageSummary.critical), toneClassName: pageSummary.critical ? 'text-rose-600 dark:text-rose-300' : undefined },
+        { label: t('admin.support_requests_page_critical', {}, 'Critical'), value: formatInteger(criticalCount), toneClassName: criticalCount ? 'text-rose-600 dark:text-rose-300' : undefined },
         { label: t('admin.support_requests_total', {}, 'Filtered total'), value: formatInteger(total) },
         { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
       ]} />
@@ -229,9 +224,9 @@ export function SupportRequestsWorkspace() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}</h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.support_requests_queue_desc', {}, 'The service applies filters and pagination; risk ordering applies to the current page.')}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}</p>
               </div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">{t('admin.support_requests_result_count', { visible: formatInteger(sortedItems.length), total: formatInteger(total) }, `${formatInteger(sortedItems.length)} on this page · ${formatInteger(total)} total`)}</p>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">{t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)}</p>
             </div>
 
             <div className="flex flex-wrap gap-2" aria-label={t('admin.support_requests_status_filter_label', {}, 'Ticket status')}>
@@ -262,7 +257,7 @@ export function SupportRequestsWorkspace() {
               <label className="text-sm text-slate-700 dark:text-slate-200">
                 <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_sort_label', {}, 'Sort')}</span>
                 <select className="input w-full" value={sort} onChange={(event) => updateQueueUrl({ sort: normalizeSupportRequestSort(event.target.value), focus: null })}>
-                  <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Current-page risk')}</option>
+                  <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Highest risk')}</option>
                   <option value="updated_at">{t('admin.support_requests_sort_updated', {}, 'Recently updated')}</option>
                 </select>
               </label>
@@ -273,9 +268,9 @@ export function SupportRequestsWorkspace() {
             </form>
           </div>
 
-          {sortedItems.length ? (
+          {items.length ? (
             <div role="list" aria-label={t('admin.support_requests_list_label', {}, 'Ticket list')}>
-              {sortedItems.map((item) => {
+              {items.map((item) => {
                 const risk = requestRisk(item);
                 const isSelected = selectedRequest?.request_id === item.request_id;
                 const age = ageHours(item.created_at);
@@ -310,7 +305,15 @@ export function SupportRequestsWorkspace() {
                     </dl>
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       <button type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} aria-controls="support-request-inspector" onClick={() => updateQueueUrl({ focus: item.request_id })}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
-                      <Link className="btn btn-primary btn-sm" href={`/admin/support-requests/${encodeURIComponent(item.request_id)}`}>{t('admin.support_request_view_detail', {}, 'View detail')}</Link>
+                      <Link
+                        className="btn btn-primary btn-sm"
+                        href={buildSupportRequestDetailHref(
+                          item.request_id,
+                          buildSupportRequestQueueReturnPath(pathname, queueParamsKey, item.request_id)
+                        )}
+                      >
+                        {t('admin.support_request_view_detail', {}, 'View detail')}
+                      </Link>
                     </div>
                   </article>
                 );
@@ -348,8 +351,8 @@ export function SupportRequestsWorkspace() {
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRequest.description}</p>
                   <dl className="mt-3 grid gap-1 text-xs text-slate-500 dark:text-slate-400">
                     <div className="flex justify-between gap-3"><dt>{t('common.email', {}, 'Email')}</dt><dd className="truncate text-right">{selectedRequest.email}</dd></div>
-                    <div className="flex justify-between gap-3"><dt>{t('admin.account_id', {}, 'Account ID')}</dt><dd className="truncate text-right">{selectedRequest.account_id}</dd></div>
-                    <div className="flex justify-between gap-3"><dt>{t('common.site', {}, 'Site')}</dt><dd className="truncate text-right">{selectedRequest.site_id || t('common.not_available', {}, 'N/A')}</dd></div>
+                    <div className="flex justify-between gap-3"><dt>{t('admin.account_id', {}, 'Account ID')}</dt><dd className="truncate text-right"><Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(selectedRequest.account_id)}`}>{selectedRequest.account_id}</Link></dd></div>
+                    <div className="flex justify-between gap-3"><dt>{t('common.site', {}, 'Site')}</dt><dd className="truncate text-right">{selectedRequest.site_id ? <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(selectedRequest.site_id)}`}>{selectedRequest.site_id}</Link> : t('common.not_available', {}, 'N/A')}</dd></div>
                     <div className="flex justify-between gap-3"><dt>{t('common.updated_at', {}, 'Updated')}</dt><dd>{selectedRequest.updated_at ? formatDate(selectedRequest.updated_at) : t('common.unknown', {}, 'Unknown')}</dd></div>
                   </dl>
                 </section>
@@ -371,7 +374,15 @@ export function SupportRequestsWorkspace() {
                   {actionError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{actionError}</p> : null}
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className="btn btn-primary btn-sm" disabled={displayScope.isRetainedScope || updateRequest.isPending} onClick={() => void handleUpdate(selectedRequest)}>{updateRequest.isPending ? t('common.saving', {}, 'Saving...') : t('admin.support_requests_update_action', {}, 'Update ticket')}</button>
-                    <Link className="btn btn-secondary btn-sm" href={`/admin/support-requests/${encodeURIComponent(selectedRequest.request_id)}`}>{t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}</Link>
+                    <Link
+                      className="btn btn-secondary btn-sm"
+                      href={buildSupportRequestDetailHref(
+                        selectedRequest.request_id,
+                        buildSupportRequestQueueReturnPath(pathname, queueParamsKey, selectedRequest.request_id)
+                      )}
+                    >
+                      {t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}
+                    </Link>
                   </div>
                 </section>
                 <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.support_requests_inspector_boundary', {}, 'The queue updates Cloud support status and internal notes only. Public replies, attachments, and the full timeline stay in ticket detail; no WordPress write is created.')}</p>

@@ -31,7 +31,14 @@ export type SupportRequestListPayload = {
     offset?: number;
     has_more?: boolean;
   };
-  summary?: { open?: number; in_progress?: number };
+  summary?: {
+    open?: number;
+    in_progress?: number;
+    critical?: number;
+    warning?: number;
+    monitor?: number;
+    stable?: number;
+  };
 };
 
 export type SupportRequestsQueryData = SupportRequestListPayload & {

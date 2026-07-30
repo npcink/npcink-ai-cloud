@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -48,6 +49,7 @@ SUPPORT_REQUEST_TOPICS = {
     "usage",
     "account",
 }
+SUPPORT_REQUEST_SORTS = {"risk", "updated_at"}
 SUPPORT_REQUEST_MESSAGE_VISIBILITIES = {
     SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC,
     SUPPORT_REQUEST_MESSAGE_VISIBILITY_INTERNAL,
@@ -74,6 +76,16 @@ def _normalize_support_status(value: str, *, allow_empty: bool = False) -> str:
         raise CommercialValidationError(
             "service.support_request_status_invalid",
             "support request status is not supported",
+        )
+    return normalized
+
+
+def _normalize_support_sort(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in SUPPORT_REQUEST_SORTS:
+        raise CommercialValidationError(
+            "service.support_request_sort_invalid",
+            "support request sort is not supported",
         )
     return normalized
 
@@ -355,19 +367,24 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         status: str = "",
         topic: str = "",
         query: str = "",
+        sort: str = "risk",
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, object]:
         normalized_status = _normalize_support_status(status, allow_empty=True)
         normalized_topic = _normalize_support_topic(topic) if str(topic or "").strip() else ""
+        normalized_sort = _normalize_support_sort(sort)
         safe_limit = max(1, min(200, int(limit or 100)))
         safe_offset = max(0, int(offset or 0))
+        risk_as_of = datetime.now(UTC)
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
             items = repository.list_support_requests(
                 status=normalized_status or None,
                 topic=normalized_topic or None,
                 query=query,
+                sort=normalized_sort,
+                risk_as_of=risk_as_of,
                 limit=safe_limit,
                 offset=safe_offset,
             )
@@ -376,9 +393,11 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 topic=normalized_topic or None,
                 query=query,
             )
-            open_count = repository.count_support_requests(status=SUPPORT_REQUEST_STATUS_OPEN)
-            in_progress_count = repository.count_support_requests(
-                status=SUPPORT_REQUEST_STATUS_IN_PROGRESS
+            summary = repository.summarize_support_request_queue(
+                status=normalized_status or None,
+                topic=normalized_topic or None,
+                query=query,
+                risk_as_of=risk_as_of,
             )
         return {
             "items": [self._serialize_support_request(item) for item in items],
@@ -388,10 +407,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "total": total,
                 "has_more": safe_offset + len(items) < total,
             },
-            "summary": {
-                "open": open_count,
-                "in_progress": in_progress_count,
-            },
+            "summary": summary,
         }
 
     def get_admin_support_request(

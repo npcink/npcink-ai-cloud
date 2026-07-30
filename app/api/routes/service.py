@@ -2838,6 +2838,7 @@ async def list_admin_support_requests(
     status: str = Query(default="", max_length=32),
     topic: str = Query(default="", max_length=64),
     q: str = Query(default="", max_length=191),
+    sort: str = Query(default="risk", pattern="^(risk|updated_at)$"),
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> Any:
@@ -2849,6 +2850,7 @@ async def list_admin_support_requests(
             status=status,
             topic=topic,
             query=q,
+            sort=sort,
             limit=limit,
             offset=offset,
         )
