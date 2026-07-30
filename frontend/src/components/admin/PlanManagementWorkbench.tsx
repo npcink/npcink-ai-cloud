@@ -157,6 +157,7 @@ function buildBaselineFieldPatch(tierSummary: TierSummary): Partial<PlanVersionF
 function ParameterField({
   label,
   detail,
+  unit,
   value,
   onChange,
   min = 0,
@@ -164,22 +165,32 @@ function ParameterField({
 }: {
   label: string;
   detail: string;
+  unit: string;
   value: string;
   onChange: (value: string) => void;
   min?: number;
   step?: number;
 }) {
   return (
-    <label className="grid content-start gap-1.5 border-b border-slate-200 py-3 dark:border-slate-800">
+    <label className="grid min-w-0 content-start gap-1.5 border-b border-slate-200 py-3 dark:border-slate-800">
       <span className="text-sm font-semibold text-slate-950 dark:text-white">{label}</span>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="input h-9 w-full"
-        type="number"
-        min={min}
-        step={step}
-      />
+      <span className="relative block">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="input h-10 w-full appearance-none pr-24 text-right tabular-nums [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          type="number"
+          inputMode={step < 1 ? 'decimal' : 'numeric'}
+          min={min}
+          step={step}
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-slate-500 dark:text-slate-400"
+        >
+          {unit}
+        </span>
+      </span>
       <span className="text-xs leading-5 text-slate-500 dark:text-slate-400">{detail}</span>
     </label>
   );
@@ -251,6 +262,12 @@ export function PlanManagementWorkbench({
     () => detail ? buildBaselineFieldPatch(detail.tier_summary) : {},
     [detail]
   );
+  const hasUnsavedChanges = useMemo(() => {
+    if (!detail) return false;
+    const savedForm = buildInitialForm(detail);
+    return (Object.keys(form) as Array<keyof PlanVersionFormState>)
+      .some((field) => form[field] !== savedForm[field]);
+  }, [detail, form]);
 
   const updateField = (field: keyof PlanVersionFormState, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -317,11 +334,13 @@ export function PlanManagementWorkbench({
       cancelLabel={t('common.close', {}, 'Close')}
       saveLabel={t('common.save', {}, 'Save')}
       savingLabel={t('common.saving', {}, 'Saving...')}
-      footerNotice={t(
-        'admin.plans.workbench_notice',
-        {},
-        'Saved values take effect for this package and its active subscriptions.'
-      )}
+      footerNotice={hasUnsavedChanges && activeSubscriptionCount > 0
+        ? t(
+            'admin.plans.subscription_impact',
+            { count: formatInteger(activeSubscriptionCount) },
+            `Saving will affect ${formatInteger(activeSubscriptionCount)} active subscriptions.`
+          )
+        : ''}
       footerActions={(
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" className="btn btn-secondary" disabled={isSaving} onClick={onClose}>
@@ -352,23 +371,6 @@ export function PlanManagementWorkbench({
 
       {detail ? (
         <>
-          <p
-            data-ui="plan-subscription-impact"
-            className="border-l-2 border-blue-300 bg-blue-50/60 px-3 py-2 text-sm text-slate-700 dark:border-blue-700 dark:bg-blue-950/20 dark:text-slate-200"
-          >
-            {activeSubscriptionCount > 0
-              ? t(
-                  'admin.plans.subscription_impact',
-                  { count: formatInteger(activeSubscriptionCount) },
-                  `${formatInteger(activeSubscriptionCount)} active subscriptions will use the new values after saving.`
-                )
-              : t(
-                  'admin.plans.subscription_impact_empty',
-                  {},
-                  'No active subscriptions are affected by this change.'
-                )}
-          </p>
-
           <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800" role="tablist">
             {tabs.map((tab) => (
               <button
@@ -418,10 +420,14 @@ export function PlanManagementWorkbench({
                   <h5 id="plan-customer-package-title" className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t('admin.plans.customer_package_section', {}, 'Customer package')}
                   </h5>
-                  <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
+                  <div
+                    data-ui="plan-parameter-grid"
+                    className="mt-1 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                  >
                     <ParameterField
                       label={t('admin.sales_price_cny', {}, 'Sales price (CNY / 30 days)')}
                       detail={t('admin.sales_price_cny_detail', {}, 'Customer-facing 30-day price used for new Alipay orders.')}
+                      unit={t('admin.plans.unit_cny_30_days', {}, 'CNY / 30d')}
                       value={form.sales_price_cny}
                       step={0.01}
                       onChange={(value) => updateField('sales_price_cny', value)}
@@ -429,12 +435,14 @@ export function PlanManagementWorkbench({
                     <ParameterField
                       label={t('admin.included_points', {}, 'Package AI credits')}
                       detail={t('admin.included_points_detail', {}, 'Current-period package AI credits shared by all sites on this account.')}
+                      unit={t('admin.plans.unit_credits', {}, 'credits')}
                       value={form.monthly_included_points}
                       onChange={(value) => updateField('monthly_included_points', value)}
                     />
                     <ParameterField
                       label={t('admin.site_limit', {}, 'Site limit')}
                       detail={t('admin.site_limit_detail', {}, 'Maximum sites covered by the current customer subscription.')}
+                      unit={t('admin.plans.unit_sites', {}, 'sites')}
                       value={form.site_limit}
                       min={1}
                       onChange={(value) => updateField('site_limit', value)}
@@ -442,6 +450,7 @@ export function PlanManagementWorkbench({
                     <ParameterField
                       label={t('admin.vector_documents_limit', {}, 'Knowledge articles')}
                       detail={t('admin.vector_documents_limit_detail', {}, 'Account-level article capacity for Site Knowledge indexing.')}
+                      unit={t('admin.plans.unit_articles', {}, 'articles')}
                       value={form.max_vector_documents}
                       onChange={(value) => updateField('max_vector_documents', value)}
                     />
@@ -452,22 +461,28 @@ export function PlanManagementWorkbench({
                   <h5 id="plan-runtime-limits-title" className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t('admin.plans.runtime_limits_section', {}, 'Runtime limits')}
                   </h5>
-                  <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
+                  <div
+                    data-ui="plan-parameter-grid"
+                    className="mt-1 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                  >
                     <ParameterField
                       label={t('admin.concurrency', {}, 'Concurrency')}
                       detail={t('admin.plan_template_concurrency_detail', {}, 'Maximum tasks that may run at the same time for this package.')}
+                      unit={t('admin.plans.unit_runs', {}, 'runs')}
                       value={form.max_active_runs}
                       onChange={(value) => updateField('max_active_runs', value)}
                     />
                     <ParameterField
                       label={t('admin.batch_ceiling', {}, 'Batch ceiling')}
                       detail={t('admin.batch_ceiling_detail', {}, 'Maximum tasks allowed in one operator batch.')}
+                      unit={t('admin.plans.unit_items', {}, 'items')}
                       value={form.max_batch_items}
                       onChange={(value) => updateField('max_batch_items', value)}
                     />
                     <ParameterField
                       label={t('admin.model_cost_budget_cny', {}, 'Model cost budget (CNY / period)')}
                       detail={t('admin.period_cost_budget_detail', {}, 'Internal provider-cost monitoring threshold; it does not change the sales price.')}
+                      unit={t('admin.plans.unit_cny_period', {}, 'CNY / period')}
                       value={form.max_cost_cny_per_period}
                       step={0.01}
                       onChange={(value) => updateField('max_cost_cny_per_period', value)}
@@ -475,6 +490,7 @@ export function PlanManagementWorkbench({
                     <ParameterField
                       label={t('admin.grace_period_label', {}, 'Grace period')}
                       detail={t('admin.plans.grace_period_detail', {}, 'Days the subscription may remain available after the current period ends.')}
+                      unit={t('admin.plans.unit_days', {}, 'days')}
                       value={form.grace_period_days}
                       onChange={(value) => updateField('grace_period_days', value)}
                     />

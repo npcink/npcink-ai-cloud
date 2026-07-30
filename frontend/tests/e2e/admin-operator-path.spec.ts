@@ -189,15 +189,34 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await freeManageButton.click();
   const packageEditor = page.getByRole('dialog', { name: /Manage Free|管理 Free/i });
   await expect(packageEditor).toBeVisible();
-  await expect(packageEditor.locator('[data-ui="plan-subscription-impact"]')).toContainText(
-    new RegExp(`${freeActiveSubscriptionCount} (?:active subscriptions|个活跃订阅)`, 'i')
+  const subscriptionImpactText = new RegExp(
+    `(?:affect ${freeActiveSubscriptionCount} active subscriptions|影响 ${freeActiveSubscriptionCount} 个活跃订阅)`,
+    'i'
   );
+  await expect(packageEditor.getByText(subscriptionImpactText)).toHaveCount(0);
   await expect(packageEditor.getByText(/Current package parameters|当前套餐参数/i)).toBeVisible();
   await expect(packageEditor.getByText(/^Customer package$|^客户套餐$/i)).toBeVisible();
   await expect(packageEditor.getByText(/^Runtime limits$|^运行限制$/i)).toBeVisible();
   await expect(packageEditor.getByText(/^Package ID$|^套餐 ID$/i)).toHaveCount(0);
   await expect(packageEditor.getByText(/^Latest version$|^最新版本$/i)).toHaveCount(0);
   await expect(packageEditor.getByText(/shared by all sites|所有站点共享/i)).toBeVisible();
+  await expect(packageEditor.locator('[data-ui="plan-parameter-grid"]')).toHaveCount(2);
+  await expect(packageEditor.getByText(/^CNY \/ 30d$|^元 \/ 30天$/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^credits$|^积分$/i)).toBeVisible();
+  await expect(packageEditor.getByText(/^days$|^天$/i)).toBeVisible();
+  await expect(packageEditor.locator('input[type="number"]')).toHaveCount(8);
+  await packageEditor.getByRole('spinbutton', { name: /^(Sales price|销售价格)/i }).fill('1');
+  await expect(packageEditor.getByText(subscriptionImpactText)).toBeVisible();
+  const parameterGrid = packageEditor.locator('[data-ui="plan-parameter-grid"]').first();
+  const gridColumnCount = () => parameterGrid.evaluate((element) =>
+    window.getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length
+  );
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect.poll(gridColumnCount).toBe(2);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect.poll(gridColumnCount).toBe(3);
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect.poll(gridColumnCount).toBe(4);
   await expect(packageEditor.getByText(/Advanced JSON overrides|高级 JSON 覆盖项/i)).toHaveCount(0);
   await expect(packageEditor.getByRole('tab', { name: /Release history|发布历史/i })).toHaveCount(0);
   await expect(packageEditor.getByRole('link', { name: /^(Open subscriptions|打开订阅|查看订阅|查看訂閱)$/i })).toHaveCount(0);
