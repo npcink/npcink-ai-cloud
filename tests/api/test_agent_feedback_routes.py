@@ -200,6 +200,221 @@ def test_agent_feedback_accepts_image_quality_labels(tmp_path: Path) -> None:
     ]
 
 
+def test_agent_feedback_summarizes_metadata_only_media_quality(tmp_path: Path) -> None:
+    _database_url, client = _build_client(tmp_path)
+    events = [
+        (
+            "media-search-result",
+            {
+                "source_runtime": "image_candidates",
+                "handoff_id": "search-session-1",
+                "handoff_type": "editor_media_search_completed",
+                "local_surface": "editor_featured_image_search",
+                "local_outcome": "accepted",
+                "feedback_labels": ["media_search_has_results"],
+                "source_action_id": "media_search_completed",
+                "source_object_type": "media_search_session",
+                "source_object_id": "media_session_1",
+                "source_reason_codes": ["result_count_1_3"],
+            },
+        ),
+        (
+            "media-search-empty",
+            {
+                "source_runtime": "image_candidates",
+                "handoff_id": "search-session-2",
+                "handoff_type": "editor_media_search_completed",
+                "local_surface": "editor_paragraph_image_search",
+                "local_outcome": "rejected",
+                "feedback_labels": ["media_search_no_results"],
+                "source_action_id": "media_search_completed",
+                "source_object_type": "media_search_session",
+                "source_object_id": "media_session_2",
+                "source_reason_codes": ["result_count_0"],
+            },
+        ),
+        (
+            "media-search-error",
+            {
+                "source_runtime": "image_candidates",
+                "handoff_id": "search-session-3",
+                "handoff_type": "editor_media_search_runtime_error",
+                "local_surface": "editor_featured_image_search",
+                "local_outcome": "ignored",
+                "feedback_labels": ["media_search_runtime_error"],
+                "source_action_id": "media_search_runtime_error",
+                "source_object_type": "media_search_session",
+                "source_object_id": "media_session_3",
+                "source_reason_codes": ["result_count_0"],
+            },
+        ),
+        (
+            "media-candidate-adopted",
+            {
+                "source_runtime": "image_candidates",
+                "handoff_id": "search-session-1-adopted",
+                "handoff_type": "editor_image_candidate_local_featured_image_adopt",
+                "local_surface": "editor_featured_image_candidate_modal_implicit",
+                "local_outcome": "accepted",
+                "feedback_labels": ["media_candidate_adopted"],
+                "source_action_id": "local_featured_image_adopt",
+                "source_object_type": "media_search_session",
+                "source_object_id": "media_session_1",
+            },
+        ),
+        (
+            "alt-applied-1",
+            {
+                "source_runtime": "media_alt_caption",
+                "handoff_id": "alt-session-1-applied",
+                "handoff_type": "editor_contextual_alt_alt_suggestion_applied_to_editor",
+                "local_surface": "editor_contextual_alt",
+                "local_outcome": "accepted",
+                "feedback_labels": ["alt_suggestion_applied"],
+                "source_action_id": "alt_suggestion_applied_to_editor",
+                "source_object_type": "editor_alt_occurrence_session",
+                "source_object_id": "alt_session_1",
+            },
+        ),
+        (
+            "alt-saved-edited-1",
+            {
+                "source_runtime": "media_alt_caption",
+                "handoff_id": "alt-session-1-saved",
+                "handoff_type": "editor_contextual_alt_alt_saved_edited",
+                "local_surface": "editor_contextual_alt",
+                "local_outcome": "edited_before_accept",
+                "feedback_labels": ["alt_saved_edited"],
+                "source_action_id": "alt_saved_edited",
+                "source_object_type": "editor_alt_occurrence_session",
+                "source_object_id": "alt_session_1",
+            },
+        ),
+        (
+            "alt-applied-2",
+            {
+                "source_runtime": "media_alt_caption",
+                "handoff_id": "alt-session-2-applied",
+                "handoff_type": "editor_contextual_alt_alt_suggestion_applied_to_editor",
+                "local_surface": "editor_contextual_alt",
+                "local_outcome": "accepted",
+                "feedback_labels": ["alt_suggestion_applied"],
+                "source_action_id": "alt_suggestion_applied_to_editor",
+                "source_object_type": "editor_alt_occurrence_session",
+                "source_object_id": "alt_session_2",
+            },
+        ),
+        (
+            "alt-saved-unchanged-2",
+            {
+                "source_runtime": "media_alt_caption",
+                "handoff_id": "alt-session-2-saved",
+                "handoff_type": "editor_contextual_alt_alt_saved_unchanged",
+                "local_surface": "editor_contextual_alt",
+                "local_outcome": "accepted",
+                "feedback_labels": ["alt_saved_unchanged"],
+                "source_action_id": "alt_saved_unchanged",
+                "source_object_type": "editor_alt_occurrence_session",
+                "source_object_id": "alt_session_2",
+            },
+        ),
+        (
+            "alt-applied-3",
+            {
+                "source_runtime": "media_alt_caption",
+                "handoff_id": "alt-session-3-applied",
+                "handoff_type": "editor_contextual_alt_alt_suggestion_applied_to_editor",
+                "local_surface": "editor_contextual_alt",
+                "local_outcome": "accepted",
+                "feedback_labels": ["alt_suggestion_applied"],
+                "source_action_id": "alt_suggestion_applied_to_editor",
+                "source_object_type": "editor_alt_occurrence_session",
+                "source_object_id": "alt_session_3",
+            },
+        ),
+        (
+            "alt-saved-decorative-3",
+            {
+                "source_runtime": "media_alt_caption",
+                "handoff_id": "alt-session-3-saved",
+                "handoff_type": "editor_contextual_alt_alt_saved_decorative",
+                "local_surface": "editor_contextual_alt",
+                "local_outcome": "accepted",
+                "feedback_labels": ["alt_saved_decorative"],
+                "source_action_id": "alt_saved_decorative",
+                "source_object_type": "editor_alt_occurrence_session",
+                "source_object_id": "alt_session_3",
+            },
+        ),
+    ]
+
+    for idempotency_key, overrides in events:
+        response = _post_feedback(
+            client,
+            _feedback_payload(
+                operator_note="",
+                evidence_ref_ids=[],
+                redaction_status="metadata_only",
+                retention_class="quality_eval",
+                **overrides,
+            ),
+            idempotency_key=idempotency_key,
+        )
+        assert response.status_code == 200
+
+    summary_response = _get_feedback_summary(client)
+
+    assert summary_response.status_code == 200
+    media = summary_response.json()["data"]["media_quality"]
+    assert media["events_total"] == 10
+    assert media["search"] == {
+        "attempts_total": 3,
+        "completed_total": 2,
+        "with_results_total": 1,
+        "no_results_total": 1,
+        "runtime_error_total": 1,
+        "success_rate": 0.5,
+        "sample_status": "insufficient",
+    }
+    assert media["candidate_adoption"] == {
+        "result_sessions_total": 1,
+        "adopted_sessions_total": 1,
+        "adoption_rate": 1.0,
+        "sample_status": "insufficient",
+    }
+    assert media["alt"]["applied_total"] == 3
+    assert media["alt"]["save_confirmed_total"] == 3
+    assert media["alt"]["saved_unchanged_total"] == 1
+    assert media["alt"]["saved_edited_total"] == 1
+    assert media["alt"]["saved_decorative_total"] == 1
+    assert media["alt"]["modification_rate"] == 0.5
+    assert media["alt"]["save_confirmation_rate"] == 1.0
+    assert media["alt"]["truth_scope"] == "saved_editor_image_block_alt"
+    assert media["alt"]["attachment_alt_included"] is False
+    assert media["surfaces"] == [
+        {
+            "surface": "featured_image",
+            "searches_completed": 1,
+            "searches_with_results": 1,
+            "candidate_adopted_sessions": 1,
+            "search_success_rate": 1.0,
+            "candidate_adoption_rate": 1.0,
+        },
+        {
+            "surface": "paragraph_image",
+            "searches_completed": 1,
+            "searches_with_results": 0,
+            "candidate_adopted_sessions": 0,
+            "search_success_rate": 0.0,
+            "candidate_adoption_rate": 0.0,
+        },
+    ]
+    assert media["raw_query_stored"] is False
+    assert media["raw_alt_stored"] is False
+    assert media["production_mutation"] is False
+    assert media["final_write_truth"] == "wordpress_local"
+
+
 def test_agent_feedback_accepts_editor_content_support_feedback(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 

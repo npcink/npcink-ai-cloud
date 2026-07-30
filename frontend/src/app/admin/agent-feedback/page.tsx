@@ -42,6 +42,40 @@ type FeedbackTopCount = {
   count: number;
 };
 
+type MediaQualitySummary = {
+  eventsTotal: number;
+  minimumSampleSize: number;
+  search: {
+    attemptsTotal: number;
+    completedTotal: number;
+    withResultsTotal: number;
+    noResultsTotal: number;
+    runtimeErrorTotal: number;
+    successRate: number;
+    sampleStatus: string;
+  };
+  candidateAdoption: {
+    resultSessionsTotal: number;
+    adoptedSessionsTotal: number;
+    adoptionRate: number;
+    sampleStatus: string;
+  };
+  alt: {
+    appliedTotal: number;
+    saveConfirmedTotal: number;
+    savedUnchangedTotal: number;
+    savedEditedTotal: number;
+    savedDecorativeTotal: number;
+    savedClearedTotal: number;
+    notSavedTotal: number;
+    modificationRate: number;
+    saveConfirmationRate: number;
+    sampleStatus: string;
+    truthScope: string;
+    attachmentAltIncluded: boolean;
+  };
+};
+
 type AgentFeedbackSummary = {
   artifactType: string;
   contractVersion: string;
@@ -62,6 +96,7 @@ type AgentFeedbackSummary = {
   qualityTrend: FeedbackTrendPoint[];
   lowQualityLabels: FeedbackTopCount[];
   rejectionReasons: FeedbackTopCount[];
+  mediaQuality: MediaQualitySummary;
   rates: {
     acceptedRate: number;
     evidenceUsefulRate: number;
@@ -134,6 +169,10 @@ function countMap(value: unknown): CountMap {
 function normalizeAgentFeedbackSummary(raw: any): AgentFeedbackSummary {
   const rates = raw?.rates ?? {};
   const boundary = raw?.boundary ?? {};
+  const mediaQuality = raw?.media_quality ?? {};
+  const mediaSearch = mediaQuality?.search ?? {};
+  const mediaAdoption = mediaQuality?.candidate_adoption ?? {};
+  const mediaAlt = mediaQuality?.alt ?? {};
   return {
     artifactType: String(raw?.artifact_type ?? ''),
     contractVersion: String(raw?.contract_version ?? ''),
@@ -184,6 +223,39 @@ function normalizeAgentFeedbackSummary(raw: any): AgentFeedbackSummary {
           count: Number(item?.count ?? 0),
         }))
       : [],
+    mediaQuality: {
+      eventsTotal: Number(mediaQuality.events_total ?? 0),
+      minimumSampleSize: Number(mediaQuality.minimum_sample_size ?? 20),
+      search: {
+        attemptsTotal: Number(mediaSearch.attempts_total ?? 0),
+        completedTotal: Number(mediaSearch.completed_total ?? 0),
+        withResultsTotal: Number(mediaSearch.with_results_total ?? 0),
+        noResultsTotal: Number(mediaSearch.no_results_total ?? 0),
+        runtimeErrorTotal: Number(mediaSearch.runtime_error_total ?? 0),
+        successRate: Number(mediaSearch.success_rate ?? 0),
+        sampleStatus: String(mediaSearch.sample_status ?? 'insufficient'),
+      },
+      candidateAdoption: {
+        resultSessionsTotal: Number(mediaAdoption.result_sessions_total ?? 0),
+        adoptedSessionsTotal: Number(mediaAdoption.adopted_sessions_total ?? 0),
+        adoptionRate: Number(mediaAdoption.adoption_rate ?? 0),
+        sampleStatus: String(mediaAdoption.sample_status ?? 'insufficient'),
+      },
+      alt: {
+        appliedTotal: Number(mediaAlt.applied_total ?? 0),
+        saveConfirmedTotal: Number(mediaAlt.save_confirmed_total ?? 0),
+        savedUnchangedTotal: Number(mediaAlt.saved_unchanged_total ?? 0),
+        savedEditedTotal: Number(mediaAlt.saved_edited_total ?? 0),
+        savedDecorativeTotal: Number(mediaAlt.saved_decorative_total ?? 0),
+        savedClearedTotal: Number(mediaAlt.saved_cleared_total ?? 0),
+        notSavedTotal: Number(mediaAlt.not_saved_total ?? 0),
+        modificationRate: Number(mediaAlt.modification_rate ?? 0),
+        saveConfirmationRate: Number(mediaAlt.save_confirmation_rate ?? 0),
+        sampleStatus: String(mediaAlt.sample_status ?? 'insufficient'),
+        truthScope: String(mediaAlt.truth_scope ?? ''),
+        attachmentAltIncluded: Boolean(mediaAlt.attachment_alt_included),
+      },
+    },
     rates: {
       acceptedRate: Number(rates.accepted_rate ?? 0),
       evidenceUsefulRate: Number(rates.evidence_useful_rate ?? 0),
@@ -419,6 +491,105 @@ function AgentFeedbackQualityDashboard() {
         { label: t('admin.agent_feedback.wrong_next_step', {}, 'Wrong next step'), value: formatPercent(data.rates.wrongNextStepRate), toneClassName: data.rates.wrongNextStepRate > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
         { label: t('admin.agent_feedback.quality_issues', {}, 'Quality issues'), value: formatNumber(qualityIssues.reduce((total, item) => total + item.count, 0)), toneClassName: qualityIssues.length ? 'text-rose-600 dark:text-rose-400' : undefined },
       ]} /> : null}
+
+      {data && data.mediaQuality.eventsTotal > 0 ? (
+        <BackofficeSectionPanel className="overflow-hidden p-0">
+          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800 md:px-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              {t('admin.agent_feedback.media_quality_label', {}, 'Media quality')}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
+              {t('admin.agent_feedback.media_quality_title', {}, 'Media recommendation outcomes')}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              {t(
+                'admin.agent_feedback.media_quality_desc',
+                {},
+                'Metadata-only search, adoption, and saved editor-block ALT outcomes. Queries and ALT text are not stored.'
+              )}
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200/80 text-sm dark:divide-slate-800">
+              <thead className="bg-slate-50/80 text-xs uppercase tracking-[0.16em] text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
+                <tr>
+                  <th className="px-5 py-3 text-left font-semibold">{t('admin.agent_feedback.media_metric', {}, 'Metric')}</th>
+                  <th className="px-5 py-3 text-right font-semibold">{t('admin.agent_feedback.media_rate', {}, 'Rate')}</th>
+                  <th className="px-5 py-3 text-right font-semibold">{t('admin.agent_feedback.media_evidence', {}, 'Evidence')}</th>
+                  <th className="px-5 py-3 text-right font-semibold">{t('admin.agent_feedback.media_sample', {}, 'Sample')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                {[
+                  {
+                    key: 'search',
+                    label: t('admin.agent_feedback.media_search_success', {}, 'Search result success'),
+                    rate: data.mediaQuality.search.successRate,
+                    evidence: `${formatNumber(data.mediaQuality.search.withResultsTotal)} / ${formatNumber(data.mediaQuality.search.completedTotal)}`,
+                    sampleStatus: data.mediaQuality.search.sampleStatus,
+                    detail: t(
+                      'admin.agent_feedback.media_search_detail',
+                      { errors: formatNumber(data.mediaQuality.search.runtimeErrorTotal) },
+                      'Runtime errors excluded from quality rate: {{errors}}'
+                    ),
+                  },
+                  {
+                    key: 'adoption',
+                    label: t('admin.agent_feedback.media_candidate_adoption', {}, 'Candidate adoption'),
+                    rate: data.mediaQuality.candidateAdoption.adoptionRate,
+                    evidence: `${formatNumber(data.mediaQuality.candidateAdoption.adoptedSessionsTotal)} / ${formatNumber(data.mediaQuality.candidateAdoption.resultSessionsTotal)}`,
+                    sampleStatus: data.mediaQuality.candidateAdoption.sampleStatus,
+                    detail: t('admin.agent_feedback.media_candidate_detail', {}, 'Search sessions with at least one adopted local candidate'),
+                  },
+                  {
+                    key: 'alt',
+                    label: t('admin.agent_feedback.media_alt_modification', {}, 'Saved ALT modification'),
+                    rate: data.mediaQuality.alt.modificationRate,
+                    evidence: `${formatNumber(data.mediaQuality.alt.savedEditedTotal)} / ${formatNumber(data.mediaQuality.alt.savedEditedTotal + data.mediaQuality.alt.savedUnchangedTotal)}`,
+                    sampleStatus: data.mediaQuality.alt.sampleStatus,
+                    detail: t(
+                      'admin.agent_feedback.media_alt_detail',
+                      {
+                        saved: formatNumber(data.mediaQuality.alt.saveConfirmedTotal),
+                        decorative: formatNumber(data.mediaQuality.alt.savedDecorativeTotal),
+                        cleared: formatNumber(data.mediaQuality.alt.savedClearedTotal),
+                      },
+                      'Confirmed WordPress block saves: {{saved}} · decorative: {{decorative}} · cleared: {{cleared}}'
+                    ),
+                  },
+                ].map((metric) => (
+                  <tr key={metric.key} className="bg-white/55 dark:bg-slate-950/20">
+                    <td className="px-5 py-3">
+                      <div className="font-semibold text-slate-950 dark:text-white">{metric.label}</div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{metric.detail}</div>
+                    </td>
+                    <td className="px-5 py-3 text-right font-semibold text-slate-800 dark:text-slate-100">{formatPercent(metric.rate)}</td>
+                    <td className="px-5 py-3 text-right text-slate-700 dark:text-slate-200">{metric.evidence}</td>
+                    <td className="px-5 py-3 text-right">
+                      <BackofficeTag tone={metric.sampleStatus === 'sufficient' ? 'success' : 'warning'}>
+                        {metric.sampleStatus === 'sufficient'
+                          ? t('admin.agent_feedback.media_sample_sufficient', {}, 'Sufficient')
+                          : t(
+                              'admin.agent_feedback.media_sample_insufficient',
+                              { minimum: formatNumber(data.mediaQuality.minimumSampleSize) },
+                              'Below {{minimum}}'
+                            )}
+                      </BackofficeTag>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-slate-200/80 px-5 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 md:px-6">
+            {t(
+              'admin.agent_feedback.media_alt_scope',
+              {},
+              'ALT results cover saved core/image block ALT only. Media-library attachment ALT is not included.'
+            )}
+          </div>
+        </BackofficeSectionPanel>
+      ) : null}
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.agent_feedback.stale_notice', {}, 'The last successfully loaded feedback snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
 

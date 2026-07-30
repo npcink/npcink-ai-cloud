@@ -37,6 +37,34 @@ ALLOWED_AGENT_FEEDBACK_LABELS = frozenset(
         "visual_quality_low",
         "operator_confidence_high",
         "operator_confidence_low",
+        "media_search_has_results",
+        "media_search_no_results",
+        "media_search_runtime_error",
+        "media_candidate_adopted",
+        "alt_suggestion_applied",
+        "alt_saved_unchanged",
+        "alt_saved_edited",
+        "alt_saved_decorative",
+        "alt_saved_cleared",
+        "alt_suggestion_not_saved",
+    }
+)
+
+MEDIA_QUALITY_ACTION_IDS = frozenset(
+    {
+        "media_search_completed",
+        "media_search_runtime_error",
+        "select_only",
+        "local_featured_image_adopt",
+        "existing_media_selected",
+        "featured_image_adopt",
+        "media_import",
+        "alt_suggestion_applied_to_editor",
+        "alt_saved_unchanged",
+        "alt_saved_edited",
+        "alt_saved_decorative",
+        "alt_saved_cleared",
+        "alt_suggestion_not_saved",
     }
 )
 
