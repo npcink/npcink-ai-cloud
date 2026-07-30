@@ -87,7 +87,7 @@ export function PortalPackageChangePanel({
     if (!tier) return false;
     const rights = tier.comparison_rights;
     return requiredComparisonRights.every((key) => {
-      const right = rights?.[key];
+      const right = rights[key];
       return Boolean(right && right.state !== 'unconfigured');
     });
   };
@@ -166,10 +166,8 @@ export function PortalPackageChangePanel({
     tier: PortalPlanComparisonTier,
     key: PortalPlanComparisonRightKey,
   ) => {
-    const right = tier.comparison_rights?.[key];
-    if (right) return `${right.state}:${right.value ?? ''}`;
-    const legacyValue = tier[key];
-    return legacyValue == null ? 'unconfigured:' : `limited:${legacyValue}`;
+    const right = tier.comparison_rights[key];
+    return `${right.state}:${right.value ?? ''}`;
   };
   const visibleComparisonRows = showOnlyDifferences
     ? comparisonRows.filter((row) => (
@@ -180,16 +178,7 @@ export function PortalPackageChangePanel({
     tier: PortalPlanComparisonTier,
     key: PortalPlanComparisonRightKey,
   ) => {
-    const right = tier.comparison_rights?.[key];
-    if (!right) {
-      const legacyValue = tier[key];
-      return {
-        label: legacyValue == null
-          ? t('portal.billing.compare_unconfigured', {}, 'To confirm')
-          : formatNumber(legacyValue),
-        state: legacyValue == null ? 'unconfigured' : 'limited',
-      };
-    }
+    const right = tier.comparison_rights[key];
     if (right.state === 'unlimited') {
       return { label: t('common.unlimited', {}, 'Unlimited'), state: right.state };
     }
@@ -202,7 +191,7 @@ export function PortalPackageChangePanel({
     return { label: formatNumber(right.value || 0), state: right.state };
   };
   const hasUnconfiguredRights = comparisonTiers.some((tier) => (
-    Object.values(tier.comparison_rights || {}).some((right) => right.state === 'unconfigured')
+    Object.values(tier.comparison_rights).some((right) => right.state === 'unconfigured')
   ));
   const selectedOffer = selectedTier === 'plus' ? plusOffer : selectedTier === 'pro' ? proOffer : null;
   const selectedTierRightsArePublished = selectedTier

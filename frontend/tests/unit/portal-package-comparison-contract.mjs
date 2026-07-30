@@ -9,10 +9,14 @@ const i18nSource = readFileSync(resolve('src/lib/i18n.ts'), 'utf8');
 
 assert.match(
   clientSource,
-  /interface PortalPlanComparisonTier[\s\S]*monthly_points[\s\S]*site_limit[\s\S]*knowledge_article_limit[\s\S]*concurrency_limit[\s\S]*batch_item_limit/
+  /interface PortalPlanComparisonTier[\s\S]*comparison_rights: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>/
 );
 assert.match(clientSource, /comparison_tiers\?: PortalPlanComparisonTier\[\]/);
-assert.match(clientSource, /comparison_rights\?: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>/);
+assert.doesNotMatch(
+  clientSource,
+  /interface PortalPlanComparisonTier \{[\s\S]*?monthly_points: number \| null/,
+  'Portal plan comparison must not retain legacy scalar rights'
+);
 
 assert.match(billingSource, /const comparisonTiers = planOffers\?\.comparison_tiers \|\| \[\]/);
 assert.match(billingSource, /<PortalPackageChangePanel[\s\S]*comparisonTiers=\{comparisonTiers\}/);
@@ -22,7 +26,12 @@ assert.match(
   /compare_monthly_points[\s\S]*compare_site_limit[\s\S]*compare_knowledge_limit[\s\S]*compare_concurrency_limit[\s\S]*compare_batch_limit/
 );
 assert.match(packagePanelSource, /showOnlyDifferences[\s\S]*new Set\(comparisonTiers\.map/);
-assert.match(packagePanelSource, /formatComparisonRight[\s\S]*tier\.comparison_rights\?\.\[key\]/);
+assert.match(packagePanelSource, /formatComparisonRight[\s\S]*tier\.comparison_rights\[key\]/);
+assert.doesNotMatch(
+  packagePanelSource,
+  /legacyValue|tier\[key\]/,
+  'Portal plan comparison must consume only comparison_rights'
+);
 assert.match(packagePanelSource, /data-comparison-state=\{right\.state\}/);
 assert.match(packagePanelSource, /common\.unlimited/);
 assert.match(packagePanelSource, /compare_not_included/);

@@ -5,15 +5,23 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocale } from '@/contexts/LocaleContext';
 
 type TierId = 'free' | 'plus' | 'pro' | 'agency';
+type PlanRightKey =
+  | 'monthly_points'
+  | 'site_limit'
+  | 'knowledge_article_limit'
+  | 'concurrency_limit'
+  | 'batch_item_limit';
+
+interface PlanComparisonRight {
+  state: 'limited' | 'unlimited' | 'not_included' | 'unconfigured';
+  value: number | null;
+}
 
 interface PublicPlanTier {
   tier_id: TierId;
   label: string;
   availability: 'available' | 'unavailable';
-  monthly_points: number | null;
-  site_limit: number | null;
-  concurrency_limit: number | null;
-  batch_item_limit: number | null;
+  comparison_rights: Record<PlanRightKey, PlanComparisonRight>;
   amount: number | null;
   currency: 'CNY';
   billing_cycle: 'monthly' | null;
@@ -97,18 +105,30 @@ function planLabel(view: TierView): string {
 }
 
 function PlanValue({
-  value,
+  right,
   suffix,
   unavailable,
+  zh,
 }: {
-  value: number | null;
+  right: PlanComparisonRight | undefined;
   suffix: string;
   unavailable: boolean;
+  zh: boolean;
 }) {
+  if (unavailable) return <span>—</span>;
+  if (!right || right.state === 'unconfigured') {
+    return <span>{zh ? '待确认' : 'To confirm'}</span>;
+  }
+  if (right.state === 'unlimited') {
+    return <span>{zh ? '不限' : 'Unlimited'}</span>;
+  }
+  if (right.state === 'not_included') {
+    return <span>{zh ? '未包含' : 'Not included'}</span>;
+  }
   return (
     <span>
-      {unavailable ? '—' : formatNumber(value)}
-      {!unavailable && value !== null ? (
+      {formatNumber(right.value)}
+      {right.value !== null ? (
         <span className="ml-1 text-slate-400">{suffix}</span>
       ) : null}
     </span>
@@ -178,9 +198,10 @@ function PlanDetails({
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
-              value={data?.monthly_points ?? null}
+              right={data?.comparison_rights?.monthly_points}
               suffix={zh ? '/月' : '/mo'}
               unavailable={loading || unavailable}
+              zh={zh}
             />
           )}
         </dd>
@@ -192,9 +213,10 @@ function PlanDetails({
             zh ? '多站点' : 'Multi-site'
           ) : (
             <PlanValue
-              value={data?.site_limit ?? null}
+              right={data?.comparison_rights?.site_limit}
               suffix={zh ? '个' : 'sites'}
               unavailable={loading || unavailable}
+              zh={zh}
             />
           )}
         </dd>
@@ -206,9 +228,10 @@ function PlanDetails({
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
-              value={data?.concurrency_limit ?? null}
+              right={data?.comparison_rights?.concurrency_limit}
               suffix={zh ? '项' : 'runs'}
               unavailable={loading || unavailable}
+              zh={zh}
             />
           )}
         </dd>
@@ -220,9 +243,10 @@ function PlanDetails({
             zh ? '按方案' : 'Custom'
           ) : (
             <PlanValue
-              value={data?.batch_item_limit ?? null}
+              right={data?.comparison_rights?.batch_item_limit}
               suffix={zh ? '项' : 'items'}
               unavailable={loading || unavailable}
+              zh={zh}
             />
           )}
         </dd>

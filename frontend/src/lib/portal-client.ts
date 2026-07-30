@@ -1197,12 +1197,7 @@ export interface PortalPlanComparisonTier {
   label: string;
   plan_id: string;
   plan_version_id: string;
-  monthly_points: number | null;
-  site_limit: number | null;
-  knowledge_article_limit: number | null;
-  concurrency_limit: number | null;
-  batch_item_limit: number | null;
-  comparison_rights?: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>;
+  comparison_rights: Record<PortalPlanComparisonRightKey, PortalPlanComparisonRight>;
   amount?: number | null;
   currency: 'CNY';
   billing_cycle?: 'monthly' | null;

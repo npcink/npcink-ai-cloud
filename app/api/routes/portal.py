@@ -419,11 +419,6 @@ def _portal_plan_comparison_tier_data(value: object) -> dict[str, object]:
         "label": str(tier.get("label") or ""),
         "plan_id": str(tier.get("plan_id") or ""),
         "plan_version_id": str(tier.get("plan_version_id") or ""),
-        "monthly_points": tier.get("monthly_points"),
-        "site_limit": tier.get("site_limit"),
-        "knowledge_article_limit": tier.get("knowledge_article_limit"),
-        "concurrency_limit": tier.get("concurrency_limit"),
-        "batch_item_limit": tier.get("batch_item_limit"),
         "comparison_rights": {
             key: _portal_plan_comparison_right_data(rights.get(key))
             for key in (

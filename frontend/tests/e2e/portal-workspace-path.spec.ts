@@ -757,7 +757,6 @@ async function installPortalMocks(
         comparison_tiers: [
           {
             tier_id: 'free', label: 'Free', plan_id: 'free', plan_version_id: 'free_v1',
-            monthly_points: 300, site_limit: 1, knowledge_article_limit: 100, concurrency_limit: 1, batch_item_limit: 5,
             comparison_rights: {
               monthly_points: { state: 'limited', value: 300 }, site_limit: { state: 'limited', value: 1 },
               knowledge_article_limit: { state: 'limited', value: 100 }, concurrency_limit: { state: 'limited', value: 1 },
@@ -767,7 +766,6 @@ async function installPortalMocks(
           },
           {
             tier_id: 'plus', label: 'Plus', plan_id: 'plus', plan_version_id: 'plus_v1',
-            monthly_points: 3000, site_limit: 3, knowledge_article_limit: null, concurrency_limit: 2, batch_item_limit: 15,
             comparison_rights: {
               monthly_points: { state: 'limited', value: 3000 }, site_limit: { state: 'limited', value: 3 },
               knowledge_article_limit: { state: 'unconfigured', value: null }, concurrency_limit: { state: 'limited', value: 2 },
@@ -777,7 +775,6 @@ async function installPortalMocks(
           },
           {
             tier_id: 'pro', label: 'Pro', plan_id: 'pro', plan_version_id: 'pro_v1',
-            monthly_points: 10000, site_limit: 5, knowledge_article_limit: 2000, concurrency_limit: 3, batch_item_limit: 25,
             comparison_rights: {
               monthly_points: { state: 'limited', value: 10000 }, site_limit: { state: 'limited', value: 5 },
               knowledge_article_limit: { state: 'limited', value: 2000 }, concurrency_limit: { state: 'limited', value: 3 },
