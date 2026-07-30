@@ -38,16 +38,40 @@ function getValidDate(date: string | Date | undefined): Date | null {
  * Format date to local string
  */
 export function formatDate(date: string | Date | undefined): string {
+  return formatDateTime(date);
+}
+
+export function formatDateTime(
+  date: string | Date | undefined,
+  locale?: Locale
+): string {
   const value = getValidDate(date);
   if (!value) {
     return '';
   }
-  return new Intl.DateTimeFormat(getCurrentLocale(), {
+  const resolvedLocale = locale ?? getCurrentLocale();
+  return new Intl.DateTimeFormat(resolvedLocale === 'en' ? 'en-US' : 'zh-CN', {
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+  }).format(value);
+}
+
+export function formatDateOnly(
+  date: string | Date | undefined,
+  locale?: Locale
+): string {
+  const value = getValidDate(date);
+  if (!value) {
+    return '';
+  }
+  const resolvedLocale = locale ?? getCurrentLocale();
+  return new Intl.DateTimeFormat(resolvedLocale === 'en' ? 'en-US' : 'zh-CN', {
+    year: 'numeric',
+    month: resolvedLocale === 'en' ? 'short' : 'numeric',
+    day: 'numeric',
   }).format(value);
 }
 

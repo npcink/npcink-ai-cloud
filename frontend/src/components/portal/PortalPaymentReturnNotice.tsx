@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { PortalCard } from '@/components/portal/PortalScaffold';
+import type { Locale } from '@/lib/i18n';
 import { portalClient, type Entitlements, type PortalPaymentOrder } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
-import { formatDate, formatNumber } from '@/lib/utils';
+import { formatDateTime, formatNumber } from '@/lib/utils';
 
 type TranslateFn = (key: string, params?: Record<string, string>, fallback?: string) => string;
 
 type PortalPaymentReturnNoticeProps = {
   t: TranslateFn;
+  locale: Locale;
   provider: string;
   orderId: string;
   isAuthenticated: boolean;
@@ -34,6 +36,7 @@ function isClosedPaymentStatus(status: string): boolean {
 
 export function PortalPaymentReturnNotice({
   t,
+  locale,
   provider,
   orderId,
   isAuthenticated,
@@ -266,7 +269,7 @@ export function PortalPaymentReturnNotice({
                   {!reconciled
                     ? t('common.loading', {}, 'Loading...')
                     : billingFresh && nextExpiry
-                      ? formatDate(nextExpiry)
+                      ? formatDateTime(nextExpiry, locale)
                       : t('common.not_available', {}, 'Not available')}
                 </p>
               </div>

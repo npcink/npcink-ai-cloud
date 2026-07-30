@@ -31,7 +31,7 @@ import {
 } from '@/lib/portal-client';
 import { formatPortalErrorMessage } from '@/lib/portal-error';
 import type { Locale } from '@/lib/i18n';
-import { formatDate, formatNumber } from '@/lib/utils';
+import { formatDateTime, formatNumber } from '@/lib/utils';
 import { getPortalSiteDisplayName } from '@/lib/portal-site-display';
 import {
   PortalPageStack,
@@ -495,6 +495,9 @@ function PortalUsageContent() {
   );
   const paidCredits = Number(quotaSummary?.ai_credits?.paid_remaining ?? 0);
   const nextPaidCreditExpiry = String(quotaSummary?.ai_credits?.paid_next_expires_at || '');
+  const formattedNextPaidCreditExpiry = nextPaidCreditExpiry
+    ? formatDateTime(nextPaidCreditExpiry, locale)
+    : '';
   const currentPeriodStart =
     currentSubscription?.current_period_start_at ||
     entitlements?.period_start_at ||
@@ -583,9 +586,9 @@ function PortalUsageContent() {
     },
     {
       label: t('portal.usage.next_expiry_label', {}, 'Next expiry'),
-      value: nextPaidCreditExpiry ? formatDate(nextPaidCreditExpiry) : t('common.not_available', {}, 'Not available'),
-      detail: nextPaidCreditExpiry
-        ? t('portal.usage.paid_credit_expiry_hint', { date: formatDate(nextPaidCreditExpiry) }, `The next paid credit grant expires on ${formatDate(nextPaidCreditExpiry)}.`)
+      value: formattedNextPaidCreditExpiry || t('common.not_available', {}, 'Not available'),
+      detail: formattedNextPaidCreditExpiry
+        ? t('portal.usage.paid_credit_expiry_hint', { date: formattedNextPaidCreditExpiry }, `The next paid credit grant expires on ${formattedNextPaidCreditExpiry}.`)
         : t('portal.usage.overview_no_expiry_detail', {}, 'No paid-credit expiry is currently recorded.'),
       size: 'compact' as const,
     },
