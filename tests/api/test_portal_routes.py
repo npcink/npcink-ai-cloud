@@ -4277,7 +4277,7 @@ def test_open_plan_catalog_is_anonymous_and_bounded(tmp_path: Path) -> None:
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["meta"]["revision"] == "public-plan-catalog-v1"
+    assert payload["meta"]["revision"] == "public-plan-catalog-v2"
     assert [tier["tier_id"] for tier in payload["data"]["tiers"]] == [
         "free",
         "plus",
@@ -4285,6 +4285,18 @@ def test_open_plan_catalog_is_anonymous_and_bounded(tmp_path: Path) -> None:
         "agency",
     ]
     assert payload["data"]["shared_paid_trial"]["days"] == 14
+    assert payload["data"]["tiers"][0]["comparison_rights"]["monthly_points"] == {
+        "state": "unconfigured",
+        "value": None,
+    }
+    legacy_comparison_keys = {
+        "monthly_points",
+        "site_limit",
+        "knowledge_article_limit",
+        "concurrency_limit",
+        "batch_item_limit",
+    }
+    assert legacy_comparison_keys.isdisjoint(payload["data"]["tiers"][0])
     serialized = json.dumps(payload["data"], ensure_ascii=False)
     for private_field in (
         "account_id",
@@ -5306,14 +5318,19 @@ def test_portal_user_can_start_pro_trial_and_create_monthly_order(
     ]
     comparison_tiers = offers_response.json()["data"]["comparison_tiers"]
     assert [item["tier_id"] for item in comparison_tiers] == ["free", "plus", "pro"]
-    assert comparison_tiers[0]["monthly_points"] == 300
-    assert comparison_tiers[1]["site_limit"] == 3
-    assert comparison_tiers[2]["knowledge_article_limit"] == 2000
     assert comparison_tiers[0]["comparison_rights"]["monthly_points"]["state"] == "limited"
     assert comparison_tiers[1]["comparison_rights"]["site_limit"] == {
         "state": "limited",
         "value": 3,
     }
+    legacy_comparison_keys = {
+        "monthly_points",
+        "site_limit",
+        "knowledge_article_limit",
+        "concurrency_limit",
+        "batch_item_limit",
+    }
+    assert legacy_comparison_keys.isdisjoint(comparison_tiers[0])
     eligible_trial = offers_response.json()["data"]["trial"]
     assert eligible_trial["available"] is True
     assert eligible_trial["trial_days"] == 14

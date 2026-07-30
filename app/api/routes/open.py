@@ -55,7 +55,7 @@ async def list_open_plan_catalog(request: Request) -> Any:
         status="ok",
         message="public plan catalog loaded",
         data=catalog,
-        revision="public-plan-catalog-v1",
+        revision="public-plan-catalog-v2",
     )
 
 

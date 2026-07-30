@@ -122,13 +122,17 @@ def test_public_plan_catalog_reads_published_versions_and_active_offers(
         "agency",
     ]
     assert [tier["amount"] for tier in tiers] == [0.0, 15.0, 29.0, None]
-    assert [tier["monthly_points"] for tier in tiers] == [
+    assert [
+        tier["comparison_rights"]["monthly_points"]["value"] for tier in tiers
+    ] == [
         300,
         3_000,
         10_000,
         150_000,
     ]
-    assert [tier["site_limit"] for tier in tiers] == [1, 3, 5, 25]
+    assert [
+        tier["comparison_rights"]["site_limit"]["value"] for tier in tiers
+    ] == [1, 3, 5, 25]
     assert tiers[3]["purchase_mode"] == "quote"
     assert tiers[3]["trial_requires_approval"] is True
     assert catalog["shared_paid_trial"] == {
@@ -244,12 +248,12 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
     free_comparison = initial["comparison_tiers"][0]
     plus_comparison = initial["comparison_tiers"][1]
     pro_comparison = initial["comparison_tiers"][2]
-    assert free_comparison["monthly_points"] == 300
-    assert plus_comparison["monthly_points"] == 3000
-    assert pro_comparison["monthly_points"] == 10000
-    assert free_comparison["site_limit"] == 1
-    assert plus_comparison["knowledge_article_limit"] == 800
-    assert pro_comparison["concurrency_limit"] == 3
+    assert free_comparison["comparison_rights"]["monthly_points"]["value"] == 300
+    assert plus_comparison["comparison_rights"]["monthly_points"]["value"] == 3000
+    assert pro_comparison["comparison_rights"]["monthly_points"]["value"] == 10000
+    assert free_comparison["comparison_rights"]["site_limit"]["value"] == 1
+    assert plus_comparison["comparison_rights"]["knowledge_article_limit"]["value"] == 800
+    assert pro_comparison["comparison_rights"]["concurrency_limit"]["value"] == 3
     assert plus_comparison["amount"] == 15.0
     assert plus_comparison["comparison_rights"]["monthly_points"] == {
         "state": "limited",
@@ -277,13 +281,20 @@ def test_published_sales_price_updates_offer_and_new_checkout_snapshot(
     assert plus_offer["amount"] == 19.0
     assert plus_offer["plan_version_id"] == "plus_v2"
     assert refreshed_plus_comparison["plan_version_id"] == "plus_v2"
-    assert refreshed_plus_comparison["monthly_points"] == 3500
-    assert refreshed_plus_comparison["knowledge_article_limit"] is None
+    assert refreshed_plus_comparison["comparison_rights"]["monthly_points"]["value"] == 3500
     assert refreshed_plus_comparison["comparison_rights"]["knowledge_article_limit"] == {
         "state": "unconfigured",
         "value": None,
     }
     assert refreshed_plus_comparison["amount"] == 19.0
+    legacy_comparison_keys = {
+        "monthly_points",
+        "site_limit",
+        "knowledge_article_limit",
+        "concurrency_limit",
+        "batch_item_limit",
+    }
+    assert legacy_comparison_keys.isdisjoint(refreshed_plus_comparison)
 
     checkout = service.create_account_subscription_payment_order(
         account_id="acct_sales_price",

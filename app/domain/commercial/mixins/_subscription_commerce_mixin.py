@@ -134,6 +134,18 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                 available = plan_version is not None and plan_active and (
                     not requires_offer or offer is not None
                 )
+                comparison_rights = comparison.get("comparison_rights")
+                if not isinstance(comparison_rights, dict):
+                    comparison_rights = {
+                        key: {"state": "unconfigured", "value": None}
+                        for key in (
+                            "monthly_points",
+                            "site_limit",
+                            "knowledge_article_limit",
+                            "concurrency_limit",
+                            "batch_item_limit",
+                        )
+                    }
                 tiers.append(
                     {
                         "tier_id": tier_id,
@@ -143,10 +155,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
                         "plan_version_id": str(
                             comparison.get("plan_version_id") or ""
                         ),
-                        "monthly_points": comparison.get("monthly_points"),
-                        "site_limit": comparison.get("site_limit"),
-                        "concurrency_limit": comparison.get("concurrency_limit"),
-                        "batch_item_limit": comparison.get("batch_item_limit"),
+                        "comparison_rights": comparison_rights,
                         "amount": (
                             0.0
                             if tier_id == "free" and available
@@ -1671,11 +1680,6 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
             "label": label,
             "plan_id": plan_version.plan_id,
             "plan_version_id": plan_version.plan_version_id,
-            "monthly_points": monthly_points_right["value"],
-            "site_limit": site_limit_right["value"],
-            "knowledge_article_limit": knowledge_article_limit_right["value"],
-            "concurrency_limit": concurrency_limit_right["value"],
-            "batch_item_limit": batch_item_limit_right["value"],
             "comparison_rights": {
                 "monthly_points": monthly_points_right,
                 "site_limit": site_limit_right,
