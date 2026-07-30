@@ -129,6 +129,33 @@ relay, acquire the remote deployment lock, or change containers. Use
 `pnpm run m4:preview:tunnel` command remains available when an explicitly
 configured SSH target is required.
 
+Before starting SSH, the command fails when the requested local port already
+has a listener, so an old healthy tunnel cannot be mistaken for the new
+process. Select a different `--local-port` instead of reusing that listener.
+The command reports `tunnel_ready=true` only after the local listener can
+successfully read `/health/live`; selecting an SSH route or starting an SSH
+process is not readiness. The default wait is 120 seconds and can be bounded
+with `NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS`. A timeout fails closed,
+stops the child SSH process, and never emits the ready marker.
+
+For an offsite browser lane, add the optional read-only transport preflight:
+
+```bash
+pnpm run m4:preview:auto -- --browser-preflight
+```
+
+It reads the final Tailscale ping route and a bounded 256 KiB byte range from a
+local Next.js static asset. It does not run Playwright, change M4, select
+replacement evidence, or print raw Tailscale output. A peer-relay path, an
+incomplete sample, or throughput below 64 KiB/s emits
+`browser_transport=degraded` and `browser_evidence=not_counted`. This is a
+transport classification, not a product failure. Use the same revision with
+local production Playwright, or collect manual evidence through an
+existing-authenticated Cloudflare browser. Record which lane supplied the
+evidence; do not silently treat either as an automatic substitute. A
+`browser_transport=ready` result only says the transport is usable enough to
+attempt real browser assertions.
+
 The implementation reasoning, rejected alternatives, timeout correction,
 measured LAN/Tailscale evidence, and troubleshooting lessons are recorded in
 [the 2026-07-25 single-operator preview retrospective](m4-personal-preview-auto-route-retrospective-2026-07-25.md).
@@ -279,6 +306,9 @@ Run commands from the local repository worktree:
 ```bash
 # Open the single-operator preview; office LAN first, Tailscale fallback
 pnpm run m4:preview:auto
+
+# Offsite read-only transport classification before browser assertions
+pnpm run m4:preview:auto -- --browser-preflight
 
 # First deployment or dependency/Dockerfile/lock-file change
 pnpm run m4:preview:deploy
