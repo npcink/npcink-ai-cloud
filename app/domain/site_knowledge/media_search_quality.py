@@ -130,7 +130,7 @@ def _canonical_wordpress_media_key(url: str) -> str:
     except ValueError:
         return ""
     host = str(parsed.hostname or "").lower()
-    path = unquote(parsed.path or "").lower()
+    path = unquote(parsed.path or "")
     if not host or not path:
         return ""
     canonical_path = _WORDPRESS_IMAGE_SIZE_SUFFIX.sub("", path)

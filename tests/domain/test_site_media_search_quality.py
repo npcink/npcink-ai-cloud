@@ -125,6 +125,26 @@ def test_unparseable_or_relative_urls_are_not_collapsed() -> None:
     assert collapsed == 0
 
 
+def test_case_sensitive_wordpress_media_paths_remain_distinct() -> None:
+    unique, collapsed = collapse_media_search_duplicates(
+        [
+            {
+                "source_id": 1,
+                "url": "https://EXAMPLE.test/uploads/Cat-300x200.jpg",
+                "score": 0.8,
+            },
+            {
+                "source_id": 2,
+                "url": "https://example.test/uploads/cat.jpg",
+                "score": 0.7,
+            },
+        ]
+    )
+
+    assert [result["source_id"] for result in unique] == [1, 2]
+    assert collapsed == 0
+
+
 def test_service_applies_media_ranking_and_duplicate_grouping_only_for_media_intent() -> None:
     service = object.__new__(SiteKnowledgeService)
     service.reranker = None
