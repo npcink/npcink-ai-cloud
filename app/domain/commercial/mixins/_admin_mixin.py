@@ -32,7 +32,6 @@ from app.core.models import (
     SUBSCRIPTION_STATUS_SUSPENDED,
     SUBSCRIPTION_STATUS_TRIALING,
     AccountSubscription,
-    ServiceSetting,
 )
 from app.domain.commercial.audit_context import ServiceAuditContext
 from app.domain.commercial.credits import (
@@ -43,10 +42,6 @@ from app.domain.commercial.credits import (
     package_credit_net_delta,
     package_credit_remaining_from_net_delta,
     rounded_token_credits,
-)
-from app.domain.commercial.currency import (
-    SERVICE_SETTING_ACCOUNTING_FX,
-    resolve_accounting_fx_rate,
 )
 from app.domain.commercial.errors import (
     CommercialNotFoundError,
@@ -1796,15 +1791,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 now=now,
             )
             totals = cast(Any, self)._aggregate_meter_events(meter_events)
-            rate_row = session.get(ServiceSetting, SERVICE_SETTING_ACCOUNTING_FX)
-            accounting_fx = resolve_accounting_fx_rate(
-                rate_row.config_json if rate_row is not None and rate_row.enabled else None
-            )
             totals.update(
-                cast(Any, self)._aggregate_accounting_costs(
-                    meter_events,
-                    accounting_fx,
-                )
+                cast(Any, self)._aggregate_accounting_costs(meter_events)
             )
             budgets = cast(Any, self)._resolve_effective_subscription_budgets(
                 plan_version=plan_version,

@@ -229,6 +229,7 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
         provider_payload = dict(provider_event.payload_json or {})
         cost_usd_event = next(event for event in events if event.meter_key == "cost")
         cost_cny_event = next(event for event in events if event.meter_key == "cost_cny")
+        accounting_costs = service._aggregate_accounting_costs(events)
         credit_source_types = set(
             session.scalars(
                 select(CreditLedgerEntry.source_type).where(
@@ -258,8 +259,51 @@ def test_provider_call_usage_records_cache_token_breakdown(tmp_path: Path) -> No
     )
     assert cost_cny_event.payload_json["cost_usd"] == 0.004
     assert cost_cny_event.payload_json["cost_cny"] == 0.0284
+    assert accounting_costs == {
+        "cost_usd": 0.004,
+        "cost_cny": 0.0284,
+        "cost_cny_snapshot_missing_count": 0.0,
+    }
     assert credit_source_types == {"tokens_total"}
     dispose_engine(database_url)
+
+
+def test_accounting_cost_aggregation_does_not_reprice_missing_cny_snapshots(
+    tmp_path: Path,
+) -> None:
+    service = CommercialService(_sqlite_url(tmp_path))
+
+    totals = service._aggregate_accounting_costs(
+        [
+            UsageMeterEvent(
+                meter_key="cost",
+                provider_call_id=101,
+                quantity=1.25,
+            ),
+            UsageMeterEvent(
+                meter_key="cost_cny",
+                provider_call_id=101,
+                quantity=8.75,
+            ),
+            UsageMeterEvent(
+                meter_key="cost",
+                provider_call_id=102,
+                quantity=2.0,
+            ),
+            UsageMeterEvent(
+                meter_key="cost",
+                provider_call_id=None,
+                quantity=0.5,
+            ),
+        ]
+    )
+
+    assert totals == {
+        "cost_usd": 3.75,
+        "cost_cny": 8.75,
+        "cost_cny_snapshot_missing_count": 2.0,
+    }
+    assert "legacy_cost_usd_converted" not in totals
 
 
 def test_authorize_runtime_request_adds_active_paid_grants_to_package_headroom(
