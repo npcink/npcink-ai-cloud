@@ -32,8 +32,14 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /admin\.coverage\.inspector_title[\s\S]*selectedQueueItem[\s\S]*admin\.coverage_open_customer_action/,
-  'Coverage workspace must show a compact right-side customer inspector with direct existing-surface actions'
+  /customerDisplayName[\s\S]*admin\.coverage\.unnamed_customer[\s\S]*admin\.coverage\.account_id_label/,
+  'Coverage workspace must separate a readable customer label from the explicitly labelled internal account ID'
+);
+
+assert.match(
+  coverageSource,
+  /actionOpensAccount[\s\S]*showSelectedCustomerAction[\s\S]*admin\.coverage_open_customer_action/,
+  'Coverage inspector must hide its duplicate customer action when the primary action already opens that account'
 );
 
 assert.doesNotMatch(
@@ -80,7 +86,7 @@ assert.match(
 
 assert.match(
   i18nSource,
-  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
+  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.unnamed_customer': '未命名客户'[\s\S]*'admin\.coverage\.account_id_label': '账户 ID'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
   'Coverage toolbar and table must provide Simplified Chinese utility copy'
 );
 
