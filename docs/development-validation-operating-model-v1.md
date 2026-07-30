@@ -42,6 +42,7 @@ The authoritative details are:
 - [ADR-023: Candidate and Accepted Promotion](decisions/023-m4-preview-candidate-acceptance-promotion.md);
 - [ADR-024: Risk-Tiered Validation Authority](decisions/024-risk-tiered-development-validation-authority.md);
 - [ADR-025: Source-Only Authoring and AI Checkpoint Dispatch](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md);
+- [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md);
 - [CI Pytest Sharding](ci-pytest-sharding-v1.md);
 - [Release CI Open-Source Patterns](release-ci-open-source-patterns-2026-07.md).
 
@@ -375,3 +376,28 @@ Before reporting a feature or fix complete:
 For a documentation-only closeout, M4 candidate and promotion steps are
 normally not applicable. Validate the document links, repository contracts,
 formatting, and protected docs-only CI instead.
+
+## 13. Development-Stage Closeout
+
+Task completion and development-stage completion are different scopes. One
+task may be merged and accepted while later batches still own the merge queue,
+shared M4, or a declared conflict domain.
+
+Before declaring a development stage closed:
+
+1. inventory every batch already admitted to that stage;
+2. confirm that each batch is merged, explicitly withdrawn, or handed to a
+   later stage;
+3. confirm clean-current-`master` M4 acceptance where required;
+4. confirm that no stage candidate remains active;
+5. obtain explicit release of both the human Cloud merge lane and shared M4;
+6. record local-only candidates, retained worktrees, blockers, rollback, and
+   next owners;
+7. record the operator decision that selects the next queue.
+
+If the next queue is controlled production validation, create a durable
+handoff but do not treat that record as deployment authorization. Freeze the
+exact candidate only after the stage-close conditions hold, then follow the
+current production release policy and checklist. The full ownership,
+double-release, scheduling, and release-handoff rules are normative in
+[Parallel AI Collaboration Standard Section 11](parallel-ai-collaboration-standard-v1.md#11-development-stage-closeout-and-release-handoff).

@@ -312,3 +312,47 @@ For several active AI sessions, use this default schedule:
 
 The objective is not maximum simultaneous mutation. It is maximum useful
 parallel investigation with one unambiguous source, merge, and runtime truth.
+
+## 11. Development-Stage Closeout and Release Handoff
+
+Finishing one PR does not close a development stage. A stage closes only when:
+
+1. every batch already admitted to the stage is merged, withdrawn with a
+   recorded reason, or explicitly handed to a later stage;
+2. every merged batch that requires runtime acceptance has completed
+   clean-current-`master` promotion and the relevant smoke;
+3. no candidate belonging to the stage is still running or waiting on shared
+   M4;
+4. both the human Cloud merge lane and shared-runtime ownership are explicitly
+   released;
+5. remaining worktrees, local-only candidates, blockers, rollback boundaries,
+   and next owners are recorded;
+6. the operator explicitly changes the queue from feature development to
+   release-candidate preparation.
+
+The merge lane and shared runtime are separate resources. "Double release"
+means that both have independently met their release conditions. A merged PR
+whose clean-master promotion is pending has not completed the stage handoff.
+An M4-released candidate whose PR is still in final required checks also has
+not completed it.
+
+When an operator places controlled production validation after the current
+development stage:
+
+- record one durable release-queue handoff with start and stop conditions;
+- keep it behind all already admitted development batches;
+- do not admit an ordinary feature batch after the stage-close condition is
+  reached until the exact release-candidate decision is complete;
+- freeze and record the exact `master` revision, scope, migrations, rollback,
+  bundle, image, and protected configuration dependencies;
+- follow the current production release policy and checklist rather than
+  copying their mutable gate details into the coordination queue;
+- treat a release issue, production PR, green CI, M4 acceptance, manual
+  workflow dispatch, Environment approval, production validation, and GA as
+  distinct evidence and authorization states.
+
+Creating a release issue or queue record does not authorize a production PR,
+host mutation, Environment approval, user enablement, or GA. If a release gate
+is missing, the owner records the blocker and stops at that boundary; it must
+not substitute M4, synthetic fixture, liveness, or queue state for production
+evidence.
