@@ -1,16 +1,16 @@
 import { expect, test } from '@playwright/test';
 import { buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
 
-test('service risk queue keeps filters and inspector focus in the URL on PC', async ({ page }) => {
+test('service status table keeps filters and customer focus in the URL on PC', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installAdminMocks(page);
 
   await page.goto('/admin/coverage');
-  await expect(page.getByRole('heading', { name: /^Service risk queue$|^服务风险队列$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$/i })).toBeVisible();
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
-  await expect(page.locator('table')).toHaveCount(0);
+  await expect(page.getByRole('table', { name: /Customer service status|客户服务状态/i })).toBeVisible();
 
-  await page.getByRole('button', { name: /^(All|全部)\s*·\s*3$/i }).click();
+  await page.getByRole('button', { name: /^(All|全部)\s*3$/i }).click();
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(3);
 
   await page.getByLabel(/^Search$|^搜索$/i).fill('Uncovered');
@@ -20,9 +20,9 @@ test('service risk queue keeps filters and inspector focus in the URL on PC', as
 
   await page.getByRole('combobox', { name: /Reason|原因/i }).selectOption('missing_package_coverage');
   await page.getByRole('combobox', { name: /Sort|排序/i }).selectOption('customer');
-  const inspectButton = page.getByRole('button', { name: /^Inspect$|^检查$/i });
-  await inspectButton.focus();
-  await inspectButton.press('Enter');
+  const customerButton = page.getByRole('button', { name: 'Uncovered Account' });
+  await customerButton.focus();
+  await customerButton.press('Enter');
 
   await expect(page).toHaveURL(/status=all/);
   await expect(page).toHaveURL(/q=Uncovered/);
@@ -44,7 +44,7 @@ test('service risk queue keeps filters and inspector focus in the URL on PC', as
       body: JSON.stringify(buildAdminApiErrorEnvelope('temporary queue refresh failure')),
     });
   });
-  await page.getByRole('button', { name: /Refresh queue|刷新队列/i }).click();
+  await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
   await expect(
     page.getByRole('alert').filter({ hasText: /temporary queue refresh failure/i })
   ).toBeVisible();

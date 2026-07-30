@@ -8,8 +8,8 @@ const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8
 
 assert.match(
   coverageSource,
-  /title=\{t\('admin\.coverage_surface_title'[\s\S]*Service risk queue/,
-  'Coverage surface must be framed as the canonical service risk queue'
+  /title=\{t\('admin\.coverage_surface_title'[\s\S]*Service status/,
+  'Coverage surface must use the direct service-status title'
 );
 
 assert.match(
@@ -26,14 +26,14 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /visibleItems\.find\(\(item\) => queueItemKey\(item\) === selectedKey\)[\s\S]*admin\.coverage\.select_inspector_action/,
-  'Coverage inspector must follow an explicit operator selection instead of always taking the first row'
+  /visibleItems\.find\(\(item\) => queueItemKey\(item\) === selectedKey\)[\s\S]*aria-controls="coverage-inspector"/,
+  'Coverage inspector must follow an explicit customer selection instead of always taking the first row'
 );
 
 assert.match(
   coverageSource,
-  /admin\.coverage\.inspector_title[\s\S]*selectedQueueItem[\s\S]*admin\.coverage\.inspector_boundary/,
-  'Coverage workspace must show a right-side customer inspector with a boundary note'
+  /admin\.coverage\.inspector_title[\s\S]*selectedQueueItem[\s\S]*admin\.coverage_open_customer_action/,
+  'Coverage workspace must show a compact right-side customer inspector with direct existing-surface actions'
 );
 
 assert.doesNotMatch(
@@ -42,10 +42,10 @@ assert.doesNotMatch(
   'Coverage workspace must not reintroduce the duplicate package overview tab or fetch the package catalog directly'
 );
 
-assert.match(
+assert.doesNotMatch(
   coverageSource,
-  /href="\/admin\/subscriptions"[\s\S]*admin\.coverage_open_subscription_queue_action/,
-  'Coverage workspace must expose subscription risk as a secondary entry'
+  /actions=\{\([\s\S]*admin\.coverage_open_subscription_queue_action/,
+  'Coverage header must not duplicate the subscription action already owned by each queue item'
 );
 
 assert.match(
@@ -54,16 +54,16 @@ assert.match(
   'Coverage queue must deduplicate initial loading and expose a bounded refresh action'
 );
 
-assert.doesNotMatch(
+assert.match(
   coverageSource,
-  /AdminHorizontalScroll|<table|min-w-\[64rem\]/,
-  'The core service queue must not depend on a horizontally scrolling desktop table on mobile'
+  /overflow-x-auto[\s\S]*<table[\s\S]*admin\.coverage\.table_issue[\s\S]*admin\.coverage\.table_impact/,
+  'The service queue must use a compact semantic table with explicit issue and impact columns'
 );
 
 assert.match(
   coverageSource,
-  /role="list"[\s\S]*data-ui="coverage-queue-item"[\s\S]*aria-controls="coverage-inspector"/,
-  'Coverage queue must use a responsive task list with an explicitly connected inspector'
+  /<tbody>[\s\S]*data-ui="coverage-queue-item"[\s\S]*aria-controls="coverage-inspector"/,
+  'Coverage table must keep an explicitly connected customer inspector'
 );
 
 assert.doesNotMatch(
@@ -73,21 +73,15 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  coverageSource,
-  /admin\.coverage\.inspector_boundary[\s\S]*checkout, payment, or WordPress write controls/,
-  'Coverage inspector must not become customer-facing checkout, payment, or WordPress write control'
+  i18nSource,
+  /'admin\.coverage_surface_title': '服务状态'/,
+  'Coverage queue must provide direct Simplified Chinese title copy'
 );
 
 assert.match(
   i18nSource,
-  /'admin\.coverage_surface_title': '服务风险队列'/,
-  'Coverage queue must provide task-specific Simplified Chinese title copy'
-);
-
-assert.match(
-  i18nSource,
-  /'admin\.coverage\.refresh_action': '刷新队列'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.inspector_boundary': '这个检查器只打开现有客户、订阅、站点和套餐界面，不创建客户侧 checkout、支付或 WordPress 写入控制。'/,
-  'Coverage toolbar and inspector must provide Simplified Chinese utility copy'
+  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
+  'Coverage toolbar and table must provide Simplified Chinese utility copy'
 );
 
 assert.doesNotMatch(
