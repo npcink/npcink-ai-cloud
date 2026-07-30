@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
   BackofficePageStack,
@@ -15,6 +15,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
+import { sanitizeSupportRequestReturnPath } from '@/features/admin/support-requests/directory-model';
 
 type SupportRequestStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
@@ -184,7 +185,9 @@ function authorLabel(authorKind: string, visibility: string, t: ReturnType<typeo
 
 export default function AdminSupportRequestDetailPage() {
   const params = useParams<{ requestId?: string }>();
+  const searchParams = useSearchParams();
   const requestId = String(params?.requestId || '');
+  const returnPath = sanitizeSupportRequestReturnPath(searchParams.get('return_to'));
   const { t } = useLocale();
   const [supportRequest, setSupportRequest] = useState<SupportRequest | null>(null);
   const [messages, setMessages] = useState<SupportRequestMessage[]>([]);
@@ -336,7 +339,7 @@ export default function AdminSupportRequestDetailPage() {
           ) : null
         }
         actions={
-          <Link href="/admin/support-requests" className="btn btn-secondary">
+          <Link href={returnPath} className="btn btn-secondary">
             {t('common.back', {}, 'Back')}
           </Link>
         }
@@ -357,8 +360,12 @@ export default function AdminSupportRequestDetailPage() {
         <BackofficeSectionPanel>
           <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-2 xl:grid-cols-4">
             <span>{supportRequest.email}</span>
-            <span>{supportRequest.account_id}</span>
-            <span>{supportRequest.site_id || t('portal.support_request_no_site', {}, 'Account-level issue')}</span>
+            <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(supportRequest.account_id)}`}>{supportRequest.account_id}</Link>
+            {supportRequest.site_id ? (
+              <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(supportRequest.site_id)}`}>{supportRequest.site_id}</Link>
+            ) : (
+              <span>{t('portal.support_request_no_site', {}, 'Account-level issue')}</span>
+            )}
             <span>{t(`portal.support_topic_${supportRequest.topic}`, {}, supportRequest.topic)}</span>
           </div>
         </BackofficeSectionPanel>

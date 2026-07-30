@@ -175,8 +175,8 @@ assert.match(
 );
 assert.match(
   adminSupportPageSource,
-  /href=\{`\/admin\/support-requests\/\$\{encodeURIComponent\(item\.request_id\)\}`\}/,
-  'Admin support queue must link to ticket detail'
+  /buildSupportRequestDetailHref[\s\S]*item\.request_id[\s\S]*buildSupportRequestQueueReturnPath/,
+  'Admin support queue must link to ticket detail while preserving the queue return context'
 );
 assert.match(
   adminSupportDetailPageSource,

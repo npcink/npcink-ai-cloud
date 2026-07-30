@@ -9,6 +9,10 @@ const source = [
   'src/features/admin/support-requests/directory-model.ts',
   'src/features/admin/support-requests/queries.ts',
 ].map((path) => readFileSync(fromFrontendRoot(path), 'utf8')).join('\n');
+const detailSource = readFileSync(
+  fromFrontendRoot('src/app/admin/support-requests/[requestId]/page.tsx'),
+  'utf8'
+);
 
 assert.match(source, /BackofficeLayer/, 'ticket queue must use the compact operating header');
 assert.match(source, /BackofficeSummaryStrip/, 'ticket queue must expose a compact operating summary');
@@ -22,7 +26,9 @@ assert.match(source, /window\.history\.replaceState/, 'queue filter updates must
 assert.match(source, /useSupportRequestsDirectory[\s\S]*placeholderData: keepPreviousData/, 'ticket reads must use the shared Query state layer and retain the previous page while filters load');
 assert.match(source, /getLatestSupportRequestsDirectoryData[\s\S]*support_requests_retained_notice/, 'failed filter loads must retain and honestly label the last successful page');
 assert.match(source, /displayScope\.isRetainedScope \|\| updateRequest\.isPending/, 'retained or placeholder results must stay read-only');
-assert.match(source, /risk ordering applies to the current page/, 'client risk ordering must not be presented as global SLA truth');
+assert.match(source, /params\.set\('sort', sort\)/, 'the selected sort must be sent to the server before pagination');
+assert.doesNotMatch(source, /sortSupportRequests/, 'the client must not reorder a page after server pagination');
+assert.match(source, /global risk ordering before pagination/, 'the queue must state its server-owned global ordering');
 
 assert.match(source, /data-ui="support-request-queue-item"/, 'tickets must render as a responsive task list');
 assert.match(source, /id="support-request-inspector"/, 'ticket queue must provide one persistent inspector');
@@ -34,6 +40,10 @@ assert.match(source, /invalidateQueries[\s\S]*supportRequestKeys\.directories/, 
 assert.match(source, /setActionError[\s\S]*role="alert"/, 'ticket update failures must stay in the inspector context');
 assert.match(source, /toast\.success/, 'successful ticket updates must use global toast feedback');
 assert.match(source, /admin\.support_requests_open_conversation_action/, 'the inspector must explicitly open the full conversation surface');
+assert.match(source, /return_to/, 'ticket detail links must preserve the queue return context');
+assert.match(detailSource, /sanitizeSupportRequestReturnPath/, 'ticket detail must reject untrusted return paths');
+assert.match(source + detailSource, /\/admin\/accounts\/\$\{encodeURIComponent/, 'ticket context must link directly to the customer');
+assert.match(source + detailSource, /\/admin\/sites\/\$\{encodeURIComponent/, 'ticket context must link directly to the related site');
 assert.match(source, /no WordPress write is created/, 'the queue must state its Cloud service-plane boundary');
 
 console.log('admin_support_requests_queue_v2_contract: ok');

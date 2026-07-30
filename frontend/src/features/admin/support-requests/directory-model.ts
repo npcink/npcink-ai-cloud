@@ -43,15 +43,46 @@ export function normalizeSupportRequestSort(
 
 export function buildSupportRequestsQuery(
   filters: SupportRequestFilters,
+  sort: SupportRequestSort,
   offset: number
 ): string {
   const params = new URLSearchParams();
   params.set('limit', String(SUPPORT_REQUEST_PAGE_SIZE));
+  params.set('sort', sort);
   if (offset > 0) params.set('offset', String(offset));
   if (filters.status) params.set('status', filters.status);
   if (filters.topic) params.set('topic', filters.topic);
   if (filters.q.trim()) params.set('q', filters.q.trim());
   return params.toString();
+}
+
+export function buildSupportRequestQueueReturnPath(
+  pathname: string,
+  queueParamsKey: string,
+  requestId: string
+): string {
+  const params = new URLSearchParams(queueParamsKey);
+  params.set('focus', requestId);
+  return `${pathname}?${params.toString()}`;
+}
+
+export function buildSupportRequestDetailHref(
+  requestId: string,
+  returnPath: string
+): string {
+  const params = new URLSearchParams({ return_to: returnPath });
+  return `/admin/support-requests/${encodeURIComponent(requestId)}?${params.toString()}`;
+}
+
+export function sanitizeSupportRequestReturnPath(value: string | null): string {
+  const normalized = String(value || '').trim();
+  if (
+    normalized === '/admin/support-requests' ||
+    normalized.startsWith('/admin/support-requests?')
+  ) {
+    return normalized;
+  }
+  return '/admin/support-requests';
 }
 
 export function supportRequestsDisplayScope(input: {
@@ -97,31 +128,6 @@ export function requestRisk(item: SupportRequest): SupportRequestRisk {
   if (item.status === 'open' || priority === 'high') return 'warning';
   if (item.status === 'in_progress') return 'monitor';
   return 'stable';
-}
-
-function riskRank(item: SupportRequest): number {
-  return { critical: 0, warning: 1, monitor: 2, stable: 3 }[
-    requestRisk(item)
-  ];
-}
-
-export function sortSupportRequests(
-  items: SupportRequest[],
-  sort: SupportRequestSort
-): SupportRequest[] {
-  return [...items].sort((left, right) => {
-    const leftTime =
-      new Date(left.updated_at || left.created_at || 0).getTime() || 0;
-    const rightTime =
-      new Date(right.updated_at || right.created_at || 0).getTime() || 0;
-    if (sort === 'updated_at') return rightTime - leftTime;
-    const rankDifference = riskRank(left) - riskRank(right);
-    if (rankDifference) return rankDifference;
-    if (left.status === 'open' || left.status === 'in_progress') {
-      return leftTime - rightTime;
-    }
-    return rightTime - leftTime;
-  });
 }
 
 export function riskToneClassName(risk: SupportRequestRisk): string {

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import {
+  buildSupportRequestDetailHref,
+  buildSupportRequestQueueReturnPath,
   buildSupportRequestsQuery,
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
   requestRisk,
-  sortSupportRequests,
+  sanitizeSupportRequestReturnPath,
   supportRequestsDisplayScope,
 } from '@/features/admin/support-requests/directory-model';
 import {
@@ -42,12 +44,14 @@ describe('Support request directory model', () => {
           status: 'open',
           topic: 'billing',
         },
+        'risk',
         20
       )
     );
 
     expect(Object.fromEntries(query)).toEqual({
       limit: '20',
+      sort: 'risk',
       offset: '20',
       status: 'open',
       topic: 'billing',
@@ -55,7 +59,7 @@ describe('Support request directory model', () => {
     });
   });
 
-  it('normalizes offset and current-page sort without inventing values', () => {
+  it('normalizes offset and server sort without inventing values', () => {
     expect(normalizeSupportRequestOffset('-1')).toBe(0);
     expect(normalizeSupportRequestOffset('12.5')).toBe(0);
     expect(normalizeSupportRequestOffset('40')).toBe(40);
@@ -63,26 +67,31 @@ describe('Support request directory model', () => {
     expect(normalizeSupportRequestSort('updated_at')).toBe('updated_at');
   });
 
-  it('keeps risk ordering bounded to the current page', () => {
+  it('classifies risk for the server-ordered queue presentation', () => {
     const critical = supportRequest({
       request_id: 'sr_critical',
       priority: 'critical',
     });
-    const inProgress = supportRequest({
-      request_id: 'sr_progress',
-      status: 'in_progress',
-    });
-    const resolved = supportRequest({
-      request_id: 'sr_resolved',
-      status: 'resolved',
-    });
 
     expect(requestRisk(critical)).toBe('critical');
-    expect(
-      sortSupportRequests([resolved, inProgress, critical], 'risk').map(
-        (item) => item.request_id
-      )
-    ).toEqual(['sr_critical', 'sr_progress', 'sr_resolved']);
+  });
+
+  it('preserves queue context in detail links and rejects external returns', () => {
+    const returnPath = buildSupportRequestQueueReturnPath(
+      '/admin/support-requests',
+      'status=open&sort=updated_at&offset=20',
+      'sr_critical'
+    );
+    expect(returnPath).toBe(
+      '/admin/support-requests?status=open&sort=updated_at&offset=20&focus=sr_critical'
+    );
+    expect(buildSupportRequestDetailHref('sr_critical', returnPath)).toContain(
+      'return_to=%2Fadmin%2Fsupport-requests%3Fstatus%3Dopen'
+    );
+    expect(sanitizeSupportRequestReturnPath(returnPath)).toBe(returnPath);
+    expect(sanitizeSupportRequestReturnPath('https://example.com')).toBe(
+      '/admin/support-requests'
+    );
   });
 
   it('marks placeholder and failed-filter fallbacks as read-only scopes', () => {
