@@ -97,6 +97,7 @@ Evidence records (not target-contract completion proof):
 - [docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md](docs/ai-credit-unification-addon-recovery-and-development-retrospective-2026-07-28.md)
 - [docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md](docs/hosted-gpt55-wordpress-short-text-closeout-and-development-retrospective-2026-07-28.md)
 - [docs/doubao-search-and-external-service-credential-links-closeout-and-development-retrospective-2026-07-29.md](docs/doubao-search-and-external-service-credential-links-closeout-and-development-retrospective-2026-07-29.md)
+- [docs/feedback-flywheel-serial-delivery-and-production-handoff-closeout-2026-07-30.md](docs/feedback-flywheel-serial-delivery-and-production-handoff-closeout-2026-07-30.md)
 
 Operational references:
 
