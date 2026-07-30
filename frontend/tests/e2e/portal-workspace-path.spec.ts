@@ -1713,7 +1713,7 @@ test('Alipay return polls from pending to paid and shows reconciled credit detai
   await expect(page).toHaveURL('/portal/billing');
 });
 
-test('confirmed Alipay return stays visible when account totals fail to refresh', async ({
+test('confirmed Alipay return can retry when account totals fail to refresh', async ({
   page,
 }) => {
   await installPortalMocks(page, {
@@ -1735,6 +1735,15 @@ test('confirmed Alipay return stays visible when account totals fail to refresh'
   await expect(
     notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
   ).toBeVisible();
+  await notice.getByRole('button', { name: /Retry|重试/i }).click();
+  await expect(notice.locator('[data-payment-return-metric="total-available"]')).toContainText(
+    '12,419'
+  );
+  await expect(notice.locator('[data-payment-return-metric="next-expiry"]')).toContainText('2027');
+  await expect(
+    notice.getByText(/some account totals could not be refreshed|部分账户汇总暂时无法刷新/i)
+  ).toHaveCount(0);
+  await expect(notice.getByRole('button', { name: /Retry|重试/i })).toHaveCount(0);
 });
 
 test('portal account page hides internal identifiers and duplicate summary metrics', async ({ page }) => {
