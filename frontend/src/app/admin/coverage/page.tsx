@@ -13,6 +13,7 @@ import {
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
+import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
@@ -102,10 +103,6 @@ function queueItemKey(item: CoverageQueueItem): string {
 function customerDisplayName(name: string | undefined, accountId: string, unnamedLabel: string): string {
   const normalizedName = name?.trim();
   return normalizedName && normalizedName !== accountId ? normalizedName : unnamedLabel;
-}
-
-function actionOpensAccount(actionHref: string, accountId: string): boolean {
-  return actionHref.split(/[?#]/, 1)[0] === `/admin/accounts/${accountId}`;
 }
 
 async function readJsonData<T>(url: string): Promise<T> {
@@ -288,6 +285,40 @@ function AdminCoverageContent() {
       ),
     [queue?.items]
   );
+  const customerLabelsByKey = useMemo(() => {
+    const groups = new Map<string, CoverageQueueItem[]>();
+    const labels = new Map<string, string>();
+    for (const item of visibleQueueItems) {
+      const label = customerDisplayName(
+        item.account.name,
+        item.account.account_id,
+        t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
+      );
+      groups.set(label, [...(groups.get(label) || []), item]);
+    }
+    for (const [label, group] of groups) {
+      const orderedGroup = [...group].sort((left, right) =>
+        left.account.account_id.localeCompare(right.account.account_id)
+      );
+      orderedGroup.forEach((item, index) => {
+        labels.set(
+          queueItemKey(item),
+          orderedGroup.length > 1
+            ? t(
+                'admin.coverage.customer_position',
+                {
+                  name: label,
+                  index: formatInteger(index + 1),
+                  total: formatInteger(orderedGroup.length),
+                },
+                `${label} · ${index + 1}/${orderedGroup.length}`
+              )
+            : label
+        );
+      });
+    }
+    return labels;
+  }, [t, visibleQueueItems]);
   const visibleSummary = useMemo(() => buildQueueSummary(visibleQueueItems), [visibleQueueItems]);
   const visibleItems = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -370,11 +401,8 @@ function AdminCoverageContent() {
   const reasonEntries = Object.entries(visibleSummary.reason_counts || {})
     .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))
     .slice(0, 6);
-  const selectedAccountHref = selectedQueueItem
-    ? `/admin/accounts/${selectedQueueItem.account.account_id}`
-    : '';
   const selectedPrimaryActionHref = selectedQueueItem
-    ? selectedQueueItem.action_href || selectedAccountHref
+    ? selectedQueueItem.action_href || `/admin/accounts/${selectedQueueItem.account.account_id}`
     : '';
   const selectedCustomerLabel = selectedQueueItem
     ? customerDisplayName(
@@ -383,9 +411,8 @@ function AdminCoverageContent() {
         t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
       )
     : '';
-  const showSelectedCustomerAction = selectedQueueItem
-    ? !actionOpensAccount(selectedPrimaryActionHref, selectedQueueItem.account.account_id)
-    : false;
+  const showSelectedPrimaryAction =
+    selectedQueueItem?.severity === 'error' || selectedQueueItem?.severity === 'warning';
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
@@ -567,7 +594,7 @@ function AdminCoverageContent() {
           {visibleItems.length ? (
             <div className="overflow-x-auto">
               <table
-                className="w-full min-w-[52rem] table-fixed border-collapse text-left text-sm"
+                className="w-full min-w-[44rem] table-fixed border-collapse text-left text-sm"
                 aria-label={t('admin.coverage.table_region_label', {}, 'Customer service status')}
               >
                 <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
@@ -578,18 +605,15 @@ function AdminCoverageContent() {
                     </th>
                     <th className="px-4 py-3">{t('admin.coverage.table_issue', {}, 'Issue')}</th>
                     <th className="w-[9rem] px-4 py-3">{t('admin.coverage.table_impact', {}, 'Impact')}</th>
-                    <th className="w-[7.5rem] px-4 py-3 text-right">{t('common.actions', {}, 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleItems.map((item) => {
                     const itemKey = queueItemKey(item);
                     const isSelected = selectedQueueItem ? queueItemKey(selectedQueueItem) === itemKey : false;
-                    const customerLabel = customerDisplayName(
-                      item.account.name,
-                      item.account.account_id,
-                      t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
-                    );
+                    const customerLabel =
+                      customerLabelsByKey.get(itemKey) ||
+                      t('admin.coverage.unnamed_customer', {}, 'Unnamed customer');
                     const selectQueueItem = () => {
                       setSelectedKey(itemKey);
                       updateQueueUrl({
@@ -664,38 +688,32 @@ function AdminCoverageContent() {
                           <span className="block max-w-full font-semibold text-slate-950 dark:text-white">
                             <span className="block truncate">{customerLabel}</span>
                           </span>
-                          <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                            <span className="shrink-0">
-                              {t('admin.coverage.account_id_label', {}, 'Account ID')}:
-                            </span>
-                            <BackofficeIdentifier
-                              value={item.account.account_id}
-                              className="min-w-0 text-xs"
-                            />
-                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-medium text-slate-800 dark:text-slate-100">
                             {translateReasonCode(t, item.reason_code, item.reason_label)}
                           </p>
+                          {item.severity === 'error' || item.severity === 'warning' ? (
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {t(
+                                'admin.coverage.next_action',
+                                {
+                                  action: translateActionLabel(
+                                    t,
+                                    item.recommended_action,
+                                    item.action_label || t('common.open', {}, 'Open')
+                                  ),
+                                },
+                                `Next: ${item.action_label || t('common.open', {}, 'Open')}`
+                              )}
+                            </p>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-medium text-slate-900 dark:text-slate-100">{impactLabel}</p>
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             {item.package?.display_package_label || t('common.not_available', {}, 'N/A')}
                           </p>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Link
-                            href={item.action_href || `/admin/accounts/${item.account.account_id}`}
-                            className="btn btn-primary btn-sm whitespace-nowrap"
-                          >
-                            {translateActionLabel(
-                              t,
-                              item.recommended_action,
-                              item.action_label || t('common.open', {}, 'Open')
-                            )}
-                          </Link>
                         </td>
                       </tr>
                     );
@@ -755,13 +773,7 @@ function AdminCoverageContent() {
                   <p className="text-base font-semibold text-slate-950 dark:text-white">
                     {selectedCustomerLabel}
                   </p>
-                  <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    {t('admin.coverage.account_id_label', {}, 'Account ID')}
-                  </p>
-                  <div className="mt-1 break-all text-xs text-slate-500 dark:text-slate-400">
-                    <BackofficeIdentifier value={selectedQueueItem.account.account_id} full />
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
                     {translateReasonCode(t, selectedQueueItem.reason_code, selectedQueueItem.reason_label)}
                   </p>
                 </div>
@@ -781,19 +793,39 @@ function AdminCoverageContent() {
                   ))}
                 </dl>
 
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    href={selectedPrimaryActionHref}
-                    className="btn btn-primary btn-sm"
-                  >
-                    {translateActionLabel(t, selectedQueueItem.recommended_action, selectedQueueItem.action_label || t('common.open', {}, 'Open'))}
-                  </Link>
-                  {showSelectedCustomerAction ? (
-                    <Link href={selectedAccountHref} className="btn btn-secondary btn-sm">
-                      {t('admin.coverage_open_customer_action', {}, 'Open customer')}
+                <AdminSettingsDisclosure
+                  dataUi="coverage-technical-info"
+                  title={t('admin.coverage.technical_info_title', {}, 'Technical information')}
+                  description={t(
+                    'admin.coverage.technical_info_desc',
+                    {},
+                    'Use only when support or engineering needs the internal identifier.'
+                  )}
+                >
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t('admin.coverage.account_id_label', {}, 'Account ID')}
+                    </p>
+                    <div className="mt-1 break-all text-xs text-slate-600 dark:text-slate-300">
+                      <BackofficeIdentifier value={selectedQueueItem.account.account_id} full />
+                    </div>
+                  </div>
+                </AdminSettingsDisclosure>
+
+                {showSelectedPrimaryAction ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={selectedPrimaryActionHref}
+                      className="btn btn-primary btn-sm"
+                    >
+                      {translateActionLabel(
+                        t,
+                        selectedQueueItem.recommended_action,
+                        selectedQueueItem.action_label || t('common.open', {}, 'Open')
+                      )}
                     </Link>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="text-sm text-slate-600 dark:text-slate-300">

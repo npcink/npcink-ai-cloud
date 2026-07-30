@@ -32,14 +32,26 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /customerDisplayName[\s\S]*admin\.coverage\.unnamed_customer[\s\S]*admin\.coverage\.account_id_label/,
-  'Coverage workspace must separate a readable customer label from the explicitly labelled internal account ID'
+  /customerDisplayName[\s\S]*admin\.coverage\.unnamed_customer[\s\S]*AdminSettingsDisclosure[\s\S]*admin\.coverage\.technical_info_title[\s\S]*admin\.coverage\.account_id_label/,
+  'Coverage workspace must keep the internal account ID inside a low-frequency technical disclosure'
+);
+
+assert.doesNotMatch(
+  coverageSource,
+  /common\.actions|<td className="px-4 py-3 text-right">/,
+  'Coverage rows must not duplicate selection with a generic action column'
 );
 
 assert.match(
   coverageSource,
-  /actionOpensAccount[\s\S]*showSelectedCustomerAction[\s\S]*admin\.coverage_open_customer_action/,
-  'Coverage inspector must hide its duplicate customer action when the primary action already opens that account'
+  /showSelectedPrimaryAction[\s\S]*severity === 'error'[\s\S]*severity === 'warning'[\s\S]*selectedPrimaryActionHref/,
+  'Coverage inspector must expose one contextual action only for warning or error rows'
+);
+
+assert.match(
+  coverageSource,
+  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*admin\.coverage\.next_action[\s\S]*translateActionLabel/,
+  'Coverage rows must disambiguate duplicate readable names and keep the next action scannable without adding row links'
 );
 
 assert.doesNotMatch(
@@ -86,7 +98,7 @@ assert.match(
 
 assert.match(
   i18nSource,
-  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.unnamed_customer': '未命名客户'[\s\S]*'admin\.coverage\.account_id_label': '账户 ID'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
+  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.unnamed_customer': '未命名客户'[\s\S]*'admin\.coverage\.customer_position': '\{\{name\}\} · \{\{index\}\}\/\{\{total\}\}'[\s\S]*'admin\.coverage\.next_action': '下一步：\{\{action\}\}'[\s\S]*'admin\.coverage\.account_id_label': '账户 ID'[\s\S]*'admin\.coverage\.technical_info_title': '技术信息'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
   'Coverage toolbar and table must provide Simplified Chinese utility copy'
 );
 
