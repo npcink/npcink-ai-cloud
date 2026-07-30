@@ -86,6 +86,30 @@ index metadata-only text and must expose that degraded state rather than
 claiming visual evidence. Attachment deletion, identity/revision change, or
 consent withdrawal invalidates the projection and requires refresh or removal.
 
+The media projection separates two revisions:
+
+- `media_fingerprint` identifies the local image bytes/revision. A matching
+  fingerprint allows the caller to reuse the existing bounded visual evidence
+  instead of invoking a vision model again.
+- `content_hash` covers the media fingerprint plus the current retrieval text,
+  including WordPress metadata and visual evidence. A title, ALT, caption, or
+  description change therefore rebuilds embeddings without requiring another
+  visual-recognition call.
+
+A complete media-only refresh is incremental. Existing rows with the same
+`content_hash` remain in place and are reported as `unchanged_documents`;
+changed rows are replaced in the existing Site Knowledge vector subsystem.
+This optimization does not create another cache, queue, registry, or vector
+store.
+
+`site_knowledge_status.v1` additively accepts up to 20
+`media_attachment_ids`. Its `media_evidence_items` response returns existing
+projection evidence for those attachment IDs, including `media_fingerprint`,
+`content_hash`, bounded visual evidence, and `last_indexed_at`. The response is
+read-only and suggestion-only. Callers must require a matching current local
+fingerprint before reuse, and WordPress remains responsible for review and any
+final ALT write.
+
 ## Metering Boundary
 
 `npcink-cloud/site-knowledge-sync` is server-classified index maintenance. It
