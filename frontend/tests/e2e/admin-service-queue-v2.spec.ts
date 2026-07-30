@@ -18,10 +18,7 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await expect(page.getByRole('columnheader', { name: /^Actions$|^操作$/i })).toHaveCount(0);
   await expect(initialRows.nth(0)).not.toContainText(/Account ID|账户 ID/i);
   await expect(initialRows.nth(0)).not.toContainText('acct_');
-  await expect(initialRows.nth(0).getByRole('link', { name: 'MVP Account' })).toHaveAttribute(
-    'href',
-    `/admin/accounts/${encodeURIComponent(LONG_ACCOUNT_ID)}`
-  );
+  await expect(initialRows.getByRole('link')).toHaveCount(0);
   await expect(initialRows.nth(0)).toContainText(/Next: Inspect subscription|下一步：查看订阅/i);
   await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
   await initialRows.nth(1).focus();
@@ -29,6 +26,8 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await expect(initialRows.nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(initialRows.nth(1)).toContainText(/Next: Open package actions|下一步：打开套餐操作/i);
   const inspector = page.locator('#coverage-inspector');
+  const customerDetails = inspector.getByRole('link', { name: /Customer details|客户详情/i });
+  await expect(customerDetails).toBeFocused();
   await expect(inspector).toContainText('Uncovered Account');
   const technicalInfo = inspector.locator('[data-ui="coverage-technical-info"]');
   await expect(technicalInfo).not.toHaveAttribute('open', '');
@@ -37,7 +36,7 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await expect(technicalInfo.getByText(/Account ID|账户 ID/i)).toBeVisible();
   await expect(technicalInfo).toContainText('acct_uncovered');
   await expect(inspector.getByRole('link')).toHaveCount(2);
-  await expect(inspector.getByRole('link', { name: 'Uncovered Account' })).toHaveAttribute(
+  await expect(customerDetails).toHaveAttribute(
     'href',
     '/admin/accounts/acct_uncovered'
   );
@@ -48,7 +47,12 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await initialRows.nth(0).press('Enter');
   await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
   await expect(inspector).toContainText('MVP Account');
+  await expect(customerDetails).toBeFocused();
   await expect(inspector.getByRole('link')).toHaveCount(2);
+  await expect(inspector.getByRole('link', { name: /Customer details|客户详情/i })).toHaveAttribute(
+    'href',
+    `/admin/accounts/${encodeURIComponent(LONG_ACCOUNT_ID)}`
+  );
   await expect(inspector.getByRole('link', { name: /Inspect subscription|查看订阅/i })).toBeVisible();
 
   await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('all');
@@ -56,6 +60,7 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await page.locator('[data-ui="coverage-queue-item"]').nth(2).focus();
   await page.locator('[data-ui="coverage-queue-item"]').nth(2).press('Enter');
   await expect(inspector).toContainText('Free Account');
+  await expect(customerDetails).toBeFocused();
   await expect(inspector.getByRole('link')).toHaveCount(1);
   await expect(inspector).not.toContainText(
     /Package, subscription, site, key, and billing evidence are aligned|套餐、订阅、站点、密钥和账单证据已对齐/i
@@ -72,6 +77,7 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   const customerRow = page.locator('[data-ui="coverage-queue-item"]').first();
   await customerRow.focus();
   await customerRow.press(' ');
+  await expect(customerDetails).toBeFocused();
 
   await expect(page).toHaveURL(/status=all/);
   await expect(page).toHaveURL(/q=Uncovered/);
@@ -119,6 +125,11 @@ for (const viewport of [
     await expect(toolbar).toBeVisible();
     await expect(controls).toHaveCount(5);
     await expect(page.getByRole('combobox', { name: /Service status|服务状态/i }).locator('option')).toHaveCount(6);
+    const clearFilters = page.getByRole('button', { name: /Clear filters|清除筛选/i });
+    const clearFiltersTooltip = page.locator('[data-ui="coverage-clear-filters-tooltip"]');
+    await expect(clearFiltersTooltip).toHaveAttribute('title', /Clear filters|清除筛选/i);
+    await expect(clearFiltersTooltip).toHaveCSS('pointer-events', 'auto');
+    await expect(clearFilters).toBeDisabled();
 
     const toolbarBox = await toolbar.boundingBox();
     const controlBoxes = await controls.evaluateAll((elements) =>
@@ -138,8 +149,11 @@ for (const viewport of [
     ).toBe(true);
     expect(controlBoxes.every((box) => box.bottom > box.top)).toBe(true);
 
-    if (viewport.width >= 1536) {
+    if (viewport.width >= 1280) {
       expect(Math.max(...controlBoxes.map((box) => box.top)) - Math.min(...controlBoxes.map((box) => box.top))).toBeLessThan(2);
     }
+
+    await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('all');
+    await expect(clearFilters).toBeEnabled();
   });
 }
