@@ -33,6 +33,8 @@ class SiteKnowledgeVectorBackend(Protocol):
 
     def delete_post_indexes(self, site_id: str, post_ids: list[int]) -> None: ...
 
+    def delete_source_index(self, site_id: str, source_type: str, source_id: int) -> None: ...
+
     def upsert_chunks(
         self,
         *,
@@ -110,6 +112,17 @@ class ZillizCloudSiteKnowledgeBackend:
         post_ids_expr = ", ".join(str(post_id) for post_id in normalized_post_ids)
         self._delete(
             expr=(f'site_id == "{_escape_expr_string(site_id)}" and post_id in [{post_ids_expr}]')
+        )
+
+    def delete_source_index(self, site_id: str, source_type: str, source_id: int) -> None:
+        if source_id <= 0:
+            return
+        self._delete(
+            expr=(
+                f'site_id == "{_escape_expr_string(site_id)}" '
+                f'and source_type == "{_escape_expr_string(source_type)}" '
+                f"and source_id == {source_id}"
+            )
         )
 
     def upsert_chunks(
