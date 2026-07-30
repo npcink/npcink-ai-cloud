@@ -14,6 +14,8 @@ The gate covers:
   `content_support / editor_content_support_sidebar`.
 - Nightly Inspection operator feedback from
   `nightly_site_inspection / toolbox_nightly_inspection_morning_brief`.
+- Media search completion/adoption correlation and saved contextual block ALT
+  outcomes through the same metadata-only event contract.
 - The read-only Cloud admin quality dashboard boundary.
 - The local WordPress truth boundary for approval, preflight, and final writes.
 
@@ -79,6 +81,23 @@ The summary response exposes a `nightly_inspection` read-only rollup with
 outcomes, labels, source reason-code counts, rejected reason-code counts,
 rejected labels, severity counts, average source score, and quality rates. This
 rollup is for scoring and Morning Brief tuning only.
+
+## Media Recommendation Feedback
+
+The `media_quality` summary is session-based:
+
+- search success is searches with at least one result divided by completed
+  searches; runtime failures are counted separately;
+- candidate adoption is result-bearing search sessions with at least one real
+  adoption action divided by result-bearing search sessions;
+- ALT modification is edited saved block ALT divided by unchanged plus edited
+  saved block ALT;
+- every metric reports insufficient samples below 20 observations.
+
+The gate must prove that raw media queries and ALT strings are absent. A
+successful WordPress non-autosave transition is required before an ALT event is
+classified as saved. Attachment ALT remains outside this first rollup because
+the current flow has no attachment-metadata final-write receipt.
 
 After the `npcink.local` sample-expansion trial, the first watchlist for
 Nightly Intelligence quality review is:

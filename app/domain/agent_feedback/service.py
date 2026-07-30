@@ -13,9 +13,11 @@ from app.domain.agent_feedback.contracts import (
     AGENT_FEEDBACK_EVENT_KIND,
     AGENT_FEEDBACK_EXECUTION_KIND,
     AGENT_FEEDBACK_METER_PREFIX,
+    MEDIA_QUALITY_ACTION_IDS,
 )
 
 AGENT_FEEDBACK_SUMMARY_MAX_EVENTS = 5000
+MEDIA_QUALITY_MINIMUM_SAMPLE_SIZE = 20
 
 
 class AgentFeedbackService:
@@ -182,6 +184,7 @@ class AgentFeedbackService:
             ),
             "rejection_reasons": self._top_counts(rejection_reasons),
             "nightly_inspection": self._nightly_inspection_summary(events),
+            "media_quality": self._media_quality_summary(events),
             "rates": {
                 "accepted_rate": self._rate(
                     outcomes.get("accepted", 0) + outcomes.get("edited_before_accept", 0),
@@ -196,6 +199,162 @@ class AgentFeedbackService:
             "preflight_truth": "wordpress_local",
             "final_write_truth": "wordpress_local",
         }
+
+    def _media_quality_summary(self, events: list[UsageMeterEvent]) -> dict[str, Any]:
+        search_completed: set[str] = set()
+        search_with_results: set[str] = set()
+        search_without_results: set[str] = set()
+        search_runtime_errors: set[str] = set()
+        candidate_adopted: set[str] = set()
+        alt_applied: set[str] = set()
+        alt_saved_unchanged: set[str] = set()
+        alt_saved_edited: set[str] = set()
+        alt_saved_decorative: set[str] = set()
+        alt_saved_cleared: set[str] = set()
+        alt_not_saved: set[str] = set()
+        surface_sessions: dict[str, dict[str, set[str]]] = {}
+        relevant_events = 0
+
+        for event in events:
+            payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+            action_id = str(payload.get("source_action_id") or "").strip()
+            if action_id not in MEDIA_QUALITY_ACTION_IDS:
+                continue
+            labels = set(self._string_list(payload.get("feedback_labels")))
+            object_type = str(payload.get("source_object_type") or "").strip()
+            object_id = str(payload.get("source_object_id") or "").strip()
+            local_surface = str(payload.get("local_surface") or "").strip()
+            if object_type == "media_search_session" and object_id:
+                relevant_events += 1
+                surface = "paragraph_image" if "paragraph" in local_surface else "featured_image"
+                surface_bucket = surface_sessions.setdefault(
+                    surface,
+                    {
+                        "completed": set(),
+                        "with_results": set(),
+                        "adopted": set(),
+                    },
+                )
+                if action_id == "media_search_completed":
+                    search_completed.add(object_id)
+                    surface_bucket["completed"].add(object_id)
+                    if "media_search_has_results" in labels:
+                        search_with_results.add(object_id)
+                        surface_bucket["with_results"].add(object_id)
+                    if "media_search_no_results" in labels:
+                        search_without_results.add(object_id)
+                elif action_id == "media_search_runtime_error":
+                    search_runtime_errors.add(object_id)
+                elif "media_candidate_adopted" in labels:
+                    candidate_adopted.add(object_id)
+                    surface_bucket["adopted"].add(object_id)
+
+            if object_type != "editor_alt_occurrence_session" or not object_id:
+                continue
+            relevant_events += 1
+            if action_id == "alt_suggestion_applied_to_editor":
+                alt_applied.add(object_id)
+            elif action_id == "alt_saved_unchanged":
+                alt_saved_unchanged.add(object_id)
+            elif action_id == "alt_saved_edited":
+                alt_saved_edited.add(object_id)
+            elif action_id == "alt_saved_decorative":
+                alt_saved_decorative.add(object_id)
+            elif action_id == "alt_saved_cleared":
+                alt_saved_cleared.add(object_id)
+            elif action_id == "alt_suggestion_not_saved":
+                alt_not_saved.add(object_id)
+
+        search_completed_total = len(search_completed)
+        search_with_results_total = len(search_with_results)
+        result_sessions_total = len(search_with_results)
+        candidate_adopted_total = len(candidate_adopted & search_with_results)
+        alt_confirmed_total = (
+            len(alt_saved_unchanged)
+            + len(alt_saved_edited)
+            + len(alt_saved_decorative)
+            + len(alt_saved_cleared)
+        )
+        alt_comparable_total = len(alt_saved_unchanged) + len(alt_saved_edited)
+        surfaces = []
+        for surface, bucket in sorted(surface_sessions.items()):
+            result_sessions = bucket["with_results"]
+            adopted_sessions = bucket["adopted"] & result_sessions
+            surfaces.append(
+                {
+                    "surface": surface,
+                    "searches_completed": len(bucket["completed"]),
+                    "searches_with_results": len(result_sessions),
+                    "candidate_adopted_sessions": len(adopted_sessions),
+                    "search_success_rate": self._rate(
+                        len(result_sessions),
+                        len(bucket["completed"]),
+                    ),
+                    "candidate_adoption_rate": self._rate(
+                        len(adopted_sessions),
+                        len(result_sessions),
+                    ),
+                }
+            )
+
+        return {
+            "events_total": relevant_events,
+            "minimum_sample_size": MEDIA_QUALITY_MINIMUM_SAMPLE_SIZE,
+            "search": {
+                "attempts_total": search_completed_total + len(search_runtime_errors),
+                "completed_total": search_completed_total,
+                "with_results_total": search_with_results_total,
+                "no_results_total": len(search_without_results),
+                "runtime_error_total": len(search_runtime_errors),
+                "success_rate": self._rate(
+                    search_with_results_total,
+                    search_completed_total,
+                ),
+                "sample_status": self._sample_status(search_completed_total),
+            },
+            "candidate_adoption": {
+                "result_sessions_total": result_sessions_total,
+                "adopted_sessions_total": candidate_adopted_total,
+                "adoption_rate": self._rate(
+                    candidate_adopted_total,
+                    result_sessions_total,
+                ),
+                "sample_status": self._sample_status(result_sessions_total),
+            },
+            "alt": {
+                "applied_total": len(alt_applied),
+                "save_confirmed_total": alt_confirmed_total,
+                "saved_unchanged_total": len(alt_saved_unchanged),
+                "saved_edited_total": len(alt_saved_edited),
+                "saved_decorative_total": len(alt_saved_decorative),
+                "saved_cleared_total": len(alt_saved_cleared),
+                "not_saved_total": len(alt_not_saved),
+                "modification_rate": self._rate(
+                    len(alt_saved_edited),
+                    alt_comparable_total,
+                ),
+                "save_confirmation_rate": self._rate(
+                    alt_confirmed_total,
+                    len(alt_applied),
+                ),
+                "sample_status": self._sample_status(alt_comparable_total),
+                "truth_scope": "saved_editor_image_block_alt",
+                "attachment_alt_included": False,
+            },
+            "surfaces": surfaces,
+            "raw_query_stored": False,
+            "raw_alt_stored": False,
+            "production_mutation": False,
+            "final_write_truth": "wordpress_local",
+        }
+
+    @staticmethod
+    def _sample_status(sample_size: int) -> str:
+        return (
+            "sufficient"
+            if sample_size >= MEDIA_QUALITY_MINIMUM_SAMPLE_SIZE
+            else "insufficient"
+        )
 
     def _nightly_inspection_summary(self, events: list[UsageMeterEvent]) -> dict[str, Any]:
         outcomes: dict[str, int] = {}
