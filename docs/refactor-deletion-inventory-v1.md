@@ -188,6 +188,12 @@ evidence depend on that commercial truth. They are not compatibility aliases
 for the removed Admin features and must not be deleted merely because their raw
 editor and history table are gone.
 
+The normal package editor does not display package IDs or version labels in its
+parameter workflow. Those technical identifiers remain available only in the
+explicit Diagnostics tab. The fixed Free, Plus, Pro, and Agency directory uses
+business tier order and does not expose search, sort, readiness tabs, or a
+second visible catalog heading.
+
 Executable proof requires:
 
 - Admin list/detail responses omit `versions` while retaining
