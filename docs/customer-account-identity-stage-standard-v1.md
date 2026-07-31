@@ -11,6 +11,9 @@ Authority:
   owns permanent Principal identity semantics.
 - [ADR-036: Single-account, single-identity validation stage](decisions/036-single-account-single-identity-validation-stage.md)
   owns the current product restriction and Admin consolidation.
+- [ADR-037: Separate the customer directory from the service problem queue](decisions/037-separate-customer-directory-from-service-problem-queue.md)
+  owns the current Admin placement of customer information, service problems,
+  and customer-specific access actions.
 
 Implementation history:
 
@@ -97,23 +100,30 @@ boundaries rather than scattered role-name comparisons.
 
 ## 5. Admin surface
 
-`/admin/accounts` is the canonical customer directory.
+`/admin/accounts` is the canonical customer directory. It must support finding,
+creating, and opening a customer without becoming a service-risk queue.
 
-The queue must show, in one scan:
+The directory must show, in one scan:
 
 - customer identity and Account status;
-- primary login email and Principal status;
-- package/site/subscription posture;
-- whether the one-to-one relationship is healthy, missing, or conflicting;
-- the next bounded operator action.
+- primary login email and basic relationship state;
+- compact package/site/subscription posture;
+- one primary row action: open customer detail.
 
-Normal actions:
+The directory must not expose risk ordering, problem reasons, a row-selection
+inspector, identity audit, or destructive access actions.
 
-- primary: open customer detail;
-- secondary: inspect the current customer;
-- low frequency: view identity audit;
-- destructive: disable the Principal after an explicit reason and
-  confirmation.
+`/admin/coverage` is the canonical cross-customer service problem queue. It must
+default to customers needing action and include identity, access, account,
+package, subscription, billing, site, and key-coverage problems. Each problem
+must route to the detail surface that owns the next action.
+
+`/admin/accounts/{accountId}#customer-access` owns customer-specific identity
+and access work:
+
+- view primary identity and owner-membership evidence;
+- view bounded identity audit;
+- disable the Principal after an explicit reason and confirmation.
 
 Disabling a Principal invalidates Portal sessions and revokes active customer
 membership and provider bindings. It does not delete the Account, sites, or
@@ -169,7 +179,8 @@ Changes to this boundary require:
 - frontend unit, contract, type, lint, and Admin UI gates;
 - PC browser evidence for material customer queue changes;
 - M4 candidate sync for Cloud source behavior;
-- an update to ADR-036 or a superseding ADR when the current stage changes.
+- an update to ADR-036, ADR-037, or a superseding ADR when the current stage or
+  Admin placement changes.
 
 Legacy tests that construct multiple active Principals in one Account or one
 active Principal in multiple Accounts are not validation-stage compatibility

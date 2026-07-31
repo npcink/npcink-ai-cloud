@@ -77,6 +77,10 @@ inside the Customers workspace. The validation-stage product must not expose a
 second Portal-users customer directory; see ADR-036 and
 `customer-account-identity-stage-standard-v1.md`.
 
+Customers is the customer-information directory. Service queue is the
+cross-customer problem queue. The two routes must not be merged or reproduce
+each other's default ordering, reasons, or actions; see ADR-037.
+
 `/admin/subscriptions` is a service-queue view. `/admin/credit-packs` is a
 package-and-credit view. They may keep stable routes during migration, but they
 must share their parent workspace navigation and visual model.
@@ -211,10 +215,10 @@ consolidation.
 | --- | --- | --- | --- | --- |
 | `/admin` | Overview | `overview` | Overview | Keep; remove duplicated full-page evidence |
 | `/admin/login` | Authentication | `authentication` | None | Keep as a single-task page |
-| `/admin/accounts` | Customer Operations | `queue` | Customers | Keep as customer register |
-| `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Rebuild around overview, commercial, credits, sites, audit tabs |
+| `/admin/accounts` | Customer Operations | `queue` | Customers | Canonical customer directory; no risk queue or row inspector |
+| `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Overview, commercial, credits, sites, access, and audit tabs |
 | `/admin/sites/[siteId]` | Customer Operations | `detail` | Customers | Rebuild around health, coverage, runtime, usage, keys/audit tabs |
-| `/admin/coverage` | Customer Operations | `queue` | Service queue | Canonical service follow-up queue |
+| `/admin/coverage` | Customer Operations | `queue` | Service queue | Canonical cross-customer problem queue; needs-action default |
 | `/admin/subscriptions` | Customer Operations | `queue` | Service queue | Keep route; render as subscription-risk view of service queue |
 | `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Service queue | Keep; one reconciliation action and contextual evidence |
 | `/admin/support-requests` | Customer Operations | `queue` | Tickets | Keep; split customer conversation from internal handling |
@@ -387,7 +391,8 @@ move lines between files.
 ### Phase B: three representative pilots
 
 1. Customer detail: `detail` plus governed/destructive actions.
-2. Service queue: `queue` plus filters, prioritization, and inspector.
+2. Service queue: semantic table plus filters, prioritization, and contextual
+   detail links.
 3. Service settings: `configuration` plus dirty state, validation, test, save.
 
 Each pilot must pass desktop/mobile, light/dark, state, keyboard, mutation, and

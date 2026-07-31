@@ -914,6 +914,10 @@ def test_service_routes_admin_read_facade(tmp_path: Path, monkeypatch: pytest.Mo
     assert accounts[0]["package_kind"] == "tier_package"
     assert accounts[0]["coverage_state"] == "covered"
     assert accounts[0]["primary_subscription_id"] == "sub_admin"
+    assert account_detail_response.status_code == 200
+    account_detail = account_detail_response.json()["data"]
+    assert account_detail["identity_relationship_state"] == "healthy"
+    assert account_detail["primary_identity"]["email"] == "admin@example.com"
     assert package_filtered_accounts_response.status_code == 200
     assert (
         package_filtered_accounts_response.json()["data"]["filters"]["coverage_state"] == "covered"
