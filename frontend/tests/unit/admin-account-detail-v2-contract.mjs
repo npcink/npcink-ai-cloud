@@ -62,6 +62,51 @@ assert.match(
   /activeDetailTab === 'credits'[\s\S]*topup_packs_label[\s\S]*credit_adjustment_label/,
   'top-up packs and credit adjustments must stay in the credits section'
 );
+assert.doesNotMatch(
+  source,
+  /xl:grid-cols-\[0\.9fr_1\.1fr\]/,
+  'commercial and credit work must not share the sparse legacy split layout'
+);
+assert.match(
+  source,
+  /current_coverage_title[\s\S]*<dl[\s\S]*coverage_type_label[\s\S]*next_step_label/,
+  'commercial context must stay in one compact scannable definition table'
+);
+assert.match(
+  source,
+  /change_customer_package_label[\s\S]*<table[\s\S]*QUICK_PACKAGE_OPTIONS\.map/,
+  'package choices must remain a dense comparison table'
+);
+assert.match(
+  source,
+  /topup_packs_label[\s\S]*<table[\s\S]*TOPUP_PACK_OPTIONS\.map/,
+  'top-up choices must remain a dense comparison table'
+);
+assert.match(
+  source,
+  /<details[\s\S]*credit_adjustment_label[\s\S]*audit_required/,
+  'low-frequency audited credit adjustment must stay behind explicit disclosure'
+);
+assert.match(
+  source,
+  /resource_limits_title[\s\S]*<table[\s\S]*resourceRows\.map/,
+  'resource limits must remain a used-limit-remaining status table'
+);
+assert.equal(
+  source.match(/<AdminDataTableFrame/g)?.length || 0,
+  3,
+  'package, top-up, and resource comparisons must reuse the shared Admin table frame'
+);
+assert.match(
+  source,
+  /aria-label=\{`\$\{label\} · \$\{t\('admin\.account_detail\.apply_package_action'/,
+  'each package mutation must include its target package in the accessible action name'
+);
+assert.match(
+  source,
+  /metric\.status === 'limited' && metric\.key === 'active_api_key_sites'[\s\S]*key_coverage_gap_status/,
+  'API-key coverage gaps must not be mislabeled as exhausted numeric quota'
+);
 assert.match(
   source,
   /useAccountCreditEvidence\([\s\S]*activeDetailTab === 'credits'/,
