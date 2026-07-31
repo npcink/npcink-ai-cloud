@@ -12,8 +12,6 @@ import {
   BackofficePageStack,
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
-import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
-import { AdminSettingsDisclosure } from '@/components/admin/AdminSettingsDisclosure';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
@@ -205,13 +203,11 @@ function AdminCoverageContent() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [reasonFilter, setReasonFilter] = useState(() => searchParams.get('reason') || '');
   const [sort, setSort] = useState<QueueSort>(() => normalizeQueueSort(searchParams.get('sort')));
-  const [selectedKey, setSelectedKey] = useState(() => searchParams.get('focus') || '');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const mountedRef = useRef(false);
   const queueParamsRef = useRef(new URLSearchParams(searchParamsKey));
   const coverageRequestActiveRef = useRef(false);
   const coverageRequestSequenceRef = useRef(0);
-  const customerDetailLinkRef = useRef<HTMLAnchorElement>(null);
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(queueParamsRef.current.toString());
@@ -271,13 +267,22 @@ function AdminCoverageContent() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchParamsKey);
+    const hadLegacyFocus = params.has('focus');
+    params.delete('focus');
     queueParamsRef.current = params;
+    if (hadLegacyFocus) {
+      const nextQuery = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        nextQuery ? `${pathname}?${nextQuery}` : pathname
+      );
+    }
     setView(normalizeQueueView(params.get('status')));
     setSearchQuery(params.get('q') || '');
     setReasonFilter(params.get('reason') || '');
     setSort(normalizeQueueSort(params.get('sort')));
-    setSelectedKey(params.get('focus') || '');
-  }, [searchParamsKey]);
+  }, [pathname, searchParamsKey]);
 
   const visibleQueueItems = useMemo(
     () =>
@@ -363,9 +368,6 @@ function AdminCoverageContent() {
         );
     });
   }, [reasonFilter, searchQuery, sort, view, visibleQueueItems]);
-  const selectedQueueItem =
-    visibleItems.find((item) => queueItemKey(item) === selectedKey) || visibleItems[0] || null;
-
   if (error && !queue) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -403,19 +405,6 @@ function AdminCoverageContent() {
   const reasonEntries = Object.entries(visibleSummary.reason_counts || {})
     .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))
     .slice(0, 6);
-  const selectedPrimaryActionHref = selectedQueueItem
-    ? selectedQueueItem.action_href
-    : '';
-  const selectedCustomerLabel = selectedQueueItem
-    ? customerDisplayName(
-        selectedQueueItem.account.name,
-        selectedQueueItem.account.account_id,
-        t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
-      )
-    : '';
-  const showSelectedPrimaryAction =
-    Boolean(selectedPrimaryActionHref) &&
-    (selectedQueueItem?.severity === 'error' || selectedQueueItem?.severity === 'warning');
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
@@ -452,8 +441,7 @@ function AdminCoverageContent() {
         </div>
       ) : null}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.72fr)]">
-        <BackofficeSectionPanel className="overflow-hidden p-0">
+      <BackofficeSectionPanel className="overflow-hidden p-0">
           <div className="space-y-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
             <div className="flex justify-end">
               <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
@@ -483,13 +471,11 @@ function AdminCoverageContent() {
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setSearchQuery(nextValue);
-                    setSelectedKey('');
                     updateQueueUrl({
                       status: view,
                       q: nextValue.trim() || null,
                       reason: reasonFilter || null,
                       sort,
-                      focus: null,
                     });
                   }}
                 />
@@ -504,13 +490,11 @@ function AdminCoverageContent() {
                   onChange={(event) => {
                     const nextValue = normalizeQueueView(event.target.value);
                     setView(nextValue);
-                    setSelectedKey('');
                     updateQueueUrl({
                       status: nextValue,
                       q: searchQuery.trim() || null,
                       reason: reasonFilter || null,
                       sort,
-                      focus: null,
                     });
                   }}
                 >
@@ -531,13 +515,11 @@ function AdminCoverageContent() {
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setReasonFilter(nextValue);
-                    setSelectedKey('');
                     updateQueueUrl({
                       status: view,
                       q: searchQuery.trim() || null,
                       reason: nextValue || null,
                       sort,
-                      focus: null,
                     });
                   }}
                 >
@@ -564,7 +546,6 @@ function AdminCoverageContent() {
                       q: searchQuery.trim() || null,
                       reason: reasonFilter || null,
                       sort: nextValue,
-                      focus: selectedKey || null,
                     });
                   }}
                 >
@@ -589,8 +570,7 @@ function AdminCoverageContent() {
                       setReasonFilter('');
                       setView('all');
                       setSort('priority');
-                      setSelectedKey('');
-                      updateQueueUrl({ q: null, reason: null, status: null, sort: null, focus: null });
+                      updateQueueUrl({ q: null, reason: null, status: null, sort: null });
                     }}
                   >
                     <svg
@@ -615,15 +595,19 @@ function AdminCoverageContent() {
           {visibleItems.length ? (
             <div className="overflow-x-auto">
               <table
-                className="w-full min-w-[44rem] table-fixed border-collapse text-left text-sm"
+                className="w-full min-w-[64rem] table-fixed border-collapse text-left text-sm"
                 aria-label={t('admin.coverage.table_region_label', {}, 'Customer service status')}
               >
                 <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
                   <tr>
                     <th className="w-[6.5rem] px-4 py-3">{t('common.status', {}, 'Status')}</th>
-                    <th className="w-[19rem] px-4 py-3">
+                    <th className="w-[17rem] px-4 py-3">
                       {t('admin.coverage.table_customer', {}, 'Customer')}
                     </th>
+                    <th className="w-[12rem] px-4 py-3">
+                      {t('common.package', {}, 'Package')} / {t('common.subscription', {}, 'Subscription')}
+                    </th>
+                    <th className="w-[6rem] px-4 py-3">{t('common.sites', {}, 'Sites')}</th>
                     <th className="px-4 py-3">{t('admin.coverage.table_issue', {}, 'Issue')}</th>
                     <th className="w-[9rem] px-4 py-3">{t('admin.coverage.table_impact', {}, 'Impact')}</th>
                   </tr>
@@ -631,23 +615,16 @@ function AdminCoverageContent() {
                 <tbody>
                   {visibleItems.map((item) => {
                     const itemKey = queueItemKey(item);
-                    const isSelected = selectedQueueItem ? queueItemKey(selectedQueueItem) === itemKey : false;
                     const customerLabel =
                       customerLabelsByKey.get(itemKey) ||
                       t('admin.coverage.unnamed_customer', {}, 'Unnamed customer');
-                    const selectQueueItem = () => {
-                      setSelectedKey(itemKey);
-                      updateQueueUrl({
-                        status: view,
-                        q: searchQuery.trim() || null,
-                        reason: reasonFilter || null,
-                        sort,
-                        focus: itemKey,
-                      });
-                    };
                     const daysUntilEnd = item.evidence.days_until_end;
                     const missingKeySites = Number(item.evidence.missing_key_site_count || 0);
                     const siteCount = Number(item.evidence.site_count || 0);
+                    const subscriptionStatus =
+                      item.evidence.subscription_status ||
+                      item.primary_subscription?.status ||
+                      'unknown';
                     let impactLabel: string;
                     if (daysUntilEnd != null) {
                       impactLabel = t(
@@ -672,35 +649,7 @@ function AdminCoverageContent() {
                       <tr
                         key={itemKey}
                         data-ui="coverage-queue-item"
-                        tabIndex={0}
-                        aria-selected={isSelected}
-                        aria-controls="coverage-inspector"
-                        onClick={(event) => {
-                          const interactiveTarget = (event.target as HTMLElement).closest(
-                            'a, button, input, select, textarea, [role="button"]'
-                          );
-                          if (!interactiveTarget) {
-                            selectQueueItem();
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.target !== event.currentTarget) {
-                            return;
-                          }
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            selectQueueItem();
-                            window.requestAnimationFrame(() => {
-                              customerDetailLinkRef.current?.focus();
-                            });
-                          }
-                        }}
-                        className={cn(
-                          'cursor-pointer border-t border-slate-200/80 align-middle transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 dark:border-slate-800',
-                          isSelected
-                            ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-400/40 dark:bg-blue-950/25'
-                            : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35'
-                        )}
+                        className="border-t border-slate-200/80 align-middle dark:border-slate-800"
                       >
                         <td className="px-4 py-3">
                           <CoverageStatusBadge
@@ -712,11 +661,20 @@ function AdminCoverageContent() {
                           <Link
                             href={`/admin/accounts/${encodeURIComponent(item.account.account_id)}`}
                             className="block max-w-full break-words font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
                           >
                             {customerLabel}
                           </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-slate-900 dark:text-slate-100">
+                            {item.package?.display_package_label || t('common.not_available', {}, 'N/A')}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {translateStatusLabel(subscriptionStatus, t)}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                          {formatInteger(siteCount)}
                         </td>
                         <td
                           className="px-4 py-3"
@@ -726,32 +684,28 @@ function AdminCoverageContent() {
                               : translateStatusLabel(item.severity, t)
                           }
                         >
-                          {item.severity === 'error' || item.severity === 'warning' ? (
+                          {(item.severity === 'error' || item.severity === 'warning') && item.action_href ? (
                             <>
                               <p className="font-medium text-slate-800 dark:text-slate-100">
                                 {translateReasonCode(t, item.reason_code, item.reason_label)}
                               </p>
                               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                {t(
-                                  'admin.coverage.next_action',
-                                  {
-                                    action: translateActionLabel(
-                                      t,
-                                      item.recommended_action,
-                                      item.action_label || t('common.open', {}, 'Open')
-                                    ),
-                                  },
-                                  `Next: ${item.action_label || t('common.open', {}, 'Open')}`
-                                )}
+                                <Link
+                                  href={item.action_href}
+                                  className="font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
+                                >
+                                  {translateActionLabel(
+                                    t,
+                                    item.recommended_action,
+                                    item.action_label || t('common.open', {}, 'Open')
+                                  )} →
+                                </Link>
                               </p>
                             </>
                           ) : null}
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-medium text-slate-900 dark:text-slate-100">{impactLabel}</p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {item.package?.display_package_label || t('common.not_available', {}, 'N/A')}
-                          </p>
                         </td>
                       </tr>
                     );
@@ -781,7 +735,7 @@ function AdminCoverageContent() {
                     setReasonFilter('');
                     setView('all');
                     setSort('priority');
-                    updateQueueUrl({ q: null, reason: null, status: 'all', sort: null, focus: null });
+                    updateQueueUrl({ q: null, reason: null, status: 'all', sort: null });
                   }}
                 >
                   {t('common.clear_filters', {}, 'Clear filters')}
@@ -789,102 +743,7 @@ function AdminCoverageContent() {
               )}
             />
           )}
-        </BackofficeSectionPanel>
-
-        <aside id="coverage-inspector" className="xl:sticky xl:top-24" aria-live="polite">
-          <BackofficeSectionPanel className="space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-xl font-semibold text-gray-950 dark:text-white">
-                {t('admin.coverage.inspector_title', {}, 'Customer details')}
-              </h2>
-              {selectedQueueItem ? (
-                <CoverageStatusBadge
-                  severity={selectedQueueItem.severity}
-                  label={translateStatusLabel(selectedQueueItem.severity, t)}
-                />
-              ) : null}
-            </div>
-
-            {selectedQueueItem ? (
-              <div className="space-y-4">
-                <div>
-                  <p className="break-words text-base font-semibold text-slate-950 dark:text-white">
-                    {selectedCustomerLabel}
-                  </p>
-                  {selectedQueueItem.severity === 'error' || selectedQueueItem.severity === 'warning' ? (
-                    <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                      {translateReasonCode(t, selectedQueueItem.reason_code, selectedQueueItem.reason_label)}
-                    </p>
-                  ) : null}
-                </div>
-
-                <dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  {[
-                    [t('common.package', {}, 'Package'), selectedQueueItem.package?.display_package_label || t('common.not_available', {}, 'N/A')],
-                    [t('common.sites', {}, 'Sites'), formatInteger(Number(selectedQueueItem.evidence.site_count || 0))],
-                    [t('admin.account_detail.active_api_keys_label', {}, 'Active API keys'), formatInteger(Number(selectedQueueItem.evidence.active_key_site_count || 0))],
-                    [t('admin.subscriptions.snapshot_status_metric', {}, 'Snapshot'), translateStatusLabel(selectedQueueItem.evidence.billing_snapshot_status?.status || 'unknown', t)],
-                    [t('common.subscription', {}, 'Subscription'), translateStatusLabel(selectedQueueItem.evidence.subscription_status || 'unknown', t)],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800">
-                      <dt>{label}</dt>
-                      <dd className="text-right font-semibold text-slate-950 dark:text-white">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                <div className="flex justify-end">
-                  <Link
-                    ref={customerDetailLinkRef}
-                    href={`/admin/accounts/${encodeURIComponent(selectedQueueItem.account.account_id)}`}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    {t('admin.coverage.inspector_title', {}, 'Customer details')}
-                  </Link>
-                </div>
-
-                <AdminSettingsDisclosure
-                  dataUi="coverage-technical-info"
-                  title={t('admin.coverage.technical_info_title', {}, 'Technical information')}
-                  description={t(
-                    'admin.coverage.technical_info_desc',
-                    {},
-                    'Use only when support or engineering needs the internal identifier.'
-                  )}
-                >
-                  <div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                      {t('admin.coverage.account_id_label', {}, 'Account ID')}
-                    </p>
-                    <div className="mt-1 break-all text-xs text-slate-600 dark:text-slate-300">
-                      <BackofficeIdentifier value={selectedQueueItem.account.account_id} full />
-                    </div>
-                  </div>
-                </AdminSettingsDisclosure>
-
-                {showSelectedPrimaryAction ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={selectedPrimaryActionHref}
-                      className="btn btn-primary btn-sm"
-                    >
-                      {translateActionLabel(
-                        t,
-                        selectedQueueItem.recommended_action,
-                        selectedQueueItem.action_label || t('common.open', {}, 'Open')
-                      )}
-                    </Link>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                {t('admin.coverage.inspector_empty', {}, 'No customer needs inspection in this snapshot.')}
-              </p>
-            )}
-          </BackofficeSectionPanel>
-        </aside>
-      </div>
+      </BackofficeSectionPanel>
     </BackofficePageStack>
   );
 }

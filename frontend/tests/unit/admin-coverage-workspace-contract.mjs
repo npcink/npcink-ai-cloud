@@ -14,8 +14,8 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /useSearchParams\(\)[\s\S]*updateQueueUrl[\s\S]*status[\s\S]*reason[\s\S]*sort[\s\S]*focus/,
-  'Coverage filters, sort, and inspector focus must survive refresh and detail navigation through the URL'
+  /useSearchParams\(\)[\s\S]*updateQueueUrl[\s\S]*status[\s\S]*reason[\s\S]*sort/,
+  'Coverage filters and sort must survive refresh and detail navigation through the URL'
 );
 
 assert.match(
@@ -24,16 +24,10 @@ assert.match(
   'Coverage queue must support search, reason filtering, and explicit prioritization'
 );
 
-assert.match(
+assert.doesNotMatch(
   coverageSource,
-  /visibleItems\.find\(\(item\) => queueItemKey\(item\) === selectedKey\)[\s\S]*aria-controls="coverage-inspector"/,
-  'Coverage inspector must follow an explicit customer selection instead of always taking the first row'
-);
-
-assert.match(
-  coverageSource,
-  /customerDisplayName[\s\S]*admin\.coverage\.unnamed_customer[\s\S]*AdminSettingsDisclosure[\s\S]*admin\.coverage\.technical_info_title[\s\S]*admin\.coverage\.account_id_label/,
-  'Coverage workspace must keep the internal account ID inside a low-frequency technical disclosure'
+  /selectedQueueItem|selectedKey|coverage-inspector|AdminSettingsDisclosure|BackofficeIdentifier|active_api_keys_label|snapshot_status_metric/,
+  'Coverage workspace must not keep a selection inspector, technical identifiers, key counts, or billing snapshot diagnostics'
 );
 
 assert.doesNotMatch(
@@ -44,14 +38,14 @@ assert.doesNotMatch(
 
 assert.match(
   coverageSource,
-  /showSelectedPrimaryAction[\s\S]*severity === 'error'[\s\S]*severity === 'warning'[\s\S]*selectedPrimaryActionHref/,
-  'Coverage inspector must expose one contextual action only for warning or error rows'
+  /item\.severity === 'error' \|\| item\.severity === 'warning'[\s\S]*href=\{item\.action_href\}[\s\S]*translateActionLabel/,
+  'Coverage table must expose one contextual action only for warning or error rows'
 );
 
 assert.match(
   coverageSource,
-  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*data-ui="coverage-queue-item"[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}[\s\S]*onClick=\{\(event\) => event\.stopPropagation\(\)\}[\s\S]*onKeyDown=\{\(event\) => event\.stopPropagation\(\)\}[\s\S]*admin\.coverage\.next_action/,
-  'Coverage rows must show direct account-detail links without leaking link activation into row selection'
+  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*data-ui="coverage-queue-item"[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}/,
+  'Coverage rows must show direct account-detail links without a competing row-selection interaction'
 );
 
 assert.match(
@@ -60,16 +54,22 @@ assert.match(
   'Coverage defaults to all customers and the clear action restores that URL-owned default'
 );
 
+assert.doesNotMatch(
+  coverageSource,
+  /id="coverage-inspector"|aria-controls="coverage-inspector"|tabIndex=\{0\}|aria-selected=/,
+  'Coverage table must not retain inspector selection or row-level keyboard navigation'
+);
+
 assert.match(
   coverageSource,
-  /<p className="break-words text-base font-semibold[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(selectedQueueItem\.account\.account_id\)\}`\}[\s\S]*admin\.coverage\.inspector_title/,
-  'Coverage inspector must retain an explicit customer-detail link'
+  /const hadLegacyFocus = params\.has\('focus'\);[\s\S]*params\.delete\('focus'\)/,
+  'Coverage must normalize retired inspector focus parameters out of legacy URLs'
 );
 
 assert.match(
   coverageSource,
   /href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}/,
-  'Coverage customer identities must open account detail directly while row selection owns the inspector'
+  'Coverage customer identities must open account detail directly'
 );
 
 assert.match(
@@ -98,14 +98,14 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /overflow-x-auto[\s\S]*<table[\s\S]*admin\.coverage\.table_issue[\s\S]*admin\.coverage\.table_impact/,
-  'The service queue must use a compact semantic table with explicit issue and impact columns'
+  /overflow-x-auto[\s\S]*<table[\s\S]*common\.package[\s\S]*common\.subscription[\s\S]*common\.sites[\s\S]*admin\.coverage\.table_issue[\s\S]*admin\.coverage\.table_impact/,
+  'The service queue must use one full-width semantic table with package, subscription, sites, issue, and impact'
 );
 
-assert.match(
+assert.doesNotMatch(
   coverageSource,
-  /<tbody>[\s\S]*data-ui="coverage-queue-item"[\s\S]*tabIndex=\{0\}[\s\S]*aria-selected=\{isSelected\}[\s\S]*aria-controls="coverage-inspector"[\s\S]*event\.key === 'Enter' \|\| event\.key === ' '[\s\S]*customerDetailLinkRef\.current\?\.focus\(\)/,
-  'Coverage table rows must select the connected customer inspector and move keyboard users to its detail action'
+  /admin\.account_detail\.active_api_keys_label|admin\.subscriptions\.snapshot_status_metric|coverage-technical-info|admin\.coverage\.account_id_label/,
+  'Coverage table must leave key, billing, and internal identifier diagnostics to customer detail'
 );
 
 assert.doesNotMatch(
@@ -122,7 +122,7 @@ assert.match(
 
 assert.match(
   i18nSource,
-  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.unnamed_customer': '未命名客户'[\s\S]*'admin\.coverage\.customer_position': '\{\{name\}\} · \{\{index\}\}\/\{\{total\}\}'[\s\S]*'admin\.coverage\.next_action': '下一步：\{\{action\}\}'[\s\S]*'admin\.coverage\.account_id_label': '账户 ID'[\s\S]*'admin\.coverage\.technical_info_title': '技术信息'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
+  /'admin\.coverage\.refresh_action': '刷新'[\s\S]*'admin\.coverage\.search_placeholder': '客户、账户、订阅或套餐'[\s\S]*'admin\.coverage\.sort_priority': '影响最高'[\s\S]*'admin\.coverage\.unnamed_customer': '未命名客户'[\s\S]*'admin\.coverage\.customer_position': '\{\{name\}\} · \{\{index\}\}\/\{\{total\}\}'[\s\S]*'admin\.coverage\.table_customer': '客户'[\s\S]*'admin\.coverage\.table_issue': '问题'[\s\S]*'admin\.coverage\.table_impact': '影响'/,
   'Coverage toolbar and table must provide Simplified Chinese utility copy'
 );
 
