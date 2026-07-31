@@ -37,6 +37,11 @@ assert.match(
   /sampleStage[\s\S]*?confidence[\s\S]*?persistence[\s\S]*?actionable/,
   'the quality section must expose sample and persistence context'
 );
+assert.match(
+  panelSource,
+  /data-ui="editor-assist-quality-candidate-table"[\s\S]*<thead[\s\S]*admin\.editor_quality\.column_evidence[\s\S]*admin\.editor_quality\.column_next_action/,
+  'problem candidates must render as a semantic comparison table'
+);
 assert.doesNotMatch(
   panelSource,
   /method:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/,

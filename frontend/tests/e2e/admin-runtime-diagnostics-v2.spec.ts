@@ -52,6 +52,10 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
 
   await page.goto('/admin/troubleshooting');
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
+  const anomalyTable = page.locator('[data-ui="runtime-diagnostic-table"]');
+  await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toBeVisible();
+  await expect(anomalyTable.getByRole('columnheader', { name: /Affected scope|影响范围/i })).toBeVisible();
+  await expect(anomalyTable.getByRole('columnheader', { name: /Evidence code|证据代码/i })).toBeVisible();
   await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Provider call coverage gap|供应商调用遥测缺口/i);
   await expect(page.locator('#runtime-diagnostic-inspector a')).toHaveAttribute('href', '#runtime-evidence');
   await expect(page.locator('main input')).toHaveCount(0);
@@ -59,6 +63,9 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(qualityPanel).toContainText(/Editor-assist quality|编辑辅助质量/i);
   await expect(qualityPanel).toContainText(/Exact adoption|精确采纳率/i);
   await expect(qualityPanel).toContainText(/Repeat pressure|重复生成偏高/i);
+  const candidateTable = qualityPanel.locator('[data-ui="editor-assist-quality-candidate-table"]');
+  await expect(candidateTable.getByRole('columnheader', { name: /Rate \/ sample|发生率 \/ 样本/i })).toBeVisible();
+  await expect(candidateTable.getByRole('columnheader', { name: /Next action|下一步/i })).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
   await qualityPanel.getByLabel(/Task|任务/i).selectOption('content_summary');
   await expect.poll(() => qualityRequests.some((url) => url.includes('task_key=content_summary'))).toBe(true);
@@ -112,6 +119,9 @@ test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', 
   await page.goto('/admin/troubleshooting');
 
   const lanes = page.locator('#evidence-lanes');
+  const laneTable = lanes.locator('[data-ui="runtime-evidence-lane-table"]');
+  await expect(laneTable.getByRole('columnheader', { name: /Channel|通道/i })).toBeVisible();
+  await expect(laneTable.getByRole('columnheader', { name: /Evidence scope|证据范围/i })).toBeVisible();
   await expect(lanes.locator('a[href="/admin/plugin-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/media-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/vector-observability"]')).toBeVisible();
