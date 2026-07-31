@@ -89,7 +89,7 @@ function isInternalCoverageRecord(...values: Array<string | undefined>): boolean
 }
 
 function normalizeQueueView(value: string | null): QueueView {
-  return value && QUEUE_VIEWS.has(value as QueueView) ? (value as QueueView) : 'needs_action';
+  return value && QUEUE_VIEWS.has(value as QueueView) ? (value as QueueView) : 'all';
 }
 
 function normalizeQueueSort(value: string | null): QueueSort {
@@ -217,7 +217,7 @@ function AdminCoverageContent() {
     const nextParams = new URLSearchParams(queueParamsRef.current.toString());
     Object.entries(patch).forEach(([key, value]) => {
       const isDefault =
-        (key === 'status' && value === 'needs_action') ||
+        (key === 'status' && value === 'all') ||
         (key === 'sort' && value === 'priority');
       if (!value || isDefault) {
         nextParams.delete(key);
@@ -583,11 +583,11 @@ function AdminCoverageContent() {
                     type="button"
                     className="btn btn-secondary h-11 w-11 shrink-0 p-0"
                     aria-label={t('common.clear_filters', {}, 'Clear filters')}
-                    disabled={!searchQuery && !reasonFilter && view === 'needs_action' && sort === 'priority'}
+                    disabled={!searchQuery && !reasonFilter && view === 'all' && sort === 'priority'}
                     onClick={() => {
                       setSearchQuery('');
                       setReasonFilter('');
-                      setView('needs_action');
+                      setView('all');
                       setSort('priority');
                       setSelectedKey('');
                       updateQueueUrl({ q: null, reason: null, status: null, sort: null, focus: null });
@@ -709,9 +709,14 @@ function AdminCoverageContent() {
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <span className="block max-w-full break-words font-semibold text-slate-950 dark:text-slate-100">
+                          <Link
+                            href={`/admin/accounts/${encodeURIComponent(item.account.account_id)}`}
+                            className="block max-w-full break-words font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-300"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
                             {customerLabel}
-                          </span>
+                          </Link>
                         </td>
                         <td
                           className="px-4 py-3"

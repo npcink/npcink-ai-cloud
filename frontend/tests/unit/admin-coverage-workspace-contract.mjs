@@ -50,26 +50,26 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*data-ui="coverage-queue-item"[\s\S]*<span className="block max-w-full break-words font-semibold[\s\S]*admin\.coverage\.next_action/,
-  'Coverage rows must show complete readable customer identities without duplicating the inspector customer-detail link'
+  /customerLabelsByKey[\s\S]*admin\.coverage\.customer_position[\s\S]*data-ui="coverage-queue-item"[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}[\s\S]*onClick=\{\(event\) => event\.stopPropagation\(\)\}[\s\S]*onKeyDown=\{\(event\) => event\.stopPropagation\(\)\}[\s\S]*admin\.coverage\.next_action/,
+  'Coverage rows must show direct account-detail links without leaking link activation into row selection'
 );
 
 assert.match(
   coverageSource,
-  /value: 'inactive'[\s\S]*coverage-filter-toolbar[\s\S]*xl:grid-cols-\[minmax\(12\.5rem,1\.35fr\)[\s\S]*admin\.coverage\.status_filter_label[\s\S]*filters\.map\(\(filter\)[\s\S]*admin\.coverage\.reason_filter_label[\s\S]*admin\.coverage\.sort_label[\s\S]*title=\{t\('common\.clear_filters'[\s\S]*coverage-clear-filters-tooltip[\s\S]*aria-label=\{t\('common\.clear_filters'/,
-  'Coverage search, status, reason, sort, and accessible clear action must share one compact PC toolbar'
+  /normalizeQueueView[\s\S]*: 'all'[\s\S]*key === 'status' && value === 'all'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'all'[\s\S]*setView\('all'\)/,
+  'Coverage defaults to all customers and the clear action restores that URL-owned default'
 );
 
 assert.match(
   coverageSource,
   /<p className="break-words text-base font-semibold[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(selectedQueueItem\.account\.account_id\)\}`\}[\s\S]*admin\.coverage\.inspector_title/,
-  'Coverage inspector must own the only explicit customer-detail link'
+  'Coverage inspector must retain an explicit customer-detail link'
 );
 
-assert.doesNotMatch(
+assert.match(
   coverageSource,
   /href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(item\.account\.account_id\)\}`\}/,
-  'Coverage queue rows must select the inspector instead of navigating away'
+  'Coverage customer identities must open account detail directly while row selection owns the inspector'
 );
 
 assert.match(

@@ -118,7 +118,14 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   const coverageQueueItems = page.locator('[data-ui="coverage-queue-item"]');
   const coverageInspector = page.locator('#coverage-inspector');
-  await expect(coverageQueueItems.getByRole('link')).toHaveCount(0);
+  await expect(coverageQueueItems.nth(0).getByRole('link', { name: /MVP Account/i })).toHaveAttribute(
+    'href',
+    `/admin/accounts/${LONG_ACCOUNT_ID}`
+  );
+  await expect(coverageQueueItems.nth(1).getByRole('link', { name: /Uncovered Account/i })).toHaveAttribute(
+    'href',
+    '/admin/accounts/acct_uncovered'
+  );
   await expect(coverageInspector.getByRole('link', { name: /Customer details|客户详情|客戶詳情/i })).toHaveAttribute(
     'href',
     `/admin/accounts/${LONG_ACCOUNT_ID}`

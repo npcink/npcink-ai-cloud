@@ -11,14 +11,39 @@ test('service status table keeps filters and customer focus in the URL on PC', a
 
   await page.goto('/admin/coverage');
   await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$/i })).toBeVisible();
-  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
+  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(3);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态/i })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: /Service status|服务状态/i })).toHaveValue('all');
+  await expect(page).not.toHaveURL(/status=/);
 
   const initialRows = page.locator('[data-ui="coverage-queue-item"]');
   await expect(page.getByRole('columnheader', { name: /^Actions$|^操作$/i })).toHaveCount(0);
   await expect(initialRows.nth(0)).not.toContainText(/Account ID|账户 ID/i);
   await expect(initialRows.nth(0)).not.toContainText('acct_');
-  await expect(initialRows.getByRole('link')).toHaveCount(0);
+  await expect(initialRows.nth(0).getByRole('link', { name: 'MVP Account' })).toHaveAttribute(
+    'href',
+    `/admin/accounts/${encodeURIComponent(LONG_ACCOUNT_ID)}`
+  );
+  const uncoveredCustomerLink = initialRows.nth(1).getByRole('link', { name: 'Uncovered Account' });
+  await expect(uncoveredCustomerLink).toHaveAttribute(
+    'href',
+    '/admin/accounts/acct_uncovered'
+  );
+  await uncoveredCustomerLink.evaluate((element) => {
+    element.addEventListener('click', (event) => event.preventDefault(), { once: true });
+  });
+  await uncoveredCustomerLink.click();
+  await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(initialRows.nth(1)).toHaveAttribute('aria-selected', 'false');
+  await expect(page).not.toHaveURL(/focus=/);
+  await uncoveredCustomerLink.evaluate((element) => {
+    element.addEventListener('click', (event) => event.preventDefault(), { once: true });
+  });
+  await uncoveredCustomerLink.focus();
+  await uncoveredCustomerLink.press('Enter');
+  await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(initialRows.nth(1)).toHaveAttribute('aria-selected', 'false');
+  await expect(page).not.toHaveURL(/focus=/);
   await expect(initialRows.nth(0)).toContainText(/Next: Inspect subscription|下一步：查看订阅/i);
   await expect(initialRows.nth(0)).toHaveAttribute('aria-selected', 'true');
   await initialRows.nth(1).focus();
@@ -55,8 +80,6 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   );
   await expect(inspector.getByRole('link', { name: /Inspect subscription|查看订阅/i })).toBeVisible();
 
-  await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('all');
-  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(3);
   await page.locator('[data-ui="coverage-queue-item"]').nth(2).focus();
   await page.locator('[data-ui="coverage-queue-item"]').nth(2).press('Enter');
   await expect(inspector).toContainText('Free Account');
@@ -79,7 +102,7 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await customerRow.press(' ');
   await expect(customerDetails).toBeFocused();
 
-  await expect(page).toHaveURL(/status=all/);
+  await expect(page).not.toHaveURL(/status=/);
   await expect(page).toHaveURL(/q=Uncovered/);
   await expect(page).toHaveURL(/reason=missing_package_coverage/);
   await expect(page).toHaveURL(/sort=customer/);
@@ -107,6 +130,9 @@ test('service status table keeps filters and customer focus in the URL on PC', a
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Uncovered');
 
+  await page.getByRole('link', { name: 'Uncovered Account' }).click();
+  await expect(page).toHaveURL('/admin/accounts/acct_uncovered');
+  await expect(page.getByRole('heading', { name: /^Uncovered$/i })).toBeVisible();
 });
 
 for (const viewport of [
@@ -153,7 +179,7 @@ for (const viewport of [
       expect(Math.max(...controlBoxes.map((box) => box.top)) - Math.min(...controlBoxes.map((box) => box.top))).toBeLessThan(2);
     }
 
-    await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('all');
+    await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('needs_action');
     await expect(clearFilters).toBeEnabled();
   });
 }
