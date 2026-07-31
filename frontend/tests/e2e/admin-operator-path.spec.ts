@@ -117,7 +117,6 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('button', { name: /^Packages|^Package overview|^套餐|^方案/i })).toHaveCount(0);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态|客戶服務狀態/i })).toBeVisible();
   const coverageQueueItems = page.locator('[data-ui="coverage-queue-item"]');
-  const coverageInspector = page.locator('#coverage-inspector');
   await expect(coverageQueueItems.nth(0).getByRole('link', { name: /MVP Account/i })).toHaveAttribute(
     'href',
     `/admin/accounts/${LONG_ACCOUNT_ID}`
@@ -126,20 +125,19 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
     'href',
     '/admin/accounts/acct_uncovered'
   );
-  await expect(coverageInspector.getByRole('link', { name: /Customer details|客户详情|客戶詳情/i })).toHaveAttribute(
+  await expect(coverageQueueItems.nth(0).getByRole('link', { name: /Inspect subscription|查看订阅|檢查訂閱/i })).toHaveAttribute(
     'href',
-    `/admin/accounts/${LONG_ACCOUNT_ID}`
+    '/admin/subscriptions/sub_mvp'
   );
-  await expect(coverageInspector.getByRole('link')).toHaveCount(2);
-  await expect(coverageInspector.getByRole('link', { name: /Inspect subscription|查看订阅|檢查訂閱/i })).toBeVisible();
-  await coverageQueueItems.nth(1).focus();
-  await coverageQueueItems.nth(1).press('Enter');
-  await expect(coverageInspector.getByRole('link')).toHaveCount(2);
-  await expect(coverageInspector.getByRole('link', { name: /Customer details|客户详情|客戶詳情/i })).toHaveAttribute(
+  await expect(coverageQueueItems.nth(1).getByRole('link', { name: /Open package actions|打开套餐操作|打開方案操作/i })).toHaveAttribute(
     'href',
-    '/admin/accounts/acct_uncovered'
+    '/admin/accounts/acct_uncovered#coverage-actions'
   );
-  await expect(coverageInspector.getByRole('link', { name: /Open package actions|打开套餐操作|打開方案操作/i })).toBeVisible();
+  await expect(page.locator('#coverage-inspector')).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: /Package.*Subscription|套餐.*订阅|方案.*訂閱/i })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /^Sites$|^站点$|^站點$/i })).toBeVisible();
+  await expect(page.getByText(/Active API keys|活跃 API 密钥|有效 API 金鑰/i)).toHaveCount(0);
+  await expect(page.getByText(/Technical information|技术信息|技術資訊/i)).toHaveCount(0);
   await expect(page.locator('a[href="/admin/plans"]').first()).toHaveCount(1);
 
   await page.goto('/admin/subscriptions');
