@@ -55,6 +55,11 @@ It does not own:
 The default order is customer display name. The detail link is the one primary
 row action.
 
+Creation opens in the shared Admin dialog. Operators enter customer and owner
+information but do not supply an Account ID; the Cloud commercial domain
+generates an opaque identifier and the completed flow opens that customer
+detail.
+
 ### Service status
 
 `/admin/coverage` is the canonical cross-customer service problem queue.
@@ -74,6 +79,11 @@ are not the default view.
 ### Customer detail
 
 Customer-specific work belongs in `/admin/accounts/{accountId}`.
+
+Overview, Commercial, Credits and usage, Sites, Access, and Audit are distinct
+task tabs. Customer information and the direct Suspend or Restore account
+action belong in Overview. Package management belongs only in Commercial;
+duplicate header shortcuts and a More menu containing one action are excluded.
 
 The customer detail adds an Access tab that owns:
 

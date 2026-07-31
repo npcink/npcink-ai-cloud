@@ -123,15 +123,20 @@ assert.match(
   'incomplete site-runtime evidence must not drive account health or quota conclusions'
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /admin\.account_detail\.more_account_actions[\s\S]*admin\.accounts\.suspend_account_action/,
-  'account suspension must stay behind an explicit more-actions disclosure'
+  /admin\.account_detail\.more_account_actions/,
+  'a single contextual account-status action must not be hidden behind a redundant more-actions disclosure'
 );
 assert.match(
   source,
-  /useAccountOperatorProfile\([\s\S]*<AccountOperatorProfileEditor/,
-  'the route must compose the operator-profile controller and presentation boundary'
+  /activeDetailTab === 'overview'[\s\S]*admin\.account_detail\.access_status_title[\s\S]*admin\.accounts\.suspend_account_action/,
+  'account status and its direct contextual action must stay in Overview'
+);
+assert.match(
+  source,
+  /useAccountOperatorProfile\([\s\S]*activeDetailTab === 'overview'[\s\S]*<AccountOperatorProfileEditor/,
+  'the route must compose the operator-profile boundary inside Overview'
 );
 assert.doesNotMatch(
   source,

@@ -58,12 +58,13 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         bind_default_free: bool = False,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
+        resolved_account_id = str(account_id or "").strip() or f"acct_{uuid4().hex}"
         normalized_primary_email = (
             _normalize_principal_email(primary_email) if str(primary_email or "").strip() else ""
         )
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            repository.get_account_for_update(account_id)
+            repository.get_account_for_update(resolved_account_id)
             identity = (
                 repository.get_principal_identity_by_email(
                     email=normalized_primary_email,
@@ -86,10 +87,10 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                 assert_single_account_membership_available(
                     repository,
                     principal_id=principal_id,
-                    account_id=account_id,
+                    account_id=resolved_account_id,
                 )
             account = repository.upsert_account(
-                account_id=account_id,
+                account_id=resolved_account_id,
                 name=name,
                 status=status,
                 metadata_json=metadata_json,

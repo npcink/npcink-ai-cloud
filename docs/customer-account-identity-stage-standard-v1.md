@@ -60,9 +60,14 @@ one customer.
 Customer registration and interactive Admin customer creation must atomically:
 
 1. normalize or create the Principal;
-2. create the Account;
+2. generate an opaque `acct_<uuid>` identifier and create the Account;
 3. create one active Membership with `role='owner'`;
 4. return a structured response with all three identifiers.
+
+Interactive Admin creation must not ask the operator to invent an
+`account_id`. The Cloud commercial domain owns generation. Typed internal
+upsert callers may continue to provide an explicit identifier when reconciling
+an existing externally established Account.
 
 Before activating a Membership, the service must check:
 
@@ -113,6 +118,10 @@ The directory must show, in one scan:
 The directory must not expose risk ordering, problem reasons, a row-selection
 inspector, identity audit, or destructive access actions.
 
+Customer creation uses the shared Admin workbench dialog because the directory
+remains the operator's primary context. A successful create opens the generated
+customer detail directly.
+
 `/admin/coverage` is the canonical cross-customer service problem queue. It must
 default to customers needing action and include identity, access, account,
 package, subscription, billing, site, and key-coverage problems. Each problem
@@ -128,6 +137,11 @@ and access work:
 Disabling a Principal invalidates Portal sessions and revokes active customer
 membership and provider bindings. It does not delete the Account, sites, or
 WordPress users.
+
+The customer detail is divided into Overview, Commercial, Credits and usage,
+Sites, Access, and Audit task tabs. Overview owns customer information and the
+direct account-status action. Package management stays in Commercial; a single
+Suspend or Restore action must not be hidden behind a redundant More menu.
 
 The standalone `/admin/portal-users` frontend route must not be reintroduced
 without a new operator job that cannot be served from the customer workspace.

@@ -1380,20 +1380,6 @@ function AccountDetailContent() {
         eyebrow={t('admin.account_posture')}
         title={accountTitle}
         description={postureDescription}
-	        actions={(
-	          <>
-	            <a
-                href="#coverage-actions"
-                className="btn btn-primary"
-                onClick={() => setActiveDetailTab('commercial')}
-              >
-	              {t('admin.account_detail.manage_package_action', undefined, 'Manage package')}
-	            </a>
-	            <Link href="/admin/accounts" className="btn btn-secondary">
-	              {t('admin.back_to_accounts')}
-	            </Link>
-          </>
-        )}
         aside={(
           <div className="w-full xl:w-[46rem]">
             <BackofficeMetricStrip
@@ -1435,96 +1421,12 @@ function AccountDetailContent() {
           ) : null}
           {showAccountStatusBadge ? (
 	            <BackofficeStatusBadge status={account.status} label={translateStatusLabel(account.status, t)} />
-	          ) : null}
+          ) : null}
 	        </div>
-	        <BackofficeStackCard className="flex flex-col gap-4 bg-white/80 dark:bg-slate-950/55 lg:flex-row lg:items-center lg:justify-between">
-	          <div>
-	            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-	              {t('admin.account_detail.access_status_title', undefined, 'Customer access status')}
-	            </p>
-	            <div className="mt-2 flex flex-wrap items-center gap-2">
-	              <BackofficeStatusBadge status={account.status} label={translateStatusLabel(account.status, t)} />
-	              <span className="text-sm text-slate-600 dark:text-slate-300">
-	                {account.status === 'suspended'
-	                  ? t(
-	                      'admin.account_detail.access_status_suspended_desc',
-	                      undefined,
-	                      'Portal access and site actions are currently blocked for this customer.'
-	                    )
-	                  : t(
-	                      'admin.account_detail.access_status_active_desc',
-	                      undefined,
-	                      'Portal access follows this customer account membership.'
-	                    )}
-	              </span>
-	            </div>
-	          </div>
-	          <details className="self-start lg:self-auto">
-	            <summary className="btn btn-secondary cursor-pointer list-none">
-	              {t('admin.account_detail.more_account_actions', {}, 'More account actions')}
-	            </summary>
-	            <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-950">
-	              <button
-	                type="button"
-	                onClick={() => {
-	                  setSuspendReason('');
-	                  setPendingConfirmation({
-	                    title:
-	                      account.status === 'suspended'
-	                        ? t('admin.accounts.confirm_restore_title', {}, 'Confirm account restore')
-	                        : t('admin.accounts.confirm_suspend_title', {}, 'Confirm account suspension'),
-	                    message:
-	                      account.status === 'suspended'
-	                        ? t(
-	                            'admin.accounts.confirm_restore_desc',
-	                            { account: accountTitle },
-	                            `Restore ${accountTitle} to active access?`
-	                          )
-	                        : t(
-	                            'admin.accounts.confirm_suspend_desc',
-	                            { account: accountTitle },
-	                            `Suspend ${accountTitle}? Customer portal access and site actions will be blocked by account status.`
-	                          ),
-	                    confirmLabel:
-	                      account.status === 'suspended'
-	                        ? t('admin.accounts.restore_account_action', {}, 'Restore account')
-	                        : t('admin.accounts.suspend_account_action', {}, 'Suspend account'),
-	                    showSuspendReason: account.status !== 'suspended',
-	                    variant: account.status === 'suspended' ? 'default' : 'danger',
-	                    onConfirm: () => void handleAccountStatusMutation(account.status === 'suspended' ? 'restore' : 'suspend'),
-	                  });
-	                }}
-	                className={cn(
-	                  'btn btn-secondary w-full whitespace-nowrap',
-	                  account.status !== 'suspended' && 'border-red-200 text-red-700 hover:border-red-300 dark:border-red-900/60 dark:text-red-200'
-	                )}
-	                disabled={accountStatusPending !== null}
-	              >
-	                {accountStatusPending
-	                  ? t('common.saving', {}, 'Saving...')
-	                  : account.status === 'suspended'
-	                    ? t('admin.accounts.restore_account_action', {}, 'Restore account')
-	                    : t('admin.accounts.suspend_account_action', {}, 'Suspend account')}
-	              </button>
-	            </div>
-	          </details>
-	        </BackofficeStackCard>
-        {accountStatusError ? (
-          <p className="text-sm text-red-600 dark:text-red-300">{accountStatusError}</p>
-        ) : null}
-        {account.account_status_note ? (
-          <p className="text-sm text-amber-700 dark:text-amber-300">
-            {t('admin.accounts.suspend_reason_label', {}, 'Suspension reason')}: {account.account_status_note}
-          </p>
-        ) : null}
-        <AccountOperatorProfileEditor
-          accountTitle={accountTitle}
-          controller={operatorProfileController}
-        />
         <div
           role="tablist"
           aria-label={t('admin.account_detail.tabs_label', undefined, 'Customer detail sections')}
-          className="grid gap-2 rounded-[1rem] border border-slate-200/80 bg-white/75 p-2 dark:border-slate-800 dark:bg-slate-950/40 md:grid-cols-5"
+          className="grid grid-cols-2 gap-1 border-b border-slate-200 dark:border-slate-800 md:grid-cols-3 xl:grid-cols-6"
         >
           {detailTabs.map((tab) => {
             const isActive = activeDetailTab === tab.id;
@@ -1536,10 +1438,10 @@ function AccountDetailContent() {
                 href={tab.href}
                 onClick={() => setActiveDetailTab(tab.id)}
                 className={cn(
-                  'rounded-[0.85rem] px-3 py-2.5 text-left transition hover:bg-slate-100 dark:hover:bg-slate-900',
+                  'border-b-2 px-3 py-2.5 text-left transition hover:bg-slate-100 dark:hover:bg-slate-900',
                   isActive
-                    ? 'border border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/25 dark:text-blue-100'
-                    : 'border border-transparent text-slate-600 dark:text-slate-300'
+                    ? 'border-blue-600 bg-blue-50/70 text-blue-900 dark:border-blue-400 dark:bg-blue-950/25 dark:text-blue-100'
+                    : 'border-transparent text-slate-600 dark:text-slate-300'
                 )}
               >
                 <span className="block text-sm font-semibold">{tab.label}</span>
@@ -1548,6 +1450,91 @@ function AccountDetailContent() {
             );
           })}
         </div>
+        {activeDetailTab === 'overview' ? (
+          <>
+            <BackofficeStackCard className="flex flex-col gap-4 bg-white/80 dark:bg-slate-950/55 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('admin.account_detail.access_status_title', undefined, 'Customer access status')}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <BackofficeStatusBadge status={account.status} label={translateStatusLabel(account.status, t)} />
+                  <span className="text-sm text-slate-600 dark:text-slate-300">
+                    {account.status === 'suspended'
+                      ? t(
+                          'admin.account_detail.access_status_suspended_desc',
+                          undefined,
+                          'Portal access and site actions are currently blocked for this customer.'
+                        )
+                      : t(
+                          'admin.account_detail.access_status_active_desc',
+                          undefined,
+                          'Portal access follows this customer account membership.'
+                        )}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuspendReason('');
+                  setPendingConfirmation({
+                    title:
+                      account.status === 'suspended'
+                        ? t('admin.accounts.confirm_restore_title', {}, 'Confirm account restore')
+                        : t('admin.accounts.confirm_suspend_title', {}, 'Confirm account suspension'),
+                    message:
+                      account.status === 'suspended'
+                        ? t(
+                            'admin.accounts.confirm_restore_desc',
+                            { account: accountTitle },
+                            `Restore ${accountTitle} to active access?`
+                          )
+                        : t(
+                            'admin.accounts.confirm_suspend_desc',
+                            { account: accountTitle },
+                            `Suspend ${accountTitle}? Customer portal access and site actions will be blocked by account status.`
+                          ),
+                    confirmLabel:
+                      account.status === 'suspended'
+                        ? t('admin.accounts.restore_account_action', {}, 'Restore account')
+                        : t('admin.accounts.suspend_account_action', {}, 'Suspend account'),
+                    showSuspendReason: account.status !== 'suspended',
+                    variant: account.status === 'suspended' ? 'default' : 'danger',
+                    onConfirm: () =>
+                      void handleAccountStatusMutation(
+                        account.status === 'suspended' ? 'restore' : 'suspend'
+                      ),
+                  });
+                }}
+                className={cn(
+                  'btn btn-secondary self-start whitespace-nowrap lg:self-auto',
+                  account.status !== 'suspended' &&
+                    'border-red-200 text-red-700 hover:border-red-300 dark:border-red-900/60 dark:text-red-200'
+                )}
+                disabled={accountStatusPending !== null}
+              >
+                {accountStatusPending
+                  ? t('common.saving', {}, 'Saving...')
+                  : account.status === 'suspended'
+                    ? t('admin.accounts.restore_account_action', {}, 'Restore account')
+                    : t('admin.accounts.suspend_account_action', {}, 'Suspend account')}
+              </button>
+            </BackofficeStackCard>
+            {accountStatusError ? (
+              <p className="text-sm text-red-600 dark:text-red-300">{accountStatusError}</p>
+            ) : null}
+            {account.account_status_note ? (
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                {t('admin.accounts.suspend_reason_label', {}, 'Suspension reason')}: {account.account_status_note}
+              </p>
+            ) : null}
+            <AccountOperatorProfileEditor
+              accountTitle={accountTitle}
+              controller={operatorProfileController}
+            />
+          </>
+        ) : null}
         {activeDetailTab === 'commercial' || activeDetailTab === 'credits' ? (
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <div id="coverage-actions">
