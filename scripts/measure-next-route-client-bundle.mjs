@@ -21,7 +21,7 @@ const route = optionValue( '--route' );
 
 if ( ! route?.startsWith( '/' ) || route.includes( '..' ) ) {
 	fail(
-		'pass a normalized app route with --route, for example /admin/portal-users'
+		'pass a normalized app route with --route, for example /admin/accounts'
 	);
 }
 

@@ -682,8 +682,7 @@
       "status": "active",
       "evidence": [".github/workflows/ci.yml", "docs/cloud-admin-frontend-engineering-standard-v1.md"],
       "commands": {
-        "test:unit": "Run all frontend Vitest unit tests.",
-        "test:unit:coverage:portal-users": "Generate the focused Portal Users unit coverage report."
+        "test:unit": "Run all frontend Vitest unit tests."
       }
     },
     {
