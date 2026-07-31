@@ -34,8 +34,8 @@ const architectureSource = readFileSync(
 
 assert.match(
   source,
-  /type AccountDetailTab = 'overview' \| 'commercial' \| 'credits' \| 'sites' \| 'audit'/,
-  'customer detail must use the five task-oriented v2 sections'
+  /type AccountDetailTab = 'overview' \| 'commercial' \| 'credits' \| 'sites' \| 'access' \| 'audit'/,
+  'customer detail must use the six task-oriented v2 sections'
 );
 assert.match(
   source,
@@ -43,9 +43,14 @@ assert.match(
   'customer detail must open on the read-only overview section'
 );
 
-for (const tab of ['overview', 'commercial', 'credits', 'sites', 'audit']) {
+for (const tab of ['overview', 'commercial', 'credits', 'sites', 'access', 'audit']) {
   assert.match(source, new RegExp(`id: '${tab}'`), `customer detail must keep the ${tab} section`);
 }
+assert.match(
+  source,
+  /activeDetailTab === 'access'[\s\S]*<CustomerAccessPanel[\s\S]*relationshipState=\{account\.identity_relationship_state\}/,
+  'customer-specific identity and access work must stay in the customer Access section'
+);
 
 assert.match(
   source,
@@ -178,7 +183,7 @@ assert.match(
 );
 assert.match(
   architectureSource,
-  /`\/admin\/accounts\/\[accountId\]`[\s\S]*`detail`[\s\S]*overview, commercial, credits, sites, audit tabs/,
+  /`\/admin\/accounts\/\[accountId\]`[\s\S]*`detail`[\s\S]*Overview, commercial, credits, sites, access, and audit tabs/,
   'the implemented customer detail pilot must remain tied to the IA v2 route decision'
 );
 
