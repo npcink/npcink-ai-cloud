@@ -12,6 +12,13 @@ Authority:
 - [ADR-036: Single-account, single-identity validation stage](decisions/036-single-account-single-identity-validation-stage.md)
   owns the current product restriction and Admin consolidation.
 
+Implementation history:
+
+- [Customer Account and Identity Simplification Closeout and Development Retrospective](customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)
+  records the delivery sequence, verification evidence, failed assumptions, and
+  reusable development method. It is historical evidence, not normative
+  authority.
+
 ## 1. Current product contract
 
 The current customer model is:
