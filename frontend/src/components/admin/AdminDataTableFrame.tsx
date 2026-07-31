@@ -5,6 +5,7 @@ type AdminDataTableFrameProps = {
   resultLabel: string;
   dataUi: string;
   children: ReactNode;
+  bodyClassName?: string;
   footer?: ReactNode;
   headerActions?: ReactNode;
   density?: 'standard' | 'compact';
@@ -16,6 +17,7 @@ export function AdminDataTableFrame({
   resultLabel,
   dataUi,
   children,
+  bodyClassName = 'overflow-x-auto',
   footer,
   headerActions,
   density = 'standard',
@@ -49,7 +51,7 @@ export function AdminDataTableFrame({
           {headerActions ? <div className="min-w-0">{headerActions}</div> : null}
         </div>
       )}
-      <div className="overflow-x-auto">{children}</div>
+      <div className={bodyClassName}>{children}</div>
       {footer}
     </section>
   );

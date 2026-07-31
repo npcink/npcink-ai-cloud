@@ -22,6 +22,7 @@
   --admin-sidebar-collapsed: 4rem;
   --admin-workbench-max-width: 72rem;
   --admin-workbench-compact-max-width: 60rem;
+  --admin-diagnostic-queue-max-height: 32rem;
   --admin-compact-control-height: 2rem;
   --admin-compact-row-height: 2.5rem;
   --admin-compact-radius: 0.25rem;
