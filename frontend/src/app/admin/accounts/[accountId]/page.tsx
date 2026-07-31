@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react
 import Link from 'next/link';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
+import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useParams } from 'next/navigation';
@@ -163,6 +164,8 @@ const TOPUP_PACK_OPTIONS: TopUpPackOption[] = [
     recommended_for_tiers: ['agency'],
   },
 ];
+
+const ACCOUNT_DETAIL_COMPARISON_TABLE_CLASS_NAME = 'w-full min-w-[48rem] text-left text-sm';
 
 type AccountBudgetSummary = {
   used: number;
@@ -1631,8 +1634,21 @@ function AccountDetailContent() {
                 </div>
                 <BackofficeStatusBadge status="ok" label={t('admin.operator_managed', {}, 'Operator managed')} />
               </div>
-              <div className="mt-4 overflow-x-auto rounded-[1rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/55">
-                <table className="w-full min-w-[44rem] text-left text-sm">
+              <AdminDataTableFrame
+                title={t('admin.account_detail.change_customer_package_label', undefined, 'Change customer package')}
+                resultLabel={t(
+                  'admin.account_detail.package_option_count',
+                  { count: formatInteger(QUICK_PACKAGE_OPTIONS.length) },
+                  `${formatInteger(QUICK_PACKAGE_OPTIONS.length)} package options`
+                )}
+                dataUi="account-package-comparison"
+                density="compact"
+                headerVisibility="sr-only"
+              >
+                <table
+                  className={ACCOUNT_DETAIL_COMPARISON_TABLE_CLASS_NAME}
+                  aria-label={t('admin.account_detail.package_comparison_label', undefined, 'Customer package comparison')}
+                >
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
                     <tr>
                       <th className="px-4 py-2.5">{t('common.package', {}, 'Package')}</th>
@@ -1668,6 +1684,7 @@ function AccountDetailContent() {
                           <td className="px-4 py-3 text-right">
                             <button
                               type="button"
+                              aria-label={`${label} · ${t('admin.account_detail.apply_package_action', undefined, 'Apply package')}`}
                               onClick={() =>
                                 setPendingConfirmation({
                                   title: t('admin.account_detail.confirm_package_change_title', undefined, 'Confirm package change'),
@@ -1693,7 +1710,7 @@ function AccountDetailContent() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </AdminDataTableFrame>
             </div>
             <div className="mt-5 border-t border-slate-200 pt-5 dark:border-slate-800">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
@@ -1802,8 +1819,21 @@ function AccountDetailContent() {
                 </div>
                 <BackofficeStatusBadge status="warning" label={t('admin.current_period_only', {}, 'Current period only')} />
               </div>
-              <div className="mt-4 overflow-x-auto rounded-[1rem] border border-slate-200 dark:border-slate-800">
-                <table className="w-full min-w-[48rem] text-left text-sm">
+              <AdminDataTableFrame
+                title={t('admin.account_detail.topup_comparison_label', undefined, 'Top-up pack comparison')}
+                resultLabel={t(
+                  'admin.account_detail.topup_option_count',
+                  { count: formatInteger(TOPUP_PACK_OPTIONS.length) },
+                  `${formatInteger(TOPUP_PACK_OPTIONS.length)} top-up options`
+                )}
+                dataUi="account-topup-comparison"
+                density="compact"
+                headerVisibility="sr-only"
+              >
+                <table
+                  className={ACCOUNT_DETAIL_COMPARISON_TABLE_CLASS_NAME}
+                  aria-label={t('admin.account_detail.topup_comparison_label', undefined, 'Top-up pack comparison')}
+                >
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
                     <tr>
                       <th className="px-4 py-2.5">
@@ -1868,7 +1898,7 @@ function AccountDetailContent() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </AdminDataTableFrame>
             </div>
             <details className="mt-5 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/45">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
@@ -2463,8 +2493,21 @@ function AccountDetailContent() {
             <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
               {t('admin.account_detail.resource_limits_title', undefined, 'Resource limits')}
             </h3>
-            <div className="mt-4 overflow-x-auto rounded-[1rem] border border-slate-200 dark:border-slate-800">
-              <table className="w-full min-w-[48rem] text-left text-sm">
+            <AdminDataTableFrame
+              title={t('admin.account_detail.resource_limits_title', undefined, 'Resource limits')}
+              resultLabel={t(
+                'admin.account_detail.resource_limit_count',
+                { count: formatInteger(resourceRows.length) },
+                `${formatInteger(resourceRows.length)} resource limits`
+              )}
+              dataUi="account-resource-limits"
+              density="compact"
+              headerVisibility="sr-only"
+            >
+              <table
+                className={ACCOUNT_DETAIL_COMPARISON_TABLE_CLASS_NAME}
+                aria-label={t('admin.account_detail.resource_limits_table_label', undefined, 'Account resource limits')}
+              >
                 <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
                   <tr>
                     <th className="px-4 py-2.5">
@@ -2511,8 +2554,10 @@ function AccountDetailContent() {
                                   : 'ok'
                             }
                             label={
-                              metric.status === 'limited'
-                                ? t('admin.account_detail.limit_reached_status', undefined, 'Limit reached')
+                              metric.status === 'limited' && metric.key === 'active_api_key_sites'
+                                ? t('admin.account_detail.key_coverage_gap_status', undefined, 'Key coverage gap')
+                                : metric.status === 'limited'
+                                  ? t('admin.account_detail.limit_reached_status', undefined, 'Limit reached')
                                 : metric.status === 'near_limit'
                                   ? t('admin.account_detail.near_limit_status', undefined, 'Near limit')
                                   : translateStatusLabel('ok', t)
@@ -2524,7 +2569,7 @@ function AccountDetailContent() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </AdminDataTableFrame>
             {internalLimitRows.length > 0 ? (
               <div className="mt-5 rounded-[1rem] border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/35">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">

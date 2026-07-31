@@ -92,6 +92,21 @@ assert.match(
   /resource_limits_title[\s\S]*<table[\s\S]*resourceRows\.map/,
   'resource limits must remain a used-limit-remaining status table'
 );
+assert.equal(
+  source.match(/<AdminDataTableFrame/g)?.length || 0,
+  3,
+  'package, top-up, and resource comparisons must reuse the shared Admin table frame'
+);
+assert.match(
+  source,
+  /aria-label=\{`\$\{label\} · \$\{t\('admin\.account_detail\.apply_package_action'/,
+  'each package mutation must include its target package in the accessible action name'
+);
+assert.match(
+  source,
+  /metric\.status === 'limited' && metric\.key === 'active_api_key_sites'[\s\S]*key_coverage_gap_status/,
+  'API-key coverage gaps must not be mislabeled as exhausted numeric quota'
+);
 assert.match(
   source,
   /useAccountCreditEvidence\([\s\S]*activeDetailTab === 'credits'/,
