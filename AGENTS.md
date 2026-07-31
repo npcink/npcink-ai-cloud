@@ -96,6 +96,20 @@ prompt/router/preset local truth, or WordPress write owner.
 - The cross-repository contract is
   `/Users/muze/gitee/npcink-workflow-toolbox/docs/platform/pr-publishing-standard-v1.md`.
 
+## Optional Local Code Navigation
+
+- CodeGraph is an optional local navigation aid, not repository, test, runtime,
+  or acceptance truth.
+- When an indexed clean reference worktree is available, use it only for
+  architecture discovery, call-path exploration, and initial impact analysis.
+- Before editing, testing, staging, or reviewing, verify every relevant file
+  and relationship against the active worktree.
+- Do not initialize CodeGraph in every worktree or install it in CI, M4,
+  production, release, or shared runtime environments.
+- CodeGraph output never replaces native search, tests, Git diff, required
+  checks, runtime smoke, cross-repository contract verification, or M4
+  acceptance. A missing or unavailable index must not block development.
+
 ## AI Production Operation Rules
 
 - Production source branch is `production`; development integration branch is
