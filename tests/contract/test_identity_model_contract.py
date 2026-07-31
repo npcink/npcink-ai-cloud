@@ -26,7 +26,7 @@ def test_launch_identity_model_has_only_platform_admin_and_user() -> None:
     assert IDENTITY_TYPE_PLATFORM_ADMIN == "platform_admin"
     assert IDENTITY_TYPE_USER == "user"
     assert PLATFORM_ADMIN_ALLOWED_ROLES == {"platform_admin"}
-    assert USER_ALLOWED_ROLES == {"user"}
+    assert USER_ALLOWED_ROLES == {"owner"}
 
 
 def test_portal_user_actions_keep_addon_provision_without_key_management() -> None:

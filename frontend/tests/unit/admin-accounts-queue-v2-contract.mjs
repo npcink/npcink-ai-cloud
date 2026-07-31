@@ -31,14 +31,18 @@ assert.match(source, /params\.set\('sort', sort\)[\s\S]*params\.set\('limit'[\s\
 assert.match(source, /role="list"[\s\S]*data-ui="account-queue-item"/, 'customers must render as a responsive task list');
 assert.match(source, /aria-controls="account-inspector"[\s\S]*id="account-inspector"/, 'row inspection must have an accessible inspector target');
 assert.match(source, /focus: account\.account_id/, 'customer inspector focus must persist in the URL');
-assert.match(source, /href="\/admin\/portal-users"[\s\S]*admin\.accounts\.open_portal_users_action/, 'Portal users must remain a bounded secondary entry');
+assert.doesNotMatch(source, /href="\/admin\/portal-users"/, 'customer identity must not remain a separate admin destination');
+assert.match(source, /primary_identity[\s\S]*identity_relationship_state/, 'customer rows must project their one login identity and relationship state');
+assert.match(source, /\/audit\?limit=50/, 'identity audit must use the bounded Principal audit endpoint');
+assert.match(source, /admin\.accounts\.identity_audit_action/, 'identity audit must remain available from the customer inspector');
+assert.match(source, /access_actions_title[\s\S]*disable_access_action/, 'destructive login disable must stay behind an explicit disclosure');
 
-assert.match(source, /handleCreateAccount[\s\S]*showSuccessToast/, 'customer creation must retain non-shifting success feedback');
-assert.match(source, /buildCreateAccountPayload[\s\S]*bind_default_free/, 'customer creation must keep formal Free binding explicit in the bounded payload');
+assert.match(source, /handleCreateAccount[\s\S]*toast\.success/, 'customer creation must retain non-shifting success feedback');
+assert.match(source, /buildCreateAccountPayload[\s\S]*primary_email[\s\S]*bind_default_free/, 'customer creation must create one login identity and keep formal Free binding explicit');
 assert.match(source, /new FormData\(event\.currentTarget\)[\s\S]*validateCreateAccountForm/, 'customer creation must use one bounded, dependency-free form state layer');
-assert.match(source, /if \(!data\.account_id\)[\s\S]*if \(!data\.name\)/, 'customer creation must reject whitespace-only identifiers and names before transport');
+assert.match(source, /if \(!data\.account_id\)[\s\S]*if \(!data\.name\)[\s\S]*if \(!data\.primary_email\)/, 'customer creation must reject missing identifiers, names, and login email before transport');
 assert.match(source, /setErrors\(result\.errors\)[\s\S]*setIsSubmitting\(true\)/, 'validation and async submit state must remain form-owned');
 assert.match(source, /actionError[\s\S]*role="alert"/, 'customer creation failures must stay contextual');
-assert.match(source, /does not create payment, entitlement, or WordPress write controls/, 'inspector copy must preserve the Cloud service-plane boundary');
+assert.match(source, /Payment, entitlement, and WordPress writes remain outside this surface/, 'inspector copy must preserve the Cloud service-plane boundary');
 
 console.log('admin_accounts_queue_v2_contract: ok');

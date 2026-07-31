@@ -1234,6 +1234,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         def account_risk_sort_key(item: dict[str, object]) -> tuple[int, datetime, str, str]:
             account_payload = account_payload_for(item)
             account_status = str(account_payload.get("status") or "")
+            identity_relationship_state = str(item.get("identity_relationship_state") or "")
             expiry_raw = item.get("nearest_expiry_at")
             expiry = expiry_raw if isinstance(expiry_raw, datetime) else None
             if expiry is None and isinstance(expiry_raw, str) and expiry_raw:
@@ -1245,7 +1246,9 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             if expiry is not None and expiry.tzinfo is None and now.tzinfo is not None:
                 expiry = expiry.replace(tzinfo=now.tzinfo)
             risk_rank = 3
-            if account_status == "suspended":
+            if identity_relationship_state in {"missing", "conflict"}:
+                risk_rank = 0
+            elif account_status == "suspended" or identity_relationship_state == "access_disabled":
                 risk_rank = 0
             elif bool(item.get("coverage_follow_up_required")):
                 risk_rank = 1
@@ -1303,10 +1306,39 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ],
             )
             subscriptions = repository.list_subscriptions(account_ids=account_ids, limit=None)
+            memberships = repository.list_account_user_memberships(
+                account_ids=account_ids,
+                statuses=None,
+            )
+            principal_ids = sorted(
+                {
+                    str(membership.principal_id or "")
+                    for membership in memberships
+                    if str(membership.principal_id or "").strip()
+                }
+            )
+            principals = repository.list_principals(
+                principal_ids=principal_ids,
+                limit=None,
+            )
+            qq_bindings = repository.list_identity_provider_bindings(
+                principal_ids=principal_ids,
+                provider="qq",
+                statuses=None,
+            )
 
         subscriptions_by_account: dict[str, list[AccountSubscription]] = defaultdict(list)
         for subscription in subscriptions:
             subscriptions_by_account[subscription.account_id].append(subscription)
+        memberships_by_account: dict[str, list[Any]] = defaultdict(list)
+        for membership in memberships:
+            memberships_by_account[str(membership.account_id or "")].append(membership)
+        principals_by_id = {
+            str(principal.principal_id or ""): principal for principal in principals
+        }
+        qq_bindings_by_principal: dict[str, list[Any]] = defaultdict(list)
+        for binding in qq_bindings:
+            qq_bindings_by_principal[str(binding.principal_id or "")].append(binding)
 
         items = []
         for account in accounts:
@@ -1323,8 +1355,62 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 if subscription.plan_id
             ).most_common(1)
             nearest_expiry = service._find_nearest_subscription_expiry(account_subscriptions)
+            account_memberships = memberships_by_account.get(account.account_id, [])
+            active_memberships = [
+                membership
+                for membership in account_memberships
+                if str(membership.status or "") == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+            ]
+            selected_membership = (
+                active_memberships[0]
+                if active_memberships
+                else (account_memberships[0] if account_memberships else None)
+            )
+            principal = (
+                principals_by_id.get(str(selected_membership.principal_id or ""))
+                if selected_membership is not None
+                else None
+            )
+            active_qq_bindings = [
+                binding
+                for binding in qq_bindings_by_principal.get(
+                    str(getattr(principal, "principal_id", "") or ""),
+                    [],
+                )
+                if str(binding.status or "") == IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE
+            ]
+            if not account_memberships:
+                identity_relationship_state = "missing"
+            elif len(account_memberships) > 1 or principal is None:
+                identity_relationship_state = "conflict"
+            elif (
+                str(selected_membership.status or "") != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or str(getattr(principal, "status", "") or "") != PRINCIPAL_STATUS_ACTIVE
+            ):
+                identity_relationship_state = "access_disabled"
+            else:
+                identity_relationship_state = "healthy"
+            primary_identity = (
+                {
+                    "principal_id": str(principal.principal_id or ""),
+                    "email": str(principal.email or ""),
+                    "status": str(principal.status or ""),
+                    "session_version": int(principal.session_version or 1),
+                    "last_login_at": self._serialize_datetime(principal.last_login_at),
+                    "created_at": self._serialize_datetime(principal.created_at),
+                    "membership_id": str(selected_membership.membership_id or ""),
+                    "membership_role": str(selected_membership.role or ""),
+                    "membership_status": str(selected_membership.status or ""),
+                    "qq_bound": bool(active_qq_bindings),
+                    "qq_binding_count": len(active_qq_bindings),
+                }
+                if principal is not None and selected_membership is not None
+                else None
+            )
             item = {
                 "account": service._serialize_account(account),
+                "primary_identity": primary_identity,
+                "identity_relationship_state": identity_relationship_state,
                 "site_count": site_counts.get(account.account_id, 0),
                 "active_subscription_count": subscription_counts.get(account.account_id, 0),
                 "top_plan_id": str(
@@ -1361,6 +1447,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                         metadata.get("operator_display_name"),
                         metadata.get("operator_note"),
                         metadata.get("account_status_note"),
+                        (
+                            primary_identity.get("email")
+                            if isinstance(primary_identity, dict)
+                            else ""
+                        ),
+                        (
+                            primary_identity.get("principal_id")
+                            if isinstance(primary_identity, dict)
+                            else ""
+                        ),
                         item.get("display_package_label"),
                         item.get("package_kind"),
                         item.get("coverage_state"),

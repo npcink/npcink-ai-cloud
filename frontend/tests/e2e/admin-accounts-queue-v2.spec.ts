@@ -17,7 +17,36 @@ type AccountFixture = {
   coverage_state: string;
   coverage_follow_up_required: boolean;
   nearest_expiry_at: string;
+  primary_identity: {
+    principal_id: string;
+    email: string;
+    status: string;
+    session_version: number;
+    membership_id: string;
+    membership_role: string;
+    membership_status: string;
+    qq_bound: boolean;
+    qq_binding_count: number;
+  };
+  identity_relationship_state: 'healthy';
 };
+
+function identityFixture(accountId: string, email: string) {
+  return {
+    primary_identity: {
+      principal_id: `prn_${accountId}`,
+      email,
+      status: 'active',
+      session_version: 1,
+      membership_id: `aum_${accountId}`,
+      membership_role: 'owner',
+      membership_status: 'active',
+      qq_bound: false,
+      qq_binding_count: 0,
+    },
+    identity_relationship_state: 'healthy' as const,
+  };
+}
 
 function initialAccounts(): AccountFixture[] {
   return [
@@ -33,6 +62,7 @@ function initialAccounts(): AccountFixture[] {
       coverage_state: 'covered',
       coverage_follow_up_required: false,
       nearest_expiry_at: '2026-08-01T00:00:00Z',
+      ...identityFixture('acct_zeta', 'owner@zeta.example'),
     },
     {
       account: { account_id: 'acct_beta', name: 'Beta Customer', status: 'active', metadata: { operator_note: 'Assign package before launch' } },
@@ -46,6 +76,7 @@ function initialAccounts(): AccountFixture[] {
       coverage_state: 'uncovered',
       coverage_follow_up_required: true,
       nearest_expiry_at: '',
+      ...identityFixture('acct_beta', 'owner@beta.example'),
     },
     {
       account: { account_id: 'acct_alpha', name: 'Alpha Customer', status: 'active', metadata: { operator_note: 'Stable customer' } },
@@ -59,6 +90,7 @@ function initialAccounts(): AccountFixture[] {
       coverage_state: 'covered',
       coverage_follow_up_required: false,
       nearest_expiry_at: '2026-09-01T00:00:00Z',
+      ...identityFixture('acct_alpha', 'owner@alpha.example'),
     },
   ];
 }
@@ -84,7 +116,7 @@ async function installAccountsQueueMocks(page: Page) {
     const packageKind = url.searchParams.get('package_kind') || '';
     const sort = url.searchParams.get('sort') || 'risk';
     let items = accounts.filter((item) => {
-      const searchable = [item.account.account_id, item.account.name, item.display_package_label, item.account.metadata?.operator_note].join(' ').toLowerCase();
+      const searchable = [item.account.account_id, item.account.name, item.primary_identity.email, item.display_package_label, item.account.metadata?.operator_note].join(' ').toLowerCase();
       return (!q || searchable.includes(q)) && (!status || item.account.status === status) && (!coverage || item.coverage_state === coverage) && (!packageKind || item.package_kind === packageKind);
     });
     const riskRank = (item: AccountFixture) => item.account.status === 'suspended' ? 0 : item.coverage_follow_up_required ? 1 : 3;
@@ -128,6 +160,7 @@ async function installAccountsQueueMocks(page: Page) {
         coverage_state: bindDefaultFree ? 'covered' : 'uncovered',
         coverage_follow_up_required: false,
         nearest_expiry_at: '',
+        ...identityFixture(String(payload.account_id), String(payload.primary_email)),
       },
     ];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ account_id: payload.account_id })) });
@@ -156,6 +189,7 @@ test('customer queue persists risk filters and inspector focus while retaining d
   await expect(queueItems.nth(0)).toContainText('Zeta Customer');
   await expect(queueItems.nth(1)).toContainText('Beta Customer');
   await expect(page.locator('#account-inspector')).toContainText('Zeta Customer');
+  await expect(page.locator('#account-inspector')).toContainText('owner@zeta.example');
 
   await page.getByLabel(/Coverage state|覆盖状态|覆蓋狀態/i).selectOption('uncovered');
   await expect(page).toHaveURL(/coverage_state=uncovered/);
@@ -195,13 +229,16 @@ test('customer creation remains explicit and binds the formal Free package by de
   await page.getByRole('button', { name: /Add customer|添加客户|新增客戶/i }).click();
   await page.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i).fill('   ');
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('   ');
+  await page.getByLabel(/Login email|登录邮箱/i).fill('   ');
   await page.getByRole('button', { name: /Create user|创建用户|建立使用者/i }).click();
   await expect(page.getByText(/Enter an Account ID|请输入账号 ID/i)).toBeVisible();
   await expect(page.getByText(/Enter a customer name|请输入客户名称/i)).toBeVisible();
+  await expect(page.getByText(/Enter the customer login email|请输入客户登录邮箱/i)).toBeVisible();
   expect(mocks.getCreateRequestCount()).toBe(0);
 
   await page.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i).fill('acct_new_customer_free');
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('New Customer');
+  await page.getByLabel(/Login email|登录邮箱/i).fill('owner@new.example');
   await page.getByLabel(/Operator name|运营显示名|營運顯示名/i).fill('New Customer Display');
   await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create user|创建用户|建立使用者/i }).click();
@@ -209,6 +246,7 @@ test('customer creation remains explicit and binds the formal Free package by de
   await expect(page.getByText(/User created|用户已创建|使用者已建立/i).first()).toBeVisible();
   await expect(page.getByText('New Customer Display')).toBeVisible();
   await expect(page.getByText('Internal launch note')).toBeVisible();
+  await expect(page.getByText('owner@new.example')).toBeVisible();
   await expect(page.getByText('Free').last()).toBeVisible();
   expect(mocks.getCreateRequestCount()).toBe(1);
 });

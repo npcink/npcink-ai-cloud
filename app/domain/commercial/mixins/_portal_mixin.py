@@ -37,11 +37,14 @@ from app.domain.commercial.errors import (
 )
 from app.domain.commercial.identity import (
     IDENTITY_TYPE_USER,
-    USER_ROLE_USER,
+    USER_ROLE_OWNER,
     _new_principal_id,
     _normalize_principal_email,
     normalize_user_role,
     resolve_principal_allowed_actions,
+)
+from app.domain.commercial.membership_policy import (
+    assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 
@@ -106,7 +109,7 @@ def _serialize_identity_provider_binding(
         "provider": str(getattr(binding, "provider", "") or ""),
         "principal_id": principal_id,
         "identity_type": IDENTITY_TYPE_USER,
-        "role": USER_ROLE_USER,
+        "role": USER_ROLE_OWNER,
         "status": str(getattr(binding, "status", "") or ""),
         "has_unionid": bool(getattr(binding, "unionid_hash", None)),
         "last_login_at": (
@@ -800,7 +803,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
         return {
             "principal_id": principal_id,
             "identity_type": IDENTITY_TYPE_USER,
-            "role": USER_ROLE_USER,
+            "role": USER_ROLE_OWNER,
             "items": items,
         }
 
@@ -932,7 +935,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                     "status": "binding_required",
                     "provider": normalized_provider,
                     "identity_type": IDENTITY_TYPE_USER,
-                    "role": USER_ROLE_USER,
+                    "role": USER_ROLE_OWNER,
                 }
             if binding.status != IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE:
                 raise CommercialPermissionError(
@@ -963,7 +966,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "principal_id": identity.principal_id,
                 "session_version": int(identity.session_version or 1),
                 "identity_type": IDENTITY_TYPE_USER,
-                "role": USER_ROLE_USER,
+                "role": USER_ROLE_OWNER,
                 "binding": _serialize_identity_provider_binding(
                     binding,
                     principal_id=identity.principal_id,
@@ -1039,7 +1042,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
                 account_id=account.account_id,
-                role=normalize_user_role(USER_ROLE_USER),
+                role=normalize_user_role(USER_ROLE_OWNER),
                 status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
                 allowed_actions_json=resolve_principal_allowed_actions(),
                 metadata_json={
@@ -1067,7 +1070,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "session_version": int(identity.session_version or 1),
                 "account_id": account.account_id,
                 "identity_type": IDENTITY_TYPE_USER,
-                "role": USER_ROLE_USER,
+                "role": USER_ROLE_OWNER,
                 "binding": _serialize_identity_provider_binding(
                     binding,
                     principal_id=identity.principal_id,
@@ -1602,7 +1605,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
                 account_id=account.account_id,
-                role=normalize_user_role(USER_ROLE_USER),
+                role=normalize_user_role(USER_ROLE_OWNER),
                 status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
                 allowed_actions_json=resolve_principal_allowed_actions(),
                 metadata_json={"source": "portal_self_registration"},
@@ -1620,7 +1623,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 "subscription": None,
                 "free_entitlement_state": "pending_addon_connection",
                 "identity_type": IDENTITY_TYPE_USER,
-                "role": USER_ROLE_USER,
+                "role": USER_ROLE_OWNER,
                 "allowed_actions": resolve_principal_allowed_actions(),
                 "next": {
                     "portal_path": "/portal",
@@ -1677,7 +1680,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                         "allowed_actions": _resolve_membership_allowed_actions(
                             getattr(membership, "allowed_actions_json", None)
                         ),
-                        "role": str(getattr(membership, "role", "") or USER_ROLE_USER),
+                        "role": str(getattr(membership, "role", "") or USER_ROLE_OWNER),
                         "membership_id": str(getattr(membership, "membership_id", "") or ""),
                         "membership_status": str(getattr(membership, "status", "") or ""),
                         "site_count": len(sites_by_account.get(account_id, [])),
@@ -1712,7 +1715,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
             )
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
+            account = repository.get_account_for_update(account_id)
             if account is None:
                 raise CommercialPermissionError(
                     "service.account_not_found",
@@ -1720,6 +1723,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 )
             existing_identity = repository.get_principal_identity_by_email(
                 email=normalized_email,
+                for_update=True,
             )
             if existing_identity is None:
                 if normalized_status == PRINCIPAL_STATUS_DISABLED:
@@ -1755,6 +1759,11 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                         "service.principal_access_required",
                         f"principal '{principal_id}' is not active",
                     )
+                assert_single_account_membership_available(
+                    repository,
+                    principal_id=principal_id,
+                    account_id=account_id,
+                )
             elif existing_membership_row is None:
                 raise CommercialNotFoundError(
                     "service.account_membership_not_found",
@@ -1770,7 +1779,7 @@ class CommercialServicePortalMixin(CommercialServiceAuditMixin):
                 membership_id=f"aum_{uuid4().hex}",
                 principal_id=identity.principal_id,
                 account_id=account_id,
-                role=normalize_user_role(USER_ROLE_USER),
+                role=normalize_user_role(USER_ROLE_OWNER),
                 status=(
                     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
                     if normalized_status == PRINCIPAL_STATUS_ACTIVE

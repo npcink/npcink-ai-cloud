@@ -619,7 +619,7 @@ class AccountUserMembership(Base):
             "account_id",
             name="uq_account_user_memberships_principal_account",
         ),
-        CheckConstraint("role IN ('user')", name="ck_account_user_memberships_role"),
+        CheckConstraint("role IN ('owner')", name="ck_account_user_memberships_role"),
         Index(
             "ix_account_user_memberships_principal_status_account",
             "principal_id",
@@ -634,7 +634,7 @@ class AccountUserMembership(Base):
         index=True,
     )
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.account_id"), index=True)
-    role: Mapped[str] = mapped_column(String(64), default="user", index=True)
+    role: Mapped[str] = mapped_column(String(64), default="owner", index=True)
     status: Mapped[str] = mapped_column(
         String(32),
         default=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,

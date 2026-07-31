@@ -51,7 +51,7 @@ test('quick switcher discovers diagnostic child routes without expanding the sid
   const dialog = page.getByRole('dialog', { name: /Quick switcher|快速跳转/i });
   const input = dialog.locator('input');
   await input.fill('portal');
-  await expect(dialog.locator('a[href="/admin/portal-users"]')).toBeVisible();
+  await expect(dialog.locator('a[href="/admin/portal-users"]')).toHaveCount(0);
   await expect(dialog.getByText(/Customer Ops|客户运营/i)).toBeVisible();
 
   await input.fill('media');

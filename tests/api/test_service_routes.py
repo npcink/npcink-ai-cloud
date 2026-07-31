@@ -163,6 +163,54 @@ def test_service_routes_manage_account_site_and_keys(tmp_path: Path) -> None:
     dispose_engine(database_url)
 
 
+def test_admin_account_creation_provisions_one_owner_identity(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+
+    response = client.post(
+        "/internal/service/accounts",
+        json={
+            "account_id": "acct_owner_identity",
+            "name": "Owner Identity",
+            "primary_email": "Owner@Example.COM",
+        },
+        headers=build_internal_headers(idempotency_key="owner-identity-create"),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()["data"]
+    assert payload["primary_identity"]["email"] == "owner@example.com"
+    assert payload["primary_identity"]["status"] == "active"
+    assert payload["membership"]["role"] == "owner"
+    assert payload["membership"]["status"] == "active"
+
+    directory_response = client.get(
+        "/internal/service/admin/accounts?q=owner%40example.com",
+        headers=build_internal_headers(),
+    )
+    assert directory_response.status_code == 200, directory_response.text
+    directory_item = directory_response.json()["data"]["items"][0]
+    assert directory_item["identity_relationship_state"] == "healthy"
+    assert directory_item["primary_identity"]["email"] == "owner@example.com"
+    assert directory_item["primary_identity"]["membership_role"] == "owner"
+
+    conflicting_response = client.post(
+        "/internal/service/accounts",
+        json={
+            "account_id": "acct_second_for_owner",
+            "name": "Second Owner Account",
+            "primary_email": "owner@example.com",
+        },
+        headers=build_internal_headers(idempotency_key="owner-identity-conflict"),
+    )
+    assert conflicting_response.status_code == 409, conflicting_response.text
+    assert (
+        conflicting_response.json()["error_code"]
+        == "service.single_account_membership_limit"
+    )
+
+    dispose_engine(database_url)
+
+
 def test_service_routes_account_default_free_binding_is_explicit(tmp_path: Path) -> None:
     database_url, client = _build_client(tmp_path)
 

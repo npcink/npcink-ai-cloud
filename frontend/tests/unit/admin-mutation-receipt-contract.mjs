@@ -4,13 +4,7 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const receiptSource = readFileSync(fromFrontendRoot('src/components/admin/AdminMutationReceipt.tsx'), 'utf8');
 const accountDetailSource = readFileSync(fromFrontendRoot('src/app/admin/accounts/[accountId]/page.tsx'), 'utf8');
-const portalUsersSource = [
-  readFileSync(fromFrontendRoot('src/app/admin/portal-users/page.tsx'), 'utf8'),
-  readFileSync(
-    fromFrontendRoot('src/features/admin/portal-users/PortalUsersWorkspace.tsx'),
-    'utf8'
-  ),
-].join('\n');
+const accountsSource = readFileSync(fromFrontendRoot('src/app/admin/accounts/page.tsx'), 'utf8');
 const subscriptionDetailSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
 const aiResourcesSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const supplierToolbarSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierToolbar.tsx'), 'utf8');
@@ -69,15 +63,15 @@ assert.match(
 );
 
 assert.match(
-  portalUsersSource,
+  accountsSource,
   /AdminMutationReceipt[\s\S]*AdminMutationReceiptPayload/,
-  'Portal user disable writes must render the shared admin mutation receipt'
+  'Customer identity disable writes must render the shared admin mutation receipt'
 );
 
 assert.match(
-  portalUsersSource,
-  /setLastReceipt\(data\.receipt \|\| null\)/,
-  'Portal user disable writes must store the backend receipt instead of only showing a toast'
+  accountsSource,
+  /setIdentityActionReceipt\([\s\S]*payload\.receipt[\s\S]*accountId: account\.account_id/,
+  'Customer identity disable writes must store an account-scoped backend receipt instead of only showing a toast'
 );
 
 assert.match(

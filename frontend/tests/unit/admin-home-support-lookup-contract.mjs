@@ -29,10 +29,10 @@ assert.match(
   'support lookup form submit must open customer search so Enter works from the input'
 );
 
-assert.match(
+assert.doesNotMatch(
   pageSource,
   /buildAdminLookupHref\('\/admin\/portal-users', supportQuery\)/,
-  'support lookup must route Portal user searches through the existing user register'
+  'support lookup must use the unified customer register for account and identity searches'
 );
 
 assert.match(
@@ -60,7 +60,6 @@ const requiredKeys = [
   'admin.home_support_lookup_label',
   'admin.home_support_lookup_placeholder',
   'admin.home_support_lookup_accounts',
-  'admin.home_support_lookup_portal_users',
   'admin.home_support_lookup_coverage',
   'admin.home_support_lookup_diagnostics',
 ];

@@ -12,8 +12,8 @@ from app.core.models import (
 )
 from app.domain.commercial.errors import CommercialPermissionError
 
-USER_ROLE_USER = "user"
-USER_ALLOWED_ROLES = {USER_ROLE_USER}
+USER_ROLE_OWNER = "owner"
+USER_ALLOWED_ROLES = {USER_ROLE_OWNER}
 PLATFORM_ADMIN_ALLOWED_ROLES = {
     PLATFORM_ADMIN_ROLE_PLATFORM_ADMIN,
 }
@@ -61,7 +61,7 @@ def resolve_principal_allowed_actions() -> list[str]:
 
 
 def normalize_user_role(role: str) -> str:
-    normalized_role = str(role or USER_ROLE_USER).strip().lower()
+    normalized_role = str(role or USER_ROLE_OWNER).strip().lower()
     if normalized_role not in USER_ALLOWED_ROLES:
         raise CommercialPermissionError(
             "service.portal_user_role_invalid",

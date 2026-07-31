@@ -137,6 +137,7 @@ def _coerce_int(value: object, *, default: int) -> int:
 class AccountPayload(BaseModel):
     account_id: str
     name: str
+    primary_email: str = ""
     status: str = "active"
     metadata: dict[str, Any] = Field(default_factory=dict)
     bind_default_free: bool = False
@@ -1337,6 +1338,7 @@ async def upsert_account(
         result = service.upsert_account(
             account_id=payload.account_id,
             name=payload.name,
+            primary_email=payload.primary_email,
             status=payload.status,
             metadata_json=payload.metadata,
             bind_default_free=payload.bind_default_free,

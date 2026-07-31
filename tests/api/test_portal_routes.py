@@ -3576,14 +3576,13 @@ def test_portal_auth_login_code_request_and_verify_with_jwt(tmp_path: Path) -> N
         assert identity.last_login_at is not None
 
 
-def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path) -> None:
+def test_principal_cannot_hold_active_memberships_in_multiple_accounts(tmp_path: Path) -> None:
     database_url, client = _build_client(
         tmp_path,
         settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
     )
     email = "multi-account-principal@example.com"
-    principal_ids: list[str] = []
-
+    membership_responses = []
     for suffix in ("alpha", "beta"):
         account_id = f"acct_multi_principal_{suffix}"
         account_response = client.post(
@@ -3601,11 +3600,15 @@ def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path)
                 idempotency_key=f"multi-principal-membership-{suffix}"
             ),
         )
-        assert membership_response.status_code == 200, membership_response.text
-        principal_ids.append(str(membership_response.json()["data"]["principal_id"]))
+        membership_responses.append(membership_response)
 
-    assert len(set(principal_ids)) == 1
-    principal_id = principal_ids[0]
+    assert membership_responses[0].status_code == 200, membership_responses[0].text
+    assert membership_responses[1].status_code == 409, membership_responses[1].text
+    assert (
+        membership_responses[1].json()["error_code"]
+        == "service.single_account_membership_limit"
+    )
+    principal_id = str(membership_responses[0].json()["data"]["principal_id"])
     login_code = _request_portal_login_code(
         client,
         email=email,
@@ -3629,9 +3632,9 @@ def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path)
     assert addon_accounts_response.status_code == 200
     addon_accounts = addon_accounts_response.json()["data"]["items"]
     assert all(set(item) == {"account_id", "name", "site_count"} for item in addon_accounts)
-    assert {
-        item["account_id"] for item in addon_accounts
-    } == {"acct_multi_principal_alpha", "acct_multi_principal_beta"}
+    assert {item["account_id"] for item in addon_accounts} == {
+        "acct_multi_principal_alpha"
+    }
 
     with get_session(database_url) as session:
         principals = list(session.scalars(select(Principal).where(Principal.email == email)))
@@ -3645,14 +3648,54 @@ def test_one_principal_can_hold_memberships_in_multiple_accounts(tmp_path: Path)
         assert len(principals) == 1
         assert principals[0].principal_id == principal_id
         assert {membership.account_id for membership in memberships} == {
-            "acct_multi_principal_alpha",
-            "acct_multi_principal_beta",
+            "acct_multi_principal_alpha"
         }
 
     dispose_engine(database_url)
 
 
-def test_account_membership_changes_preserve_global_principal_state(
+def test_account_cannot_hold_multiple_active_login_identities(tmp_path: Path) -> None:
+    database_url, client = _build_client(tmp_path)
+    account_id = "acct_single_identity"
+    assert client.post(
+        "/internal/service/accounts",
+        json={"account_id": account_id, "name": "Single Identity"},
+        headers=build_internal_headers(idempotency_key="single-identity-account"),
+    ).status_code == 200
+
+    first_membership = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": "owner-one@example.com"},
+        headers=build_internal_headers(idempotency_key="single-identity-owner-one"),
+    )
+    second_membership = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": "owner-two@example.com"},
+        headers=build_internal_headers(idempotency_key="single-identity-owner-two"),
+    )
+
+    assert first_membership.status_code == 200, first_membership.text
+    assert second_membership.status_code == 409, second_membership.text
+    assert (
+        second_membership.json()["error_code"]
+        == "service.single_identity_account_limit"
+    )
+
+    with get_session(database_url) as session:
+        memberships = list(
+            session.scalars(
+                select(AccountUserMembership).where(
+                    AccountUserMembership.account_id == account_id
+                )
+            )
+        )
+        assert len(memberships) == 1
+        assert memberships[0].role == "owner"
+
+    dispose_engine(database_url)
+
+
+def test_owner_membership_changes_preserve_global_principal_state(
     tmp_path: Path,
 ) -> None:
     database_url, client = _build_client(
@@ -3660,23 +3703,18 @@ def test_account_membership_changes_preserve_global_principal_state(
         settings_overrides={"portal_jwt_secret": TEST_PORTAL_JWT_SECRET},
     )
     email = "membership-isolation@example.com"
-    account_ids = ("acct_membership_isolation_alpha", "acct_membership_isolation_beta")
-    for account_id in account_ids:
-        assert client.post(
-            "/internal/service/accounts",
-            json={"account_id": account_id, "name": account_id},
-            headers=build_internal_headers(
-                idempotency_key=f"{account_id}-create"
-            ),
-        ).status_code == 200
-        member_response = client.post(
-            f"/internal/service/accounts/{account_id}/members",
-            json={"email": email, "metadata": {"account_note": account_id}},
-            headers=build_internal_headers(
-                idempotency_key=f"{account_id}-member"
-            ),
-        )
-        assert member_response.status_code == 200, member_response.text
+    account_id = "acct_membership_owner"
+    assert client.post(
+        "/internal/service/accounts",
+        json={"account_id": account_id, "name": account_id},
+        headers=build_internal_headers(idempotency_key=f"{account_id}-create"),
+    ).status_code == 200
+    member_response = client.post(
+        f"/internal/service/accounts/{account_id}/members",
+        json={"email": email, "metadata": {"account_note": account_id}},
+        headers=build_internal_headers(idempotency_key=f"{account_id}-member"),
+    )
+    assert member_response.status_code == 200, member_response.text
 
     principal_id = str(member_response.json()["data"]["principal_id"])
     principal_metadata = {
@@ -3693,7 +3731,7 @@ def test_account_membership_changes_preserve_global_principal_state(
         restricted_membership = session.scalar(
             select(AccountUserMembership).where(
                 AccountUserMembership.principal_id == principal_id,
-                AccountUserMembership.account_id == account_ids[0],
+                AccountUserMembership.account_id == account_id,
             )
         )
         assert restricted_membership is not None
@@ -3702,11 +3740,11 @@ def test_account_membership_changes_preserve_global_principal_state(
         session.commit()
 
     revoke_response = client.post(
-        f"/internal/service/accounts/{account_ids[0]}/members",
+        f"/internal/service/accounts/{account_id}/members",
         json={
             "email": email,
             "status": "disabled",
-            "metadata": {"account_note": "revoke alpha only"},
+            "metadata": {"account_note": "revoke owner"},
         },
         headers=build_internal_headers(
             idempotency_key="membership-isolation-revoke-alpha"
@@ -3725,7 +3763,6 @@ def test_account_membership_changes_preserve_global_principal_state(
             session.scalars(
                 select(AccountUserMembership)
                 .where(AccountUserMembership.principal_id == principal_id)
-                .order_by(AccountUserMembership.account_id)
             )
         )
         assert identity is not None
@@ -3733,13 +3770,12 @@ def test_account_membership_changes_preserve_global_principal_state(
         assert int(identity.session_version or 1) == initial_session_version
         assert identity.metadata_json == principal_metadata
         assert [(item.account_id, item.status) for item in memberships] == [
-            (account_ids[0], ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED),
-            (account_ids[1], ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE),
+            (account_id, ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED)
         ]
         assert memberships[0].allowed_actions_json == ["view_sites"]
         assert memberships[0].metadata_json == {
             "source": "account_membership",
-            "account_note": "revoke alpha only",
+            "account_note": "revoke owner",
         }
 
     disable_response = client.post(
@@ -3751,7 +3787,7 @@ def test_account_membership_changes_preserve_global_principal_state(
     )
     assert disable_response.status_code == 200, disable_response.text
     rejected_reactivation = client.post(
-        f"/internal/service/accounts/{account_ids[0]}/members",
+        f"/internal/service/accounts/{account_id}/members",
         json={"email": email, "status": "active"},
         headers=build_internal_headers(
             idempotency_key="membership-isolation-reject-reactivation"
