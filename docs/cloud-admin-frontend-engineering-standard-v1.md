@@ -14,6 +14,7 @@ This document is the engineering companion to:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin UI Standard v1](cloud-admin-ui-standard-v1.md);
+- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin UI Development Retrospective](cloud-admin-ui-development-retrospective-2026-07-27.md);
 - [Development Validation Operating Model v1](development-validation-operating-model-v1.md).
 
@@ -28,11 +29,12 @@ The completed sequence and final work review are recorded in
 Current implementation evidence:
 
 - Stage 1 added the existing Vitest suite to frontend CI.
-- Stage 2 remediated `/admin/portal-users` as the first Query-first queue.
-- The Portal users directory repository owns filtered counts, stable
-  principal pagination, and current-page candidate selection; the domain
-  hydrates related details only for that page.
-- The measured acceptance record is
+- Stage 2 historically remediated `/admin/portal-users` as the first
+  Query-first queue. PR #425 later removed that product route when Customers
+  became the single validation-stage customer directory. The pilot remains
+  engineering-method evidence; it is not an active route baseline and does
+  not authorize restoring Portal users.
+- The historical measured acceptance record is
   [Cloud Admin Query Pilot Closeout](cloud-admin-query-pilot-closeout-2026-07-29.md).
 - `/admin/support-requests` is the bounded second Query-first queue. It reuses
   the existing provider and adapter, keeps its accepted operator layout, and
@@ -210,15 +212,15 @@ A route file should not newly accumulate:
 Use feature modules for a remediated surface. Example:
 
 ```text
-frontend/src/features/admin/portal-users/
+frontend/src/features/admin/support-requests/
   api.ts
   schemas.ts
   queries.ts
-  portal-user-directory-model.ts
-  use-portal-user-filters.ts
-  PortalUsersDirectory.tsx
-  PortalUserInspector.tsx
-  PortalUserEditForm.tsx
+  support-request-directory-model.ts
+  use-support-request-filters.ts
+  SupportRequestsDirectory.tsx
+  SupportRequestInspector.tsx
+  SupportRequestEditForm.tsx
 ```
 
 The existing shared primitives stay in `frontend/src/components/admin`,
@@ -362,7 +364,7 @@ paths. Do not delete tests or lower behavioral evidence to improve a number.
 
 ### Stage 2: one queue pilot
 
-The accepted first candidate is `/admin/portal-users`.
+The historical first candidate was `/admin/portal-users`.
 
 1. Introduce the query capability for that feature.
 2. Introduce the headless table capability only if it deletes real route-local
@@ -374,6 +376,10 @@ The accepted first candidate is `/admin/portal-users`.
    module.
 5. Preserve behavior and appearance; this is an engineering pilot, not a
    redesign.
+
+This pilot remains evidence for bounded Query adoption. The route itself was
+later retired by the single-account, single-identity product contraction and
+must not be restored from this section.
 
 Do not begin with `/admin/accounts/[accountId]`,
 `/admin/ai-resources`, `/admin/ai-advisor`, or
@@ -507,9 +513,9 @@ A new implementation session should:
    route manifest, and the development-validation model;
 3. revalidate the evidence instead of trusting the 2026-07-29 snapshot;
 4. treat Stages 1 and 2 as accepted baselines, not work to repeat;
-5. treat Portal users repository pagination as the accepted backend baseline
-   and revalidate its response contract rather than restoring full-directory
-   hydration;
+5. treat `/admin/accounts` as the only validation-stage customer directory,
+   follow the customer operations workspace standard, and do not restore the
+   retired Portal-users product route from historical Query-pilot evidence;
 6. preserve Support requests as the bounded second Query-first queue and use
    its measured reuse evidence before considering another queue;
 7. treat the account-create form as the Stage 3 baseline: retain its
