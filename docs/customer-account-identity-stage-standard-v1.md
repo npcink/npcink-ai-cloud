@@ -163,3 +163,9 @@ Changes to this boundary require:
 - PC browser evidence for material customer queue changes;
 - M4 candidate sync for Cloud source behavior;
 - an update to ADR-036 or a superseding ADR when the current stage changes.
+
+Legacy tests that construct multiple active Principals in one Account or one
+active Principal in multiple Accounts are not validation-stage compatibility
+coverage. Reintroduce those scenarios only together with the superseding
+organization ADR, role model, invitation lifecycle, and account-selection
+contract.
