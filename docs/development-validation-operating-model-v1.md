@@ -117,6 +117,25 @@ path names and modification times are not cleanup authority.
 | Migration, persistence, worker, recovery, or network behavior | focused contract plus risk-specific checks | M4 runtime evidence; full gate only when justified |
 | CI-only change | focused script/contract replay | GitHub Actions is the runtime; do not deploy M4 |
 
+### Optional local structural index
+
+A local structural index such as CodeGraph may accelerate architecture
+discovery in a large Python and TypeScript repository. It remains advisory:
+
+1. Prefer one clean, current `origin/master` reference worktree instead of
+   indexing every feature, preview, or temporary worktree.
+2. Do not assume the reference index represents the active feature worktree.
+   Re-read the exact active-worktree files before changing code.
+3. Use native search and direct file inspection for string-based routes,
+   dynamic configuration, generated contracts, cross-repository seams, and
+   any relationship the index cannot prove.
+4. Do not use index results as test-selection, merge, release, runtime, or
+   acceptance authority.
+5. Keep the index local, ignored, reversible, and absent from CI, M4,
+   production, release, and shared runtime environments.
+6. Treat a missing, stale, or unavailable index as a navigation fallback, not
+   a development blocker.
+
 For a frontend-only appearance change, an owned ephemeral slot may replace the
 primary `sync` checkpoint when it needs no mutation, dependency, API,
 migration, worker, persistence, proxy, or runtime-config change. The slot must
