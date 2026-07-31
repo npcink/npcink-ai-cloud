@@ -1342,7 +1342,7 @@ function AccountDetailContent() {
           : !creditEvidenceReady
             ? t('common.unknown')
             : quotaNeedsAttention
-              ? translateStatusLabel('warning', t)
+              ? t('admin.account_detail.quota_attention_tab_label', undefined, 'Quota needs attention')
               : translateStatusLabel('ok', t),
       href: '#quota-posture',
     },
@@ -1536,63 +1536,59 @@ function AccountDetailContent() {
           </>
         ) : null}
         {activeDetailTab === 'commercial' || activeDetailTab === 'credits' ? (
-        <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-4">
           <div id="coverage-actions">
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.account_detail.current_coverage_title', undefined, 'Current coverage')}
-            </p>
-            <h3 className="mt-3 text-lg font-semibold text-gray-950 dark:text-white">{postureTitle}</h3>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{nextStepDescription}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                {primaryPackage.display_package_label}
-              </span>
-              <span className="rounded-full border border-slate-200/80 bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
-                {translatePackageKindLabel(t, primaryPackage.package_kind)}
-              </span>
-              <span
-                className={cn(
-                  'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em]',
-                  primaryPackage.coverage_state === 'covered'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200'
-                )}
-              >
-                {translateCoverageStateLabel(t, primaryPackage.coverage_state)}
-              </span>
+          <BackofficeStackCard className="overflow-hidden bg-white/80 p-0 dark:bg-slate-950/55">
+            <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {t('admin.account_detail.current_coverage_title', undefined, 'Current coverage')}
+                </p>
+                <p className="mt-1 font-semibold text-gray-950 dark:text-white">{postureTitle}</p>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{nextStepDescription}</p>
+              </div>
+              <BackofficeStatusBadge
+                status={primarySubscription?.status || 'unknown'}
+                label={translateStatusLabel(primarySubscription?.status || 'unknown', t)}
+              />
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-slate-950/60">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('common.status')}
-                </p>
-                <div className="mt-2">
-                  <BackofficeStatusBadge
-                    status={primarySubscription?.status || 'unknown'}
-                    label={translateStatusLabel(primarySubscription?.status || 'unknown', t)}
-                  />
-                </div>
-              </div>
-              <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-slate-950/60">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('admin.period_end')}
-                </p>
-                <p className="mt-2 font-medium text-gray-950 dark:text-white">
-                  {primarySubscription?.current_period_end ? formatDate(primarySubscription.current_period_end) : t('common.not_found')}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-slate-950/60">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                  {t('admin.account_detail.next_step_label', undefined, 'Next focus')}
-                </p>
-                <p className="mt-2 font-medium text-gray-950 dark:text-white">
-                  {hasCoverageGap
+            <dl className="grid divide-y divide-slate-200 text-sm dark:divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
+              {[
+                {
+                  label: t('common.package', {}, 'Package'),
+                  value: primaryPackage.display_package_label,
+                },
+                {
+                  label: t('admin.account_detail.coverage_type_label', undefined, 'Coverage type'),
+                  value: translatePackageKindLabel(t, primaryPackage.package_kind),
+                },
+                {
+                  label: t('admin.account_detail.coverage_state_label', undefined, 'Coverage'),
+                  value: translateCoverageStateLabel(t, primaryPackage.coverage_state),
+                },
+                {
+                  label: t('admin.period_end'),
+                  value: primarySubscription?.current_period_end
+                    ? formatDate(primarySubscription.current_period_end)
+                    : t('common.not_found'),
+                },
+                {
+                  label: t('admin.account_detail.next_step_label', undefined, 'Next focus'),
+                  value: hasCoverageGap
                     ? t('admin.account_detail.next_focus_coverage', undefined, 'Customer coverage and site impact')
-                    : t('admin.account_detail.next_focus_sites', undefined, 'Site footprint and runtime detail')}
-                </p>
-              </div>
-            </div>
+                    : t('admin.account_detail.next_focus_sites', undefined, 'Site footprint and runtime detail'),
+                },
+              ].map((item) => (
+                <div key={item.label} className="min-w-0 px-4 py-3">
+                  <dt className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+                    {item.label}
+                  </dt>
+                  <dd className="mt-1 truncate font-medium text-gray-950 dark:text-white" title={item.value}>
+                    {item.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </BackofficeStackCard>
           </div>
           <BackofficeStackCard>
@@ -1635,46 +1631,68 @@ function AccountDetailContent() {
                 </div>
                 <BackofficeStatusBadge status="ok" label={t('admin.operator_managed', {}, 'Operator managed')} />
               </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-4">
-                {QUICK_PACKAGE_OPTIONS.map((option) => {
-                  const label = localizePackageAlias(t, option.tier_id, option.tier_id);
-                  const isCurrent =
-                    primarySubscription?.plan_id === option.plan_id ||
-                    primarySubscription?.plan_version_id === option.plan_version_id ||
-                    primaryPackage.display_package_label === label;
-                  return (
-                    <button
-                      key={option.tier_id}
-                      type="button"
-                      onClick={() =>
-                        setPendingConfirmation({
-                          title: t('admin.account_detail.confirm_package_change_title', undefined, 'Confirm package change'),
-                          message: t(
-                            'admin.account_detail.confirm_package_change_desc',
-                            { package: label, account: account.name || account.account_id },
-                            `Change ${account.name || account.account_id} to ${label}? This updates the customer package immediately.`
-                          ),
-                          confirmLabel: t('admin.account_detail.confirm_package_change_action', undefined, 'Change package'),
-                          onConfirm: () => void handleChangePackage(option),
-                        })
-                      }
-                      className={cn(
-                        'rounded-2xl border px-4 py-3 text-left text-sm transition',
-                        isCurrent
-                          ? 'border-emerald-300 bg-white text-emerald-800 dark:border-emerald-800 dark:bg-slate-950/60 dark:text-emerald-200'
-                          : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100'
-                      )}
-                      disabled={packageActionPending !== null}
-                    >
-                      <span className="block font-semibold">{label}</span>
-                      <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                        {isCurrent
-                          ? t('common.current', {}, 'Current')
-                          : t('admin.account_detail.apply_package_action', undefined, 'Apply package')}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="mt-4 overflow-x-auto rounded-[1rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/55">
+                <table className="w-full min-w-[44rem] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-2.5">{t('common.package', {}, 'Package')}</th>
+                      <th className="px-4 py-2.5">
+                        {t('admin.account_detail.package_scope_label', undefined, 'Scope')}
+                      </th>
+                      <th className="px-4 py-2.5">{t('common.status')}</th>
+                      <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {QUICK_PACKAGE_OPTIONS.map((option) => {
+                      const label = localizePackageAlias(t, option.tier_id, option.tier_id);
+                      const isCurrent =
+                        primarySubscription?.plan_id === option.plan_id ||
+                        primarySubscription?.plan_version_id === option.plan_version_id ||
+                        primaryPackage.display_package_label === label;
+                      return (
+                        <tr key={option.tier_id} className={cn(isCurrent && 'bg-emerald-50/55 dark:bg-emerald-950/10')}>
+                          <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{label}</td>
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                            {t('admin.account_detail.account_wide_scope', undefined, 'Customer account')}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isCurrent ? (
+                              <BackofficeStatusBadge status="ok" label={t('common.current', {}, 'Current')} />
+                            ) : (
+                              <span className="text-slate-500 dark:text-slate-400">
+                                {t('admin.account_detail.available_package_label', undefined, 'Available')}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPendingConfirmation({
+                                  title: t('admin.account_detail.confirm_package_change_title', undefined, 'Confirm package change'),
+                                  message: t(
+                                    'admin.account_detail.confirm_package_change_desc',
+                                    { package: label, account: account.name || account.account_id },
+                                    `Change ${account.name || account.account_id} to ${label}? This updates the customer package immediately.`
+                                  ),
+                                  confirmLabel: t('admin.account_detail.confirm_package_change_action', undefined, 'Change package'),
+                                  onConfirm: () => void handleChangePackage(option),
+                                })
+                              }
+                              className={cn('btn whitespace-nowrap', isCurrent ? 'btn-secondary' : 'btn-primary')}
+                              disabled={packageActionPending !== null || isCurrent}
+                            >
+                              {isCurrent
+                                ? t('common.current', {}, 'Current')
+                                : t('admin.account_detail.apply_package_action', undefined, 'Apply package')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
             <div className="mt-5 border-t border-slate-200 pt-5 dark:border-slate-800">
@@ -1784,50 +1802,81 @@ function AccountDetailContent() {
                 </div>
                 <BackofficeStatusBadge status="warning" label={t('admin.current_period_only', {}, 'Current period only')} />
               </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                {TOPUP_PACK_OPTIONS.map((pack) => {
-                  const label = t(pack.label_key, undefined, pack.fallback_label);
-                  const isRecommended = pack.recommended_for_tiers.includes(currentTierId);
-                  return (
-                    <button
-                      key={pack.pack_id}
-                      type="button"
-                      onClick={() =>
-                        setPendingConfirmation({
-                          title: t('admin.account_detail.confirm_topup_title', undefined, 'Confirm top-up pack'),
-                          message: t(
-                            'admin.account_detail.confirm_topup_desc',
-                            { pack: label, points: pack.points_label, account: account.name || account.account_id },
-                            `Apply ${label} (${pack.points_label}) to ${account.name || account.account_id} for the current period?`
-                          ),
-                          confirmLabel: t('admin.account_detail.confirm_topup_action', undefined, 'Apply top-up'),
-                          onConfirm: () => void handleApplyTopUpPack(pack),
-                        })
-                      }
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm text-slate-800 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-600"
-                      disabled={topUpActionPending !== null || packageActionPending !== null || !primarySubscription}
-                    >
-                      <span className="block font-semibold">{label}</span>
-                      <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{pack.points_label}</span>
-                      <span className="mt-2 block text-xs text-slate-500 dark:text-slate-400">
-                        {topUpActionPending === pack.pack_id
-                          ? t('common.saving', {}, 'Saving...')
-                          : isRecommended
-                            ? t('admin.recommended', {}, 'Recommended')
-                            : t('admin.account_detail.apply_topup_pack_action', undefined, 'Apply top-up')}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="mt-4 overflow-x-auto rounded-[1rem] border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[48rem] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-2.5">
+                        {t('admin.account_detail.topup_pack_column', undefined, 'Top-up pack')}
+                      </th>
+                      <th className="px-4 py-2.5">
+                        {t('admin.account_detail.topup_credits_column', undefined, 'AI credits')}
+                      </th>
+                      <th className="px-4 py-2.5">
+                        {t('admin.account_detail.topup_effective_column', undefined, 'Effective period')}
+                      </th>
+                      <th className="px-4 py-2.5">{t('common.status')}</th>
+                      <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {TOPUP_PACK_OPTIONS.map((pack) => {
+                      const label = t(pack.label_key, undefined, pack.fallback_label);
+                      const isRecommended = pack.recommended_for_tiers.includes(currentTierId);
+                      return (
+                        <tr key={pack.pack_id}>
+                          <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{label}</td>
+                          <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{pack.points_label}</td>
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                            {t('admin.current_period_only', {}, 'Current period only')}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isRecommended ? (
+                              <BackofficeStatusBadge status="ok" label={t('admin.recommended', {}, 'Recommended')} />
+                            ) : (
+                              <span className="text-slate-500 dark:text-slate-400">
+                                {t('admin.account_detail.available_topup_label', undefined, 'Available')}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              aria-label={`${label} · ${t('admin.account_detail.apply_topup_pack_action', undefined, 'Apply top-up')}`}
+                              onClick={() =>
+                                setPendingConfirmation({
+                                  title: t('admin.account_detail.confirm_topup_title', undefined, 'Confirm top-up pack'),
+                                  message: t(
+                                    'admin.account_detail.confirm_topup_desc',
+                                    { pack: label, points: pack.points_label, account: account.name || account.account_id },
+                                    `Apply ${label} (${pack.points_label}) to ${account.name || account.account_id} for the current period?`
+                                  ),
+                                  confirmLabel: t('admin.account_detail.confirm_topup_action', undefined, 'Apply top-up'),
+                                  onConfirm: () => void handleApplyTopUpPack(pack),
+                                })
+                              }
+                              className="btn btn-primary whitespace-nowrap"
+                              disabled={topUpActionPending !== null || packageActionPending !== null || !primarySubscription}
+                            >
+                              {topUpActionPending === pack.pack_id
+                                ? t('common.saving', {}, 'Saving...')
+                                : t('admin.account_detail.apply_topup_pack_action', undefined, 'Apply top-up')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/45">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <details className="mt-5 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/45">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
                     {t('admin.account_detail.credit_adjustment_label', undefined, 'AI credit adjustment')}
                   </p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                     {t(
                       'admin.account_detail.credit_adjustment_desc',
                       undefined,
@@ -1836,8 +1885,9 @@ function AccountDetailContent() {
                   </p>
                 </div>
                 <BackofficeStatusBadge status="warning" label={t('admin.audit_required', {}, 'Audit required')} />
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-[0.75fr_0.75fr_1fr]">
+              </summary>
+              <div className="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
+              <div className="grid gap-3 md:grid-cols-[0.75fr_0.75fr_1fr]">
                 <label className="text-sm">
                   <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
                     {t('admin.account_detail.credit_adjustment_type_label', undefined, 'Entry type')}
@@ -1911,7 +1961,8 @@ function AccountDetailContent() {
                     : t('admin.account_detail.apply_credit_adjustment_action', undefined, 'Apply adjustment')}
                 </button>
               </div>
-            </div>
+              </div>
+            </details>
             </>
             ) : null}
             {packageActionError ? (
@@ -2237,7 +2288,7 @@ function AccountDetailContent() {
           ]}
         />
 
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-4">
           <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -2325,7 +2376,7 @@ function AccountDetailContent() {
             </div>
           </BackofficeStackCard>
 
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55 xl:col-span-2">
+          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
@@ -2412,46 +2463,67 @@ function AccountDetailContent() {
             <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
               {t('admin.account_detail.resource_limits_title', undefined, 'Resource limits')}
             </h3>
-            <div className="mt-4 space-y-4">
-              {resourceRows.map((metric) => {
-                const progress = metric.unlimited
-                  ? 0
-                  : Math.min(100, Math.max(0, Number(metric.usage_ratio || 0) * 100));
-                return (
-                  <div key={metric.key} className="border-b border-gray-200 pb-4 last:border-b-0 dark:border-gray-800">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+            <div className="mt-4 overflow-x-auto rounded-[1rem] border border-slate-200 dark:border-slate-800">
+              <table className="w-full min-w-[48rem] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
+                  <tr>
+                    <th className="px-4 py-2.5">
+                      {t('admin.account_detail.resource_column', undefined, 'Resource')}
+                    </th>
+                    <th className="px-4 py-2.5">
+                      {t('admin.account_detail.resource_used_column', undefined, 'Used')}
+                    </th>
+                    <th className="px-4 py-2.5">
+                      {t('admin.account_detail.resource_limit_column', undefined, 'Limit')}
+                    </th>
+                    <th className="px-4 py-2.5">
+                      {t('admin.account_detail.quota_remaining_label', undefined, 'Remaining')}
+                    </th>
+                    <th className="px-4 py-2.5">{t('common.status')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {resourceRows.map((metric) => {
+                    const remaining = metric.unlimited
+                      ? unlimitedLabel
+                      : metric.unit === 'cny'
+                        ? formatAdminCurrency(Math.max(0, Number(metric.limit || 0) - Number(metric.used || 0)))
+                        : formatInteger(Math.max(0, Math.round(Number(metric.limit || 0) - Number(metric.used || 0))));
+                    return (
+                      <tr key={metric.key}>
+                        <td className="px-4 py-3 font-medium text-slate-950 dark:text-white">
                           {quotaMetricLabel(metric, t)}
-                        </p>
-                        <p className={cn('mt-1 text-sm font-semibold text-gray-950 dark:text-white', quotaMetricToneClass(metric))}>
-                          {formatQuotaMetricValue(metric)} / {formatQuotaMetricLimit(metric)}
-                        </p>
-                      </div>
-                      <p className="max-w-[12rem] text-right text-xs leading-5 text-gray-500 dark:text-gray-400">
-                        {metric.unlimited
-                          ? unlimitedLabel
-                          : `${Math.round(Math.min(999, Math.max(0, Number(metric.usage_ratio || 0) * 100)))}%`}
-                      </p>
-                    </div>
-                    {!metric.unlimited ? (
-                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                        <div
-                          className={cn(
-                            'h-full rounded-full',
-                            metric.status === 'limited'
-                              ? 'bg-red-500'
-                              : metric.status === 'near_limit'
-                                ? 'bg-amber-500'
-                                : 'bg-emerald-500'
-                          )}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                          {formatQuotaMetricValue(metric)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                          {formatQuotaMetricLimit(metric)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{remaining}</td>
+                        <td className="px-4 py-3">
+                          <BackofficeStatusBadge
+                            status={
+                              metric.status === 'limited'
+                                ? 'error'
+                                : metric.status === 'near_limit'
+                                  ? 'warning'
+                                  : 'ok'
+                            }
+                            label={
+                              metric.status === 'limited'
+                                ? t('admin.account_detail.limit_reached_status', undefined, 'Limit reached')
+                                : metric.status === 'near_limit'
+                                  ? t('admin.account_detail.near_limit_status', undefined, 'Near limit')
+                                  : translateStatusLabel('ok', t)
+                            }
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
             {internalLimitRows.length > 0 ? (
               <div className="mt-5 rounded-[1rem] border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/35">
