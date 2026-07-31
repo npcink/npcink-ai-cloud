@@ -40,6 +40,11 @@ import {
 } from '@/features/admin/accounts/account-credit-evidence';
 import { AccountOperatorProfileEditor } from '@/features/admin/accounts/AccountOperatorProfileEditor';
 import {
+  CustomerAccessPanel,
+  type CustomerIdentityRelationshipState,
+  type CustomerPrimaryIdentity,
+} from '@/features/admin/accounts/CustomerAccessPanel';
+import {
   accountDetailClient,
   useAccountOperatorProfile,
   type SavedAccountOperatorProfile,
@@ -80,6 +85,8 @@ interface AccountDetail {
     status?: string;
     name?: string;
   }>;
+  primary_identity: CustomerPrimaryIdentity | null;
+  identity_relationship_state: CustomerIdentityRelationshipState;
 }
 
 interface PackagePlanListItem {
@@ -178,6 +185,8 @@ type AccountDetailApiPayload = {
   subscriptions?: Array<
     { subscription?: Record<string, unknown> } | Record<string, unknown>
   >;
+  primary_identity?: Partial<CustomerPrimaryIdentity> | null;
+  identity_relationship_state?: CustomerIdentityRelationshipState;
 };
 
 type AdminMutationPayload = {
@@ -195,7 +204,7 @@ type PendingConfirmation = {
   onConfirm: () => void;
 };
 
-type AccountDetailTab = 'overview' | 'commercial' | 'credits' | 'sites' | 'audit';
+type AccountDetailTab = 'overview' | 'commercial' | 'credits' | 'sites' | 'access' | 'audit';
 
 function selectPrimarySubscription(account: AccountDetail | null): AccountDetail['subscriptions'][number] | null {
   if (!account?.subscriptions.length) {
@@ -575,6 +584,22 @@ function AccountDetailContent() {
             coverage_state: packageDisplay.coverage_state,
           };
         }),
+        primary_identity: payload.primary_identity?.principal_id
+          ? {
+              principal_id: String(payload.primary_identity.principal_id),
+              email: String(payload.primary_identity.email || ''),
+              status: String(payload.primary_identity.status || ''),
+              session_version: Number(payload.primary_identity.session_version || 1),
+              last_login_at: payload.primary_identity.last_login_at,
+              created_at: payload.primary_identity.created_at,
+              membership_id: String(payload.primary_identity.membership_id || ''),
+              membership_role: String(payload.primary_identity.membership_role || ''),
+              membership_status: String(payload.primary_identity.membership_status || ''),
+              qq_bound: Boolean(payload.primary_identity.qq_bound),
+              qq_binding_count: Number(payload.primary_identity.qq_binding_count || 0),
+            }
+          : null,
+        identity_relationship_state: payload.identity_relationship_state || 'missing',
       };
       setAccount(nextAccount);
       const defaultSubscription =
@@ -991,6 +1016,10 @@ function AccountDetailContent() {
         setActiveDetailTab('audit');
         return;
       }
+      if (window.location.hash === '#customer-access') {
+        setActiveDetailTab('access');
+        return;
+      }
       if (window.location.hash === '#coverage-actions') {
         setActiveDetailTab('commercial');
       }
@@ -1322,6 +1351,19 @@ function AccountDetailContent() {
       label: t('admin.account_detail.sites_tab', undefined, 'Sites'),
       detail: formatInteger(account.site_count),
       href: '#site-footprint',
+    },
+    {
+      id: 'access',
+      label: t('admin.account_detail.access_tab', undefined, 'Access'),
+      detail:
+        account.identity_relationship_state === 'healthy'
+          ? t('admin.accounts.identity_healthy_label', {}, 'Active owner')
+          : t(
+              `admin.accounts.identity_${account.identity_relationship_state}`,
+              {},
+              account.identity_relationship_state
+            ),
+      href: '#customer-access',
     },
     {
       id: 'audit',
@@ -2513,6 +2555,15 @@ function AccountDetailContent() {
           )}
         </BackofficeSectionPanel>
       </div>
+      ) : null}
+
+      {activeDetailTab === 'access' ? (
+        <CustomerAccessPanel
+          accountId={account.account_id}
+          identity={account.primary_identity}
+          relationshipState={account.identity_relationship_state}
+          onAccessChanged={() => loadAccount(selectedSiteId, true)}
+        />
       ) : null}
 
       {activeDetailTab === 'audit' ? (

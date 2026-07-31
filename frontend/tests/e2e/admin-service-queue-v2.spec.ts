@@ -11,9 +11,9 @@ test('service status table keeps filters and direct customer actions on PC', asy
 
   await page.goto('/admin/coverage?focus=legacy-inspector-selection');
   await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$/i })).toBeVisible();
-  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(3);
+  await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态/i })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: /Service status|服务状态/i })).toHaveValue('all');
+  await expect(page.getByRole('combobox', { name: /Service status|服务状态/i })).toHaveValue('needs_action');
   await expect(page).not.toHaveURL(/status=/);
 
   const initialRows = page.locator('[data-ui="coverage-queue-item"]');
@@ -45,9 +45,6 @@ test('service status table keeps filters and direct customer actions on PC', asy
     'href',
     '/admin/accounts/acct_uncovered#coverage-actions'
   );
-  await expect(initialRows.nth(2).locator('td').nth(2)).toContainText('Free');
-  await expect(initialRows.nth(2).locator('td').nth(3)).toHaveText('1');
-  await expect(initialRows.nth(2).locator('td').nth(4)).toBeEmpty();
   await expect(page.getByText(/Active API keys|活跃 API 密钥/i)).toHaveCount(0);
   await expect(page.getByText(/Technical information|技术信息/i)).toHaveCount(0);
   await expect(page.getByText(/Snapshot|账单统计|待刷新账单统计/i)).toHaveCount(0);
@@ -67,7 +64,7 @@ test('service status table keeps filters and direct customer actions on PC', asy
 
   await page.reload();
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Uncovered');
-  await expect(page.getByRole('combobox', { name: /Service status|服务状态/i })).toHaveValue('all');
+  await expect(page.getByRole('combobox', { name: /Service status|服务状态/i })).toHaveValue('needs_action');
   await expect(page.getByRole('combobox', { name: /Reason|原因/i })).toHaveValue('missing_package_coverage');
   await expect(page.getByRole('combobox', { name: /Sort|排序/i })).toHaveValue('customer');
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
@@ -135,7 +132,7 @@ for (const viewport of [
       expect(Math.max(...controlBoxes.map((box) => box.top)) - Math.min(...controlBoxes.map((box) => box.top))).toBeLessThan(2);
     }
 
-    await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('needs_action');
+    await page.getByRole('combobox', { name: /Service status|服务状态/i }).selectOption('all');
     await expect(clearFilters).toBeEnabled();
   });
 }

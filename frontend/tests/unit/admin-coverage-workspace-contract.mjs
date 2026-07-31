@@ -5,6 +5,10 @@ import assert from 'node:assert/strict';
 const coverageSource = readFileSync(resolve(process.cwd(), 'src/app/admin/coverage/page.tsx'), 'utf8');
 const layoutSource = readFileSync(resolve(process.cwd(), 'src/app/admin/layout.tsx'), 'utf8');
 const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
+const serviceSource = readFileSync(
+  resolve(process.cwd(), '../app/domain/commercial/mixins/_admin_mixin.py'),
+  'utf8'
+);
 
 assert.match(
   coverageSource,
@@ -50,8 +54,14 @@ assert.match(
 
 assert.match(
   coverageSource,
-  /normalizeQueueView[\s\S]*: 'all'[\s\S]*key === 'status' && value === 'all'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'all'[\s\S]*setView\('all'\)/,
-  'Coverage defaults to all customers and the clear action restores that URL-owned default'
+  /normalizeQueueView[\s\S]*: 'needs_action'[\s\S]*key === 'status' && value === 'needs_action'[\s\S]*coverage-filter-toolbar[\s\S]*admin\.coverage\.status_filter_label[\s\S]*disabled=\{!searchQuery && !reasonFilter && view === 'needs_action'[\s\S]*setView\('needs_action'\)/,
+  'Coverage defaults to customers needing action and the clear action restores that URL-owned default'
+);
+
+assert.match(
+  coverageSource + serviceSource,
+  /primary_identity\?[\s\S]*customer_identity_missing[\s\S]*customer_identity_conflict[\s\S]*customer_access_disabled[\s\S]*#customer-access/,
+  'Coverage must search customer login identity and route identity problems to customer access'
 );
 
 assert.doesNotMatch(

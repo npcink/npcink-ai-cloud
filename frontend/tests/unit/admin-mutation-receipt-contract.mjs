@@ -4,7 +4,7 @@ import { fromFrontendRoot } from './_paths.mjs';
 
 const receiptSource = readFileSync(fromFrontendRoot('src/components/admin/AdminMutationReceipt.tsx'), 'utf8');
 const accountDetailSource = readFileSync(fromFrontendRoot('src/app/admin/accounts/[accountId]/page.tsx'), 'utf8');
-const accountsSource = readFileSync(fromFrontendRoot('src/app/admin/accounts/page.tsx'), 'utf8');
+const customerAccessSource = readFileSync(fromFrontendRoot('src/features/admin/accounts/CustomerAccessPanel.tsx'), 'utf8');
 const subscriptionDetailSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
 const aiResourcesSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const supplierToolbarSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierToolbar.tsx'), 'utf8');
@@ -63,15 +63,15 @@ assert.match(
 );
 
 assert.match(
-  accountsSource,
+  customerAccessSource,
   /AdminMutationReceipt[\s\S]*AdminMutationReceiptPayload/,
   'Customer identity disable writes must render the shared admin mutation receipt'
 );
 
 assert.match(
-  accountsSource,
-  /setIdentityActionReceipt\([\s\S]*payload\.receipt[\s\S]*accountId: account\.account_id/,
-  'Customer identity disable writes must store an account-scoped backend receipt instead of only showing a toast'
+  customerAccessSource,
+  /setReceipt\(payload\.receipt \|\| null\)/,
+  'Customer identity disable writes must store the customer-detail backend receipt instead of only showing a toast'
 );
 
 assert.match(

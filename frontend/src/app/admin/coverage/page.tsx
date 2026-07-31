@@ -36,6 +36,11 @@ type CoverageQueueItem = {
     package_kind?: string;
     coverage_state?: string;
   };
+  primary_identity?: {
+    email?: string;
+    status?: string;
+  } | null;
+  identity_relationship_state?: 'healthy' | 'missing' | 'conflict' | 'access_disabled';
   severity: QueueSeverity;
   priority?: number;
   reason_code: string;
@@ -87,7 +92,7 @@ function isInternalCoverageRecord(...values: Array<string | undefined>): boolean
 }
 
 function normalizeQueueView(value: string | null): QueueView {
-  return value && QUEUE_VIEWS.has(value as QueueView) ? (value as QueueView) : 'all';
+  return value && QUEUE_VIEWS.has(value as QueueView) ? (value as QueueView) : 'needs_action';
 }
 
 function normalizeQueueSort(value: string | null): QueueSort {
@@ -213,7 +218,7 @@ function AdminCoverageContent() {
     const nextParams = new URLSearchParams(queueParamsRef.current.toString());
     Object.entries(patch).forEach(([key, value]) => {
       const isDefault =
-        (key === 'status' && value === 'all') ||
+        (key === 'status' && value === 'needs_action') ||
         (key === 'sort' && value === 'priority');
       if (!value || isDefault) {
         nextParams.delete(key);
@@ -343,6 +348,7 @@ function AdminCoverageContent() {
       return [
         item.account.account_id,
         item.account.name,
+        item.primary_identity?.email,
         item.primary_subscription?.subscription_id,
         item.package?.display_package_label,
         item.reason_label,
@@ -564,11 +570,11 @@ function AdminCoverageContent() {
                     type="button"
                     className="btn btn-secondary h-11 w-11 shrink-0 p-0"
                     aria-label={t('common.clear_filters', {}, 'Clear filters')}
-                    disabled={!searchQuery && !reasonFilter && view === 'all' && sort === 'priority'}
+                    disabled={!searchQuery && !reasonFilter && view === 'needs_action' && sort === 'priority'}
                     onClick={() => {
                       setSearchQuery('');
                       setReasonFilter('');
-                      setView('all');
+                      setView('needs_action');
                       setSort('priority');
                       updateQueueUrl({ q: null, reason: null, status: null, sort: null });
                     }}
@@ -626,7 +632,31 @@ function AdminCoverageContent() {
                       item.primary_subscription?.status ||
                       'unknown';
                     let impactLabel: string;
-                    if (daysUntilEnd != null) {
+                    if (item.reason_code === 'customer_identity_missing') {
+                      impactLabel = t(
+                        'admin.coverage.identity_missing_impact',
+                        {},
+                        'Customer cannot sign in'
+                      );
+                    } else if (item.reason_code === 'customer_identity_conflict') {
+                      impactLabel = t(
+                        'admin.coverage.identity_conflict_impact',
+                        {},
+                        'Owner relationship is ambiguous'
+                      );
+                    } else if (item.reason_code === 'customer_access_disabled') {
+                      impactLabel = t(
+                        'admin.coverage.access_disabled_impact',
+                        {},
+                        'Customer access is unavailable'
+                      );
+                    } else if (item.reason_code === 'customer_account_suspended') {
+                      impactLabel = t(
+                        'admin.coverage.account_suspended_impact',
+                        {},
+                        'Customer service is suspended'
+                      );
+                    } else if (daysUntilEnd != null) {
                       impactLabel = t(
                         'admin.coverage.days_remaining',
                         { count: formatInteger(daysUntilEnd) },
@@ -733,9 +763,9 @@ function AdminCoverageContent() {
                   onClick={() => {
                     setSearchQuery('');
                     setReasonFilter('');
-                    setView('all');
+                    setView('needs_action');
                     setSort('priority');
-                    updateQueueUrl({ q: null, reason: null, status: 'all', sort: null });
+                    updateQueueUrl({ q: null, reason: null, status: null, sort: null });
                   }}
                 >
                   {t('common.clear_filters', {}, 'Clear filters')}

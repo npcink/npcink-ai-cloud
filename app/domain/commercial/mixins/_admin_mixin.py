@@ -1198,6 +1198,107 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             "total": len(items),
         }
 
+    def _build_admin_identity_projections(
+        self,
+        *,
+        repository: CommercialRepository,
+        account_ids: list[str],
+    ) -> dict[str, dict[str, object]]:
+        memberships = repository.list_account_user_memberships(
+            account_ids=account_ids,
+            statuses=None,
+        )
+        principal_ids = sorted(
+            {
+                str(membership.principal_id or "")
+                for membership in memberships
+                if str(membership.principal_id or "").strip()
+            }
+        )
+        principals = repository.list_principals(
+            principal_ids=principal_ids,
+            limit=None,
+        )
+        qq_bindings = repository.list_identity_provider_bindings(
+            principal_ids=principal_ids,
+            provider="qq",
+            statuses=None,
+        )
+
+        memberships_by_account: dict[str, list[Any]] = defaultdict(list)
+        for membership in memberships:
+            memberships_by_account[str(membership.account_id or "")].append(membership)
+        principals_by_id = {
+            str(principal.principal_id or ""): principal for principal in principals
+        }
+        qq_bindings_by_principal: dict[str, list[Any]] = defaultdict(list)
+        for binding in qq_bindings:
+            qq_bindings_by_principal[str(binding.principal_id or "")].append(binding)
+
+        projections: dict[str, dict[str, object]] = {}
+        for account_id in account_ids:
+            account_memberships = memberships_by_account.get(account_id, [])
+            active_memberships = [
+                membership
+                for membership in account_memberships
+                if str(membership.status or "") == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+            ]
+            selected_membership = (
+                active_memberships[0]
+                if active_memberships
+                else (account_memberships[0] if account_memberships else None)
+            )
+            principal = (
+                principals_by_id.get(str(selected_membership.principal_id or ""))
+                if selected_membership is not None
+                else None
+            )
+            active_qq_bindings = [
+                binding
+                for binding in qq_bindings_by_principal.get(
+                    str(getattr(principal, "principal_id", "") or ""),
+                    [],
+                )
+                if str(binding.status or "") == IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE
+            ]
+            if not account_memberships:
+                relationship_state = "missing"
+            elif (
+                len(account_memberships) > 1
+                or selected_membership is None
+                or principal is None
+            ):
+                relationship_state = "conflict"
+            elif (
+                str(selected_membership.status or "") != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
+                or str(getattr(principal, "status", "") or "") != PRINCIPAL_STATUS_ACTIVE
+            ):
+                relationship_state = "access_disabled"
+            else:
+                relationship_state = "healthy"
+            primary_identity = (
+                {
+                    "principal_id": str(principal.principal_id or ""),
+                    "email": str(principal.email or ""),
+                    "status": str(principal.status or ""),
+                    "session_version": int(principal.session_version or 1),
+                    "last_login_at": self._serialize_datetime(principal.last_login_at),
+                    "created_at": self._serialize_datetime(principal.created_at),
+                    "membership_id": str(selected_membership.membership_id or ""),
+                    "membership_role": str(selected_membership.role or ""),
+                    "membership_status": str(selected_membership.status or ""),
+                    "qq_bound": bool(active_qq_bindings),
+                    "qq_binding_count": len(active_qq_bindings),
+                }
+                if principal is not None and selected_membership is not None
+                else None
+            )
+            projections[account_id] = {
+                "primary_identity": primary_identity,
+                "identity_relationship_state": relationship_state,
+            }
+        return projections
+
     def list_admin_accounts(
         self,
         *,
@@ -1306,39 +1407,14 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 ],
             )
             subscriptions = repository.list_subscriptions(account_ids=account_ids, limit=None)
-            memberships = repository.list_account_user_memberships(
+            identity_projections = self._build_admin_identity_projections(
+                repository=repository,
                 account_ids=account_ids,
-                statuses=None,
-            )
-            principal_ids = sorted(
-                {
-                    str(membership.principal_id or "")
-                    for membership in memberships
-                    if str(membership.principal_id or "").strip()
-                }
-            )
-            principals = repository.list_principals(
-                principal_ids=principal_ids,
-                limit=None,
-            )
-            qq_bindings = repository.list_identity_provider_bindings(
-                principal_ids=principal_ids,
-                provider="qq",
-                statuses=None,
             )
 
         subscriptions_by_account: dict[str, list[AccountSubscription]] = defaultdict(list)
         for subscription in subscriptions:
             subscriptions_by_account[subscription.account_id].append(subscription)
-        memberships_by_account: dict[str, list[Any]] = defaultdict(list)
-        for membership in memberships:
-            memberships_by_account[str(membership.account_id or "")].append(membership)
-        principals_by_id = {
-            str(principal.principal_id or ""): principal for principal in principals
-        }
-        qq_bindings_by_principal: dict[str, list[Any]] = defaultdict(list)
-        for binding in qq_bindings:
-            qq_bindings_by_principal[str(binding.principal_id or "")].append(binding)
 
         items = []
         for account in accounts:
@@ -1355,66 +1431,17 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 if subscription.plan_id
             ).most_common(1)
             nearest_expiry = service._find_nearest_subscription_expiry(account_subscriptions)
-            account_memberships = memberships_by_account.get(account.account_id, [])
-            active_memberships = [
-                membership
-                for membership in account_memberships
-                if str(membership.status or "") == ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
-            ]
-            selected_membership = (
-                active_memberships[0]
-                if active_memberships
-                else (account_memberships[0] if account_memberships else None)
-            )
-            principal = (
-                principals_by_id.get(str(selected_membership.principal_id or ""))
-                if selected_membership is not None
-                else None
-            )
-            active_qq_bindings = [
-                binding
-                for binding in qq_bindings_by_principal.get(
-                    str(getattr(principal, "principal_id", "") or ""),
-                    [],
-                )
-                if str(binding.status or "") == IDENTITY_PROVIDER_BINDING_STATUS_ACTIVE
-            ]
-            if not account_memberships:
-                identity_relationship_state = "missing"
-            elif (
-                len(account_memberships) > 1
-                or selected_membership is None
-                or principal is None
-            ):
-                identity_relationship_state = "conflict"
-            elif (
-                str(selected_membership.status or "") != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
-                or str(getattr(principal, "status", "") or "") != PRINCIPAL_STATUS_ACTIVE
-            ):
-                identity_relationship_state = "access_disabled"
-            else:
-                identity_relationship_state = "healthy"
-            primary_identity = (
+            identity_projection = identity_projections.get(
+                account.account_id,
                 {
-                    "principal_id": str(principal.principal_id or ""),
-                    "email": str(principal.email or ""),
-                    "status": str(principal.status or ""),
-                    "session_version": int(principal.session_version or 1),
-                    "last_login_at": self._serialize_datetime(principal.last_login_at),
-                    "created_at": self._serialize_datetime(principal.created_at),
-                    "membership_id": str(selected_membership.membership_id or ""),
-                    "membership_role": str(selected_membership.role or ""),
-                    "membership_status": str(selected_membership.status or ""),
-                    "qq_bound": bool(active_qq_bindings),
-                    "qq_binding_count": len(active_qq_bindings),
-                }
-                if principal is not None and selected_membership is not None
-                else None
+                    "primary_identity": None,
+                    "identity_relationship_state": "missing",
+                },
             )
+            primary_identity = identity_projection.get("primary_identity")
             item = {
                 "account": service._serialize_account(account),
-                "primary_identity": primary_identity,
-                "identity_relationship_state": identity_relationship_state,
+                **identity_projection,
                 "site_count": site_counts.get(account.account_id, 0),
                 "active_subscription_count": subscription_counts.get(account.account_id, 0),
                 "top_plan_id": str(
@@ -1552,6 +1579,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             latest_billing_by_site = repository.get_latest_billing_snapshots_by_site(
                 site_ids=site_ids,
             )
+            identity_projections = self._build_admin_identity_projections(
+                repository=repository,
+                account_ids=account_ids,
+            )
 
         service = cast(Any, self)
         subscriptions_by_account: dict[str, list[AccountSubscription]] = defaultdict(list)
@@ -1572,6 +1603,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             package_summary = service._build_subscription_package_summary(
                 primary_subscription,
                 site_count=len(account_sites),
+            )
+            identity_projection = identity_projections.get(
+                account.account_id,
+                {
+                    "primary_identity": None,
+                    "identity_relationship_state": "missing",
+                },
+            )
+            identity_relationship_state = str(
+                identity_projection.get("identity_relationship_state") or "missing"
             )
             site_count = len(account_sites)
             active_site_count = sum(
@@ -1625,7 +1666,35 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             action_href = ""
             severity = "ok"
 
-            if primary_subscription is None and coverage_state == "uncovered" and site_count > 0:
+            if identity_relationship_state == "missing":
+                severity = "error"
+                reason_code = "customer_identity_missing"
+                reason_label = "Customer has no owner login identity."
+                recommended_action = "repair_customer_access"
+                action_label = "Open customer access"
+                action_href = f"/admin/accounts/{account.account_id}#customer-access"
+            elif identity_relationship_state == "conflict":
+                severity = "error"
+                reason_code = "customer_identity_conflict"
+                reason_label = "Customer has conflicting owner identity memberships."
+                recommended_action = "repair_customer_access"
+                action_label = "Open customer access"
+                action_href = f"/admin/accounts/{account.account_id}#customer-access"
+            elif identity_relationship_state == "access_disabled":
+                severity = "error"
+                reason_code = "customer_access_disabled"
+                reason_label = "Customer login identity or owner membership is disabled."
+                recommended_action = "inspect_customer_access"
+                action_label = "Open customer access"
+                action_href = f"/admin/accounts/{account.account_id}#customer-access"
+            elif str(account.status or "") == "suspended":
+                severity = "error"
+                reason_code = "customer_account_suspended"
+                reason_label = "Customer account is suspended."
+                recommended_action = "review_customer_status"
+                action_label = "Open customer"
+                action_href = f"/admin/accounts/{account.account_id}"
+            elif primary_subscription is None and coverage_state == "uncovered" and site_count > 0:
                 severity = "error"
                 reason_code = "missing_package_coverage"
                 reason_label = "Customer has sites but no active package coverage."
@@ -1703,21 +1772,30 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             else:
                 priority = 10
             if reason_code == "missing_package_coverage":
-                priority = 0
-            elif reason_code == "subscription_lifecycle_risk":
-                priority = 1
-            elif reason_code == "billing_snapshot_follow_up":
-                priority = 2
-            elif reason_code == "subscription_expiring_soon":
-                priority = 3
-            elif reason_code == "site_status_follow_up":
                 priority = 4
-            elif reason_code == "site_key_missing":
+            elif reason_code == "subscription_lifecycle_risk":
                 priority = 5
+            elif reason_code == "billing_snapshot_follow_up":
+                priority = 6
+            elif reason_code == "subscription_expiring_soon":
+                priority = 7
+            elif reason_code == "site_status_follow_up":
+                priority = 8
+            elif reason_code == "site_key_missing":
+                priority = 9
+            elif reason_code == "customer_identity_missing":
+                priority = 0
+            elif reason_code == "customer_identity_conflict":
+                priority = 1
+            elif reason_code == "customer_access_disabled":
+                priority = 2
+            elif reason_code == "customer_account_suspended":
+                priority = 3
 
             items.append(
                 {
                     "account": service._serialize_account(account),
+                    **identity_projection,
                     "primary_subscription": (
                         service._serialize_subscription(primary_subscription)
                         if primary_subscription is not None
@@ -1740,13 +1818,16 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                         "billing_snapshot_status": billing_status,
                         "current_period_end_at": self._serialize_datetime(period_end_at),
                         "days_until_end": days_until_end,
+                        "identity_relationship_state": identity_relationship_state,
                     },
                 }
             )
 
         def work_queue_sort_key(item: dict[str, object]) -> tuple[int, str, str]:
             priority_source = item.get("priority")
-            priority = self._coerce_int(priority_source if priority_source else 100)
+            priority = self._coerce_int(
+                priority_source if priority_source is not None else 100
+            )
             account = item.get("account")
             account_payload: dict[str, object] = (
                 cast(dict[str, object], account) if isinstance(account, dict) else {}
@@ -1809,11 +1890,22 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 site_ids=[site.site_id for site in sites],
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
             )
+            identity_projection = self._build_admin_identity_projections(
+                repository=repository,
+                account_ids=[account_id],
+            ).get(
+                account_id,
+                {
+                    "primary_identity": None,
+                    "identity_relationship_state": "missing",
+                },
+            )
             if reconciled is not None:
                 session.commit()
 
         return {
             "account": cast(Any, self)._serialize_account(account),
+            **identity_projection,
             "sites": [cast(Any, self)._serialize_site(site) for site in sites],
             "subscriptions": [
                 {
