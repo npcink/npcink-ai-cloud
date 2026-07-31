@@ -174,7 +174,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('link', { name: /View sites|查看站点|查看站點/i })).toBeVisible();
 
   await page.goto('/admin/accounts', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /Users and current packages|客户与当前套餐|用户与当前套餐|使用者與目前方案/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Customers$|^客户$|^客戶$/i }).first()).toBeVisible();
 
   await page.goto('/admin/sites/site_mvp');
   await expect(page.getByRole('heading', { name: /MVP Site|site_mvp/i }).first()).toBeVisible();
