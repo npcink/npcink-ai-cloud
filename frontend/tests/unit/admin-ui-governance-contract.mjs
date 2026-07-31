@@ -39,7 +39,7 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 4, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 5, 'admin UI manifest version must be explicit');
 assert.equal(manifest.referenceRoute, '/admin/ai-resources', 'the accepted provider queue must remain the reference route');
 assert.equal(manifest.routes[manifest.referenceRoute], 'queue', 'the reference route must remain a queue page');
 assert.deepEqual(
@@ -47,8 +47,9 @@ assert.deepEqual(
   {
     queue: '/admin/ai-resources',
     configuration: '/admin/external-services',
+    diagnostic: '/admin/troubleshooting',
   },
-  'accepted reference routes must cover the queue and configuration models'
+  'accepted reference routes must cover the queue, configuration, and diagnostic models'
 );
 assert.deepEqual(
   manifest.pageModels,

@@ -97,6 +97,23 @@ metadata inline, and reserve secondary identifiers for tooltips or
 low-frequency evidence. Other routes remain on standard density until their
 own operator workflow is reviewed and accepted.
 
+`/admin/troubleshooting` is the accepted PC reference for a `diagnostic`
+page:
+
+1. one compact scope, time-window control, and independently fresh remote
+   sources;
+2. one explicit runtime conclusion before the evidence surfaces;
+3. one bounded semantic anomaly queue with severity, issue, scope, count, and
+   one inspect action;
+4. one contextual inspector for evidence code, affected runs, scope, and the
+   next diagnostic step;
+5. one compact quality summary that keeps sample sufficiency separate from
+   the presence or absence of a review candidate;
+6. low-frequency quality detail, evidence lanes, and runtime guidance behind
+   default-collapsed disclosures;
+7. no mutation, routing, provider, prompt, approval, or WordPress write
+   authority.
+
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.
 
@@ -150,6 +167,54 @@ Every admin route declares exactly one model in
 | `authentication` | identity scope, credential, error, submit |
 
 Do not change an API or data owner merely to make two routes look alike.
+
+### 3.1 Diagnostic Operator Density
+
+A diagnostic page is an evidence workbench, not a raw telemetry dump. Its
+default PC view must answer, in order:
+
+1. What is the current conclusion?
+2. Which anomaly should be inspected first?
+3. What is its affected scope and frequency?
+4. Which narrow evidence view or next step matches it?
+
+Use these rules:
+
+- Keep the conclusion in a dedicated, non-truncated line. A badge names the
+  state; it does not replace the conclusion.
+- Use a semantic table when anomalies repeat the same comparison fields.
+  Keep raw evidence codes, long identifiers, affected-run counts, and
+  explanatory detail in the selected inspector unless they are needed to rank
+  every row.
+- A queue beside an inspector must align to the start of the grid. A short
+  queue must not stretch to the inspector height.
+- Bound long queues with a shared `--admin-*` maximum-height token and a
+  sticky header. The manifest PC viewport must not acquire page-level
+  horizontal overflow.
+- Keep selected-row and disclosure state local unless a shareable URL is an
+  explicit operator requirement. Do not copy remote diagnostic data into
+  local state merely to render it.
+- When a page reads more than one remote source, preserve each source's
+  loading, error, and freshness state. The page may project a composite
+  refresh state, but one failed source must not erase successful evidence from
+  another source or pretend that all data is current.
+- Disable the composite refresh action until all required source requests are
+  idle. Show partial failure separately from total failure.
+- Sample sufficiency, collection stage, review-candidate count, and final
+  quality conclusion are different facts. In particular, an insufficient
+  sample with zero candidates is not a successful "no issue" conclusion.
+- Put raw lanes, schema guidance, debug identifiers, and historical detail
+  behind explicit disclosures. The closed summary must still show the state,
+  key count, sample stage, and freshness needed for the next decision.
+- Refresh and inspect are secondary actions. A diagnostic page has no
+  destructive default action and must not gain mutation authority for visual
+  convenience.
+
+Focused behavior evidence must cover ready, partial-failure, total-failure,
+refresh, row-to-inspector selection, default-collapsed disclosures, expansion,
+and insufficient-sample semantics. PC evidence must also verify start
+alignment, bounded scrolling, sticky headers, long localized text, and the
+absence of page-level horizontal overflow.
 
 ## 4. Visual Hierarchy
 
