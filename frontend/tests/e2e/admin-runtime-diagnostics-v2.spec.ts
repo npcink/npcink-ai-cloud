@@ -1,5 +1,9 @@
 import { expect, test, type Locator } from '@playwright/test';
-import { buildAdminApiErrorEnvelope, installAdminMocks } from './helpers/admin-operator-fixture';
+import {
+  buildAdminApiEnvelope,
+  buildAdminApiErrorEnvelope,
+  installAdminMocks,
+} from './helpers/admin-operator-fixture';
 
 async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
   return panel.locator('canvas').evaluate((canvas) => {
@@ -37,6 +41,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const telemetryRequests: string[] = [];
   const qualityRequests: string[] = [];
   let failNextTelemetry = false;
+  let delayNextQuality = false;
   await page.route('**/api/admin/runtime-telemetry*', async (route) => {
     if (!failNextTelemetry) {
       await route.fallback();
@@ -44,6 +49,13 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
     }
     failNextTelemetry = false;
     await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(buildAdminApiErrorEnvelope('temporary diagnostic failure')) });
+  });
+  await page.route('**/api/admin/editor-assist-quality*', async (route) => {
+    if (delayNextQuality) {
+      delayNextQuality = false;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    await route.fallback();
   });
   page.on('request', (request) => {
     if (request.url().includes('/api/admin/runtime-telemetry')) telemetryRequests.push(request.url());
@@ -55,20 +67,37 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   const anomalyTable = page.locator('[data-ui="runtime-diagnostic-table"]');
   await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toBeVisible();
   await expect(anomalyTable.getByRole('columnheader', { name: /Affected scope|影响范围/i })).toBeVisible();
-  await expect(anomalyTable.getByRole('columnheader', { name: /Evidence code|证据代码/i })).toBeVisible();
+  await expect(anomalyTable.getByRole('columnheader', { name: /Evidence code|证据代码/i })).toHaveCount(0);
+  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Runtime telemetry has|运行遥测/i);
+  await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Runtime updated|运行数据更新于/i);
+  await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Quality updated|质量数据更新于/i);
+  expect(await anomalyTable.locator('thead').evaluate((element) => getComputedStyle(element).position)).toBe('sticky');
   await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Provider call coverage gap|供应商调用遥测缺口/i);
+  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Affected runs|受影响运行/i);
+  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Evidence code|证据代码/i);
   await expect(page.locator('#runtime-diagnostic-inspector a')).toHaveAttribute('href', '#runtime-evidence');
+  const queueBox = await page.locator('[data-ui="runtime-diagnostic-table-frame"]').boundingBox();
+  const inspectorBox = await page.locator('#runtime-diagnostic-inspector').boundingBox();
+  expect(queueBox?.height || 0).toBeLessThan(inspectorBox?.height || 0);
   await expect(page.locator('main input')).toHaveCount(0);
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
+  await expect(qualityPanel).not.toHaveAttribute('open', '');
   await expect(qualityPanel).toContainText(/Editor-assist quality|编辑辅助质量/i);
+  await expect(qualityPanel).toContainText(/Resolved \/ total|已归因 \/ 总会话/i);
+  await expect(qualityPanel).toContainText(/Sample stage|样本阶段/i);
+  await qualityPanel.locator('summary').click();
+  await expect(qualityPanel).toHaveAttribute('open', '');
   await expect(qualityPanel).toContainText(/Exact adoption|精确采纳率/i);
   await expect(qualityPanel).toContainText(/Repeat pressure|重复生成偏高/i);
   const candidateTable = qualityPanel.locator('[data-ui="editor-assist-quality-candidate-table"]');
   await expect(candidateTable.getByRole('columnheader', { name: /Rate \/ sample|发生率 \/ 样本/i })).toBeVisible();
   await expect(candidateTable.getByRole('columnheader', { name: /Next action|下一步/i })).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
+  delayNextQuality = true;
   await qualityPanel.getByLabel(/Task|任务/i).selectOption('content_summary');
+  await expect(page.getByRole('button', { name: /Refreshing|刷新中/i })).toBeDisabled();
   await expect.poll(() => qualityRequests.some((url) => url.includes('task_key=content_summary'))).toBe(true);
+  await expect(page.getByRole('button', { name: /^Refresh$|^刷新$/i })).toBeEnabled();
 
   await page.getByRole('button', { name: '72h' }).click();
   await expect(page).toHaveURL(/window=72/);
@@ -84,6 +113,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
 
   const metadata = page.locator('#runtime-evidence');
   await expect(metadata).not.toHaveAttribute('open', '');
+  await expect(metadata.locator('summary')).toContainText(/Runtime evidence guide|运行证据说明/i);
   await metadata.locator('summary').click();
   await expect(metadata.getByText(/Runtime resolution|运行时解析/i)).toBeVisible();
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
@@ -99,6 +129,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   failNextTelemetry = true;
   await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).click();
   await expect(page.getByText(/last successfully loaded diagnostic snapshot|最近一次成功加载的诊断快照/i)).toBeVisible();
+  await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Partial data|部分数据可用/i);
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -119,6 +150,9 @@ test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', 
   await page.goto('/admin/troubleshooting');
 
   const lanes = page.locator('#evidence-lanes');
+  await expect(lanes).not.toHaveAttribute('open', '');
+  await lanes.locator('summary').click();
+  await expect(lanes).toHaveAttribute('open', '');
   const laneTable = lanes.locator('[data-ui="runtime-evidence-lane-table"]');
   await expect(laneTable.getByRole('columnheader', { name: /Channel|通道/i })).toBeVisible();
   await expect(laneTable.getByRole('columnheader', { name: /Evidence scope|证据范围/i })).toBeVisible();
@@ -127,4 +161,34 @@ test('runtime diagnostics keeps narrow evidence lanes as secondary navigation', 
   await expect(lanes.locator('a[href="/admin/vector-observability"]')).toBeVisible();
   await expect(lanes.locator('a[href="/admin/agent-feedback"]')).toBeVisible();
   await expect(page.getByText(/Groups|分组/)).toHaveCount(0);
+});
+
+test('editor quality keeps sample sufficiency separate from candidate status', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.route('**/api/admin/editor-assist-quality*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        generated_at: '2026-04-08T10:00:00Z',
+        totals: {
+          session_total: 5,
+          resolved_session_total: 3,
+          repeat_session_rate: 0,
+          exact_saved_rate: 0,
+          unmatched_saved_rate: 0,
+          expired_without_save_rate: 0,
+          sample_stage: 'insufficient',
+        },
+        trend: [],
+        issue_candidates: [],
+      })),
+    });
+  });
+
+  await page.goto('/admin/troubleshooting');
+  const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
+  await expect(qualityPanel).toContainText(/Collecting evidence|正在积累证据/i);
+  await expect(qualityPanel).toContainText(/insufficient|样本不足/i);
+  await expect(qualityPanel).not.toContainText(/No review candidate|无复核候选/i);
 });

@@ -6,7 +6,7 @@ import { AnalyticsLineChart } from '@/components/ui/EChartsWrapper';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
-import { formatNumber } from '@/lib/utils';
+import { formatDate, formatNumber } from '@/lib/utils';
 
 const editorQualityClient = createApiClient({ idempotencyPrefix: 'editor_assist_quality' });
 
@@ -48,6 +48,13 @@ type EditorQualitySummary = {
 type EditorAssistQualityPanelProps = {
   windowHours: 24 | 72 | 168;
   refreshSignal: number;
+  onRequestStateChange?: (state: EditorAssistQualityRequestState) => void;
+};
+
+export type EditorAssistQualityRequestState = {
+  loading: boolean;
+  error: string;
+  generatedAt: string;
 };
 
 const TASK_OPTIONS = [
@@ -104,6 +111,7 @@ function formatRate(value: number): string {
 export function EditorAssistQualityPanel({
   windowHours,
   refreshSignal,
+  onRequestStateChange,
 }: EditorAssistQualityPanelProps) {
   const { t } = useLocale();
   const [taskKey, setTaskKey] = useState('');
@@ -139,22 +147,33 @@ export function EditorAssistQualityPanel({
     void loadQuality();
   }, [loadQuality, refreshSignal]);
 
+  useEffect(() => {
+    onRequestStateChange?.({
+      loading,
+      error,
+      generatedAt: data?.generatedAt || '',
+    });
+  }, [data?.generatedAt, error, loading, onRequestStateChange]);
+
   const actionableTotal = data?.candidates.filter((candidate) => candidate.actionable).length ?? 0;
   const sustainedTotal = data?.candidates.filter((candidate) => candidate.persistence === 'sustained').length ?? 0;
-  const status = actionableTotal > 0
-    ? 'warning'
-    : data?.totals.sessionTotal
-      ? 'success'
-      : 'pending';
-  const statusLabel = actionableTotal > 0
-    ? t('admin.editor_quality.status_review', {}, 'Review')
-    : data?.totals.sessionTotal
-      ? t('admin.editor_quality.status_observing', {}, 'Observing')
-      : t('admin.editor_quality.status_waiting', {}, 'Awaiting data');
+  const sampleStage = data?.totals.sampleStage || 'insufficient';
+  const hasDecisionSample = ['observation', 'decision'].includes(sampleStage);
+  let status: 'success' | 'warning' | 'pending' = 'pending';
+  let statusLabel = t('admin.editor_quality.status_waiting', {}, 'Awaiting data');
+  if (actionableTotal > 0) {
+    status = 'warning';
+    statusLabel = t('admin.editor_quality.status_review', {}, 'Review');
+  } else if (data?.totals.sessionTotal && hasDecisionSample) {
+    status = 'success';
+    statusLabel = t('admin.editor_quality.status_clear', {}, 'No review candidate');
+  } else if (data?.totals.sessionTotal) {
+    statusLabel = t('admin.editor_quality.status_collecting', {}, 'Collecting evidence');
+  }
   const sampleLabel = t(
-    `admin.editor_quality.sample_${data?.totals.sampleStage || 'insufficient'}`,
+    `admin.editor_quality.sample_${sampleStage}`,
     {},
-    data?.totals.sampleStage || 'insufficient'
+    sampleStage
   );
   const trendData = (data?.trend || []).map((item) => ({
     label: item.label,
@@ -164,73 +183,106 @@ export function EditorAssistQualityPanel({
   const hasTrendEvidence = (data?.trend || []).some((item) => item.sessionTotal > 0);
 
   return (
-    <section
+    <details
       data-ui="editor-assist-quality-panel"
-      className="surface-panel overflow-hidden rounded-[1.35rem]"
-      aria-labelledby="editor-assist-quality-title"
+      className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
     >
-      <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:flex-row md:items-center md:justify-between md:px-6">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 id="editor-assist-quality-title" className="text-lg font-semibold text-slate-950 dark:text-white">
-              {t('admin.editor_quality.title', {}, 'Editor-assist quality')}
-            </h2>
-            <BackofficeStatusBadge label={statusLabel} status={status} />
+      <summary className="cursor-pointer list-none px-3 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="editor-assist-quality-title" className="text-sm font-semibold text-slate-950 dark:text-white">
+                {t('admin.editor_quality.title', {}, 'Editor-assist quality')}
+              </h2>
+              <BackofficeStatusBadge label={statusLabel} status={status} />
+            </div>
+            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+              {t(
+                'admin.editor_quality.description',
+                {},
+                'Silent WordPress adoption signals. Low-volume results validate instrumentation only.'
+              )}
+            </p>
           </div>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t(
-              'admin.editor_quality.description',
-              {},
-              'Silent WordPress adoption signals. Low-volume results validate instrumentation only.'
-            )}
-          </p>
+          <dl className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-2 text-xs sm:grid-cols-4">
+            <div>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.resolved_sessions', {}, 'Resolved / total')}</dt>
+              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                {loading && !data ? '—' : `${formatNumber(data?.totals.resolvedSessionTotal || 0)} / ${formatNumber(data?.totals.sessionTotal || 0)}`}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.sample_label', {}, 'Sample stage')}</dt>
+              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">{loading && !data ? '—' : sampleLabel}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.candidate_count', {}, 'Review candidates')}</dt>
+              <dd className="mt-0.5 font-semibold text-slate-900 dark:text-white">{loading && !data ? '—' : formatNumber(actionableTotal)}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.editor_quality.updated_at', {}, 'Updated')}</dt>
+              <dd className="mt-0.5 whitespace-nowrap font-semibold text-slate-900 dark:text-white">
+                {data?.generatedAt ? formatDate(data.generatedAt) : '—'}
+              </dd>
+            </div>
+          </dl>
+          <span className="shrink-0 text-xs font-semibold text-blue-700 dark:text-blue-300">
+            {t('admin.editor_quality.show_details', {}, 'View details')} ↓
+          </span>
         </div>
-        <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-          <span>{t('admin.editor_quality.task_filter', {}, 'Task')}</span>
-          <select
-            className="min-w-32 cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            value={taskKey}
-            onChange={(event) => setTaskKey(event.target.value)}
-          >
-            {TASK_OPTIONS.map((option) => (
-              <option key={option.value || 'all'} value={option.value}>
-                {t(option.labelKey, {}, option.fallback)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      </summary>
 
-      {error ? (
-        <div className="border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200 md:px-6" role="alert">
-          {error}
-        </div>
-      ) : null}
-
-      <dl className="grid divide-y divide-slate-200 border-b border-slate-200 dark:divide-slate-800 dark:border-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
-        {[
-          [t('admin.editor_quality.sessions', {}, 'Sessions'), formatNumber(data?.totals.sessionTotal || 0)],
-          [t('admin.editor_quality.repeat_rate', {}, 'Repeat rate'), formatRate(data?.totals.repeatRate || 0)],
-          [t('admin.editor_quality.exact_rate', {}, 'Exact adoption'), formatRate(data?.totals.exactSavedRate || 0)],
-          [t('admin.editor_quality.unmatched_rate', {}, 'Post-generation save (unmatched)'), formatRate(data?.totals.unmatchedSavedRate || 0)],
-          [t('admin.editor_quality.expired_rate', {}, 'No-save expiry'), formatRate(data?.totals.expiredRate || 0)],
-        ].map(([label, value]) => (
-          <div key={label} className="px-5 py-3.5 md:px-6">
-            <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</dt>
-            <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{loading && !data ? '—' : value}</dd>
+      <div className="border-t border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+              {t('admin.editor_quality.detail_title', {}, 'Quality evidence detail')}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t('admin.editor_quality.sample_stage', { stage: sampleLabel }, 'Sample stage: {{stage}}')}
+            </p>
           </div>
-        ))}
-      </dl>
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+            <span>{t('admin.editor_quality.task_filter', {}, 'Task')}</span>
+            <select
+              className="min-w-32 cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              value={taskKey}
+              onChange={(event) => setTaskKey(event.target.value)}
+            >
+              {TASK_OPTIONS.map((option) => (
+                <option key={option.value || 'all'} value={option.value}>
+                  {t(option.labelKey, {}, option.fallback)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-      <div className="grid divide-y divide-slate-200 dark:divide-slate-800 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)] xl:divide-x xl:divide-y-0">
+        {error ? (
+          <div className="border-y border-rose-200 bg-rose-50 px-5 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200 md:px-6" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        <dl className="grid divide-y divide-slate-200 border-y border-slate-200 dark:divide-slate-800 dark:border-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+          {[
+            [t('admin.editor_quality.repeat_rate', {}, 'Repeat rate'), formatRate(data?.totals.repeatRate || 0)],
+            [t('admin.editor_quality.exact_rate', {}, 'Exact adoption'), formatRate(data?.totals.exactSavedRate || 0)],
+            [t('admin.editor_quality.unmatched_rate', {}, 'Post-generation save (unmatched)'), formatRate(data?.totals.unmatchedSavedRate || 0)],
+            [t('admin.editor_quality.expired_rate', {}, 'No-save expiry'), formatRate(data?.totals.expiredRate || 0)],
+          ].map(([label, value]) => (
+            <div key={label} className="px-5 py-3 md:px-6">
+              <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</dt>
+              <dd className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{loading && !data ? '—' : value}</dd>
+            </div>
+          ))}
+        </dl>
+
         <div className="min-w-0 px-5 py-5 md:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
               {t('admin.editor_quality.trend_title', {}, 'Adoption and repeat trend')}
             </h3>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {t('admin.editor_quality.sample_stage', { stage: sampleLabel }, 'Sample stage: {{stage}}')}
-            </span>
           </div>
           {hasTrendEvidence ? (
             <AnalyticsLineChart
@@ -251,7 +303,7 @@ export function EditorAssistQualityPanel({
           )}
         </div>
 
-        <div className="min-w-0 px-5 py-5 md:px-6">
+        <div className="min-w-0 border-t border-slate-200 px-5 py-5 dark:border-slate-800 md:px-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
               {t('admin.editor_quality.candidates_title', {}, 'Problem candidates')}
@@ -263,7 +315,7 @@ export function EditorAssistQualityPanel({
           <div className="mt-3 overflow-x-auto border-y border-slate-200 dark:border-slate-800">
             <table
               data-ui="editor-assist-quality-candidate-table"
-              className="w-full min-w-[38rem] table-fixed text-left text-xs"
+              className="w-full min-w-[42rem] table-fixed text-left text-xs"
               aria-label={t('admin.editor_quality.candidates_title', {}, 'Problem candidates')}
             >
               <thead className="border-b border-slate-200 bg-slate-50/80 font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-400">
@@ -323,15 +375,14 @@ export function EditorAssistQualityPanel({
             </table>
           </div>
         </div>
+        <p className="border-t border-slate-200 px-5 py-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400 md:px-6">
+          {t(
+            'admin.editor_quality.boundary',
+            {},
+            'Read-only metadata. This view does not trigger evaluation, change prompts or models, or write WordPress content.'
+          )}
+        </p>
       </div>
-
-      <p className="border-t border-slate-200 px-5 py-3 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:text-slate-400 md:px-6">
-        {t(
-          'admin.editor_quality.boundary',
-          {},
-          'Read-only metadata. This view does not trigger evaluation, change prompts or models, or write WordPress content.'
-        )}
-      </p>
-    </section>
+    </details>
   );
 }

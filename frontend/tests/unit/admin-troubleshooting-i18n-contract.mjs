@@ -8,6 +8,10 @@ const pageSource = readFileSync(
 );
 const i18nSource = readFileSync(fromFrontendRoot('src/lib/i18n.ts'), 'utf8');
 const zhStart = i18nSource.indexOf("'zh-CN': {");
+const anomalyTableStart = pageSource.indexOf('data-ui="runtime-diagnostic-table"');
+const anomalyTableEnd = pageSource.indexOf('</table>', anomalyTableStart);
+const anomalyTableSource = pageSource.slice(anomalyTableStart, anomalyTableEnd);
+const anomalyInspectorSource = pageSource.slice(pageSource.indexOf('id="runtime-diagnostic-inspector"'));
 
 assert.ok(zhStart > 0, 'i18n dictionary must contain a Simplified Chinese section');
 
@@ -67,9 +71,21 @@ assert.match(
 );
 
 assert.match(
-  pageSource,
-  /data-ui="runtime-diagnostic-table"[\s\S]*<thead[\s\S]*admin\.troubleshooting\.column_severity[\s\S]*admin\.troubleshooting\.column_code/,
-  'Runtime anomaly evidence must render as a semantic comparison table'
+  anomalyTableSource,
+  /<thead[\s\S]*admin\.troubleshooting\.column_severity[\s\S]*admin\.troubleshooting\.column_scope[\s\S]*admin\.troubleshooting\.column_occurrences[\s\S]*admin\.troubleshooting\.column_action/,
+  'Runtime anomaly evidence must keep severity, scope, count, and action scannable in one semantic table'
+);
+
+assert.doesNotMatch(
+  anomalyTableSource,
+  /admin\.troubleshooting\.column_code/,
+  'Low-frequency evidence codes must stay out of the primary anomaly queue'
+);
+
+assert.match(
+  anomalyInspectorSource,
+  /admin\.troubleshooting\.issue_code[\s\S]*admin\.troubleshooting\.affected_runs[\s\S]*admin\.troubleshooting\.suggested_action/,
+  'The selected anomaly inspector must retain evidence code, affected runs, and the next diagnostic step'
 );
 
 assert.match(

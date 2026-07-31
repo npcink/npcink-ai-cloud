@@ -12,7 +12,10 @@ import {
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
-import { EditorAssistQualityPanel } from '@/components/admin/EditorAssistQualityPanel';
+import {
+  EditorAssistQualityPanel,
+  type EditorAssistQualityRequestState,
+} from '@/components/admin/EditorAssistQualityPanel';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
@@ -250,6 +253,11 @@ export default function AdminTroubleshootingPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [qualityRefreshSignal, setQualityRefreshSignal] = useState(0);
+  const [qualityRequestState, setQualityRequestState] = useState<EditorAssistQualityRequestState>({
+    loading: true,
+    error: '',
+    generatedAt: '',
+  });
   const requestActiveRef = useRef(false);
   const requestSequenceRef = useRef(0);
   const hasLoadedRef = useRef(false);
@@ -297,6 +305,19 @@ export default function AdminTroubleshootingPage() {
 
   const issues = data?.alertSummary.alerts || [];
   const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || issues[0] || null;
+  const refreshInProgress = loading || refreshing || qualityRequestState.loading;
+  const sourceErrorCount = Number(Boolean(error)) + Number(Boolean(qualityRequestState.error));
+  let refreshStateLabel = '';
+  let refreshStateTone: 'pending' | 'warning' | 'error' = 'pending';
+  if (refreshInProgress) {
+    refreshStateLabel = t('admin.troubleshooting.refresh_state_loading', {}, 'Refreshing both sources');
+  } else if (sourceErrorCount === 2) {
+    refreshStateLabel = t('admin.troubleshooting.refresh_state_failed', {}, 'Both sources failed');
+    refreshStateTone = 'error';
+  } else if (sourceErrorCount === 1) {
+    refreshStateLabel = t('admin.troubleshooting.refresh_state_partial', {}, 'Partial data');
+    refreshStateTone = 'warning';
+  }
   const conclusionStatus = data?.alertSummary.status || (loading ? 'pending' : 'inactive');
   const conclusionLabel = statusTone(conclusionStatus) === 'success'
     ? t('admin.troubleshooting.status_healthy', {}, 'Healthy')
@@ -324,13 +345,13 @@ export default function AdminTroubleshootingPage() {
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            disabled={loading || refreshing}
+            disabled={refreshInProgress}
             onClick={() => {
               setQualityRefreshSignal((current) => current + 1);
               void loadTelemetry(true);
             }}
           >
-            {refreshing ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
+            {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
           </button>
         )}
       />
@@ -349,7 +370,20 @@ export default function AdminTroubleshootingPage() {
             </button>
           ))}
         </div>
-        {data?.generatedAt ? <p className="text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.generated_at', { time: formatDate(data.generatedAt) }, 'Generated {{time}}')}</p> : null}
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
+          {data?.generatedAt ? (
+            <span>{t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}')}</span>
+          ) : null}
+          {qualityRequestState.generatedAt ? (
+            <span>{t('admin.troubleshooting.quality_updated_at', { time: formatDate(qualityRequestState.generatedAt) }, 'Quality updated {{time}}')}</span>
+          ) : null}
+          {refreshStateLabel ? (
+            <BackofficeStatusBadge
+              label={refreshStateLabel}
+              status={refreshStateTone}
+            />
+          ) : null}
+        </div>
       </div>
 
       {data ? <BackofficeSummaryStrip items={[
@@ -358,6 +392,21 @@ export default function AdminTroubleshootingPage() {
         { label: t('admin.troubleshooting.metering_coverage', {}, 'Metering coverage'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
         { label: t('admin.troubleshooting.open_issues', {}, 'Open anomalies'), value: data.alertSummary.alertCount, toneClassName: data.alertSummary.alertCount > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
       ]} /> : null}
+
+      {data ? (
+        <div
+          data-ui="runtime-diagnostic-conclusion"
+          className="flex flex-col gap-2 border-y border-slate-200 py-2.5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+            <p className="text-sm text-slate-700 dark:text-slate-200">{conclusionSummary}</p>
+          </div>
+          <span className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} active anomalies')}
+          </span>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200" role="alert">
@@ -373,26 +422,26 @@ export default function AdminTroubleshootingPage() {
           <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
         </BackofficeSectionPanel>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <AdminDataTableFrame
             dataUi="runtime-diagnostic-table-frame"
             density="compact"
             title={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
-            resultLabel={conclusionSummary}
+            resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} active anomalies')}
+            bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
           >
             {issues.length ? (
               <table
                 data-ui="runtime-diagnostic-table"
-                className="w-full min-w-[46rem] table-fixed text-left text-sm"
+                className="w-full min-w-[34rem] table-fixed text-left text-sm"
                 aria-label={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
               >
-                <thead className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-400">
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                   <tr>
                     <th className="w-[7rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_severity', {}, 'Severity')}</th>
                     <th className="px-3 py-2" scope="col">{t('admin.troubleshooting.column_issue', {}, 'Anomaly')}</th>
                     <th className="w-[10rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_scope', {}, 'Affected scope')}</th>
                     <th className="w-[5rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_occurrences', {}, 'Count')}</th>
-                    <th className="w-[11rem] px-3 py-2" scope="col">{t('admin.troubleshooting.column_code', {}, 'Evidence code')}</th>
                     <th className="w-[4.5rem] px-3 py-2 text-right" scope="col">{t('admin.troubleshooting.column_action', {}, 'Action')}</th>
                   </tr>
                 </thead>
@@ -420,9 +469,6 @@ export default function AdminTroubleshootingPage() {
                         </td>
                         <td className="px-3 py-2.5 text-right align-top font-semibold text-slate-700 dark:text-slate-200">
                           {formatNumber(issue.count)}
-                        </td>
-                        <td className="break-all px-3 py-2.5 align-top font-mono text-xs leading-5 text-slate-500 dark:text-slate-400">
-                          {issue.code}
                         </td>
                         <td className="px-3 py-2.5 text-right align-top">
                           <button
@@ -456,8 +502,9 @@ export default function AdminTroubleshootingPage() {
                 </div>
                 <dl className="grid gap-3 text-sm">
                   <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_code', {}, 'Evidence code')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-100">{selectedIssue.code}</dd></div>
-                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.suggested_action', {}, 'Suggested diagnostic step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{issueAction(selectedIssue, t) || data?.governanceGaps.reviewGuidance || data?.alertSummary.nextAction}</dd></div>
+                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_runs', {}, 'Affected runs')}</dt><dd className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{formatNumber(selectedIssue.count)}</dd></div>
                   <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_scope', {}, 'Affected scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedIssue.capabilities.join(', ') || t('admin.troubleshooting.runtime_scope', {}, 'Cloud runtime')}</dd></div>
+                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.suggested_action', {}, 'Suggested diagnostic step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{issueAction(selectedIssue, t) || data?.governanceGaps.reviewGuidance || data?.alertSummary.nextAction}</dd></div>
                 </dl>
                 <Link href={issueDestination(selectedIssue)} className="btn btn-primary w-full justify-center">{t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}</Link>
                 <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.troubleshooting.boundary', {}, 'Diagnostics are read-only Cloud runtime evidence. They do not change providers, model routing, local abilities, prompts, approval state, or WordPress content.')}</p>
@@ -475,15 +522,22 @@ export default function AdminTroubleshootingPage() {
       <EditorAssistQualityPanel
         windowHours={windowHours}
         refreshSignal={qualityRefreshSignal}
+        onRequestStateChange={setQualityRequestState}
       />
 
-      <div id="evidence-lanes">
-        <AdminDataTableFrame
-          dataUi="runtime-evidence-lane-table-frame"
-          density="compact"
-          title={t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}
-          resultLabel={t('admin.troubleshooting.lanes_desc', {}, 'Open the narrowest read-only detail view that matches the support question.')}
-        >
+      <details id="evidence-lanes" className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <summary className="cursor-pointer list-none px-3 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</h2>
+              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.lanes_desc', {}, 'Open the narrowest read-only detail view that matches the support question.')}</p>
+            </div>
+            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+              {t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, 'View all {{count}} channels')} ↓
+            </span>
+          </div>
+        </summary>
+        <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
           <table
             data-ui="runtime-evidence-lane-table"
             className="w-full min-w-[42rem] table-fixed text-left text-sm"
@@ -510,14 +564,14 @@ export default function AdminTroubleshootingPage() {
               ))}
             </tbody>
           </table>
-        </AdminDataTableFrame>
-      </div>
+        </div>
+      </details>
 
-      <details id="runtime-evidence" className="rounded-[1.35rem] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <summary className="cursor-pointer select-none px-5 py-4 text-sm font-semibold text-slate-900 dark:text-white md:px-6">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Advanced runtime metadata')}</summary>
+      <details id="runtime-evidence" className="admin-compact-surface border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <summary className="cursor-pointer select-none px-3 py-3 text-sm font-semibold text-slate-900 dark:text-white">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</summary>
         <div className="border-t border-slate-200 dark:border-slate-800">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[38rem] table-fixed text-left text-sm" aria-label={t('admin.troubleshooting.runtime_metadata_title', {}, 'Advanced runtime metadata')}>
+            <table className="w-full min-w-[38rem] table-fixed text-left text-sm" aria-label={t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}>
               <thead className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-400">
                 <tr>
                   <th className="w-[30%] px-5 py-2.5 md:px-6" scope="col">{t('admin.troubleshooting.metadata_column_type', {}, 'Evidence type')}</th>
