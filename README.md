@@ -68,6 +68,8 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/020-external-tls-single-bundled-nginx.md](docs/decisions/020-external-tls-single-bundled-nginx.md)
 - [docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md](docs/decisions/032-defer-provider-credential-delegation-and-text-streaming.md)
 - [docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md](docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md)
+- [docs/decisions/036-single-account-single-identity-validation-stage.md](docs/decisions/036-single-account-single-identity-validation-stage.md)
+- [docs/customer-account-identity-stage-standard-v1.md](docs/customer-account-identity-stage-standard-v1.md)
 
 Evidence records (not target-contract completion proof):
 
@@ -260,6 +262,13 @@ Boundaries:
 
 Permission differences may continue to exist, but they must be expressed as
 bounded actions or capability flags rather than new product identity labels.
+
+During the current validation stage, the product exposes one Principal, one
+active owner Membership, and one Account per customer. This is a service-layer
+restriction, not a database collapse: Principal, Account, and Membership remain
+separate so a later organization Account can add administrators and members
+without inventing a new identity type. See
+[Customer Account and Identity Stage Standard v1](docs/customer-account-identity-stage-standard-v1.md).
 
 Internal identity is frozen separately from those product labels:
 

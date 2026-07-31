@@ -9,6 +9,7 @@ describe('Create account form model', () => {
     const result = validateCreateAccountForm({
       account_id: '   ',
       name: '\t',
+      primary_email: '',
       operator_display_name: '',
       operator_note: '',
       bind_default_free: true,
@@ -19,6 +20,7 @@ describe('Create account form model', () => {
       errors: {
         account_id: 'required',
         name: 'required',
+        primary_email: 'required',
       },
     });
   });
@@ -27,6 +29,7 @@ describe('Create account form model', () => {
     const result = validateCreateAccountForm({
       account_id: '  acct_new_customer  ',
       name: '  New Customer  ',
+      primary_email: '  Owner@Example.COM  ',
       operator_display_name: '  Customer Display  ',
       operator_note: '  Internal launch note  ',
       bind_default_free: false,
@@ -37,6 +40,7 @@ describe('Create account form model', () => {
       data: {
         account_id: 'acct_new_customer',
         name: 'New Customer',
+        primary_email: 'owner@example.com',
         operator_display_name: 'Customer Display',
         operator_note: 'Internal launch note',
         bind_default_free: false,
@@ -48,6 +52,7 @@ describe('Create account form model', () => {
     const result = validateCreateAccountForm({
       account_id: 'acct_free',
       name: 'Free Customer',
+      primary_email: 'owner@example.com',
       operator_display_name: '   ',
       operator_note: '',
       bind_default_free: true,
@@ -57,6 +62,7 @@ describe('Create account form model', () => {
     expect(buildCreateAccountPayload(result.data)).toEqual({
       account_id: 'acct_free',
       name: 'Free Customer',
+      primary_email: 'owner@example.com',
       metadata: {},
       bind_default_free: true,
     });

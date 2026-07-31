@@ -126,7 +126,7 @@ def portal_client(tmp_path: Path) -> Iterator[tuple[str, TestClient]]:
                     membership_id=f"mem_portal_idempotency_{suffix}",
                     principal_id=principal_id,
                     account_id="acct_portal_idempotency",
-                    role="user",
+                    role="owner",
                     status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
                     allowed_actions_json=[],
                     metadata_json={},

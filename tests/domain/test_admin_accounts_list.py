@@ -77,11 +77,13 @@ def test_list_admin_accounts_prioritizes_service_risk_before_pagination(
     service.upsert_account(
         account_id="acct_alpha",
         name="Alpha Stable",
+        primary_email="owner-alpha@example.com",
         status="active",
     )
     service.upsert_account(
         account_id="acct_zeta",
         name="Zeta Suspended",
+        primary_email="owner-zeta@example.com",
         status="suspended",
     )
 

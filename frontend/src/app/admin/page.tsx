@@ -572,7 +572,6 @@ function AdminOverviewContent() {
       ? t('admin.home_primary_action_coverage', {}, 'Review service status')
       : t('admin.home_primary_action_accounts', {}, 'Review customers');
   const supportLookupAccountHref = buildAdminLookupHref('/admin/accounts', supportQuery);
-  const supportLookupPortalUserHref = buildAdminLookupHref('/admin/portal-users', supportQuery);
   const quickLinks = [
     {
       href: '/admin/support-requests',
@@ -829,9 +828,6 @@ function AdminOverviewContent() {
                   <div className="flex shrink-0 gap-2">
                     <Link href={supportLookupAccountHref} className="btn btn-primary btn-sm whitespace-nowrap">
                       {t('admin.home_support_lookup_accounts', {}, 'Find customer')}
-                    </Link>
-                    <Link href={supportLookupPortalUserHref} className="btn btn-secondary btn-sm whitespace-nowrap">
-                      {t('admin.home_support_lookup_portal_users', {}, 'Find user')}
                     </Link>
                   </div>
                 </form>

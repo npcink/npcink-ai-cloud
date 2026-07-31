@@ -35,7 +35,6 @@
     "test:visual:marketing:baseline": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/marketing-home.spec.ts --update-snapshots",
     "test:visual:baseline": "node ../scripts/run-cloud-frontend-playwright.js test -c playwright.config.ts tests/e2e/visual-baseline.spec.ts --update-snapshots",
     "test:unit": "vitest run",
-    "test:unit:coverage:portal-users": "vitest run --config vitest.portal-users-coverage.config.ts tests/vitest/admin-portal-users-query.test.ts --coverage",
     "test:unit:watch": "vitest"
   },
   "keywords": [

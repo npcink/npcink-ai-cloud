@@ -11,6 +11,8 @@ from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
     ACCOUNT_STATUS_SUSPENDED,
+    ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+    PRINCIPAL_STATUS_ACTIVE,
     SITE_STATUS_ACTIVE,
     SITE_STATUS_PROVISIONING,
     SITE_STATUS_SUSPENDED,
@@ -24,6 +26,17 @@ from app.domain.commercial.errors import (
     CommercialNotFoundError,
     CommercialPermissionError,
     CommercialValidationError,
+)
+from app.domain.commercial.identity import (
+    IDENTITY_TYPE_USER,
+    USER_ROLE_OWNER,
+    _new_principal_id,
+    _normalize_principal_email,
+    normalize_user_role,
+    resolve_principal_allowed_actions,
+)
+from app.domain.commercial.membership_policy import (
+    assert_single_account_membership_available,
 )
 from app.domain.commercial.mixins._audit_mixin import CommercialServiceAuditMixin
 from app.domain.commercial.service import (
@@ -39,19 +52,69 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
         *,
         account_id: str,
         name: str,
+        primary_email: str = "",
         status: str = ACCOUNT_STATUS_ACTIVE,
         metadata_json: dict[str, object] | None = None,
         bind_default_free: bool = False,
         audit_context: ServiceAuditContext | None = None,
     ) -> dict[str, object]:
+        normalized_primary_email = (
+            _normalize_principal_email(primary_email) if str(primary_email or "").strip() else ""
+        )
         with get_session(self.database_url) as session:
             repository = CommercialRepository(session)
+            repository.get_account_for_update(account_id)
+            identity = (
+                repository.get_principal_identity_by_email(
+                    email=normalized_primary_email,
+                    for_update=True,
+                )
+                if normalized_primary_email
+                else None
+            )
+            if identity is not None and str(identity.status or "") != PRINCIPAL_STATUS_ACTIVE:
+                raise CommercialPermissionError(
+                    "service.principal_access_required",
+                    f"principal '{identity.principal_id}' is not active",
+                )
+            principal_id = (
+                str(identity.principal_id)
+                if identity is not None
+                else (_new_principal_id() if normalized_primary_email else "")
+            )
+            if principal_id:
+                assert_single_account_membership_available(
+                    repository,
+                    principal_id=principal_id,
+                    account_id=account_id,
+                )
             account = repository.upsert_account(
                 account_id=account_id,
                 name=name,
                 status=status,
                 metadata_json=metadata_json,
             )
+            membership = None
+            if normalized_primary_email:
+                if identity is None:
+                    identity = repository.upsert_principal_identity(
+                        principal_id=principal_id,
+                        email=normalized_primary_email,
+                        status=PRINCIPAL_STATUS_ACTIVE,
+                        metadata_json={
+                            "source": "admin_customer_creation",
+                            "identity_type": IDENTITY_TYPE_USER,
+                        },
+                    )
+                membership = repository.upsert_account_user_membership(
+                    membership_id=f"aum_{uuid4().hex}",
+                    principal_id=str(identity.principal_id),
+                    account_id=str(account.account_id),
+                    role=normalize_user_role(USER_ROLE_OWNER),
+                    status=ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
+                    allowed_actions_json=resolve_principal_allowed_actions(),
+                    metadata_json={"source": "admin_customer_creation"},
+                )
             subscription_payload = None
             if bind_default_free:
                 subscription_payload = self._bind_default_free_subscription_for_account_in_session(
@@ -60,6 +123,18 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
                     audit_context=audit_context,
                 )
             payload = self._serialize_account(account)
+            if identity is not None and membership is not None:
+                payload["primary_identity"] = {
+                    "principal_id": str(identity.principal_id),
+                    "email": str(identity.email or ""),
+                    "status": str(identity.status or ""),
+                    "session_version": int(identity.session_version or 1),
+                }
+                payload["membership"] = {
+                    "membership_id": str(membership.membership_id),
+                    "role": str(membership.role or ""),
+                    "status": str(membership.status or ""),
+                }
             if subscription_payload is not None:
                 payload["current_subscription"] = subscription_payload["subscription"]
             self._record_service_audit_in_session(

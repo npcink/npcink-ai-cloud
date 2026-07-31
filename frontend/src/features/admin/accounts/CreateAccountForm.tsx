@@ -27,6 +27,7 @@ export function CreateAccountForm({
     const result = validateCreateAccountForm({
       account_id: String(fields.get('account_id') || ''),
       name: String(fields.get('name') || ''),
+      primary_email: String(fields.get('primary_email') || ''),
       operator_display_name: String(fields.get('operator_display_name') || ''),
       operator_note: String(fields.get('operator_note') || ''),
       bind_default_free: fields.get('bind_default_free') === 'on',
@@ -48,7 +49,7 @@ export function CreateAccountForm({
     <form
       noValidate
       onSubmit={handleSubmit}
-      className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] xl:items-end"
+      className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.05fr)_minmax(0,1fr)_auto] xl:items-end"
     >
       <div className="text-sm">
         <label
@@ -118,6 +119,46 @@ export function CreateAccountForm({
         ) : null}
       </div>
 
+      <div className="text-sm">
+        <label
+          htmlFor="create-account-primary-email"
+          className="mb-2 block font-medium text-slate-700 dark:text-slate-300"
+        >
+          {t('admin.accounts.primary_email_label', {}, 'Login email')}
+        </label>
+        <input
+          id="create-account-primary-email"
+          name="primary_email"
+          type="email"
+          autoComplete="email"
+          placeholder="owner@example.com"
+          className="input w-full"
+          aria-invalid={Boolean(errors.primary_email)}
+          aria-describedby={
+            errors.primary_email ? 'create-account-primary-email-error' : undefined
+          }
+        />
+        {errors.primary_email ? (
+          <span
+            id="create-account-primary-email-error"
+            role="alert"
+            className="mt-1.5 block text-xs text-rose-700 dark:text-rose-300"
+          >
+            {errors.primary_email === 'invalid'
+              ? t(
+                  'admin.accounts.validation_primary_email_invalid',
+                  {},
+                  'Enter a valid login email.'
+                )
+              : t(
+                  'admin.accounts.validation_primary_email_required',
+                  {},
+                  'Enter the customer login email.'
+                )}
+          </span>
+        ) : null}
+      </div>
+
       <label className="text-sm">
         <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">
           {t(
@@ -148,7 +189,7 @@ export function CreateAccountForm({
             )}
       </button>
 
-      <label className="text-sm md:col-span-2 xl:col-span-3">
+      <label className="text-sm md:col-span-2 xl:col-span-4">
         <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">
           {t('admin.accounts.operator_note_label', {}, 'Operator note')}
         </span>
@@ -178,7 +219,7 @@ export function CreateAccountForm({
       {actionError ? (
         <p
           role="alert"
-          className="text-sm text-rose-700 dark:text-rose-300 md:col-span-2 xl:col-span-4"
+            className="text-sm text-rose-700 dark:text-rose-300 md:col-span-2 xl:col-span-5"
         >
           {actionError}
         </p>

@@ -618,12 +618,18 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             statement = statement.with_for_update()
         return list(self.session.scalars(statement))
 
-    def get_principal_identity_by_email(self, *, email: str) -> Principal | None:
+    def get_principal_identity_by_email(
+        self,
+        *,
+        email: str,
+        for_update: bool = False,
+    ) -> Principal | None:
         if not str(email or "").strip():
             return None
-        return self.session.scalar(
-            select(Principal).where(func.lower(Principal.email) == email.lower())
-        )
+        statement = select(Principal).where(func.lower(Principal.email) == email.lower())
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def get_principal_identity(self, principal_id: str) -> Principal | None:
         return self.session.get(Principal, principal_id)

@@ -71,7 +71,11 @@ The primary navigation is organized into four domains.
 - Service queue (`/admin/coverage`)
 - Tickets (`/admin/support-requests`)
 - Packages and credits (`/admin/plans`)
-- Portal users (`/admin/portal-users`)
+
+Customer login identity, membership, access, and audit evidence are inspected
+inside the Customers workspace. The validation-stage product must not expose a
+second Portal-users customer directory; see ADR-036 and
+`customer-account-identity-stage-standard-v1.md`.
 
 `/admin/subscriptions` is a service-queue view. `/admin/credit-packs` is a
 package-and-credit view. They may keep stable routes during migration, but they
@@ -217,7 +221,6 @@ consolidation.
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Tickets | Keep; timeline-first ticket detail |
 | `/admin/plans` | Customer Operations | `queue` | Packages and credits | Canonical catalog plus shared package-management workbench |
 | `/admin/credit-packs` | Customer Operations | `configuration` | Packages and credits | Keep route; edit one pack at a time |
-| `/admin/portal-users` | Customer Operations | `queue` | Portal users | Add as stable secondary navigation entry |
 | `/admin/ai-resources` | Runtime Operations | `queue` | Model suppliers | Keep model-provider connections and model visibility together |
 | `/admin/external-services` | Runtime Operations | `configuration` | Search and images | Fixed Cloud runtime service directory for web search and stock-image sources |
 | `/admin/vector-settings` | Runtime Operations | `configuration` | Providers | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
