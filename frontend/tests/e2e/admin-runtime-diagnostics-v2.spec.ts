@@ -72,15 +72,12 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Runtime updated|运行数据更新于/i);
   await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Quality updated|质量数据更新于/i);
   expect(await anomalyTable.locator('thead').evaluate((element) => getComputedStyle(element).position)).toBe('sticky');
-  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Provider call coverage gap|供应商调用遥测缺口/i);
-  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Affected runs|受影响运行/i);
-  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Evidence code|证据代码/i);
-  await expect(page.locator('#runtime-diagnostic-inspector a')).toHaveAttribute('href', '#runtime-evidence');
-  const queueBox = await page.locator('[data-ui="runtime-diagnostic-table-frame"]').boundingBox();
-  const inspectorBox = await page.locator('#runtime-diagnostic-inspector').boundingBox();
-  expect(queueBox?.height || 0).toBeLessThan(inspectorBox?.height || 0);
-  await expect(page.locator('main input')).toHaveCount(0);
+  await expect(page.locator('[data-ui="admin-workbench-dialog"]')).toHaveCount(0);
   const qualityPanel = page.locator('[data-ui="editor-assist-quality-panel"]');
+  const queueBox = await page.locator('[data-ui="runtime-diagnostic-table-frame"]').boundingBox();
+  const qualityBox = await qualityPanel.boundingBox();
+  expect(qualityBox?.y || 0).toBeGreaterThan((queueBox?.y || 0) + (queueBox?.height || 0));
+  await expect(page.locator('main input')).toHaveCount(0);
   await expect(qualityPanel).not.toHaveAttribute('open', '');
   await expect(qualityPanel).toContainText(/Editor-assist quality|编辑辅助质量/i);
   await expect(qualityPanel).toContainText(/Resolved \/ total|已归因 \/ 总会话/i);
@@ -105,17 +102,35 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect.poll(() => qualityRequests.some((url) => url.includes('window_hours=72'))).toBe(true);
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
 
-  await page.getByRole('button', { name: /Provider call coverage gap|供应商调用遥测缺口/i }).click();
+  const inspectButton = page.getByRole('button', { name: /Provider call coverage gap|供应商调用遥测缺口/i });
+  await inspectButton.click();
   await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
-  await expect(page.locator('#runtime-diagnostic-inspector')).toContainText(/Provider call coverage gap|供应商调用遥测缺口/i);
+  const inspectorDrawer = page.locator('[data-ui="admin-workbench-dialog"][data-presentation="drawer"]');
+  await expect(inspectorDrawer).toBeVisible();
+  await expect(inspectorDrawer).toContainText(/Provider call coverage gap|供应商调用遥测缺口/i);
+  await expect(inspectorDrawer).toContainText(/Affected runs|受影响运行/i);
+  await expect(inspectorDrawer).toContainText(/Evidence code|证据代码/i);
+  await expect(inspectorDrawer).toContainText(/Read only|只读/i);
+  await expect(inspectorDrawer.locator('a')).toHaveAttribute('href', '#runtime-evidence');
+  await inspectorDrawer.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+  await expect(inspectorDrawer).toHaveCount(0);
+  await expect(page).not.toHaveURL(/focus=/);
+  await expect(inspectButton).toBeFocused();
+  await inspectButton.click();
+  await expect(page).toHaveURL(/focus=hosted_model.provider_call_gap/);
   await page.reload();
+  await expect(inspectorDrawer).toBeVisible();
   await expect(page.getByRole('button', { name: /Provider call coverage gap|供应商调用遥测缺口/i })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(inspectorDrawer).toHaveCount(0);
+  await expect(page).not.toHaveURL(/focus=/);
 
   const metadata = page.locator('#runtime-evidence');
   await expect(metadata).not.toHaveAttribute('open', '');
   await expect(metadata.locator('summary')).toContainText(/Runtime evidence guide|运行证据说明/i);
   await metadata.locator('summary').click();
   await expect(metadata.getByText(/Runtime resolution|运行时解析/i)).toBeVisible();
+  await expect(metadata).toContainText(/do not change providers|不会修改供应商/i);
   await expect.poll(() => countQualityTrendAccentPixels(qualityPanel)).toBeGreaterThan(20);
   await testInfo.attach('p4-e03-editor-assist-quality', {
     body: await qualityPanel.screenshot(),
@@ -137,10 +152,60 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]').first()).toBeVisible();
   await expect(qualityPanel).toBeVisible();
+  const mobileQueueBox = await page.locator('[data-ui="runtime-diagnostic-table-frame"]').boundingBox();
+  const mobileQualityBox = await qualityPanel.boundingBox();
+  expect(mobileQueueBox?.y || 0).toBeLessThan(mobileQualityBox?.y || 0);
+  await page.getByRole('button', { name: /Provider call coverage gap|供应商调用遥测缺口/i }).click();
+  await expect(inspectorDrawer).toBeVisible();
+  const mobileDrawerBox = await inspectorDrawer.locator('.admin-workbench-drawer').boundingBox();
+  expect(mobileDrawerBox?.width).toBe(390);
+  await page.keyboard.press('Escape');
   await qualityPanel.scrollIntoViewIfNeeded();
   await page.evaluate(() => window.scrollBy(0, -88));
   await testInfo.attach('p4-e03-editor-assist-quality-mobile', {
     body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+test('runtime diagnostics keeps one continuous primary lane on ultrawide screens', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 2048, height: 1200 });
+  await installAdminMocks(page);
+  await page.goto('/admin/troubleshooting');
+
+  const pageStack = page.locator('[data-page-model="diagnostic"]');
+  const workspace = page.locator('[data-ui="runtime-diagnostic-workspace"]');
+  const queue = page.locator('[data-ui="runtime-diagnostic-table-frame"]');
+  const quality = page.locator('[data-ui="editor-assist-quality-panel"]');
+  const toolbar = page.locator('[data-ui="runtime-diagnostic-toolbar"]');
+
+  const pageStackBox = await pageStack.boundingBox();
+  const workspaceBox = await workspace.boundingBox();
+  const queueBox = await queue.boundingBox();
+  const qualityBox = await quality.boundingBox();
+  const toolbarBox = await toolbar.boundingBox();
+  const refreshBox = await page.getByRole('button', { name: /^Refresh$|^刷新$/i }).boundingBox();
+
+  expect(pageStackBox?.width || Number.POSITIVE_INFINITY).toBeLessThanOrEqual(1536);
+  expect(Math.abs((queueBox?.x || 0) - (qualityBox?.x || 0))).toBeLessThan(1);
+  expect(Math.abs((queueBox?.width || 0) - (qualityBox?.width || 0))).toBeLessThan(1);
+  expect(queueBox?.y || 0).toBeLessThan(qualityBox?.y || 0);
+  expect(Math.abs((queueBox?.x || 0) - (workspaceBox?.x || 0))).toBeLessThan(1);
+  expect(Math.abs((queueBox?.width || 0) - (workspaceBox?.width || 0))).toBeLessThan(1);
+  expect(workspaceBox?.width || 0).toBeGreaterThan(1200);
+  expect(refreshBox?.y || 0).toBeGreaterThanOrEqual(toolbarBox?.y || 0);
+  expect((refreshBox?.y || 0) + (refreshBox?.height || 0)).toBeLessThanOrEqual(
+    (toolbarBox?.y || 0) + (toolbarBox?.height || 0)
+  );
+  await expect(page.getByText(/Needs attention|需要关注/i)).toHaveCount(1);
+  await page.getByRole('button', { name: /Provider call coverage gap|供应商调用遥测缺口/i }).click();
+  const drawer = page.locator('[data-ui="admin-workbench-dialog"][data-presentation="drawer"]');
+  const drawerBox = await drawer.locator('.admin-workbench-drawer').boundingBox();
+  expect(Math.abs((drawerBox?.width || 0) - 448)).toBeLessThan(1);
+  expect(Math.abs(((drawerBox?.x || 0) + (drawerBox?.width || 0)) - 2048)).toBeLessThan(1);
+
+  await testInfo.attach('admin-runtime-diagnostics-ultrawide', {
+    body: await page.screenshot({ fullPage: true }),
     contentType: 'image/png',
   });
 });

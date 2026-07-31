@@ -20,6 +20,7 @@ export type AdminWorkbenchDialogProps = {
   hideFooterActions?: boolean;
   width?: 'wide' | 'compact';
   density?: 'standard' | 'compact';
+  presentation?: 'dialog' | 'drawer';
   onClose: () => void;
   onSubmit: (formData: FormData) => void;
   children: ReactNode;
@@ -42,6 +43,7 @@ export function AdminWorkbenchDialog({
   hideFooterActions = false,
   width = 'wide',
   density = 'standard',
+  presentation = 'dialog',
   onClose,
   onSubmit,
   children,
@@ -110,8 +112,13 @@ export function AdminWorkbenchDialog({
     <div
       data-ui="admin-workbench-dialog"
       data-density={density}
-      className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 ${
-        density === 'compact' ? 'px-2 py-2 sm:px-4 sm:py-4' : 'px-4 py-6 backdrop-blur-sm sm:py-10'
+      data-presentation={presentation}
+      className={`fixed inset-0 z-50 flex overflow-y-auto bg-slate-950/45 ${
+        presentation === 'drawer'
+          ? 'items-stretch justify-end p-0'
+          : `items-start justify-center ${
+            density === 'compact' ? 'px-2 py-2 sm:px-4 sm:py-4' : 'px-4 py-6 backdrop-blur-sm sm:py-10'
+          }`
       }`}
       role="dialog"
       aria-modal="true"
@@ -121,10 +128,14 @@ export function AdminWorkbenchDialog({
       <div
         ref={dialogRef}
         data-width={width}
-        className={`${width === 'compact' ? 'admin-workbench-dialog-compact' : 'admin-workbench-dialog'} ${
-          density === 'compact'
-            ? 'admin-compact-surface max-h-[calc(100vh-2rem)] shadow-lg'
-            : `max-h-[calc(100vh-3rem)] ${width === 'compact' ? 'rounded-xl' : 'rounded-2xl'} shadow-2xl`
+        className={`${
+          presentation === 'drawer'
+            ? 'admin-workbench-drawer h-dvh max-h-dvh animate-slide-in-right rounded-none border-y-0 border-r-0 shadow-2xl motion-reduce:animate-none'
+            : `${width === 'compact' ? 'admin-workbench-dialog-compact' : 'admin-workbench-dialog'} ${
+              density === 'compact'
+                ? 'admin-compact-surface max-h-[calc(100vh-2rem)] shadow-lg'
+                : `max-h-[calc(100vh-3rem)] ${width === 'compact' ? 'rounded-xl' : 'rounded-2xl'} shadow-2xl`
+            }`
         } flex w-full flex-col overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950`}
       >
         <div className={`flex items-center justify-between border-b border-slate-200 dark:border-slate-800 ${

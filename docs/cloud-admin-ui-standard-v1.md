@@ -105,8 +105,9 @@ page:
 2. one explicit runtime conclusion before the evidence surfaces;
 3. one bounded semantic anomaly queue with severity, issue, scope, count, and
    one inspect action;
-4. one contextual inspector for evidence code, affected runs, scope, and the
-   next diagnostic step;
+4. one on-demand contextual inspector drawer for evidence code, affected
+   runs, scope, and the next diagnostic step; the closed state keeps the
+   anomaly queue full width;
 5. one compact quality summary that keeps sample sufficiency separate from
    the presence or absence of a review candidate;
 6. low-frequency quality detail, evidence lanes, and runtime guidance behind
@@ -186,8 +187,9 @@ Use these rules:
   Keep raw evidence codes, long identifiers, affected-run counts, and
   explanatory detail in the selected inspector unless they are needed to rank
   every row.
-- A queue beside an inspector must align to the start of the grid. A short
-  queue must not stretch to the inspector height.
+- A persistent queue beside an inspector must align to the start of the grid.
+  When inspector detail mostly repeats queue fields, keep the queue full width
+  and open the shared inspector drawer only from the explicit inspect action.
 - Bound long queues with a shared `--admin-*` maximum-height token and a
   sticky header. The manifest PC viewport must not acquire page-level
   horizontal overflow.

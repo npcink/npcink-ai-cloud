@@ -90,6 +90,7 @@ assert.deepEqual(
     sidebarCollapsedPx: 64,
     workbenchMaxWidthPx: 1152,
     workbenchCompactMaxWidthPx: 960,
+    inspectorDrawerMaxWidthPx: 448,
   },
   'accepted PC geometry must change through a reviewed manifest update'
 );

@@ -11,6 +11,7 @@ import {
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   EditorAssistQualityPanel,
@@ -304,7 +305,7 @@ export default function AdminTroubleshootingPage() {
   }, [loadTelemetry]);
 
   const issues = data?.alertSummary.alerts || [];
-  const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || issues[0] || null;
+  const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || null;
   const refreshInProgress = loading || refreshing || qualityRequestState.loading;
   const sourceErrorCount = Number(Boolean(error)) + Number(Boolean(qualityRequestState.error));
   let refreshStateLabel = '';
@@ -335,28 +336,20 @@ export default function AdminTroubleshootingPage() {
         : data?.alertSummary.summary || t('admin.troubleshooting.queue_desc', {}, 'Select an anomaly to inspect its evidence scope and next diagnostic step.');
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack
+      data-page-model="diagnostic"
+      className="mx-auto max-w-screen-2xl space-y-4"
+    >
       <BackofficeLayer
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         description={t('admin.troubleshooting.description', {}, 'Review the current runtime conclusion, open active anomalies, and continue into the narrowest evidence view.')}
-        aside={<BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />}
-        actions={(
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            disabled={refreshInProgress}
-            onClick={() => {
-              setQualityRefreshSignal((current) => current + 1);
-              void loadTelemetry(true);
-            }}
-          >
-            {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
-          </button>
-        )}
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div
+        data-ui="runtime-diagnostic-toolbar"
+        className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 py-2 dark:border-slate-800"
+      >
         <div className="flex flex-wrap gap-2" aria-label={t('admin.troubleshooting.window_label', {}, 'Diagnostic window')}>
           {WINDOW_OPTIONS.map((hours) => (
             <button
@@ -370,19 +363,32 @@ export default function AdminTroubleshootingPage() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
-          {data?.generatedAt ? (
-            <span>{t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}')}</span>
-          ) : null}
-          {qualityRequestState.generatedAt ? (
-            <span>{t('admin.troubleshooting.quality_updated_at', { time: formatDate(qualityRequestState.generatedAt) }, 'Quality updated {{time}}')}</span>
-          ) : null}
-          {refreshStateLabel ? (
-            <BackofficeStatusBadge
-              label={refreshStateLabel}
-              status={refreshStateTone}
-            />
-          ) : null}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400" data-ui="diagnostic-source-freshness">
+            {data?.generatedAt ? (
+              <span>{t('admin.troubleshooting.runtime_updated_at', { time: formatDate(data.generatedAt) }, 'Runtime updated {{time}}')}</span>
+            ) : null}
+            {qualityRequestState.generatedAt ? (
+              <span>{t('admin.troubleshooting.quality_updated_at', { time: formatDate(qualityRequestState.generatedAt) }, 'Quality updated {{time}}')}</span>
+            ) : null}
+            {refreshStateLabel ? (
+              <BackofficeStatusBadge
+                label={refreshStateLabel}
+                status={refreshStateTone}
+              />
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={refreshInProgress}
+            onClick={() => {
+              setQualityRefreshSignal((current) => current + 1);
+              void loadTelemetry(true);
+            }}
+          >
+            {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
+          </button>
         </div>
       </div>
 
@@ -391,20 +397,15 @@ export default function AdminTroubleshootingPage() {
         { label: t('admin.troubleshooting.provider_coverage', {}, 'Provider-call coverage'), value: formatRate(data.totals.providerCallRunCoverageRate), toneClassName: data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
         { label: t('admin.troubleshooting.metering_coverage', {}, 'Metering coverage'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
         { label: t('admin.troubleshooting.open_issues', {}, 'Open anomalies'), value: data.alertSummary.alertCount, toneClassName: data.alertSummary.alertCount > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
-      ]} /> : null}
+      ]} density="compact" /> : null}
 
       {data ? (
         <div
           data-ui="runtime-diagnostic-conclusion"
-          className="flex flex-col gap-2 border-y border-slate-200 py-2.5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between"
+          className="flex min-w-0 items-center gap-2 border-y border-slate-200 py-2.5 dark:border-slate-800"
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
-            <p className="text-sm text-slate-700 dark:text-slate-200">{conclusionSummary}</p>
-          </div>
-          <span className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} active anomalies')}
-          </span>
+          <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+          <p className="text-sm text-slate-700 dark:text-slate-200">{conclusionSummary}</p>
         </div>
       ) : null}
 
@@ -415,14 +416,18 @@ export default function AdminTroubleshootingPage() {
         </div>
       ) : null}
 
-      {loading && !data ? (
-        <BackofficeSectionPanel className="animate-pulse space-y-3" aria-label={t('admin.troubleshooting.loading', {}, 'Loading runtime diagnostics')}>
-          <div className="h-5 w-48 rounded bg-slate-200 dark:bg-slate-800" />
-          <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
-          <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
-        </BackofficeSectionPanel>
-      ) : (
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div
+        data-ui="runtime-diagnostic-workspace"
+        className="grid grid-cols-[minmax(0,1fr)] items-start gap-3"
+      >
+        <div className="min-w-0">
+          {loading && !data ? (
+            <BackofficeSectionPanel className="animate-pulse space-y-3" aria-label={t('admin.troubleshooting.loading', {}, 'Loading runtime diagnostics')}>
+              <div className="h-5 w-48 rounded bg-slate-200 dark:bg-slate-800" />
+              <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
+              <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
+            </BackofficeSectionPanel>
+          ) : (
           <AdminDataTableFrame
             dataUi="runtime-diagnostic-table-frame"
             density="compact"
@@ -491,49 +496,25 @@ export default function AdminTroubleshootingPage() {
               <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')} description={t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')} />
             )}
           </AdminDataTableFrame>
-
-          <BackofficeSectionPanel id="runtime-diagnostic-inspector" className="h-fit xl:sticky xl:top-4">
-            {selectedIssue ? (
-              <div className="space-y-5">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.inspector_eyebrow', {}, 'Selected anomaly')}</p>
-                  <div className="mt-2 flex items-start justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950 dark:text-white">{issueTitle(selectedIssue, t)}</h2><BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} /></div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{issueSummary(selectedIssue, t)}</p>
-                </div>
-                <dl className="grid gap-3 text-sm">
-                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_code', {}, 'Evidence code')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-100">{selectedIssue.code}</dd></div>
-                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_runs', {}, 'Affected runs')}</dt><dd className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{formatNumber(selectedIssue.count)}</dd></div>
-                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_scope', {}, 'Affected scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedIssue.capabilities.join(', ') || t('admin.troubleshooting.runtime_scope', {}, 'Cloud runtime')}</dd></div>
-                  <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.suggested_action', {}, 'Suggested diagnostic step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{issueAction(selectedIssue, t) || data?.governanceGaps.reviewGuidance || data?.alertSummary.nextAction}</dd></div>
-                </dl>
-                <Link href={issueDestination(selectedIssue)} className="btn btn-primary w-full justify-center">{t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}</Link>
-                <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500 dark:bg-slate-900/45 dark:text-slate-400">{t('admin.troubleshooting.boundary', {}, 'Diagnostics are read-only Cloud runtime evidence. They do not change providers, model routing, local abilities, prompts, approval state, or WordPress content.')}</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.health_conclusion', {}, 'Health conclusion')}</p><h2 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{conclusionLabel}</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{conclusionSummary}</p></div>
-                <Link href="#evidence-lanes" className="btn btn-secondary w-full justify-center">{t('admin.troubleshooting.review_lanes', {}, 'Review evidence lanes')}</Link>
-              </div>
-            )}
-          </BackofficeSectionPanel>
+          )}
         </div>
-      )}
 
-      <EditorAssistQualityPanel
-        windowHours={windowHours}
-        refreshSignal={qualityRefreshSignal}
-        onRequestStateChange={setQualityRequestState}
-      />
+        <EditorAssistQualityPanel
+          windowHours={windowHours}
+          refreshSignal={qualityRefreshSignal}
+          onRequestStateChange={setQualityRequestState}
+        />
 
-      <details id="evidence-lanes" className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <summary className="cursor-pointer list-none px-3 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
+          <details id="evidence-lanes" className="group admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <summary className="cursor-pointer list-none px-3 py-2.5 marker:hidden [&::-webkit-details-marker]:hidden">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.troubleshooting.lanes_title', {}, 'Evidence lanes')}</h2>
               <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.lanes_desc', {}, 'Open the narrowest read-only detail view that matches the support question.')}</p>
             </div>
-            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-              {t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, 'View all {{count}} channels')} ↓
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300">
+              {t('admin.troubleshooting.lane_count', { count: String(evidenceLanes.length) }, 'View all {{count}} channels')}
+              <span aria-hidden="true" className="transition-transform group-open:rotate-90">›</span>
             </span>
           </div>
         </summary>
@@ -565,10 +546,13 @@ export default function AdminTroubleshootingPage() {
             </tbody>
           </table>
         </div>
-      </details>
+          </details>
 
-      <details id="runtime-evidence" className="admin-compact-surface border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <summary className="cursor-pointer select-none px-3 py-3 text-sm font-semibold text-slate-900 dark:text-white">{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</summary>
+          <details id="runtime-evidence" className="group admin-compact-surface border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-slate-900 marker:hidden dark:text-white [&::-webkit-details-marker]:hidden">
+          <span>{t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}</span>
+          <span aria-hidden="true" className="text-blue-700 transition-transform group-open:rotate-90 dark:text-blue-300">›</span>
+        </summary>
         <div className="border-t border-slate-200 dark:border-slate-800">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[38rem] table-fixed text-left text-sm" aria-label={t('admin.troubleshooting.runtime_metadata_title', {}, 'Runtime evidence guide')}>
@@ -588,9 +572,58 @@ export default function AdminTroubleshootingPage() {
               </tbody>
             </table>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6"><p className="max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.advanced.runtime_evidence_boundary', {}, 'Evidence source remains Cloud runtime metadata such as run records, provider-call records, usage meter events, runtime profiles, and capability projection rows.')}</p><Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.advanced.action_open_runtime_profiles', {}, 'Open runtime profiles')}</Link></div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6">
+            <div className="max-w-3xl space-y-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              <p>{t('admin.advanced.runtime_evidence_boundary', {}, 'Evidence source remains Cloud runtime metadata such as run records, provider-call records, usage meter events, runtime profiles, and capability projection rows.')}</p>
+              <p>{t('admin.troubleshooting.boundary', {}, 'Diagnostics are read-only Cloud runtime evidence. They do not change providers, model routing, local abilities, prompts, approval state, or WordPress content.')}</p>
+            </div>
+            <Link href="/admin/runtime-profiles" className="btn btn-secondary btn-sm">{t('admin.advanced.action_open_runtime_profiles', {}, 'Open runtime profiles')}</Link>
+          </div>
         </div>
-      </details>
+          </details>
+      </div>
+
+      <AdminWorkbenchDialog
+        open={Boolean(selectedIssue)}
+        presentation="drawer"
+        density="compact"
+        width="compact"
+        title={selectedIssue ? issueTitle(selectedIssue, t) : t('admin.troubleshooting.inspector_eyebrow', {}, 'Selected anomaly')}
+        titleId="runtime-diagnostic-inspector-title"
+        headerAccessory={selectedIssue ? (
+          <>
+            <BackofficeStatusBadge label={severityLabel(selectedIssue.severity, t)} status={statusTone(selectedIssue.severity)} />
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[0.68rem] font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+              {t('common.read_only', {}, 'Read only')}
+            </span>
+          </>
+        ) : null}
+        saving={false}
+        closeLabel={t('common.close', {}, 'Close')}
+        cancelLabel={t('common.close', {}, 'Close')}
+        saveLabel={t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}
+        savingLabel={t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}
+        footerNotice={t('admin.troubleshooting.drawer_notice', {}, 'Read-only diagnostic detail. Closing returns to the anomaly queue.')}
+        footerActions={selectedIssue ? (
+          <Link href={issueDestination(selectedIssue)} className="btn btn-primary justify-center">
+            {t('admin.troubleshooting.open_evidence', {}, 'Open matching evidence')}
+          </Link>
+        ) : null}
+        onClose={() => updateUrl({ focus: null })}
+        onSubmit={() => {}}
+      >
+        {selectedIssue ? (
+          <div id="runtime-diagnostic-inspector" className="space-y-4">
+            <p className="text-sm leading-5 text-slate-600 dark:text-slate-300">{issueSummary(selectedIssue, t)}</p>
+            <dl className="grid gap-3 text-sm">
+              <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.issue_code', {}, 'Evidence code')}</dt><dd className="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-100">{selectedIssue.code}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_runs', {}, 'Affected runs')}</dt><dd className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{formatNumber(selectedIssue.count)}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.affected_scope', {}, 'Affected scope')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{selectedIssue.capabilities.join(', ') || t('admin.troubleshooting.runtime_scope', {}, 'Cloud runtime')}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.troubleshooting.suggested_action', {}, 'Suggested diagnostic step')}</dt><dd className="mt-1 text-slate-800 dark:text-slate-100">{issueAction(selectedIssue, t) || data?.governanceGaps.reviewGuidance || data?.alertSummary.nextAction}</dd></div>
+            </dl>
+          </div>
+        ) : null}
+      </AdminWorkbenchDialog>
     </BackofficePageStack>
   );
 }

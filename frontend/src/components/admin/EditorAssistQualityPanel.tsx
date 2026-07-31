@@ -187,8 +187,8 @@ export function EditorAssistQualityPanel({
       data-ui="editor-assist-quality-panel"
       className="admin-compact-surface overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
     >
-      <summary className="cursor-pointer list-none px-3 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <summary className="cursor-pointer list-none px-3 py-2.5 marker:hidden [&::-webkit-details-marker]:hidden">
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="editor-assist-quality-title" className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -196,7 +196,7 @@ export function EditorAssistQualityPanel({
               </h2>
               <BackofficeStatusBadge label={statusLabel} status={status} />
             </div>
-            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
               {t(
                 'admin.editor_quality.description',
                 {},
