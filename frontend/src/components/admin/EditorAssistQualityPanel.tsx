@@ -222,7 +222,7 @@ export function EditorAssistQualityPanel({
         ))}
       </dl>
 
-      <div className="grid divide-y divide-slate-200 dark:divide-slate-800 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)] xl:divide-x xl:divide-y-0">
+      <div className="grid divide-y divide-slate-200 dark:divide-slate-800 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)] xl:divide-x xl:divide-y-0">
         <div className="min-w-0 px-5 py-5 md:px-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
@@ -235,7 +235,7 @@ export function EditorAssistQualityPanel({
           {hasTrendEvidence ? (
             <AnalyticsLineChart
               data={trendData}
-              height={240}
+              height={200}
               yAxisLabel="%"
               primarySeriesName={t('admin.editor_quality.exact_rate', {}, 'Exact adoption')}
               secondarySeriesName={t('admin.editor_quality.repeat_rate', {}, 'Repeat rate')}
@@ -243,7 +243,7 @@ export function EditorAssistQualityPanel({
               secondaryColor="#d97706"
             />
           ) : (
-            <div className="flex min-h-60 items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400">
+            <div className="flex min-h-52 items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400">
               {loading
                 ? t('admin.editor_quality.loading', {}, 'Loading quality evidence...')
                 : t('admin.editor_quality.empty', {}, 'No editor-assist sessions in this window.')}
@@ -260,50 +260,67 @@ export function EditorAssistQualityPanel({
               {t('admin.editor_quality.sustained_count', { count: String(sustainedTotal) }, '{{count}} sustained')}
             </span>
           </div>
-          <div className="mt-3 divide-y divide-slate-200 border-y border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-            {(data?.candidates || []).map((candidate) => (
-              <div key={`${candidate.taskKey}:${candidate.code}`} className="py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-slate-950 dark:text-white">
-                    {t(`admin.editor_quality.issue_${candidate.code}`, {}, candidate.code)}
-                  </p>
-                  <BackofficeStatusBadge
-                    label={t(
-                      `admin.editor_quality.confidence_${candidate.confidence}`,
-                      {},
-                      candidate.confidence
-                    )}
-                    status={candidate.actionable ? 'warning' : 'pending'}
-                  />
-                </div>
-                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  {t(`admin.editor_quality.task_${candidate.taskKey}`, {}, candidate.taskKey)}
-                  {' · '}
-                  {t(
-                    'admin.editor_quality.candidate_evidence',
-                    {
-                      rate: formatRate(candidate.observedRate),
-                      sample: String(candidate.sampleSize),
-                    },
-                    '{{rate}} from {{sample}} sessions'
-                  )}
-                  {' · '}
-                  {t(
-                    `admin.editor_quality.persistence_${candidate.persistence}`,
-                    {},
-                    candidate.persistence
-                  )}
-                </p>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                  {t(`admin.editor_quality.action_${candidate.nextAction}`, {}, candidate.nextAction)}
-                </p>
-              </div>
-            ))}
-            {data?.candidates.length ? null : (
-              <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                {t('admin.editor_quality.no_candidates', {}, 'No problem candidate meets the diagnostic threshold.')}
-              </div>
-            )}
+          <div className="mt-3 overflow-x-auto border-y border-slate-200 dark:border-slate-800">
+            <table
+              data-ui="editor-assist-quality-candidate-table"
+              className="w-full min-w-[38rem] table-fixed text-left text-xs"
+              aria-label={t('admin.editor_quality.candidates_title', {}, 'Problem candidates')}
+            >
+              <thead className="border-b border-slate-200 bg-slate-50/80 font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-400">
+                <tr>
+                  <th className="w-[24%] px-3 py-2" scope="col">{t('admin.editor_quality.column_issue', {}, 'Problem')}</th>
+                  <th className="w-[13%] px-3 py-2" scope="col">{t('admin.editor_quality.column_task', {}, 'Task')}</th>
+                  <th className="w-[17%] px-3 py-2" scope="col">{t('admin.editor_quality.column_evidence', {}, 'Rate / sample')}</th>
+                  <th className="w-[20%] px-3 py-2" scope="col">{t('admin.editor_quality.column_confidence', {}, 'Confidence / persistence')}</th>
+                  <th className="px-3 py-2" scope="col">{t('admin.editor_quality.column_next_action', {}, 'Next action')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {(data?.candidates || []).map((candidate) => (
+                  <tr key={`${candidate.taskKey}:${candidate.code}`} className="align-top hover:bg-slate-50/70 dark:hover:bg-slate-900/30">
+                    <th className="px-3 py-2.5 font-semibold leading-5 text-slate-950 dark:text-white" scope="row">
+                      {t(`admin.editor_quality.issue_${candidate.code}`, {}, candidate.code)}
+                    </th>
+                    <td className="px-3 py-2.5 leading-5 text-slate-600 dark:text-slate-300">
+                      {t(`admin.editor_quality.task_${candidate.taskKey}`, {}, candidate.taskKey)}
+                    </td>
+                    <td className="px-3 py-2.5 leading-5 text-slate-600 dark:text-slate-300">
+                      <span className="font-semibold text-slate-900 dark:text-white">{formatRate(candidate.observedRate)}</span>
+                      <span className="block text-slate-500 dark:text-slate-400">
+                        {t('admin.editor_quality.sample_count', { count: String(candidate.sampleSize) }, '{{count}} sessions')}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 leading-5 text-slate-600 dark:text-slate-300">
+                      <BackofficeStatusBadge
+                        label={t(
+                          `admin.editor_quality.confidence_${candidate.confidence}`,
+                          {},
+                          candidate.confidence
+                        )}
+                        status={candidate.actionable ? 'warning' : 'pending'}
+                      />
+                      <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                        {t(
+                          `admin.editor_quality.persistence_${candidate.persistence}`,
+                          {},
+                          candidate.persistence
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 leading-5 text-slate-600 dark:text-slate-300">
+                      {t(`admin.editor_quality.action_${candidate.nextAction}`, {}, candidate.nextAction)}
+                    </td>
+                  </tr>
+                ))}
+                {data?.candidates.length ? null : (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      {t('admin.editor_quality.no_candidates', {}, 'No problem candidate meets the diagnostic threshold.')}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

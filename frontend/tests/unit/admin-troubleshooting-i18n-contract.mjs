@@ -68,6 +68,24 @@ assert.match(
 
 assert.match(
   pageSource,
+  /data-ui="runtime-diagnostic-table"[\s\S]*<thead[\s\S]*admin\.troubleshooting\.column_severity[\s\S]*admin\.troubleshooting\.column_code/,
+  'Runtime anomaly evidence must render as a semantic comparison table'
+);
+
+assert.match(
+  pageSource,
+  /data-ui="runtime-evidence-lane-table"[\s\S]*admin\.troubleshooting\.lane_column_channel[\s\S]*admin\.troubleshooting\.lane_column_evidence/,
+  'Evidence lanes must render as a compact semantic directory table'
+);
+
+assert.match(
+  pageSource,
+  /id="runtime-evidence"[\s\S]*<table[\s\S]*admin\.troubleshooting\.metadata_column_type[\s\S]*admin\.troubleshooting\.metadata_column_purpose/,
+  'Expanded runtime metadata must render as a compact semantic table'
+);
+
+assert.match(
+  pageSource,
   /evidenceLanes[\s\S]*id="evidence-lanes"[\s\S]*id="runtime-evidence"[\s\S]*admin\.advanced\.runtime_evidence_boundary/,
   'Narrow observability lanes and advanced runtime metadata must live under Runtime Diagnostics'
 );
