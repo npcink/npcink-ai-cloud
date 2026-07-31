@@ -47,7 +47,8 @@ Cloud/WordPress 所有权，不批准生产发布，也不把 M4 acceptance 等�
 | 次操作 | 切换时间窗、刷新、展开低频详情 |
 | 破坏性操作 | 无 |
 | 远端状态 | 运行诊断 API 与质量 API 各自拥有请求、错误和新鲜度 |
-| 本地状态 | 当前异常、时间窗和 disclosure 开关 |
+| URL 状态 | 当前异常 `focus` 与时间窗 `window`，由 search params 持有并可刷新、分享 |
+| 本地状态 | disclosure 开关等临时交互状态 |
 | 明确非目标 | 后端/API 变更、供应商或路由变更、WordPress 写入、生产发布 |
 | 回滚 | 定向 revert PR #426；无数据迁移或后端回滚 |
 

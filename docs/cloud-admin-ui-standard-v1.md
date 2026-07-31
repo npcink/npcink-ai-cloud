@@ -206,9 +206,10 @@ Use these rules:
 - Put raw lanes, schema guidance, debug identifiers, and historical detail
   behind explicit disclosures. The closed summary must still show the state,
   key count, sample stage, and freshness needed for the next decision.
-- Refresh and inspect are secondary actions. A diagnostic page has no
-  destructive default action and must not gain mutation authority for visual
-  convenience.
+- Inspect the selected anomaly and open matching evidence is the primary
+  operator path. Refresh and time-window changes are secondary actions. A
+  diagnostic page has no destructive default action and must not gain mutation
+  authority for visual convenience.
 
 Focused behavior evidence must cover ready, partial-failure, total-failure,
 refresh, row-to-inspector selection, default-collapsed disclosures, expansion,
