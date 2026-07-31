@@ -1381,7 +1381,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             ]
             if not account_memberships:
                 identity_relationship_state = "missing"
-            elif len(account_memberships) > 1 or principal is None:
+            elif (
+                len(account_memberships) > 1
+                or selected_membership is None
+                or principal is None
+            ):
                 identity_relationship_state = "conflict"
             elif (
                 str(selected_membership.status or "") != ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE
