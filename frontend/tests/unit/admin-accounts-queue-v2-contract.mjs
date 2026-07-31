@@ -11,6 +11,14 @@ const createSource = [
   'src/features/admin/accounts/CreateAccountForm.tsx',
   'src/features/admin/accounts/create-account-form-model.ts',
 ].map((path) => readFileSync(resolve(root, path), 'utf8')).join('\n');
+const dialogSource = readFileSync(
+  resolve(root, 'src/components/admin/AdminWorkbenchDialog.tsx'),
+  'utf8'
+);
+const accountDomainSource = readFileSync(
+  resolve(root, '../app/domain/commercial/mixins/_account_mixin.py'),
+  'utf8'
+);
 const serviceSource = readFileSync(
   resolve(root, '../app/domain/commercial/mixins/_admin_mixin.py'),
   'utf8'
@@ -64,7 +72,7 @@ assert.match(
 );
 assert.doesNotMatch(
   directorySource,
-  /\/audit\?limit=50|disable_access_action|AdminMutationReceipt|AdminWorkbenchDialog|<Modal/,
+  /\/audit\?limit=50|disable_access_action|AdminMutationReceipt|<Modal/,
   'identity audit and destructive access actions must not remain on the all-customers page'
 );
 assert.match(
@@ -138,8 +146,8 @@ assert.doesNotMatch(
 
 assert.match(
   directorySource,
-  /handleCreateAccount[\s\S]*toast\.success/,
-  'customer creation must retain non-shifting success feedback'
+  /AdminWorkbenchDialog[\s\S]*handleCreateAccount[\s\S]*toast\.success[\s\S]*router\.push/,
+  'customer creation must use the shared dialog, retain success feedback, and open the generated customer'
 );
 assert.match(
   directorySource + createSource,
@@ -147,14 +155,24 @@ assert.match(
   'customer creation must create one login identity and keep formal Free binding explicit'
 );
 assert.match(
-  createSource,
+  dialogSource + createSource,
   /new FormData\(event\.currentTarget\)[\s\S]*validateCreateAccountForm/,
   'customer creation must use one bounded dependency-free form state layer'
 );
 assert.match(
   createSource,
-  /if \(!data\.account_id\)[\s\S]*if \(!data\.name\)[\s\S]*if \(!data\.primary_email\)/,
-  'customer creation must reject missing identifiers, names, and login email before transport'
+  /if \(!data\.name\)[\s\S]*if \(!data\.primary_email\)/,
+  'customer creation must reject missing names and login email before transport'
+);
+assert.doesNotMatch(
+  createSource,
+  /name="account_id"|values\.account_id/,
+  'interactive customer creation must not ask operators to invent an account ID'
+);
+assert.match(
+  accountDomainSource,
+  /resolved_account_id = str\(account_id or ""\)\.strip\(\) or f"acct_\{uuid4\(\)\.hex\}"/,
+  'the commercial domain must generate an opaque account ID when interactive creation omits it'
 );
 
 console.log('admin_accounts_queue_v2_contract: ok');

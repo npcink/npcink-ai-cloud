@@ -13,9 +13,22 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   await expect(
     page.getByRole('heading', { name: /Npcink AI Demo|MVP Account|acct_mvp_enterprise_primary/i }).first()
   ).toBeVisible();
+  const detailTabs = page.getByRole('tab');
+  await expect(detailTabs).toHaveCount(6);
   await expect(page.getByRole('tab', { name: /^Overview|^概况|^概況/i })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toBeVisible();
+  await expect(page.getByText(/More account actions|更多账户操作|更多帳戶操作/i)).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Manage package|管理套餐|管理方案/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Back to accounts|返回客户列表|返回客戶列表/i })).toHaveCount(0);
+
+  const tabPositions = await detailTabs.evaluateAll((tabs) =>
+    tabs.map((tab) => Math.round(tab.getBoundingClientRect().top))
+  );
+  expect(new Set(tabPositions).size).toBe(1);
 
   await page.getByRole('tab', { name: /Commercial|商业与套餐|商業與方案/i }).click();
+  await expect(page.locator('[data-ui="operator-profile-editor"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toHaveCount(0);
   await page.getByRole('button', { name: /^Free/i }).first().click();
   const packageDialog = page.getByRole('dialog');
   await expect(packageDialog).toContainText(/Confirm package change|确认更换套餐|確認更換方案/i);

@@ -101,17 +101,18 @@ async function installAccountsQueueMocks(page: Page) {
   let accounts = initialAccounts();
   let requestCount = 0;
   let createRequestCount = 0;
-  let failNext = false;
+  let createPayload: Record<string, unknown> | null = null;
+  let failQuery = '';
 
   await page.route('**/api/admin/accounts?*', async (route) => {
     requestCount += 1;
-    if (failNext) {
-      failNext = false;
+    const url = new URL(route.request().url());
+    const q = (url.searchParams.get('q') || '').toLowerCase();
+    if (failQuery && q === failQuery) {
+      failQuery = '';
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(buildAdminApiErrorEnvelope('temporary customer queue failure')) });
       return;
     }
-    const url = new URL(route.request().url());
-    const q = (url.searchParams.get('q') || '').toLowerCase();
     const status = url.searchParams.get('status') || '';
     const sort = url.searchParams.get('sort') || 'display_name';
     let items = accounts.filter((item) => {
@@ -136,13 +137,15 @@ async function installAccountsQueueMocks(page: Page) {
     }
     createRequestCount += 1;
     const payload = route.request().postDataJSON() as Record<string, unknown>;
+    createPayload = payload;
+    const generatedAccountId = 'acct_generated_new_customer';
     const metadata = (payload.metadata || {}) as Record<string, unknown>;
     const bindDefaultFree = Boolean(payload.bind_default_free);
     accounts = [
       ...accounts,
       {
         account: {
-          account_id: String(payload.account_id),
+          account_id: generatedAccountId,
           name: String(payload.name),
           status: 'active',
           metadata,
@@ -157,17 +160,18 @@ async function installAccountsQueueMocks(page: Page) {
         coverage_state: bindDefaultFree ? 'covered' : 'uncovered',
         coverage_follow_up_required: false,
         nearest_expiry_at: '',
-        ...identityFixture(String(payload.account_id), String(payload.primary_email)),
+        ...identityFixture(generatedAccountId, String(payload.primary_email)),
       },
     ];
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ account_id: payload.account_id })) });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildAdminApiEnvelope({ account_id: generatedAccountId })) });
   });
 
   return {
     getRequestCount: () => requestCount,
     getCreateRequestCount: () => createRequestCount,
+    getCreatePayload: () => createPayload,
     failNextRequest: () => {
-      failNext = true;
+      failQuery = 'missing';
     },
   };
 }
@@ -181,6 +185,11 @@ test('customer directory persists customer filters and opens the specified custo
   await expect(page.locator('[data-ui="customer-directory-row"]')).toHaveCount(3);
   await expect(page.locator('table')).toHaveCount(1);
   expect(mocks.getRequestCount()).toBe(1);
+  const toolbarBox = await page.locator('[data-ui="customer-directory-toolbar"]').boundingBox();
+  const searchBox = await page.locator('[data-ui="customer-directory-search"]').boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(searchBox).not.toBeNull();
+  expect(searchBox!.width).toBeLessThan(toolbarBox!.width * 0.7);
 
   const directoryRows = page.locator('[data-ui="customer-directory-row"]');
   await expect(directoryRows.nth(0)).toContainText('Alpha Customer');
@@ -213,34 +222,45 @@ test('customer directory persists customer filters and opens the specified custo
   await expect(directoryRows).toContainText('Zeta Customer');
 });
 
-test('customer creation remains explicit and binds the formal Free package by default', async ({ page }) => {
+test('customer creation uses a dialog, receives a generated ID, and binds Free by default', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const mocks = await installAccountsQueueMocks(page);
   await page.goto('/admin/accounts');
 
-  await page.getByRole('button', { name: /Add customer|添加客户|新增客戶/i }).click();
-  await page.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i).fill('   ');
+  const addCustomerButton = page.getByRole('button', { name: /Add customer|添加客户|新增客戶/i });
+  await addCustomerButton.click();
+  const createDialog = page.getByRole('dialog', { name: /Add customer|添加客户|新增客戶/i });
+  await expect(createDialog).toBeVisible();
+  await expect(createDialog.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i)).toHaveCount(0);
+  await createDialog.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
+  await expect(addCustomerButton).toBeFocused();
+
+  await addCustomerButton.click();
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('   ');
   await page.getByLabel(/Login email|登录邮箱/i).fill('   ');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
-  await expect(page.getByText(/Enter an Account ID|请输入账号 ID/i)).toBeVisible();
   await expect(page.getByText(/Enter a customer name|请输入客户名称/i)).toBeVisible();
   await expect(page.getByText(/Enter the customer login email|请输入客户登录邮箱/i)).toBeVisible();
   expect(mocks.getCreateRequestCount()).toBe(0);
 
-  await page.getByLabel(/Account ID|账户 ID|账号 ID|帳戶 ID/i).fill('acct_new_customer_free');
   await page.getByLabel(/^Name$|^名称$|^名稱$/i).fill('New Customer');
   await page.getByLabel(/Login email|登录邮箱/i).fill('owner@new.example');
   await page.getByLabel(/Operator name|运营显示名|營運顯示名/i).fill('New Customer Display');
   await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
 
-  await expect(page.getByText(/User created|用户已创建|使用者已建立/i).first()).toBeVisible();
-  await expect(page.getByText('New Customer Display')).toBeVisible();
-  await expect(page.getByText('Internal launch note')).toBeVisible();
-  await expect(page.getByText('owner@new.example')).toBeVisible();
-  await expect(page.getByText('Free').last()).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/accounts\/acct_generated_new_customer$/);
   expect(mocks.getCreateRequestCount()).toBe(1);
+  expect(mocks.getCreatePayload()).toMatchObject({
+    name: 'New Customer',
+    primary_email: 'owner@new.example',
+    bind_default_free: true,
+    metadata: {
+      operator_display_name: 'New Customer Display',
+      operator_note: 'Internal launch note',
+    },
+  });
+  expect(mocks.getCreatePayload()).not.toHaveProperty('account_id');
 });
 
 test('customer identity audit and access disable live in the specified customer detail', async ({ page }) => {

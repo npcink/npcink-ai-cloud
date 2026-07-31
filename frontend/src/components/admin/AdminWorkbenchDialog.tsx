@@ -21,7 +21,7 @@ export type AdminWorkbenchDialogProps = {
   width?: 'wide' | 'compact';
   density?: 'standard' | 'compact';
   onClose: () => void;
-  onSubmit: () => void;
+  onSubmit: (formData: FormData) => void;
   children: ReactNode;
 };
 
@@ -103,7 +103,7 @@ export function AdminWorkbenchDialog({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit();
+    onSubmit(new FormData(event.currentTarget));
   }
 
   return createPortal(

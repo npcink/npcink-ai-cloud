@@ -135,7 +135,7 @@ def _coerce_int(value: object, *, default: int) -> int:
 
 
 class AccountPayload(BaseModel):
-    account_id: str
+    account_id: str = ""
     name: str
     primary_email: str = ""
     status: str = "active"

@@ -169,7 +169,6 @@ def test_admin_account_creation_provisions_one_owner_identity(tmp_path: Path) ->
     response = client.post(
         "/internal/service/accounts",
         json={
-            "account_id": "acct_owner_identity",
             "name": "Owner Identity",
             "primary_email": "Owner@Example.COM",
         },
@@ -178,6 +177,8 @@ def test_admin_account_creation_provisions_one_owner_identity(tmp_path: Path) ->
 
     assert response.status_code == 200, response.text
     payload = response.json()["data"]
+    assert payload["account_id"].startswith("acct_")
+    assert len(payload["account_id"]) == len("acct_") + 32
     assert payload["primary_identity"]["email"] == "owner@example.com"
     assert payload["primary_identity"]["status"] == "active"
     assert payload["membership"]["role"] == "owner"
@@ -189,6 +190,7 @@ def test_admin_account_creation_provisions_one_owner_identity(tmp_path: Path) ->
     )
     assert directory_response.status_code == 200, directory_response.text
     directory_item = directory_response.json()["data"]["items"][0]
+    assert directory_item["account"]["account_id"] == payload["account_id"]
     assert directory_item["identity_relationship_state"] == "healthy"
     assert directory_item["primary_identity"]["email"] == "owner@example.com"
     assert directory_item["primary_identity"]["membership_role"] == "owner"

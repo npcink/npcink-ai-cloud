@@ -4,6 +4,7 @@ import React, { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, us
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
@@ -17,10 +18,12 @@ import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
-import { CreateAccountForm } from '@/features/admin/accounts/CreateAccountForm';
+import {
+  CreateAccountForm,
+  useCreateAccountForm,
+} from '@/features/admin/accounts/CreateAccountForm';
 import {
   buildCreateAccountPayload,
-  type CreateAccountFormValues,
 } from '@/features/admin/accounts/create-account-form-model';
 import {
   resolveCustomerPackageDisplay,
@@ -79,6 +82,10 @@ interface AccountsListPayload {
   items?: AccountsApiItem[];
   total?: number;
   hidden_internal_total?: number;
+}
+
+interface CreatedAccountPayload {
+  account_id?: string;
 }
 
 const MALFORMED_ACCOUNT_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty/i;
@@ -194,6 +201,7 @@ function AccountsContent() {
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [loadedRequestKey, setLoadedRequestKey] = useState('');
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -202,6 +210,7 @@ function AccountsContent() {
   const hasLoadedRef = useRef(false);
   const activeRequestKeyRef = useRef('');
   const requestSequenceRef = useRef(0);
+  const createAccountForm = useCreateAccountForm();
 
   const requestKey = useMemo(() => {
     const params = new URLSearchParams();
@@ -323,13 +332,34 @@ function AccountsContent() {
     });
   };
 
-  const handleCreateAccount = async (values: CreateAccountFormValues) => {
+  const closeCreateDialog = () => {
+    if (isCreating) return;
+    setIsCreateOpen(false);
     setActionError('');
+    createAccountForm.reset();
+  };
+
+  const handleCreateAccount = async (fields: FormData) => {
+    const validation = createAccountForm.validate(fields);
+    if (!validation.success) return;
+    const values = validation.data;
+    setActionError('');
+    setIsCreating(true);
     try {
-      await accountsClient.request<Record<string, unknown>>('/api/admin/accounts', {
+      const response = await accountsClient.request<CreatedAccountPayload>('/api/admin/accounts', {
         method: 'POST',
         body: buildCreateAccountPayload(values),
       });
+      const createdAccountId = String(response.data?.account_id || '').trim();
+      if (!createdAccountId) {
+        throw new Error(
+          t(
+            'admin.accounts.created_account_id_missing',
+            {},
+            'The customer was created, but the generated account ID was not returned.'
+          )
+        );
+      }
       toast.success(
         values.bind_default_free
           ? t(
@@ -345,9 +375,12 @@ function AccountsContent() {
         t('admin.accounts.account_created_title', {}, 'Customer created')
       );
       setIsCreateOpen(false);
-      await loadAccounts(true);
+      createAccountForm.reset();
+      router.push(`/admin/accounts/${encodeURIComponent(createdAccountId)}`);
     } catch (err) {
       setActionError(resolveUiErrorMessage(err, t('error.failed_save')));
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -371,13 +404,13 @@ function AccountsContent() {
             <button
               type="button"
               className="btn btn-primary"
-              aria-expanded={isCreateOpen}
-              aria-controls="create-customer-panel"
-              onClick={() => setIsCreateOpen((current) => !current)}
+              onClick={() => {
+                setActionError('');
+                createAccountForm.reset();
+                setIsCreateOpen(true);
+              }}
             >
-              {isCreateOpen
-                ? t('common.close', {}, 'Close')
-                : t('admin.accounts.add_customer_action', {}, 'Add customer')}
+              {t('admin.accounts.add_customer_action', {}, 'Add customer')}
             </button>
             <button
               type="button"
@@ -416,23 +449,36 @@ function AccountsContent() {
         ]}
       />
 
-      {isCreateOpen ? (
-        <BackofficeSectionPanel id="create-customer-panel" className="space-y-4">
-          <div>
-            <h2 className="text-base font-semibold text-slate-950 dark:text-white">
-              {t('admin.accounts.create_title', {}, 'Add customer')}
-            </h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              {t(
-                'admin.accounts.create_desc',
-                {},
-                'Create one customer account, its owner login identity, and optional Free package in one audited service-plane action.'
-              )}
-            </p>
-          </div>
-          <CreateAccountForm actionError={actionError} onSubmit={handleCreateAccount} />
-        </BackofficeSectionPanel>
-      ) : null}
+      <AdminWorkbenchDialog
+        open={isCreateOpen}
+        title={t('admin.accounts.create_title', {}, 'Add customer')}
+        titleId="create-customer-dialog-title"
+        saving={isCreating}
+        closeLabel={t('common.close', {}, 'Close')}
+        cancelLabel={t('common.cancel', {}, 'Cancel')}
+        saveLabel={t('admin.accounts.create_customer_account', {}, 'Create customer')}
+        savingLabel={t('common.saving', {}, 'Saving...')}
+        footerNotice={t(
+          'admin.accounts.create_desc',
+          {},
+          'Create one customer account, its owner login identity, and optional Free package in one audited service-plane action.'
+        )}
+        width="compact"
+        onClose={closeCreateDialog}
+        onSubmit={(fields) => void handleCreateAccount(fields)}
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-300 md:col-span-2">
+          {t(
+            'admin.accounts.account_id_auto_desc',
+            {},
+            'Account ID is generated automatically after creation.'
+          )}
+        </p>
+        <CreateAccountForm
+          actionError={actionError}
+          errors={createAccountForm.errors}
+        />
+      </AdminWorkbenchDialog>
 
       {loadError ? (
         <div
@@ -453,8 +499,15 @@ function AccountsContent() {
       ) : null}
 
       <BackofficeSectionPanel className="overflow-hidden p-0">
-        <div className="grid gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800 lg:grid-cols-[minmax(18rem,1fr)_12rem_12rem_auto] lg:items-end">
-          <form className="flex min-w-0 gap-2" onSubmit={applySearch}>
+        <div
+          data-ui="customer-directory-toolbar"
+          className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-end"
+        >
+          <form
+            data-ui="customer-directory-search"
+            className="flex min-w-0 gap-2 lg:w-full lg:max-w-2xl"
+            onSubmit={applySearch}
+          >
             <label className="min-w-0 flex-1">
               <span className="sr-only">{t('common.search', {}, 'Search')}</span>
               <input
@@ -473,7 +526,7 @@ function AccountsContent() {
               {t('common.search', {}, 'Search')}
             </button>
           </form>
-          <label>
+          <label className="lg:w-48">
             <span className="sr-only">{t('common.status', {}, 'Status')}</span>
             <select
               className="input w-full"
@@ -488,7 +541,7 @@ function AccountsContent() {
               <option value="suspended">{t('status.suspended', {}, 'Suspended')}</option>
             </select>
           </label>
-          <label>
+          <label className="lg:w-48">
             <span className="sr-only">{t('admin.accounts.sort_label', {}, 'Sort')}</span>
             <select
               className="input w-full"
@@ -501,10 +554,10 @@ function AccountsContent() {
               }
             >
               <option value="display_name">
-                {t('admin.accounts.sort_name', {}, 'Customer name')}
+                {t('admin.accounts.sort_name', {}, 'Sort: customer name')}
               </option>
               <option value="created_at">
-                {t('admin.accounts.sort_created', {}, 'Recently created')}
+                {t('admin.accounts.sort_created', {}, 'Sort: recently created')}
               </option>
             </select>
           </label>
