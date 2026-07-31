@@ -11,6 +11,7 @@ This document composes with:
 
 - [Cloud Admin Information Architecture v2](cloud-admin-information-architecture-v2.md);
 - [Cloud Admin Frontend Engineering Standard v1](cloud-admin-frontend-engineering-standard-v1.md);
+- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md);
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md);
 - [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md).
 
@@ -36,6 +37,18 @@ accessibility, preserve the stronger boundary first.
 
 The reference route is a pattern, not a universal page template. Routes must
 still use the page model that matches their operator job.
+
+The customer operations workspace provides two bounded references:
+
+- `/admin/accounts` is the customer-directory `queue`: shared create dialog,
+  dominant search, bounded filters, one semantic customer table, and one
+  Detail row action;
+- `/admin/accounts/[accountId]` is the customer `detail`: six task tabs,
+  compact current-state summaries, semantic tables for package/top-up/resource
+  comparison, and low-frequency mutations behind disclosure.
+
+`/admin/coverage` remains the separate needs-action service queue. It is not a
+second customer directory and must not be merged into the Accounts route.
 
 `/admin/external-services` is the accepted PC reference for a
 `configuration` page:

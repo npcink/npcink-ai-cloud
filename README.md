@@ -70,6 +70,8 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md](docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md)
 - [docs/decisions/036-single-account-single-identity-validation-stage.md](docs/decisions/036-single-account-single-identity-validation-stage.md)
 - [docs/customer-account-identity-stage-standard-v1.md](docs/customer-account-identity-stage-standard-v1.md)
+- [docs/decisions/037-separate-customer-directory-from-service-problem-queue.md](docs/decisions/037-separate-customer-directory-from-service-problem-queue.md)
+- [docs/cloud-admin-customer-operations-workspace-standard-v1.md](docs/cloud-admin-customer-operations-workspace-standard-v1.md)
 
 Evidence records (not target-contract completion proof):
 
@@ -93,6 +95,7 @@ Evidence records (not target-contract completion proof):
 - [docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md](docs/cny-budget-contract-cutover-closeout-and-development-retrospective-2026-07-28.md)
 - [docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md](docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md)
 - [docs/customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md](docs/customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)
+- [docs/cloud-admin-customer-operations-workspace-closeout-2026-07-31.md](docs/cloud-admin-customer-operations-workspace-closeout-2026-07-31.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 - [docs/cloud-admin-ui-development-retrospective-2026-07-27.md](docs/cloud-admin-ui-development-retrospective-2026-07-27.md)
 - [docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md](docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md)

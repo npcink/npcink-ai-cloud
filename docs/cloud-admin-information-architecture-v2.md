@@ -12,6 +12,10 @@ This document is the authoritative migration contract for
 mutation feedback and receipt handling; this document defines the larger
 information architecture and page-model system around it.
 
+The customer directory, service problem queue, and customer-detail composition
+are further specified by
+[Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md).
+
 ## 1. Product Boundary
 
 The admin workspace is a bounded `platform_admin` service-plane surface. It may

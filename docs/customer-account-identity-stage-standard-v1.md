@@ -21,6 +21,12 @@ Implementation history:
   records the delivery sequence, verification evidence, failed assumptions, and
   reusable development method. It is historical evidence, not normative
   authority.
+- [Cloud Admin Customer Operations Workspace Standard v1](cloud-admin-customer-operations-workspace-standard-v1.md)
+  owns the current customer-directory, service-queue, customer-detail, table,
+  dialog, and action-composition rules without changing identity semantics.
+- [Cloud Admin Customer Operations Workspace Closeout](cloud-admin-customer-operations-workspace-closeout-2026-07-31.md)
+  records the route-boundary and layout evolution through the accepted M4
+  revision.
 
 ## 1. Current product contract
 
