@@ -185,6 +185,9 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(runtimeEvidenceSection).not.toHaveAttribute('open', '');
   await runtimeEvidenceSection.locator('summary').click();
   await expect(runtimeEvidenceSection.getByText(/Runtime resolution|运行时解析/i).first()).toBeVisible();
+  const evidenceLanesSection = page.locator('#evidence-lanes');
+  await expect(evidenceLanesSection).not.toHaveAttribute('open', '');
+  await evidenceLanesSection.locator('summary').click();
   await expect(page.locator('a[href="/admin/plugin-observability"]').first()).toBeVisible();
   await expect(page.locator('a[href="/admin/hosted-models"]')).toHaveCount(0);
 
