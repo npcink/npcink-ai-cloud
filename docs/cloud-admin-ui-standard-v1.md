@@ -44,8 +44,9 @@ The customer operations workspace provides two bounded references:
   dominant search, bounded filters, one semantic customer table, and one
   Detail row action;
 - `/admin/accounts/[accountId]` is the customer `detail`: six task tabs,
-  compact current-state summaries, semantic tables for package/top-up/resource
-  comparison, and low-frequency mutations behind disclosure.
+  compact current-state summaries, semantic tables for repeated comparison,
+  one outer action row per active task, shared drawers for long read-only
+  evidence, and shared dialogs for bounded comparison or mutation work.
 
 `/admin/coverage` remains the separate needs-action service queue. It is not a
 second customer directory and must not be merged into the Accounts route.
@@ -333,6 +334,13 @@ Prefer these shared surfaces:
 Page files compose route data and behavior. They must not duplicate modal
 focus management, credential reveal behavior, table framing, status palette,
 shared geometry, or dashed empty-state framing.
+
+For customer and commercial detail surfaces, use a shared inspector drawer for
+long read-only records that must preserve the current page context. Use a shared
+workbench dialog for bounded comparison, selection, or mutation. Use a
+dedicated detail page when an object needs a durable URL and several independent
+tasks. Do not nest drawers, dialogs, or multiple disclosure levels as the
+routine path to evidence or action.
 
 Existing route-local dialogs are recorded as migration debt by the executable
 gate. New route-local dialogs are rejected; migrate one existing dialog at a

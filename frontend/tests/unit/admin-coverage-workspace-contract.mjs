@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { frontendRoot } from './_paths.mjs';
 
-const coverageSource = readFileSync(resolve(process.cwd(), 'src/app/admin/coverage/page.tsx'), 'utf8');
-const layoutSource = readFileSync(resolve(process.cwd(), 'src/app/admin/layout.tsx'), 'utf8');
-const i18nSource = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
+const coverageSource = readFileSync(resolve(frontendRoot, 'src/app/admin/coverage/page.tsx'), 'utf8');
+const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
+const i18nSource = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
 const serviceSource = readFileSync(
-  resolve(process.cwd(), '../app/domain/commercial/mixins/_admin_mixin.py'),
+  resolve(frontendRoot, '../app/domain/commercial/mixins/_admin_mixin.py'),
   'utf8'
 );
 
@@ -28,10 +29,10 @@ assert.match(
   'Coverage queue must support search, reason filtering, and explicit prioritization'
 );
 
-assert.doesNotMatch(
+assert.match(
   coverageSource,
-  /selectedQueueItem|selectedKey|coverage-inspector|AdminSettingsDisclosure|BackofficeIdentifier|active_api_keys_label|snapshot_status_metric/,
-  'Coverage workspace must not keep a selection inspector, technical identifiers, key counts, or billing snapshot diagnostics'
+  /AdminInspectorDrawer[\s\S]*focusedCoverageKey[\s\S]*selectedCoverageItem/,
+  'Coverage workspace must use an on-demand shared evidence drawer'
 );
 
 assert.doesNotMatch(
@@ -64,16 +65,22 @@ assert.match(
   'Coverage must search customer login identity and route identity problems to customer access'
 );
 
+assert.match(
+  serviceSource,
+  /missing_package_coverage[\s\S]*#coverage-actions[\s\S]*subscription_lifecycle_risk[\s\S]*\/admin\/subscriptions\/[\s\S]*billing_snapshot_follow_up[\s\S]*\/admin\/subscriptions\/[\s\S]*site_status_follow_up[\s\S]*#site-footprint/,
+  'Coverage actions must route package, subscription, billing, and site problems to their owning work surfaces'
+);
+
 assert.doesNotMatch(
   coverageSource,
-  /id="coverage-inspector"|aria-controls="coverage-inspector"|tabIndex=\{0\}|aria-selected=/,
-  'Coverage table must not retain inspector selection or row-level keyboard navigation'
+  /tabIndex=\{0\}|aria-selected=/,
+  'Coverage table must not turn rows into a second keyboard-selection model'
 );
 
 assert.match(
   coverageSource,
-  /const hadLegacyFocus = params\.has\('focus'\);[\s\S]*params\.delete\('focus'\)/,
-  'Coverage must normalize retired inspector focus parameters out of legacy URLs'
+  /focus: itemKey[\s\S]*onClose=\{\(\) => updateQueueUrl\(\{ focus: null \}\)\}/,
+  'Coverage evidence focus must be addressable and closing it must preserve queue filters'
 );
 
 assert.match(
@@ -118,10 +125,10 @@ assert.doesNotMatch(
   'Coverage table must leave key, billing, and internal identifier diagnostics to customer detail'
 );
 
-assert.doesNotMatch(
+assert.match(
   layoutSource,
-  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'/,
-  'Subscription risk must not return as a top-level admin sidebar entry'
+  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
+  'Service risks and subscriptions must be independent top-level sidebar destinations'
 );
 
 assert.match(

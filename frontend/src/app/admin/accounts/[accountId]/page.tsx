@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useParams } from 'next/navigation';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -109,6 +111,15 @@ type QuickPackageOption = {
   plan_id: string;
   plan_version_id: string;
 };
+
+type AccountDetailDrawer =
+  | 'package'
+  | 'agency'
+  | 'credit-ledger'
+  | 'subscription-repair'
+  | null;
+
+type QuotaDetailTab = 'resources' | 'components' | 'advanced';
 
 const QUICK_PACKAGE_OPTIONS: QuickPackageOption[] = [
   { tier_id: 'free', plan_id: 'free', plan_version_id: 'free_v1' },
@@ -426,6 +437,8 @@ function AccountDetailContent() {
   const [packageActionReceipt, setPackageActionReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [packageActionPending, setPackageActionPending] = useState<'change' | 'suspend' | 'cancel' | null>(null);
   const [topUpActionPending, setTopUpActionPending] = useState<string | null>(null);
+  const [topUpDialogOpen, setTopUpDialogOpen] = useState(false);
+  const [selectedTopUpPackId, setSelectedTopUpPackId] = useState<TopUpPackOption['pack_id'] | null>(null);
   const [agencyForm, setAgencyForm] = useState({
     amount_cny: '499',
     valid_days: '7',
@@ -441,6 +454,10 @@ function AccountDetailContent() {
     note: '',
   });
   const [creditAdjustmentPending, setCreditAdjustmentPending] = useState(false);
+  const [creditAdjustmentOpen, setCreditAdjustmentOpen] = useState(false);
+  const [quotaDetailsOpen, setQuotaDetailsOpen] = useState(false);
+  const [quotaDetailTab, setQuotaDetailTab] = useState<QuotaDetailTab>('resources');
+  const [activeDrawer, setActiveDrawer] = useState<AccountDetailDrawer>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [packagePlans, setPackagePlans] = useState<PackagePlanListItem[]>([]);
   const [nowMs] = useState(() => Date.now());
@@ -844,7 +861,7 @@ function AccountDetailContent() {
     }
   };
 
-  const handleApplyTopUpPack = async (pack: TopUpPackOption) => {
+  const handleApplyTopUpPack = async (pack: TopUpPackOption): Promise<boolean> => {
     const subscriptionId = packageForm.subscription_id || selectPrimarySubscription(account)?.subscription_id || '';
     if (!subscriptionId) {
       setPackageActionError(
@@ -855,7 +872,7 @@ function AccountDetailContent() {
         )
       );
       setPackageActionReceipt(null);
-      return;
+      return false;
     }
 
     setTopUpActionPending(pack.pack_id);
@@ -890,10 +907,12 @@ function AccountDetailContent() {
         creditEvidenceQuery.invalidate(),
         siteRuntimeQuery.invalidate(),
       ]);
+      return true;
     } catch (err) {
       setPackageActionError(
         resolveUiErrorMessage(err, t('error.failed_save'))
       );
+      return false;
     } finally {
       setTopUpActionPending(null);
     }
@@ -955,6 +974,7 @@ function AccountDetailContent() {
         reason: '',
         note: '',
       }));
+      setCreditAdjustmentOpen(false);
       await Promise.all([
         loadAccount(selectedSiteId, true),
         creditEvidenceQuery.invalidate(),
@@ -1260,24 +1280,6 @@ function AccountDetailContent() {
     }
     return formatInteger(Math.round(Number(metric.limit || 0)));
   };
-  const quotaRows = [
-    {
-      key: 'ai-credits',
-      label: t('admin.account_detail.ai_credits_label', undefined, 'AI credits'),
-      used: formatInteger(Math.round(runBudgetSummary.used)),
-      limit: runBudgetSummary.unlimited ? unlimitedLabel : formatInteger(Math.round(runBudgetSummary.limit)),
-      remaining: runBudgetSummary.unlimited
-        ? unlimitedLabel
-        : formatInteger(Math.round(runBudgetSummary.remaining)),
-      ratio: formatUsageRatio(runBudgetSummary, unlimitedLabel),
-      detail: t(
-        'admin.account_detail.ai_credits_desc',
-        undefined,
-        'Run budget for the current subscription period.'
-      ),
-      summary: runBudgetSummary,
-    },
-  ];
   const resourceRows = quotaSummary?.resource_limits || [];
   const internalLimitRows = quotaSummary?.internal_limits || [];
   const creditLedgerItems = creditLedger?.items || [];
@@ -1291,7 +1293,6 @@ function AccountDetailContent() {
     creditLedger?.summary?.granted_ai_credits ?? quotaSummary?.ai_credit_ledger_summary?.granted_ai_credits ?? 0
   );
   const creditLedgerCount = Number(creditLedger?.pagination?.total ?? creditLedger?.summary?.entry_count ?? 0);
-  const siteLimitLabel = siteLimitUnlimited ? unlimitedLabel : formatInteger(accountSiteLimit);
   const packagePlanOptions = packagePlans
     .filter((item) => item.plan?.plan_id)
     .map((item) => {
@@ -1319,48 +1320,51 @@ function AccountDetailContent() {
         ? 'agency'
         : 'pro';
   const accountTitle = resolveAccountTitle(account, t);
-  const showPostureBadge = postureTone !== 'ok';
-  const showAccountStatusBadge = account.status !== 'active' && account.status !== 'unknown';
   const hasAdvancedChecks = siteOptions.length > 0;
-  const detailTabs: Array<{ id: AccountDetailTab; label: string; detail: string; href: string }> = [
+  const detailTabs: Array<{ id: AccountDetailTab; label: string; navLabel: string; detail: string; href: string }> = [
     {
       id: 'overview',
       label: t('admin.account_detail.overview_tab', undefined, 'Overview'),
+      navLabel: t('admin.account_detail.overview_tab', undefined, 'Overview'),
       detail: translateStatusLabel(postureTone, t),
       href: '#account-overview',
     },
     {
       id: 'commercial',
       label: t('admin.account_detail.commercial_tab', undefined, 'Commercial'),
+      navLabel: t('admin.account_detail.commercial_nav_label', undefined, 'Package'),
       detail: primaryPackage.display_package_label,
       href: '#coverage-actions',
     },
     {
       id: 'credits',
       label: t('admin.account_detail.credits_tab', undefined, 'Credits and usage'),
+      navLabel: t('admin.account_detail.credits_nav_label', undefined, 'AI credits'),
       detail: creditEvidencePending
         ? t('common.loading')
         : creditEvidenceError
           ? t('common.error')
-          : !creditEvidenceReady
-            ? t('common.unknown')
+            : !creditEvidenceReady
+              ? t('common.unknown')
             : quotaNeedsAttention
-              ? t('admin.account_detail.quota_attention_tab_label', undefined, 'Quota needs attention')
+              ? t('admin.account_detail.attention_nav_label', undefined, 'Attention')
               : translateStatusLabel('ok', t),
       href: '#quota-posture',
     },
     {
       id: 'sites',
       label: t('admin.account_detail.sites_tab', undefined, 'Sites'),
+      navLabel: t('admin.account_detail.sites_tab', undefined, 'Sites'),
       detail: formatInteger(account.site_count),
       href: '#site-footprint',
     },
     {
       id: 'access',
       label: t('admin.account_detail.access_tab', undefined, 'Access'),
+      navLabel: t('admin.account_detail.access_tab', undefined, 'Access'),
       detail:
         account.identity_relationship_state === 'healthy'
-          ? t('admin.accounts.identity_healthy_label', {}, 'Active owner')
+          ? translateStatusLabel('ok', t)
           : t(
               `admin.accounts.identity_${account.identity_relationship_state}`,
               {},
@@ -1371,88 +1375,290 @@ function AccountDetailContent() {
     {
       id: 'audit',
       label: t('admin.account_detail.audit_tab', undefined, 'Audit'),
+      navLabel: t('admin.account_detail.audit_tab', undefined, 'Audit'),
       detail: hasAdvancedChecks
         ? formatInteger(Object.keys(siteRuntimeData).length)
         : t('common.read_only', {}, 'Read only'),
       href: '#account-audit',
     },
   ];
+  const topUpPackSelector = (
+    <fieldset data-ui="account-topup-options" className="space-y-2">
+      <legend className="sr-only">{t('admin.account_detail.topup_comparison_label', undefined, 'Top-up pack comparison')}</legend>
+      {TOPUP_PACK_OPTIONS.map((pack) => {
+        const label = t(pack.label_key, undefined, pack.fallback_label);
+        const isRecommended = pack.recommended_for_tiers.includes(currentTierId);
+        const isSelected = selectedTopUpPackId === pack.pack_id;
+        return (
+          <label
+            key={pack.pack_id}
+            className={cn(
+              'grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border px-4 py-3 transition sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:items-center',
+              isSelected
+                ? 'border-blue-500 bg-blue-50/60 ring-1 ring-blue-500/20 dark:border-blue-400 dark:bg-blue-950/25'
+                : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950/45'
+            )}
+          >
+            <input
+              type="radio"
+              name="topup-pack"
+              value={pack.pack_id}
+              checked={isSelected}
+              onChange={() => setSelectedTopUpPackId(pack.pack_id)}
+              className="mt-1 h-4 w-4 border-slate-300 text-blue-600 focus:ring-blue-500 sm:mt-0"
+            />
+            <span className="min-w-0">
+              <span className="block font-semibold text-slate-950 dark:text-white">{label}</span>
+              <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400 sm:hidden">
+                {t('admin.current_period_only', {}, 'Current period only')}
+              </span>
+            </span>
+            <span className="col-start-2 whitespace-nowrap text-sm font-medium text-slate-700 dark:text-slate-200 sm:col-start-auto">
+              {pack.points_label}
+            </span>
+            <span className="col-start-2 sm:col-start-auto">
+              {isRecommended ? (
+                <BackofficeStatusBadge status="ok" label={t('admin.recommended', {}, 'Recommended')} />
+              ) : (
+                <span className="text-xs text-slate-500 dark:text-slate-400">{t('admin.current_period_only', {}, 'Current period only')}</span>
+              )}
+            </span>
+          </label>
+        );
+      })}
+    </fieldset>
+  );
+  const openTopUpOptions = () => {
+    setPackageActionError(null);
+    setSelectedTopUpPackId(
+      TOPUP_PACK_OPTIONS.find((pack) => pack.recommended_for_tiers.includes(currentTierId))?.pack_id
+        || TOPUP_PACK_OPTIONS[0]?.pack_id
+        || null
+    );
+    setTopUpDialogOpen(true);
+  };
+  const topUpDialog = (
+    <AdminWorkbenchDialog
+      open={topUpDialogOpen}
+      title={t('admin.account_detail.topup_packs_label', undefined, 'Top-up packs')}
+      titleId="account-topup-options-title"
+      closeLabel={t('common.close', undefined, 'Close')}
+      cancelLabel={t('common.cancel', undefined, 'Cancel')}
+      saveLabel={t('admin.account_detail.confirm_topup_action', undefined, 'Apply top-up')}
+      savingLabel={t('common.saving', {}, 'Saving...')}
+      saving={topUpActionPending !== null}
+      error={packageActionError || undefined}
+      width="wide"
+      density="compact"
+      headerAccessory={<BackofficeStatusBadge status={quotaNeedsAttention ? 'warning' : 'ok'} label={quotaNeedsAttention ? translateStatusLabel('warning', t) : translateStatusLabel('ok', t)} />}
+      footerNotice={t('admin.current_period_only', {}, 'Current period only')}
+      onClose={() => {
+        if (topUpActionPending !== null) return;
+        setTopUpDialogOpen(false);
+        setSelectedTopUpPackId(null);
+      }}
+      onSubmit={() => {
+        const selectedPack = TOPUP_PACK_OPTIONS.find((pack) => pack.pack_id === selectedTopUpPackId);
+        if (!selectedPack) return;
+        void (async () => {
+          const applied = await handleApplyTopUpPack(selectedPack);
+          if (applied) {
+            setTopUpDialogOpen(false);
+            setSelectedTopUpPackId(null);
+          }
+        })();
+      }}
+    >
+      <p className="text-sm text-slate-600 dark:text-slate-300">
+        {t('admin.account_detail.topup_packs_desc', undefined, 'Add temporary current-period headroom without changing the customer package.')}
+      </p>
+      {topUpPackSelector}
+    </AdminWorkbenchDialog>
+  );
+  const creditAdjustmentDialog = (
+    <AdminWorkbenchDialog
+      open={creditAdjustmentOpen}
+      title={t('admin.account_detail.credit_adjustment_label', undefined, 'AI credit adjustment')}
+      titleId="account-credit-adjustment-title"
+      headerAccessory={<BackofficeStatusBadge status="warning" label={t('admin.audit_required', {}, 'Audit required')} />}
+      error={packageActionError || undefined}
+      saving={creditAdjustmentPending}
+      closeLabel={t('common.close', undefined, 'Close')}
+      cancelLabel={t('common.cancel', undefined, 'Cancel')}
+      saveLabel={t('admin.account_detail.apply_credit_adjustment_action', undefined, 'Apply adjustment')}
+      savingLabel={t('common.saving', {}, 'Saving...')}
+      footerNotice={t('admin.account_detail.credit_adjustment_desc', undefined, 'A reason is required and the operation is audited.')}
+      width="compact"
+      density="compact"
+      onClose={() => setCreditAdjustmentOpen(false)}
+      onSubmit={() => void handleApplyCreditAdjustment()}
+    >
+      <div className="grid gap-3">
+        <label className="text-sm">
+          <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+            {t('admin.account_detail.credit_adjustment_type_label', undefined, 'Entry type')}
+          </span>
+          <select
+            value={creditAdjustmentForm.event_type}
+            onChange={(event) => setCreditAdjustmentForm((current) => ({ ...current, event_type: event.target.value }))}
+            className="input"
+          >
+            <option value="grant">{t('admin.account_detail.credit_adjustment_grant', undefined, 'Grant')}</option>
+            <option value="adjustment">{t('admin.account_detail.credit_adjustment_adjustment', undefined, 'Adjustment')}</option>
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+            {t('admin.account_detail.credit_adjustment_delta_label', undefined, 'Credit delta')}
+          </span>
+          <input
+            type="number"
+            step="1"
+            value={creditAdjustmentForm.ai_credit_delta}
+            onChange={(event) => setCreditAdjustmentForm((current) => ({ ...current, ai_credit_delta: event.target.value }))}
+            className="input"
+            placeholder="+1000"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+            {t('admin.account_detail.credit_adjustment_reason_label', undefined, 'Reason')}
+          </span>
+          <input
+            type="text"
+            value={creditAdjustmentForm.reason}
+            onChange={(event) => setCreditAdjustmentForm((current) => ({ ...current, reason: event.target.value }))}
+            className="input"
+            placeholder={t('admin.account_detail.credit_adjustment_reason_placeholder', undefined, 'billing correction')}
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
+            {t('admin.account_detail.credit_adjustment_note_label', undefined, 'Operator note')}
+          </span>
+          <input
+            type="text"
+            value={creditAdjustmentForm.note}
+            onChange={(event) => setCreditAdjustmentForm((current) => ({ ...current, note: event.target.value }))}
+            className="input"
+            placeholder={t('admin.optional', {}, 'Optional')}
+          />
+        </label>
+      </div>
+    </AdminWorkbenchDialog>
+  );
+  const creditComponentsPanel = (
+    <div
+      data-ui="account-credit-components"
+      className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/55 dark:border-slate-800 dark:bg-slate-950/35"
+    >
+      {(quotaSummary?.breakdown || []).length > 0 ? (
+      <div className="divide-y divide-slate-200 px-4 text-sm dark:divide-slate-800">
+        {(quotaSummary?.breakdown || []).map((item) => (
+          <div key={item.key} className="flex items-start justify-between gap-4 py-3">
+            <div>
+              <p className="font-medium text-gray-900 dark:text-white">{creditBreakdownLabel(item, t)}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {formatInteger(Math.round(Number(item.quantity || 0)))} {item.unit}
+              </p>
+            </div>
+            <p className="text-right text-sm font-semibold text-gray-950 dark:text-white">
+              {formatInteger(Math.round(Number(item.ai_credits || 0)))}
+            </p>
+          </div>
+        ))}
+      </div>
+      ) : (
+        <BackofficeEmptyState
+          className="!rounded-none !border-0"
+          title={t('admin.account_detail.credit_components_empty_title', undefined, 'No credit components')}
+          description={t('admin.account_detail.credit_components_empty_desc', undefined, 'No component-level credit evidence is available for the current period.')}
+        />
+      )}
+    </div>
+  );
+  const headerMetrics = [
+    { label: t('common.sites'), value: formatInteger(account.site_count) },
+    { label: t('common.status'), value: translateStatusLabel(account.status, t) },
+    { label: t('common.subscriptions'), value: formatInteger(account.subscription_count) },
+    ...(uncoveredSiteCount > 0
+      ? [{
+          label: t('admin.no_commercial_coverage', undefined, 'No commercial coverage'),
+          value: formatInteger(uncoveredSiteCount),
+          toneClassName: 'text-red-600 dark:text-red-400',
+        }]
+      : []),
+    ...(expiringSubscriptions.length > 0
+      ? [{
+          label: t('admin.expiring_soon', undefined, 'Expiring Soon'),
+          value: formatInteger(expiringSubscriptions.length),
+          toneClassName: 'text-amber-700 dark:text-amber-300',
+        }]
+      : []),
+  ];
   return (
-    <BackofficePageStack>
+    <BackofficePageStack className="!space-y-4">
       <BackofficePrimaryPanel
-        eyebrow={t('admin.account_posture')}
         title={accountTitle}
         description={postureDescription}
+        contentClassName="!px-5 !py-4 md:!px-6 md:!py-4"
         aside={(
-          <div className="w-full xl:w-[46rem]">
-            <BackofficeMetricStrip
-              items={[
-                { label: t('common.sites'), value: formatInteger(account.site_count), size: 'compact' },
-                {
-                  label: t('common.status'),
-                  value: translateStatusLabel(account.status, t),
-                  size: 'compact',
-                },
-                {
-                  label: t('common.subscriptions'),
-                  value: formatInteger(account.subscription_count),
-                  toneClassName: riskySubscriptions.length > 0 ? 'text-red-600 dark:text-red-400' : undefined,
-                  size: 'compact',
-                },
-                {
-                  label: t('admin.no_commercial_coverage', undefined, 'No commercial coverage'),
-                  value: formatInteger(uncoveredSiteCount),
-                  toneClassName: uncoveredSiteCount > 0 ? 'text-red-600 dark:text-red-400' : undefined,
-                  size: 'compact',
-                },
-                {
-                  label: t('admin.expiring_soon', undefined, 'Expiring Soon'),
-                  value: formatInteger(expiringSubscriptions.length),
-                  toneClassName: expiringSubscriptions.length > 0 ? 'text-amber-700 dark:text-amber-300' : undefined,
-                  size: 'compact',
-                },
-              ]}
-              columnsClassName="md:grid-cols-3 xl:grid-cols-5"
-            />
-          </div>
+          <dl data-ui="account-header-metrics" className="flex w-full flex-wrap items-center gap-x-5 gap-y-2 xl:w-auto xl:justify-end">
+            {headerMetrics.map((item) => (
+              <div key={item.label} className="min-w-[4rem] border-l border-slate-200 pl-4 first:border-l-0 first:pl-0 dark:border-slate-800">
+                <dt className="whitespace-nowrap text-[0.68rem] font-medium text-slate-500 dark:text-slate-400">{item.label}</dt>
+                <dd className={cn('mt-0.5 text-sm font-semibold text-slate-950 dark:text-white', item.toneClassName)}>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
         )}
-      >
-	        <div className="flex flex-wrap items-center gap-2">
-	          <BackofficeIdentifier value={account.account_id} className="text-xs text-gray-500 dark:text-gray-400" />
-	          {showPostureBadge ? (
-	            <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
-          ) : null}
-          {showAccountStatusBadge ? (
-	            <BackofficeStatusBadge status={account.status} label={translateStatusLabel(account.status, t)} />
-          ) : null}
-	        </div>
+      />
+      <div data-ui="account-detail-workspace" className="grid gap-5 xl:grid-cols-[12.5rem_minmax(0,1fr)] xl:items-start">
         <div
           role="tablist"
           aria-label={t('admin.account_detail.tabs_label', undefined, 'Customer detail sections')}
-          className="grid grid-cols-2 gap-1 border-b border-slate-200 dark:border-slate-800 md:grid-cols-3 xl:grid-cols-6"
+          data-ui="account-detail-section-nav"
+          className="flex min-w-0 gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800 xl:sticky xl:top-20 xl:block xl:overflow-visible xl:border-b-0 xl:border-r xl:pr-4"
         >
           {detailTabs.map((tab) => {
             const isActive = activeDetailTab === tab.id;
+            const isAttention =
+              (tab.id === 'overview' && postureTone !== 'ok') ||
+              (tab.id === 'credits' && (creditEvidenceError || quotaNeedsAttention)) ||
+              (tab.id === 'access' && account.identity_relationship_state !== 'healthy');
             return (
               <a
                 key={tab.id}
                 role="tab"
                 aria-selected={isActive}
+                aria-label={tab.label}
                 href={tab.href}
                 onClick={() => setActiveDetailTab(tab.id)}
                 className={cn(
-                  'border-b-2 px-3 py-2.5 text-left transition hover:bg-slate-100 dark:hover:bg-slate-900',
+                  'min-w-[8.5rem] shrink-0 border-b-2 px-3 py-2.5 text-left transition hover:bg-slate-100 dark:hover:bg-slate-900 xl:flex xl:min-w-0 xl:items-center xl:justify-between xl:gap-3 xl:rounded-md xl:border-b-0 xl:border-l-[3px] xl:px-3 xl:py-2.5',
                   isActive
-                    ? 'border-blue-600 bg-blue-50/70 text-blue-900 dark:border-blue-400 dark:bg-blue-950/25 dark:text-blue-100'
+                    ? 'border-blue-600 bg-blue-50/45 text-blue-900 dark:border-blue-400 dark:bg-blue-950/20 dark:text-blue-100'
                     : 'border-transparent text-slate-600 dark:text-slate-300'
                 )}
               >
-                <span className="block text-sm font-semibold">{tab.label}</span>
-                <span className="mt-1 block truncate text-xs text-slate-500 dark:text-slate-400">{tab.detail}</span>
+                <span className="block whitespace-nowrap text-sm font-semibold">{tab.navLabel}</span>
+                <span className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 xl:mt-0 xl:justify-end">
+                  {isAttention ? (
+                    <span
+                      className={cn(
+                        'h-2 w-2 shrink-0 rounded-full',
+                        tab.id === 'credits' && creditEvidenceError ? 'bg-red-500' : 'bg-amber-500'
+                      )}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <span>{tab.detail}</span>
+                </span>
               </a>
             );
           })}
         </div>
+        <div className="min-w-0 space-y-5" data-ui="account-detail-section-content">
         {activeDetailTab === 'overview' ? (
           <>
             <BackofficeStackCard className="flex flex-col gap-4 bg-white/80 dark:bg-slate-950/55 lg:flex-row lg:items-center lg:justify-between">
@@ -1536,11 +1742,24 @@ function AccountDetailContent() {
               accountTitle={accountTitle}
               controller={operatorProfileController}
             />
+            <details
+              data-ui="account-identifiers"
+              className="rounded-xl border border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-950/45"
+            >
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                {t('admin.account_detail.customer_identifiers_title', undefined, 'Customer identifiers')}
+              </summary>
+              <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <span className="text-slate-500 dark:text-slate-400">{t('admin.account_detail.account_id_label', undefined, 'Account ID')}</span>
+                <BackofficeIdentifier value={account.account_id} className="text-xs text-slate-600 dark:text-slate-300" />
+              </div>
+            </details>
           </>
         ) : null}
-        {activeDetailTab === 'commercial' || activeDetailTab === 'credits' ? (
+        {activeDetailTab === 'commercial' ? (
         <div className="space-y-4">
           <div id="coverage-actions">
+          {activeDetailTab === 'commercial' ? (
           <BackofficeStackCard className="overflow-hidden bg-white/80 p-0 dark:bg-slate-950/55">
             <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -1593,6 +1812,7 @@ function AccountDetailContent() {
               ))}
             </dl>
           </BackofficeStackCard>
+          ) : null}
           </div>
           <BackofficeStackCard>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -1618,7 +1838,30 @@ function AccountDetailContent() {
             </p>
             {activeDetailTab === 'commercial' ? (
             <>
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+            <div data-ui="account-package-collapsed" className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/45 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                  {t('admin.account_detail.change_customer_package_label', undefined, 'Change customer package')}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {primaryPackage.display_package_label} · {t('admin.account_detail.package_options_on_demand_desc', undefined, 'Compare package options only when a change is needed.')}
+                </p>
+              </div>
+              <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={() => setActiveDrawer('package')}>
+                {t('admin.account_detail.open_package_options_action', undefined, 'Open package options')}
+              </button>
+            </div>
+            <AdminInspectorDrawer
+              open={activeDrawer === 'package'}
+              title={t('admin.account_detail.change_customer_package_label', undefined, 'Change customer package')}
+              titleId="account-package-options-title"
+              eyebrow={t('admin.account_detail.package_actions_eyebrow', undefined, 'Package actions')}
+              description={t('admin.account_detail.change_customer_package_desc', undefined, 'Switch this account to Free, Plus, Pro, or Agency. User workspace stays read-only.')}
+              closeLabel={t('common.close', undefined, 'Close')}
+              headerAccessory={<BackofficeStatusBadge status="ok" label={t('admin.operator_managed', {}, 'Operator managed')} />}
+              onClose={() => setActiveDrawer(null)}
+            >
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
@@ -1685,7 +1928,8 @@ function AccountDetailContent() {
                             <button
                               type="button"
                               aria-label={`${label} · ${t('admin.account_detail.apply_package_action', undefined, 'Apply package')}`}
-                              onClick={() =>
+                              onClick={() => {
+                                setActiveDrawer(null);
                                 setPendingConfirmation({
                                   title: t('admin.account_detail.confirm_package_change_title', undefined, 'Confirm package change'),
                                   message: t(
@@ -1695,8 +1939,8 @@ function AccountDetailContent() {
                                   ),
                                   confirmLabel: t('admin.account_detail.confirm_package_change_action', undefined, 'Change package'),
                                   onConfirm: () => void handleChangePackage(option),
-                                })
-                              }
+                                });
+                              }}
                               className={cn('btn whitespace-nowrap', isCurrent ? 'btn-secondary' : 'btn-primary')}
                               disabled={packageActionPending !== null || isCurrent}
                             >
@@ -1712,23 +1956,31 @@ function AccountDetailContent() {
                 </table>
               </AdminDataTableFrame>
             </div>
-            <div className="mt-5 border-t border-slate-200 pt-5 dark:border-slate-800">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
-                    {t('admin.account_detail.agency_commerce_label', undefined, 'Agency quote and trial')}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    {t(
-                      'admin.account_detail.agency_commerce_desc',
-                      undefined,
-                      'Create an account-bound quote for Portal payment or approve the single shared 14-day trial.'
-                    )}
-                  </p>
-                </div>
-                <BackofficeStatusBadge status="warning" label={t('common.approval_required', {}, 'Approval required')} />
+            </AdminInspectorDrawer>
+            <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">
+                  {t('admin.account_detail.agency_commerce_label', undefined, 'Agency quote and trial')}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {t('admin.account_detail.agency_commerce_desc', undefined, 'Create a quote or approve the shared 14-day trial only when requested.')}
+                </p>
               </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={() => setActiveDrawer('agency')}>
+                {t('admin.account_detail.open_agency_operations_action', undefined, 'Open Agency operations')}
+              </button>
+            </div>
+            <AdminInspectorDrawer
+              open={activeDrawer === 'agency'}
+              title={t('admin.account_detail.agency_commerce_label', undefined, 'Agency quote and trial')}
+              titleId="account-agency-operations-title"
+              eyebrow={t('admin.account_detail.package_actions_eyebrow', undefined, 'Package actions')}
+              description={t('admin.account_detail.agency_commerce_desc', undefined, 'Create an account-bound quote for Portal payment or approve the single shared 14-day trial.')}
+              closeLabel={t('common.close', undefined, 'Close')}
+              headerAccessory={<BackofficeStatusBadge status="warning" label={t('common.approval_required', {}, 'Approval required')} />}
+              onClose={() => setActiveDrawer(null)}
+            >
+              <div className="grid gap-4">
                 <label className="text-sm text-slate-700 dark:text-slate-200">
                   <span className="mb-2 block text-xs font-medium text-slate-500 dark:text-slate-400">
                     {t('admin.account_detail.agency_amount_label', undefined, '30-day price (CNY)')}
@@ -1770,7 +2022,7 @@ function AccountDetailContent() {
                   />
                 </label>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -1798,201 +2050,7 @@ function AccountDetailContent() {
               {agencyActionError ? (
                 <p className="mt-3 text-sm text-red-700 dark:text-red-300">{agencyActionError}</p>
               ) : null}
-            </div>
-            </>
-            ) : null}
-            {activeDetailTab === 'credits' ? (
-            <>
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/45">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
-                    {t('admin.account_detail.topup_packs_label', undefined, 'Top-up packs')}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    {t(
-                      'admin.account_detail.topup_packs_desc',
-                      undefined,
-                      'Add temporary current-period headroom without changing the customer package.'
-                    )}
-                  </p>
-                </div>
-                <BackofficeStatusBadge status="warning" label={t('admin.current_period_only', {}, 'Current period only')} />
-              </div>
-              <AdminDataTableFrame
-                title={t('admin.account_detail.topup_comparison_label', undefined, 'Top-up pack comparison')}
-                resultLabel={t(
-                  'admin.account_detail.topup_option_count',
-                  { count: formatInteger(TOPUP_PACK_OPTIONS.length) },
-                  `${formatInteger(TOPUP_PACK_OPTIONS.length)} top-up options`
-                )}
-                dataUi="account-topup-comparison"
-                density="compact"
-                headerVisibility="sr-only"
-              >
-                <table
-                  className={ACCOUNT_DETAIL_COMPARISON_TABLE_CLASS_NAME}
-                  aria-label={t('admin.account_detail.topup_comparison_label', undefined, 'Top-up pack comparison')}
-                >
-                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
-                    <tr>
-                      <th className="px-4 py-2.5">
-                        {t('admin.account_detail.topup_pack_column', undefined, 'Top-up pack')}
-                      </th>
-                      <th className="px-4 py-2.5">
-                        {t('admin.account_detail.topup_credits_column', undefined, 'AI credits')}
-                      </th>
-                      <th className="px-4 py-2.5">
-                        {t('admin.account_detail.topup_effective_column', undefined, 'Effective period')}
-                      </th>
-                      <th className="px-4 py-2.5">{t('common.status')}</th>
-                      <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                    {TOPUP_PACK_OPTIONS.map((pack) => {
-                      const label = t(pack.label_key, undefined, pack.fallback_label);
-                      const isRecommended = pack.recommended_for_tiers.includes(currentTierId);
-                      return (
-                        <tr key={pack.pack_id}>
-                          <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{label}</td>
-                          <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{pack.points_label}</td>
-                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                            {t('admin.current_period_only', {}, 'Current period only')}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isRecommended ? (
-                              <BackofficeStatusBadge status="ok" label={t('admin.recommended', {}, 'Recommended')} />
-                            ) : (
-                              <span className="text-slate-500 dark:text-slate-400">
-                                {t('admin.account_detail.available_topup_label', undefined, 'Available')}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              aria-label={`${label} · ${t('admin.account_detail.apply_topup_pack_action', undefined, 'Apply top-up')}`}
-                              onClick={() =>
-                                setPendingConfirmation({
-                                  title: t('admin.account_detail.confirm_topup_title', undefined, 'Confirm top-up pack'),
-                                  message: t(
-                                    'admin.account_detail.confirm_topup_desc',
-                                    { pack: label, points: pack.points_label, account: account.name || account.account_id },
-                                    `Apply ${label} (${pack.points_label}) to ${account.name || account.account_id} for the current period?`
-                                  ),
-                                  confirmLabel: t('admin.account_detail.confirm_topup_action', undefined, 'Apply top-up'),
-                                  onConfirm: () => void handleApplyTopUpPack(pack),
-                                })
-                              }
-                              className="btn btn-primary whitespace-nowrap"
-                              disabled={topUpActionPending !== null || packageActionPending !== null || !primarySubscription}
-                            >
-                              {topUpActionPending === pack.pack_id
-                                ? t('common.saving', {}, 'Saving...')
-                                : t('admin.account_detail.apply_topup_pack_action', undefined, 'Apply top-up')}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </AdminDataTableFrame>
-            </div>
-            <details className="mt-5 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/45">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300">
-                    {t('admin.account_detail.credit_adjustment_label', undefined, 'AI credit adjustment')}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    {t(
-                      'admin.account_detail.credit_adjustment_desc',
-                      undefined,
-                      'Write a grant or signed adjustment to the current AI credit ledger. A reason is required.'
-                    )}
-                  </p>
-                </div>
-                <BackofficeStatusBadge status="warning" label={t('admin.audit_required', {}, 'Audit required')} />
-              </summary>
-              <div className="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
-              <div className="grid gap-3 md:grid-cols-[0.75fr_0.75fr_1fr]">
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
-                    {t('admin.account_detail.credit_adjustment_type_label', undefined, 'Entry type')}
-                  </span>
-                  <select
-                    value={creditAdjustmentForm.event_type}
-                    onChange={(event) =>
-                      setCreditAdjustmentForm((current) => ({ ...current, event_type: event.target.value }))
-                    }
-                    className="input"
-                  >
-                    <option value="grant">{t('admin.account_detail.credit_adjustment_grant', undefined, 'Grant')}</option>
-                    <option value="adjustment">
-                      {t('admin.account_detail.credit_adjustment_adjustment', undefined, 'Adjustment')}
-                    </option>
-                  </select>
-                </label>
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
-                    {t('admin.account_detail.credit_adjustment_delta_label', undefined, 'Credit delta')}
-                  </span>
-                  <input
-                    type="number"
-                    step="1"
-                    value={creditAdjustmentForm.ai_credit_delta}
-                    onChange={(event) =>
-                      setCreditAdjustmentForm((current) => ({ ...current, ai_credit_delta: event.target.value }))
-                    }
-                    className="input"
-                    placeholder="+1000"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
-                    {t('admin.account_detail.credit_adjustment_reason_label', undefined, 'Reason')}
-                  </span>
-                  <input
-                    type="text"
-                    value={creditAdjustmentForm.reason}
-                    onChange={(event) =>
-                      setCreditAdjustmentForm((current) => ({ ...current, reason: event.target.value }))
-                    }
-                    className="input"
-                    placeholder={t('admin.account_detail.credit_adjustment_reason_placeholder', undefined, 'billing correction')}
-                  />
-                </label>
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                <label className="text-sm">
-                  <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
-                    {t('admin.account_detail.credit_adjustment_note_label', undefined, 'Operator note')}
-                  </span>
-                  <input
-                    type="text"
-                    value={creditAdjustmentForm.note}
-                    onChange={(event) =>
-                      setCreditAdjustmentForm((current) => ({ ...current, note: event.target.value }))
-                    }
-                    className="input"
-                    placeholder={t('admin.optional', {}, 'Optional')}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="btn btn-secondary whitespace-nowrap"
-                  disabled={creditAdjustmentPending || packageActionPending !== null}
-                  onClick={() => void handleApplyCreditAdjustment()}
-                >
-                  {creditAdjustmentPending
-                    ? t('common.saving', {}, 'Saving...')
-                    : t('admin.account_detail.apply_credit_adjustment_action', undefined, 'Apply adjustment')}
-                </button>
-              </div>
-              </div>
-            </details>
+            </AdminInspectorDrawer>
             </>
             ) : null}
             {packageActionError ? (
@@ -2003,20 +2061,33 @@ function AccountDetailContent() {
                 {packageActionError}
               </BackofficeStackCard>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-3">
-              <a href="#site-footprint" className="btn btn-secondary" onClick={() => setActiveDetailTab('sites')}>
-                {t('admin.account_detail.view_sites_action', undefined, 'View sites')}
-              </a>
-            </div>
             {activeDetailTab === 'commercial' ? (
-            <details
-              data-ui="advanced-coverage-controls"
-              className="mt-5 border-t border-gray-200 pt-4 dark:border-gray-800"
+            <>
+            <div className="mt-5 flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {t('admin.account_detail.package_actions_reveal', undefined, 'Repair subscription record')}
+                </p>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {t('admin.account_detail.package_controls_desc', undefined, 'Use only for subscription-level repair work.')}
+                </p>
+              </div>
+              <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={() => setActiveDrawer('subscription-repair')}>
+                {t('admin.account_detail.open_subscription_repair_action', undefined, 'Open subscription repair')}
+              </button>
+            </div>
+            <AdminInspectorDrawer
+              open={activeDrawer === 'subscription-repair'}
+              title={t('admin.account_detail.package_actions_reveal', undefined, 'Repair subscription record')}
+              titleId="account-subscription-repair-title"
+              eyebrow={t('admin.account_detail.current_coverage_title', undefined, 'Current coverage')}
+              description={t('admin.account_detail.package_controls_desc', undefined, 'Only open these fields for subscription-level repair work. Normal package changes should use the package table.')}
+              closeLabel={t('common.close', undefined, 'Close')}
+              headerAccessory={<BackofficeStatusBadge status="warning" label={t('admin.audit_required', {}, 'Audit required')} />}
+              onClose={() => setActiveDrawer(null)}
             >
-              <summary className="cursor-pointer list-none text-sm font-medium text-gray-700 dark:text-gray-300">
-              {t('admin.account_detail.package_actions_reveal', undefined, 'Repair subscription record')}
-            </summary>
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div data-ui="advanced-coverage-controls" className="space-y-5">
+            <div className="flex flex-wrap gap-3">
                 {primarySubscription ? (
                   <Link
                     href={`/admin/subscriptions/${primarySubscription.subscription_id}`}
@@ -2026,10 +2097,7 @@ function AccountDetailContent() {
                   </Link>
                 ) : null}
               </div>
-            <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-              {t('admin.account_detail.package_controls_desc', undefined, 'Only open these fields for subscription-level repair work. Normal package changes should use the buttons above.')}
-            </p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3">
               <label className="text-sm">
                 <span className="mb-2 block font-medium text-gray-700 dark:text-gray-300">
                   {t('admin.account_detail.coverage_package_option_label', undefined, 'Coverage package option')}
@@ -2128,10 +2196,11 @@ function AccountDetailContent() {
                 />
               </label>
             </div>
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  setActiveDrawer(null);
                   setPendingConfirmation({
                     title: t('admin.account_detail.confirm_package_repair_title', undefined, 'Confirm subscription repair'),
                     message: t(
@@ -2141,8 +2210,8 @@ function AccountDetailContent() {
                     ),
                     confirmLabel: t('admin.account_detail.change_package_action', undefined, 'Change package'),
                     onConfirm: () => void handleChangePackage(),
-                  })
-                }
+                  });
+                }}
                 className="btn btn-secondary"
                 disabled={packageActionPending !== null || topUpActionPending !== null}
               >
@@ -2152,7 +2221,8 @@ function AccountDetailContent() {
               </button>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  setActiveDrawer(null);
                   setPendingConfirmation({
                     title: t('admin.account_detail.confirm_suspend_title', undefined, 'Confirm suspension'),
                     message: t(
@@ -2163,8 +2233,8 @@ function AccountDetailContent() {
                     confirmLabel: t('admin.account_detail.suspend_coverage_action', undefined, 'Suspend coverage'),
                     variant: 'danger',
                     onConfirm: () => void handleCoverageMutation('suspend'),
-                  })
-                }
+                  });
+                }}
                 className="btn btn-secondary"
                 disabled={packageActionPending !== null || topUpActionPending !== null || !primarySubscription}
               >
@@ -2174,7 +2244,8 @@ function AccountDetailContent() {
               </button>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  setActiveDrawer(null);
                   setPendingConfirmation({
                     title: t('admin.account_detail.confirm_cancel_title', undefined, 'Confirm cancellation'),
                     message: t(
@@ -2185,8 +2256,8 @@ function AccountDetailContent() {
                     confirmLabel: t('admin.account_detail.cancel_coverage_action', undefined, 'Cancel coverage'),
                     variant: 'danger',
                     onConfirm: () => void handleCoverageMutation('cancel'),
-                  })
-                }
+                  });
+                }}
                 className="btn btn-secondary"
                 disabled={packageActionPending !== null || topUpActionPending !== null || !primarySubscription}
               >
@@ -2195,7 +2266,7 @@ function AccountDetailContent() {
                   : t('admin.account_detail.cancel_coverage_action', undefined, 'Cancel coverage')}
               </button>
             </div>
-            <div className="mt-5 space-y-4">
+            <div className="space-y-4">
               {watchItems.map((item) => (
                 <div key={item.label} className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4 last:border-b-0 last:pb-0 dark:border-gray-800">
                   <div className="min-w-0">
@@ -2208,29 +2279,22 @@ function AccountDetailContent() {
                 </div>
               ))}
             </div>
-            </details>
+            </div>
+            </AdminInspectorDrawer>
+            </>
             ) : null}
           </BackofficeStackCard>
         </div>
         ) : null}
-      </BackofficePrimaryPanel>
-
       {activeDetailTab === 'credits' ? (
-      <BackofficeSectionPanel id="quota-posture" className="space-y-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <BackofficeSectionPanel id="quota-posture" className="!space-y-3 !p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-              {t('admin.account_detail.quota_eyebrow', undefined, 'Quota posture')}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              {t('admin.account_detail.quota_title', undefined, 'Current usage and limits')}
+            <h2 className="text-lg font-semibold text-gray-950 dark:text-white">
+              {t('admin.account_detail.credit_operations_title', undefined, 'AI credit operations')}
             </h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-              {t(
-                'admin.account_detail.quota_desc',
-                undefined,
-                'Account-level view of current-period AI credits, token usage, cost headroom, bound sites, and active key coverage.'
-              )}
+            <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
+              {t('admin.account_detail.credit_operations_desc', undefined, 'Review current-period headroom and open only the operation you need.')}
             </p>
           </div>
           <BackofficeStatusBadge
@@ -2259,6 +2323,68 @@ function AccountDetailContent() {
           />
         </div>
 
+        <div
+          data-ui="account-credit-operations"
+          className={cn(
+            'flex flex-col gap-2 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between',
+            quotaNeedsAttention
+              ? 'border-amber-200 bg-amber-50/45 dark:border-amber-900 dark:bg-amber-950/15'
+              : 'border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/35'
+          )}
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">
+              {quotaNeedsAttention
+                ? t('admin.account_detail.quota_attention_short', undefined, 'Quota needs attention')
+                : t('admin.account_detail.credit_operations_label', undefined, 'Credit operations')}
+            </p>
+            {quotaNeedsAttention ? (
+              <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-300">
+                {t('admin.account_detail.topup_attention_desc', undefined, 'Compare current-period top-up options before usage is blocked.')}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={cn('btn whitespace-nowrap', quotaNeedsAttention ? 'btn-primary' : 'btn-secondary')}
+                onClick={openTopUpOptions}
+              >
+                {t('admin.account_detail.open_topup_options_action', undefined, 'Open top-up options')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary whitespace-nowrap"
+                onClick={() => {
+                  setPackageActionError(null);
+                  setCreditAdjustmentOpen(true);
+                }}
+              >
+                {t('admin.account_detail.open_credit_adjustment_action', undefined, 'Adjust AI credits')}
+              </button>
+            </div>
+            <span className="hidden h-6 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden="true" />
+            <div data-ui="account-credit-evidence-actions" className="flex flex-wrap items-center gap-2">
+              <button type="button" className="btn btn-secondary whitespace-nowrap" onClick={() => setActiveDrawer('credit-ledger')}>
+                {t('admin.account_detail.view_credit_ledger_action', { count: formatInteger(creditLedgerCount) }, `View ledger · ${formatInteger(creditLedgerCount)}`)}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary whitespace-nowrap"
+                onClick={() => {
+                  setQuotaDetailTab('resources');
+                  setQuotaDetailsOpen(true);
+                }}
+              >
+                {t('admin.account_detail.open_quota_details_action', undefined, 'View quota details')}
+              </button>
+            </div>
+          </div>
+        </div>
+        {topUpDialog}
+        {creditAdjustmentDialog}
+
         {creditEvidencePending ? (
           <LoadingFallback />
         ) : creditEvidenceError || !creditEvidenceReady ? (
@@ -2278,136 +2404,55 @@ function AccountDetailContent() {
           />
         ) : (
           <>
-            <BackofficeMetricStrip
-          columnsClassName="md:grid-cols-2 xl:grid-cols-4"
-          items={[
-            {
-              label: t('admin.account_detail.ai_credits_label', undefined, 'AI credits'),
-              value: `${formatInteger(Math.round(runBudgetSummary.used))} / ${
-                runBudgetSummary.unlimited ? unlimitedLabel : formatInteger(Math.round(runBudgetSummary.limit))
-              }`,
-              detail: t('admin.account_detail.ai_credits_metric_desc', undefined, 'Used and available run credits.'),
-              toneClassName: quotaToneClass(runBudgetSummary),
-              size: 'compact',
-            },
-            {
-              label: t('admin.account_detail.bound_sites_label', undefined, 'Bound sites'),
-              value: `${formatInteger(account.site_count)} / ${siteLimitLabel}`,
-              detail: t('admin.account_detail.bound_sites_metric_desc', undefined, 'Sites attached to this customer account.'),
-              toneClassName: hasSiteLimitPressure ? 'text-amber-700 dark:text-amber-300' : undefined,
-              size: 'compact',
-            },
-            {
-              label: t('admin.account_detail.vector_documents_label', undefined, 'Vector articles'),
-              value: vectorDocumentsMetric
-                ? `${formatQuotaMetricValue(vectorDocumentsMetric)} / ${formatQuotaMetricLimit(vectorDocumentsMetric)}`
-                : `0 / ${unlimitedLabel}`,
-              detail: t('admin.account_detail.vector_documents_metric_desc', undefined, 'Indexed article capacity stays as a separate resource limit.'),
-              toneClassName: quotaMetricToneClass(vectorDocumentsMetric),
-              size: 'compact',
-            },
-            {
-              label: t('admin.account_detail.concurrent_runs_label', undefined, 'Concurrent runs'),
-              value: concurrentRunsMetric
-                ? `${formatQuotaMetricValue(concurrentRunsMetric)} / ${formatQuotaMetricLimit(concurrentRunsMetric)}`
-                : `0 / ${unlimitedLabel}`,
-              detail: t('admin.account_detail.concurrent_runs_metric_desc', undefined, 'Current queued or running workload against concurrency guardrails.'),
-              toneClassName: quotaMetricToneClass(concurrentRunsMetric),
-              size: 'compact',
-            },
-          ]}
-        />
-
-        <div className="space-y-4">
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
-                  {t('admin.account_detail.credit_breakdown_title', undefined, 'AI credit usage')}
-                </h3>
-                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  {t(
-                    'admin.account_detail.credit_breakdown_desc',
-                    undefined,
-                    'AI credits are estimated from runs, tokens, search, image recommendation, and vector processing until the ledger is enforced.'
-                  )}
-                </p>
-              </div>
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                {creditMetric?.estimated
-                  ? t('admin.account_detail.estimated_credit_label', undefined, 'Estimated')
-                  : t('admin.current_period_only', undefined, 'Current period only')}
-              </span>
-            </div>
-            <div className="mt-5 space-y-4">
-              {quotaRows.map((item) => {
-                const progress = item.summary.unlimited
-                  ? 0
-                  : Math.min(100, Math.max(0, item.summary.usageRatio * 100));
-                return (
-                  <div key={item.key} className="space-y-2">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-950 dark:text-white">{item.label}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{item.detail}</p>
-                      </div>
-                      <div className="text-left sm:text-right">
-                        <p className={cn('text-sm font-semibold text-gray-950 dark:text-white', quotaToneClass(item.summary))}>
-                          {item.used} / {item.limit}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {t('admin.account_detail.quota_remaining_label', undefined, 'Remaining')}: {item.remaining}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                      <div
-                        className={cn(
-                          'h-full rounded-full',
-                          item.summary.overLimit || item.summary.usageRatio >= 1
-                            ? 'bg-red-500'
-                            : item.summary.usageRatio >= 0.8
-                              ? 'bg-amber-500'
-                              : 'bg-emerald-500'
-                        )}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {t('admin.account_detail.quota_usage_ratio_label', undefined, 'Usage')}: {item.ratio}
-                    </p>
-                  </div>
-                );
-              })}
-              {(quotaSummary?.breakdown || []).length > 0 ? (
-                <div className="rounded-[1rem] border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/35">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
-                    {t('admin.account_detail.credit_components_label', undefined, 'Credit components')}
+          <div data-ui="account-credit-summary" className="overflow-hidden rounded-xl border border-slate-200 bg-white/80 dark:border-slate-800 dark:bg-slate-950/45">
+            <BackofficeStackCard
+              data-ui="account-credit-usage-summary"
+              className="!rounded-none !border-0 !bg-transparent p-0"
+            >
+              <div className="grid divide-y divide-slate-200 text-sm dark:divide-slate-800 sm:grid-cols-[1.35fr_1fr_0.8fr] sm:divide-x sm:divide-y-0">
+                <div className="px-4 py-3">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                    {t('admin.account_detail.ai_credits_label', undefined, 'AI credits')}
                   </p>
-                  <div className="mt-3 divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                    {(quotaSummary?.breakdown || []).map((item) => (
-                      <div key={item.key} className="flex items-start justify-between gap-4 py-2">
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white">
-                            {creditBreakdownLabel(item, t)}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatInteger(Math.round(Number(item.quantity || 0)))} {item.unit}
-                          </p>
-                        </div>
-                        <p className="text-right text-sm font-semibold text-gray-950 dark:text-white">
-                          {formatInteger(Math.round(Number(item.ai_credits || 0)))}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  <p className={cn('mt-1 text-base font-semibold text-slate-950 dark:text-white', quotaToneClass(runBudgetSummary))}>
+                    {formatInteger(Math.round(runBudgetSummary.used))} / {runBudgetSummary.unlimited ? unlimitedLabel : formatInteger(Math.round(runBudgetSummary.limit))}
+                  </p>
                 </div>
-              ) : null}
-            </div>
-          </BackofficeStackCard>
+                <div className="px-4 py-3">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                    {t('admin.account_detail.quota_remaining_label', undefined, 'Remaining')}
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-950 dark:text-white">
+                    {runBudgetSummary.unlimited ? unlimitedLabel : formatInteger(Math.round(runBudgetSummary.remaining))}
+                  </p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                    {t('admin.account_detail.quota_usage_ratio_label', undefined, 'Usage')}
+                  </p>
+                  <p className={cn('mt-1 text-base font-semibold text-slate-950 dark:text-white', quotaToneClass(runBudgetSummary))}>
+                    {formatUsageRatio(runBudgetSummary, unlimitedLabel)}
+                  </p>
+                </div>
+              </div>
+              <div className="h-1.5 bg-slate-200 dark:bg-slate-800">
+                <div
+                  className={cn(
+                    'h-full',
+                    runBudgetSummary.overLimit || runBudgetSummary.usageRatio >= 1
+                      ? 'bg-red-500'
+                      : runBudgetSummary.usageRatio >= 0.8
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                  )}
+                  style={{ width: `${runBudgetSummary.unlimited ? 0 : Math.min(100, Math.max(0, runBudgetSummary.usageRatio * 100))}%` }}
+                />
+              </div>
+            </BackofficeStackCard>
 
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div data-ui="account-credit-support-rows" className="divide-y divide-slate-200 border-t border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+          <BackofficeStackCard className="!rounded-none !border-0 !bg-transparent !px-3 !py-2.5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
                   {t('admin.account_detail.credit_ledger_title', undefined, 'Credit ledger detail')}
@@ -2420,7 +2465,8 @@ function AccountDetailContent() {
                   )}
                 </p>
               </div>
-              <div className="text-left sm:text-right">
+              <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                <div className="text-left sm:text-right">
                 <p className="text-sm font-semibold text-gray-950 dark:text-white">
                   {formatInteger(Math.round(creditLedgerNetUsed))}
                 </p>
@@ -2431,10 +2477,22 @@ function AccountDetailContent() {
                     `Net used, ${formatInteger(creditLedgerCount)} records, ${formatInteger(Math.round(creditLedgerGranted))} granted`
                   )}
                 </p>
+                </div>
               </div>
             </div>
+          </BackofficeStackCard>
+          <AdminInspectorDrawer
+            open={activeDrawer === 'credit-ledger'}
+            title={t('admin.account_detail.credit_ledger_title', undefined, 'Credit ledger detail')}
+            titleId="account-credit-ledger-title"
+            eyebrow={t('admin.account_detail.quota_eyebrow', undefined, 'Quota posture')}
+            description={t('admin.account_detail.credit_ledger_desc', undefined, 'Current-period consume, grant, adjustment, and refund records from the AI credit ledger.')}
+            closeLabel={t('common.close', undefined, 'Close')}
+            headerAccessory={<BackofficeStatusBadge status="ok" label={t('admin.account_detail.credit_ledger_record_count', { count: formatInteger(creditLedgerCount) }, `${formatInteger(creditLedgerCount)} records`)} />}
+            onClose={() => setActiveDrawer(null)}
+          >
             {creditLedgerItems.length > 0 ? (
-              <div className="mt-4 overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
+              <div className="overflow-hidden rounded-[1rem] border border-slate-200 dark:border-slate-800">
                 <div className="hidden grid-cols-[1.15fr_0.85fr_0.7fr_0.9fr] gap-3 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/45 dark:text-slate-400 sm:grid">
                   <span>{t('admin.account_detail.credit_ledger_source', undefined, 'Source')}</span>
                   <span>{t('admin.account_detail.credit_ledger_quantity', undefined, 'Quantity')}</span>
@@ -2487,12 +2545,79 @@ function AccountDetailContent() {
                 )}
               />
             )}
-          </BackofficeStackCard>
+          </AdminInspectorDrawer>
 
-          <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
-            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
-              {t('admin.account_detail.resource_limits_title', undefined, 'Resource limits')}
-            </h3>
+          <BackofficeStackCard className="!rounded-none !border-0 !bg-transparent !px-3 !py-2.5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-950 dark:text-white">
+                  {t('admin.account_detail.resource_limits_title', undefined, 'Resource limits')}
+                </h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {t(
+                    'admin.account_detail.resource_limits_summary_desc',
+                    { count: formatInteger(resourceRows.length) },
+                    `${formatInteger(resourceRows.length)} limits · open only when checking capacity or a quota warning.`
+                  )}
+                </p>
+              </div>
+            </div>
+          </BackofficeStackCard>
+          <AdminWorkbenchDialog
+            open={quotaDetailsOpen}
+            title={t('admin.account_detail.quota_details_title', undefined, 'Quota details')}
+            titleId="account-quota-details-title"
+            closeLabel={t('common.close', undefined, 'Close')}
+            cancelLabel={t('common.close', undefined, 'Close')}
+            saveLabel={t('common.close', undefined, 'Close')}
+            savingLabel={t('common.loading', undefined, 'Loading')}
+            saving={false}
+            footerNotice={t('admin.account_detail.resource_limits_drawer_desc', undefined, 'Review resource limits, credit components, and advanced evidence without extending the default page.')}
+            hideFooterActions
+            width="wide"
+            density="compact"
+            headerAccessory={<BackofficeStatusBadge status={quotaNeedsAttention ? 'warning' : 'ok'} label={quotaNeedsAttention ? translateStatusLabel('warning', t) : translateStatusLabel('ok', t)} />}
+            onClose={() => setQuotaDetailsOpen(false)}
+            onSubmit={() => undefined}
+          >
+            <div
+              role="tablist"
+              aria-label={t('admin.account_detail.quota_detail_tabs_label', undefined, 'Quota detail sections')}
+              data-ui="account-quota-detail-tabs"
+              className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800"
+            >
+              {([
+                {
+                  id: 'resources' as const,
+                  label: t('admin.account_detail.resource_limits_title', undefined, 'Resource limits'),
+                },
+                {
+                  id: 'components' as const,
+                  label: `${t('admin.account_detail.credit_components_label', undefined, 'Credit components')} · ${formatInteger((quotaSummary?.breakdown || []).length)}`,
+                },
+                {
+                  id: 'advanced' as const,
+                  label: t('admin.account_detail.advanced_quota_information_title', undefined, 'Advanced information'),
+                },
+              ]).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={quotaDetailTab === tab.id}
+                  className={cn(
+                    'shrink-0 border-b-2 px-3 py-2 text-sm font-semibold transition',
+                    quotaDetailTab === tab.id
+                      ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-200'
+                      : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                  )}
+                  onClick={() => setQuotaDetailTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {quotaDetailTab === 'resources' ? (
             <AdminDataTableFrame
               title={t('admin.account_detail.resource_limits_title', undefined, 'Resource limits')}
               resultLabel={t(
@@ -2570,8 +2695,12 @@ function AccountDetailContent() {
                 </tbody>
               </table>
             </AdminDataTableFrame>
+            ) : null}
+            {quotaDetailTab === 'components' ? creditComponentsPanel : null}
+            {quotaDetailTab === 'advanced' ? (
+              <div data-ui="account-advanced-quota" className="rounded-xl border border-slate-200 bg-slate-50/55 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/35">
             {internalLimitRows.length > 0 ? (
-              <div className="mt-5 rounded-[1rem] border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+              <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
                   {t('admin.account_detail.internal_guardrails_title', undefined, 'Internal guardrails')}
                 </p>
@@ -2587,7 +2716,7 @@ function AccountDetailContent() {
                 </div>
               </div>
             ) : null}
-            <div className="mt-5 rounded-[1rem] border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/35">
+            <div className={cn('border-slate-200 dark:border-slate-800', internalLimitRows.length > 0 && 'mt-4 border-t pt-3')}>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
                 {t('admin.account_detail.operator_recommendations_title', undefined, 'Recommendations')}
               </p>
@@ -2597,7 +2726,10 @@ function AccountDetailContent() {
                 ))}
               </ul>
             </div>
-          </BackofficeStackCard>
+              </div>
+            ) : null}
+          </AdminWorkbenchDialog>
+        </div>
         </div>
           </>
         )}
@@ -2811,6 +2943,8 @@ function AccountDetailContent() {
         ) : null}
         </div>
       ) : null}
+        </div>
+      </div>
 
       <ConfirmModal
         isOpen={Boolean(pendingConfirmation)}

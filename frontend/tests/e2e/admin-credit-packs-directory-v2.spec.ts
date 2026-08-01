@@ -73,6 +73,10 @@ test('credit pack directory is read-first, URL-backed, retained on refresh failu
   const harness = await installCreditPackHarness(page);
   await page.goto('/admin/credit-packs');
 
+  const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
+  await expect(primaryNav.locator('a[href="/admin/credit-packs"]')).toHaveAttribute('aria-current', 'page');
+  await expect(primaryNav.locator('a[href="/admin/plans"]')).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: /Open package catalog|打开套餐目录/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="credit-pack-directory-row"]')).toHaveCount(3);
   await expect(page.locator('main input')).toHaveCount(0);
   await expect(page.locator('[data-pack-id="pack_small"]')).toHaveAttribute('data-selected', 'true');

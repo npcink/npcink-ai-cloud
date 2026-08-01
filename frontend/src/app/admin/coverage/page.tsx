@@ -3,6 +3,8 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
+import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
@@ -208,6 +210,7 @@ function AdminCoverageContent() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [reasonFilter, setReasonFilter] = useState(() => searchParams.get('reason') || '');
   const [sort, setSort] = useState<QueueSort>(() => normalizeQueueSort(searchParams.get('sort')));
+  const [focusedCoverageKey, setFocusedCoverageKey] = useState(() => searchParams.get('focus') || '');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const mountedRef = useRef(false);
   const queueParamsRef = useRef(new URLSearchParams(searchParamsKey));
@@ -216,6 +219,11 @@ function AdminCoverageContent() {
 
   const updateQueueUrl = useCallback((patch: Record<string, string | null>) => {
     const nextParams = new URLSearchParams(queueParamsRef.current.toString());
+    const changesQueue = Object.keys(patch).some((key) => key !== 'focus');
+    if (changesQueue && !Object.prototype.hasOwnProperty.call(patch, 'focus')) {
+      nextParams.delete('focus');
+      setFocusedCoverageKey('');
+    }
     Object.entries(patch).forEach(([key, value]) => {
       const isDefault =
         (key === 'status' && value === 'needs_action') ||
@@ -225,12 +233,15 @@ function AdminCoverageContent() {
       } else {
         nextParams.set(key, value);
       }
+      if (key === 'focus') {
+        setFocusedCoverageKey(value || '');
+      }
     });
     const nextQuery = nextParams.toString();
     queueParamsRef.current = nextParams;
     const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
     window.history.replaceState(window.history.state, '', nextUrl);
-  }, [pathname]);
+  }, [pathname, setFocusedCoverageKey]);
 
   const loadCoverage = useCallback(async (force = false) => {
     if (!force && coverageRequestActiveRef.current) {
@@ -272,21 +283,12 @@ function AdminCoverageContent() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchParamsKey);
-    const hadLegacyFocus = params.has('focus');
-    params.delete('focus');
     queueParamsRef.current = params;
-    if (hadLegacyFocus) {
-      const nextQuery = params.toString();
-      window.history.replaceState(
-        window.history.state,
-        '',
-        nextQuery ? `${pathname}?${nextQuery}` : pathname
-      );
-    }
     setView(normalizeQueueView(params.get('status')));
     setSearchQuery(params.get('q') || '');
     setReasonFilter(params.get('reason') || '');
     setSort(normalizeQueueSort(params.get('sort')));
+    setFocusedCoverageKey(params.get('focus') || '');
   }, [pathname, searchParamsKey]);
 
   const visibleQueueItems = useMemo(
@@ -374,6 +376,13 @@ function AdminCoverageContent() {
         );
     });
   }, [reasonFilter, searchQuery, sort, view, visibleQueueItems]);
+  const selectedCoverageItem = focusedCoverageKey
+    ? visibleItems.find((item) => queueItemKey(item) === focusedCoverageKey) || null
+    : null;
+  const selectedCoverageLabel = selectedCoverageItem
+    ? customerLabelsByKey.get(queueItemKey(selectedCoverageItem)) ||
+      t('admin.coverage.unnamed_customer', {}, 'Unnamed customer')
+    : '';
   if (error && !queue) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -731,6 +740,15 @@ function AdminCoverageContent() {
                                   )} →
                                 </Link>
                               </p>
+                              <button
+                                type="button"
+                                className="mt-2 text-xs font-semibold text-slate-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-slate-300"
+                                aria-pressed={focusedCoverageKey === itemKey}
+                                aria-controls="coverage-evidence-drawer"
+                                onClick={() => updateQueueUrl({ focus: itemKey })}
+                              >
+                                {t('admin.coverage.inspect_evidence_action', {}, 'Inspect evidence')}
+                              </button>
                             </>
                           ) : null}
                         </td>
@@ -774,6 +792,119 @@ function AdminCoverageContent() {
             />
           )}
       </BackofficeSectionPanel>
+
+      <AdminInspectorDrawer
+        open={Boolean(selectedCoverageItem)}
+        title={selectedCoverageLabel}
+        titleId="coverage-evidence-title"
+        eyebrow={t('admin.coverage.evidence_eyebrow', {}, 'Service evidence')}
+        description={selectedCoverageItem
+          ? translateReasonCode(t, selectedCoverageItem.reason_code, selectedCoverageItem.reason_label)
+          : undefined}
+        closeLabel={t('common.close', {}, 'Close')}
+        onClose={() => updateQueueUrl({ focus: null })}
+        headerAccessory={selectedCoverageItem ? (
+          <CoverageStatusBadge
+            severity={selectedCoverageItem.severity}
+            label={translateStatusLabel(selectedCoverageItem.severity, t)}
+          />
+        ) : null}
+        footer={selectedCoverageItem ? (
+          <div className="flex flex-wrap gap-2">
+            <Link href={selectedCoverageItem.action_href} className="btn btn-primary btn-sm">
+              {translateActionLabel(
+                t,
+                selectedCoverageItem.recommended_action,
+                selectedCoverageItem.action_label || t('common.open', {}, 'Open')
+              )}
+            </Link>
+            <Link
+              href={`/admin/accounts/${encodeURIComponent(selectedCoverageItem.account.account_id)}`}
+              className="btn btn-secondary btn-sm"
+            >
+              {t('admin.coverage_open_customer_action', {}, 'Open customer')}
+            </Link>
+          </div>
+        ) : null}
+      >
+        {selectedCoverageItem ? (
+          <div id="coverage-evidence-drawer" className="space-y-5">
+            <dl className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+              {[
+                [
+                  t('common.package', {}, 'Package'),
+                  selectedCoverageItem.package?.display_package_label || t('common.not_available', {}, 'N/A'),
+                ],
+                [
+                  t('common.subscription', {}, 'Subscription'),
+                  translateStatusLabel(
+                    selectedCoverageItem.evidence.subscription_status ||
+                      selectedCoverageItem.primary_subscription?.status ||
+                      'unknown',
+                    t
+                  ),
+                ],
+                [
+                  t('common.sites', {}, 'Sites'),
+                  formatInteger(Number(selectedCoverageItem.evidence.site_count || 0)),
+                ],
+                [
+                  t('admin.coverage.missing_key_sites', {}, 'Sites missing keys'),
+                  formatInteger(Number(selectedCoverageItem.evidence.missing_key_site_count || 0)),
+                ],
+                [
+                  t('admin.coverage.period_end', {}, 'Period end'),
+                  selectedCoverageItem.evidence.current_period_end_at
+                    ? formatDate(selectedCoverageItem.evidence.current_period_end_at)
+                    : t('common.unknown', {}, 'Unknown'),
+                ],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-4 border-b border-slate-200/70 pb-2 last:border-b-0 dark:border-slate-800">
+                  <dt>{label}</dt>
+                  <dd className="text-right font-semibold text-slate-950 dark:text-white">{value}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900/45">
+              <p className="font-semibold text-slate-950 dark:text-white">
+                {t('admin.coverage.recommended_action_label', {}, 'Recommended action')}
+              </p>
+              <p className="mt-1 leading-6 text-slate-600 dark:text-slate-300">
+                {translateActionLabel(
+                  t,
+                  selectedCoverageItem.recommended_action,
+                  selectedCoverageItem.action_label || t('common.open', {}, 'Open')
+                )}
+              </p>
+            </div>
+
+            <details className="border-t border-slate-200/80 pt-4 text-sm dark:border-slate-800">
+              <summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-100">
+                {t('portal.support_information', {}, 'Support information')}
+              </summary>
+              <div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400">
+                <BackofficeIdentifier value={selectedCoverageItem.account.account_id} full />
+                {selectedCoverageItem.primary_subscription?.subscription_id ? (
+                  <BackofficeIdentifier value={selectedCoverageItem.primary_subscription.subscription_id} full />
+                ) : null}
+                <BackofficeIdentifier value={selectedCoverageItem.reason_code} full />
+                {selectedCoverageItem.evidence.billing_snapshot_status?.summary ? (
+                  <p className="pt-1 leading-5">{selectedCoverageItem.evidence.billing_snapshot_status.summary}</p>
+                ) : null}
+              </div>
+            </details>
+
+            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {t(
+                'admin.coverage.evidence_boundary',
+                {},
+                'This drawer explains existing service evidence only. Remediation continues in the owning customer or subscription page.'
+              )}
+            </p>
+          </div>
+        ) : null}
+      </AdminInspectorDrawer>
     </BackofficePageStack>
   );
 }
