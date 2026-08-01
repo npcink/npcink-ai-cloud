@@ -3,7 +3,7 @@ import { buildAdminApiEnvelope, installAdminMocks } from './helpers/admin-operat
 
 test('vector settings keeps the fixed PC profile and saves the continuous configuration table', async ({
   page
-}) => {
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
@@ -149,6 +149,12 @@ test('vector settings keeps the fixed PC profile and saves the continuous config
 
   await expect(configurationSection).toContainText('site_knowledge_zh_v1');
   await expect(page.getByText(/Result reranking|结果重排/i)).toHaveCount(0);
+  const pageScreenshotPath = testInfo.outputPath('admin-vector-settings-page-pc.png');
+  await page.screenshot({ path: pageScreenshotPath, fullPage: true, animations: 'disabled' });
+  await testInfo.attach('admin-vector-settings-page-pc', {
+    path: pageScreenshotPath,
+    contentType: 'image/png'
+  });
 
   await configurationSection
     .getByLabel('Zilliz Endpoint')

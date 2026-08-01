@@ -349,7 +349,7 @@ export default function VectorSettingsPage() {
       }
     > = {
       ready: {
-        label: copy('admin.vector_settings.status_ready', '可用', 'Ready'),
+        label: copy('admin.vector_settings.status_ready', '已就绪', 'Ready'),
         tone: 'success',
         description: copy(
           'admin.vector_settings.status_ready_desc',

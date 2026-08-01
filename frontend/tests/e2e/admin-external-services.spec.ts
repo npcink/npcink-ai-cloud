@@ -106,6 +106,12 @@ test('fixed service directory uses a table and one configuration workbench', asy
     scale: 'css',
     maxDiffPixelRatio: 0.015,
   });
+  const pageScreenshotPath = testInfo.outputPath('admin-external-services-page-pc.png');
+  await page.screenshot({ path: pageScreenshotPath, fullPage: true, animations: 'disabled' });
+  await testInfo.attach('admin-external-services-page-pc', {
+    path: pageScreenshotPath,
+    contentType: 'image/png',
+  });
 
   await page.getByRole('tab', { name: /Image sources|图库来源/i }).click();
   await expect(page.locator('[data-external-service-id="unsplash"]')).toBeVisible();
