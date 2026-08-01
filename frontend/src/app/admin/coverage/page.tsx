@@ -443,7 +443,7 @@ function AdminCoverageContent() {
           </button>
         )}
         summaryItems={[
-          { label: t('common.total', {}, 'Total'), value: formatInteger(visibleSummary.total) },
+          { label: t('admin.coverage.summary_total', {}, 'Total'), value: formatInteger(visibleSummary.total) },
           { label: t('admin.coverage.filter_needs_action', {}, 'Needs action'), value: formatInteger(visibleSummary.needs_action), toneClassName: visibleSummary.needs_action > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
           { label: translateStatusLabel('error', t), value: formatInteger(visibleSummary.error), toneClassName: visibleSummary.error > 0 ? 'text-rose-600 dark:text-rose-300' : undefined },
           { label: translateStatusLabel('warning', t), value: formatInteger(visibleSummary.warning), toneClassName: visibleSummary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },

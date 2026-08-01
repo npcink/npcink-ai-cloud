@@ -331,7 +331,7 @@ export default function AdminSupportRequestDetailPage() {
         title={supportRequest?.title || t('admin.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
         summaryItems={supportRequest ? [
-          { label: t('common.priority', {}, 'Priority'), value: supportRequest.priority },
+          { label: t('admin.support_requests_priority', {}, 'Priority'), value: supportRequest.priority },
           { label: t('common.account', {}, 'Account'), value: supportRequest.account_id },
           { label: t('common.updated_at', {}, 'Updated'), value: supportRequest.updated_at ? formatDate(supportRequest.updated_at) : t('common.unknown', {}, 'Unknown') },
         ] : []}
