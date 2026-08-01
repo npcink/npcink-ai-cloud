@@ -1,0 +1,4 @@
+interface:
+  display_name: "Npcink Parallel Delivery"
+  short_description: "并行调查与单通道交付 Npcink Cloud 变更"
+  default_prompt: "Use $npcink-parallel-delivery to deliver this repository task through bounded parallel agents and one integration owner."
