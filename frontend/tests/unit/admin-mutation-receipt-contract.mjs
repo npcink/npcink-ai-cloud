@@ -162,7 +162,7 @@ for (const [source, label] of [
 
 assert.match(
   runtimeProfilesSource,
-  /<BackofficePrimaryPanel[\s\S]*description=\{copy\('description'/,
+  /<BackofficeConfigurationHeader[\s\S]*description=\{copy\('description'/,
   'Hosted runtime profiles must keep the Cloud runtime boundary visible in the compact workspace header'
 );
 

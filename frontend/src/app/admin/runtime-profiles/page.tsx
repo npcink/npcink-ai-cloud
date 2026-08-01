@@ -8,10 +8,10 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import {
+  BackofficeConfigurationHeader,
   BackofficeDisclosure,
   BackofficeEmptyState,
   BackofficePageStack,
-  BackofficePrimaryPanel,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -468,32 +468,27 @@ export default function RuntimeProfilesPage() {
   }
 
   return (
-    <BackofficePageStack className="space-y-3">
-      <BackofficePrimaryPanel
+    <BackofficePageStack className="space-y-3" data-page-model="configuration">
+      <BackofficeConfigurationHeader
         eyebrow={copy('eyebrow', 'Runtime plane')}
         title={copy('title', 'Runtime Profiles')}
         description={copy('description', 'Configure the Cloud-hosted candidate chain for WordPress connector tasks. This is runtime routing metadata, not local ability or workflow truth.')}
-        descriptionDisplay="hint"
-        aside={(
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href="/admin/ai-resources" className="btn btn-secondary">
-              {copy('action_open_suppliers', 'Model suppliers')}
-            </Link>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!dirty || saving}
-              onClick={() => void saveProfiles()}
-            >
-              {saving ? copy('action_saving', 'Saving...') : copy('action_save', 'Save profiles')}
-            </button>
-          </div>
+        secondaryAction={(
+          <Link href="/admin/ai-resources" className="btn btn-secondary">
+            {copy('action_open_suppliers', 'Model suppliers')}
+          </Link>
         )}
-        className="rounded-md shadow-none backdrop-blur-none"
-        contentClassName="px-4 py-3 md:px-4 md:py-3"
-      >
-        <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-200 pt-2 text-xs dark:border-slate-800">
-          {[
+        primaryAction={(
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!dirty || saving}
+            onClick={() => void saveProfiles()}
+          >
+            {saving ? copy('action_saving', 'Saving...') : copy('action_save', 'Save profiles')}
+          </button>
+        )}
+        summaryItems={[
           { label: copy('summary_platform', 'Platform'), value: 'WordPress' },
           { label: copy('summary_profiles', 'Profiles'), value: String(drafts.length) },
           { label: copy('summary_configured', 'Configured'), value: `${configuredCount}/${drafts.length}` },
@@ -503,17 +498,9 @@ export default function RuntimeProfilesPage() {
             value: dirty ? copy('unsaved_status', 'Unsaved') : t('common.saved'),
             toneClassName: dirty ? 'text-amber-700 dark:text-amber-300' : undefined,
           },
-          ].map((item) => (
-            <div key={item.label} className="flex items-baseline gap-1.5">
-              <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
-              <dd className={`font-semibold text-slate-900 dark:text-white ${item.toneClassName || ''}`}>{item.value}</dd>
-            </div>
-          ))}
-          <div className="min-w-0 flex-1 text-right text-slate-500 dark:text-slate-400">
-            {copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
-          </div>
-        </dl>
-      </BackofficePrimaryPanel>
+        ]}
+        summaryAside={copy('boundary_notice', 'The local plugin still owns abilities, workflows, prompts, profile adoption, approvals, audit, and final WordPress writes.')}
+      />
 
       {error ? (
         <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200">
