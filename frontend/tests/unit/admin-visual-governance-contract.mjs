@@ -39,9 +39,21 @@ const pilotRoutes = {
     states: ['ready', 'selected', 'partial_error', 'disclosure'],
     spec: 'tests/e2e/admin-runtime-diagnostics-v2.spec.ts',
   },
+  '/admin/support-requests': {
+    pageModel: 'queue',
+    states: ['ready', 'filtered', 'selected', 'returned'],
+    spec: 'tests/e2e/admin-support-request-operator-closure.spec.ts',
+    artifact: 'support-request-queue',
+  },
+  '/admin/support-requests/[requestId]': {
+    pageModel: 'detail',
+    states: ['ready', 'action_error', 'action_success', 'return_context'],
+    spec: 'tests/e2e/admin-support-request-operator-closure.spec.ts',
+    artifact: 'support-request-detail',
+  },
 };
 
-assert.equal(manifest.version, 6, 'visual governance must use the reviewed v6 manifest');
+assert.equal(manifest.version, 7, 'visual governance must use the reviewed v7 manifest');
 assert.equal(manifest.visualGovernance.version, 1);
 assert.equal(manifest.visualGovernance.receiptSchema, 'admin-visual-receipt.schema.json');
 assert.deepEqual(manifest.visualGovernance.resultStates, expectedStatuses);
@@ -61,6 +73,12 @@ for (const [route, expected] of Object.entries(pilotRoutes)) {
   assert.match(spec, /writeAdminVisualReceipt/, `${route} must emit a structured browser receipt`);
   for (const state of expected.states) {
     assert.ok(spec.includes(`'${state}'`), `${route} must record the ${state} browser state`);
+  }
+  if (expected.artifact) {
+    assert.ok(
+      spec.includes(`artifactId: '${expected.artifact}'`),
+      `${route} must write a route-specific receipt artifact`
+    );
   }
 }
 
@@ -98,8 +116,10 @@ for (const status of expectedStatuses) {
   assert.ok(standard.includes(`\`${status}\``), `Admin UI standard must document ${status}`);
 }
 assert.match(helper, /git[\s\S]*rev-parse[\s\S]*status --porcelain/);
+assert.match(helper, /status[\s\S]*trimEnd\(\)/, 'porcelain parsing must preserve the first status column');
+assert.match(helper, /artifactId[\s\S]*artifactSuffix/, 'one workflow must support multiple receipt artifacts');
 assert.match(helper, /testInfo\.outputPath[\s\S]*testInfo\.attach/);
 assert.match(packageSource, /admin-visual-governance-contract\.mjs/);
 assert.match(packageSource, /admin-runtime-diagnostics-v2\.spec\.ts/);
 
-console.log('admin_visual_governance_contract: ok (12 rules, 3 pilot routes, structured receipts)');
+console.log('admin_visual_governance_contract: ok (12 rules, 5 pilot routes, structured receipts)');

@@ -382,11 +382,13 @@ Admin visual evidence uses the risk tier declared by the changed seam:
   interaction change; run the representative route matrix locally and gather
   M4 browser evidence before acceptance.
 
-The first pilot covers `/admin/ai-resources`, `/admin/service-settings`, and
-`/admin/troubleshooting`. The manifest owns their page model, risk tier,
-working-surface selector, and required state matrix. Do not expand the pilot to
-all routes until these three routes provide stable evidence without excessive
-false positives.
+The initial route pilots cover `/admin/ai-resources`, `/admin/service-settings`,
+and `/admin/troubleshooting`. The first cross-route workflow pilot covers the
+`/admin/support-requests` queue and `/admin/support-requests/[requestId]`
+detail as one operator closure. The manifest owns every pilot's page model,
+risk tier, working-surface selector, and required state matrix. Expand the
+pilot only through a bounded operator workflow with stable evidence and no
+excessive false positives.
 
 Every rule result is one of `pass`, `fail`, `review_required`,
 `not_applicable`, and `unmeasured`. Do not calculate a composite visual score.
@@ -436,9 +438,9 @@ pnpm run check:admin-ui:visual
 
 The structural gate verifies the route manifest, shared tokens, required
 primitives, documentation/AI entry points, and the bounded legacy-dialog and
-credential allowlists. The visual gate verifies the accepted queue,
-configuration, and diagnostic pilots at the fixed PC viewport and writes
-structured receipts into Playwright test results.
+credential allowlists. The visual gate verifies the accepted queue, detail,
+configuration, diagnostic, and cross-route workflow pilots at the fixed PC
+viewport and writes structured receipts into Playwright test results.
 
 Also run type, lint, i18n, contract, M4, and repository gates required by the
 actual changed seam. A screenshot is supporting evidence, not proof of API,

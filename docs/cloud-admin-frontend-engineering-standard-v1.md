@@ -226,7 +226,9 @@ frontend/src/features/admin/support-requests/
 The existing shared primitives stay in `frontend/src/components/admin`,
 `frontend/src/components/backoffice`, and `frontend/src/components/ui`.
 Feature modules must not fork those primitives to obtain slightly different
-spacing or color.
+spacing or color. The Tailwind content scan must include `frontend/src/features`
+so moving a surface into a feature module cannot silently remove its responsive
+or interaction-state utilities from the production CSS bundle.
 
 File length is a review signal, not a hard gate. A large translation map,
 schema, fixture, or declarative column definition is different from a large

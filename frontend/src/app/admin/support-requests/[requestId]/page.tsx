@@ -325,7 +325,7 @@ export default function AdminSupportRequestDetailPage() {
   }
 
   return (
-    <BackofficePageStack>
+    <BackofficePageStack data-ui="support-request-detail-workspace">
       <BackofficePrimaryPanel
         eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={supportRequest?.title || t('admin.support_request_detail_title', {}, 'Ticket detail')}
