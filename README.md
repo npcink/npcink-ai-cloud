@@ -71,6 +71,7 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/036-single-account-single-identity-validation-stage.md](docs/decisions/036-single-account-single-identity-validation-stage.md)
 - [docs/customer-account-identity-stage-standard-v1.md](docs/customer-account-identity-stage-standard-v1.md)
 - [docs/decisions/037-separate-customer-directory-from-service-problem-queue.md](docs/decisions/037-separate-customer-directory-from-service-problem-queue.md)
+- [docs/decisions/038-server-owned-support-waiting-state-projection.md](docs/decisions/038-server-owned-support-waiting-state-projection.md)
 - [docs/cloud-admin-customer-operations-workspace-standard-v1.md](docs/cloud-admin-customer-operations-workspace-standard-v1.md)
 
 Evidence records (not target-contract completion proof):
@@ -100,6 +101,7 @@ Evidence records (not target-contract completion proof):
 - [docs/cloud-admin-commercial-operations-density-closeout-and-development-retrospective-2026-08-01.md](docs/cloud-admin-commercial-operations-density-closeout-and-development-retrospective-2026-08-01.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 - [docs/cloud-admin-ui-development-retrospective-2026-07-27.md](docs/cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [docs/cloud-admin-support-request-queue-retrospective-2026-08-01.md](docs/cloud-admin-support-request-queue-retrospective-2026-08-01.md)
 - [docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md](docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md)
 - [docs/runtime-diagnostics-information-density-closeout-and-development-retrospective-2026-07-31.md](docs/runtime-diagnostics-information-density-closeout-and-development-retrospective-2026-07-31.md)
 - [docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md](docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)

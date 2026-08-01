@@ -296,6 +296,43 @@ boundaries, status text, or accessible table structure.
 Use the accepted admin table frame and status primitives instead of creating a
 new route-local table shell.
 
+### 5.1 Support and conversation queues
+
+A support queue ranks conversation work, not merely database status values.
+For `/admin/support-requests` and any future bounded conversation queue:
+
+- Use the full queue width for repeated comparison. Open inspection or editing
+  on demand in the shared drawer, workbench, or dedicated detail route; do not
+  reserve a permanently empty inspector column.
+- Keep the default row answerable in one scan: priority, waiting object,
+  waiting age, customer or ticket identity, workflow status, scope, freshness,
+  and one clear follow-up action.
+- Treat workflow status (`open`, `in_progress`, `resolved`, `closed`) and
+  waiting object (`operator`, `customer`, `none`) as separate facts. Do not
+  infer one from the other in the browser when the service owns a canonical
+  projection.
+- Rank and filter before pagination on the service. The browser must not sort
+  one fetched page and present it as the global risk order.
+- “Overdue” requires a server-owned waiting start and an explicit threshold.
+  Generic `updated_at`, internal notes, or page-load time are not SLA clocks.
+- Public customer activity may move work to the operator; public operator
+  activity may move it to the customer. Internal notes do not change the
+  public conversation owner. Complete work uses `none`.
+- Keep URL-backed queue scope shareable and refresh-safe. A retained or
+  placeholder result from a different request key remains visibly labeled and
+  read-only.
+- At the manifest PC viewport, the normal filter set and bounded actions use
+  one stable toolbar row when their labels and controls fit. Combining closely
+  related status and attention views into one selector is preferred to adding
+  another row or hiding frequent filters.
+- An empty queue is a bounded empty state, not a reason to preserve large
+  unused page geometry. Visual acceptance of populated states uses
+  deterministic fixtures or governed demo data and states exactly which one.
+
+The durable reasoning and delivery evidence for these rules are recorded in
+[Cloud Admin Support Request Queue Retrospective](cloud-admin-support-request-queue-retrospective-2026-08-01.md)
+and [ADR-038](decisions/038-server-owned-support-waiting-state-projection.md).
+
 ## 6. Dialogs And Configuration
 
 - Create and edit use a dialog or drawer while the list remains the primary

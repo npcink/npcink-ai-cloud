@@ -40,6 +40,11 @@ Current implementation evidence:
   the existing provider and adapter, keeps its accepted operator layout, and
   makes retained or placeholder result scopes read-only. Its measured record
   is [Cloud Admin Support Requests Query Closeout](cloud-admin-support-requests-query-closeout-2026-07-29.md).
+- PRs #436, #438, #439, and #450 then evolved that same queue without replacing
+  its Query ownership: full-width comparison with on-demand inspection,
+  one-row PC filters, queue-to-detail operator closure, and a server-owned
+  waiting-state projection. The consolidated record is
+  [Cloud Admin Support Request Queue Retrospective](cloud-admin-support-request-queue-retrospective-2026-08-01.md).
 - A headless table library and React Hook Form remain unadopted. They require
   their own burden-removal evidence; the Query pilot does not pre-approve them.
 - Stage 3 tested React Hook Form plus the Zod resolver on the bounded account
@@ -186,6 +191,19 @@ Hard rules:
    conclusions require explicit evidence completeness. Partial evidence may
    remain visible, but it must not silently authorize a complete-scope
    conclusion or mutation.
+9. A browser must not derive a durable queue clock from `created_at` or
+   `updated_at` when public domain activity owns the transition. Persist or
+   project the canonical event time on the service and expose it read-only.
+10. Workflow status, attention view, waiting object, and risk rank are distinct
+    state dimensions. Give each one an explicit owner and test their combined
+    behavior before adding UI labels.
+11. Internal notes, notification delivery, and public conversation activity
+    must not accidentally share one update timestamp as their only semantic
+    source. Test the mutation that changes the waiting owner and the mutation
+    that deliberately does not.
+12. When a new projection is backfilled, migration fixtures must include every
+    historical event family that can own the result, including messages and
+    attachments, plus internal events that must be ignored.
 
 ## 5. Page And Feature Structure
 
