@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
   BackofficePageStack,
-  BackofficePrimaryPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
@@ -443,20 +442,14 @@ export default function AdminSiteCompliancePage() {
 
   return (
     <BackofficePageStack className="min-w-0 space-y-3">
-      <BackofficePrimaryPanel
+      <BackofficeConfigurationHeader
         eyebrow={copy('网站与审核资料', 'Public site and review')}
         title={copy('网站合规资料', 'Site compliance')}
         description={copy(
           '维护一份版本化的 Cloud 公开资料；草稿保存后重新检查，只有已发布版本进入公开页面。',
           'Maintain one versioned Cloud disclosure. Saving revalidates the draft; only a published version reaches public pages.'
         )}
-        descriptionDisplay="hint"
-        contentClassName="px-5 py-4 md:px-7 md:py-5"
-        summaryClassName="px-5 py-2.5 md:px-7 md:py-2.5"
-        summary={(
-          <BackofficeSummaryStrip
-            density="compact"
-            items={[
+        summaryItems={[
               {
                 label: copy('草稿状态', 'Draft'),
                 value: dirty ? copy('有未保存修改', 'Unsaved') : copy('已保存', 'Saved'),
@@ -485,8 +478,6 @@ export default function AdminSiteCompliancePage() {
                 size: 'compact',
               },
             ]}
-          />
-        )}
       />
 
       {error ? (

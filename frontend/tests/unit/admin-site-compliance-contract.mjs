@@ -41,8 +41,8 @@ assert.match(
 
 assert.match(
   page,
-  /<BackofficePrimaryPanel[\s\S]*?descriptionDisplay="hint"[\s\S]*?<BackofficeSummaryStrip[\s\S]*?density="compact"[\s\S]*?data-ui="site-compliance-workbench"[\s\S]*?data-ui="site-compliance-directory"[\s\S]*?data-ui="site-compliance-active-panel"/,
-  'site compliance must use a short header, flat summary strip, and one continuous directory/workbench surface'
+  /<BackofficeConfigurationHeader[\s\S]*?summaryItems=\{\[[\s\S]*?data-ui="site-compliance-workbench"[\s\S]*?data-ui="site-compliance-directory"[\s\S]*?data-ui="site-compliance-active-panel"/,
+  'site compliance must use the shared compact configuration header and one continuous directory/workbench surface'
 );
 
 assert.match(

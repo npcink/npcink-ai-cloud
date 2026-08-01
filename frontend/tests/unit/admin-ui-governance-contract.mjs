@@ -26,6 +26,8 @@ const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/
 const vectorSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/vector-settings/page.tsx'), 'utf8');
 const runtimeProfilesPageSource = readFileSync(fromFrontendRoot('src/app/admin/runtime-profiles/page.tsx'), 'utf8');
 const serviceSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
+const creditPacksPageSource = readFileSync(fromFrontendRoot('src/app/admin/credit-packs/page.tsx'), 'utf8');
+const siteCompliancePageSource = readFileSync(fromFrontendRoot('src/app/admin/site-compliance/page.tsx'), 'utf8');
 
 function listFiles(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -213,10 +215,13 @@ for (const [name, source] of [
   ['external services', externalServicesPageSource],
   ['vector settings', vectorSettingsPageSource],
   ['runtime profiles', runtimeProfilesPageSource],
+  ['credit packs', creditPacksPageSource],
+  ['service settings', serviceSettingsPageSource],
+  ['site compliance', siteCompliancePageSource],
 ]) {
   assert.match(source, /<BackofficeConfigurationHeader/, `${name} must use the shared configuration header`);
   assert.doesNotMatch(source, /<BackofficePrimaryPanel/, `${name} must not fork configuration-header geometry`);
-  assert.match(source, /summaryItems=\{\[/, `${name} must project its readiness facts through the shared summary slot`);
+  assert.match(source, /summaryItems=\{(?:\[|metrics)/, `${name} must project its readiness facts through the shared summary slot`);
 }
 assert.match(
   externalServicesPageSource,

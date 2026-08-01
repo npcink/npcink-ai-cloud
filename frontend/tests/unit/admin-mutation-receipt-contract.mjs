@@ -149,16 +149,17 @@ assert.match(
   'Hosted runtime profile writes must store the backend receipt'
 );
 
-for (const [source, label] of [
-  [aiResourcesSource, 'AI resources'],
-  [serviceSettingsSource, 'Service settings'],
-]) {
-  assert.match(
-    source,
-    /descriptionDisplay="hint"/,
-    `${label} must collect low-frequency top-level descriptions behind an info hint`
-  );
-}
+assert.match(
+  aiResourcesSource,
+  /descriptionDisplay="hint"/,
+  'AI resources must collect low-frequency top-level descriptions behind an info hint'
+);
+
+assert.match(
+  serviceSettingsSource,
+  /<BackofficeConfigurationHeader/,
+  'Service settings must delegate low-frequency top-level descriptions to the shared configuration header info hint'
+);
 
 assert.match(
   runtimeProfilesSource,

@@ -12,7 +12,7 @@ const editorSurface = source.slice(editorStart);
 
 assert.match(source, /usePathname[\s\S]*useRouter[\s\S]*searchParams\.get\('status'\)[\s\S]*searchParams\.get\('focus'\)/, 'Credit pack filter and focus must be URL-backed');
 assert.match(source, /requestActiveRef[\s\S]*requestSequenceRef[\s\S]*hasLoadedRef[\s\S]*if \(requestActiveRef\.current\) return/, 'Credit pack reads must deduplicate Strict Mode requests and reject stale replacement');
-assert.match(defaultSurface, /BackofficeLayer[\s\S]*BackofficeSummaryStrip[\s\S]*AdminDataTableFrame[\s\S]*data-ui="credit-pack-directory-row"/, 'The default surface must use compact orientation and one comparison table');
+assert.match(defaultSurface, /BackofficeConfigurationHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*data-ui="credit-pack-directory-row"/, 'The default surface must use the shared compact configuration header and one comparison table');
 assert.doesNotMatch(defaultSurface, /<input|<textarea/, 'The default credit pack directory must be read-only until one pack enters edit mode');
 assert.doesNotMatch(defaultSurface, /common\.save|handleSaveDraft/, 'The default header and directory must not expose an ambiguous save-all action');
 assert.doesNotMatch(defaultSurface, /admin\.credit_packs_open_packages/, 'The independent AI credit pack workspace must not duplicate package-catalog navigation');

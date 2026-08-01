@@ -4,10 +4,9 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
+  BackofficeConfigurationHeader,
   BackofficeEmptyState,
-  BackofficeLayer,
   BackofficePageStack,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import {
   AdminConfigurationRow,
@@ -215,7 +214,7 @@ export default function AdminCreditPacksPage() {
 
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficeConfigurationHeader
         eyebrow={t('admin.credit_packs_eyebrow', {}, 'Commercial catalog')}
         title={t('admin.credit_packs_title', {}, 'AI credit packs')}
         description={t(
@@ -223,11 +222,17 @@ export default function AdminCreditPacksPage() {
           {},
           'Review the customer purchase catalog first. Edit one pack only when price, credits, validity, visibility, or package fit must change.'
         )}
-        actions={(
+        secondaryAction={(
           <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving}>
             {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
           </button>
         )}
+        summaryItems={[
+          { label: t('admin.credit_packs_active_count', {}, 'Active packs'), value: `${activeCount}/${items.length}` },
+          { label: t('admin.credit_packs_default_validity', {}, 'Default validity'), value: t('admin.credit_packs_validity_days_value', { days: String(defaultValidityDays) }, `${defaultValidityDays} days`) },
+          { label: t('admin.credit_packs_expiry_policy', {}, 'Expiry policy'), value: t('admin.credit_packs_expiry_policy_value', {}, 'Purchase time + validity') },
+          { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
+        ]}
       />
 
       {error ? (
@@ -236,13 +241,6 @@ export default function AdminCreditPacksPage() {
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadCatalog(true)}>{t('common.retry')}</button>
         </div>
       ) : null}
-
-      <BackofficeSummaryStrip items={[
-        { label: t('admin.credit_packs_active_count', {}, 'Active packs'), value: `${activeCount}/${items.length}` },
-        { label: t('admin.credit_packs_default_validity', {}, 'Default validity'), value: t('admin.credit_packs_validity_days_value', { days: String(defaultValidityDays) }, `${defaultValidityDays} days`) },
-        { label: t('admin.credit_packs_expiry_policy', {}, 'Expiry policy'), value: t('admin.credit_packs_expiry_policy_value', {}, 'Purchase time + validity') },
-        { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
-      ]} />
 
       <p role="status" aria-live="polite" className="sr-only">
         {t('admin.credit_packs_result_count', { visible: String(filteredItems.length), total: String(items.length) }, '{{visible}} visible · {{total}} total')}
