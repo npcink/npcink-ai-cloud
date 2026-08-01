@@ -263,7 +263,10 @@ def test_admin_provider_connections_store_encrypted_credentials_and_project_to_a
     assert data["configuration_status"] == "ready"
     assert data["verification_status"] == "not_observed"
     assert data["attention_required"] is True
-    assert data["attention_reasons"] == ["image_delivery_unconfirmed"]
+    assert data["attention_reasons"] == [
+        "verification_not_observed",
+        "image_delivery_unconfirmed",
+    ]
     assert "priority" not in data
     assert "note" not in data
     assert data["receipt"]["event_kind"] == "provider_connection.save"
@@ -1076,8 +1079,8 @@ def test_admin_ai_resources_lists_only_added_capability_provider_connections(
     assert connections["search_apify"]["status"] == "ready"
     assert connections["search_apify"]["configuration_status"] == "ready"
     assert connections["search_apify"]["verification_status"] == "not_observed"
-    assert connections["search_apify"]["attention_required"] is False
-    assert connections["search_apify"]["attention_reasons"] == []
+    assert connections["search_apify"]["attention_required"] is True
+    assert connections["search_apify"]["attention_reasons"] == ["verification_not_observed"]
     assert [item["connection_id"] for item in web_search_connections] == ["search_apify"]
     capabilities = {item["capability_id"]: item for item in projection["capabilities"]}
     assert capabilities["web_search"]["connection_ids"] == ["search_apify"]

@@ -75,6 +75,7 @@ function connectionErrorLabel(errorCode: string, translate: Translate): string {
 function ConnectionIssue({ connection, translate }: { connection: SupplierConnection; translate: Translate }) {
   const attentionLabels: Record<string, string> = {
     last_test_failed: translate('provider_issue_last_test_failed', 'Last verification failed'),
+    verification_not_observed: translate('provider_issue_verification_not_observed', 'Connection has not been verified'),
     image_delivery_unconfirmed: translate('provider_issue_image_delivery_unconfirmed', 'Image delivery mode is not confirmed'),
     image_output_hosts_missing: translate('provider_issue_image_output_hosts_missing', 'Image download hosts are missing'),
   };

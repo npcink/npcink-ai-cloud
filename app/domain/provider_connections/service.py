@@ -800,6 +800,8 @@ def _connection_attention_reasons(
         reasons.append(configuration_status)
     if verification_status == "failed":
         reasons.append("last_test_failed")
+    elif verification_status == "not_observed" and configuration_status == "ready":
+        reasons.append("verification_not_observed")
 
     if "image_generation" in capability_ids:
         image_response_format = _string(config.get("image_response_format")).lower()

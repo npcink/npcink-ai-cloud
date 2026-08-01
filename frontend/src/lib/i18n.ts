@@ -7656,6 +7656,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.ai_resources.provider_issue_missing_credential': '未配置凭据',
     'admin.ai_resources.provider_issue_credential_unreadable': '已保存凭据无法读取，请重新输入并保存密钥。',
     'admin.ai_resources.provider_issue_last_test_failed': '上次验证失败',
+    'admin.ai_resources.provider_issue_verification_not_observed': '连接尚未验证',
     'admin.ai_resources.provider_issue_image_delivery_unconfirmed': '图片交付方式未确认',
     'admin.ai_resources.provider_issue_image_output_hosts_missing': '缺少图片下载域名',
     'admin.ai_resources.provider_error_unsupported_kind': '当前连接类型不支持自动测试。',
