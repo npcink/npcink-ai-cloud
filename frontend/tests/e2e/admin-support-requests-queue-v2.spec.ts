@@ -165,6 +165,7 @@ async function installSupportQueueMocks(page: Page) {
 }
 
 test('ticket queue persists filters and focus while retaining usable results on failure', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const mocks = await installSupportQueueMocks(page);
   await page.goto('/admin/support-requests');
@@ -174,6 +175,21 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(page.locator('[data-ui="support-request-table"] table')).toHaveCount(1);
   await expect(page.locator('[data-ui="admin-context-drawer"]')).toHaveCount(0);
   expect(mocks.getRequestCount()).toBe(1);
+
+  const toolbarControls = [
+    page.getByLabel(/Search tickets|搜索工单/i),
+    page.getByLabel(/Ticket status|工单状态/i),
+    page.getByLabel(/Ticket topic|工单类型/i),
+    page.getByLabel(/Sort|排序/i),
+    page.getByRole('button', { name: /^Apply$|^应用$/i }),
+    page.getByRole('button', { name: /^Clear filters$|^清除筛选$/i }),
+  ];
+  const toolbarCenters = await Promise.all(toolbarControls.map(async (control) => {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    return box!.y + box!.height / 2;
+  }));
+  expect(Math.max(...toolbarCenters) - Math.min(...toolbarCenters)).toBeLessThan(4);
 
   const rows = page.locator('[data-ui="support-request-row"]');
   await expect(rows.nth(0)).toContainText('Payment confirmation is still missing');

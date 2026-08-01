@@ -245,9 +245,9 @@ export function SupportRequestsWorkspace() {
         <form
           data-ui="support-request-toolbar"
           onSubmit={applySearch}
-          className="grid gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_9rem_9rem_9rem_auto]"
+          className="grid gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6"
         >
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label className="text-sm text-slate-700 dark:text-slate-200 xl:col-span-2">
             <span className="sr-only">{t('admin.support_requests_search_label', {}, 'Search tickets')}</span>
             <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
           </label>
@@ -270,7 +270,7 @@ export function SupportRequestsWorkspace() {
               <option value="updated_at">{t('admin.support_requests_sort_updated', {}, 'Recently updated')}</option>
             </select>
           </label>
-          <div className="flex items-center justify-end gap-2 md:col-span-2 xl:col-span-1">
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
             <button type="submit" className="btn btn-primary btn-sm">{t('common.apply', {}, 'Apply')}</button>
             <button type="button" className="btn btn-secondary btn-sm" disabled={!hasFilters && !queryDraft} onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button>
           </div>

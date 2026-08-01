@@ -22,7 +22,7 @@ assert.match(source, /BackofficeLayer/, 'ticket queue must use the compact opera
 assert.match(source, /BackofficeSummaryStrip/, 'ticket queue must expose a compact operating summary');
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeStackCard|support-request-queue-item/, 'ticket queue must not restore the old card stack or task cards');
 assert.match(source, /AdminDataTableFrame[\s\S]*dataUi="support-request-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/, 'ticket queue must use the shared full-width semantic table');
-assert.match(source, /data-ui="support-request-toolbar"[\s\S]*md:grid-cols-2[\s\S]*xl:grid-cols-/, 'ticket filters must stay in one compact responsive toolbar');
+assert.match(source, /data-ui="support-request-toolbar"[\s\S]*md:grid-cols-2[\s\S]*xl:grid-cols-6[\s\S]*xl:col-span-2[\s\S]*whitespace-nowrap/, 'four ticket filters and both actions must share one PC toolbar row');
 
 for (const parameter of ['status', 'topic', 'q', 'sort', 'offset', 'focus']) {
   assert.match(source, new RegExp(`queueParams\\.get\\('${parameter}'\\)`), `${parameter} must be URL-backed`);
