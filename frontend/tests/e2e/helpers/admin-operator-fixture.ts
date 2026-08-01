@@ -502,6 +502,7 @@ export async function installAdminMocks(page: Page) {
         },
         totals: {
           runs: 6,
+          ai_evidence_required_runs: 6,
           provider_calls: 5,
           usage_meter_events: 6,
           provider_call_run_coverage_rate: 0.8333,

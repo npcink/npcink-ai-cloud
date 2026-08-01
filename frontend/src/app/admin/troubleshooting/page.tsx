@@ -39,6 +39,7 @@ type RuntimeTelemetrySummary = {
   generatedAt: string;
   totals: {
     runs: number;
+    aiEvidenceRequiredRuns: number;
     providerCalls: number;
     usageMeterEvents: number;
     providerCallRunCoverageRate: number;
@@ -152,6 +153,7 @@ function normalizeRuntimeTelemetry(raw: any): RuntimeTelemetrySummary {
     generatedAt: String(raw?.generated_at ?? ''),
     totals: {
       runs: asNumber(totals.runs),
+      aiEvidenceRequiredRuns: asNumber(totals.ai_evidence_required_runs),
       providerCalls: asNumber(totals.provider_calls),
       usageMeterEvents: asNumber(totals.usage_meter_events),
       providerCallRunCoverageRate: asNumber(totals.provider_call_run_coverage_rate),
@@ -306,6 +308,8 @@ export default function AdminTroubleshootingPage() {
 
   const issues = data?.alertSummary.alerts || [];
   const selectedIssue = issues.find((issue) => issue.code === focusedIssueCode) || null;
+  const hasCoverageSample = Boolean(data && data.totals.aiEvidenceRequiredRuns > 0);
+  const selectedWindowLabel = windowHours === 168 ? '7d' : `${windowHours}h`;
   const refreshInProgress = loading || refreshing || qualityRequestState.loading;
   const sourceErrorCount = Number(Boolean(error)) + Number(Boolean(qualityRequestState.error));
   let refreshStateLabel = '';
@@ -327,13 +331,17 @@ export default function AdminTroubleshootingPage() {
       : statusTone(conclusionStatus) === 'warning'
         ? t('admin.troubleshooting.status_warning', {}, 'Needs attention')
         : t('admin.troubleshooting.status_unknown', {}, 'Awaiting evidence');
-  const conclusionSummary = statusTone(conclusionStatus) === 'error'
-    ? t('admin.troubleshooting.conclusion_error', {}, 'Runtime telemetry has errors or coverage gaps that require operator review.')
-    : statusTone(conclusionStatus) === 'warning'
-      ? t('admin.troubleshooting.conclusion_warning', {}, 'Runtime telemetry has coverage gaps that should be reviewed.')
-      : statusTone(conclusionStatus) === 'success'
-        ? t('admin.troubleshooting.conclusion_healthy', {}, 'Runtime telemetry is healthy in the selected window.')
-        : data?.alertSummary.summary || t('admin.troubleshooting.queue_desc', {}, 'Select an anomaly to inspect its evidence scope and next diagnostic step.');
+  const conclusionSummary = loading && !data
+    ? t('admin.troubleshooting.loading', {}, 'Loading runtime diagnostics')
+    : conclusionStatus === 'inactive'
+      ? t('admin.troubleshooting.conclusion_inactive', { window: selectedWindowLabel }, 'No runtime runs were observed in the selected {{window}} window.')
+      : statusTone(conclusionStatus) === 'error'
+        ? t('admin.troubleshooting.conclusion_error', {}, 'Runtime telemetry has errors or coverage gaps that require operator review.')
+        : statusTone(conclusionStatus) === 'warning'
+          ? t('admin.troubleshooting.conclusion_warning', {}, 'Runtime telemetry has coverage gaps that should be reviewed.')
+          : statusTone(conclusionStatus) === 'success'
+            ? t('admin.troubleshooting.conclusion_healthy', {}, 'Runtime telemetry is healthy in the selected window.')
+            : t('admin.troubleshooting.queue_desc', {}, 'Select an anomaly to inspect its evidence scope and next diagnostic step.');
 
   return (
     <BackofficePageStack
@@ -344,6 +352,20 @@ export default function AdminTroubleshootingPage() {
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         description={t('admin.troubleshooting.description', {}, 'Review the current runtime conclusion, open active anomalies, and continue into the narrowest evidence view.')}
+        aside={(
+          <div
+            data-ui="runtime-diagnostic-header-conclusion"
+            className="min-w-0 max-w-xl border-l-2 border-slate-200 pl-3 dark:border-slate-800 lg:min-w-[22rem]"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {t('admin.troubleshooting.health_conclusion', {}, 'Health conclusion')}
+              </span>
+              <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
+            </div>
+            <p className="mt-1 text-sm leading-5 text-slate-700 dark:text-slate-200">{conclusionSummary}</p>
+          </div>
+        )}
       />
 
       <div
@@ -394,20 +416,10 @@ export default function AdminTroubleshootingPage() {
 
       {data ? <BackofficeSummaryStrip items={[
         { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
-        { label: t('admin.troubleshooting.provider_coverage', {}, 'Provider-call coverage'), value: formatRate(data.totals.providerCallRunCoverageRate), toneClassName: data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
-        { label: t('admin.troubleshooting.metering_coverage', {}, 'Metering coverage'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
+        { label: t('admin.troubleshooting.provider_coverage', {}, 'Provider-call coverage'), value: hasCoverageSample ? formatRate(data.totals.providerCallRunCoverageRate) : t('admin.troubleshooting.not_measured', {}, 'Not measured'), toneClassName: hasCoverageSample && data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : !hasCoverageSample ? 'text-slate-400 dark:text-slate-500' : undefined },
+        { label: t('admin.troubleshooting.metering_coverage', {}, 'Metering coverage'), value: hasCoverageSample ? formatRate(data.totals.meteredRunCoverageRate) : t('admin.troubleshooting.not_measured', {}, 'Not measured'), toneClassName: hasCoverageSample && data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : !hasCoverageSample ? 'text-slate-400 dark:text-slate-500' : undefined },
         { label: t('admin.troubleshooting.open_issues', {}, 'Open anomalies'), value: data.alertSummary.alertCount, toneClassName: data.alertSummary.alertCount > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
       ]} density="compact" /> : null}
-
-      {data ? (
-        <div
-          data-ui="runtime-diagnostic-conclusion"
-          className="flex min-w-0 items-center gap-2 border-y border-slate-200 py-2.5 dark:border-slate-800"
-        >
-          <BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />
-          <p className="text-sm text-slate-700 dark:text-slate-200">{conclusionSummary}</p>
-        </div>
-      ) : null}
 
       {error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-200" role="alert">
@@ -427,15 +439,14 @@ export default function AdminTroubleshootingPage() {
               <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
               <div className="h-20 rounded-xl bg-slate-100 dark:bg-slate-900" />
             </BackofficeSectionPanel>
-          ) : (
-          <AdminDataTableFrame
-            dataUi="runtime-diagnostic-table-frame"
-            density="compact"
-            title={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
-            resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} active anomalies')}
-            bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
-          >
-            {issues.length ? (
+          ) : issues.length ? (
+            <AdminDataTableFrame
+              dataUi="runtime-diagnostic-table-frame"
+              density="compact"
+              title={t('admin.troubleshooting.queue_title', {}, 'Runtime anomaly queue')}
+              resultLabel={t('admin.troubleshooting.issue_count', { count: String(issues.length) }, '{{count}} active anomalies')}
+              bodyClassName="max-h-[var(--admin-diagnostic-queue-max-height)] overflow-auto"
+            >
               <table
                 data-ui="runtime-diagnostic-table"
                 className="w-full min-w-[34rem] table-fixed text-left text-sm"
@@ -492,10 +503,19 @@ export default function AdminTroubleshootingPage() {
                   })}
                 </tbody>
               </table>
-            ) : (
-              <BackofficeEmptyState className="m-5 md:m-6" title={t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')} description={t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')} />
-            )}
-          </AdminDataTableFrame>
+            </AdminDataTableFrame>
+          ) : (
+            <div data-ui="runtime-diagnostic-empty-state">
+              <BackofficeEmptyState
+                className="admin-compact-surface py-5"
+                title={data?.totals.runs === 0
+                  ? t('admin.troubleshooting.no_sample_title', {}, 'No runtime runs observed')
+                  : t('admin.troubleshooting.no_issue_title', {}, 'No active runtime anomalies')}
+                description={data?.totals.runs === 0
+                  ? t('admin.troubleshooting.no_sample_desc', { window: selectedWindowLabel }, 'No diagnostic sample was recorded in the selected {{window}} window. Try a longer window if you need historical evidence.')
+                  : t('admin.troubleshooting.no_issue_desc', {}, 'The selected window has no runtime telemetry alerts. Continue with a narrow evidence lane only when investigating a specific support question.')}
+              />
+            </div>
           )}
         </div>
 

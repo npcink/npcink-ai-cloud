@@ -68,7 +68,7 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toBeVisible();
   await expect(anomalyTable.getByRole('columnheader', { name: /Affected scope|影响范围/i })).toBeVisible();
   await expect(anomalyTable.getByRole('columnheader', { name: /Evidence code|证据代码/i })).toHaveCount(0);
-  await expect(page.locator('[data-ui="runtime-diagnostic-conclusion"]')).toContainText(/Runtime telemetry has|运行遥测/i);
+  await expect(page.locator('[data-ui="runtime-diagnostic-header-conclusion"]')).toContainText(/Runtime telemetry has|运行遥测/i);
   await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Runtime updated|运行数据更新于/i);
   await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Quality updated|质量数据更新于/i);
   expect(await anomalyTable.locator('thead').evaluate((element) => getComputedStyle(element).position)).toBe('sticky');
@@ -166,6 +166,51 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+});
+
+test('runtime diagnostics uses a compact localized no-sample state', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('locale', 'zh-CN');
+  });
+  await installAdminMocks(page);
+  await page.route('**/api/admin/runtime-telemetry*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        generated_at: '2026-08-01T06:12:00Z',
+        totals: {
+          runs: 0,
+          ai_evidence_required_runs: 0,
+          provider_calls: 0,
+          usage_meter_events: 0,
+          provider_call_run_coverage_rate: 1,
+          metered_run_coverage_rate: 1,
+        },
+        governance_gaps: {},
+        alert_summary: {
+          status: 'inactive',
+          summary: 'No runtime runs were observed in this telemetry window.',
+          next_action: 'continue_monitoring',
+          alert_count: 0,
+          alerts: [],
+        },
+      })),
+    });
+  });
+
+  await page.goto('/admin/troubleshooting');
+
+  const conclusion = page.locator('[data-ui="runtime-diagnostic-header-conclusion"]');
+  const emptyState = page.locator('[data-ui="runtime-diagnostic-empty-state"]');
+  await expect(conclusion).toContainText('所选 24h 时间窗内未观测到运行记录。');
+  await expect(page.getByText('未测量')).toHaveCount(2);
+  await expect(page.getByText('No runtime runs were observed in this telemetry window.')).toHaveCount(0);
+  await expect(page.locator('[data-ui="runtime-diagnostic-table-frame"]')).toHaveCount(0);
+  await expect(emptyState).toContainText('未观测到运行记录');
+  await expect(emptyState).toContainText('如需查看历史证据，请切换到更长时间窗。');
+  const emptyStateBox = await emptyState.boundingBox();
+  expect(emptyStateBox?.height || Number.POSITIVE_INFINITY).toBeLessThan(160);
 });
 
 test('runtime diagnostics keeps one continuous primary lane on ultrawide screens', async ({ page }, testInfo) => {

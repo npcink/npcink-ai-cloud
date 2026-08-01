@@ -104,7 +104,8 @@ page:
    sources;
 2. one explicit runtime conclusion before the evidence surfaces;
 3. one bounded semantic anomaly queue with severity, issue, scope, count, and
-   one inspect action;
+   one inspect action when active anomalies exist; a zero-anomaly state uses
+   one compact shared status surface instead of an empty table frame;
 4. one on-demand contextual inspector drawer for evidence code, affected
    runs, scope, and the next diagnostic step; the closed state keeps the
    anomaly queue full width;
@@ -114,6 +115,11 @@ page:
    default-collapsed disclosures;
 7. no mutation, routing, provider, prompt, approval, or WordPress write
    authority.
+
+When the selected window has no eligible runtime sample, coverage values are
+`not measured`, not `100%`. Backend free-text summaries are evidence detail;
+the operator conclusion uses the stable status/code translation contract so a
+localized Admin route does not leak backend English into its primary state.
 
 The executable projection of the route matrix and accepted dimensions lives in
 `frontend/admin-ui-manifest.json`.

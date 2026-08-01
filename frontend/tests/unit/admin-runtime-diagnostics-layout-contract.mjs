@@ -17,15 +17,25 @@ assert.match(
   /data-ui="runtime-diagnostic-toolbar"[\s\S]*WINDOW_OPTIONS\.map[\s\S]*data-ui="diagnostic-source-freshness"[\s\S]*admin\.troubleshooting\.refresh/,
   'time window, source freshness, and refresh must stay in one compact toolbar'
 );
+assert.match(
+  source,
+  /<BackofficeLayer[\s\S]*aside=\{\([\s\S]*data-ui="runtime-diagnostic-header-conclusion"[\s\S]*conclusionLabel[\s\S]*conclusionSummary/,
+  'the header must use the available desktop lane for one explicit diagnostic conclusion'
+);
 assert.doesNotMatch(
   source,
-  /aside=\{<BackofficeStatusBadge label=\{conclusionLabel\}/,
-  'the header must not duplicate the page-level diagnostic conclusion'
+  /data-ui="runtime-diagnostic-conclusion"/,
+  'the page must not duplicate the header conclusion in a second status strip'
 );
 assert.match(
   source,
-  /data-ui="runtime-diagnostic-conclusion"[\s\S]*conclusionLabel[\s\S]*conclusionSummary/,
-  'the page must keep one explicit, non-truncated runtime conclusion'
+  /aiEvidenceRequiredRuns[\s\S]*hasCoverageSample[\s\S]*admin\.troubleshooting\.not_measured/,
+  'coverage without an eligible sample must render as not measured instead of 100 percent'
+);
+assert.match(
+  source,
+  /issues\.length \? \([\s\S]*<AdminDataTableFrame[\s\S]*runtime-diagnostic-empty-state[\s\S]*<BackofficeEmptyState/,
+  'active anomalies must use the semantic table while zero anomalies use one compact shared empty state'
 );
 
 const workspaceStart = source.indexOf('data-ui="runtime-diagnostic-workspace"');
