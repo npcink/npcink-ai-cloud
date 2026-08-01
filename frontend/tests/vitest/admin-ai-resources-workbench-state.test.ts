@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildProviderConnectionForm,
+  computeModelReferenceCoverage,
   EMPTY_PROVIDER_CONNECTION_FORM,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
@@ -9,6 +10,10 @@ import {
   type ProviderWorkbenchState,
 } from '@/features/admin/ai-resources/provider-workbench-state';
 import type { SupplierConnection } from '@/features/admin/ai-resources/types';
+import {
+  inferProviderPreset,
+  providerReferenceLinksForConnection,
+} from '@/features/admin/ai-resources/provider-presets';
 
 const catalogPreview: ProviderCatalogPreview = {
   provider_id: 'anthropic',
@@ -56,10 +61,28 @@ const staleWorkbench: ProviderWorkbenchState = {
   modelReferenceShowDeprecated: false,
   modelReferencePage: 4,
   confirmingClearModels: true,
+  confirmingModelBatch: '',
   customModelInput: 'claude-opus-4',
 };
 
 describe('AI resources provider workbench state', () => {
+  it('counts reference coverage by matching model identity instead of aggregate size', () => {
+    expect(computeModelReferenceCoverage({
+      providerId: 'openai',
+      targetModelIds: ['gpt-a', 'gpt-b'],
+      references: [
+        { provider_id: 'openai', model_id: 'other-a' },
+        { provider_id: 'openai', model_id: 'other-b' },
+      ],
+    })).toEqual({ covered: 0, total: 2 });
+
+    expect(computeModelReferenceCoverage({
+      providerId: 'openai',
+      targetModelIds: ['gpt-a', 'openai/gpt-a'],
+      references: [{ provider_id: 'openai', model_id: 'openai/gpt-a' }],
+    })).toEqual({ covered: 1, total: 1 });
+  });
+
   it('opens a clean create workflow without leaking the previous edit draft', () => {
     const state = providerWorkbenchReducer(staleWorkbench, {
       type: 'open_create',
@@ -151,6 +174,22 @@ describe('AI resources provider workbench state', () => {
     expect(state.modelReferenceProviderId).toBe('openai');
     expect(state.confirmingClearModels).toBe(false);
     expect(state.modelReferencePage).toBe(1);
+  });
+
+  it('keeps filtered batch confirmation mutually exclusive with clear-all', () => {
+    const batch = providerWorkbenchReducer(staleWorkbench, {
+      type: 'set_confirming_model_batch',
+      batch: 'disable',
+    });
+    expect(batch.confirmingModelBatch).toBe('disable');
+    expect(batch.confirmingClearModels).toBe(false);
+
+    const filtered = providerWorkbenchReducer(batch, {
+      type: 'set_reference_search',
+      search: 'audio',
+    });
+    expect(filtered.confirmingModelBatch).toBe('');
+    expect(filtered.modelReferencePage).toBe(1);
   });
 
   it('applies a preset as one transition and resets stale model controls', () => {
@@ -245,6 +284,41 @@ describe('AI resources provider form projection', () => {
       imageOutputHosts: 'cdn.example.test',
       credential: '',
       enabled: true,
+    });
+  });
+});
+
+describe('AI resources provider reference ownership', () => {
+  const compatibleConnection: SupplierConnection = {
+    connection_id: 'ollama_m4',
+    provider_id: 'openai',
+    display_name: 'Ollama M4',
+    kind: 'openai_compatible',
+    enabled: true,
+    configured: true,
+    status: 'ready',
+    base_url: 'http://host.docker.internal:11434/v1',
+    capability_ids: ['text_generation'],
+    runtime_profile_ids: ['text.ai'],
+    metadata: {},
+  };
+
+  it('does not project OpenAI links onto an Ollama-compatible connection', () => {
+    expect(inferProviderPreset(compatibleConnection)).toBe('ollama');
+    expect(providerReferenceLinksForConnection(compatibleConnection)).toMatchObject({
+      websiteUrl: 'https://ollama.com/',
+      docsUrl: 'https://docs.ollama.com/api/openai-compatibility',
+    });
+  });
+
+  it('prefers saved supplier-specific links over inferred defaults', () => {
+    expect(providerReferenceLinksForConnection({
+      ...compatibleConnection,
+      metadata: { docs_url: 'https://internal.example.test/provider-docs' },
+    })).toEqual({
+      websiteUrl: undefined,
+      statusUrl: undefined,
+      docsUrl: 'https://internal.example.test/provider-docs',
     });
   });
 });

@@ -260,6 +260,13 @@ def test_admin_provider_connections_store_encrypted_credentials_and_project_to_a
     assert data["connection_id"] == "openai_primary"
     assert data["status"] == "ready"
     assert data["configured"] is True
+    assert data["configuration_status"] == "ready"
+    assert data["verification_status"] == "not_observed"
+    assert data["attention_required"] is True
+    assert data["attention_reasons"] == [
+        "verification_not_observed",
+        "image_delivery_unconfirmed",
+    ]
     assert "priority" not in data
     assert "note" not in data
     assert data["receipt"]["event_kind"] == "provider_connection.save"
@@ -1070,6 +1077,10 @@ def test_admin_ai_resources_lists_only_added_capability_provider_connections(
     assert list(connections.keys()).count("search_apify") == 1
     assert connections["search_apify"]["provider_id"] == "apify"
     assert connections["search_apify"]["status"] == "ready"
+    assert connections["search_apify"]["configuration_status"] == "ready"
+    assert connections["search_apify"]["verification_status"] == "not_observed"
+    assert connections["search_apify"]["attention_required"] is True
+    assert connections["search_apify"]["attention_reasons"] == ["verification_not_observed"]
     assert [item["connection_id"] for item in web_search_connections] == ["search_apify"]
     capabilities = {item["capability_id"]: item for item in projection["capabilities"]}
     assert capabilities["web_search"]["connection_ids"] == ["search_apify"]
@@ -1127,6 +1138,22 @@ def _assert_admin_provider_test_failure_is_redacted(
         serialized_audit = json.dumps(audit_payload)
         for value in redacted_values:
             assert value not in serialized_audit
+
+    list_response = client.get(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(),
+    )
+    assert list_response.status_code == 200, list_response.text
+    listed = next(
+        item
+        for item in list_response.json()["data"]["connections"]
+        if item["connection_id"] == connection_id
+    )
+    assert listed["status"] == "ready"
+    assert listed["configuration_status"] == "ready"
+    assert listed["verification_status"] == "failed"
+    assert listed["attention_required"] is True
+    assert "last_test_failed" in listed["attention_reasons"]
 
 
 def test_admin_provider_connection_test_redacts_catalog_fetch_exception(
@@ -1431,6 +1458,41 @@ def test_admin_provider_connection_test_updates_masked_diagnostics(
         assert row is not None
         assert row.last_tested_at is not None
         assert row.last_error_code in {None, ""}
+
+    list_response = client.get(
+        "/internal/service/admin/provider-connections",
+        headers=build_internal_headers(),
+    )
+    listed = next(
+        item
+        for item in list_response.json()["data"]["connections"]
+        if item["connection_id"] == "openai_testable"
+    )
+    assert listed["verification_status"] == "passed"
+    assert listed["attention_required"] is False
+
+    update_response = client.patch(
+        "/internal/service/admin/provider-connections/openai_testable",
+        headers=build_internal_headers(idempotency_key="provider-connection-test-update"),
+        json={
+            "connection_id": "openai_testable",
+            "provider_id": "openai",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "OpenAI testable",
+            "enabled": True,
+            "base_url": "https://api.openai.changed.test/v1",
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    updated = update_response.json()["data"]
+    assert updated["status"] == "ready"
+    assert updated["last_tested_at"] == ""
+    assert updated["verification_status"] == "not_observed"
+    assert updated["attention_required"] is True
+    assert "verification_not_observed" in updated["attention_reasons"]
 
 
 def test_admin_provider_connection_test_runs_web_search_probe_without_result_payload(

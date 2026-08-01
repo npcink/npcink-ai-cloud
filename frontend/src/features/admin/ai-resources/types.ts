@@ -8,6 +8,7 @@ export type ResourceStatus =
 export type ConnectionStatusFilter =
   | 'all'
   | 'ready'
+  | 'attention'
   | 'missing_secret'
   | 'disabled';
 
@@ -19,6 +20,10 @@ export type SupplierConnection = {
   enabled: boolean;
   configured: boolean;
   status: ResourceStatus;
+  configuration_status?: ResourceStatus;
+  verification_status?: 'passed' | 'failed' | 'not_observed' | string;
+  attention_required?: boolean;
+  attention_reasons?: string[];
   base_url: string;
   capability_ids: string[];
   runtime_profile_ids: string[];

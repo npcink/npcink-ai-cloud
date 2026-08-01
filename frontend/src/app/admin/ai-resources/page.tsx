@@ -34,6 +34,7 @@ import {
 } from '@/features/admin/ai-resources/directory';
 import {
   buildProviderConnectionForm,
+  computeModelReferenceCoverage,
   EMPTY_PROVIDER_CONNECTION_FORM,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
@@ -43,6 +44,22 @@ import {
   type ProviderCatalogPreviewModel,
   type ProviderConnectionForm,
 } from '@/features/admin/ai-resources/provider-workbench-state';
+import {
+  PROVIDER_PRESETS,
+  canChooseReferenceProvider,
+  connectionExternalLinkItems,
+  defaultReferenceProviderId,
+  externalUrlValue,
+  inferProviderPreset,
+  inferReferenceProviderFromModelIds,
+  providerPresetById,
+  providerExternalLinkItems,
+  providerReferenceLinksForConnection,
+  providerReferenceLinksForForm,
+  referenceProviderForConnection,
+  referenceProviderLabel,
+  type ProviderExternalLinkItem,
+} from '@/features/admin/ai-resources/provider-presets';
 import type {
   ConnectionStatusFilter,
   ProviderConnectionTestResult,
@@ -127,306 +144,6 @@ type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
   receipt?: AdminMutationReceiptPayload | null;
 };
 
-type ProviderPreset = {
-  id: string;
-  label: string;
-  providerId: string;
-  kind: string;
-  displayName: string;
-  baseUrl: string;
-  websiteUrl?: string;
-  statusUrl?: string;
-  docsUrl?: string;
-  capabilityIds: string;
-  runtimeProfileIds: string;
-  modelIds: string;
-};
-
-type ProviderExternalLinkItem = {
-  key: 'website' | 'status' | 'docs';
-  labelKey: string;
-  fallback: string;
-  href: string;
-};
-
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    id: 'openai_compatible',
-    label: 'OpenAI Compatible',
-    providerId: 'openai',
-    kind: 'openai_compatible',
-    displayName: 'OpenAI Compatible',
-    baseUrl: 'https://api.openai.com/v1',
-    websiteUrl: 'https://openai.com/',
-    statusUrl: 'https://status.openai.com/',
-    docsUrl: 'https://developers.openai.com/api/docs',
-    capabilityIds: 'text_generation, image_generation',
-    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
-    modelIds: '',
-  },
-  {
-    id: 'newapi',
-    label: 'New API / One API',
-    providerId: 'newapi',
-    kind: 'openai_compatible',
-    displayName: 'New API channel',
-    baseUrl: 'https://api.example.com/v1',
-    websiteUrl: 'https://www.newapi.ai/en',
-    docsUrl: 'https://www.newapi.ai/en/docs',
-    capabilityIds: 'text_generation, image_generation',
-    runtimeProfileIds: 'text.ai, text.free-gpt55, grok-imagine-image-quality',
-    modelIds: '',
-  },
-  {
-    id: 'deepseek',
-    label: 'DeepSeek',
-    providerId: 'deepseek',
-    kind: 'openai_compatible',
-    displayName: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    websiteUrl: 'https://www.deepseek.com/',
-    statusUrl: 'https://status.deepseek.com/',
-    docsUrl: 'https://api-docs.deepseek.com/',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'deepseek-v4-flash, deepseek-v4-pro',
-  },
-  {
-    id: 'kimi',
-    label: 'Kimi',
-    providerId: 'kimi',
-    kind: 'openai_compatible',
-    displayName: 'Kimi',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    websiteUrl: 'https://www.kimi.com/',
-    docsUrl: 'https://platform.kimi.com/docs/api/overview',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'kimi-k2.6',
-  },
-  {
-    id: 'doubao',
-    label: 'Doubao / Volcengine Ark',
-    providerId: 'doubao',
-    kind: 'openai_compatible',
-    displayName: 'Doubao / Volcengine Ark',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    websiteUrl: 'https://www.volcengine.com/product/ark',
-    docsUrl: 'https://docs.volcengine.com/docs/82379/1795150',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'doubao-seed-2-0-lite-260215',
-  },
-  {
-    id: 'xiaomi_mimo',
-    label: 'Xiaomi MiMo',
-    providerId: 'xiaomi_mimo',
-    kind: 'openai_compatible',
-    displayName: 'Xiaomi MiMo',
-    baseUrl: 'https://api.xiaomimimo.com/v1',
-    websiteUrl: 'https://mimo.mi.com/',
-    docsUrl: 'https://mimo.mi.com/docs/quick-start/first-api-call',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'mimo-v2.5-pro',
-  },
-  {
-    id: 'longcat',
-    label: 'LongCat / Meituan',
-    providerId: 'longcat',
-    kind: 'openai_compatible',
-    displayName: 'LongCat / Meituan',
-    baseUrl: 'https://api.longcat.chat/openai/v1',
-    websiteUrl: 'https://longcat.chat/',
-    docsUrl: 'https://longcat.chat/platform/docs/APIDocs.html',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'LongCat-2.0',
-  },
-  {
-    id: 'qwen',
-    label: 'Qwen / Alibaba Cloud Model Studio',
-    providerId: 'qwen',
-    kind: 'openai_compatible',
-    displayName: 'Qwen / Alibaba Cloud Model Studio',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    websiteUrl: 'https://www.aliyun.com/product/bailian',
-    docsUrl: 'https://help.aliyun.com/zh/model-studio/base-url',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'qwen3.6-plus',
-  },
-  {
-    id: 'hunyuan',
-    label: 'Hunyuan / Tencent TokenHub',
-    providerId: 'hunyuan',
-    kind: 'openai_compatible',
-    displayName: 'Hunyuan / Tencent TokenHub',
-    baseUrl: 'https://tokenhub.tencentmaas.com/v1',
-    websiteUrl: 'https://cloud.tencent.com/product/hunyuan',
-    docsUrl: 'https://cloud.tencent.com/document/product/1729/131925',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'hy3-preview',
-  },
-  {
-    id: 'zhipu_glm',
-    label: 'Zhipu GLM',
-    providerId: 'zhipu_glm',
-    kind: 'openai_compatible',
-    displayName: 'Zhipu GLM',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    websiteUrl: 'https://www.bigmodel.cn/',
-    docsUrl: 'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'glm-5.1',
-  },
-  {
-    id: 'anthropic',
-    label: 'Anthropic',
-    providerId: 'anthropic',
-    kind: 'anthropic',
-    displayName: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    websiteUrl: 'https://www.anthropic.com/',
-    statusUrl: 'https://status.claude.com/',
-    docsUrl: 'https://platform.claude.com/docs',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: 'claude-3-5-sonnet-latest',
-  },
-  {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    providerId: 'openrouter',
-    kind: 'openrouter',
-    displayName: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    websiteUrl: 'https://openrouter.ai/',
-    statusUrl: 'https://status.openrouter.ai/',
-    docsUrl: 'https://openrouter.ai/docs',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: '',
-  },
-  {
-    id: 'siliconflow',
-    label: 'SiliconFlow',
-    providerId: 'siliconflow',
-    kind: 'siliconflow',
-    displayName: 'SiliconFlow',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    websiteUrl: 'https://www.siliconflow.com/',
-    docsUrl: 'https://docs.siliconflow.com/en/userguide/introduction',
-    capabilityIds: 'text_generation, embedding',
-    runtimeProfileIds: 'text.ai, embed.default',
-    modelIds: '',
-  },
-  {
-    id: 'minimax',
-    label: 'MiniMax',
-    providerId: 'minimax',
-    kind: 'minimax',
-    displayName: 'MiniMax',
-    baseUrl: '',
-    websiteUrl: 'https://www.minimax.io/',
-    statusUrl: 'https://status.minimax.io/',
-    docsUrl: 'https://platform.minimax.io/docs',
-    capabilityIds: 'text_generation, image_generation, audio_generation, video_generation',
-    runtimeProfileIds: '',
-    modelIds: '',
-  },
-  {
-    id: 'custom',
-    label: 'Custom',
-    providerId: 'custom',
-    kind: 'openai_compatible',
-    displayName: 'Custom provider',
-    baseUrl: '',
-    capabilityIds: 'text_generation',
-    runtimeProfileIds: 'text.ai',
-    modelIds: '',
-  },
-];
-
-function externalUrlValue(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : '';
-  } catch {
-    return '';
-  }
-}
-
-function providerExternalLinkItems(values: {
-  websiteUrl?: unknown;
-  statusUrl?: unknown;
-  docsUrl?: unknown;
-}): ProviderExternalLinkItem[] {
-  return [
-    {
-      key: 'website' as const,
-      labelKey: 'provider_link_website',
-      fallback: 'Website',
-      href: externalUrlValue(values.websiteUrl),
-    },
-    {
-      key: 'status' as const,
-      labelKey: 'provider_link_status',
-      fallback: 'Status',
-      href: externalUrlValue(values.statusUrl),
-    },
-    {
-      key: 'docs' as const,
-      labelKey: 'provider_link_docs',
-      fallback: 'Docs',
-      href: externalUrlValue(values.docsUrl),
-    },
-  ].filter((item) => item.href);
-}
-
-function providerReferenceLinksForForm(form: ProviderConnectionForm): {
-  websiteUrl?: unknown;
-  statusUrl?: unknown;
-  docsUrl?: unknown;
-} {
-  const preset = providerPresetById(form.providerPreset);
-  return preset.id === 'custom' ? {} : preset;
-}
-
-function providerReferenceLinksForConnection(connection: Connection): {
-  websiteUrl?: unknown;
-  statusUrl?: unknown;
-  docsUrl?: unknown;
-} {
-  const preset = providerPresetById(inferProviderPreset(connection));
-  if (preset.id === 'custom') return {};
-  if (
-    preset.id === 'openai_compatible' &&
-    connection.provider_id.toLowerCase() !== 'openai' &&
-    !isExactOpenAIBaseUrl(connection.base_url)
-  ) {
-    return {};
-  }
-  return preset;
-}
-
-function isExactOpenAIBaseUrl(baseUrl: string): boolean {
-  try {
-    return new URL(baseUrl).hostname.toLowerCase() === 'api.openai.com';
-  } catch {
-    return false;
-  }
-}
-
-function connectionExternalLinkItems(connection: Connection): ProviderExternalLinkItem[] {
-  return providerExternalLinkItems(providerReferenceLinksForConnection(connection));
-}
-
 function supplierCategory(connection: Connection): SupplierCategory {
   if (
     connection.metadata?.managed_surface === 'site_knowledge_vector_profile' ||
@@ -481,43 +198,6 @@ function slugifyProviderValue(value: string): string {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return slug || 'provider';
-}
-
-function providerPresetById(presetId: string): ProviderPreset {
-  return PROVIDER_PRESETS.find((preset) => preset.id === presetId) || PROVIDER_PRESETS[0];
-}
-
-function providerHostname(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).hostname.toLowerCase().replace(/\.$/, '');
-  } catch {
-    return '';
-  }
-}
-
-function matchesProviderHostname(hostname: string, allowedDomains: string[]): boolean {
-  return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
-}
-
-function inferProviderPreset(connection: Connection): string {
-  const kind = connection.kind.toLowerCase();
-  const providerId = connection.provider_id.toLowerCase();
-  const hostname = providerHostname(connection.base_url);
-  if (providerId.includes('newapi')) return 'newapi';
-  if (providerId.includes('deepseek') || matchesProviderHostname(hostname, ['deepseek.com'])) return 'deepseek';
-  if (providerId.includes('kimi') || providerId.includes('moonshot') || matchesProviderHostname(hostname, ['moonshot.cn'])) return 'kimi';
-  if (providerId.includes('doubao') || providerId.includes('volcengine') || matchesProviderHostname(hostname, ['volces.com'])) return 'doubao';
-  if (providerId.includes('xiaomi_mimo') || providerId === 'mimo' || matchesProviderHostname(hostname, ['xiaomimimo.com'])) return 'xiaomi_mimo';
-  if (providerId.includes('longcat') || providerId.includes('meituan') || matchesProviderHostname(hostname, ['longcat.chat'])) return 'longcat';
-  if (providerId.includes('qwen') || providerId.includes('dashscope') || matchesProviderHostname(hostname, ['dashscope.aliyuncs.com', 'maas.aliyuncs.com'])) return 'qwen';
-  if (providerId.includes('hunyuan') || providerId.includes('tencent') || matchesProviderHostname(hostname, ['tencentmaas.com', 'hunyuan.cloud.tencent.com'])) return 'hunyuan';
-  if (providerId.includes('zhipu') || providerId.includes('glm') || matchesProviderHostname(hostname, ['bigmodel.cn'])) return 'zhipu_glm';
-  if (kind === 'anthropic') return 'anthropic';
-  if (kind === 'openrouter') return 'openrouter';
-  if (kind === 'siliconflow') return 'siliconflow';
-  if (kind === 'minimax' || kind === 'audio_provider' || kind === 'minimax_audio') return 'minimax';
-  if (kind === 'openai_compatible') return 'openai_compatible';
-  return 'custom';
 }
 
 function providerConnectionTestResultFromError(error: unknown): ProviderConnectionTestResponse | undefined {
@@ -598,48 +278,6 @@ function modelReferenceSearchText(row: ModelVisibilityRow): string {
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
-function defaultReferenceProviderId(providerId: string, presetId: string): string {
-  const normalizedProviderId = providerId.trim().toLowerCase();
-  if (normalizedProviderId && normalizedProviderId !== 'custom') return normalizedProviderId;
-  const presetProviderId = providerPresetById(presetId).providerId.trim().toLowerCase();
-  return presetProviderId === 'custom' ? 'openai' : presetProviderId;
-}
-
-function canChooseReferenceProvider(presetId: string): boolean {
-  return ['openai_compatible', 'newapi', 'openrouter', 'custom'].includes(presetId);
-}
-
-function referenceProviderLabel(providerId: string): string {
-  const normalizedProviderId = providerId.trim().toLowerCase();
-  const preset = PROVIDER_PRESETS.find((item) => item.providerId === normalizedProviderId);
-  return preset?.label || normalizedProviderId || 'OpenAI';
-}
-
-function modelProviderPrefix(modelId: string): string {
-  const normalizedModelId = modelId.trim().toLowerCase();
-  const slashIndex = normalizedModelId.indexOf('/');
-  if (slashIndex <= 0) return '';
-  return normalizedModelId.slice(0, slashIndex);
-}
-
-function inferReferenceProviderFromModelIds(modelIds: string[], fallbackProviderId: string): string {
-  const normalizedFallback = fallbackProviderId.trim().toLowerCase();
-  const prefixes = uniqueList(modelIds.map(modelProviderPrefix).filter(Boolean));
-  if (prefixes.length === 1) {
-    return prefixes[0];
-  }
-  return normalizedFallback || 'openai';
-}
-
-function referenceProviderForConnection(connection: Connection): string {
-  const presetId = inferProviderPreset(connection);
-  const fallbackProviderId = defaultReferenceProviderId(connection.provider_id, presetId);
-  if (!canChooseReferenceProvider(presetId)) {
-    return fallbackProviderId;
-  }
-  return inferReferenceProviderFromModelIds(connection.model_ids || [], fallbackProviderId);
-}
-
 function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureFilter {
   const normalized = feature.trim().toLowerCase();
   if (normalized.includes('image')) return 'image';
@@ -648,6 +286,17 @@ function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureF
   if (normalized.includes('embedding') || normalized.includes('vector')) return 'embedding';
   if (normalized.includes('text')) return 'text';
   return 'all';
+}
+
+function catalogDisplayFeature(modelId: string, catalogFeature: string): string {
+  const normalized = modelId.trim().toLowerCase();
+  if (/(^|[\/_-])(cosyvoice|sensevoice|funasr|whisper|tts|speech|audio)([\/_:.-]|$)/.test(normalized)) {
+    return 'audio';
+  }
+  if (/(^|[\/_-])(video|wan2\.[0-9]|sora)([\/_:.-]|$)/.test(normalized)) {
+    return 'video';
+  }
+  return catalogFeature;
 }
 
 function normalizeModelLookupValue(value: string): string {
@@ -694,12 +343,10 @@ function selectedModelIdFor(
 function hasModelMetadataFor(
   modelId: string,
   providerId: string,
-  references: ModelReferenceEntry[],
-  catalogModels: ProviderCatalogPreviewModel[]
+  references: ModelReferenceEntry[]
 ): boolean {
   const keys = modelLookupKeySet(modelId, providerId);
-  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)))
-    || catalogModels.some((model) => modelLookupKeys(model.model_id, providerId).some((key) => keys.has(key)));
+  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)));
 }
 
 function normalizeProviderCatalogPreview(value: any): ProviderCatalogPreview | null {
@@ -815,6 +462,7 @@ function AiResourcesContent() {
     modelReferenceShowDeprecated,
     modelReferencePage,
     confirmingClearModels,
+    confirmingModelBatch,
     customModelInput,
   } = providerWorkbench;
   const [error, setError] = useState('');
@@ -906,7 +554,7 @@ function AiResourcesContent() {
 
   useEffect(() => {
     const requestedStatus = searchParams.get('status');
-    if (requestedStatus === 'ready' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
+    if (requestedStatus === 'ready' || requestedStatus === 'attention' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
       setConnectionStatusFilter(requestedStatus);
     } else {
       setConnectionStatusFilter('all');
@@ -1459,7 +1107,8 @@ function AiResourcesContent() {
     return (data?.connections || []).filter((connection) => {
       const matchesFilter =
         connectionStatusFilter === 'all'
-        || (connectionStatusFilter === 'ready' && connection.status === 'ready')
+        || (connectionStatusFilter === 'ready' && connection.status === 'ready' && !connection.attention_required)
+        || (connectionStatusFilter === 'attention' && (connection.attention_required ?? connection.status !== 'ready'))
         || (connectionStatusFilter === 'missing_secret' && (connection.status === 'missing_secret' || !connection.configured))
         || (connectionStatusFilter === 'disabled' && (!connection.enabled || connection.status === 'disabled'));
       if (!matchesFilter) return false;
@@ -1491,7 +1140,7 @@ function AiResourcesContent() {
       return aiText('model_feature_text_generation', 'Text generation');
     }
     if (normalized === 'audio_generation' || normalized === 'audio_generations' || normalized === 'audio') {
-      return aiText('model_feature_audio_generation', 'Audio generation');
+      return aiText('model_feature_audio_generation', 'Audio');
     }
     if (normalized === 'video_generation' || normalized === 'video_generations' || normalized === 'video') {
       return aiText('model_feature_video_generation', 'Video generation');
@@ -1555,10 +1204,9 @@ function AiResourcesContent() {
     () => selectedProviderModelIds.filter((modelId) => !hasModelMetadataFor(
       modelId,
       modelReferenceProviderId,
-      modelReferences,
-      providerCatalogPreview?.models || []
+      modelReferences
     )).length,
-    [modelReferenceProviderId, modelReferences, providerCatalogPreview, selectedProviderModelIds]
+    [modelReferenceProviderId, modelReferences, selectedProviderModelIds]
   );
 
   const modelsDevReferenceSource = useMemo(
@@ -1588,6 +1236,26 @@ function AiResourcesContent() {
     syncingModelReferences,
   ]);
 
+  const modelReferenceCoverage = useMemo(
+    () => computeModelReferenceCoverage({
+      providerId: modelReferenceProviderId,
+      targetModelIds: [
+        ...(providerCatalogPreview?.model_ids || []),
+        ...selectedProviderModelIds,
+      ],
+      references: modelReferences,
+    }),
+    [
+      modelReferenceProviderId,
+      modelReferences,
+      providerCatalogPreview?.model_ids,
+      selectedProviderModelIds,
+    ]
+  );
+  const modelReferenceCoverageBase = Math.max(
+    modelReferenceCoverage.total,
+    Number(providerCatalogPreview?.model_count ?? 0) || 0
+  );
   const modelReferenceCompactStatusText = useMemo(() => {
     if (autoSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
@@ -1595,8 +1263,25 @@ function AiResourcesContent() {
     if (loadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
+    if (
+      modelReferenceCoverageBase > 0
+      && modelReferenceCoverage.covered >= modelReferenceCoverageBase
+    ) {
+      return aiText('model_reference_compact_complete', 'intelligence complete {{covered}}/{{total}}', {
+        covered: String(modelReferenceCoverage.covered),
+        total: String(modelReferenceCoverageBase),
+      });
+    }
+    if (modelReferenceTotal > 0 && modelReferenceCoverageBase > 0) {
+      return aiText('model_reference_compact_partial', 'intelligence partial {{covered}}/{{total}}', {
+        covered: String(modelReferenceCoverage.covered),
+        total: String(modelReferenceCoverageBase),
+      });
+    }
     if (modelReferenceTotal > 0) {
-      return aiText('model_reference_compact_synced', 'reference synced');
+      return aiText('model_reference_compact_unscoped', 'intelligence available {{count}} records; load a catalog to verify coverage', {
+        count: String(modelReferenceTotal),
+      });
     }
     if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
       return aiText('model_reference_compact_failed', 'reference sync failed');
@@ -1607,6 +1292,8 @@ function AiResourcesContent() {
     autoSyncingModelReferences,
     loadingModelReferences,
     modelReferenceAutoSyncError,
+    modelReferenceCoverageBase,
+    modelReferenceCoverage.covered,
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
@@ -1650,7 +1337,7 @@ function AiResourcesContent() {
       rows.set(rowModelId, {
         modelId: rowModelId,
         family: existing?.family || model.family,
-        feature: existing?.feature || model.feature,
+        feature: existing?.feature || catalogDisplayFeature(model.model_id, model.feature),
         sourceLabel: existing?.sourceLabel || aiText('model_source_upstream', 'Upstream catalog'),
         sourceKind: existing?.sourceKind || 'catalog',
         selected: Boolean(selectedModelId),
@@ -1726,6 +1413,29 @@ function AiResourcesContent() {
     (visibleModelReferencePage - 1) * MODEL_VISIBILITY_PAGE_SIZE,
     visibleModelReferencePage * MODEL_VISIBILITY_PAGE_SIZE
   );
+  const filteredEnableModelIds = modelVisibilityRows
+    .filter((row) => !row.selected && !row.deprecated)
+    .map((row) => row.modelId);
+  const filteredDisableModelIds = modelVisibilityRows
+    .filter((row) => row.selected)
+    .map((row) => row.modelId);
+  const confirmingBatchModelIds = confirmingModelBatch === 'enable'
+    ? filteredEnableModelIds
+    : filteredDisableModelIds;
+  const confirmingBatchResultCount = confirmingModelBatch === 'enable'
+    ? uniqueList([...selectedProviderModelIds, ...confirmingBatchModelIds]).length
+    : selectedProviderModelIds.filter((modelId) => !new Set(confirmingBatchModelIds).has(modelId)).length;
+
+  function applyFilteredModelBatch(): void {
+    if (confirmingModelBatch === 'enable') {
+      setProviderModelIds([...selectedProviderModelIds, ...filteredEnableModelIds]);
+      return;
+    }
+    if (confirmingModelBatch === 'disable') {
+      const disabledIds = new Set(filteredDisableModelIds);
+      setProviderModelIds(selectedProviderModelIds.filter((modelId) => !disabledIds.has(modelId)));
+    }
+  }
   if (loading) {
     return <AdminRouteSkeleton />;
   }
@@ -1749,13 +1459,16 @@ function AiResourcesContent() {
   }
 
   const readyModelSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai' && connection.status === 'ready'
+    (connection) => supplierCategory(connection) === 'ai'
+      && connection.status === 'ready'
+      && !connection.attention_required
   ).length;
   const modelSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai'
   ).length;
   const attentionSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai' && connection.status !== 'ready'
+    (connection) => supplierCategory(connection) === 'ai'
+      && (connection.attention_required ?? connection.status !== 'ready')
   ).length;
   const latestModelSupplierTestAt = data.connections
     .filter(
@@ -2029,7 +1742,7 @@ function AiResourcesContent() {
                       </div>
                       {selectedModelMetadataGapCount ? (
                         <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                          {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
+                          {aiText('model_metadata_gap_hint', '{{count}} enabled models lack reference intelligence. Refresh intelligence to fill capability, context, and price.', {
                             count: String(selectedModelMetadataGapCount),
                           })}
                         </p>
@@ -2074,7 +1787,7 @@ function AiResourcesContent() {
                         <option value="all">{aiText('filter_all', 'All')}</option>
                         <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
                         <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
-                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
+                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio')}</option>
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
@@ -2165,6 +1878,68 @@ function AiResourcesContent() {
                             </div>
                           )}
                           detail={aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
+                        />
+                        <AdminConfigurationRow
+                          rowId="filtered-model-batch"
+                          label={aiText('filtered_models_batch_label', 'Filtered results')}
+                          value={aiText('filtered_models_batch_count', '{{count}} matching models', {
+                            count: String(modelVisibilityRows.length),
+                          })}
+                          detail={confirmingModelBatch ? (
+                            <span className="grid gap-2">
+                              <span className="text-amber-700 dark:text-amber-300">
+                                {aiText(
+                                  'filtered_models_batch_confirmation',
+                                  '{{action}} {{count}} matching models? The enabled total will become {{result}}. Changes remain a draft until you save.',
+                                  {
+                                    action: confirmingModelBatch === 'enable'
+                                      ? aiText('action_enable', 'Enable')
+                                      : aiText('action_disable', 'Disable'),
+                                    count: String(confirmingBatchModelIds.length),
+                                    result: String(confirmingBatchResultCount),
+                                  }
+                                )}
+                              </span>
+                              <span className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  data-ui="model-filtered-batch-confirm"
+                                  className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                                  onClick={applyFilteredModelBatch}
+                                >
+                                  {aiText('action_confirm_apply', 'Confirm apply')}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
+                                  onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: '' })}
+                                >
+                                  {aiText('action_cancel', 'Cancel')}
+                                </button>
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                data-ui="model-filtered-enable-request"
+                                className="font-semibold text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300"
+                                disabled={!filteredEnableModelIds.length || savingConnection}
+                                onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'enable' })}
+                              >
+                                {aiText('action_enable_filtered_models', 'Enable matching')}
+                              </button>
+                              <button
+                                type="button"
+                                data-ui="model-filtered-disable-request"
+                                className="font-semibold text-slate-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300"
+                                disabled={!filteredDisableModelIds.length || savingConnection}
+                                onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'disable' })}
+                              >
+                                {aiText('action_disable_filtered_models', 'Disable matching')}
+                              </button>
+                            </span>
+                          )}
                         />
                         <AdminConfigurationRow
                           rowId="enabled-model-bulk-maintenance"
@@ -2296,7 +2071,7 @@ function AiResourcesContent() {
                                       <div className="text-slate-500 dark:text-slate-400">
                                         {row.family}
                                         {row.sourceKind === 'manual' ? ` · ${row.sourceLabel}` : ''}
-                                        {row.verified ? ` · ${aiText('catalog_model_status_verified', 'Verified')}` : ''}
+                                        {row.verified ? ` · ${aiText('catalog_model_status_upstream_available', 'Upstream available')}` : ''}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
                                       {row.deprecated && row.selected ? (

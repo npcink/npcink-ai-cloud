@@ -44,7 +44,7 @@ function statusTone(status: ResourceStatus): 'success' | 'warning' | 'disabled' 
 
 function resourceStatusLabel(status: ResourceStatus, translate: Translate): string {
   const labels: Record<string, string> = {
-    ready: translate('status_configured_label', 'Configured'),
+    ready: translate('status_ready_label', 'Ready'),
     missing_secret: translate('status_missing_secret_label', 'Missing secret'),
     missing_provider: translate('status_missing_provider_label', 'Missing provider'),
     saved_credential_unreadable: translate('status_saved_credential_unreadable_label', 'Credential must be saved again'),
@@ -73,7 +73,16 @@ function connectionErrorLabel(errorCode: string, translate: Translate): string {
 }
 
 function ConnectionIssue({ connection, translate }: { connection: SupplierConnection; translate: Translate }) {
-  if (connection.enabled && connection.configured) return null;
+  const attentionLabels: Record<string, string> = {
+    last_test_failed: translate('provider_issue_last_test_failed', 'Last verification failed'),
+    verification_not_observed: translate('provider_issue_verification_not_observed', 'Connection has not been verified'),
+    image_delivery_unconfirmed: translate('provider_issue_image_delivery_unconfirmed', 'Image delivery mode is not confirmed'),
+    image_output_hosts_missing: translate('provider_issue_image_output_hosts_missing', 'Image download hosts are missing'),
+  };
+  const attentionMessages = (connection.attention_reasons || [])
+    .map((reason) => attentionLabels[reason])
+    .filter(Boolean);
+  if (connection.enabled && connection.configured && !attentionMessages.length) return null;
   if (connection.status === 'saved_credential_unreadable') {
     return (
       <div className="mt-2 text-xs font-medium leading-5 text-amber-700 dark:text-amber-300">
@@ -94,6 +103,11 @@ function ConnectionIssue({ connection, translate }: { connection: SupplierConnec
       {!connection.configured ? (
         <span className="text-amber-700 dark:text-amber-300">
           {translate('provider_issue_missing_credential', 'Provider credential is not configured')}
+        </span>
+      ) : null}
+      {attentionMessages.length ? (
+        <span className="block text-amber-700 dark:text-amber-300">
+          {attentionMessages.join(' · ')}
         </span>
       ) : null}
     </div>
@@ -316,12 +330,18 @@ export function ModelSupplierTable({
                     <td className="px-3 py-3 align-top text-xs text-slate-500 dark:text-slate-400">
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
                         {testResult
-                          ? (testResult.ok ? translate('test_passed', 'Passed') : resourceStatusLabel(testResult.status, translate))
-                          : connection.last_tested_at
-                            ? formatDate(connection.last_tested_at)
-                            : translate('status_not_observed', 'Not observed')}
+                          ? (testResult.ok ? translate('test_passed', 'Passed') : translate('test_failed', 'Failed'))
+                          : connection.verification_status === 'passed'
+                            ? translate('test_passed', 'Passed')
+                            : connection.verification_status === 'failed' || connection.last_error_code
+                              ? translate('test_failed', 'Failed')
+                              : translate('status_not_observed', 'Not observed')}
                       </span>
-                      {testResult ? <p className="mt-1">{providerTestStageLabel(testResult.stage)}</p> : null}
+                      {testResult ? (
+                        <p className="mt-1">{providerTestStageLabel(testResult.stage)}</p>
+                      ) : connection.last_tested_at ? (
+                        <p className="mt-1">{formatDate(connection.last_tested_at)}</p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="flex items-start justify-end gap-2">
