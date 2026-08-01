@@ -484,8 +484,21 @@ Reject prompts or plans that begin with:
 
 ## 11. Verification And Delivery
 
-Use the narrowest useful source gates during the edit loop. Before publishing a
-material Admin source change, the minimum expected chain is:
+Use the narrowest useful source gates during the edit loop. Separate the first
+human-visible preview from engineering closeout:
+
+| Visual risk | Before visible preview | Before publish or closeout |
+| --- | --- | --- |
+| `low` appearance-only | exact source/static check plus focused target-route PC browser check | required PR checks; no M4 unless the requested outcome includes runtime acceptance |
+| `material` route layout | focused route visual spec and structured receipt | `check:admin-ui`; complete visual matrix once when required by the changed seam or PR policy |
+| `shared` or behavioral | representative local matrix and focused behavior evidence | full chain below, including M4 candidate and accepted promotion when in scope |
+
+Do not make unrelated backend CI, the complete Admin visual matrix, merge, or
+M4 promotion prerequisites for showing an eligible appearance-only preview.
+The preview is deliberately a candidate, not a merge or acceptance claim.
+
+Before publishing a shared, behavioral, or otherwise integration-sensitive
+Admin source change, the minimum expected chain is:
 
 ```text
 focused Vitest
@@ -502,6 +515,10 @@ focused Vitest
 
 CI, a screenshot, `200`, M4 candidate reachability, merge, M4 acceptance,
 production deployment, and human acceptance remain separate evidence states.
+
+The eligibility, upward-reclassification triggers, and 15-minute visible-
+preview objective for appearance-only work are normative in
+[Development Validation Operating Model v1](development-validation-operating-model-v1.md#appearance-only-preview-first-lane).
 
 Documentation-only changes require link validation, `git diff --check`,
 release-policy validation, and the docs-only gate. They do not require M4.

@@ -5,6 +5,14 @@ import { fromFrontendRoot } from './_paths.mjs';
 const manifest = JSON.parse(readFileSync(fromFrontendRoot('admin-ui-manifest.json'), 'utf8'));
 const receiptSchema = JSON.parse(readFileSync(fromFrontendRoot('admin-visual-receipt.schema.json'), 'utf8'));
 const standard = readFileSync(fromFrontendRoot('../docs/cloud-admin-ui-standard-v1.md'), 'utf8');
+const engineeringStandard = readFileSync(
+  fromFrontendRoot('../docs/cloud-admin-frontend-engineering-standard-v1.md'),
+  'utf8'
+);
+const operatingModel = readFileSync(
+  fromFrontendRoot('../docs/development-validation-operating-model-v1.md'),
+  'utf8'
+);
 const helper = readFileSync(fromFrontendRoot('tests/e2e/helpers/admin-visual-receipt.ts'), 'utf8');
 const packageSource = readFileSync(fromFrontendRoot('../package.json'), 'utf8');
 
@@ -112,6 +120,14 @@ for (const phrase of [
   assert.ok(standard.includes(phrase), `Admin UI standard must document ${phrase}`);
 }
 assert.match(standard, /No receipt means\s+`unmeasured`/);
+assert.match(standard, /Preview-first and closeout gates/);
+assert.match(standard, /Do not wait for the complete Admin visual matrix/);
+assert.match(standard, /Reclassify upward immediately/);
+assert.match(engineeringStandard, /Separate the first\s+human-visible preview from engineering closeout/);
+assert.match(engineeringStandard, /The preview is deliberately a candidate, not a merge or acceptance claim/);
+assert.match(operatingModel, /Appearance-only preview-first lane/);
+assert.match(operatingModel, /within 15 minutes/);
+assert.match(operatingModel, /The 15-minute target is a feedback objective/);
 for (const status of expectedStatuses) {
   assert.ok(standard.includes(`\`${status}\``), `Admin UI standard must document ${status}`);
 }
