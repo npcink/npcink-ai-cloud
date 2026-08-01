@@ -197,6 +197,7 @@ repository; it points at a path that no longer exists here.
 
 - local runtime seed: `pnpm run seed:smoke`
 - local login seed: `pnpm run login:seed:dev`
+- deterministic Portal demo data: `bash dev/seed-portal-demo-dev.sh`
 - local portal real-site bootstrap: `pnpm run portal:bind:dev -- --site-id <site-id> --member-email <email>`
 - scaffold one new Cloud route pack: `pnpm run scaffold:route -- --route-id <route-id>`
 - scaffold one new Portal route pack: `pnpm run scaffold:portal-route -- --route-id <route-id>`
