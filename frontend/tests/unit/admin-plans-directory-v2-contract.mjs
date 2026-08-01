@@ -3,12 +3,19 @@ import { readFileSync } from 'node:fs';
 import { fromFrontendRoot } from './_paths.mjs';
 
 const source = readFileSync(fromFrontendRoot('src/app/admin/plans/page.tsx'), 'utf8');
+const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
 const workbench = readFileSync(fromFrontendRoot('src/components/admin/PlanManagementWorkbench.tsx'), 'utf8');
 const proxy = readFileSync(fromFrontendRoot('src/app/api/admin/[...path]/route.ts'), 'utf8');
 
 assert.match(source, /BackofficeLayer/, 'package catalog must use the compact operating header');
 assert.match(source, /BackofficeSummaryStrip/, 'package catalog must expose a compact status summary');
 assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeMetricStrip/, 'package catalog must not restore the old hero metric surface');
+assert.doesNotMatch(source, /admin\.plans\.open_credit_packs/, 'the independent package catalog must not duplicate the AI credit pack navigation entry');
+assert.match(
+  layoutSource,
+  /href: '\/admin\/plans'[\s\S]*activePrefixes: \['\/admin\/plans'\][\s\S]*href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.nav_credit_packs'[\s\S]*activePrefixes: \['\/admin\/credit-packs'\]/,
+  'package catalog and AI credit packs must be independent top-level sidebar destinations'
+);
 
 assert.match(source, /searchParams\.get\('focus'\)/, 'the open management workbench must remain URL-backed');
 for (const retiredParameter of ['q', 'state', 'sort']) {

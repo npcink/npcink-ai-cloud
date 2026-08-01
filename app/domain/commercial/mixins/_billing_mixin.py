@@ -100,6 +100,9 @@ ADMIN_SUBSCRIPTION_RISK_RANK = {
     "stable": 3,
 }
 ADMIN_SUBSCRIPTION_SORTS = frozenset({"priority", "expiry", "customer"})
+ADMIN_SUBSCRIPTION_RISK_FILTERS = frozenset(
+    {"all", "needs_action", "critical", "warning", "monitor", "stable"}
+)
 ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS = 500
 ADMIN_SUBSCRIPTION_QUEUE_MAX_SITES = 500
 SHADOW_PRICING_TARIFF_REGISTRY: dict[str, dict[str, dict[str, float | str]]] = {
@@ -1050,6 +1053,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
         account_id: str | None = None,
         plan_id: str | None = None,
         expires_before: datetime | None = None,
+        risk: str = "all",
         sort: str = "priority",
         offset: int = 0,
         limit: int = 100,
@@ -1061,6 +1065,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             raise CommercialValidationError(
                 "service.admin_subscription_sort_invalid",
                 "subscription sort must be one of: priority, expiry, customer",
+            )
+        normalized_risk = str(risk or "all").strip().lower()
+        if normalized_risk not in ADMIN_SUBSCRIPTION_RISK_FILTERS:
+            raise CommercialValidationError(
+                "service.admin_subscription_risk_invalid",
+                "subscription risk must be one of: all, needs_action, critical, warning, monitor, stable",
             )
         now = self._normalize_datetime(self.now_factory())
         with get_session(self.database_url) as session:
@@ -1193,9 +1203,26 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
             str(cast(dict[str, object], item["operator_risk"]).get("level") or "monitor")
             for item, _subscription in enriched_items
         )
+        if normalized_risk == "needs_action":
+            filtered_items = [
+                entry
+                for entry in enriched_items
+                if str(cast(dict[str, object], entry[0]["operator_risk"]).get("level") or "monitor")
+                in {"critical", "warning", "monitor"}
+            ]
+        elif normalized_risk == "all":
+            filtered_items = enriched_items
+        else:
+            filtered_items = [
+                entry
+                for entry in enriched_items
+                if str(cast(dict[str, object], entry[0]["operator_risk"]).get("level") or "monitor")
+                == normalized_risk
+            ]
+        filtered_total = len(filtered_items)
         items = [
             item
-            for item, _subscription in enriched_items[
+            for item, _subscription in filtered_items[
                 normalized_offset : normalized_offset + resolved_limit
             ]
         ]
@@ -1205,6 +1232,7 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "account_id": account_id or "",
                 "plan_id": plan_id or "",
                 "expires_before": self._serialize_datetime(expires_before),
+                "risk": normalized_risk,
                 "sort": normalized_sort,
                 "offset": normalized_offset,
                 "limit": resolved_limit,
@@ -1216,12 +1244,12 @@ class CommercialServiceBillingMixin(CommercialServiceAuditMixin):
                 "stable": summary_counts["stable"],
             },
             "items": items,
-            "total": total,
+            "total": filtered_total,
             "pagination": {
                 "offset": normalized_offset,
                 "limit": resolved_limit,
-                "total": total,
-                "has_more": normalized_offset + len(items) < total,
+                "total": filtered_total,
+                "has_more": normalized_offset + len(items) < filtered_total,
             },
         }
 

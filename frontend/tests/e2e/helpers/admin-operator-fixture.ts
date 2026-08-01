@@ -49,7 +49,12 @@ async function fulfillJson(route: Route, data: unknown) {
   });
 }
 
-export async function installAdminMocks(page: Page) {
+export async function installAdminMocks(
+  page: Page,
+  options: { auditEvents?: number; quotaNeedsAttention?: boolean } = {}
+) {
+  const auditEvents = options.auditEvents ?? 4;
+  const quotaNeedsAttention = options.quotaNeedsAttention ?? false;
   let primaryAccountSubscription = {
     subscription_id: 'sub_mvp',
     status: 'past_due',
@@ -285,11 +290,11 @@ export async function installAdminMocks(page: Page) {
       await fulfillJson(route, {
         generated_at: '2026-04-08T10:00:00Z',
         totals: {
-          events: 4,
-          succeeded: 3,
-          error: 1,
+          events: auditEvents,
+          succeeded: auditEvents > 0 ? 3 : 0,
+          error: auditEvents > 0 ? 1 : 0,
         },
-        groups: [
+        groups: auditEvents > 0 ? [
           {
             event_kind: searchParams.get('site_id') ? 'subscription.bind' : 'provider_connection.sync',
             outcome: 'succeeded',
@@ -303,6 +308,37 @@ export async function installAdminMocks(page: Page) {
             count: 1,
             first_seen_at: '2026-04-08T07:15:00Z',
             last_seen_at: '2026-04-08T07:15:00Z',
+          },
+        ] : [],
+      });
+      return;
+    }
+
+    if (pathname === '/api/admin/audit-events') {
+      await fulfillJson(route, {
+        total: 2,
+        items: [
+          {
+            event_id: 101,
+            event_kind: 'subscription.bind',
+            outcome: 'succeeded',
+            actor_kind: 'platform_admin',
+            actor_ref: 'operator',
+            method: 'POST',
+            path: '/internal/service/admin/subscriptions/sub_mvp/bind',
+            trace_id: 'trace-audit-101',
+            created_at: '2026-04-08T09:45:00Z',
+          },
+          {
+            event_id: 102,
+            event_kind: 'subscription.billing_snapshot.rebuild',
+            outcome: 'error',
+            actor_kind: 'system',
+            actor_ref: '',
+            method: 'POST',
+            path: '/internal/service/admin/subscriptions/sub_mvp/billing-snapshots/rebuild',
+            trace_id: 'trace-audit-102',
+            created_at: '2026-04-08T07:15:00Z',
           },
         ],
       });
@@ -1253,12 +1289,12 @@ export async function installAdminMocks(page: Page) {
         generated_at: '2026-04-08T10:00:00Z',
         ai_credits: {
           key: 'ai_credits',
-          used: 250,
+          used: quotaNeedsAttention ? 1900 : 250,
           limit: 2000,
-          remaining: 1750,
-          usage_ratio: 0.125,
+          remaining: quotaNeedsAttention ? 100 : 1750,
+          usage_ratio: quotaNeedsAttention ? 0.95 : 0.125,
           unlimited: false,
-          status: 'ok',
+          status: quotaNeedsAttention ? 'near_limit' : 'ok',
           unit: 'ai_credits',
           estimated: false,
           source: 'ledger',

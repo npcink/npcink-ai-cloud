@@ -1464,6 +1464,36 @@ def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_paginati
         "stable": 1,
     }
 
+    needs_action_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"risk": "needs_action", "sort": "priority"},
+        headers=build_internal_headers(),
+    )
+    assert needs_action_response.status_code == 200
+    needs_action_data = needs_action_response.json()["data"]
+    assert needs_action_data["filters"]["risk"] == "needs_action"
+    assert needs_action_data["total"] == 3
+    assert needs_action_data["summary"] == {
+        "critical": 1,
+        "warning": 1,
+        "monitor": 1,
+        "stable": 1,
+    }
+    assert [item["operator_risk"]["level"] for item in needs_action_data["items"]] == [
+        "critical",
+        "warning",
+        "monitor",
+    ]
+
+    stable_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"risk": "stable"},
+        headers=build_internal_headers(),
+    )
+    assert stable_response.status_code == 200
+    assert stable_response.json()["data"]["total"] == 1
+    assert stable_response.json()["data"]["items"][0]["operator_risk"]["level"] == "stable"
+
     invalid_sort_response = client.get(
         "/internal/service/admin/subscriptions",
         params={"sort": "newest"},
@@ -1475,6 +1505,18 @@ def test_admin_subscriptions_queue_sorts_and_summarizes_globally_before_paginati
         match="subscription sort must be one of",
     ):
         CommercialService(database_url).list_admin_subscriptions(sort="newest")
+
+    invalid_risk_response = client.get(
+        "/internal/service/admin/subscriptions",
+        params={"risk": "unknown"},
+        headers=build_internal_headers(),
+    )
+    assert invalid_risk_response.status_code == 422
+    with pytest.raises(
+        CommercialValidationError,
+        match="subscription risk must be one of",
+    ):
+        CommercialService(database_url).list_admin_subscriptions(risk="unknown")
 
     monkeypatch.setattr(billing_mixin, "ADMIN_SUBSCRIPTION_QUEUE_MAX_SUBSCRIPTIONS", 3)
     with pytest.raises(

@@ -96,6 +96,7 @@ Evidence records (not target-contract completion proof):
 - [docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md](docs/user-identity-membership-site-authorization-closeout-and-development-retrospective-2026-07-27.md)
 - [docs/customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md](docs/customer-account-identity-simplification-closeout-and-development-retrospective-2026-07-31.md)
 - [docs/cloud-admin-customer-operations-workspace-closeout-2026-07-31.md](docs/cloud-admin-customer-operations-workspace-closeout-2026-07-31.md)
+- [docs/cloud-admin-commercial-operations-density-closeout-and-development-retrospective-2026-08-01.md](docs/cloud-admin-commercial-operations-density-closeout-and-development-retrospective-2026-08-01.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 - [docs/cloud-admin-ui-development-retrospective-2026-07-27.md](docs/cloud-admin-ui-development-retrospective-2026-07-27.md)
 - [docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md](docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md)

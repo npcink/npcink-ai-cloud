@@ -5,34 +5,53 @@ import {
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
 
-test('subscription detail keeps one PC conclusion and defers operational evidence', async ({ page }) => {
+test('subscription detail keeps one PC conclusion and uses dense evidence tables', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
-  await page.goto('/admin/subscriptions/sub_mvp');
+  const returnTo = '/admin/subscriptions?status=active&focus=sub_mvp';
+  await page.goto(`/admin/subscriptions/sub_mvp?return_to=${encodeURIComponent(returnTo)}`);
 
-  await expect(page.getByRole('heading', { name: /Service status detail|服务状态详情/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Subscription detail|订阅详情/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Customer coverage needs follow-up|客户覆盖需要跟进/i })).toHaveCount(1);
 
   const primaryAction = page.getByRole('link', { name: /Open customer coverage|打开客户覆盖/i });
   await expect(primaryAction).toBeVisible();
   await expect(primaryAction).toHaveAttribute('href', `/admin/accounts/${LONG_ACCOUNT_ID}#coverage-actions`);
-  await expect(page.getByRole('link', { name: /Back to subscriptions|返回订阅/i })).toHaveCount(0);
+  const returnLink = page.getByRole('link', { name: /Back to subscription operations|返回订阅运营/i });
+  await expect(returnLink).toBeVisible();
+  await expect(returnLink).toHaveAttribute('href', returnTo);
 
   await expect(page.getByText(/^Read current status and grace posture first\.$/)).toHaveCount(0);
   await expect(page.getByText(/^Open site detail for runtime and entitlement impact\.$/)).toHaveCount(0);
-  await expect(page.locator('a[href^="/api/admin/audit-events"]')).toBeHidden();
+  await expect(page.locator('a[href^="/api/admin/audit-events"]')).toHaveCount(0);
+
+  await expect(page.getByRole('heading', { name: /Subscription facts|订阅基本信息/i })).toBeVisible();
+  await expect(page.locator('[data-ui="subscription-summary-card"]')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Budget and usage|预算与用量/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Covered sites|关联站点/i })).toBeVisible();
+  await expect(page.locator('[data-ui="subscription-operational-grid"]')).toBeVisible();
+  await expect(page.getByRole('table')).toHaveCount(4);
+
+  const auditButton = page.getByRole('button', { name: /View 4 audit records|查看 4 条审计记录/i });
+  await expect(auditButton).toBeVisible();
+  await auditButton.click();
+  const auditDrawer = page.getByRole('dialog', { name: /Recent audit records|近期审计记录/i });
+  await expect(auditDrawer).toBeVisible();
+  await expect(auditDrawer.getByText('Subscription Bind')).toBeVisible();
+  await expect(auditDrawer.getByText('Subscription Billing Snapshot Rebuild')).toBeVisible();
+  await expect(auditDrawer.getByText(/trace-audit-101/)).toBeHidden();
+  await auditDrawer.getByRole('button', { name: /^Close$|^关闭$/i }).click();
+  await expect(auditDrawer).toBeHidden();
 
   const advancedEvidence = page.locator('details').filter({
-    hasText: /Advanced subscription evidence|高级订阅运营证据/i,
+    hasText: /Support and advanced evidence|支持信息与高级证据|Advanced subscription evidence|高级订阅运营证据/i,
   });
   await expect(advancedEvidence).not.toHaveAttribute('open', '');
-  await expect(page.getByRole('heading', { name: /Package, usage, and service coverage|套餐、用量与服务覆盖/i })).toBeHidden();
-  await expect(page.getByRole('heading', { name: /Covered sites|关联站点/i })).toBeHidden();
+  await expect(page.getByRole('heading', { name: /^Boundary$|^边界$/i })).toBeHidden();
 
   await advancedEvidence.locator(':scope > summary').click();
-  await expect(page.getByRole('heading', { name: /Package, usage, and service coverage|套餐、用量与服务覆盖/i })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Covered sites|关联站点/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Boundary$|^边界$/i })).toBeVisible();
   const costCompleteness = page.locator('[data-ui="cost-snapshot-completeness"]');
   await expect(costCompleteness).toContainText(/≥\s*¥18\.42/);
   await expect(costCompleteness).toContainText(
@@ -59,4 +78,13 @@ test('subscription detail failure preserves the PC route shell and bounded retry
   await page.getByRole('button', { name: /^Retry$|^重试$/i }).click();
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/subscriptions\/sub_mvp$/);
+});
+
+test('subscription detail hides the audit action when the current scope has no events', async ({ page }) => {
+  await installAdminMocks(page, { auditEvents: 0 });
+
+  await page.goto('/admin/subscriptions/sub_mvp');
+  await expect(page.getByText(/No recent audit groups|暂无最近审计分组/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /audit records|审计记录/i })).toHaveCount(0);
+  await expect(page.locator('a[href^="/api/admin/audit-events"]')).toHaveCount(0);
 });

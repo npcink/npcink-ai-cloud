@@ -48,6 +48,11 @@ for (const tab of ['overview', 'commercial', 'credits', 'sites', 'access', 'audi
 }
 assert.match(
   source,
+  /data-ui="account-detail-workspace"[\s\S]*data-ui="account-detail-section-nav"[\s\S]*xl:sticky[\s\S]*xl:border-r[\s\S]*xl:border-l-\[3px\][\s\S]*data-ui="account-detail-section-content"/,
+  'customer detail must use a flat sticky PC section rail while preserving the responsive tab contract'
+);
+assert.match(
+  source,
   /activeDetailTab === 'access'[\s\S]*<CustomerAccessPanel[\s\S]*relationshipState=\{account\.identity_relationship_state\}/,
   'customer-specific identity and access work must stay in the customer Access section'
 );
@@ -79,23 +84,88 @@ assert.match(
 );
 assert.match(
   source,
-  /topup_packs_label[\s\S]*<table[\s\S]*TOPUP_PACK_OPTIONS\.map/,
-  'top-up choices must remain a dense comparison table'
+  /const topUpPackSelector = \([\s\S]*data-ui="account-topup-options"[\s\S]*type="radio"/,
+  'top-up choices must use a compact single-selection list without a wide table'
 );
 assert.match(
   source,
-  /<details[\s\S]*credit_adjustment_label[\s\S]*audit_required/,
-  'low-frequency audited credit adjustment must stay behind explicit disclosure'
+  /<AdminWorkbenchDialog[\s\S]*credit_adjustment_label[\s\S]*audit_required/,
+  'low-frequency audited credit adjustment must use the shared focused mutation dialog'
 );
 assert.match(
   source,
-  /resource_limits_title[\s\S]*<table[\s\S]*resourceRows\.map/,
-  'resource limits must remain a used-limit-remaining status table'
+  /activeDrawer === 'credit-ledger'[\s\S]*credit_ledger_title/,
+  'current-period ledger detail must move behind the shared inspector drawer'
+);
+assert.match(
+  source,
+  /activeDrawer === 'agency'[\s\S]*agency_commerce_label/,
+  'Agency quote and trial work must move behind the shared inspector drawer'
+);
+assert.match(
+  source,
+  /activeDrawer === 'subscription-repair'[\s\S]*package_actions_reveal/,
+  'subscription repair must move behind the shared inspector drawer'
+);
+assert.match(
+  source,
+  /const openTopUpOptions = \(\) => \{[\s\S]*setTopUpDialogOpen\(true\)/,
+  'top-up choices must stay behind a focused dialog'
+);
+assert.match(
+  source,
+  /data-ui="account-credit-operations"[\s\S]*quotaNeedsAttention[\s\S]*onClick=\{openTopUpOptions\}/,
+  'the compact credit operation row must reflect quota risk and expose the top-up dialog'
+);
+assert.match(
+  source,
+  /data-ui="account-identifiers"[\s\S]*<BackofficeIdentifier value=\{account\.account_id\}/,
+  'low-frequency account identifiers must stay behind an overview disclosure'
+);
+assert.doesNotMatch(
+  source,
+  /view_sites_action/,
+  'the detail workspace must not duplicate the Sites section with an extra navigation button'
+);
+assert.match(
+  source,
+  /data-ui="account-quota-detail-tabs"[\s\S]*quotaDetailTab === 'resources'[\s\S]*quotaDetailTab === 'components'[\s\S]*quotaDetailTab === 'advanced'/,
+  'resource, credit-component, and advanced quota evidence must use direct tabs in one shared dialog'
+);
+assert.match(
+  source,
+  /open=\{quotaDetailsOpen\}[\s\S]*quotaDetailTab === 'resources'[\s\S]*<table[\s\S]*resourceRows\.map/,
+  'resource limits must remain a used-limit-remaining status table inside the shared quota dialog'
+);
+assert.doesNotMatch(
+  source,
+  /data-ui="account-credit-components"[^>]*<details|data-ui="account-advanced-quota"[^>]*<details/,
+  'quota detail tabs must not contain another disclosure layer'
+);
+assert.match(
+  source,
+  /data-ui="account-credit-usage-summary"[\s\S]*runBudgetSummary\.used[\s\S]*runBudgetSummary\.remaining[\s\S]*formatUsageRatio/,
+  'default credit view must keep one compact used, remaining, and ratio summary'
+);
+assert.match(
+  source,
+  /contentClassName="!px-5 !py-4 md:!px-6 md:!py-4"[\s\S]*data-ui="account-header-metrics"/,
+  'customer header must use a compact metric line without an empty child slot'
+);
+assert.match(
+  source,
+  /data-ui="account-credit-operations"[\s\S]*data-ui="account-credit-summary"[\s\S]*data-ui="account-credit-support-rows"/,
+  'credit state, actions, ledger summary, and resource summary must form one compact operating surface'
+);
+assert.match(
+  source,
+  /account-package-collapsed[\s\S]*activeDrawer === 'package'[\s\S]*account-package-comparison/,
+  'package comparison must stay behind a compact on-demand drawer entry'
 );
 assert.equal(
   source.match(/<AdminDataTableFrame/g)?.length || 0,
-  3,
-  'package, top-up, and resource comparisons must reuse the shared Admin table frame'
+  2,
+  'package and resource comparisons must reuse the shared Admin table frame; top-up stays a compact radio dialog'
 );
 assert.match(
   source,
