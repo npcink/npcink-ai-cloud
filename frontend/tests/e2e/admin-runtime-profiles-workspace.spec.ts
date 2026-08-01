@@ -193,7 +193,7 @@ function candidateRow(page: Page, instanceId: string) {
   return page.locator(`[data-instance-id="${instanceId}"]`);
 }
 
-test('hosted runtime profiles are URL-backed, boundary-focused, and mobile safe', async ({ page }) => {
+test('hosted runtime profiles are URL-backed, boundary-focused, and mobile safe', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installRuntimeProfilesHarness(page);
   await page.goto('/admin/runtime-profiles');
@@ -202,6 +202,12 @@ test('hosted runtime profiles are URL-backed, boundary-focused, and mobile safe'
   await expect(profileRow(page, 'route.short_text')).toBeVisible();
   await expect(page.getByText('Text Provider / text-model-v1').first()).toBeVisible();
   await expect(page.locator('main input')).toHaveCount(0);
+  const pageScreenshotPath = testInfo.outputPath('admin-runtime-profiles-page-pc.png');
+  await page.screenshot({ path: pageScreenshotPath, fullPage: true, animations: 'disabled' });
+  await testInfo.attach('admin-runtime-profiles-page-pc', {
+    path: pageScreenshotPath,
+    contentType: 'image/png',
+  });
   await page.getByText(/Hosted runtime contract details|托管运行合同详情/i).click();
   await expect(page.getByText(/Operation contract|操作合同/i)).toBeVisible();
   await expect(page.getByText('wordpress_operation.v1')).toBeVisible();

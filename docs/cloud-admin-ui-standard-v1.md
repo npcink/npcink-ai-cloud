@@ -78,6 +78,22 @@ candidate-chain configuration page:
 7. contract identity, revision, and other low-frequency evidence outside the
    default working table.
 
+The three primary runtime-configuration routes form one visual family without
+sharing an identical body layout:
+
+- `/admin/external-services` summarizes ready services before the active
+  service directory;
+- `/admin/vector-settings` summarizes the fixed profile and readiness before
+  its connection table;
+- `/admin/runtime-profiles` summarizes configured and needs-attention counts
+  before the candidate-chain directory.
+
+Use `Ready` / `已就绪` for an operable runtime object, `Needs config` /
+`待配置` for an incomplete object, and `Configuration saved` / `配置已保存`
+only for page-draft persistence. Keep each route's operator-specific working
+surface; visual consistency does not require wrapping all three routes in the
+same extra panel or adding another shared component.
+
 `/admin/service-settings` is the accepted PC reference for a compact
 multi-group settings page:
 

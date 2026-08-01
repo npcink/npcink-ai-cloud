@@ -495,7 +495,7 @@ export default function RuntimeProfilesPage() {
           { label: copy('summary_attention', 'Needs attention'), value: String(attentionCount) },
           {
             label: t('common.status'),
-            value: dirty ? copy('unsaved_status', 'Unsaved') : t('common.saved'),
+            value: dirty ? copy('unsaved_status', 'Unsaved') : copy('saved_status', 'Configuration saved'),
             toneClassName: dirty ? 'text-amber-700 dark:text-amber-300' : undefined,
           },
         ]}
