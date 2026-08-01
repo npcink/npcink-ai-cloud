@@ -5,9 +5,10 @@ Status: active implementation standard.
 Date: 2026-07-31.
 
 Purpose: define one stable operator model for the Cloud Admin customer
-directory, cross-customer service problem queue, and customer detail workspace.
-The standard preserves fast PC operations without merging routes that answer
-different questions or turning customer detail into one long form.
+directory, service and subscription operations queues, commercial catalogs,
+and customer detail workspace. The standard preserves fast PC operations
+without merging routes that answer different questions or turning detail
+surfaces into long forms or nested disclosure trees.
 
 This standard composes with:
 
@@ -23,16 +24,26 @@ page composition and interaction posture.
 
 ## 1. Operator model
 
-The customer operations workspace has three distinct jobs:
+The customer operations workspace has seven distinct jobs:
 
 | Surface | Operator question | Default posture | Completion condition |
 | --- | --- | --- | --- |
 | `/admin/accounts` | Who is the customer and where is the complete record? | all customers ordered by customer name | the intended customer is found, created, or opened |
 | `/admin/coverage` | Which customers may have a service problem, why, and what should happen next? | customers needing action ordered by service priority | the issue is understood and the operator reaches its owning action |
+| `/admin/subscriptions` | Which subscriptions need commercial or billing follow-up? | server-filtered needs-action subscriptions ordered by risk | the subscription is opened or safely deferred with its queue context intact |
+| `/admin/plans` | Which package definition owns price, limits, and release state? | all package definitions in catalog order | the intended package is inspected or maintained |
+| `/admin/credit-packs` | Which purchasable AI credit pack needs configuration? | one compact pack directory and one active editor | one pack is inspected or updated without changing package ownership |
 | `/admin/accounts/{accountId}` | What is true for this customer and what bounded action belongs here? | overview of one customer | the operator completes or safely defers one customer-specific task |
+| `/admin/subscriptions/{subscriptionId}` | What commercial, billing, usage, and site evidence explains this subscription? | compact conclusion and current facts | reconciliation is completed or the operator returns to the originating filtered queue |
 
 The routes share customer identity and deep links, but they do not share the
 same default rows, sort order, columns, or primary actions.
+
+Top-level navigation follows the operator job rather than the adjacency of
+domain entities. Service operations and Subscription operations therefore
+remain separate entries. Package catalog and AI credit packs also remain
+separate entries. Cross-links are contextual conveniences, not parent-child
+navigation and not duplicated default header actions.
 
 The normal work chain is:
 
@@ -115,7 +126,7 @@ The dialog must:
 Do not add a dedicated create page, route-local overlay, client-generated
 Account ID, or form library without measured burden-removal evidence.
 
-## 3. Service status
+## 3. Service and subscription operations
 
 `/admin/coverage` is the canonical cross-customer service problem queue.
 
@@ -142,6 +153,40 @@ Examples:
 - package or credit problem -> Commercial or Credits and usage;
 - subscription reconciliation -> subscription detail;
 - site or key coverage problem -> customer Sites or the owning site detail.
+
+### 3.1 Subscription operations
+
+`/admin/subscriptions` is the canonical commercial lifecycle and billing-risk
+queue. It is not a second service-status view.
+
+Required posture:
+
+- default to the server-owned `needs_action` risk filter;
+- keep risk, customer, package, expiry, sorting, pagination, and the selected
+  read-only evidence row in URL state when they must survive refresh or return;
+- apply risk filtering before pagination and report the filtered total;
+- keep the global risk summary independent from the selected filter;
+- use a full-width queue with no default selected row;
+- open read-only context on demand in the shared inspector drawer;
+- send mutations and reconciliation to the subscription detail page;
+- preserve a validated `return_to` path back to the originating filtered
+  subscription queue.
+
+Normal or stable subscriptions may be available through an explicit filter,
+but they must not dominate the default work queue. The backend must keep the
+global sort bounded and fail closed when the supported queue population is
+exceeded instead of performing unbounded enrichment.
+
+### 3.2 Commercial catalogs
+
+`/admin/plans` owns package definitions, package limits, release state, and
+package-scoped subscription follow-up. `/admin/credit-packs` owns purchasable
+AI credit-pack price, credits, validity, visibility, and package fit.
+
+They remain separate navigation entries and page models. Neither page should
+repeat a routine header button that merely opens the other. Provide a
+contextual link only where the active object or decision genuinely requires
+the related catalog.
 
 ## 4. Customer detail tabs
 
@@ -191,15 +236,56 @@ The accepted composition for Commercial is:
 
 The accepted composition for Credits and usage is:
 
-1. current balance and period conclusion;
-2. one top-up comparison table in `AdminDataTableFrame`;
-3. one resource-limit table in `AdminDataTableFrame`;
-4. AI credit adjustment behind a disclosure;
-5. ledger and audit evidence only when needed.
+1. one compact current-balance and period conclusion;
+2. one outer operation row containing top-up, AI-credit adjustment, current
+   ledger, and quota-detail entry points;
+3. top-up comparison in a shared wide workbench dialog;
+4. the long current-period ledger in the shared inspector drawer;
+5. one shared wide quota-detail dialog with direct tabs for resource limits,
+   AI-credit components, and advanced quota information;
+6. no drawer-inside-drawer, dialog-inside-drawer, or disclosure-inside-
+   disclosure interaction path.
 
 Tables use one shared density and table-frame class, semantic headers, quiet
 row dividers, explicit empty state, and labelled overflow when necessary. They
 must not restore a grid of nested cards.
+
+### 5.1 Choosing the detail container
+
+Choose the container from the operator's task, not from the amount of empty
+space on the current page.
+
+| Container | Use when | Do not use when |
+| --- | --- | --- |
+| Inline | the fact or action is required for the current decision | the content is long, technical, or rarely used |
+| Inspector drawer | the operator scans read-only context, evidence, or a long sequential record while preserving the queue or detail page | the task needs several peer categories, a comparison matrix, or a multi-step mutation |
+| Shared dialog | the task is bounded, interruptible, and benefits from focused comparison, selection, or mutation | the content needs a durable URL, long navigation history, or another nested overlay |
+| Dedicated detail page | the object has durable identity, several independent tasks, return context, or enough evidence to require navigation | the content is one short read-only explanation or one bounded form |
+
+An overlay may contain direct tabs when the tabs are peer views of one bounded
+task. It must not contain another overlay or a deep accordion tree. If a user
+must open more than one disclosure to reach a routine fact or action, promote
+that fact or action one level.
+
+### 5.2 One-screen decision target
+
+At the manifest PC viewport, a task tab should expose the current conclusion,
+the important measured state, and all routine next-action entry points without
+requiring page scroll. This is a decision target, not a requirement to render
+all raw evidence in the first viewport.
+
+Use these reductions in order:
+
+1. remove duplicate titles, descriptions, identifiers, and normal-state prose;
+2. replace card mosaics with aligned rows, definition lists, or one semantic
+   table;
+3. keep normal state quiet and make warnings and errors carry the emphasis;
+4. move long records to an inspector drawer;
+5. move bounded comparison or mutation work to a shared dialog;
+6. use a dedicated subpage only when the object needs durable navigation.
+
+Do not solve page height by shrinking controls below the shared compact-density
+tokens or by hiding required state behind ambiguous icons.
 
 ## 6. Action hierarchy
 
@@ -214,6 +300,10 @@ One section has one primary action by default.
   object-specific confirmation.
 - Refresh and read-only inspection are secondary.
 - Recovery actions appear with the failed state.
+- An opaque technical identifier is supporting evidence, not customer-facing
+  identity. Keep it out of the default header and expose it through an
+  identifier treatment, tooltip, copy action, or low-frequency evidence view
+  when operators genuinely need it.
 
 An overflow menu is justified only when at least two low-frequency actions
 remain after routine and destructive actions have been correctly placed.
@@ -243,6 +333,9 @@ Required accessibility:
 - keyboard-operable tabs and disclosures;
 - no page-level horizontal overflow at the accepted PC viewport;
 - core narrow-screen task does not depend on horizontal scrolling.
+- selected state, keyboard focus, and mouse click state remain visually
+  distinct; mouse focus must not leave a second persistent outline after the
+  action completes.
 
 ## 8. Development and verification
 
@@ -287,10 +380,16 @@ This standard does not authorize:
 - merging Customers and Service status into one route;
 - restoring a standalone Portal-users customer directory;
 - turning Cloud Admin into a CRM;
+- merging Service operations and Subscription operations merely because both
+  rows can lead to a customer;
+- merging Package catalog and AI credit packs merely because both participate
+  in commercial entitlement;
 - organization roles, invitations, or account switching;
 - package editing from Service status;
 - WordPress writes or local governance ownership;
 - a new design system or broad account-detail rewrite;
+- nested overlays or multi-level disclosure as the normal path to routine
+  evidence;
 - permanent background tunnels or public exposure of M4 loopback ports.
 
 ## 10. Rollback and change authority

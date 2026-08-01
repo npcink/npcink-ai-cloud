@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -225,12 +224,9 @@ export default function AdminCreditPacksPage() {
           'Review the customer purchase catalog first. Edit one pack only when price, credits, validity, visibility, or package fit must change.'
         )}
         actions={(
-          <>
-            <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving}>
-              {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
-            </button>
-            <Link href="/admin/plans" className="btn btn-secondary">{t('admin.credit_packs_open_packages', {}, 'Open package catalog')}</Link>
-          </>
+          <button type="button" className="btn btn-secondary" onClick={() => void loadCatalog(true)} disabled={isRefreshing || isSaving}>
+            {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
+          </button>
         )}
       />
 

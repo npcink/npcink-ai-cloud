@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { frontendRoot } from './_paths.mjs';
 
 const source = readFileSync(resolve(frontendRoot, 'src/app/admin/credit-packs/page.tsx'), 'utf8');
+const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
 const defaultSurfaceStart = source.indexOf('<BackofficePageStack className="space-y-5">');
 const editorStart = source.indexOf('<AdminWorkbenchDialog', defaultSurfaceStart);
 const defaultSurface = source.slice(defaultSurfaceStart, editorStart);
@@ -14,6 +15,12 @@ assert.match(source, /requestActiveRef[\s\S]*requestSequenceRef[\s\S]*hasLoadedR
 assert.match(defaultSurface, /BackofficeLayer[\s\S]*BackofficeSummaryStrip[\s\S]*AdminDataTableFrame[\s\S]*data-ui="credit-pack-directory-row"/, 'The default surface must use compact orientation and one comparison table');
 assert.doesNotMatch(defaultSurface, /<input|<textarea/, 'The default credit pack directory must be read-only until one pack enters edit mode');
 assert.doesNotMatch(defaultSurface, /common\.save|handleSaveDraft/, 'The default header and directory must not expose an ambiguous save-all action');
+assert.doesNotMatch(defaultSurface, /admin\.credit_packs_open_packages/, 'The independent AI credit pack workspace must not duplicate package-catalog navigation');
+assert.match(
+  layoutSource,
+  /href: '\/admin\/credit-packs'[\s\S]*labelKey: 'admin\.nav_credit_packs'[\s\S]*activePrefixes: \['\/admin\/credit-packs'\]/,
+  'AI credit pack routes must own their sidebar state'
+);
 assert.match(editorSurface, /open=\{Boolean\(draft\)\}[\s\S]*isDraftDirty[\s\S]*handleSaveDraft[\s\S]*AdminConfigurationTable/, 'The shared workbench must use a configuration table and save only an explicitly changed selected pack');
 assert.match(source, /items\.map\(\(item\) => item\.pack_id === draft\.pack_id \? normalizeItem\(draft\) : normalizeItem\(item\)\)[\s\S]*saveCatalog\(nextItems\)/, 'One-pack editing must preserve the atomic complete-catalog PATCH contract');
 assert.match(source, /useToast\(\)[\s\S]*toast\.success/, 'Successful pack updates must use non-shifting global Toast feedback');

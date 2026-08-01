@@ -19,8 +19,8 @@ const latestOperationSource = read('src/components/admin/AdminLatestOperationDia
 
 assert.match(
   layoutSource,
-  /activePrefixes: \['\/admin\/coverage', '\/admin\/subscriptions'\]/,
-  'subscription routes must remain under the service-status navigation context'
+  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
+  'service and subscription operations must keep independent navigation contexts'
 );
 
 assert.match(subscriptionSource, /return <AdminRouteSkeleton \/>/, 'subscription detail must use the shared route skeleton');

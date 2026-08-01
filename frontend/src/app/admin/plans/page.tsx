@@ -396,10 +396,7 @@ function PlansContent() {
           'Read the active Free, Plus, Pro, and Agency package posture first. Open detail only when price, limits, or release state needs maintenance.'
         )}
         actions={(
-          <>
-            <button type="button" className="btn btn-secondary" disabled={isRefreshing} onClick={() => void loadPlans(true)}>{isRefreshing ? t('common.loading', {}, 'Loading...') : t('admin.plans.refresh_action', {}, 'Refresh catalog')}</button>
-            <Link href="/admin/credit-packs" className="btn btn-secondary">{t('admin.plans.open_credit_packs', {}, 'Open AI credit packs')}</Link>
-          </>
+          <button type="button" className="btn btn-secondary" disabled={isRefreshing} onClick={() => void loadPlans(true)}>{isRefreshing ? t('common.loading', {}, 'Loading...') : t('admin.plans.refresh_action', {}, 'Refresh catalog')}</button>
         )}
       />
 

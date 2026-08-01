@@ -9,8 +9,12 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installAdminMocks(page);
 
-  await page.goto('/admin/coverage?focus=legacy-inspector-selection');
+  await page.goto('/admin/coverage');
   await expect(page.getByRole('heading', { name: /^Service status$|^服务状态$/i })).toBeVisible();
+  const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
+  await expect(primaryNav.locator('a[href="/admin/coverage"]')).toHaveAttribute('aria-current', 'page');
+  await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).not.toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('link', { name: /Open subscription risk|打开订阅风险/i })).toHaveCount(0);
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(2);
   await expect(page.getByRole('table', { name: /Customer service status|客户服务状态/i })).toBeVisible();
   await expect(page.getByRole('combobox', { name: /Service status|服务状态/i })).toHaveValue('needs_action');
@@ -49,6 +53,15 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await expect(page.getByText(/Technical information|技术信息/i)).toHaveCount(0);
   await expect(page.getByText(/Snapshot|账单统计|待刷新账单统计/i)).toHaveCount(0);
 
+  await initialRows.nth(0).getByRole('button', { name: /Inspect evidence|查看证据/i }).click();
+  const evidenceDrawer = page.locator('[data-ui="admin-inspector-drawer"]');
+  await expect(evidenceDrawer).toBeVisible();
+  await expect(evidenceDrawer).toContainText('MVP Account');
+  await expect(page).toHaveURL(/focus=/);
+  await page.keyboard.press('Escape');
+  await expect(evidenceDrawer).toHaveCount(0);
+  await expect(page).not.toHaveURL(/focus=/);
+
   await page.getByLabel(/^Search$|^搜索$/i).fill('Uncovered');
   await expect(page.locator('[data-ui="coverage-queue-item"]')).toHaveCount(1);
   await expect(page.getByText('Uncovered Account').first()).toBeVisible();
@@ -61,6 +74,12 @@ test('service status table keeps filters and direct customer actions on PC', asy
   await expect(page).toHaveURL(/reason=missing_package_coverage/);
   await expect(page).toHaveURL(/sort=customer/);
   await expect(page).not.toHaveURL(/focus=/);
+
+  await page.getByRole('button', { name: /Inspect evidence|查看证据/i }).click();
+  await expect(evidenceDrawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/q=Uncovered/);
+  await expect(page).toHaveURL(/reason=missing_package_coverage/);
 
   await page.reload();
   await expect(page.getByLabel(/^Search$|^搜索$/i)).toHaveValue('Uncovered');

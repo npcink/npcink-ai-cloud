@@ -72,22 +72,32 @@ The primary navigation is organized into four domains.
 ### 4.2 Customer Operations
 
 - Customers (`/admin/accounts`)
-- Service queue (`/admin/coverage`)
+- Service operations (`/admin/coverage`)
+- Subscription operations (`/admin/subscriptions`)
 - Tickets (`/admin/support-requests`)
-- Packages and credits (`/admin/plans`)
+- Package catalog (`/admin/plans`)
+- AI credit packs (`/admin/credit-packs`)
 
 Customer login identity, membership, access, and audit evidence are inspected
 inside the Customers workspace. The validation-stage product must not expose a
 second Portal-users customer directory; see ADR-036 and
 `customer-account-identity-stage-standard-v1.md`.
 
-Customers is the customer-information directory. Service queue is the
-cross-customer problem queue. The two routes must not be merged or reproduce
-each other's default ordering, reasons, or actions; see ADR-037.
+Customers is the customer-information directory. Service operations owns the
+cross-customer service-status and impact queue. The two routes must not be
+merged or reproduce each other's default ordering, reasons, or actions; see
+ADR-037.
 
-`/admin/subscriptions` is a service-queue view. `/admin/credit-packs` is a
-package-and-credit view. They may keep stable routes during migration, but they
-must share their parent workspace navigation and visual model.
+Subscription operations owns the commercial lifecycle and billing-evidence
+queue. It keeps its own top-level navigation entry, URL-owned filters, risk
+ordering, and detail return path instead of presenting itself as a child of
+Service operations.
+Package catalog owns package definition, limits, and package-scoped
+subscription follow-up. AI credit packs owns the purchasable credit-pack
+configuration, including price, credits, validity, visibility, and package
+fit. Each keeps its own top-level navigation entry and page model; their
+commercial relationship stays contextual rather than being expressed as
+parent-child navigation.
 
 ### 4.3 Runtime Operations
 
@@ -222,13 +232,13 @@ consolidation.
 | `/admin/accounts` | Customer Operations | `queue` | Customers | Canonical customer directory; no risk queue or row inspector |
 | `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Overview, commercial, credits, sites, access, and audit tabs |
 | `/admin/sites/[siteId]` | Customer Operations | `detail` | Customers | Rebuild around health, coverage, runtime, usage, keys/audit tabs |
-| `/admin/coverage` | Customer Operations | `queue` | Service queue | Canonical cross-customer problem queue; needs-action default |
-| `/admin/subscriptions` | Customer Operations | `queue` | Service queue | Keep route; render as subscription-risk view of service queue |
-| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Service queue | Keep; one reconciliation action and contextual evidence |
+| `/admin/coverage` | Customer Operations | `queue` | Service operations | Canonical full-width cross-customer problem queue; needs-action default; read-only evidence opens on demand in the shared drawer |
+| `/admin/subscriptions` | Customer Operations | `queue` | Subscription operations | Independent full-width subscription lifecycle and billing-risk queue; defaults to server-filtered needs-action records, keeps normal records behind explicit All, has no default selection, and opens read-only context in the shared drawer |
+| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Subscription operations | Keep; one reconciliation action, contextual evidence, and filtered-queue return |
 | `/admin/support-requests` | Customer Operations | `queue` | Tickets | Keep; split customer conversation from internal handling |
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Tickets | Keep; timeline-first ticket detail |
-| `/admin/plans` | Customer Operations | `queue` | Packages and credits | Canonical catalog plus shared package-management workbench |
-| `/admin/credit-packs` | Customer Operations | `configuration` | Packages and credits | Keep route; edit one pack at a time |
+| `/admin/plans` | Customer Operations | `queue` | Package catalog | Canonical catalog plus shared package-management workbench |
+| `/admin/credit-packs` | Customer Operations | `configuration` | AI credit packs | Independent purchasable credit-pack directory; edit one pack at a time |
 | `/admin/ai-resources` | Runtime Operations | `queue` | Model suppliers | Keep model-provider connections and model visibility together |
 | `/admin/external-services` | Runtime Operations | `configuration` | Search and images | Fixed Cloud runtime service directory for web search and stock-image sources |
 | `/admin/vector-settings` | Runtime Operations | `configuration` | Providers | Keep vector embedding, storage, and rerank configuration separate from provider queues and diagnostics |
