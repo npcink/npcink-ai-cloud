@@ -8,8 +8,8 @@ Every AI development session should start with:
 2. Read `README.md`.
 3. Read `docs/parallel-ai-collaboration-standard-v1.md`. When another session
    may be active, inspect worktrees, open human PRs, and available task
-   ownership, then report the conflict-domain owner, merge-lane intent, and
-   shared-runtime intent before editing.
+   ownership, then report the session role, conflict-domain owner, merge-lane
+   intent, and shared-runtime intent before editing.
 4. For feature, bug-fix, M4, or CI work, read
    `docs/development-validation-operating-model-v1.md`.
 5. Read the relevant boundary docs before editing:
@@ -53,6 +53,12 @@ prompt/router/preset local truth, or WordPress write owner.
   conflict domain, one human-authored PR in the protected merge lane, and one
   shared-runtime operation owner. Parallel investigation and disjoint local
   work remain allowed.
+- In an operator-declared multi-session queue, builders stop at a clean,
+  committed `local-ready` receipt. The single integrator admits at most one
+  item to the merge lane and keeps at most two additional accepted ready items
+  waiting. Builders do not publish merge-ready PRs, request auto-merge, mutate
+  M4, or chase `master` after handoff; follow Section 3.1 of the parallel
+  collaboration standard.
 - Whenever an AI session creates an auxiliary linked worktree, it must
   immediately run
   `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
@@ -76,7 +82,8 @@ prompt/router/preset local truth, or WordPress write owner.
   into Cloud:
   `composer quality:matrix` for status and `composer quality:matrix:run` before
   cross-repo closeout.
-- Publish a completed clean topic branch with
+- Except for a builder stopping at `local-ready`, publish a completed clean
+  topic branch with
   `pnpm run pr:publish -- --title "<title>" --body-file <path>`. Start the body
   from `.github/pull_request_template.md`; do not replace it with ad hoc
   `gh pr create --body` text that omits `Scope`, `Boundary`, `Verification`, or
@@ -196,7 +203,10 @@ whitespace or quiet solid dividers as defined by
 - A user-authorized Cloud source or build/runtime task also authorizes the
   corresponding candidate preview action. After a coherent task checkpoint
   and the narrowest useful local source/static gate, run `m4:preview:sync` or
-  `m4:preview:deploy` without waiting for the user to ask again.
+  `m4:preview:deploy` without waiting for the user to ask again. In a declared
+  multi-session queue, the integrator schedules and runs that authorized
+  checkpoint after accepting the builder's `local-ready` receipt; the builder
+  records the runtime need and does not seize the shared runtime.
 - Automatic checkpoint dispatch means an explicit agent action in the active
   task. Do not add per-save watchers, background daemons, Git hooks, or
   GitHub-hosted M4 deployment credentials. Batch related edits into a coherent
