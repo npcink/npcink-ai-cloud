@@ -9,6 +9,10 @@ import {
   type ProviderWorkbenchState,
 } from '@/features/admin/ai-resources/provider-workbench-state';
 import type { SupplierConnection } from '@/features/admin/ai-resources/types';
+import {
+  inferProviderPreset,
+  providerReferenceLinksForConnection,
+} from '@/features/admin/ai-resources/provider-presets';
 
 const catalogPreview: ProviderCatalogPreview = {
   provider_id: 'anthropic',
@@ -262,6 +266,41 @@ describe('AI resources provider form projection', () => {
       imageOutputHosts: 'cdn.example.test',
       credential: '',
       enabled: true,
+    });
+  });
+});
+
+describe('AI resources provider reference ownership', () => {
+  const compatibleConnection: SupplierConnection = {
+    connection_id: 'ollama_m4',
+    provider_id: 'openai',
+    display_name: 'Ollama M4',
+    kind: 'openai_compatible',
+    enabled: true,
+    configured: true,
+    status: 'ready',
+    base_url: 'http://host.docker.internal:11434/v1',
+    capability_ids: ['text_generation'],
+    runtime_profile_ids: ['text.ai'],
+    metadata: {},
+  };
+
+  it('does not project OpenAI links onto an Ollama-compatible connection', () => {
+    expect(inferProviderPreset(compatibleConnection)).toBe('ollama');
+    expect(providerReferenceLinksForConnection(compatibleConnection)).toMatchObject({
+      websiteUrl: 'https://ollama.com/',
+      docsUrl: 'https://docs.ollama.com/api/openai-compatibility',
+    });
+  });
+
+  it('prefers saved supplier-specific links over inferred defaults', () => {
+    expect(providerReferenceLinksForConnection({
+      ...compatibleConnection,
+      metadata: { docs_url: 'https://internal.example.test/provider-docs' },
+    })).toEqual({
+      websiteUrl: undefined,
+      statusUrl: undefined,
+      docsUrl: 'https://internal.example.test/provider-docs',
     });
   });
 });
