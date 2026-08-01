@@ -76,6 +76,7 @@ export type ProviderWorkbenchState = {
   modelReferenceFeatureFilter: ModelReferenceFeatureFilter;
   modelReferenceVisibilityFilter: ModelReferenceVisibilityFilter;
   modelReferenceShowDeprecated: boolean;
+  modelReferencePage: number;
   confirmingClearModels: boolean;
   customModelInput: string;
 };
@@ -91,6 +92,7 @@ export const INITIAL_PROVIDER_WORKBENCH_STATE: ProviderWorkbenchState = {
   modelReferenceFeatureFilter: 'all',
   modelReferenceVisibilityFilter: 'all',
   modelReferenceShowDeprecated: false,
+  modelReferencePage: 1,
   confirmingClearModels: false,
   customModelInput: '',
 };
@@ -126,6 +128,7 @@ export type ProviderWorkbenchAction =
       filter: ModelReferenceVisibilityFilter;
     }
   | { type: 'set_show_deprecated'; show: boolean }
+  | { type: 'set_reference_page'; page: number }
   | { type: 'set_custom_model_input'; value: string }
   | { type: 'set_confirming_clear_models'; confirming: boolean }
   | { type: 'set_credential_edit_open'; open: boolean }
@@ -142,6 +145,7 @@ export function providerWorkbenchReducer(
         providerFormOpen: true,
         modelReferenceProviderId: action.referenceProviderId,
         modelReferenceShowDeprecated: true,
+        modelReferencePage: 1,
       };
     case 'open_edit':
       return {
@@ -153,6 +157,7 @@ export function providerWorkbenchReducer(
         providerCatalogPreview: action.catalogPreview,
         modelReferenceProviderId: action.referenceProviderId,
         modelReferenceShowDeprecated: true,
+        modelReferencePage: 1,
       };
     case 'close':
       return {
@@ -169,6 +174,7 @@ export function providerWorkbenchReducer(
         credentialEditOpen: true,
         providerConnectionForm: EMPTY_PROVIDER_CONNECTION_FORM,
         providerCatalogPreview: null,
+        modelReferencePage: 1,
         confirmingClearModels: false,
         customModelInput: '',
       };
@@ -195,6 +201,7 @@ export function providerWorkbenchReducer(
         modelReferenceFeatureFilter: 'all',
         modelReferenceVisibilityFilter: 'all',
         modelReferenceShowDeprecated: true,
+        modelReferencePage: 1,
         customModelInput: '',
         confirmingClearModels: false,
       };
@@ -208,19 +215,22 @@ export function providerWorkbenchReducer(
         modelReferenceProviderId:
           action.referenceProviderId ?? state.modelReferenceProviderId,
         confirmingClearModels: false,
+        modelReferencePage: 1,
       };
     case 'set_catalog_preview':
       return { ...state, providerCatalogPreview: action.preview };
     case 'set_reference_provider':
-      return { ...state, modelReferenceProviderId: action.providerId };
+      return { ...state, modelReferenceProviderId: action.providerId, modelReferencePage: 1 };
     case 'set_reference_search':
-      return { ...state, modelReferenceSearch: action.search };
+      return { ...state, modelReferenceSearch: action.search, modelReferencePage: 1 };
     case 'set_reference_feature_filter':
-      return { ...state, modelReferenceFeatureFilter: action.filter };
+      return { ...state, modelReferenceFeatureFilter: action.filter, modelReferencePage: 1 };
     case 'set_reference_visibility_filter':
-      return { ...state, modelReferenceVisibilityFilter: action.filter };
+      return { ...state, modelReferenceVisibilityFilter: action.filter, modelReferencePage: 1 };
     case 'set_show_deprecated':
-      return { ...state, modelReferenceShowDeprecated: action.show };
+      return { ...state, modelReferenceShowDeprecated: action.show, modelReferencePage: 1 };
+    case 'set_reference_page':
+      return { ...state, modelReferencePage: Math.max(1, Math.floor(action.page)) };
     case 'set_custom_model_input':
       return { ...state, customModelInput: action.value };
     case 'set_confirming_clear_models':

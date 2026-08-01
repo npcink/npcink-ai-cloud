@@ -121,6 +121,8 @@ type ModelVisibilityRow = {
   catalog?: ProviderCatalogPreviewModel;
 };
 
+const MODEL_VISIBILITY_PAGE_SIZE = 25;
+
 type ProviderConnectionTestResponse = ProviderConnectionTestResult & {
   receipt?: AdminMutationReceiptPayload | null;
 };
@@ -811,6 +813,7 @@ function AiResourcesContent() {
     modelReferenceFeatureFilter,
     modelReferenceVisibilityFilter,
     modelReferenceShowDeprecated,
+    modelReferencePage,
     confirmingClearModels,
     customModelInput,
   } = providerWorkbench;
@@ -837,6 +840,12 @@ function AiResourcesContent() {
   const handleConnectionStatusFilterChange = useCallback((value: ConnectionStatusFilter) => {
     setConnectionStatusFilter(value);
     updateWorkspaceParams({ status: value === 'all' ? null : value, focus: null });
+  }, [updateWorkspaceParams]);
+
+  const handleClearConnectionFilters = useCallback(() => {
+    setConnectionSearch('');
+    setConnectionStatusFilter('all');
+    updateWorkspaceParams({ q: null, status: null, focus: null });
   }, [updateWorkspaceParams]);
 
   const handleSelectConnection = useCallback((connectionId: string) => {
@@ -1705,6 +1714,18 @@ function AiResourcesContent() {
     modelVisibilityRows.length,
     selectedProviderModelIds.length
   );
+  const modelVisibilityPageCount = Math.max(
+    1,
+    Math.ceil(modelVisibilityRows.length / MODEL_VISIBILITY_PAGE_SIZE)
+  );
+  const visibleModelReferencePage = Math.min(
+    modelReferencePage,
+    modelVisibilityPageCount
+  );
+  const modelVisibilityPageRows = modelVisibilityRows.slice(
+    (visibleModelReferencePage - 1) * MODEL_VISIBILITY_PAGE_SIZE,
+    visibleModelReferencePage * MODEL_VISIBILITY_PAGE_SIZE
+  );
   if (loading) {
     return <AdminRouteSkeleton />;
   }
@@ -2217,8 +2238,9 @@ function AiResourcesContent() {
                           {aiText('loading_model_references', 'Loading model reference data...')}
                         </div>
                       ) : modelVisibilityRows.length ? (
-                        <div className="relative max-h-[28rem] overflow-auto border-t border-slate-200 dark:border-slate-800">
-                          <table className="w-full min-w-[50rem] text-left text-xs">
+                        <div data-ui="model-visibility-directory" className="border-t border-slate-200 dark:border-slate-800">
+                          <div className="relative max-h-[28rem] overflow-auto">
+                            <table className="w-full min-w-[50rem] text-left text-xs">
                             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_rgba(30,41,59,0.9)]">
                               <tr>
                                 <th className="px-3 py-2 font-semibold">{aiText('column_model_visibility', 'Visibility')}</th>
@@ -2234,7 +2256,7 @@ function AiResourcesContent() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {modelVisibilityRows.map((row) => {
+                              {modelVisibilityPageRows.map((row) => {
                                 const tags = row.reference ? modelReferenceCapabilityTags(row.reference) : [];
                                 const tagLabels = tags.map(modelReferenceCapabilityLabel);
                                 const visibleTagLabels = tagLabels.slice(0, 3);
@@ -2337,7 +2359,54 @@ function AiResourcesContent() {
                                 );
                               })}
                             </tbody>
-                          </table>
+                            </table>
+                          </div>
+                          <div
+                            data-ui="model-visibility-pagination"
+                            className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
+                          >
+                            <span>
+                              {aiText(
+                                'model_visibility_page_summary',
+                                'Showing {{shown}} of {{total}} matching models · {{enabled}} enabled',
+                                {
+                                  shown: String(modelVisibilityPageRows.length),
+                                  total: String(modelVisibilityRows.length),
+                                  enabled: String(selectedProviderModelIds.length),
+                                }
+                              )}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-secondary h-8 px-3"
+                                disabled={visibleModelReferencePage <= 1}
+                                onClick={() => dispatchProviderWorkbench({
+                                  type: 'set_reference_page',
+                                  page: visibleModelReferencePage - 1,
+                                })}
+                              >
+                                {aiText('action_previous_page', 'Previous')}
+                              </button>
+                              <span className="min-w-16 text-center font-medium text-slate-700 dark:text-slate-200">
+                                {aiText('pagination_page', '{{current}} / {{total}}', {
+                                  current: String(visibleModelReferencePage),
+                                  total: String(modelVisibilityPageCount),
+                                })}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-secondary h-8 px-3"
+                                disabled={visibleModelReferencePage >= modelVisibilityPageCount}
+                                onClick={() => dispatchProviderWorkbench({
+                                  type: 'set_reference_page',
+                                  page: visibleModelReferencePage + 1,
+                                })}
+                              >
+                                {aiText('action_next_page', 'Next')}
+                              </button>
+                            </span>
+                          </div>
                         </div>
                       ) : (
                         <AdminEmptyState>
@@ -2446,6 +2515,8 @@ function AiResourcesContent() {
           )}
           selectedConnectionId={selectedConnectionId}
           onSelectConnection={handleSelectConnection}
+          hasActiveFilters={Boolean(connectionSearch.trim() || connectionStatusFilter !== 'all')}
+          onClearFilters={handleClearConnectionFilters}
           testResults={connectionTestResults}
           testingConnectionId={testingConnectionId}
           deletingConnectionId={deletingConnectionId}

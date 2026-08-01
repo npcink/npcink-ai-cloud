@@ -30,8 +30,20 @@ assert.match(
 
 assert.match(
   directorySource,
-  /data-connection-id=\{connection\.connection_id\}[\s\S]*data-selected=\{isSelected[\s\S]*action_configure[\s\S]*action_test[\s\S]*supplier-more-actions/,
+  /data-connection-id=\{connection\.connection_id\}[\s\S]*data-selected=\{isSelected[\s\S]*action_configure[\s\S]*action_test[\s\S]*SupplierMoreActions/,
   'Each provider row must keep URL-backed focus and put frequent actions before the overflow control'
+);
+
+assert.match(
+  directorySource,
+  /column_configuration_status[\s\S]*column_enabled_models[\s\S]*column_profiles[\s\S]*column_last_verification[\s\S]*data-ui="supplier-name"/,
+  'Supplier identity must be non-interactive and configuration, models, profiles, and verification must remain separate facts'
+);
+
+assert.match(
+  directorySource,
+  /event\.key !== 'Escape'[\s\S]*aria-haspopup="menu"[\s\S]*aria-expanded=\{open\}[\s\S]*absolute right-0 top-full/,
+  'Supplier overflow must be an overlay menu that closes with Escape without changing table row geometry'
 );
 
 assert.doesNotMatch(
@@ -132,6 +144,18 @@ assert.match(
   pageSource,
   /data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*field_feature_filter[\s\S]*field_show_deprecated_models[\s\S]*data-ui="model-sync-primary"/,
   'Model search, filters, history visibility, and synchronization must stay in one stable toolbar'
+);
+
+assert.match(
+  pageSource,
+  /MODEL_VISIBILITY_PAGE_SIZE = 25[\s\S]*modelVisibilityPageRows[\s\S]*data-ui="model-visibility-pagination"[\s\S]*set_reference_page/,
+  'Large model directories must render one bounded page and keep pagination inside the model workbench'
+);
+
+assert.match(
+  directorySource,
+  /AdminEmptyState[\s\S]*hasActiveFilters[\s\S]*action_clear_filters/,
+  'A filtered-empty supplier queue must provide one direct reset action'
 );
 
 assert.match(

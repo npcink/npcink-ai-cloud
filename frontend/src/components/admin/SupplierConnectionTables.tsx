@@ -1,6 +1,7 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
 import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import type {
   ProviderConnectionTestResult,
@@ -43,7 +44,7 @@ function statusTone(status: ResourceStatus): 'success' | 'warning' | 'disabled' 
 
 function resourceStatusLabel(status: ResourceStatus, translate: Translate): string {
   const labels: Record<string, string> = {
-    ready: translate('status_ready_label', 'Ready'),
+    ready: translate('status_configured_label', 'Configured'),
     missing_secret: translate('status_missing_secret_label', 'Missing secret'),
     missing_provider: translate('status_missing_provider_label', 'Missing provider'),
     saved_credential_unreadable: translate('status_saved_credential_unreadable_label', 'Credential must be saved again'),
@@ -120,8 +121,98 @@ type ModelSupplierTableProps = SharedTableProps & {
   providerKindLabel: (kind: string) => string;
   referenceLinksForConnection: (connection: SupplierConnection) => ReferenceLinkItem[];
   onConfigure: (connection: SupplierConnection) => void;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
   toolbar?: ReactNode;
 };
+
+type SupplierMoreActionsProps = {
+  connection: SupplierConnection;
+  providerLinks: ReferenceLinkItem[];
+  isDeleting: boolean;
+  onSelectConnection: () => void;
+  onRequestDelete: (connectionId: string) => void;
+  translate: Translate;
+};
+
+function SupplierMoreActions({
+  connection,
+  providerLinks,
+  isDeleting,
+  onSelectConnection,
+  onRequestDelete,
+  translate,
+}: SupplierMoreActionsProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} data-ui="supplier-more-actions" className="relative shrink-0 text-left">
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`${TABLE_ACTION_BUTTON_CLASS} min-w-9 px-2`}
+        aria-label={translate('model_visibility_more_operations', 'More actions')}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        ···
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-950"
+        >
+          <ProviderReferenceLinks
+            items={providerLinks}
+            label={translate('provider_links_title', 'Reference links')}
+            translate={translate}
+            variant="inline"
+          />
+          {connection.managed_by === 'cloud_provider_connections' ? (
+            <button
+              type="button"
+              className={`${TABLE_DELETE_BUTTON_CLASS} mt-3 w-full`}
+              disabled={isDeleting}
+              onClick={() => {
+                setOpen(false);
+                onSelectConnection();
+                onRequestDelete(connection.connection_id);
+              }}
+            >
+              {translate('action_delete', 'Delete')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function ModelSupplierTable({
   connections,
@@ -136,6 +227,8 @@ export function ModelSupplierTable({
   providerTestMessage,
   referenceLinksForConnection,
   onConfigure,
+  hasActiveFilters,
+  onClearFilters,
   onTest,
   onDelete,
   onRequestDelete,
@@ -146,7 +239,7 @@ export function ModelSupplierTable({
   return (
     <AdminDataTableFrame
       dataUi="model-supplier-directory"
-      title={translate('overview_model_suppliers', 'Model suppliers')}
+      title={translate('model_directory_title', 'Supplier directory')}
       resultLabel={translate('directory_result_count', '{{count}} suppliers', { count: String(connections.length) })}
       headerActions={toolbar}
       footer={(
@@ -163,12 +256,13 @@ export function ModelSupplierTable({
         <table data-ui="model-supplier-table" className="w-full min-w-[64rem] table-fixed text-left text-sm">
           <thead className="border-b border-slate-200 bg-white text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
             <tr>
-              <th className="w-[21%] px-4 py-2.5">{translate('column_provider', 'Supplier')}</th>
-              <th className="w-[13%] px-3 py-2.5">{translate('column_status', 'Status')}</th>
-              <th className="w-[16%] px-3 py-2.5">{translate('column_connection', 'Connection')}</th>
-              <th className="w-[12%] px-3 py-2.5">{translate('column_enabled_models', 'Runtime allowlist')}</th>
-              <th className="w-[16%] px-3 py-2.5">{translate('last_test', 'Last test')}</th>
-              <th className="w-[22%] px-4 py-2.5 text-right">{translate('column_actions', 'Actions')}</th>
+              <th className="w-[18%] px-4 py-2.5">{translate('column_provider', 'Supplier')}</th>
+              <th className="w-[11%] px-3 py-2.5">{translate('column_configuration_status', 'Configuration')}</th>
+              <th className="w-[15%] px-3 py-2.5">{translate('column_connection', 'Connection')}</th>
+              <th className="w-[10%] px-3 py-2.5">{translate('column_enabled_models', 'Enabled models')}</th>
+              <th className="w-[16%] px-3 py-2.5">{translate('column_profiles', 'Runtime profiles')}</th>
+              <th className="w-[14%] px-3 py-2.5">{translate('column_last_verification', 'Last verification')}</th>
+              <th className="w-[16%] px-4 py-2.5 text-right">{translate('column_actions', 'Actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -190,13 +284,9 @@ export function ModelSupplierTable({
                     className={isSelected ? 'bg-blue-50/60 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-900/30'}
                   >
                     <td className="px-4 py-3 align-top">
-                      <button
-                        type="button"
-                        className="max-w-full truncate text-left font-semibold text-slate-950 hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
-                        onClick={selectConnection}
-                      >
+                      <span data-ui="supplier-name" className="block max-w-full truncate font-semibold text-slate-950 dark:text-white">
                         {connection.display_name}
-                      </button>
+                      </span>
                       <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{connection.provider_id}</p>
                     </td>
                     <td className="px-3 py-3 align-top">
@@ -217,7 +307,9 @@ export function ModelSupplierTable({
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
                         {translate('model_catalog_enabled_count_short', '{{count}} models', { count: String(modelCount) })}
                       </span>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    </td>
+                    <td className="px-3 py-3 align-top text-xs text-slate-500 dark:text-slate-400">
+                      <p className="line-clamp-2" title={connection.runtime_profile_ids.join(', ')}>
                         {connection.runtime_profile_ids.join(', ') || '-'}
                       </p>
                     </td>
@@ -227,7 +319,7 @@ export function ModelSupplierTable({
                           ? (testResult.ok ? translate('test_passed', 'Passed') : resourceStatusLabel(testResult.status, translate))
                           : connection.last_tested_at
                             ? formatDate(connection.last_tested_at)
-                            : '-'}
+                            : translate('status_not_observed', 'Not observed')}
                       </span>
                       {testResult ? <p className="mt-1">{providerTestStageLabel(testResult.stage)}</p> : null}
                     </td>
@@ -257,41 +349,20 @@ export function ModelSupplierTable({
                             {isTesting ? translate('testing', 'Testing...') : translate('action_test', 'Test')}
                           </button>
                         ) : null}
-                        <details data-ui="supplier-more-actions" className="group shrink-0 text-left">
-                          <summary
-                            className={`${TABLE_ACTION_BUTTON_CLASS} cursor-pointer list-none whitespace-nowrap`}
-                            aria-label={translate('model_visibility_more_operations', 'More actions')}
-                          >
-                            ···
-                          </summary>
-                          <div className="mt-2 w-48 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-950">
-                            <ProviderReferenceLinks
-                              items={providerLinks}
-                              label={translate('provider_links_title', 'Reference links')}
-                              translate={translate}
-                              variant="inline"
-                            />
-                            {connection.managed_by === 'cloud_provider_connections' ? (
-                              <button
-                                type="button"
-                                className={`${TABLE_DELETE_BUTTON_CLASS} mt-3 w-full`}
-                                disabled={isDeleting}
-                                onClick={() => {
-                                  selectConnection();
-                                  onRequestDelete(connection.connection_id);
-                                }}
-                              >
-                                {translate('action_delete', 'Delete')}
-                              </button>
-                            ) : null}
-                          </div>
-                        </details>
+                        <SupplierMoreActions
+                          connection={connection}
+                          providerLinks={providerLinks}
+                          isDeleting={isDeleting}
+                          onSelectConnection={selectConnection}
+                          onRequestDelete={onRequestDelete}
+                          translate={translate}
+                        />
                       </div>
                     </td>
                   </tr>
                   {hasFeedback ? (
                     <tr data-feedback-for={connection.connection_id}>
-                      <td colSpan={6} className="bg-slate-50/70 px-4 py-3 dark:bg-slate-900/35">
+                      <td colSpan={7} className="bg-slate-50/70 px-4 py-3 dark:bg-slate-900/35">
                         {testResult && !testResult.ok ? (
                           <p role="alert" className="text-xs leading-5 text-amber-800 dark:text-amber-200">
                             {providerTestStageLabel(testResult.stage)} · {providerTestMessage(testResult)}
@@ -328,8 +399,15 @@ export function ModelSupplierTable({
             })}
             {connections.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-                  {translate('ai_suppliers_empty', 'No model suppliers match the current filters.')}
+                <td colSpan={7} className="px-4 py-6">
+                  <AdminEmptyState className="flex items-center justify-between gap-3 text-left">
+                    <span>{translate('ai_suppliers_empty', 'No model suppliers match the current filters.')}</span>
+                    {hasActiveFilters ? (
+                      <button type="button" className="font-semibold text-blue-700 hover:underline dark:text-blue-300" onClick={onClearFilters}>
+                        {translate('action_clear_filters', 'Clear filters')}
+                      </button>
+                    ) : null}
+                  </AdminEmptyState>
                 </td>
               </tr>
             ) : null}
