@@ -50,6 +50,7 @@ SUPPORT_REQUEST_TOPICS = {
     "account",
 }
 SUPPORT_REQUEST_SORTS = {"risk", "updated_at"}
+SUPPORT_REQUEST_ATTENTION_FILTERS = {"", "waiting_for_operator", "overdue"}
 SUPPORT_REQUEST_MESSAGE_VISIBILITIES = {
     SUPPORT_REQUEST_MESSAGE_VISIBILITY_PUBLIC,
     SUPPORT_REQUEST_MESSAGE_VISIBILITY_INTERNAL,
@@ -86,6 +87,16 @@ def _normalize_support_sort(value: str) -> str:
         raise CommercialValidationError(
             "service.support_request_sort_invalid",
             "support request sort is not supported",
+        )
+    return normalized
+
+
+def _normalize_support_attention(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in SUPPORT_REQUEST_ATTENTION_FILTERS:
+        raise CommercialValidationError(
+            "service.support_request_attention_invalid",
+            "support request attention filter is not supported",
         )
     return normalized
 
@@ -229,6 +240,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 priority="normal",
                 source_path=_trim_support_text(source_path, max_length=191),
                 context_json=dict(context_json or {}),
+                activity_at=now,
             )
             repository.create_support_request_message(
                 message_id=f"srm_{uuid4().hex}",
@@ -239,6 +251,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 email=str(profile.get("email") or ""),
                 body=normalized_description,
                 metadata_json={"source": "initial_description"},
+                activity_at=now,
             )
             payload = self._serialize_portal_support_request(request)
             self._record_service_audit_in_session(
@@ -367,12 +380,14 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         status: str = "",
         topic: str = "",
         query: str = "",
+        attention: str = "",
         sort: str = "risk",
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, object]:
         normalized_status = _normalize_support_status(status, allow_empty=True)
         normalized_topic = _normalize_support_topic(topic) if str(topic or "").strip() else ""
+        normalized_attention = _normalize_support_attention(attention)
         normalized_sort = _normalize_support_sort(sort)
         safe_limit = max(1, min(200, int(limit or 100)))
         safe_offset = max(0, int(offset or 0))
@@ -383,6 +398,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 status=normalized_status or None,
                 topic=normalized_topic or None,
                 query=query,
+                attention=normalized_attention or None,
                 sort=normalized_sort,
                 risk_as_of=risk_as_of,
                 limit=safe_limit,
@@ -392,11 +408,14 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 status=normalized_status or None,
                 topic=normalized_topic or None,
                 query=query,
+                attention=normalized_attention or None,
+                risk_as_of=risk_as_of,
             )
             summary = repository.summarize_support_request_queue(
                 status=normalized_status or None,
                 topic=normalized_topic or None,
                 query=query,
+                attention=normalized_attention or None,
                 risk_as_of=risk_as_of,
             )
         return {
@@ -491,6 +510,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 email=str(request.email or ""),
                 body=normalized_body,
                 metadata_json={"source": "portal_reply"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
@@ -556,6 +576,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 email="",
                 body=normalized_body,
                 metadata_json={"source": "admin_reply"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
@@ -646,6 +667,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 content_type=normalized_content_type,
                 content_bytes=content,
                 metadata_json={"source": "portal_upload"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
@@ -719,6 +741,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 content_type=normalized_content_type,
                 content_bytes=content,
                 metadata_json={"source": "admin_upload"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_support_request(request),
@@ -846,6 +869,13 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
             request.closed_at = now if bool(resolved) else None
             request.resolved_at = request.resolved_at if bool(resolved) else None
+            if bool(resolved):
+                repository.mark_support_request_complete(request)
+            else:
+                repository.mark_support_request_waiting_for_operator(
+                    request,
+                    activity_at=now,
+                )
             feedback = repository.upsert_support_request_feedback(
                 feedback_id=f"srf_{uuid4().hex}",
                 request=request,
@@ -855,6 +885,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 rating=normalized_rating,
                 comment=normalized_comment,
                 metadata_json={"source": "portal_close_evaluation"},
+                activity_at=now,
             )
             payload: dict[str, object] = {
                 "request": self._serialize_portal_support_request(request),
@@ -909,6 +940,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 request.closed_at = (
                     now if normalized_status == SUPPORT_REQUEST_STATUS_CLOSED else None
                 )
+                if normalized_status in {
+                    SUPPORT_REQUEST_STATUS_RESOLVED,
+                    SUPPORT_REQUEST_STATUS_CLOSED,
+                }:
+                    repository.mark_support_request_complete(request)
+                elif previous_status in {
+                    SUPPORT_REQUEST_STATUS_RESOLVED,
+                    SUPPORT_REQUEST_STATUS_CLOSED,
+                }:
+                    repository.restore_support_request_waiting_state(request)
             if normalized_note:
                 request.admin_note = normalized_note
                 repository.create_support_request_message(
@@ -920,6 +961,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     email="",
                     body=normalized_note,
                     metadata_json={"source": "admin_status_update"},
+                    activity_at=now,
                 )
             session.flush()
             payload = self._serialize_support_request(request)
@@ -1004,6 +1046,17 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             "source_path": str(request.source_path or ""),
             "admin_note": str(request.admin_note or ""),
             "context": request.context_json if isinstance(request.context_json, dict) else {},
+            "first_operator_response_at": self._serialize_datetime(
+                request.first_operator_response_at
+            ),
+            "last_customer_activity_at": self._serialize_datetime(
+                request.last_customer_activity_at
+            ),
+            "last_operator_public_activity_at": self._serialize_datetime(
+                request.last_operator_public_activity_at
+            ),
+            "waiting_on": str(request.waiting_on or "operator"),
+            "waiting_since": self._serialize_datetime(request.waiting_since),
             "created_at": self._serialize_datetime(request.created_at),
             "updated_at": self._serialize_datetime(request.updated_at),
             "resolved_at": self._serialize_datetime(request.resolved_at),

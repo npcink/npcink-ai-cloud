@@ -16,6 +16,9 @@ type TicketFixture = {
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   priority: string;
   admin_note: string;
+  waiting_on: 'operator' | 'customer' | 'none';
+  waiting_since?: string;
+  first_operator_response_at?: string;
   created_at: string;
   updated_at: string;
 };
@@ -33,6 +36,8 @@ function initialTickets(): TicketFixture[] {
       status: 'open',
       priority: 'normal',
       admin_note: '',
+      waiting_on: 'operator',
+      waiting_since: '2026-07-08T08:00:00Z',
       created_at: '2026-07-08T08:00:00Z',
       updated_at: '2026-07-08T08:00:00Z',
     },
@@ -47,6 +52,8 @@ function initialTickets(): TicketFixture[] {
       status: 'open',
       priority: 'normal',
       admin_note: '',
+      waiting_on: 'operator',
+      waiting_since: '2026-07-12T05:00:00Z',
       created_at: '2026-07-12T05:00:00Z',
       updated_at: '2026-07-12T05:00:00Z',
     },
@@ -61,6 +68,9 @@ function initialTickets(): TicketFixture[] {
       status: 'in_progress',
       priority: 'normal',
       admin_note: 'Checking the current billing snapshot.',
+      waiting_on: 'customer',
+      waiting_since: '2026-07-12T06:00:00Z',
+      first_operator_response_at: '2026-07-12T06:00:00Z',
       created_at: '2026-07-10T05:00:00Z',
       updated_at: '2026-07-12T06:00:00Z',
     },
@@ -75,6 +85,7 @@ function initialTickets(): TicketFixture[] {
       status: 'resolved',
       priority: 'normal',
       admin_note: 'Resolved after identity verification.',
+      waiting_on: 'none',
       created_at: '2026-07-09T05:00:00Z',
       updated_at: '2026-07-11T05:00:00Z',
     },
@@ -101,17 +112,25 @@ async function installSupportQueueMocks(page: Page) {
       return;
     }
     const status = url.searchParams.get('status') || '';
+    const attention = url.searchParams.get('attention') || '';
     const topic = url.searchParams.get('topic') || '';
     const filteredItems = tickets.filter((ticket) => {
       const searchable = [ticket.request_id, ticket.email, ticket.title, ticket.account_id, ticket.site_id].join(' ').toLowerCase();
-      return (!status || ticket.status === status) && (!topic || ticket.topic === topic) && (!query || searchable.includes(query));
+      const waitingForOperator = ticket.waiting_on === 'operator';
+      const overdue = waitingForOperator && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime();
+      return (!status || ticket.status === status)
+        && (!topic || ticket.topic === topic)
+        && (!attention || (attention === 'waiting_for_operator' ? waitingForOperator : overdue))
+        && (!query || searchable.includes(query));
     });
     const sort = url.searchParams.get('sort') || 'risk';
     const offset = Number(url.searchParams.get('offset') || 0);
     const riskRank = (ticket: TicketFixture) => {
-      if (['critical', 'urgent'].includes(ticket.priority) || ticket.status === 'open') return 0;
-      if (ticket.priority === 'high') return 1;
-      if (ticket.status === 'in_progress') return 2;
+      const active = ticket.status === 'open' || ticket.status === 'in_progress';
+      const overdue = ticket.waiting_on === 'operator' && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime();
+      if (active && (['critical', 'urgent'].includes(ticket.priority) || overdue)) return 0;
+      if (active && (ticket.waiting_on === 'operator' || ticket.priority === 'high')) return 1;
+      if (active) return 2;
       return 3;
     };
     const orderedItems = [...filteredItems].sort((left, right) => {
@@ -133,6 +152,9 @@ async function installSupportQueueMocks(page: Page) {
           warning: filteredItems.filter((ticket) => riskRank(ticket) === 1).length,
           monitor: filteredItems.filter((ticket) => riskRank(ticket) === 2).length,
           stable: filteredItems.filter((ticket) => riskRank(ticket) === 3).length,
+          waiting_for_operator: filteredItems.filter((ticket) => ticket.waiting_on === 'operator').length,
+          waiting_for_customer: filteredItems.filter((ticket) => ticket.waiting_on === 'customer').length,
+          overdue: filteredItems.filter((ticket) => ticket.waiting_on === 'operator' && Boolean(ticket.waiting_since) && new Date(ticket.waiting_since || 0).getTime() <= new Date('2026-07-10T08:00:00Z').getTime()).length,
         },
       })),
     });
@@ -178,7 +200,7 @@ test('ticket queue persists filters and focus while retaining usable results on 
 
   const toolbarControls = [
     page.getByLabel(/Search tickets|搜索工单/i),
-    page.getByLabel(/Ticket status|工单状态/i),
+    page.getByLabel(/Ticket view|工单视图/i),
     page.getByLabel(/Ticket topic|工单类型/i),
     page.getByLabel(/Sort|排序/i),
     page.getByRole('button', { name: /^Apply$|^应用$/i }),
@@ -196,7 +218,14 @@ test('ticket queue persists filters and focus while retaining usable results on 
   await expect(rows.nth(1)).toContainText('Site connection needs review');
   await expect(rows.nth(2)).toContainText('Usage total needs explanation');
 
-  await page.getByLabel(/Ticket status|工单状态/i).selectOption('open');
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:waiting_for_operator');
+  await expect(page).toHaveURL(/attention=waiting_for_operator/);
+  await expect(rows).toHaveCount(2);
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('attention:overdue');
+  await expect(page).toHaveURL(/attention=overdue/);
+  await expect(rows).toHaveCount(1);
+
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('status:open');
   await expect(page).toHaveURL(/status=open/);
   await expect(rows).toHaveCount(2);
 

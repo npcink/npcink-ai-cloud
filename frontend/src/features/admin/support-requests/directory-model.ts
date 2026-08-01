@@ -1,5 +1,6 @@
 import type {
   SupportRequest,
+  SupportRequestAttention,
   SupportRequestFilters,
   SupportRequestRisk,
   SupportRequestSort,
@@ -13,6 +14,11 @@ export const SUPPORT_REQUEST_STATUS_FILTERS = [
   'resolved',
   'closed',
 ] as const;
+export const SUPPORT_REQUEST_ATTENTION_FILTERS: SupportRequestAttention[] = [
+  '',
+  'waiting_for_operator',
+  'overdue',
+];
 export const SUPPORT_REQUEST_TOPICS = [
   '',
   'billing',
@@ -52,6 +58,7 @@ export function buildSupportRequestsQuery(
   if (offset > 0) params.set('offset', String(offset));
   if (filters.status) params.set('status', filters.status);
   if (filters.topic) params.set('topic', filters.topic);
+  if (filters.attention) params.set('attention', filters.attention);
   if (filters.q.trim()) params.set('q', filters.q.trim());
   return params.toString();
 }
@@ -116,17 +123,21 @@ export function ageHours(value?: string): number | null {
 }
 
 export function requestRisk(item: SupportRequest): SupportRequestRisk {
-  const age = ageHours(item.created_at);
+  const waitAge = ageHours(item.waiting_since || item.created_at);
   const priority = item.priority.toLowerCase();
+  const active = item.status === 'open' || item.status === 'in_progress';
+  const waitingOn = item.waiting_on || (item.status === 'open' ? 'operator' : 'customer');
   if (
-    priority === 'critical' ||
-    priority === 'urgent' ||
-    (item.status === 'open' && age !== null && age >= 48)
+    active && (
+      priority === 'critical' ||
+      priority === 'urgent' ||
+      (waitingOn === 'operator' && waitAge !== null && waitAge >= 48)
+    )
   ) {
     return 'critical';
   }
-  if (item.status === 'open' || priority === 'high') return 'warning';
-  if (item.status === 'in_progress') return 'monitor';
+  if (active && (waitingOn === 'operator' || priority === 'high')) return 'warning';
+  if (active) return 'monitor';
   return 'stable';
 }
 

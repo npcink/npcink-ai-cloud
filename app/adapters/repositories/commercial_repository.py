@@ -112,7 +112,9 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         source_path: str,
         admin_note: str | None = None,
         context_json: dict[str, object] | None = None,
+        activity_at: datetime | None = None,
     ) -> SupportRequest:
+        now = activity_at or datetime.now(UTC)
         request = SupportRequest(
             request_id=request_id,
             account_id=account_id,
@@ -127,6 +129,11 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             source_path=source_path,
             admin_note=admin_note,
             context_json=context_json,
+            last_customer_activity_at=now,
+            waiting_on="operator",
+            waiting_since=now,
+            created_at=now,
+            updated_at=now,
         )
         self.session.add(request)
         self.session.flush()
@@ -143,7 +150,9 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         principal_id: str | None = None,
         email: str = "",
         metadata_json: dict[str, object] | None = None,
+        activity_at: datetime | None = None,
     ) -> SupportRequestMessage:
+        now = activity_at or datetime.now(UTC)
         message = SupportRequestMessage(
             message_id=message_id,
             request_id=str(request.request_id or ""),
@@ -155,8 +164,19 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             visibility=visibility,
             body=body,
             metadata_json=metadata_json,
+            created_at=now,
         )
-        request.updated_at = datetime.now(UTC)
+        request.updated_at = now
+        if visibility == "public" and author_kind == "customer":
+            request.last_customer_activity_at = now
+            request.waiting_on = "operator"
+            request.waiting_since = now
+        elif visibility == "public" and author_kind == "operator":
+            if request.first_operator_response_at is None:
+                request.first_operator_response_at = now
+            request.last_operator_public_activity_at = now
+            request.waiting_on = "customer"
+            request.waiting_since = now
         self.session.add(message)
         self.session.flush()
         return message
@@ -198,7 +218,9 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         principal_id: str | None = None,
         email: str = "",
         metadata_json: dict[str, object] | None = None,
+        activity_at: datetime | None = None,
     ) -> SupportRequestAttachment:
+        now = activity_at or datetime.now(UTC)
         attachment = SupportRequestAttachment(
             attachment_id=attachment_id,
             request_id=str(request.request_id or ""),
@@ -214,8 +236,19 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             byte_size=len(content_bytes),
             content_bytes=content_bytes,
             metadata_json=metadata_json,
+            created_at=now,
         )
-        request.updated_at = datetime.now(UTC)
+        request.updated_at = now
+        if visibility == "public" and uploader_kind == "customer":
+            request.last_customer_activity_at = now
+            request.waiting_on = "operator"
+            request.waiting_since = now
+        elif visibility == "public" and uploader_kind == "operator":
+            if request.first_operator_response_at is None:
+                request.first_operator_response_at = now
+            request.last_operator_public_activity_at = now
+            request.waiting_on = "customer"
+            request.waiting_since = now
         self.session.add(attachment)
         self.session.flush()
         return attachment
@@ -266,7 +299,9 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         rating: int,
         comment: str,
         metadata_json: dict[str, object] | None = None,
+        activity_at: datetime | None = None,
     ) -> SupportRequestFeedback:
+        now = activity_at or datetime.now(UTC)
         feedback = self.get_support_request_feedback(str(request.request_id or ""))
         if feedback is None:
             feedback = SupportRequestFeedback(
@@ -289,9 +324,35 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             feedback.rating = rating
             feedback.comment = comment
             feedback.metadata_json = metadata_json
-        request.updated_at = datetime.now(UTC)
+        request.updated_at = now
         self.session.flush()
         return feedback
+
+    @staticmethod
+    def mark_support_request_complete(request: SupportRequest) -> None:
+        request.waiting_on = "none"
+        request.waiting_since = None
+
+    @staticmethod
+    def mark_support_request_waiting_for_operator(
+        request: SupportRequest,
+        *,
+        activity_at: datetime,
+    ) -> None:
+        request.last_customer_activity_at = activity_at
+        request.waiting_on = "operator"
+        request.waiting_since = activity_at
+
+    @staticmethod
+    def restore_support_request_waiting_state(request: SupportRequest) -> None:
+        customer_at = request.last_customer_activity_at
+        operator_at = request.last_operator_public_activity_at
+        if operator_at is not None and (customer_at is None or operator_at > customer_at):
+            request.waiting_on = "customer"
+            request.waiting_since = operator_at
+            return
+        request.waiting_on = "operator"
+        request.waiting_since = customer_at or request.created_at
 
     def list_support_requests(
         self,
@@ -302,6 +363,7 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         status: str | None = None,
         topic: str | None = None,
         query: str | None = None,
+        attention: str | None = None,
         sort: str = "updated_at",
         risk_as_of: datetime | None = None,
         limit: int | None = None,
@@ -315,6 +377,8 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
                 status=status,
                 topic=topic,
                 query=query,
+                attention=attention,
+                risk_as_of=risk_as_of,
             )
         )
         if sort == "risk":
@@ -332,7 +396,7 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
                 ),
                 else_=1,
             )
-            active_updated_at = case(
+            active_waiting_since = case(
                 (
                     SupportRequest.status.in_(
                         [
@@ -340,14 +404,14 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
                             SUPPORT_REQUEST_STATUS_IN_PROGRESS,
                         ]
                     ),
-                    SupportRequest.updated_at,
+                    SupportRequest.waiting_since,
                 ),
                 else_=None,
             )
             statement = statement.order_by(
                 risk_rank.asc(),
                 active_rank.asc(),
-                active_updated_at.asc(),
+                active_waiting_since.asc(),
                 SupportRequest.updated_at.desc(),
                 SupportRequest.request_id.desc(),
             )
@@ -372,6 +436,8 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         status: str | None = None,
         topic: str | None = None,
         query: str | None = None,
+        attention: str | None = None,
+        risk_as_of: datetime | None = None,
     ) -> int:
         statement = select(func.count(SupportRequest.request_id)).where(
             *self._support_request_filters(
@@ -381,6 +447,8 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
                 status=status,
                 topic=topic,
                 query=query,
+                attention=attention,
+                risk_as_of=risk_as_of,
             )
         )
         return int(self.session.scalar(statement) or 0)
@@ -394,6 +462,7 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         status: str | None = None,
         topic: str | None = None,
         query: str | None = None,
+        attention: str | None = None,
         risk_as_of: datetime | None = None,
     ) -> dict[str, int]:
         cutoff = (risk_as_of or datetime.now(UTC)) - timedelta(hours=48)
@@ -415,6 +484,20 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             func.sum(case((risk_rank == 1, 1), else_=0)),
             func.sum(case((risk_rank == 2, 1), else_=0)),
             func.sum(case((risk_rank == 3, 1), else_=0)),
+            func.sum(case((SupportRequest.waiting_on == "operator", 1), else_=0)),
+            func.sum(case((SupportRequest.waiting_on == "customer", 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            SupportRequest.waiting_on == "operator",
+                            SupportRequest.waiting_since <= cutoff,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
         ).where(
             *self._support_request_filters(
                 account_id=account_id,
@@ -423,6 +506,8 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
                 status=status,
                 topic=topic,
                 query=query,
+                attention=attention,
+                risk_as_of=risk_as_of,
             )
         )
         row = self.session.execute(statement).one()
@@ -433,6 +518,9 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             "warning": int(row[3] or 0),
             "monitor": int(row[4] or 0),
             "stable": int(row[5] or 0),
+            "waiting_for_operator": int(row[6] or 0),
+            "waiting_for_customer": int(row[7] or 0),
+            "overdue": int(row[8] or 0),
         }
 
     def _support_request_risk_rank(
@@ -441,26 +529,35 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         cutoff: datetime,
     ) -> ColumnElement[int]:
         priority = func.lower(SupportRequest.priority)
+        active = SupportRequest.status.in_(
+            [SUPPORT_REQUEST_STATUS_OPEN, SUPPORT_REQUEST_STATUS_IN_PROGRESS]
+        )
         return case(
             (
-                or_(
-                    priority.in_(["critical", "urgent"]),
-                    and_(
-                        SupportRequest.status == SUPPORT_REQUEST_STATUS_OPEN,
-                        SupportRequest.created_at <= cutoff,
+                and_(
+                    active,
+                    or_(
+                        priority.in_(["critical", "urgent"]),
+                        and_(
+                            SupportRequest.waiting_on == "operator",
+                            SupportRequest.waiting_since <= cutoff,
+                        ),
                     ),
                 ),
                 0,
             ),
             (
-                or_(
-                    SupportRequest.status == SUPPORT_REQUEST_STATUS_OPEN,
-                    priority == "high",
+                and_(
+                    active,
+                    or_(
+                        SupportRequest.waiting_on == "operator",
+                        priority == "high",
+                    ),
                 ),
                 1,
             ),
             (
-                SupportRequest.status == SUPPORT_REQUEST_STATUS_IN_PROGRESS,
+                active,
                 2,
             ),
             else_=3,
@@ -475,6 +572,8 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
         status: str | None,
         topic: str | None,
         query: str | None,
+        attention: str | None = None,
+        risk_as_of: datetime | None = None,
     ) -> list[SQLAFilter]:
         filters: list[SQLAFilter] = []
         if account_id:
@@ -487,6 +586,16 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
             filters.append(SupportRequest.status == status)
         if topic:
             filters.append(SupportRequest.topic == topic)
+        if attention == "waiting_for_operator":
+            filters.append(SupportRequest.waiting_on == "operator")
+        elif attention == "overdue":
+            cutoff = (risk_as_of or datetime.now(UTC)) - timedelta(hours=48)
+            filters.extend(
+                [
+                    SupportRequest.waiting_on == "operator",
+                    SupportRequest.waiting_since <= cutoff,
+                ]
+            )
         normalized_query = str(query or "").strip().lower()
         if normalized_query:
             pattern = f"%{normalized_query}%"

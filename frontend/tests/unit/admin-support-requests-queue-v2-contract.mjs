@@ -23,7 +23,7 @@ assert.doesNotMatch(source, /BackofficePrimaryPanel|BackofficeStackCard|support-
 assert.match(source, /AdminDataTableFrame[\s\S]*dataUi="support-request-table"[\s\S]*<table[\s\S]*<thead[\s\S]*<tbody/, 'ticket queue must use the shared full-width semantic table');
 assert.match(source, /data-ui="support-request-toolbar"[\s\S]*md:grid-cols-2[\s\S]*xl:grid-cols-6[\s\S]*xl:col-span-2[\s\S]*whitespace-nowrap/, 'four ticket filters and both actions must share one PC toolbar row');
 
-for (const parameter of ['status', 'topic', 'q', 'sort', 'offset', 'focus']) {
+for (const parameter of ['status', 'topic', 'attention', 'q', 'sort', 'offset', 'focus']) {
   assert.match(source, new RegExp(`queueParams\\.get\\('${parameter}'\\)`), `${parameter} must be URL-backed`);
 }
 assert.match(source, /window\.history\.replaceState/, 'queue filter updates must synchronously preserve the current PC URL state');
@@ -32,8 +32,10 @@ assert.match(source, /useSupportRequestsDirectory[\s\S]*placeholderData: keepPre
 assert.match(source, /getLatestSupportRequestsDirectoryData[\s\S]*support_requests_retained_notice/, 'failed filter loads must retain and honestly label the last successful page');
 assert.match(source, /disabled=\{displayScope\.isRetainedScope\}[\s\S]*openEditor/, 'retained or placeholder results must stay read-only');
 assert.match(source, /params\.set\('sort', sort\)/, 'the selected sort must be sent to the server before pagination');
+assert.match(source, /params\.set\('attention', filters\.attention\)/, 'waiting-for-support and overdue views must be sent to the server before pagination');
 assert.doesNotMatch(source, /sortSupportRequests/, 'the client must not reorder a page after server pagination');
 assert.match(source, /global risk ordering before pagination/, 'the queue must state its server-owned global ordering');
+assert.match(source, /waiting_on[\s\S]*waiting_since/, 'the queue must present the server-owned waiting object and waiting age');
 
 assert.match(source, /data-ui="support-request-row"/, 'tickets must render as compact semantic table rows');
 assert.match(source, /AdminContextDrawer[\s\S]*open=\{Boolean\(selectedRequest\) && !editRequest\}/, 'ticket inspection must open on demand without reserving queue width');
