@@ -2331,6 +2331,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in ci_workflow
     assert "PROD_INCLUDE_EXTERNAL_IMAGES" not in deploy_workflow
     assert "deploy_required:" in ci_workflow
+    assert "frontend_only:" in ci_workflow
     ci_classifier = (
         cloud_root / "scripts" / "classify-ci-changes.sh"
     ).read_text()
@@ -2352,6 +2353,7 @@ def test_deploy_bundle_smoke_uses_sample_provider_and_skip_frontend_contract() -
     assert "- secret-scan" in ci_workflow
     assert "backend-scope:" in ci_workflow
     assert "backend-targeted:" in ci_workflow
+    assert "targeted backend gate should be skipped for frontend-only changes" in ci_workflow
     assert "backend-static:" in ci_workflow
     assert "backend-pytest:" in ci_workflow
     assert "matrix:" in ci_workflow

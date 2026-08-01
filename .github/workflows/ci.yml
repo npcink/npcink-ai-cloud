@@ -34,6 +34,7 @@ jobs:
       deploy_required: ${{ steps.changed.outputs.deploy_required }}
       static_terms_only: ${{ steps.changed.outputs.static_terms_only }}
       docs_only: ${{ steps.changed.outputs.docs_only }}
+      frontend_only: ${{ steps.changed.outputs.frontend_only }}
       frontend_e2e_required: ${{ steps.changed.outputs.frontend_e2e_required }}
     steps:
       - name: Checkout
@@ -72,16 +73,17 @@ jobs:
     if: needs.classify.outputs.static_terms_only != 'true'
     runs-on: ubuntu-latest
     outputs:
-      requires_full_backend: ${{ steps.scope.outputs.requires_full_backend || steps.docs_scope.outputs.requires_full_backend }}
+      requires_full_backend: ${{ steps.scope.outputs.requires_full_backend || steps.docs_scope.outputs.requires_full_backend || steps.frontend_scope.outputs.requires_full_backend }}
     steps:
       - name: Checkout
+        if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Classify backend gate scope
         id: scope
-        if: needs.classify.outputs.docs_only != 'true'
+        if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
         run: bash scripts/check-pr-backend-gate.sh --classify-only
 
       - name: Select docs-only backend gate
@@ -89,10 +91,15 @@ jobs:
         if: needs.classify.outputs.docs_only == 'true'
         run: echo "requires_full_backend=0" >> "${GITHUB_OUTPUT}"
 
+      - name: Select frontend-only backend gate
+        id: frontend_scope
+        if: needs.classify.outputs.frontend_only == 'true'
+        run: echo "requires_full_backend=0" >> "${GITHUB_OUTPUT}"
+
   python-dependency-audit:
     name: Python dependency audit
     needs: [classify]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only != 'true'
+    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.frontend_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -134,7 +141,7 @@ jobs:
 
   backend-targeted:
     needs: [classify, backend-scope]
-    if: needs.classify.outputs.static_terms_only != 'true' && needs['backend-scope'].outputs.requires_full_backend != '1' && (github.event_name == 'pull_request' || needs.classify.outputs.docs_only == 'true')
+    if: needs.classify.outputs.static_terms_only != 'true' && needs.classify.outputs.frontend_only != 'true' && needs['backend-scope'].outputs.requires_full_backend != '1' && (github.event_name == 'pull_request' || needs.classify.outputs.docs_only == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -363,6 +370,7 @@ jobs:
           BACKEND_POSTGRES_CUTOVER_RESULT: ${{ needs['backend-postgres-cutover'].result }}
           REQUIRES_FULL_BACKEND: ${{ needs['backend-scope'].outputs.requires_full_backend }}
           DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
+          FRONTEND_ONLY: ${{ needs.classify.outputs.frontend_only }}
         run: |
           set -euo pipefail
           echo "scope=${BACKEND_SCOPE_RESULT}"
@@ -379,9 +387,9 @@ jobs:
             exit 1
           fi
 
-          if [ "${DOCS_ONLY}" = "true" ]; then
+          if [ "${DOCS_ONLY}" = "true" ] || [ "${FRONTEND_ONLY}" = "true" ]; then
             if [ "${PYTHON_DEPENDENCY_AUDIT_RESULT}" != "skipped" ]; then
-              echo "python dependency audit should be skipped for docs-only changes" >&2
+              echo "python dependency audit should be skipped for docs-only or frontend-only changes" >&2
               exit 1
             fi
           elif [ "${PYTHON_DEPENDENCY_AUDIT_RESULT}" != "success" ]; then
@@ -422,7 +430,10 @@ jobs:
               echo "PostgreSQL 16 encryption cutover regression should be skipped for a targeted gate" >&2
               exit 1
             fi
-            if [ "${BACKEND_TARGETED_RESULT}" != "success" ]; then
+            if [ "${FRONTEND_ONLY}" = "true" ] && [ "${BACKEND_TARGETED_RESULT}" != "skipped" ]; then
+              echo "targeted backend gate should be skipped for frontend-only changes" >&2
+              exit 1
+            elif [ "${FRONTEND_ONLY}" != "true" ] && [ "${BACKEND_TARGETED_RESULT}" != "success" ]; then
               echo "targeted backend gate did not pass" >&2
               exit 1
             fi
