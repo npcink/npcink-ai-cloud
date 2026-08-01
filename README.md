@@ -99,6 +99,7 @@ Evidence records (not target-contract completion proof):
 - [docs/cloud-admin-commercial-operations-density-closeout-and-development-retrospective-2026-08-01.md](docs/cloud-admin-commercial-operations-density-closeout-and-development-retrospective-2026-08-01.md)
 - [docs/public-frontend-release-code-closeout-2026-07-26.md](docs/public-frontend-release-code-closeout-2026-07-26.md)
 - [docs/cloud-admin-ui-development-retrospective-2026-07-27.md](docs/cloud-admin-ui-development-retrospective-2026-07-27.md)
+- [docs/cloud-admin-unified-page-header-closeout-and-development-retrospective-2026-08-01.md](docs/cloud-admin-unified-page-header-closeout-and-development-retrospective-2026-08-01.md)
 - [docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md](docs/cloud-admin-frontend-remediation-final-closeout-2026-07-29.md)
 - [docs/runtime-diagnostics-information-density-closeout-and-development-retrospective-2026-07-31.md](docs/runtime-diagnostics-information-density-closeout-and-development-retrospective-2026-07-31.md)
 - [docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md](docs/production-release-timing-and-admin-settings-freeze-retrospective-2026-07-28.md)

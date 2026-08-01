@@ -15,6 +15,10 @@ This document composes with:
 - [Cloud Admin Feedback And Layout Contract v1](cloud-admin-feedback-and-layout-contract-v1.md);
 - [Cloud Content Generation Boundary v1](cloud-content-generation-boundary-v1.md).
 
+The delivery history, proportionality lessons, stop conditions, and evidence
+boundaries for the shared page header are recorded in
+[Cloud Admin Unified Page Header Closeout and Development Retrospective](cloud-admin-unified-page-header-closeout-and-development-retrospective-2026-08-01.md).
+
 If a visual preference conflicts with product ownership, security, audit, or
 accessibility, preserve the stronger boundary first.
 
