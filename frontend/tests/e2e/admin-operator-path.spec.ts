@@ -173,7 +173,8 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(agencyDrawer.getByRole('button', { name: /Create Agency quote|创建 Agency 报价/i })).toBeVisible();
   await expect(agencyDrawer.getByRole('button', { name: /Approve 14-day trial|批准 14 天试用/i })).toBeVisible();
   await agencyDrawer.locator('[data-ui="admin-inspector-drawer-close"]').click();
-  await expect(page.getByRole('link', { name: /View sites|查看站点|查看站點/i })).toBeVisible();
+  await page.getByRole('tab', { name: /^Sites$|^站点$|^站點$/i }).click();
+  await expect(page.locator('#site-footprint')).toBeVisible();
 
   await page.goto('/admin/accounts', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Customers$|^客户$|^客戶$/i }).first()).toBeVisible();
