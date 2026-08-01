@@ -37,8 +37,7 @@ assert.match(i18nSource, /'admin\.nav_ai_resources': '模型供应商'/);
 assert.match(i18nSource, /'admin\.nav_external_services': '搜索与图片'/);
 assert.match(i18nSource, /'admin\.ai_resources\.title': '模型供应商'/);
 
-assert.match(pageSource, /<BackofficePrimaryPanel[\s\S]*actionPlacement="header"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-5 md:py-2\.5"/);
-assert.match(pageSource, /<BackofficeSummaryStrip[\s\S]*density="compact"/);
+assert.match(pageSource, /<BackofficePageHeader[\s\S]*primaryAction=\{\([\s\S]*summaryItems=\{\[/);
 assert.match(pageSource, /openNewProviderConnection[\s\S]*action_add_model_supplier/);
 assert.match(pageSource, /<ModelSupplierTable[\s\S]*toolbar=\{\([\s\S]*<SupplierToolbar/);
 assert.doesNotMatch(pageSource, /<SupplierSummaryCards/);

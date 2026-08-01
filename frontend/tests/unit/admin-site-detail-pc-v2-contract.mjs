@@ -28,9 +28,10 @@ assert.match(
   'site relink controls must remain unavailable until ownership has been released'
 );
 
-const primaryStart = page.indexOf('<BackofficePrimaryPanel');
-const primaryEnd = page.indexOf('</BackofficePrimaryPanel>', primaryStart);
+const primaryStart = page.indexOf('<BackofficePageHeader');
+const primaryEnd = page.indexOf('/>', page.indexOf('summaryAside=', primaryStart));
 const primarySource = page.slice(primaryStart, primaryEnd);
+assert.match(primarySource, /summaryItems=\{\[/, 'site detail must project compact operating facts through the shared page header');
 assert.doesNotMatch(primarySource, /<h2[^>]*>\{postureTitle\}<\/h2>[\s\S]*admin\.site_detail\.summary_desc/, 'site posture conclusion must not be duplicated in the summary strip');
 assert.doesNotMatch(primarySource, /href=\{`\/admin\/accounts\/\$\{site\.account_id\}`\}/, 'site header must not duplicate the current follow-up action');
 

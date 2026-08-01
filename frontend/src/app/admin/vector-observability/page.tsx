@@ -6,11 +6,10 @@ import {
   BackofficeEmptyState,
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
@@ -358,7 +357,7 @@ function AdminVectorObservabilityContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.vector_obs.title', {}, 'Vector Observability')}
         description={t(
@@ -366,8 +365,15 @@ function AdminVectorObservabilityContent() {
           {},
           'Cross-site runtime metrics for Cloud site knowledge indexing and semantic search. This view exposes coverage, hit quality, latency, and errors without showing chunk text, embeddings, or query text.'
         )}
-        aside={data ? <BackofficeStatusBadge status={data.health.status} label={`${vectorStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
-        actions={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+        secondaryAction={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+        summaryItems={data ? [
+          { label: t('admin.vector_obs.indexed', {}, 'Indexed'), value: formatNumber(data.totals.currentDocumentCount), detail: t('admin.vector_obs.detail_chunks', { count: formatNumber(data.totals.currentChunkCount) }, '{{count}} chunks') },
+          { label: t('admin.vector_obs.searches', {}, 'Searches'), value: formatNumber(data.totals.searchQueriesTotal), detail: t('admin.vector_obs.detail_no_hit', { count: formatNumber(data.totals.noHitTotal) }, '{{count}} no-hit') },
+          { label: t('admin.vector_obs.no_hit_rate', {}, 'No-hit rate'), value: formatPercent(data.totals.noHitRate), toneClassName: data.totals.noHitRate >= 0.25 ? 'text-amber-600 dark:text-amber-400' : undefined },
+          { label: t('admin.vector_obs.p95', {}, 'P95 search'), value: `${formatNumber(data.totals.p95SearchLatencyMs)}ms`, detail: t('admin.vector_obs.detail_top1', { score: formatScore(data.totals.avgTop1Score) }, 'top1 {{score}}') },
+          { label: t('admin.vector_obs.errors', {}, 'Errors'), value: formatNumber(data.errors.reduce((total, item) => total + item.count, 0)), toneClassName: data.errors.length ? 'text-rose-600 dark:text-rose-400' : undefined },
+        ] : []}
+        summaryAside={data ? <BackofficeStatusBadge status={data.health.status} label={`${vectorStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
       />
 
       <BackofficeSectionPanel className="p-4 md:p-5">
@@ -413,14 +419,6 @@ function AdminVectorObservabilityContent() {
           </div>
         </div>
       </BackofficeSectionPanel>
-
-      {data ? <BackofficeSummaryStrip items={[
-        { label: t('admin.vector_obs.indexed', {}, 'Indexed'), value: formatNumber(data.totals.currentDocumentCount), detail: t('admin.vector_obs.detail_chunks', { count: formatNumber(data.totals.currentChunkCount) }, '{{count}} chunks') },
-        { label: t('admin.vector_obs.searches', {}, 'Searches'), value: formatNumber(data.totals.searchQueriesTotal), detail: t('admin.vector_obs.detail_no_hit', { count: formatNumber(data.totals.noHitTotal) }, '{{count}} no-hit') },
-        { label: t('admin.vector_obs.no_hit_rate', {}, 'No-hit rate'), value: formatPercent(data.totals.noHitRate), toneClassName: data.totals.noHitRate >= 0.25 ? 'text-amber-600 dark:text-amber-400' : undefined },
-        { label: t('admin.vector_obs.p95', {}, 'P95 search'), value: `${formatNumber(data.totals.p95SearchLatencyMs)}ms`, detail: t('admin.vector_obs.detail_top1', { score: formatScore(data.totals.avgTop1Score) }, 'top1 {{score}}') },
-        { label: t('admin.vector_obs.errors', {}, 'Errors'), value: formatNumber(data.errors.reduce((total, item) => total + item.count, 0)), toneClassName: data.errors.length ? 'text-rose-600 dark:text-rose-400' : undefined },
-      ]} /> : null}
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.vector_obs.stale_notice', {}, 'The last successfully loaded vector snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
 

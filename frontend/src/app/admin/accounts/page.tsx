@@ -9,10 +9,9 @@ import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifi
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   BackofficeEmptyState,
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
@@ -391,7 +390,7 @@ function AccountsContent() {
 
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.accounts.directory_eyebrow', {}, 'Customer operations')}
         title={t('admin.accounts.list_title', {}, 'Customers')}
         description={t(
@@ -399,33 +398,30 @@ function AccountsContent() {
           {},
           'Find a customer, create a customer, or open the customer record. Service problems are handled in Service status.'
         )}
-        actions={(
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                setActionError('');
-                createAccountForm.reset();
-                setIsCreateOpen(true);
-              }}
-            >
-              {t('admin.accounts.add_customer_action', {}, 'Add customer')}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void loadAccounts(true)}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
-            </button>
-          </>
+        primaryAction={(
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setActionError('');
+              createAccountForm.reset();
+              setIsCreateOpen(true);
+            }}
+          >
+            {t('admin.accounts.add_customer_action', {}, 'Add customer')}
+          </button>
         )}
-      />
-
-      <BackofficeSummaryStrip
-        items={[
+        secondaryAction={(
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadAccounts(true)}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? t('common.loading', {}, 'Loading...') : t('common.refresh', {}, 'Refresh')}
+          </button>
+        )}
+        summaryItems={[
           {
             label: t('admin.accounts.summary_customers', {}, 'Customers'),
             value: formatInteger(total),

@@ -31,6 +31,26 @@ const runtimeProfilesPageSource = readFileSync(fromFrontendRoot('src/app/admin/r
 const serviceSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
 const creditPacksPageSource = readFileSync(fromFrontendRoot('src/app/admin/credit-packs/page.tsx'), 'utf8');
 const siteCompliancePageSource = readFileSync(fromFrontendRoot('src/app/admin/site-compliance/page.tsx'), 'utf8');
+const unifiedOperationalHeaderSources = [
+  ['overview', 'src/app/admin/page.tsx'],
+  ['accounts', 'src/app/admin/accounts/page.tsx'],
+  ['account detail', 'src/app/admin/accounts/[accountId]/page.tsx'],
+  ['AI resources', 'src/app/admin/ai-resources/page.tsx'],
+  ['AI advisor', 'src/app/admin/ai-advisor/page.tsx'],
+  ['coverage', 'src/app/admin/coverage/page.tsx'],
+  ['plans', 'src/app/admin/plans/page.tsx'],
+  ['site detail', 'src/app/admin/sites/[siteId]/page.tsx'],
+  ['subscriptions', 'src/app/admin/subscriptions/page.tsx'],
+  ['subscription detail', 'src/app/admin/subscriptions/[subscriptionId]/page.tsx'],
+  ['support queue', 'src/features/admin/support-requests/SupportRequestsWorkspace.tsx'],
+  ['support detail', 'src/app/admin/support-requests/[requestId]/page.tsx'],
+  ['external services', 'src/app/admin/external-services/page.tsx'],
+  ['troubleshooting', 'src/app/admin/troubleshooting/page.tsx'],
+  ['agent feedback', 'src/app/admin/agent-feedback/page.tsx'],
+  ['media observability', 'src/app/admin/media-observability/page.tsx'],
+  ['plugin observability', 'src/app/admin/plugin-observability/page.tsx'],
+  ['vector observability', 'src/app/admin/vector-observability/page.tsx'],
+].map(([name, path]) => [name, readFileSync(fromFrontendRoot(path), 'utf8')]);
 
 function listFiles(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -230,17 +250,12 @@ assert.match(
   /<BackofficePageHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
   'external services must use the shared page header and keep diagnostics secondary to row-level configuration work'
 );
-for (const [name, source] of [
-  ['subscriptions', subscriptionsPageSource],
-  ['subscription detail', subscriptionDetailPageSource],
-  ['external services', externalServicesPageSource],
-  ['troubleshooting', troubleshootingPageSource],
-]) {
-  assert.match(source, /<BackofficePageHeader/, `${name} must use the shared top-level page header pilot`);
+for (const [name, source] of unifiedOperationalHeaderSources) {
+  assert.match(source, /<BackofficePageHeader/, `${name} must use the shared top-level page header`);
 }
 assert.match(
   standardSource,
-  /use\s+`BackofficePageHeader` for the top-level page header[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,
+  /Every non-authentication Admin route uses `BackofficePageHeader`[\s\S]*`BackofficeConfigurationHeader` remains the[\s\S]*compatibility alias[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,
   'the Admin UI standard must distinguish the page header from nested section headers'
 );
 assert.match(

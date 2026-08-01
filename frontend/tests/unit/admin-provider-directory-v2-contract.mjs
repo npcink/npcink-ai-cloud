@@ -18,7 +18,7 @@ const directoryQuerySource = readFileSync(
 
 assert.match(
   pageSource,
-  /data-ui="supplier-summary-strip"[\s\S]*BackofficeSummaryStrip[\s\S]*density="compact"/,
+  /<BackofficePageHeader[\s\S]*primaryAction=\{\([\s\S]*action_add_model_supplier[\s\S]*summaryItems=\{\[/,
   'Provider readiness must remain in the compact operational header'
 );
 
@@ -94,7 +94,7 @@ assert.doesNotMatch(
 
 assert.match(
   pageSource,
-  /openNewProviderConnection[\s\S]*action_add_model_supplier[\s\S]*actionPlacement="header"/,
+  /primaryAction=\{\([\s\S]*openNewProviderConnection[\s\S]*action_add_model_supplier/,
   'Adding a model supplier must remain the sole header primary action'
 );
 

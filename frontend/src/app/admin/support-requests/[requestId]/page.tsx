@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
   BackofficePageStack,
-  BackofficePrimaryPanel,
+  BackofficePageHeader,
   BackofficeSectionPanel,
   BackofficeStackCard,
 } from '@/components/backoffice/BackofficeScaffold';
@@ -326,11 +326,16 @@ export default function AdminSupportRequestDetailPage() {
 
   return (
     <BackofficePageStack data-ui="support-request-detail-workspace">
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={supportRequest?.title || t('admin.support_request_detail_title', {}, 'Ticket detail')}
         description={supportRequest?.description || ''}
-        aside={
+        summaryItems={supportRequest ? [
+          { label: t('common.priority', {}, 'Priority'), value: supportRequest.priority },
+          { label: t('common.account', {}, 'Account'), value: supportRequest.account_id },
+          { label: t('common.updated_at', {}, 'Updated'), value: supportRequest.updated_at ? formatDate(supportRequest.updated_at) : t('common.unknown', {}, 'Unknown') },
+        ] : []}
+        summaryAside={
           supportRequest ? (
             <BackofficeStatusBadge
               status={statusTone(supportRequest.status)}
@@ -338,7 +343,7 @@ export default function AdminSupportRequestDetailPage() {
             />
           ) : null
         }
-        actions={
+        secondaryAction={
           <Link href={returnPath} className="btn btn-secondary">
             {t('common.back', {}, 'Back')}
           </Link>

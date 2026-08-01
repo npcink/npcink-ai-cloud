@@ -11,9 +11,8 @@ import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
@@ -200,15 +199,22 @@ export function SupportRequestsWorkspace() {
 
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.support_requests_eyebrow', {}, 'Customer support')}
         title={t('admin.support_requests_title', {}, 'Tickets')}
         description={t('admin.support_requests_workspace_desc', {}, 'Prioritize unanswered customer issues, inspect one ticket, then continue the full conversation in its detail view.')}
-        actions={(
+        secondaryAction={(
           <button type="button" className="btn btn-secondary" onClick={() => void directoryQuery.refetch()} disabled={isRefreshing}>
             {isRefreshing ? t('common.loading', {}, 'Loading...') : t('admin.support_requests_refresh_action', {}, 'Refresh tickets')}
           </button>
         )}
+        summaryItems={[
+          { label: t('admin.support_requests_open', {}, 'Open'), value: formatInteger(openCount), toneClassName: openCount ? 'text-amber-600 dark:text-amber-300' : undefined },
+          { label: t('admin.support_requests_in_progress', {}, 'In progress'), value: formatInteger(inProgressCount) },
+          { label: t('admin.support_requests_page_critical', {}, 'Critical'), value: formatInteger(criticalCount), toneClassName: criticalCount ? 'text-rose-600 dark:text-rose-300' : undefined },
+          { label: t('admin.support_requests_total', {}, 'Filtered total'), value: formatInteger(total) },
+          { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
+        ]}
       />
 
       {loadError ? (
@@ -225,14 +231,6 @@ export function SupportRequestsWorkspace() {
           {t('admin.support_requests_retained_notice', {}, 'Showing the last successfully loaded page; it may not match the current filters. Updates are disabled until the current view loads.')}
         </div>
       ) : null}
-
-      <BackofficeSummaryStrip items={[
-        { label: t('admin.support_requests_open', {}, 'Open'), value: formatInteger(openCount), toneClassName: openCount ? 'text-amber-600 dark:text-amber-300' : undefined },
-        { label: t('admin.support_requests_in_progress', {}, 'In progress'), value: formatInteger(inProgressCount) },
-        { label: t('admin.support_requests_page_critical', {}, 'Critical'), value: formatInteger(criticalCount), toneClassName: criticalCount ? 'text-rose-600 dark:text-rose-300' : undefined },
-        { label: t('admin.support_requests_total', {}, 'Filtered total'), value: formatInteger(total) },
-        { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
-      ]} />
 
       <AdminDataTableFrame
         title={t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}

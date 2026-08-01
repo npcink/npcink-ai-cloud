@@ -5,10 +5,10 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   BackofficeDiagnosticNotice,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminMutationReceipt, type AdminMutationReceiptPayload } from '@/components/admin/AdminMutationReceipt';
@@ -1770,56 +1770,44 @@ function AiResourcesContent() {
     )[0]?.last_tested_at;
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={aiText('eyebrow', 'Runtime plane')}
         title={aiText('title', 'Model suppliers')}
         description={aiText('description', 'Manage Cloud runtime model-provider connections and model visibility. Search, image, and vector services use their dedicated fixed-configuration pages.')}
-        descriptionDisplay="hint"
-        aside={(
+        secondaryAction={(
           <Link href="/admin/runtime-profiles" className="btn btn-secondary justify-center">
             {aiText('action_open_runtime_profiles', 'Open runtime profiles')}
           </Link>
         )}
-        actions={(
+        primaryAction={(
           <button type="button" className="btn btn-primary justify-center" onClick={openNewProviderConnection}>
             {aiText('action_add_model_supplier', 'Add model supplier')}
           </button>
         )}
-        actionPlacement="header"
-        contentClassName="px-4 py-4 md:px-5 md:py-4"
-        summaryClassName="px-4 py-2.5 md:px-5 md:py-2.5"
-        summary={(
-          <div
-            data-ui="supplier-summary-strip"
-            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+        summaryItems={[
+          {
+            label: aiText('overview_model_suppliers', 'Model suppliers'),
+            value: `${readyModelSupplierCount}/${modelSupplierCount}`,
+          },
+          {
+            label: aiText('overview_attention_suppliers', 'Needs attention'),
+            value: attentionSupplierCount,
+            toneClassName: attentionSupplierCount > 0
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-emerald-600 dark:text-emerald-400',
+          },
+          {
+            label: aiText('last_test', 'Last test'),
+            value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
+          },
+        ]}
+        summaryAside={(
+          <Link
+            href="/admin/troubleshooting"
+            className="shrink-0 font-semibold text-slate-600 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
           >
-            <BackofficeSummaryStrip
-              density="compact"
-              items={[
-                {
-                  label: aiText('overview_model_suppliers', 'Model suppliers'),
-                  value: `${readyModelSupplierCount}/${modelSupplierCount}`,
-                },
-                {
-                  label: aiText('overview_attention_suppliers', 'Needs attention'),
-                  value: attentionSupplierCount,
-                  toneClassName: attentionSupplierCount > 0
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-emerald-600 dark:text-emerald-400',
-                },
-                {
-                  label: aiText('last_test', 'Last test'),
-                  value: latestModelSupplierTestAt ? formatDate(latestModelSupplierTestAt) : '—',
-                },
-              ]}
-            />
-            <Link
-              href="/admin/troubleshooting"
-              className="shrink-0 text-xs font-semibold text-slate-600 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
-            >
-              {aiText('action_view_diagnostics', 'View diagnostics')} →
-            </Link>
-          </div>
+            {aiText('action_view_diagnostics', 'View diagnostics')} →
+          </Link>
         )}
       />
 

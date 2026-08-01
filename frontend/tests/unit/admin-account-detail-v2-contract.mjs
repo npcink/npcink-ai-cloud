@@ -149,8 +149,8 @@ assert.match(
 );
 assert.match(
   source,
-  /contentClassName="!px-5 !py-4 md:!px-6 md:!py-4"[\s\S]*data-ui="account-header-metrics"/,
-  'customer header must use a compact metric line without an empty child slot'
+  /<BackofficePageHeader[\s\S]*title=\{accountTitle\}[\s\S]*summaryItems=\{headerMetrics\}/,
+  'customer detail must project its compact factual metrics through the shared page header'
 );
 assert.match(
   source,

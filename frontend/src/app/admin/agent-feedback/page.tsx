@@ -2,7 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { BackofficeDiagnosticNotice, BackofficeDisclosure, BackofficeEmptyState, BackofficeLayer, BackofficeMetricStrip, BackofficePageStack, BackofficeSectionPanel, BackofficeStackCard, BackofficeSummaryStrip } from '@/components/backoffice/BackofficeScaffold';
+import { BackofficeDiagnosticNotice, BackofficeDisclosure, BackofficeEmptyState, BackofficeMetricStrip, BackofficePageHeader, BackofficePageStack, BackofficeSectionPanel, BackofficeStackCard } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -420,7 +420,7 @@ function AgentFeedbackQualityDashboard() {
 
   return (
     <BackofficePageStack>
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.agent_feedback.title', {}, 'Agent Feedback Quality')}
         description={t(
@@ -428,8 +428,15 @@ function AgentFeedbackQualityDashboard() {
           {},
           'Read-only quality signals from local operator feedback. Cloud summarizes feedback for evaluation; WordPress approval, preflight, and final writes stay local.'
         )}
-        aside={data ? <BackofficeStatusBadge status="read_only" label={t('admin.read_only', {}, 'Read-only')} /> : undefined}
-        actions={<button type="button" onClick={() => void loadData(true)} disabled={loading} className="btn btn-secondary btn-sm">{t('common.refresh', {}, 'Refresh')}</button>}
+        secondaryAction={<button type="button" onClick={() => void loadData(true)} disabled={loading} className="btn btn-secondary btn-sm">{t('common.refresh', {}, 'Refresh')}</button>}
+        summaryItems={data ? [
+          { label: t('admin.agent_feedback.events', {}, 'Events'), value: formatNumber(data.eventsTotal), detail: metricWindowDetail(t, data) },
+          { label: t('admin.agent_feedback.accepted_rate', {}, 'Accepted'), value: formatPercent(data.rates.acceptedRate), toneClassName: data.rates.acceptedRate < 0.5 && data.eventsTotal > 0 ? 'text-amber-600 dark:text-amber-400' : undefined },
+          { label: t('admin.agent_feedback.evidence_weak', {}, 'Evidence weak'), value: formatPercent(data.rates.evidenceWeakRate), toneClassName: data.rates.evidenceWeakRate > 0.2 ? 'text-amber-600 dark:text-amber-400' : undefined },
+          { label: t('admin.agent_feedback.wrong_next_step', {}, 'Wrong next step'), value: formatPercent(data.rates.wrongNextStepRate), toneClassName: data.rates.wrongNextStepRate > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
+          { label: t('admin.agent_feedback.quality_issues', {}, 'Quality issues'), value: formatNumber(qualityIssues.reduce((total, item) => total + item.count, 0)), toneClassName: qualityIssues.length ? 'text-rose-600 dark:text-rose-400' : undefined },
+        ] : []}
+        summaryAside={data ? <BackofficeStatusBadge status="read_only" label={t('admin.read_only', {}, 'Read-only')} /> : undefined}
       />
 
       <BackofficeSectionPanel className="p-4 md:p-5">
@@ -483,14 +490,6 @@ function AgentFeedbackQualityDashboard() {
           </div>
         ) : null}
       </BackofficeSectionPanel>
-
-      {data ? <BackofficeSummaryStrip items={[
-        { label: t('admin.agent_feedback.events', {}, 'Events'), value: formatNumber(data.eventsTotal), detail: metricWindowDetail(t, data) },
-        { label: t('admin.agent_feedback.accepted_rate', {}, 'Accepted'), value: formatPercent(data.rates.acceptedRate), toneClassName: data.rates.acceptedRate < 0.5 && data.eventsTotal > 0 ? 'text-amber-600 dark:text-amber-400' : undefined },
-        { label: t('admin.agent_feedback.evidence_weak', {}, 'Evidence weak'), value: formatPercent(data.rates.evidenceWeakRate), toneClassName: data.rates.evidenceWeakRate > 0.2 ? 'text-amber-600 dark:text-amber-400' : undefined },
-        { label: t('admin.agent_feedback.wrong_next_step', {}, 'Wrong next step'), value: formatPercent(data.rates.wrongNextStepRate), toneClassName: data.rates.wrongNextStepRate > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
-        { label: t('admin.agent_feedback.quality_issues', {}, 'Quality issues'), value: formatNumber(qualityIssues.reduce((total, item) => total + item.count, 0)), toneClassName: qualityIssues.length ? 'text-rose-600 dark:text-rose-400' : undefined },
-      ]} /> : null}
 
       {data && data.mediaQuality.eventsTotal > 0 ? (
         <BackofficeSectionPanel className="overflow-hidden p-0">

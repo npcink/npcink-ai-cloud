@@ -8,6 +8,7 @@ import {
   BackofficeDisclosure,
   BackofficeLayer,
   BackofficeMetricStrip,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
@@ -586,11 +587,11 @@ function SiteDetailContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={t('admin.site_health')}
         title={site.site_name || site.site_id}
         description={postureDescription}
-        actions={site.status === 'provisioning' ? (
+        primaryAction={site.status === 'provisioning' ? (
               <button
                 type="button"
                 onClick={handleActivateSite}
@@ -602,61 +603,53 @@ function SiteDetailContent() {
                   : t('admin.site_detail.activate_action', undefined, 'Activate site')}
               </button>
             ) : undefined}
-        summary={(
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_1.45fr]">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                {t('admin.site_detail.summary_title', undefined, 'Site operator summary')}
-              </p>
-              <BackofficeIdentifier value={site.site_id} className="mt-2 block text-xs text-gray-500 dark:text-gray-400" />
-              <div className="mt-3 flex flex-wrap gap-2">
-                <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
-                <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
-                {site.subscription ? (
-                  <BackofficeStatusBadge
-                    status={site.subscription.status}
-                    label={translateStatusLabel(site.subscription.status, t)}
-                  />
-                ) : null}
-              </div>
-              {site.status === 'provisioning' ? (
-                <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                  {t(
-                    'admin.site_detail.provisioning_warning',
-                    undefined,
-                    'This site record exists, but hosted runtime is still blocked until the site is activated.'
-                  )}
-                </p>
-              ) : null}
-              {siteActionError ? (
-                <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-                  {siteActionError}
-                </p>
-              ) : null}
-            </div>
-            <BackofficeMetricStrip
-              items={[
-                {
-                  label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
-                  value: t('common.enabled', undefined, 'Enabled'),
-                },
-                { label: t('common.keys'), value: formatInteger(site.key_count) },
-                {
-                  label: t('admin.failed_runs'),
-                  value: formatInteger(failedRuns),
-                  toneClassName: hasRuntimeRisk ? 'text-red-600 dark:text-red-400' : undefined,
-                },
-                {
-                  label: t('admin.period_end'),
-                  value: site.subscription?.current_period_end
-                    ? formatDate(site.subscription.current_period_end)
-                    : t('common.not_found'),
-                },
-              ]}
-            />
+        summaryItems={[
+          {
+            label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
+            value: t('common.enabled', undefined, 'Enabled'),
+          },
+          { label: t('common.keys'), value: formatInteger(site.key_count) },
+          {
+            label: t('admin.failed_runs'),
+            value: formatInteger(failedRuns),
+            toneClassName: hasRuntimeRisk ? 'text-red-600 dark:text-red-400' : undefined,
+          },
+          {
+            label: t('admin.period_end'),
+            value: site.subscription?.current_period_end
+              ? formatDate(site.subscription.current_period_end)
+              : t('common.not_found'),
+          },
+        ]}
+        summaryAside={(
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <BackofficeIdentifier value={site.site_id} className="text-xs text-gray-500 dark:text-gray-400" />
+            <BackofficeStatusBadge status={postureTone} label={translateStatusLabel(postureTone, t)} />
+            <BackofficeStatusBadge status={site.status} label={translateStatusLabel(site.status, t)} />
+            {site.subscription ? (
+              <BackofficeStatusBadge
+                status={site.subscription.status}
+                label={translateStatusLabel(site.subscription.status, t)}
+              />
+            ) : null}
           </div>
         )}
-      >
+      />
+      <BackofficeSectionPanel className="space-y-4" data-ui="site-primary-workspace">
+        {site.status === 'provisioning' ? (
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            {t(
+              'admin.site_detail.provisioning_warning',
+              undefined,
+              'This site record exists, but hosted runtime is still blocked until the site is activated.'
+            )}
+          </p>
+        ) : null}
+        {siteActionError ? (
+          <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {siteActionError}
+          </p>
+        ) : null}
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
           <BackofficeStackCard className="bg-white/80 dark:bg-slate-950/55">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -889,7 +882,7 @@ function SiteDetailContent() {
             />
           </div>
         </details>
-      </BackofficePrimaryPanel>
+      </BackofficeSectionPanel>
 
       <BackofficeDisclosure
         summary={t('admin.site_detail.advanced_operational_evidence', undefined, 'Advanced site operational evidence')}

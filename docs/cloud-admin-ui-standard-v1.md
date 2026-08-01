@@ -337,8 +337,10 @@ Page files compose route data and behavior. They must not duplicate modal
 focus management, credential reveal behavior, table framing, status palette,
 shared geometry, or dashed empty-state framing.
 
-For new and materially changed non-authentication routes, use
-`BackofficePageHeader` for the top-level page header. Keep its order stable:
+Every non-authentication Admin route uses `BackofficePageHeader` for its
+ready-state top-level page header. `BackofficeConfigurationHeader` remains the
+configuration-page compatibility alias and delegates to the same primitive.
+Keep the header order stable:
 eyebrow, one page title with an information hint, no more than one primary
 action plus bounded secondary action, then a compact factual summary. Use
 `BackofficeLayer` only for a section inside the page; it must not create a
