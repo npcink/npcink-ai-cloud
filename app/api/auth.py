@@ -17,7 +17,7 @@ from sqlalchemy import text
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.envelope import build_envelope
 from app.core.config import Settings
-from app.core.db import get_session
+from app.core.db import build_postgres_advisory_lock_material, get_session
 from app.core.models import PRINCIPAL_STATUS_ACTIVE
 from app.core.security import (
     PUBLIC_REPLAY_POLICY_METHOD_DEFAULT,
@@ -523,7 +523,12 @@ def _enforce_portal_request_rate_limit(
                             "hashtextextended(:lock_material, 0)"
                             ")"
                         ),
-                        {"lock_material": f"{scope_kind}\0{scope_id}"},
+                        {
+                            "lock_material": build_postgres_advisory_lock_material(
+                                scope_kind,
+                                scope_id,
+                            )
+                        },
                     )
             rate_limit_error: RequestAuthError | None = None
             for scope_kind, scope_id, max_requests in bounded_scopes:
