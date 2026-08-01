@@ -33,6 +33,7 @@ def test_ci_change_classifier_is_fail_closed_without_paths() -> None:
         "deploy_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
+        "frontend_only": "false",
         "frontend_e2e_required": "true",
     }
 
@@ -47,6 +48,7 @@ def test_ci_change_classifier_selects_only_safe_documentation_paths() -> None:
         "deploy_required": "false",
         "static_terms_only": "false",
         "docs_only": "true",
+        "frontend_only": "false",
         "frontend_e2e_required": "false",
     }
 
@@ -64,6 +66,7 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "deploy_required": "true",
         "static_terms_only": "true",
         "docs_only": "false",
+        "frontend_only": "false",
         "frontend_e2e_required": "false",
     }
 
@@ -71,14 +74,32 @@ def test_ci_change_classifier_preserves_static_terms_and_runtime_boundaries() ->
         "deploy_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
+        "frontend_only": "false",
         "frontend_e2e_required": "false",
     }
     assert _classify(".github/workflows/ci.yml") == {
         "deploy_required": "true",
         "static_terms_only": "false",
         "docs_only": "false",
+        "frontend_only": "false",
         "frontend_e2e_required": "true",
     }
+
+
+def test_ci_change_classifier_selects_only_frontend_tree_changes() -> None:
+    assert _classify(
+        "frontend/src/app/admin/ai-resources/page.tsx",
+        "frontend/tests/admin-ai-resources.test.tsx",
+    )["frontend_only"] == "true"
+    assert _classify(
+        "frontend/src/app/admin/ai-resources/page.tsx",
+        "app/main.py",
+    )["frontend_only"] == "false"
+    assert _classify(
+        "frontend/src/app/admin/ai-resources/page.tsx",
+        "pnpm-lock.yaml",
+    )["frontend_only"] == "false"
+    assert _classify(".github/workflows/ci.yml")["frontend_only"] == "false"
 
 
 def test_codeql_runs_for_master_and_production_pull_requests() -> None:
@@ -124,6 +145,7 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "received a non-documentation change" in docs_gate
 
     assert "docs_only: ${{ steps.changed.outputs.docs_only }}" in workflow
+    assert "frontend_only: ${{ steps.changed.outputs.frontend_only }}" in workflow
     assert (
         "frontend_e2e_required: "
         "${{ steps.changed.outputs.frontend_e2e_required }}" in workflow
@@ -132,7 +154,9 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
     assert "Docs-only frontend acknowledgement" in workflow
-    assert "python dependency audit should be skipped for docs-only changes" in workflow
+    assert "python dependency audit should be skipped for docs-only or frontend-only changes" in workflow
+    assert "targeted backend gate should be skipped for frontend-only changes" in workflow
+    assert "Select frontend-only backend gate" in workflow
     assert "pnpm --dir frontend exec playwright install --with-deps chromium" in workflow
     assert "node scripts/run-cloud-frontend-playwright.js" in workflow
     assert workflow.count(

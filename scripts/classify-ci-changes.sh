@@ -6,6 +6,7 @@ if [ "$#" -eq 0 ]; then
 		'deploy_required=true' \
 		'static_terms_only=false' \
 		'docs_only=false' \
+		'frontend_only=false' \
 		'frontend_e2e_required=true'
 	exit 0
 fi
@@ -13,9 +14,15 @@ fi
 deploy_required=false
 static_terms_only=true
 docs_only=true
+frontend_only=true
 frontend_e2e_required=false
 
 for changed_file in "$@"; do
+	case "${changed_file}" in
+		frontend/*) ;;
+		*) frontend_only=false ;;
+	esac
+
 	case "${changed_file}" in
 		.github/workflows/ci.yml|frontend/*|package.json|pnpm-lock.yaml|scripts/run-cloud-frontend-playwright.js)
 			deploy_required=true
@@ -50,4 +57,5 @@ done
 printf 'deploy_required=%s\n' "${deploy_required}"
 printf 'static_terms_only=%s\n' "${static_terms_only}"
 printf 'docs_only=%s\n' "${docs_only}"
+printf 'frontend_only=%s\n' "${frontend_only}"
 printf 'frontend_e2e_required=%s\n' "${frontend_e2e_required}"
