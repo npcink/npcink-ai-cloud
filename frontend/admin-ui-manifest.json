@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "standard": "../docs/cloud-admin-ui-standard-v1.md",
   "referenceRoute": "/admin/ai-resources",
   "referenceRoutes": {
@@ -71,6 +71,18 @@
         "riskTier": "material",
         "workingSurface": "[data-ui=\"runtime-diagnostic-table-frame\"]",
         "requiredStates": ["ready", "selected", "partial_error", "disclosure"]
+      },
+      "/admin/support-requests": {
+        "pageModel": "queue",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"support-request-table\"]",
+        "requiredStates": ["ready", "filtered", "selected", "returned"]
+      },
+      "/admin/support-requests/[requestId]": {
+        "pageModel": "detail",
+        "riskTier": "material",
+        "workingSurface": "[data-ui=\"support-request-detail-workspace\"]",
+        "requiredStates": ["ready", "action_error", "action_success", "return_context"]
       }
     },
     "browserLanes": {

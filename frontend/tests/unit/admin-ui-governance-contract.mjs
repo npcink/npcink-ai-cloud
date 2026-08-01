@@ -14,6 +14,7 @@ const architectureSource = readFileSync(join(repositoryRoot, 'docs/cloud-admin-i
 const agentsSource = readFileSync(join(repositoryRoot, 'AGENTS.md'), 'utf8');
 const pullRequestTemplateSource = readFileSync(join(repositoryRoot, '.github/pull_request_template.md'), 'utf8');
 const globalStylesSource = readFileSync(fromFrontendRoot('src/app/globals.css'), 'utf8');
+const tailwindConfigSource = readFileSync(fromFrontendRoot('tailwind.config.ts'), 'utf8');
 const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 'utf8');
 const workbenchSource = readFileSync(fromFrontendRoot('src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const configurationTableSource = readFileSync(fromFrontendRoot('src/components/admin/AdminConfigurationTable.tsx'), 'utf8');
@@ -42,7 +43,12 @@ function routeForPage(path) {
   return routePart ? `/admin/${routePart}` : '/admin';
 }
 
-assert.equal(manifest.version, 6, 'admin UI manifest version must be explicit');
+assert.equal(manifest.version, 7, 'admin UI manifest version must be explicit');
+assert.match(
+  tailwindConfigSource,
+  /\.\/src\/features\/\*\*\/\*\.\{js,ts,jsx,tsx,mdx\}/,
+  'Tailwind must compile utility classes owned by feature modules'
+);
 assert.equal(manifest.referenceRoute, '/admin/ai-resources', 'the accepted provider queue must remain the reference route');
 assert.equal(manifest.routes[manifest.referenceRoute], 'queue', 'the reference route must remain a queue page');
 assert.deepEqual(

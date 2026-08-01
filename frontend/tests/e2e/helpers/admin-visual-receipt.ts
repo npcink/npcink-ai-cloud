@@ -76,7 +76,7 @@ function sourceEvidence() {
   const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
     cwd: repositoryRoot,
     encoding: 'utf8',
-  }).trim();
+  }).trimEnd();
   const dirtyPaths = status
     ? status.split('\n').map((line) => line.slice(3).trim()).filter(Boolean).sort()
     : [];
@@ -109,6 +109,7 @@ export async function writeAdminVisualReceipt({
   interactionResults,
   environment = 'local',
   humanAcceptance = 'pending',
+  artifactId,
 }: {
   page: Page;
   testInfo: TestInfo;
@@ -123,6 +124,7 @@ export async function writeAdminVisualReceipt({
   interactionResults: AdminVisualResult[];
   environment?: VisualEnvironment;
   humanAcceptance?: HumanAcceptance;
+  artifactId?: string;
 }) {
   const pilot = manifest.visualGovernance.pilotRoutes[route];
   if (!pilot) throw new Error(`${route} is not declared as an Admin visual pilot route`);
@@ -191,7 +193,11 @@ export async function writeAdminVisualReceipt({
   const ruleResults = [...automaticRuleResults, ...orderedRouteRuleResults, runtimeRule];
 
   const requiredStatesMissing = pilot.requiredStates.filter((state) => !testedStates.includes(state));
-  const screenshotPath = testInfo.outputPath('admin-visual-receipt.png');
+  if (artifactId && !/^[a-z0-9-]+$/.test(artifactId)) {
+    throw new Error('visual receipt artifactId must contain only lowercase letters, numbers, and hyphens');
+  }
+  const artifactSuffix = artifactId ? `-${artifactId}` : '';
+  const screenshotPath = testInfo.outputPath(`admin-visual-receipt${artifactSuffix}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled' });
 
   const receipt = {
@@ -211,10 +217,10 @@ export async function writeAdminVisualReceipt({
     human_acceptance: humanAcceptance,
     generated_at: new Date().toISOString(),
   };
-  const receiptPath = testInfo.outputPath('admin-visual-receipt.json');
+  const receiptPath = testInfo.outputPath(`admin-visual-receipt${artifactSuffix}.json`);
   writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
-  await testInfo.attach('admin-visual-receipt', { path: receiptPath, contentType: 'application/json' });
-  await testInfo.attach('admin-visual-receipt-screenshot', { path: screenshotPath, contentType: 'image/png' });
+  await testInfo.attach(`admin-visual-receipt${artifactSuffix}`, { path: receiptPath, contentType: 'application/json' });
+  await testInfo.attach(`admin-visual-receipt-screenshot${artifactSuffix}`, { path: screenshotPath, contentType: 'image/png' });
 
   const blockingRuleResults = ruleResults.filter((item) => item.status === 'fail' || item.status === 'unmeasured');
   const blockingInteractions = interactionResults.filter((item) => item.status === 'fail' || item.status === 'unmeasured');
