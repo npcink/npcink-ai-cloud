@@ -154,7 +154,10 @@ def test_docs_only_scripts_and_workflow_are_fail_closed() -> None:
     assert "bash scripts/classify-ci-changes.sh" in workflow
     assert "bash scripts/check-docs-only.sh" in workflow
     assert "Docs-only frontend acknowledgement" in workflow
-    assert "python dependency audit should be skipped for docs-only or frontend-only changes" in workflow
+    assert (
+        "python dependency audit should be skipped for docs-only or frontend-only changes"
+        in workflow
+    )
     assert "targeted backend gate should be skipped for frontend-only changes" in workflow
     assert "Select frontend-only backend gate" in workflow
     assert "pnpm --dir frontend exec playwright install --with-deps chromium" in workflow
