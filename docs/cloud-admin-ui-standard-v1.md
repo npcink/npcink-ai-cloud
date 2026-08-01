@@ -319,6 +319,8 @@ new route-local table shell.
 
 Prefer these shared surfaces:
 
+- `BackofficePageHeader` for the one top-level page identity, action, and
+  compact summary surface;
 - `BackofficeLayer`, `BackofficeSummaryStrip`, and
   `BackofficeDiagnosticNotice`;
 - `AdminDataTableFrame`;
@@ -334,6 +336,15 @@ Prefer these shared surfaces:
 Page files compose route data and behavior. They must not duplicate modal
 focus management, credential reveal behavior, table framing, status palette,
 shared geometry, or dashed empty-state framing.
+
+For new and materially changed non-authentication routes, use
+`BackofficePageHeader` for the top-level page header. Keep its order stable:
+eyebrow, one page title with an information hint, no more than one primary
+action plus bounded secondary action, then a compact factual summary. Use
+`BackofficeLayer` only for a section inside the page; it must not create a
+second page title. Loading and failure shells may use `BackofficePrimaryPanel`
+when they need to retain a bounded retry surface without fabricating summary
+facts.
 
 For customer and commercial detail surfaces, use a shared inspector drawer for
 long read-only records that must preserve the current page context. Use a shared

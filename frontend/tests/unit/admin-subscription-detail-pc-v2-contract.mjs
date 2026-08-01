@@ -12,7 +12,7 @@ const auditSummary = readFileSync(resolve(frontendRoot, 'src/components/admin/Ad
 
 assert.match(page, /conclusionTitle[\s\S]*conclusionDescription[\s\S]*accountCoverageHref/, 'subscription detail must derive one current conclusion and one bounded next destination');
 assert.match(page, /admin\.subscription_detail\.current_follow_up[\s\S]*hasSnapshotFollowUp[\s\S]*admin\.subscription_detail\.open_customer_coverage_action/, 'the first-screen action must follow snapshot and customer-coverage priority');
-assert.match(page, /actions=\{\([\s\S]*admin\.back_to_subscriptions[\s\S]*actionPlacement="header"/, 'the header must preserve one compact return action');
+assert.match(page, /BackofficePageHeader[\s\S]*secondaryAction=\{\([\s\S]*admin\.back_to_subscriptions[\s\S]*summaryItems=\{\[/, 'the shared page header must preserve one compact return action and factual summary');
 assert.match(page, /data-ui="subscription-summary-card"[\s\S]*admin\.subscription_detail\.basic_information[\s\S]*<dl/, 'subscription facts must fill the top summary beside the current conclusion');
 assert.match(page, /data-ui="subscription-operational-grid"[\s\S]*xl:grid-cols-2[\s\S]*2xl:grid-cols-[\s\S]*admin\.subscription_detail\.usage_title[\s\S]*admin\.subscription_detail\.covered_sites_label/, 'usage, sites, and audit must share one responsive operational grid');
 assert.match(page, /AdminAuditSummaryPanel[\s\S]*display="table"/, 'subscription audit evidence must use the compact table presentation');

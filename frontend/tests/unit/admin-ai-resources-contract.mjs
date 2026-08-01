@@ -126,7 +126,7 @@ assert.match(externalServicesSource, /data-external-service-id=\{option\.id\}/);
 assert.match(externalServicesSource, /AdminDataTableFrame[\s\S]*dataUi="external-service-directory"/);
 assert.match(
   externalServicesSource,
-  /<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
+  /<BackofficePageHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
   'External services must keep diagnostics and status in a compact operational header'
 );
 assert.match(externalServicesSource, /AdminWorkbenchDialog[\s\S]*width="compact"/);

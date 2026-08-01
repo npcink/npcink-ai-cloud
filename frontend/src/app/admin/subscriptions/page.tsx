@@ -7,10 +7,9 @@ import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifi
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   BackofficeEmptyState,
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { ListPagination } from '@/components/ui/ListPagination';
@@ -421,7 +420,7 @@ function SubscriptionsContent() {
 
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.subscriptions.workspace_eyebrow', {}, 'Subscription operations')}
         title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription operations')}
         description={t(
@@ -429,10 +428,10 @@ function SubscriptionsContent() {
           {},
           'Review the current filtered subscription register by service risk, then open one bounded detail surface for evidence and follow-up.'
         )}
-        actions={(
+        secondaryAction={(
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-secondary"
             onClick={() => void loadSubscriptions(true)}
             disabled={isRefreshing}
           >
@@ -441,6 +440,24 @@ function SubscriptionsContent() {
               : t('admin.subscriptions.refresh_action', {}, 'Refresh subscriptions')}
           </button>
         )}
+        summaryItems={[
+          {
+            label: t('admin.subscriptions.summary_critical_metric', {}, 'Critical'),
+            value: formatInteger(summary.critical),
+            toneClassName: summary.critical > 0 ? 'text-rose-600 dark:text-rose-300' : undefined,
+          },
+          {
+            label: t('admin.subscriptions.summary_warning_metric', {}, 'Warning'),
+            value: formatInteger(summary.warning),
+            toneClassName: summary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
+          },
+          { label: t('admin.subscriptions.summary_monitor_metric', {}, 'Monitor'), value: formatInteger(summary.monitor) },
+          { label: t('admin.subscriptions.summary_stable_metric', {}, 'Service normal'), value: formatInteger(summary.stable) },
+          {
+            label: t('common.updated_at', {}, 'Updated'),
+            value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown'),
+          },
+        ]}
       />
 
       {error ? (
@@ -465,27 +482,6 @@ function SubscriptionsContent() {
           </button>
         </div>
       ) : null}
-
-      <BackofficeSummaryStrip
-        items={[
-          {
-            label: t('admin.subscriptions.summary_critical_metric', {}, 'Critical'),
-            value: formatInteger(summary.critical),
-            toneClassName: summary.critical > 0 ? 'text-rose-600 dark:text-rose-300' : undefined,
-          },
-          {
-            label: t('admin.subscriptions.summary_warning_metric', {}, 'Warning'),
-            value: formatInteger(summary.warning),
-            toneClassName: summary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
-          },
-          { label: t('admin.subscriptions.summary_monitor_metric', {}, 'Monitor'), value: formatInteger(summary.monitor) },
-          { label: t('admin.subscriptions.summary_stable_metric', {}, 'Service normal'), value: formatInteger(summary.stable) },
-          {
-            label: t('common.updated_at', {}, 'Updated'),
-            value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown'),
-          },
-        ]}
-      />
 
       <>
         <BackofficeSectionPanel className="overflow-hidden p-0">

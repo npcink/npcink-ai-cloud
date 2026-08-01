@@ -23,6 +23,9 @@ const backofficeScaffoldSource = readFileSync(fromFrontendRoot('src/components/b
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
 const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
+const subscriptionsPageSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/page.tsx'), 'utf8');
+const subscriptionDetailPageSource = readFileSync(fromFrontendRoot('src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
+const troubleshootingPageSource = readFileSync(fromFrontendRoot('src/app/admin/troubleshooting/page.tsx'), 'utf8');
 const vectorSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/vector-settings/page.tsx'), 'utf8');
 const runtimeProfilesPageSource = readFileSync(fromFrontendRoot('src/app/admin/runtime-profiles/page.tsx'), 'utf8');
 const serviceSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
@@ -208,11 +211,10 @@ assert.match(
 );
 assert.match(
   backofficeScaffoldSource,
-  /export function BackofficeConfigurationHeader[\s\S]*descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"/,
-  'the shared configuration header must own compact geometry, hint disclosure, action placement, and summary density'
+  /export function BackofficePageHeader[\s\S]*descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"[\s\S]*export function BackofficeConfigurationHeader[\s\S]*<BackofficePageHeader/,
+  'the shared page header must own compact geometry, hint disclosure, action placement, and summary density while keeping the configuration alias'
 );
 for (const [name, source] of [
-  ['external services', externalServicesPageSource],
   ['vector settings', vectorSettingsPageSource],
   ['runtime profiles', runtimeProfilesPageSource],
   ['credit packs', creditPacksPageSource],
@@ -225,8 +227,21 @@ for (const [name, source] of [
 }
 assert.match(
   externalServicesPageSource,
-  /<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
-  'external services must keep diagnostics secondary to row-level configuration work'
+  /<BackofficePageHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
+  'external services must use the shared page header and keep diagnostics secondary to row-level configuration work'
+);
+for (const [name, source] of [
+  ['subscriptions', subscriptionsPageSource],
+  ['subscription detail', subscriptionDetailPageSource],
+  ['external services', externalServicesPageSource],
+  ['troubleshooting', troubleshootingPageSource],
+]) {
+  assert.match(source, /<BackofficePageHeader/, `${name} must use the shared top-level page header pilot`);
+}
+assert.match(
+  standardSource,
+  /use\s+`BackofficePageHeader` for the top-level page header[\s\S]*Use\s+`BackofficeLayer` only for a section inside the page/,
+  'the Admin UI standard must distinguish the page header from nested section headers'
 );
 assert.match(
   vectorSettingsPageSource,

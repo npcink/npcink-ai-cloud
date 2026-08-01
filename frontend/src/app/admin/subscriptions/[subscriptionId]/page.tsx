@@ -14,6 +14,7 @@ import { normalizeStatusToken, translateStatusLabel } from '@/lib/status-display
 import {
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
@@ -384,7 +385,7 @@ function SubscriptionDetailContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         eyebrow={t('admin.nav_subscriptions', {}, 'Subscription operations')}
         title={t(
           'admin.subscription_detail.title',
@@ -396,20 +397,21 @@ function SubscriptionDetailContent() {
           {},
           'Review the current conclusion, subscription facts, usage, and related evidence.'
         )}
-        aside={(
-          <div className="flex flex-wrap items-center gap-2">
-            <BackofficeStatusBadge status={normalized.status} label={statusValue} />
-            <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} />
-          </div>
-        )}
-        actions={(
+        secondaryAction={(
           <Link href={returnTo} className="btn btn-secondary">
             {t('admin.back_to_subscriptions', {}, 'Back to subscription operations')}
           </Link>
         )}
-        actionPlacement="header"
-      >
-        <section className="grid gap-5 border-y border-slate-200 py-4 dark:border-slate-800 xl:grid-cols-[minmax(0,0.8fr)_minmax(32rem,1.2fr)]">
+        summaryItems={[
+          { label: t('common.status', {}, 'Status'), value: <BackofficeStatusBadge status={normalized.status} label={statusValue} /> },
+          { label: t('admin.subscription_detail.snapshot_freshness', {}, 'Billing statistics'), value: <BackofficeStatusBadge status={billingSnapshotStatusTone} label={billingSnapshotStatusLabel} /> },
+          { label: t('common.account', {}, 'Customer'), value: normalized.accountName || t('admin.subscription_detail.current_customer_label', {}, 'Current customer') },
+          { label: t('admin.subscription_detail.covered_sites_label', {}, 'Covered sites'), value: formatInteger(normalized.relatedSites.length) },
+        ]}
+      />
+
+      <BackofficeSectionPanel>
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(32rem,1.2fr)]">
           <div className="flex min-w-0 flex-col justify-between gap-4">
             <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
@@ -510,7 +512,7 @@ function SubscriptionDetailContent() {
             </dl>
           </div>
         </section>
-      </BackofficePrimaryPanel>
+      </BackofficeSectionPanel>
 
       <div data-ui="subscription-operational-grid" className="grid items-stretch gap-6 xl:grid-cols-2 2xl:grid-cols-[minmax(36rem,1.45fr)_minmax(18rem,0.8fr)_minmax(18rem,0.8fr)]">
       <BackofficeSectionPanel className="h-full space-y-4 xl:col-span-2 2xl:col-span-1">
