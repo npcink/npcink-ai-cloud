@@ -477,6 +477,7 @@
       "commands": {
         "check:visual:frontend": "Run the bounded frontend visual test suite.",
         "check:admin-ui": "Run the required Admin UI governance and static gate.",
+        "check:admin-ui:visual-governance": "Verify risk-tiered Admin visual rules, pilot routes, and structured receipt contracts.",
         "check:admin-ui:visual": "Run the required material Admin UI browser gate."
       }
     },
