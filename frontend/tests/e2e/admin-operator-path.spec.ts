@@ -143,7 +143,7 @@ test('admin operator path smoke: queue and inspector routes stay connected', asy
   await expect(page.getByRole('heading', { name: /^Subscription operations$|^订阅运营$/i })).toBeVisible();
   await expect(page.locator('[data-ui="subscription-queue-item"] a[href^="/admin/subscriptions/sub_mvp?"]')).toBeVisible();
   await expect(
-    page.locator('[data-density="standard"]').first().getByText(/^Critical$|^严重风险$|^嚴重風險$/i)
+    page.locator('[data-ui="backoffice-page-header"]').getByText(/^Critical$|^严重风险$|^嚴重風險$/i)
   ).toBeVisible();
   await expect(page.locator('[data-ui="subscription-queue-item"]')).toContainText(/Current|当前有效|目前有效/i);
 
