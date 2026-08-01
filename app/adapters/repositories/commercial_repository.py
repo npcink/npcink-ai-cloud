@@ -11,6 +11,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.adapters.repositories.commercial_account_queries import CommercialAccountQueries
 from app.adapters.repositories.commercial_site_queries import CommercialSiteQueries
+from app.core.db import build_postgres_advisory_lock_material
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
     ACCOUNT_USER_MEMBERSHIP_STATUS_REVOKED,
@@ -560,13 +561,19 @@ class CommercialRepository(CommercialAccountQueries, CommercialSiteQueries):
     ) -> int:
         bind = self.session.get_bind()
         if bind.dialect.name == "postgresql":
+            normalized_email = email.strip().lower()
             self.session.execute(
                 text(
                     "SELECT pg_advisory_xact_lock("
                     "hashtextextended(:lock_material, 0)"
                     ")"
                 ),
-                {"lock_material": f"{email.strip().lower()}\0{purpose}"},
+                {
+                    "lock_material": build_postgres_advisory_lock_material(
+                        normalized_email,
+                        purpose,
+                    )
+                },
             )
         pending_codes = self.list_portal_login_codes(
             email=email,
