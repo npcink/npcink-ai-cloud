@@ -19,6 +19,8 @@ def test_support_request_risk_order_and_summary_are_global_before_pagination(
             "request_id": "sr_stable",
             "status": "resolved",
             "priority": "normal",
+            "waiting_on": "none",
+            "waiting_since": None,
             "created_at": risk_as_of - timedelta(days=4),
             "updated_at": risk_as_of - timedelta(hours=1),
         },
@@ -26,6 +28,8 @@ def test_support_request_risk_order_and_summary_are_global_before_pagination(
             "request_id": "sr_monitor",
             "status": "in_progress",
             "priority": "normal",
+            "waiting_on": "customer",
+            "waiting_since": risk_as_of - timedelta(hours=8),
             "created_at": risk_as_of - timedelta(days=3),
             "updated_at": risk_as_of - timedelta(hours=8),
         },
@@ -33,24 +37,42 @@ def test_support_request_risk_order_and_summary_are_global_before_pagination(
             "request_id": "sr_warning",
             "status": "open",
             "priority": "normal",
+            "waiting_on": "operator",
+            "waiting_since": risk_as_of - timedelta(hours=2),
             "created_at": risk_as_of - timedelta(hours=2),
             "updated_at": risk_as_of - timedelta(hours=2),
         },
         {
             "request_id": "sr_urgent",
-            "status": "resolved",
+            "status": "in_progress",
             "priority": "urgent",
+            "waiting_on": "customer",
+            "waiting_since": risk_as_of - timedelta(minutes=30),
             "created_at": risk_as_of - timedelta(hours=3),
             "updated_at": risk_as_of - timedelta(minutes=30),
         },
         {
             "request_id": "sr_overdue",
-            "status": "open",
+            "status": "in_progress",
             "priority": "normal",
+            "waiting_on": "operator",
+            "waiting_since": risk_as_of - timedelta(hours=72),
             "created_at": risk_as_of - timedelta(hours=72),
             "updated_at": risk_as_of - timedelta(hours=24),
         },
     ]
+    fixtures.extend(
+        {
+            "request_id": f"sr_closed_{index:02d}",
+            "status": "closed",
+            "priority": "normal",
+            "waiting_on": "none",
+            "waiting_since": None,
+            "created_at": risk_as_of - timedelta(days=10, minutes=index),
+            "updated_at": risk_as_of - timedelta(days=1, minutes=index),
+        }
+        for index in range(25)
+    )
     try:
         with get_session(database_url) as session:
             session.add(
@@ -93,6 +115,13 @@ def test_support_request_risk_order_and_summary_are_global_before_pagination(
                 topic="billing",
                 risk_as_of=risk_as_of,
             )
+            overdue = repository.list_support_requests(
+                topic="billing",
+                attention="overdue",
+                sort="risk",
+                risk_as_of=risk_as_of,
+                limit=20,
+            )
 
         assert [item.request_id for item in first_page] == [
             "sr_overdue",
@@ -103,12 +132,16 @@ def test_support_request_risk_order_and_summary_are_global_before_pagination(
             "sr_monitor",
         ]
         assert summary == {
-            "open": 2,
-            "in_progress": 1,
+            "open": 1,
+            "in_progress": 3,
             "critical": 2,
             "warning": 1,
             "monitor": 1,
-            "stable": 1,
+            "stable": 26,
+            "waiting_for_operator": 2,
+            "waiting_for_customer": 2,
+            "overdue": 1,
         }
+        assert [item.request_id for item in overdue] == ["sr_overdue"]
     finally:
         dispose_engine(database_url)

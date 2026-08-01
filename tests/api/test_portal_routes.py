@@ -94,6 +94,11 @@ PORTAL_SUPPORT_INTERNAL_FIELDS = {
     "admin_note",
     "metadata",
     "visibility",
+    "first_operator_response_at",
+    "last_customer_activity_at",
+    "last_operator_public_activity_at",
+    "waiting_on",
+    "waiting_since",
 }
 PORTAL_BOUNDED_PROJECTION_INTERNAL_FIELDS = {
     "account_id",
@@ -894,7 +899,10 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
         headers=build_internal_headers(idempotency_key="portal-support-admin-update-001"),
     )
     assert admin_update_response.status_code == 200, admin_update_response.text
-    assert admin_update_response.json()["data"]["request"]["status"] == "in_progress"
+    admin_update_request = admin_update_response.json()["data"]["request"]
+    assert admin_update_request["status"] == "in_progress"
+    assert admin_update_request["waiting_on"] == "operator"
+    assert admin_update_request["first_operator_response_at"] is None
 
     admin_public_reply_response = client.post(
         f"/internal/service/admin/support-requests/{request_id}/messages",
@@ -907,6 +915,9 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     assert admin_public_reply_response.status_code == 200, admin_public_reply_response.text
     admin_public_payload = admin_public_reply_response.json()["data"]
     assert admin_public_payload["message"]["visibility"] == "public"
+    assert admin_public_payload["request"]["waiting_on"] == "customer"
+    assert admin_public_payload["request"]["first_operator_response_at"]
+    assert admin_public_payload["request"]["last_operator_public_activity_at"]
     assert admin_public_payload["notification"]["delivered"] is True
     assert fake_sender.messages[-1]["kind"] == "support_request_update"
     assert fake_sender.messages[-1]["recipient_email"] == "portal-support@example.com"
@@ -921,6 +932,7 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     )
     assert admin_internal_note_response.status_code == 200, admin_internal_note_response.text
     assert admin_internal_note_response.json()["data"]["message"]["visibility"] == "internal"
+    assert admin_internal_note_response.json()["data"]["request"]["waiting_on"] == "customer"
 
     portal_detail_response = client.get(
         f"/portal/v1/support-requests/{request_id}",
@@ -946,6 +958,15 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     portal_attachment_data = portal_attachment_response.json()["data"]
     _assert_no_portal_support_internal_fields(portal_attachment_data)
     portal_attachment = portal_attachment_data["attachment"]
+
+    waiting_list_response = client.get(
+        "/internal/service/admin/support-requests?attention=waiting_for_operator",
+        headers=build_internal_headers(),
+    )
+    assert waiting_list_response.status_code == 200, waiting_list_response.text
+    assert request_id in {
+        item["request_id"] for item in waiting_list_response.json()["data"]["items"]
+    }
 
     admin_attachment_response = client.post(
         f"/internal/service/admin/support-requests/{request_id}/attachments",
@@ -1005,7 +1026,10 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
         headers=build_internal_headers(idempotency_key="portal-support-admin-resolve-001"),
     )
     assert admin_resolve_response.status_code == 200, admin_resolve_response.text
-    assert admin_resolve_response.json()["data"]["request"]["status"] == "resolved"
+    admin_resolved_request = admin_resolve_response.json()["data"]["request"]
+    assert admin_resolved_request["status"] == "resolved"
+    assert admin_resolved_request["waiting_on"] == "none"
+    assert admin_resolved_request["waiting_since"] is None
 
     portal_feedback_response = client.post(
         f"/portal/v1/support-requests/{request_id}/feedback",
@@ -1028,6 +1052,15 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
     _assert_no_portal_support_internal_fields(portal_reopen_feedback_data)
     assert portal_reopen_feedback_data["request"]["status"] == "open"
 
+    reopened_admin_response = client.get(
+        f"/internal/service/admin/support-requests/{request_id}",
+        headers=build_internal_headers(),
+    )
+    assert reopened_admin_response.status_code == 200, reopened_admin_response.text
+    reopened_request = reopened_admin_response.json()["data"]["request"]
+    assert reopened_request["waiting_on"] == "operator"
+    assert reopened_request["waiting_since"]
+
     fake_sender.support_update_error = "SMTP authentication failed at smtp.internal:465"
     failed_notification_response = client.post(
         f"/internal/service/admin/support-requests/{request_id}/messages",
@@ -1046,6 +1079,7 @@ def test_portal_support_requests_flow_to_admin_queue(tmp_path: Path) -> None:
         "delivered": False,
         "reason": "delivery_failed",
     }
+    assert failed_notification_response.json()["data"]["request"]["waiting_on"] == "customer"
     assert "smtp.internal" not in failed_notification_response.text
 
     with get_session(database_url) as session:

@@ -21,6 +21,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import {
+  SUPPORT_REQUEST_ATTENTION_FILTERS,
   SUPPORT_REQUEST_PAGE_SIZE,
   SUPPORT_REQUEST_STATUS_FILTERS,
   SUPPORT_REQUEST_TOPICS,
@@ -39,7 +40,11 @@ import {
   useSupportRequestUpdate,
   useSupportRequestsDirectory,
 } from './queries';
-import type { SupportRequest, SupportRequestStatus } from './types';
+import type {
+  SupportRequest,
+  SupportRequestAttention,
+  SupportRequestStatus,
+} from './types';
 
 const NEXT_STATUSES: SupportRequestStatus[] = ['open', 'in_progress', 'resolved', 'closed'];
 
@@ -62,6 +67,11 @@ export function SupportRequestsWorkspace() {
   const appliedStatus = queueParams.get('status') || '';
   const appliedTopic = queueParams.get('topic') || '';
   const appliedQuery = queueParams.get('q') || '';
+  const appliedAttention = SUPPORT_REQUEST_ATTENTION_FILTERS.includes(
+    (queueParams.get('attention') || '') as SupportRequestAttention
+  )
+    ? (queueParams.get('attention') || '') as SupportRequestAttention
+    : '';
   const sort = normalizeSupportRequestSort(queueParams.get('sort'));
   const offset = normalizeSupportRequestOffset(queueParams.get('offset'));
   const focusedRequestId = queueParams.get('focus') || '';
@@ -74,11 +84,16 @@ export function SupportRequestsWorkspace() {
   const requestKey = useMemo(
     () =>
       buildSupportRequestsQuery(
-        { q: appliedQuery, status: appliedStatus, topic: appliedTopic },
+        {
+          q: appliedQuery,
+          status: appliedStatus,
+          topic: appliedTopic,
+          attention: appliedAttention,
+        },
         sort,
         offset
       ),
-    [appliedQuery, appliedStatus, appliedTopic, offset, sort]
+    [appliedAttention, appliedQuery, appliedStatus, appliedTopic, offset, sort]
   );
   const directoryQuery = useSupportRequestsDirectory(requestKey);
   const updateRequest = useSupportRequestUpdate();
@@ -137,7 +152,23 @@ export function SupportRequestsWorkspace() {
 
   const clearFilters = () => {
     setQueryDraft('');
-    updateQueueUrl({ status: null, topic: null, q: null, sort: null, offset: null, focus: null });
+    updateQueueUrl({ attention: null, status: null, topic: null, q: null, sort: null, offset: null, focus: null });
+  };
+
+  const queueView = appliedAttention
+    ? `attention:${appliedAttention}`
+    : appliedStatus
+      ? `status:${appliedStatus}`
+      : '';
+
+  const updateQueueView = (value: string) => {
+    const [kind, filterValue] = value.split(':', 2);
+    updateQueueUrl({
+      attention: kind === 'attention' ? filterValue : null,
+      status: kind === 'status' ? filterValue : null,
+      offset: null,
+      focus: null,
+    });
   };
 
   const handleUpdate = async (formData: FormData) => {
@@ -178,12 +209,19 @@ export function SupportRequestsWorkspace() {
   }
   if (isLoading && !hasLoaded) return <LoadingFallback />;
 
-  const hasFilters = Boolean(appliedStatus || appliedTopic || appliedQuery || sort !== 'risk');
-  const openCount = Number(summary?.open || 0);
-  const inProgressCount = Number(summary?.in_progress || 0);
-  const criticalCount = Number(summary?.critical || 0);
+  const hasFilters = Boolean(appliedAttention || appliedStatus || appliedTopic || appliedQuery || sort !== 'risk');
+  const waitingForOperatorCount = Number(summary?.waiting_for_operator || 0);
+  const waitingForCustomerCount = Number(summary?.waiting_for_customer || 0);
+  const overdueCount = Number(summary?.overdue || 0);
   const selectedRisk = selectedRequest ? requestRisk(selectedRequest) : null;
-  const selectedAge = selectedRequest ? ageHours(selectedRequest.created_at) : null;
+  const selectedAge = selectedRequest ? ageHours(selectedRequest.waiting_since || selectedRequest.created_at) : null;
+  const selectedWaitingOn = selectedRequest?.waiting_on || (
+    selectedRequest?.status === 'open'
+      ? 'operator'
+      : selectedRequest?.status === 'in_progress'
+        ? 'customer'
+        : 'none'
+  );
   const selectedRiskReason = selectedRisk === 'critical'
     ? t('admin.support_requests_reason_overdue', {}, 'This unanswered or urgent ticket needs immediate operator review.')
     : selectedRisk === 'warning'
@@ -209,9 +247,9 @@ export function SupportRequestsWorkspace() {
           </button>
         )}
         summaryItems={[
-          { label: t('admin.support_requests_open', {}, 'Open'), value: formatInteger(openCount), toneClassName: openCount ? 'text-amber-600 dark:text-amber-300' : undefined },
-          { label: t('admin.support_requests_in_progress', {}, 'In progress'), value: formatInteger(inProgressCount) },
-          { label: t('admin.support_requests_page_critical', {}, 'Critical'), value: formatInteger(criticalCount), toneClassName: criticalCount ? 'text-rose-600 dark:text-rose-300' : undefined },
+          { label: t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support'), value: formatInteger(waitingForOperatorCount), toneClassName: waitingForOperatorCount ? 'text-amber-600 dark:text-amber-300' : undefined },
+          { label: t('admin.support_requests_overdue', {}, 'Overdue'), value: formatInteger(overdueCount), toneClassName: overdueCount ? 'text-rose-600 dark:text-rose-300' : undefined },
+          { label: t('admin.support_requests_waiting_for_customer', {}, 'Waiting for customer'), value: formatInteger(waitingForCustomerCount) },
           { label: t('admin.support_requests_total', {}, 'Filtered total'), value: formatInteger(total) },
           { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
         ]}
@@ -250,9 +288,12 @@ export function SupportRequestsWorkspace() {
             <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
-            <span className="sr-only">{t('admin.support_requests_status_filter_label', {}, 'Ticket status')}</span>
-            <select className="input w-full" value={appliedStatus} onChange={(event) => updateQueueUrl({ status: event.target.value || null, offset: null, focus: null })}>
-              {SUPPORT_REQUEST_STATUS_FILTERS.map((status) => <option key={status || 'all'} value={status}>{status ? t(`admin.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}</option>)}
+            <span className="sr-only">{t('admin.support_requests_view_filter_label', {}, 'Ticket view')}</span>
+            <select className="input w-full" value={queueView} onChange={(event) => updateQueueView(event.target.value)}>
+              <option value="">{t('common.all', {}, 'All')}</option>
+              <option value="attention:waiting_for_operator">{t('admin.support_requests_waiting_for_operator', {}, 'Waiting for support')}</option>
+              <option value="attention:overdue">{t('admin.support_requests_overdue', {}, 'Overdue')}</option>
+              {SUPPORT_REQUEST_STATUS_FILTERS.filter(Boolean).map((status) => <option key={status} value={`status:${status}`}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
             </select>
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
@@ -278,7 +319,7 @@ export function SupportRequestsWorkspace() {
           <table className="w-full min-w-[68rem] table-fixed text-left text-sm">
             <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
               <tr>
-                <th scope="col" className="w-36 px-3 py-2">{t('admin.support_requests_table_risk', {}, 'Risk / age')}</th>
+                <th scope="col" className="w-44 px-3 py-2">{t('admin.support_requests_table_waiting', {}, 'Priority / waiting')}</th>
                 <th scope="col" className="w-[28%] px-3 py-2">{t('admin.support_requests_table_ticket', {}, 'Ticket / customer')}</th>
                 <th scope="col" className="w-36 px-3 py-2">{t('common.status')}</th>
                 <th scope="col" className="w-52 px-3 py-2">{t('admin.support_requests_table_scope', {}, 'Account / site')}</th>
@@ -290,12 +331,16 @@ export function SupportRequestsWorkspace() {
               {items.length ? items.map((item) => {
                 const risk = requestRisk(item);
                 const isSelected = selectedRequest?.request_id === item.request_id;
-                const age = ageHours(item.created_at);
+                const waitAge = ageHours(item.waiting_since || item.created_at);
+                const waitingOn = item.waiting_on || (item.status === 'open' ? 'operator' : item.status === 'in_progress' ? 'customer' : 'none');
                 return (
                   <tr key={item.request_id} data-ui="support-request-row" className={cn('align-middle transition', isSelected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
                     <td className="px-3 py-2.5">
                       <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold', riskToneClassName(risk))}>{t(`admin.support_requests_risk_${risk}`, {}, risk)}</span>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{age === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(age) }, `${age}h`)}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {t(`admin.support_requests_waiting_on_${waitingOn}`, {}, waitingOn)}
+                        {waitingOn !== 'none' ? ` · ${waitAge === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(waitAge) }, `${waitAge}h`)}` : ''}
+                      </p>
                     </td>
                     <td className="min-w-0 px-3 py-2.5">
                       <p className="truncate font-semibold text-slate-950 dark:text-white">{item.title}</p>
@@ -369,7 +414,10 @@ export function SupportRequestsWorkspace() {
             <section aria-labelledby="support-request-risk-title" className="border-l-2 border-slate-300 pl-3 dark:border-slate-700">
               <h3 id="support-request-risk-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_risk_summary_title', {}, 'Queue reason')}</h3>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRiskReason}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('admin.support_requests_age_label', {}, 'Age')}: {selectedAge === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(selectedAge) }, `${selectedAge}h`)}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {t(`admin.support_requests_waiting_on_${selectedWaitingOn}`, {}, selectedWaitingOn)}
+                {selectedWaitingOn !== 'none' ? ` · ${selectedAge === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(selectedAge) }, `${selectedAge}h`)}` : ''}
+              </p>
             </section>
             <section aria-labelledby="support-request-customer-submission-title">
               <h3 id="support-request-customer-submission-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_customer_submission_title', {}, 'Customer submission')}</h3>
@@ -382,6 +430,7 @@ export function SupportRequestsWorkspace() {
               <dt className="text-slate-500 dark:text-slate-400">{t('common.status')}</dt><dd className="text-right"><BackofficeStatusBadge status={statusTone(selectedRequest.status)} label={t(`admin.support_status_${selectedRequest.status}`, {}, selectedRequest.status)} /></dd>
               <dt className="text-slate-500 dark:text-slate-400">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</dt><dd className="text-right text-slate-950 dark:text-white">{t(`portal.support_topic_${selectedRequest.topic}`, {}, selectedRequest.topic)}</dd>
               <dt className="text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}</dt><dd className="text-right text-slate-950 dark:text-white">{selectedRequest.updated_at ? formatDate(selectedRequest.updated_at) : t('common.unknown', {}, 'Unknown')}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.support_requests_first_response', {}, 'First response')}</dt><dd className="text-right text-slate-950 dark:text-white">{selectedRequest.first_operator_response_at ? formatDate(selectedRequest.first_operator_response_at) : t('admin.support_requests_not_responded', {}, 'Not responded')}</dd>
             </dl>
             <section aria-labelledby="support-request-internal-handling-title">
               <h3 id="support-request-internal-handling-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_internal_handling_title', {}, 'Internal handling')}</h3>

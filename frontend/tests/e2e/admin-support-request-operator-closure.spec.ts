@@ -21,6 +21,8 @@ const supportRequest = {
   status: 'open',
   priority: 'normal',
   admin_note: '',
+  waiting_on: 'operator',
+  waiting_since: '2026-07-08T08:00:00Z',
   created_at: '2026-07-08T08:00:00Z',
   updated_at: '2026-07-08T08:00:00Z',
 } as const;
@@ -63,6 +65,9 @@ async function installSupportRequestClosureHarness(page: Page) {
           warning: 0,
           monitor: 0,
           stable: 0,
+          waiting_for_operator: items.length,
+          waiting_for_customer: 0,
+          overdue: items.length,
         },
       })),
     });
@@ -100,7 +105,14 @@ async function installSupportRequestClosureHarness(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(buildAdminApiEnvelope({
-        request: { ...supportRequest, updated_at: '2026-07-12T09:00:00Z' },
+        request: {
+          ...supportRequest,
+          waiting_on: 'customer',
+          waiting_since: '2026-07-12T09:00:00Z',
+          first_operator_response_at: '2026-07-12T09:00:00Z',
+          last_operator_public_activity_at: '2026-07-12T09:00:00Z',
+          updated_at: '2026-07-12T09:00:00Z',
+        },
         message,
         notification: { delivered: true },
       })),
@@ -136,7 +148,7 @@ test('ticket operator preserves queue context through failed and successful publ
 
   const queue = page.locator('[data-ui="support-request-table"]');
   await expect(queue).toBeVisible();
-  await page.getByLabel(/Ticket status|工单状态/i).selectOption('open');
+  await page.getByLabel(/Ticket view|工单视图/i).selectOption('status:open');
   await page.getByLabel(/Search tickets|搜索工单/i).fill('Payment');
   await page.getByRole('button', { name: /^Apply$|^应用$/i }).click();
   await expect(page).toHaveURL(/status=open/);
@@ -211,7 +223,7 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(page).toHaveURL(/status=open/);
   await expect(page).toHaveURL(/q=Payment/);
   await expect(page).toHaveURL(new RegExp(`focus=${requestId}`));
-  await expect(page.getByLabel(/Ticket status|工单状态/i)).toHaveValue('open');
+  await expect(page.getByLabel(/Ticket view|工单视图/i)).toHaveValue('status:open');
   await expect(page.getByLabel(/Search tickets|搜索工单/i)).toHaveValue('Payment');
   await expect(page.locator('[data-ui="support-request-row"]')).toHaveCount(1);
   await expect(page.locator('[data-ui="support-request-row"]')

@@ -2853,6 +2853,10 @@ async def list_admin_support_requests(
     status: str = Query(default="", max_length=32),
     topic: str = Query(default="", max_length=64),
     q: str = Query(default="", max_length=191),
+    attention: str = Query(
+        default="",
+        pattern="^(|waiting_for_operator|overdue)$",
+    ),
     sort: str = Query(default="risk", pattern="^(risk|updated_at)$"),
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -2865,6 +2869,7 @@ async def list_admin_support_requests(
             status=status,
             topic=topic,
             query=q,
+            attention=attention,
             sort=sort,
             limit=limit,
             offset=offset,
@@ -2875,7 +2880,7 @@ async def list_admin_support_requests(
         status="ok",
         message="support requests loaded",
         data=result,
-        revision="m6",
+        revision="m7",
     )
 
 

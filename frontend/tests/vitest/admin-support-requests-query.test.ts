@@ -29,6 +29,8 @@ function supportRequest(
     description: 'Default description',
     status: 'open',
     priority: 'normal',
+    waiting_on: 'operator',
+    waiting_since: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     updated_at: '2026-07-29T08:00:00Z',
     ...overrides,
@@ -43,6 +45,7 @@ describe('Support request directory model', () => {
           q: '  customer@example.com  ',
           status: 'open',
           topic: 'billing',
+          attention: 'waiting_for_operator',
         },
         'risk',
         20
@@ -56,6 +59,7 @@ describe('Support request directory model', () => {
       status: 'open',
       topic: 'billing',
       q: 'customer@example.com',
+      attention: 'waiting_for_operator',
     });
   });
 
@@ -74,6 +78,17 @@ describe('Support request directory model', () => {
     });
 
     expect(requestRisk(critical)).toBe('critical');
+    expect(requestRisk(supportRequest({ status: 'in_progress' }))).toBe('warning');
+    expect(requestRisk(supportRequest({
+      status: 'in_progress',
+      waiting_on: 'customer',
+    }))).toBe('monitor');
+    expect(requestRisk(supportRequest({
+      status: 'resolved',
+      priority: 'urgent',
+      waiting_on: 'none',
+      waiting_since: undefined,
+    }))).toBe('stable');
   });
 
   it('preserves queue context in detail links and rejects external returns', () => {
