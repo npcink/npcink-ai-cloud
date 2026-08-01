@@ -30,6 +30,9 @@ The documents have separate responsibilities:
 - [ADR-038](decisions/038-tiered-m4-parallel-preview-capacity.md) records the
   startability contract, accepted-backend compatibility anchor, and the one
   resource-limited isolated full-stack lease.
+- [M4 Preview Slot Design and Operation Standard](m4-preview-slot-design-and-operation-standard-v1.md)
+  is the normative entry point for slot selection, state semantics, ownership,
+  resource limits, evidence, release, and recovery.
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.

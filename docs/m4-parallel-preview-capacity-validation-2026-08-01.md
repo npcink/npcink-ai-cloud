@@ -141,3 +141,38 @@ any evidence that must represent merged `master`.
 The isolated slot is intentionally singular. If it becomes a sustained queue,
 measure queue time and Docker pressure before adding capacity; do not add more
 complete stacks by copying the project number.
+
+## 7. Subsequent Product-Task Evidence
+
+The runtime-diagnostics layout task later exercised the isolated slot as a
+real consumer rather than an infrastructure fixture:
+
+```text
+owner=codex:runtime-diagnostics-layout-20260801
+project=npcink-ai-cloud-m4-fullstack-1
+browser_url=http://127.0.0.1:18031/admin/troubleshooting
+source_revision=beb2566c2e9e3e64701ff5c50236149daccef381
+source_dirty=false
+acceptance_state=candidate
+```
+
+The first two sync attempts failed closed with exit code `75` because another
+primary-preview operation held the private source-relay lock. The lock's
+timestamp-plus-PID `run_id` happened to equal the local attempt's run id, but
+read-only process inspection showed a different target directory, branch, and
+primary Compose project. No lock was removed and direct transfer was not used.
+After the active transfer finished and the relay reported available, the same
+controlled sync succeeded.
+
+The isolated frontend, API, PostgreSQL, Redis, and proxy were healthy. An
+authenticated Edge session at the isolated URL proved the candidate page had
+localized zero-sample semantics, no default dialog, no empty anomaly table,
+no horizontal overflow, and no console error. The primary `18010` candidate
+was not replaced.
+
+This follow-up validates the ownership and recovery model in ordinary product
+work. It also exposes one non-blocking observability debt: relay run ids are
+not globally unique across authoring sessions. Until tooling records a stable
+task owner or globally unique operation id in the relay receipt, operators
+must correlate run id with start time, target project, source evidence, and
+the active remote process before declaring a stale or self-owned lock.
