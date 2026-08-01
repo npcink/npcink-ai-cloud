@@ -264,11 +264,13 @@ this single-operator development path more automatic.
 
 When multiple AI tasks are changing appearance only, use the bounded
 frontend-only leases from
-[ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md). They share the
-accepted primary backend and do not add another database, API, worker,
-Cloudflare hostname, or accepted-state authority. Backend, migration,
-dependency, proxy, and mutation work still waits for the one primary merge
-lane.
+[ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md). They share an
+accepted or accepted-backend-compatible primary API and do not add another
+database, API, worker, Cloudflare hostname, or accepted-state authority. One
+resource-limited isolated full-stack lease from
+[ADR-038](decisions/038-tiered-m4-parallel-preview-capacity.md) may absorb a
+concurrent backend, migration, proxy, or mutation candidate. Worker behavior
+and accepted promotion still wait for the primary merge lane.
 
 Keep this model for five working days and record only:
 
@@ -357,6 +359,14 @@ pnpm run m4:frontend:tunnel -- --slot 1 --auto
 pnpm run m4:frontend:status
 pnpm run m4:frontend:logs -- --slot 1
 pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
+
+# Single isolated full-stack collaboration slot
+pnpm run m4:fullstack:up -- --owner <task-id>
+pnpm run m4:fullstack:sync -- --owner <task-id>
+pnpm run m4:fullstack:tunnel -- --auto
+pnpm run m4:fullstack:status
+pnpm run m4:fullstack:logs -- api
+pnpm run m4:fullstack:release -- --owner <task-id>
 ```
 
 `deploy` builds the runtime and frontend images on M4. It never calls local
@@ -548,11 +558,13 @@ must be promoted again before completion is reported.
 
 Frontend-only slots do not replace the primary accepted status. They record
 their own owner, TTL, frontend revision, source bundle hash, and the accepted
-primary revision they consumed. Ordinary slot start/sync refuses an active
-primary operation, a candidate primary, fingerprint drift, or an unhealthy
-API. The `--allow-candidate-primary` flag is reserved for validating the slot
-machinery itself and requires exact candidate revision and full source-bundle
-equality.
+primary revision they consumed. `state=available` means only that no lease is
+recorded; use `startable` and `block_reason` to decide whether the slot can run.
+An ordinary slot may reuse a candidate primary only when both sources match the
+last accepted backend fingerprint and revision anchor. Missing anchors,
+backend changes, fingerprint drift, active primary operations, and unhealthy
+APIs fail closed. The `--allow-candidate-primary` flag remains reserved for
+validating the slot machinery itself.
 
 Slots 1 and 2 map M4 loopback ports `8021` and `8022` to authoring-Mac
 foreground tunnel ports `18021` and `18022`. Slot 3 maps `8023` to `18023` and
@@ -566,6 +578,15 @@ A later primary candidate may keep an existing slot container running, but it
 invalidates that slot's backend evidence. `m4:frontend:status` then reports
 `backend_lease_status=drifted`. Do not use that slot for acceptance until the
 primary is accepted again and the owner performs an explicit slot sync.
+
+The full-stack slot uses M4 port `8031`, authoring-Mac tunnel port `18031`,
+separate image tags and separate PostgreSQL/Redis/other Compose volumes. It
+starts API, PostgreSQL, Redis, frontend, and proxy with restart policy `no` and
+a combined 2,880 MiB container memory ceiling; it starts no workers and has no
+Cloudflare route. Its 1-24 hour owner lease is independent of primary
+acceptance. Primary and isolated image build/start operations are mutually
+exclusive. Release is owner-checked and removes only resources with the exact
+isolated Compose project label.
 
 ## Native M4 Ollama
 

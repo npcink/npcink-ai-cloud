@@ -35,12 +35,19 @@ def test_m4_frontend_slot_shell_is_fail_closed_and_non_destructive() -> None:
 
     assert 'source "$(cd "$(dirname "${BASH_SOURCE[0]}")"' in source
     assert "frontend_only_read_only" in source
-    assert "primary runtime must be accepted" in source
+    assert "primary runtime is neither accepted nor backend-compatible" in source
     assert "primary M4 operation is active" in source
     assert "primary frontend dependency image does not match" in source
     assert "primary preview configuration does not match" in source
     assert 'primary_revision}" = "${source_base_revision}' in source
     assert 'primary_revision}" = "${source_revision}' in source
+    assert 'primary_backend_sha}" = "${accepted_backend_sha}' in source
+    assert 'backend_input_sha}" = "${accepted_backend_sha}' in source
+    assert "backend_source_fingerprint" in source
+    assert "lease_state=available" in source
+    assert "startable=${primary_startable}" in source
+    assert "block_reason=${primary_block_reason}" in source
+    assert "primary_candidate_backend_changed" in source
     assert source.count('[ "${primary_dirty}" = "false" ]') >= 2
     assert '[ "${source_dirty}" = "false" ]' in source
     assert "slot 3 requires --allow-third" in source

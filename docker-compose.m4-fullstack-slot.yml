@@ -1,0 +1,27 @@
+services:
+  postgres:
+    restart: "no"
+    mem_limit: 384m
+
+  redis:
+    restart: "no"
+    mem_limit: 128m
+
+  api:
+    restart: "no"
+    mem_limit: 768m
+    environment:
+      NPCINK_CLOUD_BASE_URL: http://127.0.0.1:${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18031}
+      NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST: http://127.0.0.1:${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18031},http://localhost:${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18031}
+      NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST: 127.0.0.1,127.0.0.1:${NPCINK_CLOUD_M4_PORT:-8031},127.0.0.1:${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18031},localhost,localhost:${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18031},api,api:8000,proxy,proxy:8080
+
+  frontend:
+    restart: "no"
+    mem_limit: 1536m
+    environment:
+      CLOUD_PUBLIC_BASE_URL: http://127.0.0.1:${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18031}
+      NODE_OPTIONS: --max-old-space-size=1024
+
+  proxy:
+    restart: "no"
+    mem_limit: 64m

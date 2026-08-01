@@ -117,6 +117,7 @@ run_up_or_sync() {
 	local source_dirty=""
 	local image_input_sha=""
 	local config_input_sha=""
+	local backend_input_sha=""
 	local remote_port=""
 	local tunnel_port=""
 	local expires_epoch=""
@@ -130,6 +131,7 @@ run_up_or_sync() {
 	source_dirty="$(source_dirty_state)"
 	image_input_sha="$(dependency_fingerprint)"
 	config_input_sha="$(config_fingerprint)"
+	backend_input_sha="$(backend_source_fingerprint)"
 	remote_port="$(slot_remote_port "${slot}")"
 	tunnel_port="$(slot_tunnel_port "${slot}")"
 	expires_epoch="$(python3 -c 'import sys,time; print(int(time.time()) + int(sys.argv[1]) * 3600)' "${ttl_hours}")"
@@ -142,6 +144,7 @@ run_up_or_sync() {
 	slot_log "source_branch=${source_branch}"
 	slot_log "source_dirty=${source_dirty}"
 	slot_log "source_bundle_sha256=${source_sha}"
+	slot_log "backend_input_sha256=${backend_input_sha}"
 	slot_log "expires_at_utc=${expires_at}"
 	slot_log "remote_url=http://127.0.0.1:${remote_port}"
 	slot_log "local_url=http://127.0.0.1:${tunnel_port}"
@@ -178,7 +181,8 @@ run_up_or_sync() {
 		"${M4_SLOT_REMOTE_BASE}" \
 		"${M4_SLOT_STATE_BASE}" \
 		"${RUN_ID}" \
-		"${source_base_revision}" <<'REMOTE_SLOT_UP'
+		"${source_base_revision}" \
+		"${backend_input_sha}" <<'REMOTE_SLOT_UP'
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
@@ -203,6 +207,7 @@ slot_remote_base="${18}"
 slot_state_base="${19}"
 run_id="${20}"
 source_base_revision="${21}"
+backend_input_sha="${22}"
 
 slot_project="npcink-ai-cloud-m4-ui-${slot}"
 slot_remote_dir="${slot_remote_base}-${slot}"
@@ -298,6 +303,10 @@ primary_branch="$(state_value source_branch "${primary_state_file}")"
 primary_dirty="$(state_value source_dirty "${primary_state_file}")"
 primary_image_sha="$(state_value image_input_sha256 "${primary_state_file}")"
 primary_config_sha="$(state_value config_input_sha256 "${primary_state_file}")"
+primary_backend_sha="$(state_value backend_input_sha256 "${primary_state_file}")"
+accepted_revision="$(state_value accepted_source_revision "${primary_state_file}")"
+accepted_backend_sha="$(state_value accepted_backend_input_sha256 "${primary_state_file}")"
+backend_compatibility="unknown"
 
 if [ "${primary_acceptance}" = "accepted" ]; then
 	[ "${primary_branch}" = "master" ] &&
@@ -306,14 +315,42 @@ if [ "${primary_acceptance}" = "accepted" ]; then
 		echo '[m4-frontend-slot] accepted primary metadata is inconsistent' >&2
 		exit 65
 	}
+	[ -n "${primary_backend_sha}" ] || {
+		echo '[m4-frontend-slot] primary backend fingerprint is missing; redeploy the primary runtime with the current preview tooling' >&2
+		exit 65
+	}
+	[ "${primary_backend_sha}" = "${backend_input_sha}" ] || {
+		echo '[m4-frontend-slot] this worktree changes backend inputs and cannot reuse the accepted primary API' >&2
+		exit 65
+	}
+	backend_compatibility="accepted"
+elif [ "${primary_acceptance}" = "candidate" ] &&
+	[ -n "${accepted_revision}" ] &&
+	[ -n "${accepted_backend_sha}" ] &&
+	[ "${accepted_revision}" = "${source_base_revision}" ] &&
+	[ "${primary_backend_sha}" = "${accepted_backend_sha}" ] &&
+	[ "${backend_input_sha}" = "${accepted_backend_sha}" ]; then
+	backend_compatibility="candidate_compatible"
+	echo '[m4-frontend-slot] primary candidate changes frontend only; reusing its accepted-compatible API'
 elif [ "${allow_candidate}" = "1" ] &&
 	[ "${primary_acceptance}" = "candidate" ] &&
 	[ "${primary_revision}" = "${source_revision}" ] &&
+	[ -n "${primary_backend_sha}" ] &&
+	[ "${primary_backend_sha}" = "${backend_input_sha}" ] &&
 	[ "${primary_dirty}" = "false" ] &&
 	[ "${source_dirty}" = "false" ]; then
+	backend_compatibility="explicit_candidate"
 	echo '[m4-frontend-slot] explicit candidate-primary validation mode enabled'
 else
-	echo "[m4-frontend-slot] primary runtime must be accepted; current state=${primary_acceptance:-missing}" >&2
+	if [ "${primary_acceptance}" = "candidate" ] && [ -z "${accepted_backend_sha}" ]; then
+		echo '[m4-frontend-slot] accepted backend anchor is missing; redeploy the primary runtime with the current preview tooling' >&2
+	elif [ "${primary_acceptance}" = "candidate" ] && [ "${primary_backend_sha}" != "${accepted_backend_sha}" ]; then
+		echo '[m4-frontend-slot] primary candidate changes backend inputs; a frontend-only slot cannot reuse it' >&2
+	elif [ "${primary_acceptance}" = "candidate" ] && [ "${backend_input_sha}" != "${accepted_backend_sha}" ]; then
+		echo '[m4-frontend-slot] this worktree changes backend inputs; use the isolated full-stack slot' >&2
+	else
+		echo "[m4-frontend-slot] primary runtime is neither accepted nor backend-compatible; current state=${primary_acceptance:-missing}" >&2
+	fi
 	exit 65
 fi
 [ "${primary_image_sha}" = "${image_input_sha}" ] || {
@@ -458,6 +495,8 @@ done
 	printf 'source_dirty=%s\n' "${source_dirty}"
 	printf 'source_bundle_sha256=%s\n' "${source_sha}"
 	printf 'primary_acceptance_state=%s\n' "${primary_acceptance}"
+	printf 'backend_compatibility_at_start=%s\n' "${backend_compatibility}"
+	printf 'backend_input_sha256=%s\n' "${backend_input_sha}"
 	printf 'primary_source_revision=%s\n' "${primary_revision}"
 	printf 'remote_port=%s\n' "${remote_port}"
 	printf 'tunnel_port=%s\n' "${tunnel_port}"
@@ -473,6 +512,10 @@ REMOTE_SLOT_UP
 
 run_status() {
 	local slot=""
+	local source_base_revision=""
+	local backend_input_sha=""
+	local image_input_sha=""
+	local config_input_sha=""
 	while [ "$#" -gt 0 ]; do
 		case "$1" in
 			--slot)
@@ -485,14 +528,103 @@ run_status() {
 		esac
 	done
 	[ -z "${slot}" ] || validate_slot "${slot}"
+	source_base_revision="$(git -C "${ROOT_DIR}" merge-base HEAD refs/remotes/origin/master)"
+	backend_input_sha="$(backend_source_fingerprint)"
+	image_input_sha="$(dependency_fingerprint)"
+	config_input_sha="$(config_fingerprint)"
 	require_cmd ssh
 	ssh "${SSH_ARGS[@]}" "${M4_SSH_HOST}" bash -s -- \
-		"${slot:-all}" "${M4_SLOT_STATE_BASE}" "${M4_PROJECT_NAME}" <<'REMOTE_SLOT_STATUS'
+		"${slot:-all}" "${M4_SLOT_STATE_BASE}" "${M4_PROJECT_NAME}" \
+		"${source_base_revision}" "${backend_input_sha}" "${image_input_sha}" \
+		"${config_input_sha}" <<'REMOTE_SLOT_STATUS'
 set -euo pipefail
 requested="$1"
 state_base="${HOME}/$2"
-primary_state_file="${HOME}/.cache/$3/last-deploy.txt"
+primary_project="$3"
+source_base_revision="$4"
+backend_input_sha="$5"
+image_input_sha="$6"
+config_input_sha="$7"
+primary_cache="${HOME}/.cache/${primary_project}"
+primary_state_file="${primary_cache}/last-deploy.txt"
+primary_lock_dir="${primary_cache}/operation.lock"
 now_epoch="$(date +%s)"
+
+state_value() {
+	[ -f "$2" ] || return 0
+	sed -n "s/^$1=//p" "$2" | head -n 1
+}
+
+primary_acceptance="$(state_value acceptance_state "${primary_state_file}")"
+primary_revision="$(state_value source_revision "${primary_state_file}")"
+primary_branch="$(state_value source_branch "${primary_state_file}")"
+primary_dirty="$(state_value source_dirty "${primary_state_file}")"
+primary_backend_sha="$(state_value backend_input_sha256 "${primary_state_file}")"
+primary_image_sha="$(state_value image_input_sha256 "${primary_state_file}")"
+primary_config_sha="$(state_value config_input_sha256 "${primary_state_file}")"
+accepted_revision="$(state_value accepted_source_revision "${primary_state_file}")"
+accepted_backend_sha="$(state_value accepted_backend_input_sha256 "${primary_state_file}")"
+primary_api_health="missing"
+api_id="$(
+	docker ps -q \
+		--filter "label=com.docker.compose.project=${primary_project}" \
+		--filter "label=com.docker.compose.service=api" \
+		--filter "label=com.docker.compose.oneoff=False" |
+		head -n 1
+)"
+if [ -n "${api_id}" ]; then
+	primary_api_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${api_id}")"
+fi
+
+primary_startable=false
+primary_block_reason=primary_state_missing
+backend_compatibility=unknown
+if [ -d "${primary_lock_dir}" ]; then
+	primary_block_reason=primary_operation_active
+elif [ ! -f "${primary_state_file}" ]; then
+	primary_block_reason=primary_state_missing
+elif [ "${primary_api_health}" != "healthy" ]; then
+	primary_block_reason=primary_api_unhealthy
+elif [ "${primary_image_sha}" != "${image_input_sha}" ]; then
+	primary_block_reason=dependency_fingerprint_mismatch
+elif [ "${primary_config_sha}" != "${config_input_sha}" ]; then
+	primary_block_reason=config_fingerprint_mismatch
+elif [ -z "${primary_backend_sha}" ]; then
+	primary_block_reason=primary_backend_fingerprint_missing
+elif [ "${primary_acceptance}" = "accepted" ]; then
+	if [ "${primary_branch}" != "master" ] ||
+		[ "${primary_dirty}" != "false" ] ||
+		[ "${primary_revision}" != "${source_base_revision}" ]; then
+		primary_block_reason=accepted_primary_metadata_inconsistent
+	elif [ "${backend_input_sha}" != "${primary_backend_sha}" ]; then
+		backend_compatibility=incompatible
+		primary_block_reason=worktree_backend_changed
+	else
+		backend_compatibility=accepted
+		primary_startable=true
+		primary_block_reason=none
+	fi
+elif [ "${primary_acceptance}" = "candidate" ]; then
+	if [ -z "${accepted_revision}" ] || [ -z "${accepted_backend_sha}" ]; then
+		primary_block_reason=accepted_backend_anchor_missing
+	elif [ "${accepted_revision}" != "${source_base_revision}" ]; then
+		backend_compatibility=incompatible
+		primary_block_reason=accepted_base_revision_mismatch
+	elif [ "${primary_backend_sha}" != "${accepted_backend_sha}" ]; then
+		backend_compatibility=incompatible
+		primary_block_reason=primary_candidate_backend_changed
+	elif [ "${backend_input_sha}" != "${accepted_backend_sha}" ]; then
+		backend_compatibility=incompatible
+		primary_block_reason=worktree_backend_changed
+	else
+		backend_compatibility=candidate_compatible
+		primary_startable=true
+		primary_block_reason=none
+	fi
+else
+	primary_block_reason=primary_not_accepted_or_compatible
+fi
+
 for slot in 1 2 3; do
 	[ "${requested}" = "all" ] || [ "${requested}" = "${slot}" ] || continue
 	project="npcink-ai-cloud-m4-ui-${slot}"
@@ -500,6 +632,12 @@ for slot in 1 2 3; do
 	echo "[m4-frontend-slot] slot ${slot}"
 	if [ ! -f "${state_file}" ]; then
 		echo 'state=available'
+		echo 'lease_state=available'
+		echo "startable=${primary_startable}"
+		echo "block_reason=${primary_block_reason}"
+		echo "backend_compatibility=${backend_compatibility}"
+		echo "primary_acceptance_state=${primary_acceptance:-missing}"
+		echo "primary_api_health=${primary_api_health}"
 		continue
 	fi
 	cat "${state_file}"
@@ -507,16 +645,22 @@ for slot in 1 2 3; do
 	case "${expires}" in
 		''|*[!0-9]*) expires=0 ;;
 	esac
-	[ "${expires}" -gt "${now_epoch}" ] && echo 'lease_status=active' || echo 'lease_status=expired'
-	recorded_primary="$(sed -n 's/^primary_source_revision=//p' "${state_file}" | head -n 1)"
-	current_acceptance=""
-	current_primary=""
-	if [ -f "${primary_state_file}" ]; then
-		current_acceptance="$(sed -n 's/^acceptance_state=//p' "${primary_state_file}" | head -n 1)"
-		current_primary="$(sed -n 's/^source_revision=//p' "${primary_state_file}" | head -n 1)"
+	if [ "${expires}" -gt "${now_epoch}" ]; then
+		echo 'lease_state=active'
+		echo 'startable=false'
+		echo 'block_reason=slot_leased'
+	else
+		echo 'lease_state=expired'
+		echo "startable=${primary_startable}"
+		echo "block_reason=${primary_block_reason}"
 	fi
-	if [ "${current_acceptance}" = "accepted" ] &&
-		[ "${current_primary}" = "${recorded_primary}" ]; then
+	echo "backend_compatibility=${backend_compatibility}"
+	echo "primary_acceptance_state=${primary_acceptance:-missing}"
+	echo "primary_api_health=${primary_api_health}"
+	recorded_backend="$(state_value backend_input_sha256 "${state_file}")"
+	if [ -n "${recorded_backend}" ] &&
+		[ "${recorded_backend}" = "${primary_backend_sha}" ] &&
+		[ "${primary_api_health}" = "healthy" ]; then
 		echo 'backend_lease_status=stable'
 	else
 		echo 'backend_lease_status=drifted'

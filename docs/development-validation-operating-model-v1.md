@@ -139,9 +139,14 @@ discovery in a large Python and TypeScript repository. It remains advisory:
 For a frontend-only appearance change, an owned ephemeral slot may replace the
 primary `sync` checkpoint when it needs no mutation, dependency, API,
 migration, worker, persistence, proxy, or runtime-config change. The slot must
-attach to a clean accepted primary runtime and use its foreground loopback
-tunnel. This is a concurrency exception for rendering only, not a second
-integration stack.
+attach to an accepted or accepted-backend-compatible primary runtime and use
+its foreground loopback tunnel. Status must report lease availability and
+runtime startability separately.
+
+One owned isolated full-stack slot may be used for a concurrent API, migration,
+mutation, or persistence candidate. It has separate images and data, starts no
+workers, and is candidate evidence only. It is not a second accepted runtime;
+worker and promotion evidence remain in the serialized primary lane.
 
 `sync` is the default for ordinary source. It must fail closed when a changed
 fingerprint requires `deploy`. Do not choose a cold rebuild merely because it

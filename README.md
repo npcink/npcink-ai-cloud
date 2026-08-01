@@ -123,6 +123,8 @@ Operational references:
 - [docs/m4-source-relay-transfer-validation-2026-07-24.md](docs/m4-source-relay-transfer-validation-2026-07-24.md)
 - [docs/decisions/027-m4-package-proxy-streaming-cache.md](docs/decisions/027-m4-package-proxy-streaming-cache.md)
 - [docs/decisions/035-ephemeral-m4-frontend-preview-slots.md](docs/decisions/035-ephemeral-m4-frontend-preview-slots.md)
+- [docs/decisions/038-tiered-m4-parallel-preview-capacity.md](docs/decisions/038-tiered-m4-parallel-preview-capacity.md)
+- [docs/m4-parallel-preview-capacity-validation-2026-08-01.md](docs/m4-parallel-preview-capacity-validation-2026-08-01.md)
 - [docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
 - [docs/ci-pytest-sharding-v1.md](docs/ci-pytest-sharding-v1.md)
 - [docs/portal-commerce-production-development-history-2026-07-11.md](docs/portal-commerce-production-development-history-2026-07-11.md)
@@ -503,8 +505,24 @@ pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
 ```
 
 Slots share the accepted primary API and start no database, Redis, API, or
-worker copy. Use the primary M4 lane for backend, mutation, migration,
-dependency, proxy, and persistence work.
+worker copy. `status` distinguishes an empty lease from a slot that is actually
+startable. A frontend-only primary candidate may be reused only when its backend
+still matches the last accepted backend anchor.
+
+One isolated full-stack slot is available for concurrent backend, mutation,
+migration, or persistence work:
+
+```bash
+pnpm run m4:fullstack:up -- --owner <task-id>
+pnpm run m4:fullstack:sync -- --owner <task-id>
+pnpm run m4:fullstack:tunnel -- --auto
+pnpm run m4:fullstack:status
+pnpm run m4:fullstack:release -- --owner <task-id>
+```
+
+It uses separate images, PostgreSQL, Redis, and volumes, starts no workers, and
+does not change the primary candidate or accepted state. Use the primary lane
+for worker behavior and accepted promotion evidence.
 
 - `test:contract`
   - contract truth for response shape and seam drift in `tests/contract/**`

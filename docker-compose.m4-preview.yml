@@ -23,7 +23,7 @@ services:
       retries: 20
 
   api:
-    image: npcink-ai-cloud-runtime:m4-dev
+    image: ${NPCINK_CLOUD_M4_RUNTIME_IMAGE:-npcink-ai-cloud-runtime:m4-dev}
     environment:
       NPCINK_CLOUD_BASE_URL: ${NPCINK_CLOUD_M4_PUBLIC_BASE_URL:-https://cloud.mqzjmax.top}
       NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST: ${NPCINK_CLOUD_M4_BROWSER_ORIGIN_ALLOWLIST:-https://cloud.mqzjmax.top,http://127.0.0.1:18010,http://localhost:18010,http://127.0.0.1:18021,http://localhost:18021,http://127.0.0.1:18022,http://localhost:18022,http://127.0.0.1:18023,http://localhost:18023}
@@ -42,22 +42,22 @@ services:
       retries: 20
 
   worker:
-    image: npcink-ai-cloud-runtime:m4-dev
+    image: ${NPCINK_CLOUD_M4_RUNTIME_IMAGE:-npcink-ai-cloud-runtime:m4-dev}
     environment:
       NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID: ${NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID:-m4-preview-service-v1}
 
   callback-worker:
-    image: npcink-ai-cloud-runtime:m4-dev
+    image: ${NPCINK_CLOUD_M4_RUNTIME_IMAGE:-npcink-ai-cloud-runtime:m4-dev}
     environment:
       NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID: ${NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID:-m4-preview-service-v1}
 
   ops-worker:
-    image: npcink-ai-cloud-runtime:m4-dev
+    image: ${NPCINK_CLOUD_M4_RUNTIME_IMAGE:-npcink-ai-cloud-runtime:m4-dev}
     environment:
       NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID: ${NPCINK_CLOUD_SERVICE_SETTINGS_ENCRYPTION_KEY_ID:-m4-preview-service-v1}
 
   frontend:
-    image: npcink-ai-cloud-frontend:m4-dev
+    image: ${NPCINK_CLOUD_M4_FRONTEND_IMAGE:-npcink-ai-cloud-frontend:m4-dev}
     command:
       [
         "node",

@@ -11,6 +11,9 @@ M4_PORT="${NPCINK_CLOUD_M4_PORT:-8010}"
 M4_POSTGRES_PORT="${NPCINK_CLOUD_M4_POSTGRES_PORT:-15433}"
 M4_REDIS_PORT="${NPCINK_CLOUD_M4_REDIS_PORT:-16380}"
 M4_TUNNEL_LOCAL_PORT="${NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT:-18010}"
+M4_STACK_MODE="${NPCINK_CLOUD_M4_STACK_MODE:-primary}"
+M4_RUNTIME_IMAGE="${NPCINK_CLOUD_M4_RUNTIME_IMAGE:-npcink-ai-cloud-runtime:m4-dev}"
+M4_FRONTEND_IMAGE="${NPCINK_CLOUD_M4_FRONTEND_IMAGE:-npcink-ai-cloud-frontend:m4-dev}"
 M4_OLLAMA_PORT="${NPCINK_CLOUD_M4_OLLAMA_PORT:-11434}"
 M4_OLLAMA_LABEL="top.mqzj.npcink-ollama-preview"
 M4_OLLAMA_PLIST="${ROOT_DIR}/deploy/${M4_OLLAMA_LABEL}.plist"
@@ -72,6 +75,9 @@ Environment overrides:
   NPCINK_CLOUD_M4_POSTGRES_PORT
   NPCINK_CLOUD_M4_REDIS_PORT
   NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT
+  NPCINK_CLOUD_M4_STACK_MODE
+  NPCINK_CLOUD_M4_RUNTIME_IMAGE
+  NPCINK_CLOUD_M4_FRONTEND_IMAGE
   NPCINK_CLOUD_M4_TUNNEL_READY_TIMEOUT_SECONDS
   NPCINK_CLOUD_M4_OLLAMA_PORT
   NPCINK_CLOUD_M4_SOURCE_TRANSFER_MODE
@@ -149,6 +155,13 @@ validate_target() {
 	validate_port "M4 PostgreSQL port" "${M4_POSTGRES_PORT}"
 	validate_port "M4 Redis port" "${M4_REDIS_PORT}"
 	validate_port "M4 Ollama port" "${M4_OLLAMA_PORT}"
+	case "${M4_STACK_MODE}" in
+		primary|isolated) ;;
+		*) fail "M4 stack mode must be primary or isolated" ;;
+	esac
+	case "${M4_RUNTIME_IMAGE}:${M4_FRONTEND_IMAGE}" in
+		*[!A-Za-z0-9._:/-]*) fail "M4 image names contain unsupported characters" ;;
+	esac
 	validate_ssh_host "M4 SSH host" "${M4_SSH_HOST}"
 	validate_ssh_host "M4 LAN SSH host" "${M4_LAN_SSH_HOST}"
 	case "${M4_SOURCE_TRANSFER_MODE}" in
@@ -1019,6 +1032,7 @@ config_fingerprint() {
 		docker-compose.dev.yml
 		docker-compose.m4-preview.yml
 		docker-compose.m4-frontend-slot.yml
+		docker-compose.m4-fullstack-slot.yml
 		deploy/nginx.m4-preview.conf
 		deploy/nginx.m4-frontend-slot.conf.template
 		scripts/redact-m4-preview-logs.py
@@ -1031,6 +1045,39 @@ config_fingerprint() {
 			shasum -a 256 "${file}"
 		done
 	) | shasum -a 256 | awk '{print $1}'
+}
+
+backend_source_fingerprint() {
+	local file=""
+	local source_list=""
+	source_list="$(mktemp "${TMPDIR:-/tmp}/npcink-m4-backend-inputs.XXXXXX")"
+	(
+		cd "${ROOT_DIR}"
+		git ls-files -z --cached --others --exclude-standard -- \
+			app migrations alembic.ini > "${source_list}"
+		while IFS= read -r -d '' file; do
+			printf '%s\0' "${file}"
+			shasum -a 256 "${file}" | awk '{print $1}'
+		done < "${source_list}"
+	) | shasum -a 256 | awk '{print $1}'
+	rm -f "${source_list}"
+}
+
+backend_revision_fingerprint() {
+	local revision="$1"
+	local file=""
+	local source_list=""
+	source_list="$(mktemp "${TMPDIR:-/tmp}/npcink-m4-backend-revision-inputs.XXXXXX")"
+	(
+		cd "${ROOT_DIR}"
+		git ls-tree -r --name-only -z "${revision}" -- \
+			app migrations alembic.ini > "${source_list}"
+		while IFS= read -r -d '' file; do
+			printf '%s\0' "${file}"
+			git show "${revision}:${file}" | shasum -a 256 | awk '{print $1}'
+		done < "${source_list}"
+	) | shasum -a 256 | awk '{print $1}'
+	rm -f "${source_list}"
 }
 
 source_path_allowed() {
@@ -1256,23 +1303,30 @@ upload_and_apply() {
 	local source_bundle=""
 	local source_sha=""
 	local source_revision=""
+	local source_base_revision=""
 	local source_branch=""
 	local source_dirty=""
 	local dirty_count=""
 	local image_input_sha=""
 	local config_input_sha=""
+	local backend_input_sha=""
+	local base_backend_input_sha=""
 
 	package_source
 	source_bundle="${SOURCE_BUNDLE_PATH}"
 	source_sha="$(shasum -a 256 "${source_bundle}" | awk '{print $1}')"
 	source_revision="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+	source_base_revision="$(git -C "${ROOT_DIR}" merge-base HEAD refs/remotes/origin/master)"
 	source_branch="$(git -C "${ROOT_DIR}" symbolic-ref --quiet --short HEAD || printf 'detached')"
 	source_dirty="$(source_dirty_state)"
 	dirty_count="$(source_dirty_count)"
 	image_input_sha="$(dependency_fingerprint)"
 	config_input_sha="$(config_fingerprint)"
+	backend_input_sha="$(backend_source_fingerprint)"
+	base_backend_input_sha="$(backend_revision_fingerprint "${source_base_revision}")"
 
 	log "source revision: ${source_revision}"
+	log "source base revision: ${source_base_revision}"
 	log "source branch: ${source_branch}"
 	log "source dirty: ${source_dirty} (${dirty_count} paths)"
 	log "acceptance state: ${acceptance_state}"
@@ -1280,6 +1334,8 @@ upload_and_apply() {
 	log "source bundle SHA256: ${source_sha}"
 	log "image input SHA256: ${image_input_sha}"
 	log "config input SHA256: ${config_input_sha}"
+	log "backend input SHA256: ${backend_input_sha}"
+	log "base backend input SHA256: ${base_backend_input_sha}"
 	log "source transfer mode: ${M4_SOURCE_TRANSFER_MODE}"
 
 	if [ "${DRY_RUN}" = "1" ]; then
@@ -1323,7 +1379,14 @@ upload_and_apply() {
 		"${acceptance_state}" \
 		"${promotion_pr}" \
 		"${M4_SOURCE_TRANSFER_MODE}" \
-		"${SOURCE_RELAY_URL}" <<'REMOTE_APPLY'
+		"${SOURCE_RELAY_URL}" \
+		"${source_base_revision}" \
+		"${backend_input_sha}" \
+		"${M4_STACK_MODE}" \
+		"${M4_RUNTIME_IMAGE}" \
+		"${M4_FRONTEND_IMAGE}" \
+		"${M4_TUNNEL_LOCAL_PORT}" \
+		"${base_backend_input_sha}" <<'REMOTE_APPLY'
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -1347,6 +1410,13 @@ acceptance_state="${16}"
 promotion_pr="${17}"
 source_transfer_mode="${18}"
 source_relay_url="${19}"
+source_base_revision="${20}"
+backend_input_sha="${21}"
+stack_mode="${22}"
+runtime_image="${23}"
+frontend_image="${24}"
+tunnel_local_port="${25}"
+base_backend_input_sha="${26}"
 export NPCINK_CLOUD_FRONTEND_REVISION="${source_revision}"
 
 case "${acceptance_state}" in
@@ -1422,6 +1492,8 @@ source_bundle_partial="${source_bundle}.partial"
 stack_touched=0
 lock_acquired=0
 frontend_slot_locks_acquired=0
+accepted_source_revision=""
+accepted_backend_input_sha=""
 prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
@@ -1431,6 +1503,37 @@ package_proxy_cache_max_bytes="2147483648"
 package_proxy_cache_max_age_seconds="1209600"
 pip_index_secret=""
 pip_trusted_host_secret=""
+
+case "${stack_mode}" in
+	primary)
+		peer_lock_dir="$HOME/.cache/npcink-ai-cloud-m4-fullstack-1/operation.lock"
+		;;
+	isolated)
+		peer_lock_dir="$HOME/.cache/npcink-ai-cloud-m4-dev/operation.lock"
+		;;
+	*)
+		echo '[m4-preview] invalid stack mode' >&2
+		exit 64
+		;;
+esac
+
+if [ "${acceptance_state}" = "accepted" ]; then
+	accepted_source_revision="${source_revision}"
+	accepted_backend_input_sha="${backend_input_sha}"
+elif [ -f "${state_file}" ]; then
+	previous_acceptance="$(sed -n 's/^acceptance_state=//p' "${state_file}" | head -n 1)"
+	if [ "${previous_acceptance}" = "accepted" ]; then
+		accepted_source_revision="$(sed -n 's/^source_revision=//p' "${state_file}" | head -n 1)"
+		accepted_backend_input_sha="$(sed -n 's/^backend_input_sha256=//p' "${state_file}" | head -n 1)"
+		if [ -z "${accepted_backend_input_sha}" ] &&
+			[ "${accepted_source_revision}" = "${source_base_revision}" ]; then
+			accepted_backend_input_sha="${base_backend_input_sha}"
+		fi
+	else
+		accepted_source_revision="$(sed -n 's/^accepted_source_revision=//p' "${state_file}" | head -n 1)"
+		accepted_backend_input_sha="$(sed -n 's/^accepted_backend_input_sha256=//p' "${state_file}" | head -n 1)"
+	fi
+fi
 
 release_frontend_slot_operation_locks() {
 	local slot=""
@@ -1495,6 +1598,10 @@ cleanup_remote() {
 trap cleanup_remote EXIT INT TERM
 
 mkdir -p "${cache_dir}"
+if [ -d "${peer_lock_dir}" ]; then
+	echo "[m4-preview] peer preview operation is active; concurrent build/start refused (${peer_lock_dir})" >&2
+	exit 75
+fi
 if ! mkdir "${lock_dir}" 2>/dev/null; then
 	echo "[m4-preview] another operation holds ${lock_dir}" >&2
 	if [ -f "${lock_dir}/owner.txt" ]; then
@@ -1865,9 +1972,10 @@ export COMPOSE_PARALLEL_LIMIT=1
 export NPCINK_CLOUD_M4_PORT="${preview_port}"
 export NPCINK_CLOUD_M4_POSTGRES_PORT="${postgres_port}"
 export NPCINK_CLOUD_M4_REDIS_PORT="${redis_port}"
+export NPCINK_CLOUD_M4_TUNNEL_LOCAL_PORT="${tunnel_local_port}"
+export NPCINK_CLOUD_M4_RUNTIME_IMAGE="${runtime_image}"
+export NPCINK_CLOUD_M4_FRONTEND_IMAGE="${frontend_image}"
 
-runtime_image='npcink-ai-cloud-runtime:m4-dev'
-frontend_image='npcink-ai-cloud-frontend:m4-dev'
 frontend_volume="${project_name}_cloud-frontend-node-modules-dev"
 frontend_slot_state_base="${HOME}/.cache/npcink-ai-cloud-m4-frontend-slots"
 primary_compose=(
@@ -1881,6 +1989,9 @@ primary_compose=(
 	-f "${remote_dir}/docker-compose.dev.yml"
 	-f "${remote_dir}/docker-compose.m4-preview.yml"
 )
+if [ "${stack_mode}" = "isolated" ]; then
+	primary_compose+=( -f "${remote_dir}/docker-compose.m4-fullstack-slot.yml" )
+fi
 
 if [ -e "${staging}" ] || [ -L "${staging}" ]; then
 	echo "[m4-preview] staging path already exists: ${staging}" >&2
@@ -1890,6 +2001,9 @@ mkdir -p "${staging}"
 tar -xzf "${source_bundle}" -C "${staging}"
 test -f "${staging}/docker-compose.dev.yml"
 test -f "${staging}/docker-compose.m4-preview.yml"
+if [ "${stack_mode}" = "isolated" ]; then
+	test -f "${staging}/docker-compose.m4-fullstack-slot.yml"
+fi
 test -f "${staging}/deploy/nginx.m4-preview.conf"
 test -f "${staging}/scripts/m4-package-proxy.py"
 test -f "${staging}/scripts/redact-m4-preview-logs.py"
@@ -1949,7 +2063,7 @@ if [ "${mode}" = "deploy" ]; then
 			frontend_volume_refresh_required=1
 		fi
 	fi
-	if [ "${frontend_volume_refresh_required}" = "1" ]; then
+	if [ "${frontend_volume_refresh_required}" = "1" ] && [ "${stack_mode}" = "primary" ]; then
 		acquire_frontend_slot_operation_locks
 		guard_frontend_dependency_volume_consumers "${frontend_volume}"
 	fi
@@ -1995,6 +2109,9 @@ compose=(
 	-f docker-compose.dev.yml
 	-f docker-compose.m4-preview.yml
 )
+if [ "${stack_mode}" = "isolated" ]; then
+	compose+=( -f docker-compose.m4-fullstack-slot.yml )
+fi
 
 "${compose[@]}" config --quiet
 
@@ -2275,15 +2392,21 @@ elif [ "${mode}" = "deploy" ]; then
 	stack_touched=1
 	"${compose[@]}" up -d --pull never postgres redis
 	"${compose[@]}" run --interactive=false -T --rm --pull never api alembic upgrade head
-	"${compose[@]}" up -d --no-build --pull never \
-		postgres redis api frontend proxy worker callback-worker ops-worker
+	if [ "${stack_mode}" = "isolated" ]; then
+		"${compose[@]}" up -d --no-build --pull never postgres redis api frontend proxy
+	else
+		"${compose[@]}" up -d --no-build --pull never \
+			postgres redis api frontend proxy worker callback-worker ops-worker
+	fi
 else
 	stack_touched=1
 	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
 	# The development frontend live-mounts source, but its source-revision
 	# environment still requires a recreate for each candidate sync.
 	"${compose[@]}" up -d --no-build --pull never frontend
-	"${compose[@]}" restart worker callback-worker ops-worker
+	if [ "${stack_mode}" = "primary" ]; then
+		"${compose[@]}" restart worker callback-worker ops-worker
+	fi
 	proxy_id="$("${compose[@]}" ps -q proxy)"
 	if [ -n "${proxy_id}" ]; then
 		"${compose[@]}" exec --interactive=false -T proxy nginx -s reload >/dev/null 2>&1 ||
@@ -2310,7 +2433,14 @@ wait_for_http() {
 wait_for_http "http://127.0.0.1:${preview_port}/health/live" 200
 wait_for_http "http://127.0.0.1:${preview_port}/" 200
 
-for service in postgres redis api frontend proxy worker callback-worker ops-worker; do
+if [ "${stack_mode}" = "isolated" ]; then
+	verification_services='postgres redis api frontend proxy'
+	expected_restart_policy='no'
+else
+	verification_services='postgres redis api frontend proxy worker callback-worker ops-worker'
+	expected_restart_policy='unless-stopped'
+fi
+for service in ${verification_services}; do
 	container_id="$("${compose[@]}" ps -q "${service}")"
 	test -n "${container_id}" || {
 		echo "[m4-preview] missing service: ${service}" >&2
@@ -2322,7 +2452,7 @@ for service in postgres redis api frontend proxy worker callback-worker ops-work
 		exit 1
 	}
 	restart_policy="$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "${container_id}")"
-	test "${restart_policy}" = "unless-stopped" || {
+	test "${restart_policy}" = "${expected_restart_policy}" || {
 		echo "[m4-preview] invalid restart policy: ${service} (${restart_policy})" >&2
 		exit 1
 	}
@@ -2359,8 +2489,10 @@ printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 
 {
 	printf 'acceptance_state=%s\n' "${acceptance_state}"
+	printf 'stack_mode=%s\n' "${stack_mode}"
 	printf 'promotion_pr=%s\n' "${promotion_pr}"
 	printf 'source_revision=%s\n' "${source_revision}"
+	printf 'source_base_revision=%s\n' "${source_base_revision}"
 	printf 'source_branch=%s\n' "${source_branch}"
 	printf 'source_dirty=%s\n' "${source_dirty}"
 	printf 'source_dirty_paths=%s\n' "${dirty_count}"
@@ -2368,6 +2500,9 @@ printf '%s\n' "${config_input_sha}" > "${deployed_config_marker}"
 	printf 'source_transfer_mode=%s\n' "${source_transfer_mode}"
 	printf 'image_input_sha256=%s\n' "${image_input_sha}"
 	printf 'config_input_sha256=%s\n' "${config_input_sha}"
+	printf 'backend_input_sha256=%s\n' "${backend_input_sha}"
+	printf 'accepted_source_revision=%s\n' "${accepted_source_revision}"
+	printf 'accepted_backend_input_sha256=%s\n' "${accepted_backend_input_sha}"
 	printf 'runtime_image_id=%s\n' "${runtime_image_id}"
 	printf 'runtime_image_created=%s\n' "${runtime_image_created}"
 	printf 'frontend_image_id=%s\n' "${frontend_image_id}"
@@ -2755,11 +2890,11 @@ main() {
 			;;
 		deploy)
 			parse_dry_run "$@"
-			if [ "${DRY_RUN}" = "0" ]; then
+			if [ "${DRY_RUN}" = "0" ] && [ "${M4_STACK_MODE}" = "primary" ]; then
 				remote_ollama_preflight
 			fi
 			upload_and_apply "${command}" candidate none
-			if [ "${DRY_RUN}" = "0" ]; then
+			if [ "${DRY_RUN}" = "0" ] && [ "${M4_STACK_MODE}" = "primary" ]; then
 				remote_ollama_restart 1
 			fi
 			;;

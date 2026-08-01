@@ -424,7 +424,9 @@
       "evidence": ["README.md", "docs/m4-preview-development-v1.md"],
       "commands": {
         "m4:frontend:status": "Inspect an owned read-only M4 frontend slot.",
-        "m4:frontend:logs": "Inspect logs for an owned M4 frontend slot."
+        "m4:frontend:logs": "Inspect logs for an owned M4 frontend slot.",
+        "m4:fullstack:status": "Inspect the isolated M4 full-stack slot lease and resources.",
+        "m4:fullstack:logs": "Inspect logs for the isolated M4 full-stack slot."
       }
     },
     {
@@ -438,7 +440,11 @@
         "m4:frontend:up": "Start an owned read-only M4 frontend slot.",
         "m4:frontend:sync": "Synchronize source to an owned M4 frontend slot.",
         "m4:frontend:tunnel": "Open the foreground browser tunnel for an M4 frontend slot.",
-        "m4:frontend:release": "Release an owned M4 frontend slot."
+        "m4:frontend:release": "Release an owned M4 frontend slot.",
+        "m4:fullstack:up": "Start the single isolated resource-limited M4 full-stack slot.",
+        "m4:fullstack:sync": "Synchronize source to the owned isolated M4 full-stack slot.",
+        "m4:fullstack:tunnel": "Open the foreground browser tunnel for the isolated M4 full-stack slot.",
+        "m4:fullstack:release": "Release the owned isolated M4 full-stack slot and its labeled resources."
       }
     },
     {

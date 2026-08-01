@@ -27,6 +27,9 @@ The documents have separate responsibilities:
 - [ADR-035](decisions/035-ephemeral-m4-frontend-preview-slots.md) records why
   two normal, frontend-only leases may share the accepted primary runtime
   without creating another backend or persistence stack.
+- [ADR-038](decisions/038-tiered-m4-parallel-preview-capacity.md) records the
+  startability contract, accepted-backend compatibility anchor, and the one
+  resource-limited isolated full-stack lease.
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.
@@ -112,16 +115,19 @@ replacing the primary candidate when all of these are true:
 
 - the change needs no API, migration, worker, persistence, dependency, image,
   proxy, or shared runtime-config change;
-- the primary runtime is accepted, clean, unlocked, fingerprint-compatible,
-  and healthy;
+- the primary runtime is accepted or candidate-compatible with the last
+  accepted backend anchor, unlocked, fingerprint-compatible, and healthy;
 - the slot owner and TTL are explicit;
 - product mutations are not required;
 - the browser uses the slot's foreground loopback tunnel.
 
 Use `m4:frontend:up` for the first checkpoint and `m4:frontend:sync` for later
 coherent checkpoints. A slot is frontend candidate evidence only. It does not
-change the primary `acceptance_state` and cannot be promoted. If any condition
-above is false, use or wait for the serialized primary lane.
+change the primary `acceptance_state` and cannot be promoted. If a condition is
+false because the work changes backend or persistence behavior, the one
+isolated full-stack slot MAY be used. It owns separate images/data, starts no
+workers, and remains candidate evidence only. Worker behavior and accepted
+runtime evidence still use or wait for the serialized primary lane.
 
 Risk and command choice are related but not identical:
 
@@ -217,6 +223,13 @@ pnpm run m4:frontend:sync -- --slot 1 --owner <task-id>
 pnpm run m4:frontend:tunnel -- --slot 1 --auto
 pnpm run m4:frontend:status -- --slot 1
 pnpm run m4:frontend:release -- --slot 1 --owner <task-id>
+
+# One isolated backend/migration/mutation candidate; no workers or Cloudflare
+pnpm run m4:fullstack:up -- --owner <task-id>
+pnpm run m4:fullstack:sync -- --owner <task-id>
+pnpm run m4:fullstack:tunnel -- --auto
+pnpm run m4:fullstack:status
+pnpm run m4:fullstack:release -- --owner <task-id>
 
 # Dependency, image, Compose, proxy, or deployment-script update
 pnpm run m4:preview:deploy
@@ -482,6 +495,9 @@ Cloud integration runtime while:
 - single-operator use does not create material queueing.
 - two normal frontend-only visual slots absorb bounded UI concurrency without
   multiplying the backend, database, workers, or accepted-state authority.
+- one resource-limited isolated full-stack slot absorbs a backend-changing
+  candidate without granting worker, Cloudflare, promotion, or acceptance
+  authority.
 
 Reassess the setup when the thresholds are repeatedly exceeded, M4 downtime
 costs more than 30-60 minutes per week, multiple developers need concurrent
