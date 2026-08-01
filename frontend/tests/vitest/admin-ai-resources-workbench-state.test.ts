@@ -54,6 +54,7 @@ const staleWorkbench: ProviderWorkbenchState = {
   modelReferenceFeatureFilter: 'text',
   modelReferenceVisibilityFilter: 'enabled',
   modelReferenceShowDeprecated: false,
+  modelReferencePage: 4,
   confirmingClearModels: true,
   customModelInput: 'claude-opus-4',
 };
@@ -76,6 +77,7 @@ describe('AI resources provider workbench state', () => {
       modelReferenceFeatureFilter: 'all',
       modelReferenceVisibilityFilter: 'all',
       modelReferenceShowDeprecated: true,
+      modelReferencePage: 1,
       confirmingClearModels: false,
       customModelInput: '',
     });
@@ -97,6 +99,7 @@ describe('AI resources provider workbench state', () => {
       providerCatalogPreview: catalogPreview,
       modelReferenceProviderId: 'anthropic',
       modelReferenceShowDeprecated: true,
+      modelReferencePage: 1,
     });
   });
 
@@ -147,6 +150,7 @@ describe('AI resources provider workbench state', () => {
     expect(state.providerConnectionForm.modelIds).toBe('gpt-5.5, gpt-image-1');
     expect(state.modelReferenceProviderId).toBe('openai');
     expect(state.confirmingClearModels).toBe(false);
+    expect(state.modelReferencePage).toBe(1);
   });
 
   it('applies a preset as one transition and resets stale model controls', () => {
@@ -173,6 +177,22 @@ describe('AI resources provider workbench state', () => {
     expect(state.modelReferenceShowDeprecated).toBe(true);
     expect(state.confirmingClearModels).toBe(false);
     expect(state.customModelInput).toBe('');
+    expect(state.modelReferencePage).toBe(1);
+  });
+
+  it('keeps model pagination bounded and resets it when filters change', () => {
+    const paged = providerWorkbenchReducer(staleWorkbench, {
+      type: 'set_reference_page',
+      page: 3.8,
+    });
+    expect(paged.modelReferencePage).toBe(3);
+
+    const filtered = providerWorkbenchReducer(paged, {
+      type: 'set_reference_visibility_filter',
+      filter: 'disabled',
+    });
+    expect(filtered.modelReferenceVisibilityFilter).toBe('disabled');
+    expect(filtered.modelReferencePage).toBe(1);
   });
 
   it('closes safely and resets the workflow after a successful save', () => {

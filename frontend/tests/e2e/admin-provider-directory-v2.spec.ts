@@ -210,8 +210,12 @@ test('model supplier table keeps PC operations and filters in one workspace', as
     contentType: 'image/png',
   });
 
-  await page.locator('[data-connection-id="model_ready"]').getByRole('button', { name: 'MQZJ' }).click();
+  const readyRow = page.locator('[data-connection-id="model_ready"]');
+  await expect(readyRow.locator('[data-ui="supplier-name"]')).toHaveText('MQZJ');
+  await expect(readyRow.getByRole('button', { name: 'MQZJ' })).toHaveCount(0);
+  await readyRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
   await expect(page).toHaveURL(/focus=model_ready/);
+  await page.keyboard.press('Escape');
   await page.reload();
   await expect(page.locator('[data-connection-id="model_ready"]')).toHaveAttribute('data-selected', 'true');
 
@@ -221,6 +225,12 @@ test('model supplier table keeps PC operations and filters in one workspace', as
   await expect(page.locator('[data-ui="model-supplier-directory"] [data-connection-id]')).toHaveCount(1);
   await expect(page.locator('[data-connection-id="model_ready"]')).toBeVisible();
   expect(await page.locator('[data-ui="model-supplier-directory"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(420);
+
+  await page.getByLabel(/^Status$|^状态$/i).selectOption('missing_secret');
+  await page.getByPlaceholder(/Name, provider, model, capability|名称、provider、模型、能力/i).fill('no-such-provider');
+  await expect(page.locator('[data-ui="admin-empty-state"]')).toBeVisible();
+  await page.getByRole('button', { name: /Clear filters|清除筛选/i }).click();
+  await expect(page.locator('[data-ui="model-supplier-directory"] [data-connection-id]')).toHaveCount(3);
 });
 
 test('model supplier workspace does not expose capability-service controls', async ({ page }) => {
@@ -246,7 +256,16 @@ test('supplier row keeps test feedback nearby and deletion under more actions', 
   const feedbackRow = page.locator('[data-feedback-for="model_ready"]');
   await expect(feedbackRow.getByRole('status').filter({ hasText: /Test passed|连接测试通过/i })).toBeVisible();
 
-  await supplierRow.locator('[data-ui="supplier-more-actions"] summary').click();
+  const rowHeightBefore = await supplierRow.evaluate((element) => element.getBoundingClientRect().height);
+  const moreButton = supplierRow.getByRole('button', { name: /More actions|更多操作/i });
+  await moreButton.click();
+  await expect(supplierRow.getByRole('menu')).toBeVisible();
+  await expect(supplierRow).toHaveCSS('height', `${rowHeightBefore}px`);
+  await page.keyboard.press('Escape');
+  await expect(supplierRow.getByRole('menu')).toHaveCount(0);
+  await expect(moreButton).toBeFocused();
+
+  await moreButton.click();
   await supplierRow.getByRole('button', { name: /^Delete$|^删除$/i }).click();
   await expect(feedbackRow.getByRole('alert').filter({ hasText: /removes this runtime connection|移除这条运行时连接/i })).toBeVisible();
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toBeVisible();
@@ -367,6 +386,65 @@ test('editing a provider uses a dense connection table above the model workbench
   });
 });
 
+test('large model directories render one bounded page and reset pagination when searched', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page);
+  const referenceItems = Array.from({ length: 60 }, (_, index) => ({
+    source_id: 'models.dev',
+    source_label: 'models.dev',
+    provider_id: 'openai',
+    provider_label: 'OpenAI',
+    model_id: `catalog-model-${String(index + 1).padStart(2, '0')}`,
+    display_name: `Catalog model ${index + 1}`,
+    family: 'catalog',
+    feature: 'text',
+    status: 'active',
+    modalities: { input: ['text'], output: ['text'] },
+    capability_flags: {},
+    context_window: 128000,
+    output_limit: 8192,
+    price: { input: 1, output: 2, unit: 'USD', billing_truth: false },
+    source_updated_at: '2026-07-12T00:00:00Z',
+    synced_at: '2026-07-12T00:00:00Z',
+    is_deprecated: false,
+    override_present: false,
+  }));
+  await page.route('**/api/admin/model-references?**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        items: referenceItems,
+        total: referenceItems.length,
+        source_summary: [{
+          source_id: 'models.dev',
+          display_name: 'models.dev',
+          source_url: 'https://models.dev',
+          status: 'active',
+          last_synced_at: '2026-07-12T00:00:00Z',
+          last_error_code: '',
+          last_error_message: '',
+        }],
+      })),
+    });
+  });
+  await page.goto('/admin/ai-resources?focus=model_ready');
+  const supplierRow = page.locator('[data-connection-id="model_ready"]');
+  await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
+
+  const dialog = page.getByRole('dialog');
+  const directory = dialog.locator('[data-ui="model-visibility-directory"]');
+  await expect(directory.locator('tbody tr')).toHaveCount(25);
+  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/25.*62|62.*25/);
+  await dialog.getByRole('button', { name: /^Next$|^下一页$/i }).click();
+  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/2 \/ 3|第 2 \/ 3 页/);
+
+  await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-60');
+  await expect(directory.locator('tbody tr')).toHaveCount(1);
+  await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/1 \/ 1|第 1 \/ 1 页/);
+});
+
 test('save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
@@ -425,12 +503,15 @@ test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({
   const attentionRow = page.locator('[data-connection-id="model_attention"]');
   await expect(directory).toBeVisible();
   await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/i })).toHaveCount(1);
-  await expect(readyRow).toContainText(/Ready|就绪/i);
+  await expect(readyRow).toContainText(/Configured|已配置/i);
   await expect(attentionRow.getByRole('button', { name: /^Configure$|^配置$/i })).toBeVisible();
   await expect(attentionRow.getByRole('button', { name: /^Test$|^测试$/i })).toBeVisible();
 
-  await readyRow.getByRole('button', { name: 'MQZJ' }).click();
+  await expect(readyRow.locator('[data-ui="supplier-name"]')).toHaveText('MQZJ');
+  await expect(readyRow.getByRole('button', { name: 'MQZJ' })).toHaveCount(0);
+  await readyRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
   await expect(readyRow).toHaveAttribute('data-selected', 'true');
+  await page.keyboard.press('Escape');
   await page.reload();
   await expect(readyRow).toHaveAttribute('data-selected', 'true');
   await expect(page).toHaveURL(/focus=model_ready/);
@@ -468,7 +549,7 @@ test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({
     expectedConsoleErrors: [/^provider credential is missing$/],
     routeRuleResults: [
       { id: 'single-primary-action', status: 'pass', evidence: 'one Add model supplier header action is visible' },
-      { id: 'textual-status', status: 'pass', evidence: 'supplier rows expose Ready and missing-credential text labels' },
+      { id: 'textual-status', status: 'pass', evidence: 'supplier rows expose Configured and missing-credential text labels' },
       { id: 'action-object-proximity', status: 'pass', evidence: 'Configure and Test remain inside the affected supplier row' },
       { id: 'distinct-interaction-states', status: 'pass', evidence: 'selected supplier uses data-selected and the status filter retains its value' },
       { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closes the provider dialog and returns focus to Add model supplier' },
