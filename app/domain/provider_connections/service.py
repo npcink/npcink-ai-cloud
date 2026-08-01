@@ -128,6 +128,7 @@ class ProviderConnectionAdminService:
         now = datetime.now(UTC)
         with get_session(self.database_url) as session:
             row = session.get(ProviderConnection, normalized["connection_id"])
+            credential = normalized["credential"]
             if row is None:
                 row = ProviderConnection(
                     connection_id=normalized["connection_id"],
@@ -147,6 +148,14 @@ class ProviderConnectionAdminService:
                 )
                 session.add(row)
             else:
+                verification_inputs_changed = (
+                    row.provider_type != normalized["provider_type"]
+                    or bool(row.enabled) != normalized["enabled"]
+                    or (row.base_url or "") != normalized["base_url"]
+                    or _dict(row.config_json) != normalized["config_json"]
+                    or row.source_role != normalized["source_role"]
+                    or credential is not None
+                )
                 row.provider_type = normalized["provider_type"]
                 row.display_name = normalized["display_name"]
                 row.enabled = normalized["enabled"]
@@ -155,10 +164,11 @@ class ProviderConnectionAdminService:
                 row.source_role = normalized["source_role"]
                 row.metadata_json = normalized["metadata_json"]
                 row.updated_at = now
-                row.last_error_code = None
-                row.last_error_message = None
+                if verification_inputs_changed:
+                    row.last_tested_at = None
+                    row.last_error_code = None
+                    row.last_error_message = None
 
-            credential = normalized["credential"]
             if credential is not None:
                 try:
                     row.secret_ciphertext = (

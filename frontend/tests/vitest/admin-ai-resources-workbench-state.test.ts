@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildProviderConnectionForm,
+  computeModelReferenceCoverage,
   EMPTY_PROVIDER_CONNECTION_FORM,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
@@ -65,6 +66,23 @@ const staleWorkbench: ProviderWorkbenchState = {
 };
 
 describe('AI resources provider workbench state', () => {
+  it('counts reference coverage by matching model identity instead of aggregate size', () => {
+    expect(computeModelReferenceCoverage({
+      providerId: 'openai',
+      targetModelIds: ['gpt-a', 'gpt-b'],
+      references: [
+        { provider_id: 'openai', model_id: 'other-a' },
+        { provider_id: 'openai', model_id: 'other-b' },
+      ],
+    })).toEqual({ covered: 0, total: 2 });
+
+    expect(computeModelReferenceCoverage({
+      providerId: 'openai',
+      targetModelIds: ['gpt-a', 'openai/gpt-a'],
+      references: [{ provider_id: 'openai', model_id: 'openai/gpt-a' }],
+    })).toEqual({ covered: 1, total: 1 });
+  });
+
   it('opens a clean create workflow without leaking the previous edit draft', () => {
     const state = providerWorkbenchReducer(staleWorkbench, {
       type: 'open_create',

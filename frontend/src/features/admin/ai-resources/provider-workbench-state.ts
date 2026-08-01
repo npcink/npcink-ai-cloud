@@ -31,6 +31,64 @@ export type ModelReferenceFeatureFilter =
 
 export type ModelReferenceVisibilityFilter = 'all' | 'enabled' | 'disabled';
 
+export type ModelReferenceIdentity = {
+  model_id: string;
+  provider_id?: string;
+};
+
+function modelIdentityKeys(modelId: string, providerId: string): Set<string> {
+  const normalizedModelId = modelId.trim().toLowerCase();
+  const normalizedProviderId = providerId.trim().toLowerCase();
+  const keys = new Set<string>();
+  if (!normalizedModelId) return keys;
+
+  keys.add(normalizedModelId);
+  const slashIndex = normalizedModelId.indexOf('/');
+  if (slashIndex > 0 && slashIndex < normalizedModelId.length - 1) {
+    keys.add(normalizedModelId.slice(slashIndex + 1));
+  }
+  if (normalizedProviderId && normalizedModelId.startsWith(`${normalizedProviderId}/`)) {
+    keys.add(normalizedModelId.slice(normalizedProviderId.length + 1));
+  }
+  if (normalizedProviderId && !normalizedModelId.includes('/')) {
+    keys.add(`${normalizedProviderId}/${normalizedModelId}`);
+  }
+  return keys;
+}
+
+function identitySetsOverlap(left: Set<string>, right: Set<string>): boolean {
+  return Array.from(left).some((key) => right.has(key));
+}
+
+export function computeModelReferenceCoverage({
+  providerId,
+  targetModelIds,
+  references,
+}: {
+  providerId: string;
+  targetModelIds: string[];
+  references: ModelReferenceIdentity[];
+}): { covered: number; total: number } {
+  const targetIdentitySets: Set<string>[] = [];
+  for (const modelId of targetModelIds) {
+    const keys = modelIdentityKeys(modelId, providerId);
+    if (!keys.size || targetIdentitySets.some((existing) => identitySetsOverlap(existing, keys))) {
+      continue;
+    }
+    targetIdentitySets.push(keys);
+  }
+
+  const referenceIdentitySets = references
+    .map((reference) => modelIdentityKeys(reference.model_id, reference.provider_id || providerId))
+    .filter((keys) => keys.size > 0);
+  return {
+    covered: targetIdentitySets.filter((target) => (
+      referenceIdentitySets.some((reference) => identitySetsOverlap(target, reference))
+    )).length,
+    total: targetIdentitySets.length,
+  };
+}
+
 export type ProviderConnectionForm = {
   providerPreset: string;
   connectionId: string;

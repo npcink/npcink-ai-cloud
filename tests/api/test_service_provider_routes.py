@@ -1471,6 +1471,29 @@ def test_admin_provider_connection_test_updates_masked_diagnostics(
     assert listed["verification_status"] == "passed"
     assert listed["attention_required"] is False
 
+    update_response = client.patch(
+        "/internal/service/admin/provider-connections/openai_testable",
+        headers=build_internal_headers(idempotency_key="provider-connection-test-update"),
+        json={
+            "connection_id": "openai_testable",
+            "provider_id": "openai",
+            "provider_type": "openai_compatible",
+            "kind": "openai_compatible",
+            "display_name": "OpenAI testable",
+            "enabled": True,
+            "base_url": "https://api.openai.changed.test/v1",
+            "capability_ids": ["text_generation"],
+            "runtime_profile_ids": [TEXT_AI_PROFILE_ID],
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    updated = update_response.json()["data"]
+    assert updated["status"] == "ready"
+    assert updated["last_tested_at"] == ""
+    assert updated["verification_status"] == "not_observed"
+    assert updated["attention_required"] is True
+    assert "verification_not_observed" in updated["attention_reasons"]
+
 
 def test_admin_provider_connection_test_runs_web_search_probe_without_result_payload(
     tmp_path: Path,

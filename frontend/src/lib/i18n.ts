@@ -7573,6 +7573,7 @@ export const translations: Record<Locale, TranslationMap> = {
     'admin.ai_resources.model_reference_compact_synced': '情报已同步',
     'admin.ai_resources.model_reference_compact_complete': '情报完整 {{covered}}/{{total}}',
     'admin.ai_resources.model_reference_compact_partial': '情报不完整 {{covered}}/{{total}}',
+    'admin.ai_resources.model_reference_compact_unscoped': '已有 {{count}} 条情报；加载模型目录后才能确认覆盖率',
     'admin.ai_resources.model_reference_compact_failed': '情报同步失败',
     'admin.ai_resources.model_reference_compact_not_synced': '情报未同步',
     'admin.ai_resources.model_reference_title': '参考情报',

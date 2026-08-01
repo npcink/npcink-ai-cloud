@@ -34,6 +34,7 @@ import {
 } from '@/features/admin/ai-resources/directory';
 import {
   buildProviderConnectionForm,
+  computeModelReferenceCoverage,
   EMPTY_PROVIDER_CONNECTION_FORM,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
@@ -1235,10 +1236,25 @@ function AiResourcesContent() {
     syncingModelReferences,
   ]);
 
+  const modelReferenceCoverage = useMemo(
+    () => computeModelReferenceCoverage({
+      providerId: modelReferenceProviderId,
+      targetModelIds: [
+        ...(providerCatalogPreview?.model_ids || []),
+        ...selectedProviderModelIds,
+      ],
+      references: modelReferences,
+    }),
+    [
+      modelReferenceProviderId,
+      modelReferences,
+      providerCatalogPreview?.model_ids,
+      selectedProviderModelIds,
+    ]
+  );
   const modelReferenceCoverageBase = Math.max(
-    modelReferenceTotal,
-    Number(providerCatalogPreview?.model_count ?? 0) || 0,
-    selectedProviderModelIds.length
+    modelReferenceCoverage.total,
+    Number(providerCatalogPreview?.model_count ?? 0) || 0
   );
   const modelReferenceCompactStatusText = useMemo(() => {
     if (autoSyncingModelReferences) {
@@ -1247,16 +1263,24 @@ function AiResourcesContent() {
     if (loadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
-    if (modelReferenceTotal > 0 && modelReferenceTotal >= modelReferenceCoverageBase) {
+    if (
+      modelReferenceCoverageBase > 0
+      && modelReferenceCoverage.covered >= modelReferenceCoverageBase
+    ) {
       return aiText('model_reference_compact_complete', 'intelligence complete {{covered}}/{{total}}', {
-        covered: String(modelReferenceTotal),
+        covered: String(modelReferenceCoverage.covered),
+        total: String(modelReferenceCoverageBase),
+      });
+    }
+    if (modelReferenceTotal > 0 && modelReferenceCoverageBase > 0) {
+      return aiText('model_reference_compact_partial', 'intelligence partial {{covered}}/{{total}}', {
+        covered: String(modelReferenceCoverage.covered),
         total: String(modelReferenceCoverageBase),
       });
     }
     if (modelReferenceTotal > 0) {
-      return aiText('model_reference_compact_partial', 'intelligence partial {{covered}}/{{total}}', {
-        covered: String(modelReferenceTotal),
-        total: String(modelReferenceCoverageBase),
+      return aiText('model_reference_compact_unscoped', 'intelligence available {{count}} records; load a catalog to verify coverage', {
+        count: String(modelReferenceTotal),
       });
     }
     if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
@@ -1269,6 +1293,7 @@ function AiResourcesContent() {
     loadingModelReferences,
     modelReferenceAutoSyncError,
     modelReferenceCoverageBase,
+    modelReferenceCoverage.covered,
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
