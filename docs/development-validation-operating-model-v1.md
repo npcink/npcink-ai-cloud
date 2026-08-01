@@ -143,6 +143,39 @@ attach to a clean accepted primary runtime and use its foreground loopback
 tunnel. This is a concurrency exception for rendering only, not a second
 integration stack.
 
+### Appearance-only preview-first lane
+
+For a bounded Admin appearance change, separate two clocks:
+
+1. **Visible preview** answers whether the operator wants the composition. Aim
+   to provide a route-focused PC preview within 15 minutes of a coherent edit.
+2. **Engineering closeout** answers whether the chosen composition may merge,
+   become M4 accepted, or ship. It may continue after visual direction is
+   confirmed and remains subject to the required GitHub, M4, and release gates.
+
+This lane applies only when the diff changes copy, spacing, color, iconography,
+or route-local composition and does not change shared primitives, geometry
+tokens, action hierarchy, interaction behavior, state ownership, API/data
+contracts, credentials, destructive actions, dependencies, or runtime inputs.
+
+The preview checkpoint is:
+
+```text
+exact source/static check
+  -> focused target-route PC browser check
+  -> visible candidate for operator review
+```
+
+Do not block that visible candidate on the whole Admin visual matrix, unrelated
+backend CI, PR merge, or clean-master M4 promotion. Those controls still run at
+the closeout stage required by the declared risk and requested outcome. If the
+focused browser check exposes overflow, broken states, console/network errors,
+or a shared-seam change, stop using this lane and reclassify the work as
+`material` or `shared` under the Admin UI standard.
+
+The 15-minute target is a feedback objective, not evidence that the change is
+merged, accepted, deployed, or human-approved. Record those states separately.
+
 `sync` is the default for ordinary source. It must fail closed when a changed
 fingerprint requires `deploy`. Do not choose a cold rebuild merely because it
 feels more complete.

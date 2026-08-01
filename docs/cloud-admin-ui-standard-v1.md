@@ -373,14 +373,46 @@ evidence for meaningful layout changes.
 
 Admin visual evidence uses the risk tier declared by the changed seam:
 
-- `low`: copy, data labels, or non-visual logic with no geometry or interaction
-  change; run the structural and behavior gate that owns the seam;
-- `material`: route layout, table, form, state, action hierarchy, dialog, or
-  inspector change; local PC browser evidence and a structured visual receipt
-  are mandatory;
+- `low`: copy, data labels, color, iconography, or route-local spacing with no
+  geometry, action-hierarchy, state, or interaction change; run the structural
+  check that owns the seam plus a focused target-route PC browser check;
+- `material`: route composition, table, form, responsive geometry, state,
+  action hierarchy, dialog, or inspector change; local PC browser evidence and
+  a structured visual receipt are mandatory;
 - `shared`: Admin shell, shared primitive, geometry token, or cross-route
   interaction change; run the representative route matrix locally and gather
   M4 browser evidence before acceptance.
+
+### 10.2 Preview-first and closeout gates
+
+Visual direction must be reviewable before unrelated integration work obscures
+the feedback loop. For an eligible `low` appearance-only change, use:
+
+```text
+focused source/static check
+  -> focused target-route PC browser check
+  -> visible preview
+```
+
+Do not wait for the complete Admin visual matrix, unrelated backend CI, merge,
+or M4 promotion before showing that preview. The preview proves only the
+rendered candidate. Required PR checks still decide merge eligibility, and M4
+promotion still decides accepted runtime state when acceptance is in scope.
+
+For `material` work, run the route-focused visual spec and write its receipt
+before preview. Run `check:admin-ui` before publish, and run the complete
+`check:admin-ui:visual` matrix once at closeout when the changed seam or PR
+policy requires it; do not repeat the matrix after every styling edit.
+
+For `shared` work, or any change involving behavior, state ownership, API/data
+contracts, credentials, destructive actions, dependencies, or runtime inputs,
+use the complete delivery chain in the frontend engineering standard.
+
+Reclassify upward immediately when a supposedly `low` change causes overflow,
+alters a control or state, touches a shared primitive/token, or produces an
+unexplained console or network failure. A user request for merged, M4 accepted,
+deployed, or production evidence also expands the requested outcome even when
+the visual diff itself remains small.
 
 The initial route pilots cover `/admin/ai-resources`, `/admin/service-settings`,
 and `/admin/troubleshooting`. The first cross-route workflow pilot covers the
