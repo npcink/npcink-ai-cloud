@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -13,7 +13,8 @@ const FOCUSABLE_SELECTOR = [
 
 export function useDialogFocusManagement<T extends HTMLElement>(
   isOpen: boolean,
-  onClose: () => void
+  onClose: () => void,
+  returnFocusRef?: RefObject<HTMLElement | null>
 ) {
   const containerRef = useRef<T>(null);
   const closeRef = useRef(onClose);
@@ -27,6 +28,7 @@ export function useDialogFocusManagement<T extends HTMLElement>(
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
+    const returnFocusTarget = returnFocusRef?.current || previousFocus;
     const container = containerRef.current;
     const initialFocus = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) || container;
     initialFocus?.focus();
@@ -63,9 +65,9 @@ export function useDialogFocusManagement<T extends HTMLElement>(
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
-      previousFocus?.focus();
+      returnFocusTarget?.focus();
     };
-  }, [isOpen]);
+  }, [isOpen, returnFocusRef]);
 
   return containerRef;
 }

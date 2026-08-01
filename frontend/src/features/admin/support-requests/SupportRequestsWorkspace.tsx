@@ -1,16 +1,18 @@
 'use client';
 
-import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { AdminContextDrawer } from '@/components/admin/AdminContextDrawer';
+import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
+import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
+import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
-  BackofficeEmptyState,
   BackofficeLayer,
   BackofficePageStack,
-  BackofficeSectionPanel,
   BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
@@ -67,8 +69,8 @@ export function SupportRequestsWorkspace() {
 
   const [queryDraft, setQueryDraft] = useState(appliedQuery);
   const [actionError, setActionError] = useState('');
-  const [statusDraft, setStatusDraft] = useState<SupportRequestStatus>('open');
-  const [noteDraft, setNoteDraft] = useState('');
+  const [editRequest, setEditRequest] = useState<SupportRequest | null>(null);
+  const inspectorTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const requestKey = useMemo(
     () =>
@@ -125,14 +127,7 @@ export function SupportRequestsWorkspace() {
   }, [appliedQuery]);
 
   const items = directory?.items || [];
-  const selectedRequest = items.find((item) => item.request_id === focusedRequestId) || items[0] || null;
-
-  useEffect(() => {
-    if (!selectedRequest) return;
-    setStatusDraft(selectedRequest.status);
-    setNoteDraft(selectedRequest.admin_note || '');
-    setActionError('');
-  }, [selectedRequest]);
+  const selectedRequest = items.find((item) => item.request_id === focusedRequestId) || null;
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -146,18 +141,25 @@ export function SupportRequestsWorkspace() {
     updateQueueUrl({ status: null, topic: null, q: null, sort: null, offset: null, focus: null });
   };
 
-  const handleUpdate = async (item: SupportRequest) => {
+  const handleUpdate = async (formData: FormData) => {
+    if (!editRequest) return;
+    const requestedStatus = String(formData.get('status') || '');
+    if (!NEXT_STATUSES.includes(requestedStatus as SupportRequestStatus)) {
+      setActionError(t('error.failed_save'));
+      return;
+    }
     setActionError('');
     try {
       const data = await updateRequest.mutateAsync({
-        requestId: item.request_id,
-        status: statusDraft,
-        adminNote: noteDraft,
+        requestId: editRequest.request_id,
+        status: requestedStatus as SupportRequestStatus,
+        adminNote: String(formData.get('admin_note') || ''),
       });
       if (!data.request) {
         throw new Error(t('error.failed_save'));
       }
-      updateQueueUrl({ focus: item.request_id });
+      updateQueueUrl({ focus: editRequest.request_id });
+      setEditRequest(null);
       toast.success(t('admin.support_requests_updated_notice', {}, 'Ticket updated.'), t('admin.support_requests_updated_title', {}, 'Ticket saved'));
     } catch (error) {
       setActionError(resolveUiErrorMessage(error, t('error.failed_save')));
@@ -181,6 +183,20 @@ export function SupportRequestsWorkspace() {
   const openCount = Number(summary?.open || 0);
   const inProgressCount = Number(summary?.in_progress || 0);
   const criticalCount = Number(summary?.critical || 0);
+  const selectedRisk = selectedRequest ? requestRisk(selectedRequest) : null;
+  const selectedAge = selectedRequest ? ageHours(selectedRequest.created_at) : null;
+  const selectedRiskReason = selectedRisk === 'critical'
+    ? t('admin.support_requests_reason_overdue', {}, 'This unanswered or urgent ticket needs immediate operator review.')
+    : selectedRisk === 'warning'
+      ? t('admin.support_requests_reason_open', {}, 'The customer is waiting for the first operator response.')
+      : selectedRisk === 'monitor'
+        ? t('admin.support_requests_reason_in_progress', {}, 'Work has started; keep the customer conversation and internal next step current.')
+        : t('admin.support_requests_reason_complete', {}, 'The ticket is resolved or closed and remains available as support history.');
+  const closeInspector = () => updateQueueUrl({ focus: null });
+  const openEditor = (item: SupportRequest) => {
+    setActionError('');
+    setEditRequest(item);
+  };
 
   return (
     <BackofficePageStack className="space-y-5">
@@ -218,179 +234,198 @@ export function SupportRequestsWorkspace() {
         { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
       ]} />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.72fr)]">
-        <BackofficeSectionPanel className="overflow-hidden p-0">
-          <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 md:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}</h2>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}</p>
-              </div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400" role="status">{t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)}</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2" aria-label={t('admin.support_requests_status_filter_label', {}, 'Ticket status')}>
-              {SUPPORT_REQUEST_STATUS_FILTERS.map((status) => (
-                <button
-                  key={status || 'all'}
-                  type="button"
-                  aria-pressed={appliedStatus === status}
-                  className={cn('cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition', appliedStatus === status ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200' : 'border-slate-200/80 bg-white/80 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:border-slate-600')}
-                  onClick={() => updateQueueUrl({ status: status || null, offset: null, focus: null })}
-                >
-                  {status ? t(`admin.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}
-                </button>
-              ))}
-            </div>
-
-            <form onSubmit={applySearch} className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(13rem,1.2fr)_minmax(9rem,0.7fr)_minmax(9rem,0.7fr)_auto]">
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_search_label', {}, 'Search tickets')}</span>
-                <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</span>
-                <select className="input w-full" value={appliedTopic} onChange={(event) => updateQueueUrl({ topic: event.target.value || null, offset: null, focus: null })}>
-                  {SUPPORT_REQUEST_TOPICS.map((topic) => <option key={topic || 'all'} value={topic}>{topic ? t(`portal.support_topic_${topic}`, {}, topic) : t('admin.support_topic_all', {}, 'All topics')}</option>)}
-                </select>
-              </label>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_sort_label', {}, 'Sort')}</span>
-                <select className="input w-full" value={sort} onChange={(event) => updateQueueUrl({ sort: normalizeSupportRequestSort(event.target.value), focus: null })}>
-                  <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Highest risk')}</option>
-                  <option value="updated_at">{t('admin.support_requests_sort_updated', {}, 'Recently updated')}</option>
-                </select>
-              </label>
-              <div className="flex items-end gap-2 md:col-span-2 2xl:col-span-1">
-                <button type="submit" className="btn btn-primary flex-1 2xl:flex-none">{t('common.apply', {}, 'Apply')}</button>
-                <button type="button" className="btn btn-secondary flex-1 2xl:flex-none" disabled={!hasFilters && !queryDraft} onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button>
-              </div>
-            </form>
+      <AdminDataTableFrame
+        title={t('admin.support_requests_queue_title', {}, 'Customer ticket queue')}
+        resultLabel={`${t('admin.support_requests_result_count', { visible: formatInteger(items.length), total: formatInteger(total) }, `${formatInteger(items.length)} on this page · ${formatInteger(total)} total`)} · ${t('admin.support_requests_queue_desc', {}, 'The service applies filters and global risk ordering before pagination.')}`}
+        dataUi="support-request-table"
+        density="compact"
+        bodyClassName="overflow-hidden"
+        footer={<ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />}
+      >
+        <form
+          data-ui="support-request-toolbar"
+          onSubmit={applySearch}
+          className="grid gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_9rem_9rem_9rem_auto]"
+        >
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            <span className="sr-only">{t('admin.support_requests_search_label', {}, 'Search tickets')}</span>
+            <input name="q" type="search" className="input w-full" value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={t('admin.support_requests_search_placeholder', {}, 'Email, site, account, or title')} />
+          </label>
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            <span className="sr-only">{t('admin.support_requests_status_filter_label', {}, 'Ticket status')}</span>
+            <select className="input w-full" value={appliedStatus} onChange={(event) => updateQueueUrl({ status: event.target.value || null, offset: null, focus: null })}>
+              {SUPPORT_REQUEST_STATUS_FILTERS.map((status) => <option key={status || 'all'} value={status}>{status ? t(`admin.support_status_${status}`, {}, status) : t('common.all', {}, 'All')}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            <span className="sr-only">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</span>
+            <select className="input w-full" value={appliedTopic} onChange={(event) => updateQueueUrl({ topic: event.target.value || null, offset: null, focus: null })}>
+              {SUPPORT_REQUEST_TOPICS.map((topic) => <option key={topic || 'all'} value={topic}>{topic ? t(`portal.support_topic_${topic}`, {}, topic) : t('admin.support_topic_all', {}, 'All topics')}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            <span className="sr-only">{t('admin.support_requests_sort_label', {}, 'Sort')}</span>
+            <select className="input w-full" value={sort} onChange={(event) => updateQueueUrl({ sort: normalizeSupportRequestSort(event.target.value), focus: null })}>
+              <option value="risk">{t('admin.support_requests_sort_risk', {}, 'Highest risk')}</option>
+              <option value="updated_at">{t('admin.support_requests_sort_updated', {}, 'Recently updated')}</option>
+            </select>
+          </label>
+          <div className="flex items-center justify-end gap-2 md:col-span-2 xl:col-span-1">
+            <button type="submit" className="btn btn-primary btn-sm">{t('common.apply', {}, 'Apply')}</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={!hasFilters && !queryDraft} onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button>
           </div>
+        </form>
 
-          {items.length ? (
-            <div role="list" aria-label={t('admin.support_requests_list_label', {}, 'Ticket list')}>
-              {items.map((item) => {
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[68rem] table-fixed text-left text-sm">
+            <thead className="bg-slate-50/80 text-xs font-semibold text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+              <tr>
+                <th scope="col" className="w-36 px-3 py-2">{t('admin.support_requests_table_risk', {}, 'Risk / age')}</th>
+                <th scope="col" className="w-[28%] px-3 py-2">{t('admin.support_requests_table_ticket', {}, 'Ticket / customer')}</th>
+                <th scope="col" className="w-36 px-3 py-2">{t('common.status')}</th>
+                <th scope="col" className="w-52 px-3 py-2">{t('admin.support_requests_table_scope', {}, 'Account / site')}</th>
+                <th scope="col" className="w-36 px-3 py-2">{t('common.updated_at', {}, 'Updated')}</th>
+                <th scope="col" className="w-56 px-3 py-2 text-right">{t('common.actions', {}, 'Actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800">
+              {items.length ? items.map((item) => {
                 const risk = requestRisk(item);
                 const isSelected = selectedRequest?.request_id === item.request_id;
                 const age = ageHours(item.created_at);
-                const riskReason = risk === 'critical'
-                  ? t('admin.support_requests_reason_overdue', {}, 'This unanswered or urgent ticket needs immediate operator review.')
-                  : risk === 'warning'
-                    ? t('admin.support_requests_reason_open', {}, 'The customer is waiting for the first operator response.')
-                    : risk === 'monitor'
-                      ? t('admin.support_requests_reason_in_progress', {}, 'Work has started; keep the customer conversation and internal next step current.')
-                      : t('admin.support_requests_reason_complete', {}, 'The ticket is resolved or closed and remains available as support history.');
                 return (
-                  <article key={item.request_id} role="listitem" data-ui="support-request-queue-item" className={cn('grid gap-4 border-b border-slate-200/80 px-5 py-5 transition last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(11rem,0.9fr)_minmax(13rem,1.1fr)] md:items-center md:px-6 2xl:grid-cols-[minmax(12rem,1fr)_minmax(14rem,1.2fr)_minmax(9rem,0.75fr)_auto]', isSelected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="line-clamp-2 font-semibold text-slate-950 dark:text-white">{item.title}</h3>
-                        <BackofficeStatusBadge status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
+                  <tr key={item.request_id} data-ui="support-request-row" className={cn('align-middle transition', isSelected ? 'bg-blue-50/65 dark:bg-blue-950/15' : 'hover:bg-slate-50/70 dark:hover:bg-slate-950/35')}>
+                    <td className="px-3 py-2.5">
+                      <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold', riskToneClassName(risk))}>{t(`admin.support_requests_risk_${risk}`, {}, risk)}</span>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{age === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(age) }, `${age}h`)}</p>
+                    </td>
+                    <td className="min-w-0 px-3 py-2.5">
+                      <p className="truncate font-semibold text-slate-950 dark:text-white">{item.title}</p>
+                      <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="truncate">{item.email}</span>
+                        <span aria-hidden="true">·</span>
+                        <BackofficeIdentifier value={item.request_id} />
                       </div>
-                      <p className="mt-2 truncate text-xs text-slate-500 dark:text-slate-400">{item.email}</p>
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400"><BackofficeIdentifier value={item.request_id} /></div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(risk))}>{t(`admin.support_requests_risk_${risk}`, {}, risk)}</span>
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <BackofficeStatusBadge status={statusTone(item.status)} label={t(`admin.support_status_${item.status}`, {}, item.status)} />
+                      <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{t(`portal.support_topic_${item.topic}`, {}, item.topic)}</p>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
+                      <p className="truncate font-medium text-slate-950 dark:text-white">{item.account_id}</p>
+                      <p className="mt-1 truncate">{item.site_id || t('common.not_available', {}, 'N/A')}</p>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
+                      {item.updated_at ? formatDate(item.updated_at) : t('common.unknown', {}, 'Unknown')}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-2">
+                        <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; updateQueueUrl({ focus: item.request_id }); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
+                        <Link
+                          className="btn btn-primary btn-sm"
+                          href={buildSupportRequestDetailHref(item.request_id, buildSupportRequestQueueReturnPath(pathname, queueParamsKey, item.request_id))}
+                        >
+                          {t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}
+                        </Link>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{riskReason}</p>
-                    </div>
-                    <dl className="grid gap-2 text-xs text-slate-600 dark:text-slate-300">
-                      <div className="flex justify-between gap-3"><dt>{t('admin.account_id', {}, 'Account ID')}</dt><dd className="max-w-32 truncate font-semibold text-slate-950 dark:text-white">{item.account_id}</dd></div>
-                      <div className="flex justify-between gap-3"><dt>{t('common.site', {}, 'Site')}</dt><dd className="max-w-32 truncate font-semibold text-slate-950 dark:text-white">{item.site_id || t('common.not_available', {}, 'N/A')}</dd></div>
-                      <div className="flex justify-between gap-3"><dt>{t('admin.support_requests_age_label', {}, 'Age')}</dt><dd className="font-semibold text-slate-950 dark:text-white">{age === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(age) }, `${age}h`)}</dd></div>
-                    </dl>
-                    <div className="flex flex-wrap gap-2 md:justify-end">
-                      <button type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} aria-controls="support-request-inspector" onClick={() => updateQueueUrl({ focus: item.request_id })}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
-                      <Link
-                        className="btn btn-primary btn-sm"
-                        href={buildSupportRequestDetailHref(
-                          item.request_id,
-                          buildSupportRequestQueueReturnPath(pathname, queueParamsKey, item.request_id)
-                        )}
-                      >
-                        {t('admin.support_request_view_detail', {}, 'View detail')}
-                      </Link>
-                    </div>
-                  </article>
+                    </td>
+                  </tr>
                 );
-              })}
-            </div>
-          ) : (
-            <BackofficeEmptyState
-              className="m-5 md:m-6"
-              title={hasFilters ? t('admin.support_requests_filtered_empty_title', {}, 'No tickets match these filters') : t('admin.support_requests_empty_title', {}, 'No support tickets yet')}
-              description={hasFilters ? t('admin.support_requests_filtered_empty_desc', {}, 'Clear or change the filters to return to the ticket queue.') : t('admin.support_requests_empty_desc', {}, 'New Portal support tickets will appear here.')}
-              action={hasFilters ? <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
-            />
-          )}
+              }) : (
+                <tr>
+                  <td colSpan={6} className="px-3 py-3">
+                    <AdminEmptyState className="mx-auto max-w-2xl text-center">
+                      <p className="font-semibold text-slate-700 dark:text-slate-200">{hasFilters ? t('admin.support_requests_filtered_empty_title', {}, 'No tickets match these filters') : t('admin.support_requests_empty_title', {}, 'No support tickets yet')}</p>
+                      <p className="mt-1">{hasFilters ? t('admin.support_requests_filtered_empty_desc', {}, 'Clear or change the filters to return to the ticket queue.') : t('admin.support_requests_empty_desc', {}, 'New Portal support tickets will appear here.')}</p>
+                      {hasFilters ? <button type="button" className="btn btn-secondary btn-sm mt-2" onClick={clearFilters}>{t('common.clear_filters', {}, 'Clear filters')}</button> : null}
+                    </AdminEmptyState>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </AdminDataTableFrame>
 
-          <ListPagination offset={offset} limit={SUPPORT_REQUEST_PAGE_SIZE} total={total} isLoading={isRefreshing} onOffsetChange={(nextOffset) => updateQueueUrl({ offset: String(nextOffset), focus: null })} />
-        </BackofficeSectionPanel>
-
-        <aside id="support-request-inspector" className="xl:sticky xl:top-24" aria-live="polite">
-          <BackofficeSectionPanel className="space-y-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t('admin.support_requests_inspector_eyebrow', {}, 'Inspector')}</p>
-                <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_inspector_title', {}, 'Current ticket')}</h2>
-              </div>
-              {selectedRequest ? <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(requestRisk(selectedRequest)))}>{t(`admin.support_requests_risk_${requestRisk(selectedRequest)}`, {}, requestRisk(selectedRequest))}</span> : null}
+      <AdminContextDrawer
+        open={Boolean(selectedRequest) && !editRequest}
+        title={selectedRequest?.title || t('admin.support_requests_inspector_title', {}, 'Current ticket')}
+        titleId="support-request-drawer-title"
+        eyebrow={t('admin.support_requests_inspector_eyebrow', {}, 'Inspector')}
+        closeLabel={t('admin.support_requests_close_inspector', {}, 'Close ticket inspector')}
+        onClose={closeInspector}
+        returnFocusRef={inspectorTriggerRef}
+        footer={selectedRequest ? (
+          <>
+            <button type="button" className="btn btn-secondary" disabled={displayScope.isRetainedScope} onClick={() => openEditor(selectedRequest)}>{t('admin.support_requests_edit_action', {}, 'Edit handling')}</button>
+            <Link className="btn btn-primary" href={buildSupportRequestDetailHref(selectedRequest.request_id, buildSupportRequestQueueReturnPath(pathname, queueParamsKey, selectedRequest.request_id))}>{t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}</Link>
+          </>
+        ) : null}
+      >
+        {selectedRequest ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <BackofficeIdentifier value={selectedRequest.request_id} full />
+              {selectedRisk ? <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold', riskToneClassName(selectedRisk))}>{t(`admin.support_requests_risk_${selectedRisk}`, {}, selectedRisk)}</span> : null}
             </div>
-            {selectedRequest ? (
-              <div className="space-y-5">
-                <div>
-                  <p className="text-base font-semibold text-slate-950 dark:text-white">{selectedRequest.title}</p>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400"><BackofficeIdentifier value={selectedRequest.request_id} full /></div>
-                </div>
-                <section aria-labelledby="customer-submission-title" className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/35">
-                  <h3 id="customer-submission-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_customer_submission_title', {}, 'Customer submission')}</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRequest.description}</p>
-                  <dl className="mt-3 grid gap-1 text-xs text-slate-500 dark:text-slate-400">
-                    <div className="flex justify-between gap-3"><dt>{t('common.email', {}, 'Email')}</dt><dd className="truncate text-right">{selectedRequest.email}</dd></div>
-                    <div className="flex justify-between gap-3"><dt>{t('admin.account_id', {}, 'Account ID')}</dt><dd className="truncate text-right"><Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(selectedRequest.account_id)}`}>{selectedRequest.account_id}</Link></dd></div>
-                    <div className="flex justify-between gap-3"><dt>{t('common.site', {}, 'Site')}</dt><dd className="truncate text-right">{selectedRequest.site_id ? <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(selectedRequest.site_id)}`}>{selectedRequest.site_id}</Link> : t('common.not_available', {}, 'N/A')}</dd></div>
-                    <div className="flex justify-between gap-3"><dt>{t('common.updated_at', {}, 'Updated')}</dt><dd>{selectedRequest.updated_at ? formatDate(selectedRequest.updated_at) : t('common.unknown', {}, 'Unknown')}</dd></div>
-                  </dl>
-                </section>
-                <section aria-labelledby="internal-handling-title" className="space-y-3 border-t border-slate-200/80 pt-4 dark:border-slate-800">
-                  <div>
-                    <h3 id="internal-handling-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_internal_handling_title', {}, 'Internal handling')}</h3>
-                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.support_requests_internal_handling_desc', {}, 'Status and this note are internal. Use ticket detail for the customer conversation.')}</p>
-                  </div>
-                  <label className="block text-sm text-slate-700 dark:text-slate-200">
-                    <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('common.status')}</span>
-                    <select className="input w-full" value={statusDraft} disabled={displayScope.isRetainedScope} onChange={(event) => setStatusDraft(event.target.value as SupportRequestStatus)}>
-                      {NEXT_STATUSES.map((status) => <option key={status} value={status}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
-                    </select>
-                  </label>
-                  <label className="block text-sm text-slate-700 dark:text-slate-200">
-                    <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_note_placeholder', {}, 'Internal handling note')}</span>
-                    <textarea className="input min-h-28 w-full" value={noteDraft} disabled={displayScope.isRetainedScope} onChange={(event) => setNoteDraft(event.target.value)} placeholder={t('admin.support_requests_note_placeholder', {}, 'Internal handling note')} />
-                  </label>
-                  {actionError ? <p role="alert" className="text-sm text-rose-700 dark:text-rose-300">{actionError}</p> : null}
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className="btn btn-primary btn-sm" disabled={displayScope.isRetainedScope || updateRequest.isPending} onClick={() => void handleUpdate(selectedRequest)}>{updateRequest.isPending ? t('common.saving', {}, 'Saving...') : t('admin.support_requests_update_action', {}, 'Update ticket')}</button>
-                    <Link
-                      className="btn btn-secondary btn-sm"
-                      href={buildSupportRequestDetailHref(
-                        selectedRequest.request_id,
-                        buildSupportRequestQueueReturnPath(pathname, queueParamsKey, selectedRequest.request_id)
-                      )}
-                    >
-                      {t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}
-                    </Link>
-                  </div>
-                </section>
-                <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.support_requests_inspector_boundary', {}, 'The queue updates Cloud support status and internal notes only. Public replies, attachments, and the full timeline stay in ticket detail; no WordPress write is created.')}</p>
-              </div>
-            ) : <p className="text-sm text-slate-600 dark:text-slate-300">{t('admin.support_requests_inspector_empty', {}, 'No ticket is visible on this page.')}</p>}
-          </BackofficeSectionPanel>
-        </aside>
-      </div>
+            <section aria-labelledby="support-request-risk-title" className="border-l-2 border-slate-300 pl-3 dark:border-slate-700">
+              <h3 id="support-request-risk-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_risk_summary_title', {}, 'Queue reason')}</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRiskReason}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('admin.support_requests_age_label', {}, 'Age')}: {selectedAge === null ? t('common.unknown', {}, 'Unknown') : t('admin.support_requests_age_hours', { hours: String(selectedAge) }, `${selectedAge}h`)}</p>
+            </section>
+            <section aria-labelledby="support-request-customer-submission-title">
+              <h3 id="support-request-customer-submission-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_customer_submission_title', {}, 'Customer submission')}</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRequest.description}</p>
+            </section>
+            <dl className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-x-4 gap-y-2 border-y border-slate-200 py-4 text-sm dark:border-slate-800">
+              <dt className="text-slate-500 dark:text-slate-400">{t('common.email', {}, 'Email')}</dt><dd className="truncate text-right text-slate-950 dark:text-white">{selectedRequest.email}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.account_id', {}, 'Account ID')}</dt><dd className="truncate text-right"><Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/accounts/${encodeURIComponent(selectedRequest.account_id)}`}>{selectedRequest.account_id}</Link></dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('common.site', {}, 'Site')}</dt><dd className="truncate text-right">{selectedRequest.site_id ? <Link className="font-medium text-blue-700 hover:underline dark:text-blue-300" href={`/admin/sites/${encodeURIComponent(selectedRequest.site_id)}`}>{selectedRequest.site_id}</Link> : t('common.not_available', {}, 'N/A')}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('common.status')}</dt><dd className="text-right"><BackofficeStatusBadge status={statusTone(selectedRequest.status)} label={t(`admin.support_status_${selectedRequest.status}`, {}, selectedRequest.status)} /></dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('admin.support_requests_topic_filter_label', {}, 'Ticket topic')}</dt><dd className="text-right text-slate-950 dark:text-white">{t(`portal.support_topic_${selectedRequest.topic}`, {}, selectedRequest.topic)}</dd>
+              <dt className="text-slate-500 dark:text-slate-400">{t('common.updated_at', {}, 'Updated')}</dt><dd className="text-right text-slate-950 dark:text-white">{selectedRequest.updated_at ? formatDate(selectedRequest.updated_at) : t('common.unknown', {}, 'Unknown')}</dd>
+            </dl>
+            <section aria-labelledby="support-request-internal-handling-title">
+              <h3 id="support-request-internal-handling-title" className="text-sm font-semibold text-slate-950 dark:text-white">{t('admin.support_requests_internal_handling_title', {}, 'Internal handling')}</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{selectedRequest.admin_note || t('admin.support_requests_no_internal_note', {}, 'No internal handling note yet.')}</p>
+            </section>
+            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t('admin.support_requests_inspector_boundary', {}, 'The queue updates Cloud support status and internal notes only. Public replies, attachments, and the full timeline stay in ticket detail; no WordPress write is created.')}</p>
+          </div>
+        ) : null}
+      </AdminContextDrawer>
+
+      <AdminWorkbenchDialog
+        key={editRequest?.request_id || 'closed-support-request-editor'}
+        open={Boolean(editRequest)}
+        title={t('admin.support_requests_edit_title', { title: editRequest?.title || '' }, 'Edit internal handling')}
+        titleId="support-request-edit-title"
+        saving={updateRequest.isPending}
+        error={actionError}
+        closeLabel={t('common.close')}
+        cancelLabel={t('common.cancel')}
+        saveLabel={t('common.save')}
+        savingLabel={t('common.saving', {}, 'Saving...')}
+        footerNotice={t('admin.support_requests_edit_notice', {}, 'This changes the Cloud ticket status and internal note only.')}
+        width="compact"
+        density="compact"
+        onClose={() => setEditRequest(null)}
+        onSubmit={(formData) => void handleUpdate(formData)}
+      >
+        {editRequest ? (
+          <>
+            <label className="block text-sm text-slate-700 dark:text-slate-200">
+              <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_status_edit_label', { title: editRequest.title }, `Status for ${editRequest.title}`)}</span>
+              <select name="status" className="input w-full" defaultValue={editRequest.status}>
+                {NEXT_STATUSES.map((status) => <option key={status} value={status}>{t(`admin.support_status_${status}`, {}, status)}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm text-slate-700 dark:text-slate-200">
+              <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{t('admin.support_requests_note_edit_label', { title: editRequest.title }, `Internal note for ${editRequest.title}`)}</span>
+              <textarea name="admin_note" className="input min-h-32 w-full" defaultValue={editRequest.admin_note || ''} placeholder={t('admin.support_requests_note_placeholder', {}, 'Internal handling note')} />
+            </label>
+          </>
+        ) : null}
+      </AdminWorkbenchDialog>
     </BackofficePageStack>
   );
 }
