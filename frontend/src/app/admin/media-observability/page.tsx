@@ -8,12 +8,11 @@ import {
   BackofficeEmptyState,
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
-  BackofficeLayer,
   BackofficeMetricStrip,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { BackofficeFilterPill } from '@/components/backoffice/BackofficeFilterPill';
@@ -392,7 +391,7 @@ function AdminMediaObservabilityContent() {
 
   return (
     <BackofficePageStack>
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.media_obs.title', {}, 'Media Processing Observability')}
         description={t(
@@ -400,8 +399,15 @@ function AdminMediaObservabilityContent() {
           {},
           'Cross-site runtime metrics for Cloud image derivative jobs. This view tracks processing health, temporary artifact pressure, and compression value without exposing image payloads.'
         )}
-        aside={data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
-        actions={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+        secondaryAction={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadData(true)} disabled={loading}>{t('common.refresh', {}, 'Refresh')}</button>}
+        summaryItems={data ? [
+          { label: t('admin.media_obs.jobs', {}, 'Jobs'), value: formatNumber(data.totals.jobsTotal) },
+          { label: t('admin.media_obs.success_rate', {}, 'Success rate'), value: formatPercent(data.totals.successRate), toneClassName: statusForSuccess(data.totals.successRate, data.totals.failedTotal) === 'error' ? 'text-rose-600 dark:text-rose-400' : statusForSuccess(data.totals.successRate, data.totals.failedTotal) === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined },
+          { label: t('admin.media_obs.p95_processing', {}, 'P95 processing'), value: `${formatNumber(data.totals.p95ProcessingDurationMs)}ms` },
+          { label: t('admin.media_obs.saved', {}, 'Size change'), value: formatBytes(data.totals.bytesSavedTotal), toneClassName: data.totals.bytesSavedTotal < 0 ? 'text-amber-600 dark:text-amber-400' : undefined },
+          { label: t('admin.media_obs.failures', {}, 'Failures'), value: formatNumber(data.totals.failedTotal), toneClassName: data.totals.failedTotal > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
+        ] : []}
+        summaryAside={data ? <BackofficeStatusBadge status={data.health.status} label={`${mediaStatusLabel(t, data.health.status)} · ${data.health.score}`} /> : undefined}
       />
 
       <BackofficeSectionPanel className="p-4 md:p-5">
@@ -438,14 +444,6 @@ function AdminMediaObservabilityContent() {
           </div>
         </div>
       </BackofficeSectionPanel>
-
-      {data ? <BackofficeSummaryStrip items={[
-        { label: t('admin.media_obs.jobs', {}, 'Jobs'), value: formatNumber(data.totals.jobsTotal) },
-        { label: t('admin.media_obs.success_rate', {}, 'Success rate'), value: formatPercent(data.totals.successRate), toneClassName: statusForSuccess(data.totals.successRate, data.totals.failedTotal) === 'error' ? 'text-rose-600 dark:text-rose-400' : statusForSuccess(data.totals.successRate, data.totals.failedTotal) === 'warning' ? 'text-amber-600 dark:text-amber-400' : undefined },
-        { label: t('admin.media_obs.p95_processing', {}, 'P95 processing'), value: `${formatNumber(data.totals.p95ProcessingDurationMs)}ms` },
-        { label: t('admin.media_obs.saved', {}, 'Size change'), value: formatBytes(data.totals.bytesSavedTotal), toneClassName: data.totals.bytesSavedTotal < 0 ? 'text-amber-600 dark:text-amber-400' : undefined },
-        { label: t('admin.media_obs.failures', {}, 'Failures'), value: formatNumber(data.totals.failedTotal), toneClassName: data.totals.failedTotal > 0 ? 'text-rose-600 dark:text-rose-400' : undefined },
-      ]} /> : null}
 
       {error ? <BackofficeDiagnosticNotice message={error} staleDescription={data ? t('admin.media_obs.stale_notice', {}, 'The last successfully loaded media snapshot remains visible.') : undefined} retryLabel={t('common.retry')} onRetry={() => void loadData(true)} /> : null}
 

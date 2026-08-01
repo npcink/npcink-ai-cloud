@@ -6,8 +6,8 @@ import { frontendRoot } from './_paths.mjs';
 const source = readFileSync(resolve(frontendRoot, 'src/app/admin/subscriptions/page.tsx'), 'utf8');
 const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
 
-assert.match(source, /BackofficeLayer[\s\S]*BackofficeSummaryStrip/, 'subscription queue must start with a compact operating layer and summary strip');
-assert.doesNotMatch(source, /BackofficeMetricStrip|BackofficePrimaryPanel|BackofficeStackCard/, 'subscription queue must not regress to metric cards or a landing-page hero');
+assert.match(source, /BackofficePageHeader[\s\S]*secondaryAction=\{[\s\S]*summaryItems=\{\[/, 'subscription queue must start with the shared compact page header and factual summary');
+assert.doesNotMatch(source, /BackofficeMetricStrip|BackofficeLayer|BackofficePrimaryPanel|BackofficeStackCard/, 'subscription queue must not regress to a section header, metric cards, or a landing-page hero');
 
 assert.match(source, /usePathname[\s\S]*useRouter[\s\S]*useSearchParams/, 'queue state must be addressable from the route');
 for (const parameter of ['risk', 'status', 'account_id', 'plan_id', 'expires_before', 'sort', 'offset', 'focus']) {

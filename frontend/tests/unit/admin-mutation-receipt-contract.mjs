@@ -151,8 +151,8 @@ assert.match(
 
 assert.match(
   aiResourcesSource,
-  /descriptionDisplay="hint"/,
-  'AI resources must collect low-frequency top-level descriptions behind an info hint'
+  /<BackofficePageHeader/,
+  'AI resources must delegate low-frequency top-level descriptions to the shared page header info hint'
 );
 
 assert.match(

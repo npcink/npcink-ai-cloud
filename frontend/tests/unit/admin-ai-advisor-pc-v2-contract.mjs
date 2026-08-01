@@ -56,10 +56,11 @@ assert.doesNotMatch(
   'Advisor review route must not retain the retired admin identity alias'
 );
 
-const primaryStart = page.indexOf('<BackofficePrimaryPanel');
+const primaryStart = page.indexOf('data-ui="ai-advisor-scope-workbench"');
 const advancedStart = page.indexOf("t('admin.ai_advisor.advanced_params'", primaryStart);
-const primaryEnd = page.indexOf('</BackofficePrimaryPanel>', advancedStart);
+const primaryEnd = page.indexOf('</BackofficeSectionPanel>', advancedStart);
 assert.ok(primaryStart > 0 && advancedStart > primaryStart && primaryEnd > advancedStart, 'Advisor primary and advanced regions must remain explicit');
+assert.match(page, /<BackofficePageHeader[\s\S]*summaryAside=\{data \? <BackofficeStatusBadge/, 'Advisor must keep its status in the shared compact page header');
 const primaryBeforeAdvanced = page.slice(primaryStart, advancedStart);
 const advancedRegion = page.slice(advancedStart, primaryEnd);
 assert.doesNotMatch(primaryBeforeAdvanced, /items=\{metricItems\}/, 'AI tokens, cache, and request cost must not dominate the default header');

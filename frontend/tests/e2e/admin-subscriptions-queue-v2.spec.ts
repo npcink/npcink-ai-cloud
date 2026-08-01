@@ -77,7 +77,7 @@ const SUBSCRIPTIONS = [
   },
 ];
 
-test('subscription risk queue persists server filters and inspector focus while retaining data on refresh failure', async ({ page }) => {
+test('subscription risk queue persists server filters and inspector focus while retaining data on refresh failure', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await installAdminMocks(page);
 
@@ -140,6 +140,9 @@ test('subscription risk queue persists server filters and inspector focus while 
 
   await page.goto('/admin/subscriptions');
   await expect(page.getByRole('heading', { name: /^Subscription operations$|^订阅运营$/i })).toBeVisible();
+  const pageHeader = page.locator('[data-ui="backoffice-page-header"]');
+  await expect(pageHeader).toBeVisible();
+  await expect(pageHeader.getByRole('button', { name: /Refresh subscriptions|刷新订阅/i })).toHaveClass(/btn-secondary/);
   const primaryNav = page.locator('[data-ui="admin-primary-nav"]');
   await expect(primaryNav.locator('a[href="/admin/subscriptions"]')).toHaveAttribute('aria-current', 'page');
   await expect(primaryNav.locator('a[href="/admin/coverage"]')).not.toHaveAttribute('aria-current', 'page');
@@ -149,9 +152,15 @@ test('subscription risk queue persists server filters and inspector focus while 
   expect(requestCount).toBe(1);
   expect(requestedSorts).toEqual(['priority']);
   expect(requestedRisks).toEqual(['needs_action']);
-  const summaryStrip = page.locator('[data-density="standard"]').first();
+  const summaryStrip = pageHeader.locator('[data-density="compact"]');
   await expect(summaryStrip.getByText(/^Critical$|^严重风险$/i)).toBeVisible();
   await expect(summaryStrip.getByText(/^Warning$|^警告$/i)).toBeVisible();
+  const headerScreenshotPath = testInfo.outputPath('admin-subscriptions-unified-header-pc.png');
+  await pageHeader.screenshot({ path: headerScreenshotPath });
+  await testInfo.attach('admin-subscriptions-unified-header-pc', {
+    path: headerScreenshotPath,
+    contentType: 'image/png',
+  });
 
   const queueItems = page.locator('[data-ui="subscription-queue-item"]');
   await expect(queueItems.nth(0)).toContainText('Zeta Customer');

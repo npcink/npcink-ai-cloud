@@ -26,7 +26,7 @@ const serviceSource = readFileSync(
 
 assert.match(
   directorySource,
-  /BackofficeLayer[\s\S]*BackofficeSummaryStrip[\s\S]*AdminDataTableFrame[\s\S]*<table/,
+  /BackofficePageHeader[\s\S]*summaryItems=\{\[[\s\S]*AdminDataTableFrame[\s\S]*<table/,
   'customer directory must use one compact header, summary strip, and semantic directory table'
 );
 assert.doesNotMatch(

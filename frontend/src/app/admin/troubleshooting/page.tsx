@@ -5,10 +5,9 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BackofficeEmptyState,
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
@@ -344,12 +343,11 @@ export default function AdminTroubleshootingPage() {
 
   return (
     <BackofficePageStack>
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.operator_surface', {}, 'Operator surface')}
         title={t('admin.troubleshooting.title', {}, 'Runtime diagnostics')}
         description={t('admin.troubleshooting.description', {}, 'Review the current runtime conclusion, open active anomalies, and continue into the narrowest evidence view.')}
-        aside={<BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />}
-        actions={(
+        secondaryAction={(
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -362,6 +360,13 @@ export default function AdminTroubleshootingPage() {
             {refreshInProgress ? t('admin.troubleshooting.refreshing', {}, 'Refreshing...') : t('admin.troubleshooting.refresh', {}, 'Refresh')}
           </button>
         )}
+        summaryItems={data ? [
+          { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
+          { label: t('admin.troubleshooting.provider_coverage', {}, 'Provider-call coverage'), value: formatRate(data.totals.providerCallRunCoverageRate), toneClassName: data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
+          { label: t('admin.troubleshooting.metering_coverage', {}, 'Metering coverage'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
+          { label: t('admin.troubleshooting.open_issues', {}, 'Open anomalies'), value: data.alertSummary.alertCount, toneClassName: data.alertSummary.alertCount > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
+        ] : []}
+        summaryAside={<BackofficeStatusBadge label={conclusionLabel} status={statusTone(conclusionStatus)} />}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -393,13 +398,6 @@ export default function AdminTroubleshootingPage() {
           ) : null}
         </div>
       </div>
-
-      {data ? <BackofficeSummaryStrip items={[
-        { label: t('admin.troubleshooting.runs', {}, 'Runs'), value: formatNumber(data.totals.runs) },
-        { label: t('admin.troubleshooting.provider_coverage', {}, 'Provider-call coverage'), value: formatRate(data.totals.providerCallRunCoverageRate), toneClassName: data.totals.providerCallRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
-        { label: t('admin.troubleshooting.metering_coverage', {}, 'Metering coverage'), value: formatRate(data.totals.meteredRunCoverageRate), toneClassName: data.totals.meteredRunCoverageRate < 1 ? 'text-amber-700 dark:text-amber-300' : undefined },
-        { label: t('admin.troubleshooting.open_issues', {}, 'Open anomalies'), value: data.alertSummary.alertCount, toneClassName: data.alertSummary.alertCount > 0 ? 'text-amber-700 dark:text-amber-300' : undefined },
-      ]} /> : null}
 
       {data ? (
         <div

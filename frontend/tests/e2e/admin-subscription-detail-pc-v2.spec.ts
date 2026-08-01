@@ -5,7 +5,7 @@ import {
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
 
-test('subscription detail keeps one PC conclusion and uses dense evidence tables', async ({ page }) => {
+test('subscription detail keeps one PC conclusion and uses dense evidence tables', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
@@ -13,6 +13,16 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await page.goto(`/admin/subscriptions/sub_mvp?return_to=${encodeURIComponent(returnTo)}`);
 
   await expect(page.getByRole('heading', { name: /Subscription detail|订阅详情/i })).toBeVisible();
+  const pageHeader = page.locator('[data-ui="backoffice-page-header"]');
+  await expect(pageHeader).toBeVisible();
+  await expect(pageHeader).toContainText(/Status|状态/i);
+  await expect(pageHeader).toContainText(/Billing statistics|账单统计/i);
+  const headerScreenshotPath = testInfo.outputPath('admin-subscription-detail-unified-header-pc.png');
+  await pageHeader.screenshot({ path: headerScreenshotPath });
+  await testInfo.attach('admin-subscription-detail-unified-header-pc', {
+    path: headerScreenshotPath,
+    contentType: 'image/png',
+  });
   await expect(page.getByRole('heading', { name: /Customer coverage needs follow-up|客户覆盖需要跟进/i })).toHaveCount(1);
 
   const primaryAction = page.getByRole('link', { name: /Open customer coverage|打开客户覆盖/i });

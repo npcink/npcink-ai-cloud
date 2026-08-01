@@ -192,7 +192,7 @@ test('model supplier table keeps PC operations and filters in one workspace', as
   const harness = await installProviderDirectoryHarness(page);
   await page.goto('/admin/ai-resources');
 
-  await expect(page.locator('[data-ui="supplier-summary-strip"]')).toBeVisible();
+  await expect(page.locator('[data-ui="backoffice-page-header"]')).toBeVisible();
   await expect(page.locator('[data-ui="model-supplier-directory"] [data-connection-id]')).toHaveCount(3);
   await expect(page.locator('[data-connection-id="embedding_ready"]')).toHaveCount(0);
   await expect(page.locator('[data-ui="model-supplier-table"]')).toBeVisible();

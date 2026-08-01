@@ -18,6 +18,7 @@ import {
   BackofficeEmptyState,
   BackofficeDiagnosticNotice,
   BackofficeMetricStrip,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficePrimaryPanel,
   BackofficeSectionPanel,
@@ -1598,20 +1599,10 @@ function AccountDetailContent() {
   ];
   return (
     <BackofficePageStack className="!space-y-4">
-      <BackofficePrimaryPanel
+      <BackofficePageHeader
         title={accountTitle}
         description={postureDescription}
-        contentClassName="!px-5 !py-4 md:!px-6 md:!py-4"
-        aside={(
-          <dl data-ui="account-header-metrics" className="flex w-full flex-wrap items-center gap-x-5 gap-y-2 xl:w-auto xl:justify-end">
-            {headerMetrics.map((item) => (
-              <div key={item.label} className="min-w-[4rem] border-l border-slate-200 pl-4 first:border-l-0 first:pl-0 dark:border-slate-800">
-                <dt className="whitespace-nowrap text-[0.68rem] font-medium text-slate-500 dark:text-slate-400">{item.label}</dt>
-                <dd className={cn('mt-0.5 text-sm font-semibold text-slate-950 dark:text-white', item.toneClassName)}>{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        summaryItems={headerMetrics}
       />
       <div data-ui="account-detail-workspace" className="grid gap-5 xl:grid-cols-[12.5rem_minmax(0,1fr)] xl:items-start">
         <div

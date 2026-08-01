@@ -69,6 +69,15 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   });
 
   await page.goto('/admin/troubleshooting');
+  const pageHeader = page.locator('[data-ui="backoffice-page-header"]');
+  await expect(pageHeader).toBeVisible();
+  await expect(pageHeader).toContainText(/Runs|运行次数/i);
+  const headerScreenshotPath = testInfo.outputPath('admin-runtime-diagnostics-unified-header-pc.png');
+  await pageHeader.screenshot({ path: headerScreenshotPath });
+  await testInfo.attach('admin-runtime-diagnostics-unified-header-pc', {
+    path: headerScreenshotPath,
+    contentType: 'image/png',
+  });
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
   const anomalyTable = page.locator('[data-ui="runtime-diagnostic-table"]');
   await expect(anomalyTable.getByRole('columnheader', { name: /Severity|严重度/i })).toBeVisible();

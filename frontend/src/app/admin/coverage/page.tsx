@@ -10,7 +10,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import {
   BackofficeEmptyState,
-  BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
@@ -422,7 +422,7 @@ function AdminCoverageContent() {
     .slice(0, 6);
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.coverage.primary_queue_eyebrow', {}, 'Customer operations')}
         title={t('admin.coverage_surface_title', {}, 'Service status')}
         description={t(
@@ -430,7 +430,7 @@ function AdminCoverageContent() {
           {},
           'Find affected customers, understand the blocker, and open the exact action that resolves it.'
         )}
-        actions={(
+        secondaryAction={(
           <button
             type="button"
             className="btn btn-secondary"
@@ -442,6 +442,13 @@ function AdminCoverageContent() {
               : t('admin.coverage.refresh_action', {}, 'Refresh')}
           </button>
         )}
+        summaryItems={[
+          { label: t('admin.coverage.summary_total', {}, 'Total'), value: formatInteger(visibleSummary.total) },
+          { label: t('admin.coverage.filter_needs_action', {}, 'Needs action'), value: formatInteger(visibleSummary.needs_action), toneClassName: visibleSummary.needs_action > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
+          { label: translateStatusLabel('error', t), value: formatInteger(visibleSummary.error), toneClassName: visibleSummary.error > 0 ? 'text-rose-600 dark:text-rose-300' : undefined },
+          { label: translateStatusLabel('warning', t), value: formatInteger(visibleSummary.warning), toneClassName: visibleSummary.warning > 0 ? 'text-amber-600 dark:text-amber-300' : undefined },
+          { label: t('common.updated_at', {}, 'Updated'), value: queue.generated_at ? formatDate(queue.generated_at) : t('common.unknown', {}, 'Unknown') },
+        ]}
       />
 
       {error ? (

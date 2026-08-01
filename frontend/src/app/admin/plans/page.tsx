@@ -8,10 +8,10 @@ import {
   BackofficeInfoHint,
   BackofficeEmptyState,
   BackofficeLayer,
+  BackofficePageHeader,
   BackofficePageStack,
   BackofficeSectionPanel,
   BackofficeStackCard,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
 import { useToast } from '@/components/ui/Toast';
@@ -387,7 +387,7 @@ function PlansContent() {
 
   return (
     <BackofficePageStack className="space-y-5">
-      <BackofficeLayer
+      <BackofficePageHeader
         eyebrow={t('admin.nav_plan_catalog', {}, 'Package Catalog')}
         title={t('admin.coverage_package_catalog_title', {}, 'Coverage package catalog')}
         description={t(
@@ -395,20 +395,19 @@ function PlansContent() {
           {},
           'Read the active Free, Plus, Pro, and Agency package posture first. Open detail only when price, limits, or release state needs maintenance.'
         )}
-        actions={(
+        secondaryAction={(
           <button type="button" className="btn btn-secondary" disabled={isRefreshing} onClick={() => void loadPlans(true)}>{isRefreshing ? t('common.loading', {}, 'Loading...') : t('admin.plans.refresh_action', {}, 'Refresh catalog')}</button>
         )}
+        summaryItems={[
+          { label: t('admin.managed_packages', {}, 'Managed packages'), value: formatInteger(tierTemplates.length) },
+          { label: t('admin.ready_packages', {}, 'Ready packages'), value: formatInteger(readyPackageCount), toneClassName: readyPackageCount === tierTemplates.length ? 'text-emerald-600 dark:text-emerald-300' : undefined },
+          { label: t('admin.plans.needs_attention_metric', {}, 'Needs attention'), value: formatInteger(missingShellCount), toneClassName: missingShellCount ? 'text-rose-600 dark:text-rose-300' : undefined },
+          { label: t('admin.active_subscriptions'), value: formatInteger(activeSubscriptions) },
+          { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
+        ]}
       />
 
       {error ? <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between"><span>{error}{plans.length > 0 ? <span className="mt-1 block text-xs">{t('admin.plans.retained_notice', {}, 'Showing the last successfully loaded catalog.')}</span> : null}</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadPlans(true)}>{t('common.retry')}</button></div> : null}
-
-      <BackofficeSummaryStrip items={[
-        { label: t('admin.managed_packages', {}, 'Managed packages'), value: formatInteger(tierTemplates.length) },
-        { label: t('admin.ready_packages', {}, 'Ready packages'), value: formatInteger(readyPackageCount), toneClassName: readyPackageCount === tierTemplates.length ? 'text-emerald-600 dark:text-emerald-300' : undefined },
-        { label: t('admin.plans.needs_attention_metric', {}, 'Needs attention'), value: formatInteger(missingShellCount), toneClassName: missingShellCount ? 'text-rose-600 dark:text-rose-300' : undefined },
-        { label: t('admin.active_subscriptions'), value: formatInteger(activeSubscriptions) },
-        { label: t('common.updated_at', {}, 'Updated'), value: loadedAt ? formatDate(loadedAt.toISOString()) : t('common.unknown', {}, 'Unknown') },
-      ]} />
 
       <div className="min-w-0">
           <AdminDataTableFrame
