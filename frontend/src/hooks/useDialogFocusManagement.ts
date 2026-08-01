@@ -28,7 +28,7 @@ export function useDialogFocusManagement<T extends HTMLElement>(
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const returnFocusTarget = returnFocusRef?.current || previousFocus;
+    const requestedReturnFocus = returnFocusRef?.current;
     const container = containerRef.current;
     const initialFocus = container?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) || container;
     initialFocus?.focus();
@@ -65,7 +65,11 @@ export function useDialogFocusManagement<T extends HTMLElement>(
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
-      returnFocusTarget?.focus();
+      if (requestedReturnFocus) {
+        requestedReturnFocus.focus();
+      } else {
+        previousFocus?.focus();
+      }
     };
   }, [isOpen, returnFocusRef]);
 
