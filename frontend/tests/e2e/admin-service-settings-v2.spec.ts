@@ -3,6 +3,10 @@ import {
   buildAdminApiEnvelope,
   buildAdminApiErrorEnvelope,
 } from './helpers/admin-operator-fixture';
+import {
+  observeAdminBrowserEvidence,
+  writeAdminVisualReceipt,
+} from './helpers/admin-visual-receipt';
 
 const BASE_URL =
   process.env.NPCINK_CLOUD_FRONTEND_BASE_URL ||
@@ -27,7 +31,8 @@ function setting(
   };
 }
 
-test('service settings v2 preserves dirty input, guards navigation, validates, saves, and keeps one active form', async ({ page }) => {
+test('service settings v2 preserves dirty input, guards navigation, validates, saves, and keeps one active form', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   let publicBaseUrl = 'https://cloud.example.test';
   let settingsReadCount = 0;
@@ -209,6 +214,32 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await expect(previewButton).toBeFocused();
 
   await page.getByRole('tab', { name: /QQ login|QQ 登录/i }).click();
+
+  await writeAdminVisualReceipt({
+    page,
+    testInfo,
+    route: '/admin/service-settings',
+    pageModel: 'configuration',
+    testedStates: ['ready', 'invalid', 'dirty', 'save_error', 'saved', 'dialog'],
+    humanAcceptance: 'not_required',
+    pageTitle: page.getByRole('heading', { name: /^Service Settings$|^服务配置$/i }),
+    workingSurface: page.locator('[data-ui="admin-settings-workbench"]'),
+    browserEvidence,
+    expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
+    routeRuleResults: [
+      { id: 'single-primary-action', status: 'pass', evidence: 'only one active form and its save action are visible' },
+      { id: 'textual-status', status: 'pass', evidence: 'settings directory exposes Ready, Disabled, and dirty text states' },
+      { id: 'action-object-proximity', status: 'pass', evidence: 'save and validation feedback remain in the active settings panel' },
+      { id: 'distinct-interaction-states', status: 'pass', evidence: 'selected tab, dirty tab, enabled save, and disabled save states were exercised' },
+      { id: 'dialog-focus-recovery', status: 'pass', evidence: 'email preview closes with Escape and restores focus to its trigger' },
+      { id: 'context-stability', status: 'pass', evidence: 'failed save preserves the draft and guarded navigation preserves the active form' },
+    ],
+    interactionResults: [
+      { id: 'validation-and-dirty-state', status: 'pass', evidence: 'invalid and dirty values produce distinct feedback and action state' },
+      { id: 'save-failure-recovery', status: 'pass', evidence: 'failed save retains the draft before a successful retry' },
+      { id: 'preview-dialog-keyboard-recovery', status: 'pass', evidence: 'Escape closes preview and restores focus' },
+    ],
+  });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('form:visible')).toHaveCount(1);

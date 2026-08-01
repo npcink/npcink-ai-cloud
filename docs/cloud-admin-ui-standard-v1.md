@@ -361,6 +361,59 @@ evidence for meaningful layout changes.
 
 ## 10. Required Gates
 
+### 10.1 Risk-tiered visual enforcement
+
+Admin visual evidence uses the risk tier declared by the changed seam:
+
+- `low`: copy, data labels, or non-visual logic with no geometry or interaction
+  change; run the structural and behavior gate that owns the seam;
+- `material`: route layout, table, form, state, action hierarchy, dialog, or
+  inspector change; local PC browser evidence and a structured visual receipt
+  are mandatory;
+- `shared`: Admin shell, shared primitive, geometry token, or cross-route
+  interaction change; run the representative route matrix locally and gather
+  M4 browser evidence before acceptance.
+
+The first pilot covers `/admin/ai-resources`, `/admin/service-settings`, and
+`/admin/troubleshooting`. The manifest owns their page model, risk tier,
+working-surface selector, and required state matrix. Do not expand the pilot to
+all routes until these three routes provide stable evidence without excessive
+false positives.
+
+Every rule result is one of `pass`, `fail`, `review_required`,
+`not_applicable`, and `unmeasured`. Do not calculate a composite visual score.
+A deterministic failure blocks the gate. `review_required` preserves a human
+decision instead of inventing a machine judgment. No receipt means
+`unmeasured`; missing evidence must not be reported as a pass.
+
+The first rule set is:
+
+1. route and manifest page model agree;
+2. the PC evidence viewport is exactly `1440 x 1050`;
+3. the document has no unintended horizontal overflow;
+4. the main surface has exactly one page title;
+5. the primary working surface begins in the first PC viewport;
+6. each working region has no more than one primary action by default;
+7. status is expressed with text instead of color alone;
+8. frequent actions remain next to their object or in the same workbench;
+9. selected, keyboard-focus, and disabled states remain distinguishable;
+10. applicable dialogs contain focus, close safely with `Escape`, and restore
+    focus to their trigger;
+11. loading, feedback, failure, and retry preserve the operator's meaningful
+    context instead of resetting or displacing the working surface;
+12. the browser reports no unexplained console error or failed request.
+
+The receipt schema lives at `frontend/admin-visual-receipt.schema.json`. A
+receipt records route, model, exact source state, environment, viewport,
+tested states, all rule results, screenshots, interactions, browser errors,
+review items, and human acceptance. Local evidence, M4 candidate evidence,
+M4 accepted evidence, production, and human visual acceptance remain separate.
+
+Commit the schema, state matrix, tests, and accepted golden baselines. Keep
+ordinary successful screenshots, traces, videos, and repeated receipts in the
+ignored Playwright test-result directory. Commit a changed golden baseline
+only after the required human visual acceptance.
+
 Inner loop:
 
 ```bash
@@ -375,8 +428,9 @@ pnpm run check:admin-ui:visual
 
 The structural gate verifies the route manifest, shared tokens, required
 primitives, documentation/AI entry points, and the bounded legacy-dialog and
-credential allowlists. The visual gate verifies the accepted queue and
-configuration tables and edit workbenches at the fixed PC viewport.
+credential allowlists. The visual gate verifies the accepted queue,
+configuration, and diagnostic pilots at the fixed PC viewport and writes
+structured receipts into Playwright test results.
 
 Also run type, lint, i18n, contract, M4, and repository gates required by the
 actual changed seam. A screenshot is supporting evidence, not proof of API,

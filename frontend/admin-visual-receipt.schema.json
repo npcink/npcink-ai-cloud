@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://npcink.com/schemas/admin-visual-receipt-v1.json",
+  "title": "Npcink Admin visual verification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "route",
+    "page_model",
+    "source_revision",
+    "source_dirty",
+    "source_dirty_paths",
+    "environment",
+    "viewport",
+    "tested_states",
+    "rule_results",
+    "screenshot_paths",
+    "interaction_results",
+    "console_errors",
+    "network_failures",
+    "review_required_items",
+    "human_acceptance",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "route": { "type": "string", "pattern": "^/admin(?:/|$)" },
+    "page_model": {
+      "enum": ["overview", "queue", "detail", "configuration", "diagnostic", "authentication"]
+    },
+    "source_revision": { "type": "string", "minLength": 7 },
+    "source_dirty": { "type": "boolean" },
+    "source_dirty_paths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "environment": { "enum": ["local", "m4_candidate", "m4_accepted"] },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 320 },
+        "height": { "type": "integer", "minimum": 480 }
+      }
+    },
+    "tested_states": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "rule_results": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "screenshot_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "interaction_results": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "console_errors": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "network_failures": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "review_required_items": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "human_acceptance": { "enum": ["pending", "not_required", "accepted", "rejected"] },
+    "generated_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["pass", "fail", "review_required", "not_applicable", "unmeasured"]
+        },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

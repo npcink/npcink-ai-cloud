@@ -4,6 +4,10 @@ import {
   buildAdminApiErrorEnvelope,
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
+import {
+  observeAdminBrowserEvidence,
+  writeAdminVisualReceipt,
+} from './helpers/admin-visual-receipt';
 
 async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
   return panel.locator('canvas').evaluate((canvas) => {
@@ -36,7 +40,9 @@ async function countQualityTrendAccentPixels(panel: Locator): Promise<number> {
 }
 
 test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
   const telemetryRequests: string[] = [];
   const qualityRequests: string[] = [];
@@ -131,6 +137,32 @@ test('runtime diagnostics is telemetry-driven, URL-backed, and mobile safe', asy
   await expect(page.getByText(/last successfully loaded diagnostic snapshot|最近一次成功加载的诊断快照/i)).toBeVisible();
   await expect(page.locator('[data-ui="diagnostic-source-freshness"]')).toContainText(/Partial data|部分数据可用/i);
   await expect(page.locator('[data-ui="runtime-diagnostic-issue"]')).toHaveCount(1);
+
+  await writeAdminVisualReceipt({
+    page,
+    testInfo,
+    route: '/admin/troubleshooting',
+    pageModel: 'diagnostic',
+    testedStates: ['ready', 'selected', 'partial_error', 'disclosure'],
+    humanAcceptance: 'not_required',
+    pageTitle: page.getByRole('heading', { name: /^Runtime diagnostics$|^运行诊断$/i }),
+    workingSurface: page.locator('[data-ui="runtime-diagnostic-table-frame"]'),
+    browserEvidence,
+    expectedConsoleErrors: [/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/],
+    routeRuleResults: [
+      { id: 'single-primary-action', status: 'not_applicable', evidence: 'diagnostic reference is read-only and exposes no mutation primary action' },
+      { id: 'textual-status', status: 'pass', evidence: 'severity, freshness, and partial-data states include text labels' },
+      { id: 'action-object-proximity', status: 'pass', evidence: 'anomaly inspection starts from the selected anomaly row and opens its evidence inspector' },
+      { id: 'distinct-interaction-states', status: 'pass', evidence: 'focused anomaly uses aria-pressed and partial refresh has a distinct status message' },
+      { id: 'dialog-focus-recovery', status: 'not_applicable', evidence: 'the diagnostic reference uses in-flow disclosures and no dialog' },
+      { id: 'context-stability', status: 'pass', evidence: 'failed refresh retains the last successful diagnostic snapshot and selected anomaly' },
+    ],
+    interactionResults: [
+      { id: 'window-and-focus', status: 'pass', evidence: 'time window and anomaly focus are URL-backed' },
+      { id: 'evidence-disclosure', status: 'pass', evidence: 'runtime and quality evidence disclosures open without displacing the queue' },
+      { id: 'partial-refresh-recovery', status: 'pass', evidence: 'partial failure keeps prior evidence visible' },
+    ],
+  });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(100);

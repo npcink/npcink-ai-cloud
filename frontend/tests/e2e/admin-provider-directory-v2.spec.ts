@@ -4,6 +4,10 @@ import {
   buildAdminApiErrorEnvelope,
   installAdminMocks,
 } from './helpers/admin-operator-fixture';
+import {
+  observeAdminBrowserEvidence,
+  writeAdminVisualReceipt,
+} from './helpers/admin-visual-receipt';
 
 const connections = [
   {
@@ -211,6 +215,7 @@ test('model supplier table keeps PC operations and filters in one workspace', as
   await page.reload();
   await expect(page.locator('[data-connection-id="model_ready"]')).toHaveAttribute('data-selected', 'true');
 
+  await expect(page.getByLabel(/^Status$|^状态$/i)).toHaveValue('all');
   await page.getByLabel(/^Status$|^状态$/i).selectOption('ready');
   await expect(page).toHaveURL(/status=ready/);
   await expect(page.locator('[data-ui="model-supplier-directory"] [data-connection-id]')).toHaveCount(1);
@@ -377,4 +382,102 @@ test('save and test closes the dialog, uses a compact toast, and keeps the recei
   await expect(page.getByRole('status').filter({ hasText: /saved and tested|已保存并完成测试/i })).toBeVisible();
   await expect(page.locator('main [role="status"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Latest operation|最近操作/i })).toBeVisible();
+});
+
+test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({ page }, testInfo) => {
+  const browserEvidence = observeAdminBrowserEvidence(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await installProviderDirectoryHarness(page);
+  await page.route('**/api/admin/provider-connections/model_attention/test', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        buildAdminApiErrorEnvelope(
+          'provider credential is missing',
+          'provider_connection.missing_secret',
+          {
+            connection_id: 'model_attention',
+            provider_id: 'minimax',
+            kind: 'minimax',
+            status: 'missing_secret',
+            stage: 'config_preflight',
+            ok: false,
+            error_code: 'provider_connection.missing_secret',
+            message: 'provider credential is missing',
+            tested_at: '2026-07-12T02:00:00Z',
+            receipt: {
+              event_kind: 'provider_connection.test',
+              scope_kind: 'provider_connection',
+              scope_id: 'model_attention',
+              outcome: 'error',
+            },
+          }
+        )
+      ),
+    });
+  });
+  await page.goto('/admin/ai-resources');
+
+  const directory = page.locator('[data-ui="model-supplier-directory"]');
+  const readyRow = page.locator('[data-connection-id="model_ready"]');
+  const attentionRow = page.locator('[data-connection-id="model_attention"]');
+  await expect(directory).toBeVisible();
+  await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/i })).toHaveCount(1);
+  await expect(readyRow).toContainText(/Ready|就绪/i);
+  await expect(attentionRow.getByRole('button', { name: /^Configure$|^配置$/i })).toBeVisible();
+  await expect(attentionRow.getByRole('button', { name: /^Test$|^测试$/i })).toBeVisible();
+
+  await readyRow.getByRole('button', { name: 'MQZJ' }).click();
+  await expect(readyRow).toHaveAttribute('data-selected', 'true');
+  await page.reload();
+  await expect(readyRow).toHaveAttribute('data-selected', 'true');
+  await expect(page).toHaveURL(/focus=model_ready/);
+  await page.getByLabel(/^Status$|^状态$/i).selectOption('ready');
+  await expect(page).toHaveURL(/status=ready/);
+  await page.reload();
+  await expect(page.getByLabel(/^Status$|^状态$/i)).toHaveValue('ready');
+
+  await page.goto('/admin/ai-resources?focus=model_attention');
+  await expect(attentionRow).toBeVisible();
+  await attentionRow.getByRole('button', { name: /^Test$|^测试$/i }).click();
+  await expect(page.locator('[data-feedback-for="model_attention"]').getByRole('alert')).toContainText(
+    /provider credential is missing|供应商凭据缺失/i
+  );
+
+  const addButton = page.getByRole('button', { name: /Add model supplier|添加模型供应商/i });
+  await addButton.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /^Close$|^关闭$/i })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(addButton).toBeFocused();
+
+  await writeAdminVisualReceipt({
+    page,
+    testInfo,
+    route: '/admin/ai-resources',
+    pageModel: 'queue',
+    testedStates: ['ready', 'selected', 'filtered', 'operation_error', 'dialog'],
+    humanAcceptance: 'not_required',
+    pageTitle: page.locator('main h1').filter({ hasText: /^Model providers$|^模型供应商$/i }),
+    workingSurface: directory,
+    browserEvidence,
+    expectedConsoleErrors: [/^provider credential is missing$/],
+    routeRuleResults: [
+      { id: 'single-primary-action', status: 'pass', evidence: 'one Add model supplier header action is visible' },
+      { id: 'textual-status', status: 'pass', evidence: 'supplier rows expose Ready and missing-credential text labels' },
+      { id: 'action-object-proximity', status: 'pass', evidence: 'Configure and Test remain inside the affected supplier row' },
+      { id: 'distinct-interaction-states', status: 'pass', evidence: 'selected supplier uses data-selected and the status filter retains its value' },
+      { id: 'dialog-focus-recovery', status: 'pass', evidence: 'Escape closes the provider dialog and returns focus to Add model supplier' },
+      { id: 'context-stability', status: 'pass', evidence: 'focus survives reload before filtering and the status filter survives its own reload' },
+    ],
+    interactionResults: [
+      { id: 'filter-and-focus', status: 'pass', evidence: 'URL-backed focus and status were each verified across reload' },
+      { id: 'row-operation-error', status: 'pass', evidence: 'failed provider test stayed next to the affected row' },
+      { id: 'dialog-keyboard-recovery', status: 'pass', evidence: 'dialog closed with Escape and restored focus' },
+    ],
+  });
 });
