@@ -56,6 +56,7 @@ const staleWorkbench: ProviderWorkbenchState = {
   modelReferenceShowDeprecated: false,
   modelReferencePage: 4,
   confirmingClearModels: true,
+  confirmingModelBatch: '',
   customModelInput: 'claude-opus-4',
 };
 
@@ -151,6 +152,22 @@ describe('AI resources provider workbench state', () => {
     expect(state.modelReferenceProviderId).toBe('openai');
     expect(state.confirmingClearModels).toBe(false);
     expect(state.modelReferencePage).toBe(1);
+  });
+
+  it('keeps filtered batch confirmation mutually exclusive with clear-all', () => {
+    const batch = providerWorkbenchReducer(staleWorkbench, {
+      type: 'set_confirming_model_batch',
+      batch: 'disable',
+    });
+    expect(batch.confirmingModelBatch).toBe('disable');
+    expect(batch.confirmingClearModels).toBe(false);
+
+    const filtered = providerWorkbenchReducer(batch, {
+      type: 'set_reference_search',
+      search: 'audio',
+    });
+    expect(filtered.confirmingModelBatch).toBe('');
+    expect(filtered.modelReferencePage).toBe(1);
   });
 
   it('applies a preset as one transition and resets stale model controls', () => {

@@ -338,6 +338,19 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     modelIds: '',
   },
   {
+    id: 'ollama',
+    label: 'Ollama',
+    providerId: 'ollama',
+    kind: 'openai_compatible',
+    displayName: 'Ollama',
+    baseUrl: 'http://localhost:11434/v1',
+    websiteUrl: 'https://ollama.com/',
+    docsUrl: 'https://docs.ollama.com/api/openai-compatibility',
+    capabilityIds: 'text_generation, embedding',
+    runtimeProfileIds: 'text.ai, embed.default',
+    modelIds: '',
+  },
+  {
     id: 'custom',
     label: 'Custom',
     providerId: 'custom',
@@ -403,6 +416,14 @@ function providerReferenceLinksForConnection(connection: Connection): {
   statusUrl?: unknown;
   docsUrl?: unknown;
 } {
+  const explicitLinks = {
+    websiteUrl: connection.metadata?.website_url,
+    statusUrl: connection.metadata?.status_url,
+    docsUrl: connection.metadata?.docs_url,
+  };
+  if (providerExternalLinkItems(explicitLinks).length) {
+    return explicitLinks;
+  }
   const preset = providerPresetById(inferProviderPreset(connection));
   if (preset.id === 'custom') return {};
   if (
@@ -503,6 +524,8 @@ function inferProviderPreset(connection: Connection): string {
   const kind = connection.kind.toLowerCase();
   const providerId = connection.provider_id.toLowerCase();
   const hostname = providerHostname(connection.base_url);
+  const identityText = `${connection.provider_id} ${connection.display_name} ${connection.base_url}`.toLowerCase();
+  if (identityText.includes('ollama') || connection.base_url.includes(':11434')) return 'ollama';
   if (providerId.includes('newapi')) return 'newapi';
   if (providerId.includes('deepseek') || matchesProviderHostname(hostname, ['deepseek.com'])) return 'deepseek';
   if (providerId.includes('kimi') || providerId.includes('moonshot') || matchesProviderHostname(hostname, ['moonshot.cn'])) return 'kimi';
@@ -650,6 +673,17 @@ function normalizeModelReferenceFeature(feature: string): ModelReferenceFeatureF
   return 'all';
 }
 
+function catalogDisplayFeature(modelId: string, catalogFeature: string): string {
+  const normalized = modelId.trim().toLowerCase();
+  if (/(^|[\/_-])(cosyvoice|sensevoice|funasr|whisper|tts|speech|audio)([\/_:.-]|$)/.test(normalized)) {
+    return 'audio';
+  }
+  if (/(^|[\/_-])(video|wan2\.[0-9]|sora)([\/_:.-]|$)/.test(normalized)) {
+    return 'video';
+  }
+  return catalogFeature;
+}
+
 function normalizeModelLookupValue(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -694,12 +728,10 @@ function selectedModelIdFor(
 function hasModelMetadataFor(
   modelId: string,
   providerId: string,
-  references: ModelReferenceEntry[],
-  catalogModels: ProviderCatalogPreviewModel[]
+  references: ModelReferenceEntry[]
 ): boolean {
   const keys = modelLookupKeySet(modelId, providerId);
-  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)))
-    || catalogModels.some((model) => modelLookupKeys(model.model_id, providerId).some((key) => keys.has(key)));
+  return references.some((reference) => modelLookupKeys(reference.model_id, reference.provider_id || providerId).some((key) => keys.has(key)));
 }
 
 function normalizeProviderCatalogPreview(value: any): ProviderCatalogPreview | null {
@@ -815,6 +847,7 @@ function AiResourcesContent() {
     modelReferenceShowDeprecated,
     modelReferencePage,
     confirmingClearModels,
+    confirmingModelBatch,
     customModelInput,
   } = providerWorkbench;
   const [error, setError] = useState('');
@@ -906,7 +939,7 @@ function AiResourcesContent() {
 
   useEffect(() => {
     const requestedStatus = searchParams.get('status');
-    if (requestedStatus === 'ready' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
+    if (requestedStatus === 'ready' || requestedStatus === 'attention' || requestedStatus === 'missing_secret' || requestedStatus === 'disabled') {
       setConnectionStatusFilter(requestedStatus);
     } else {
       setConnectionStatusFilter('all');
@@ -1459,7 +1492,8 @@ function AiResourcesContent() {
     return (data?.connections || []).filter((connection) => {
       const matchesFilter =
         connectionStatusFilter === 'all'
-        || (connectionStatusFilter === 'ready' && connection.status === 'ready')
+        || (connectionStatusFilter === 'ready' && connection.status === 'ready' && !connection.attention_required)
+        || (connectionStatusFilter === 'attention' && (connection.attention_required ?? connection.status !== 'ready'))
         || (connectionStatusFilter === 'missing_secret' && (connection.status === 'missing_secret' || !connection.configured))
         || (connectionStatusFilter === 'disabled' && (!connection.enabled || connection.status === 'disabled'));
       if (!matchesFilter) return false;
@@ -1491,7 +1525,7 @@ function AiResourcesContent() {
       return aiText('model_feature_text_generation', 'Text generation');
     }
     if (normalized === 'audio_generation' || normalized === 'audio_generations' || normalized === 'audio') {
-      return aiText('model_feature_audio_generation', 'Audio generation');
+      return aiText('model_feature_audio_generation', 'Audio');
     }
     if (normalized === 'video_generation' || normalized === 'video_generations' || normalized === 'video') {
       return aiText('model_feature_video_generation', 'Video generation');
@@ -1555,10 +1589,9 @@ function AiResourcesContent() {
     () => selectedProviderModelIds.filter((modelId) => !hasModelMetadataFor(
       modelId,
       modelReferenceProviderId,
-      modelReferences,
-      providerCatalogPreview?.models || []
+      modelReferences
     )).length,
-    [modelReferenceProviderId, modelReferences, providerCatalogPreview, selectedProviderModelIds]
+    [modelReferenceProviderId, modelReferences, selectedProviderModelIds]
   );
 
   const modelsDevReferenceSource = useMemo(
@@ -1588,6 +1621,11 @@ function AiResourcesContent() {
     syncingModelReferences,
   ]);
 
+  const modelReferenceCoverageBase = Math.max(
+    modelReferenceTotal,
+    Number(providerCatalogPreview?.model_count ?? 0) || 0,
+    selectedProviderModelIds.length
+  );
   const modelReferenceCompactStatusText = useMemo(() => {
     if (autoSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
@@ -1595,8 +1633,17 @@ function AiResourcesContent() {
     if (loadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
+    if (modelReferenceTotal > 0 && modelReferenceTotal >= modelReferenceCoverageBase) {
+      return aiText('model_reference_compact_complete', 'intelligence complete {{covered}}/{{total}}', {
+        covered: String(modelReferenceTotal),
+        total: String(modelReferenceCoverageBase),
+      });
+    }
     if (modelReferenceTotal > 0) {
-      return aiText('model_reference_compact_synced', 'reference synced');
+      return aiText('model_reference_compact_partial', 'intelligence partial {{covered}}/{{total}}', {
+        covered: String(modelReferenceTotal),
+        total: String(modelReferenceCoverageBase),
+      });
     }
     if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
       return aiText('model_reference_compact_failed', 'reference sync failed');
@@ -1607,6 +1654,7 @@ function AiResourcesContent() {
     autoSyncingModelReferences,
     loadingModelReferences,
     modelReferenceAutoSyncError,
+    modelReferenceCoverageBase,
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
@@ -1650,7 +1698,7 @@ function AiResourcesContent() {
       rows.set(rowModelId, {
         modelId: rowModelId,
         family: existing?.family || model.family,
-        feature: existing?.feature || model.feature,
+        feature: existing?.feature || catalogDisplayFeature(model.model_id, model.feature),
         sourceLabel: existing?.sourceLabel || aiText('model_source_upstream', 'Upstream catalog'),
         sourceKind: existing?.sourceKind || 'catalog',
         selected: Boolean(selectedModelId),
@@ -1726,6 +1774,29 @@ function AiResourcesContent() {
     (visibleModelReferencePage - 1) * MODEL_VISIBILITY_PAGE_SIZE,
     visibleModelReferencePage * MODEL_VISIBILITY_PAGE_SIZE
   );
+  const filteredEnableModelIds = modelVisibilityRows
+    .filter((row) => !row.selected && !row.deprecated)
+    .map((row) => row.modelId);
+  const filteredDisableModelIds = modelVisibilityRows
+    .filter((row) => row.selected)
+    .map((row) => row.modelId);
+  const confirmingBatchModelIds = confirmingModelBatch === 'enable'
+    ? filteredEnableModelIds
+    : filteredDisableModelIds;
+  const confirmingBatchResultCount = confirmingModelBatch === 'enable'
+    ? uniqueList([...selectedProviderModelIds, ...confirmingBatchModelIds]).length
+    : selectedProviderModelIds.filter((modelId) => !new Set(confirmingBatchModelIds).has(modelId)).length;
+
+  function applyFilteredModelBatch(): void {
+    if (confirmingModelBatch === 'enable') {
+      setProviderModelIds([...selectedProviderModelIds, ...filteredEnableModelIds]);
+      return;
+    }
+    if (confirmingModelBatch === 'disable') {
+      const disabledIds = new Set(filteredDisableModelIds);
+      setProviderModelIds(selectedProviderModelIds.filter((modelId) => !disabledIds.has(modelId)));
+    }
+  }
   if (loading) {
     return <AdminRouteSkeleton />;
   }
@@ -1749,13 +1820,16 @@ function AiResourcesContent() {
   }
 
   const readyModelSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai' && connection.status === 'ready'
+    (connection) => supplierCategory(connection) === 'ai'
+      && connection.status === 'ready'
+      && !connection.attention_required
   ).length;
   const modelSupplierCount = data.connections.filter(
     (connection) => supplierCategory(connection) === 'ai'
   ).length;
   const attentionSupplierCount = data.connections.filter(
-    (connection) => supplierCategory(connection) === 'ai' && connection.status !== 'ready'
+    (connection) => supplierCategory(connection) === 'ai'
+      && (connection.attention_required ?? connection.status !== 'ready')
   ).length;
   const latestModelSupplierTestAt = data.connections
     .filter(
@@ -2029,7 +2103,7 @@ function AiResourcesContent() {
                       </div>
                       {selectedModelMetadataGapCount ? (
                         <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                          {aiText('model_metadata_gap_hint', '{{count}} models only have saved IDs. Sync the model catalog or reference data to fill capability, context, and price.', {
+                          {aiText('model_metadata_gap_hint', '{{count}} enabled models lack reference intelligence. Refresh intelligence to fill capability, context, and price.', {
                             count: String(selectedModelMetadataGapCount),
                           })}
                         </p>
@@ -2074,7 +2148,7 @@ function AiResourcesContent() {
                         <option value="all">{aiText('filter_all', 'All')}</option>
                         <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
                         <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
-                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio generation')}</option>
+                        <option value="audio">{aiText('model_feature_audio_generation', 'Audio')}</option>
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
@@ -2165,6 +2239,68 @@ function AiResourcesContent() {
                             </div>
                           )}
                           detail={aiText('manual_model_add_desc', 'Use this only for models missing from the upstream catalog. Manual-only rows can be removed from the list.')}
+                        />
+                        <AdminConfigurationRow
+                          rowId="filtered-model-batch"
+                          label={aiText('filtered_models_batch_label', 'Filtered results')}
+                          value={aiText('filtered_models_batch_count', '{{count}} matching models', {
+                            count: String(modelVisibilityRows.length),
+                          })}
+                          detail={confirmingModelBatch ? (
+                            <span className="grid gap-2">
+                              <span className="text-amber-700 dark:text-amber-300">
+                                {aiText(
+                                  'filtered_models_batch_confirmation',
+                                  '{{action}} {{count}} matching models? The enabled total will become {{result}}. Changes remain a draft until you save.',
+                                  {
+                                    action: confirmingModelBatch === 'enable'
+                                      ? aiText('action_enable', 'Enable')
+                                      : aiText('action_disable', 'Disable'),
+                                    count: String(confirmingBatchModelIds.length),
+                                    result: String(confirmingBatchResultCount),
+                                  }
+                                )}
+                              </span>
+                              <span className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  data-ui="model-filtered-batch-confirm"
+                                  className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                                  onClick={applyFilteredModelBatch}
+                                >
+                                  {aiText('action_confirm_apply', 'Confirm apply')}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
+                                  onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: '' })}
+                                >
+                                  {aiText('action_cancel', 'Cancel')}
+                                </button>
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                data-ui="model-filtered-enable-request"
+                                className="font-semibold text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300"
+                                disabled={!filteredEnableModelIds.length || savingConnection}
+                                onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'enable' })}
+                              >
+                                {aiText('action_enable_filtered_models', 'Enable matching')}
+                              </button>
+                              <button
+                                type="button"
+                                data-ui="model-filtered-disable-request"
+                                className="font-semibold text-slate-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300"
+                                disabled={!filteredDisableModelIds.length || savingConnection}
+                                onClick={() => dispatchProviderWorkbench({ type: 'set_confirming_model_batch', batch: 'disable' })}
+                              >
+                                {aiText('action_disable_filtered_models', 'Disable matching')}
+                              </button>
+                            </span>
+                          )}
                         />
                         <AdminConfigurationRow
                           rowId="enabled-model-bulk-maintenance"
@@ -2296,7 +2432,7 @@ function AiResourcesContent() {
                                       <div className="text-slate-500 dark:text-slate-400">
                                         {row.family}
                                         {row.sourceKind === 'manual' ? ` · ${row.sourceLabel}` : ''}
-                                        {row.verified ? ` · ${aiText('catalog_model_status_verified', 'Verified')}` : ''}
+                                        {row.verified ? ` · ${aiText('catalog_model_status_upstream_available', 'Upstream available')}` : ''}
                                         {row.reference?.override_present ? ` · ${aiText('model_reference_override', 'manual override')}` : ''}
                                       </div>
                                       {row.deprecated && row.selected ? (

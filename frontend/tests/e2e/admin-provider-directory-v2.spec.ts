@@ -18,6 +18,10 @@ const connections = [
     enabled: true,
     configured: false,
     status: 'missing_secret',
+    configuration_status: 'missing_secret',
+    verification_status: 'failed',
+    attention_required: true,
+    attention_reasons: ['missing_secret', 'last_test_failed'],
     base_url: 'https://api.minimax.io/v1',
     capability_ids: ['text_generation'],
     runtime_profile_ids: ['text.ai'],
@@ -34,10 +38,15 @@ const connections = [
     enabled: true,
     configured: true,
     status: 'ready',
+    configuration_status: 'ready',
+    verification_status: 'passed',
+    attention_required: false,
+    attention_reasons: [],
     base_url: 'https://new-api.example.test/v1',
     capability_ids: ['text_generation', 'image_generation'],
     runtime_profile_ids: ['text.ai'],
     model_ids: ['gpt-5.5', 'gpt-5.4-mini'],
+    config: { image_response_format: 'b64_json' },
     last_tested_at: '2026-07-12T00:25:00Z',
     managed_by: 'cloud_provider_connections',
     metadata: {},
@@ -226,6 +235,10 @@ test('model supplier table keeps PC operations and filters in one workspace', as
   await expect(page.locator('[data-connection-id="model_ready"]')).toBeVisible();
   expect(await page.locator('[data-ui="model-supplier-directory"]').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(420);
 
+  await page.getByLabel(/^Status$|^状态$/i).selectOption('attention');
+  await expect(page).toHaveURL(/status=attention/);
+  await expect(page.locator('[data-connection-id="model_attention"]')).toBeVisible();
+
   await page.getByLabel(/^Status$|^状态$/i).selectOption('missing_secret');
   await page.getByPlaceholder(/Name, provider, model, capability|名称、provider、模型、能力/i).fill('no-such-provider');
   await expect(page.locator('[data-ui="admin-empty-state"]')).toBeVisible();
@@ -360,7 +373,7 @@ test('editing a provider uses a dense connection table above the model workbench
   await expect(dialog.getByText(/^More operations$|^更多操作$/i)).toHaveCount(0);
   const maintenanceTable = dialog.locator('[data-ui="model-maintenance-table"]').getByRole('table');
   await expect(maintenanceTable).toBeVisible();
-  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(3);
+  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(4);
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -443,6 +456,16 @@ test('large model directories render one bounded page and reset pagination when 
   await dialog.getByPlaceholder(/model, family, provider|模型、系列、供应商/i).fill('catalog-model-60');
   await expect(directory.locator('tbody tr')).toHaveCount(1);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/1 \/ 1|第 1 \/ 1 页/);
+
+  await dialog.locator('[data-ui="model-filtered-enable-request"]').click();
+  await expect(dialog.getByText(/enabled total will become 3|已启用总数为 3/i)).toBeVisible();
+  await dialog.locator('[data-ui="model-filtered-batch-confirm"]').click();
+  await expect(directory.locator('tbody tr').first()).toContainText(/Enabled|已启用/i);
+
+  await dialog.locator('[data-ui="model-filtered-disable-request"]').click();
+  await expect(dialog.getByText(/enabled total will become 2|已启用总数为 2/i)).toBeVisible();
+  await dialog.locator('[data-ui="model-filtered-batch-confirm"]').click();
+  await expect(directory.locator('tbody tr').first()).toContainText(/Not enabled|未启用/i);
 });
 
 test('save and test closes the dialog, uses a compact toast, and keeps the receipt near the toolbar', async ({ page }) => {
@@ -503,7 +526,8 @@ test('model supplier pilot emits the risk-tiered Admin visual receipt', async ({
   const attentionRow = page.locator('[data-connection-id="model_attention"]');
   await expect(directory).toBeVisible();
   await expect(page.getByRole('button', { name: /Add model supplier|添加模型供应商/i })).toHaveCount(1);
-  await expect(readyRow).toContainText(/Configured|已配置/i);
+  await expect(readyRow).toContainText(/Ready|就绪/i);
+  await expect(readyRow).toContainText(/Passed|通过/i);
   await expect(attentionRow.getByRole('button', { name: /^Configure$|^配置$/i })).toBeVisible();
   await expect(attentionRow.getByRole('button', { name: /^Test$|^测试$/i })).toBeVisible();
 

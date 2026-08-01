@@ -679,6 +679,16 @@ class ProviderConnectionAdminService:
             configured=configured,
             credential_error=credential_error,
         )
+        verification_status = _verification_status(
+            last_tested_at=row.last_tested_at,
+            last_error_code=row.last_error_code or "",
+        )
+        attention_reasons = _connection_attention_reasons(
+            configuration_status=status,
+            verification_status=verification_status,
+            capability_ids=capability_ids,
+            config=config,
+        )
         return {
             "connection_id": row.connection_id,
             "provider_id": provider_id,
@@ -688,6 +698,10 @@ class ProviderConnectionAdminService:
             "enabled": bool(row.enabled),
             "configured": configured,
             "status": status,
+            "configuration_status": status,
+            "verification_status": verification_status,
+            "attention_required": bool(attention_reasons),
+            "attention_reasons": attention_reasons,
             "source_role": row.source_role,
             "base_url": row.base_url or "",
             "capability_ids": capability_ids,
@@ -762,6 +776,40 @@ def _connection_status(
     if credential_error:
         return credential_error
     return "ready" if configured else "missing_secret"
+
+
+def _verification_status(
+    *,
+    last_tested_at: datetime | None,
+    last_error_code: str,
+) -> str:
+    if last_tested_at is None:
+        return "not_observed"
+    return "failed" if _string(last_error_code) else "passed"
+
+
+def _connection_attention_reasons(
+    *,
+    configuration_status: str,
+    verification_status: str,
+    capability_ids: list[str],
+    config: dict[str, Any],
+) -> list[str]:
+    reasons: list[str] = []
+    if configuration_status != "ready":
+        reasons.append(configuration_status)
+    if verification_status == "failed":
+        reasons.append("last_test_failed")
+
+    if "image_generation" in capability_ids:
+        image_response_format = _string(config.get("image_response_format")).lower()
+        if not image_response_format:
+            reasons.append("image_delivery_unconfirmed")
+        elif image_response_format == "url" and not _normalize_id_list(
+            config.get("image_output_hosts")
+        ):
+            reasons.append("image_output_hosts_missing")
+    return reasons
 
 
 def _credential_readiness(

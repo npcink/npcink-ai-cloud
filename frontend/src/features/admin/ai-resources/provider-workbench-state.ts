@@ -78,6 +78,7 @@ export type ProviderWorkbenchState = {
   modelReferenceShowDeprecated: boolean;
   modelReferencePage: number;
   confirmingClearModels: boolean;
+  confirmingModelBatch: 'enable' | 'disable' | '';
   customModelInput: string;
 };
 
@@ -94,6 +95,7 @@ export const INITIAL_PROVIDER_WORKBENCH_STATE: ProviderWorkbenchState = {
   modelReferenceShowDeprecated: false,
   modelReferencePage: 1,
   confirmingClearModels: false,
+  confirmingModelBatch: '',
   customModelInput: '',
 };
 
@@ -131,6 +133,7 @@ export type ProviderWorkbenchAction =
   | { type: 'set_reference_page'; page: number }
   | { type: 'set_custom_model_input'; value: string }
   | { type: 'set_confirming_clear_models'; confirming: boolean }
+  | { type: 'set_confirming_model_batch'; batch: 'enable' | 'disable' | '' }
   | { type: 'set_credential_edit_open'; open: boolean }
   | { type: 'cancel_credential_edit' };
 
@@ -165,6 +168,7 @@ export function providerWorkbenchReducer(
         providerFormOpen: false,
         credentialEditOpen: true,
         confirmingClearModels: false,
+        confirmingModelBatch: '',
       };
     case 'reset_after_save':
       return {
@@ -176,6 +180,7 @@ export function providerWorkbenchReducer(
         providerCatalogPreview: null,
         modelReferencePage: 1,
         confirmingClearModels: false,
+        confirmingModelBatch: '',
         customModelInput: '',
       };
     case 'patch_form':
@@ -204,6 +209,7 @@ export function providerWorkbenchReducer(
         modelReferencePage: 1,
         customModelInput: '',
         confirmingClearModels: false,
+        confirmingModelBatch: '',
       };
     case 'set_model_ids':
       return {
@@ -215,26 +221,29 @@ export function providerWorkbenchReducer(
         modelReferenceProviderId:
           action.referenceProviderId ?? state.modelReferenceProviderId,
         confirmingClearModels: false,
+        confirmingModelBatch: '',
         modelReferencePage: 1,
       };
     case 'set_catalog_preview':
       return { ...state, providerCatalogPreview: action.preview };
     case 'set_reference_provider':
-      return { ...state, modelReferenceProviderId: action.providerId, modelReferencePage: 1 };
+      return { ...state, modelReferenceProviderId: action.providerId, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_reference_search':
-      return { ...state, modelReferenceSearch: action.search, modelReferencePage: 1 };
+      return { ...state, modelReferenceSearch: action.search, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_reference_feature_filter':
-      return { ...state, modelReferenceFeatureFilter: action.filter, modelReferencePage: 1 };
+      return { ...state, modelReferenceFeatureFilter: action.filter, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_reference_visibility_filter':
-      return { ...state, modelReferenceVisibilityFilter: action.filter, modelReferencePage: 1 };
+      return { ...state, modelReferenceVisibilityFilter: action.filter, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_show_deprecated':
-      return { ...state, modelReferenceShowDeprecated: action.show, modelReferencePage: 1 };
+      return { ...state, modelReferenceShowDeprecated: action.show, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_reference_page':
       return { ...state, modelReferencePage: Math.max(1, Math.floor(action.page)) };
     case 'set_custom_model_input':
       return { ...state, customModelInput: action.value };
     case 'set_confirming_clear_models':
-      return { ...state, confirmingClearModels: action.confirming };
+      return { ...state, confirmingClearModels: action.confirming, confirmingModelBatch: '' };
+    case 'set_confirming_model_batch':
+      return { ...state, confirmingModelBatch: action.batch, confirmingClearModels: false };
     case 'set_credential_edit_open':
       return { ...state, credentialEditOpen: action.open };
     case 'cancel_credential_edit':

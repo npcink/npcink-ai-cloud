@@ -72,6 +72,13 @@ assert.match(pageSource, /data-ui="model-visibility-toolbar"/);
 assert.match(pageSource, /data-ui="model-maintenance-table"/);
 assert.match(pageSource, /data-ui="model-clear-all-request"/);
 assert.match(pageSource, /clear_all_models_confirmation[\s\S]*data-ui="model-clear-all-confirm"/);
+assert.match(pageSource, /data-ui="model-filtered-enable-request"/);
+assert.match(pageSource, /data-ui="model-filtered-disable-request"/);
+assert.match(pageSource, /filtered_models_batch_confirmation[\s\S]*data-ui="model-filtered-batch-confirm"/);
+assert.match(pageSource, /model_reference_compact_partial/);
+assert.match(pageSource, /catalog_model_status_upstream_available/);
+assert.match(pageSource, /id: 'ollama'[\s\S]*https:\/\/docs\.ollama\.com\/api\/openai-compatibility/);
+assert.match(pageSource, /connection\.metadata\?\.website_url/);
 assert.doesNotMatch(pageSource, /model_visibility_more_operations[\s\S]*sm:absolute sm:right-0 sm:z-30/);
 assert.match(i18nSource, /'admin\.ai_resources\.field_image_output_hosts': '精确图片下载域名'/);
 assert.match(i18nSource, /文本或模型目录连接测试通过，不代表生成图片一定可以交付/);
@@ -84,6 +91,8 @@ assert.doesNotMatch(toolbarSource, /SupplierTypeFilter|supplierTypeFilter|action
 assert.match(tablesSource, /export function ModelSupplierTable/);
 assert.match(tablesSource, /headerActions=\{toolbar\}/);
 assert.match(tablesSource, /className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"/);
+assert.match(tablesSource, /connection\.verification_status === 'passed'/);
+assert.match(tablesSource, /connection\.attention_reasons/);
 assert.doesNotMatch(tablesSource, /CapabilitySupplierTable|capability-supplier-directory|CapabilityProviderCategory/);
 assert.match(tableFrameSource, /headerActions\?: ReactNode/);
 
