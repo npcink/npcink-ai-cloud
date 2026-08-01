@@ -11,11 +11,10 @@ import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import {
+  BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
   BackofficePageStack,
-  BackofficePrimaryPanel,
   BackofficeSectionPanel,
-  BackofficeSummaryStrip,
 } from '@/components/backoffice/BackofficeScaffold';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -232,20 +231,16 @@ export default function ExternalServicesPage() {
 
   return (
     <BackofficePageStack data-page-model="configuration" data-external-services-page>
-      <BackofficePrimaryPanel
+      <BackofficeConfigurationHeader
         eyebrow={copy('admin.external_services.eyebrow', '运行设置', 'Runtime settings')}
         title={copy('admin.external_services.title', '搜索与图片', 'Search & images')}
         description={copy('admin.external_services.description', '从固定服务清单配置网页搜索和图库来源，无需创建供应商记录。', 'Configure web search and stock-image sources from a fixed service directory; no supplier records need to be created.')}
-        descriptionDisplay="hint"
-        actionPlacement="header"
-        contentClassName="px-4 py-3 md:px-4 md:py-3"
-        summaryClassName="px-4 py-2.5 md:px-4 md:py-2.5"
-        actions={<Link href="/admin/troubleshooting" className="btn btn-secondary">{copy('admin.external_services.open_diagnostics', '查看运行诊断', 'Open runtime diagnostics')}</Link>}
-        summary={<BackofficeSummaryStrip items={[
+        secondaryAction={<Link href="/admin/troubleshooting" className="btn btn-secondary">{copy('admin.external_services.open_diagnostics', '查看运行诊断', 'Open runtime diagnostics')}</Link>}
+        summaryItems={[
           { label: copy('admin.external_services.ready', '已就绪服务', 'Ready services'), value: `${readyCount}/${SERVICE_OPTIONS.length}` },
           { label: copy('admin.external_services.search_rule', '搜索规则', 'Search rule'), value: copy('admin.external_services.search_rule_value', '主服务单选 + Reader 增强', 'One primary + Reader enhancement') },
           { label: copy('admin.external_services.image_rule', '图片规则', 'Image rule'), value: copy('admin.external_services.image_rule_value', '已启用来源并行', 'Enabled sources in parallel') },
-        ]} density="compact" />}
+        ]}
       />
 
       {error ? <BackofficeDiagnosticNotice message={error} retryLabel={copy('common.retry', '重试', 'Retry')} onRetry={() => void loadConnections()} /> : null}

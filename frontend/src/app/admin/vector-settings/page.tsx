@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  BackofficeConfigurationHeader,
   BackofficeDiagnosticNotice,
   BackofficePageStack,
-  BackofficePrimaryPanel,
   BackofficeSectionPanel,
 } from '@/components/backoffice/BackofficeScaffold';
 import {
@@ -447,7 +447,7 @@ export default function VectorSettingsPage() {
 
   return (
     <BackofficePageStack data-page-model="configuration">
-      <BackofficePrimaryPanel
+      <BackofficeConfigurationHeader
         eyebrow={copy('admin.vector_settings.eyebrow', 'Site Knowledge', 'Site Knowledge')}
         title={copy('admin.vector_settings.title', '站点向量服务', 'Site vector service')}
         description={copy(
@@ -455,11 +455,7 @@ export default function VectorSettingsPage() {
           '使用平台固定的中文站点向量档案。管理员只需提供供应商密钥和 Zilliz 连接凭证。',
           'Use the platform-defined Chinese Site Knowledge vector profile. Admins only provide the provider key and Zilliz connection credentials.'
         )}
-        descriptionDisplay="hint"
-        actionPlacement="header"
-        contentClassName="px-4 py-3 md:px-4 md:py-3"
-        summaryClassName="px-4 py-2.5 md:px-4 md:py-2.5"
-        actions={
+        secondaryAction={
           <Link href="/admin/vector-observability" className="btn btn-secondary">
             {copy(
               'admin.vector_settings.open_observability',
@@ -468,31 +464,22 @@ export default function VectorSettingsPage() {
             )}
           </Link>
         }
-        summary={
-          <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-            {[
-              { label: 'Profile', value: profile?.profile_id || 'site-knowledge.zh.v1' },
-              {
-                label: copy('admin.vector_settings.model', '模型', 'Model'),
-                value: profile?.model_id || 'BAAI/bge-m3'
-              },
-              {
-                label: copy('admin.vector_settings.current_status', '当前状态', 'Current status'),
-                value: status.label,
-                toneClassName: status.tone === 'success'
-                  ? 'text-emerald-700 dark:text-emerald-300'
-                  : status.tone === 'warning' || status.tone === 'failed'
-                    ? 'text-amber-700 dark:text-amber-300'
-                    : undefined
-              }
-            ].map((item) => (
-              <div key={item.label} className="flex items-baseline gap-1.5">
-                <dt className="text-slate-500 dark:text-slate-400">{item.label}</dt>
-                <dd className={`font-semibold text-slate-900 dark:text-white ${item.toneClassName || ''}`}>{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-        }
+        summaryItems={[
+          { label: 'Profile', value: profile?.profile_id || 'site-knowledge.zh.v1' },
+          {
+            label: copy('admin.vector_settings.model', '模型', 'Model'),
+            value: profile?.model_id || 'BAAI/bge-m3'
+          },
+          {
+            label: copy('admin.vector_settings.current_status', '当前状态', 'Current status'),
+            value: status.label,
+            toneClassName: status.tone === 'success'
+              ? 'text-emerald-700 dark:text-emerald-300'
+              : status.tone === 'warning' || status.tone === 'failed'
+                ? 'text-amber-700 dark:text-amber-300'
+                : undefined
+          }
+        ]}
       />
 
       {error ? (

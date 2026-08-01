@@ -18,9 +18,12 @@ const layoutSource = readFileSync(fromFrontendRoot('src/app/admin/layout.tsx'), 
 const workbenchSource = readFileSync(fromFrontendRoot('src/components/admin/AdminWorkbenchDialog.tsx'), 'utf8');
 const configurationTableSource = readFileSync(fromFrontendRoot('src/components/admin/AdminConfigurationTable.tsx'), 'utf8');
 const emptyStateSource = readFileSync(fromFrontendRoot('src/components/admin/AdminEmptyState.tsx'), 'utf8');
+const backofficeScaffoldSource = readFileSync(fromFrontendRoot('src/components/backoffice/BackofficeScaffold.tsx'), 'utf8');
 const providerPageSource = readFileSync(fromFrontendRoot('src/app/admin/ai-resources/page.tsx'), 'utf8');
 const providerTableSource = readFileSync(fromFrontendRoot('src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
 const externalServicesPageSource = readFileSync(fromFrontendRoot('src/app/admin/external-services/page.tsx'), 'utf8');
+const vectorSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/vector-settings/page.tsx'), 'utf8');
+const runtimeProfilesPageSource = readFileSync(fromFrontendRoot('src/app/admin/runtime-profiles/page.tsx'), 'utf8');
 const serviceSettingsPageSource = readFileSync(fromFrontendRoot('src/app/admin/service-settings/page.tsx'), 'utf8');
 
 function listFiles(directory, predicate) {
@@ -194,6 +197,35 @@ assert.match(
   externalServicesPageSource,
   /AdminWorkbenchDialog[\s\S]*AdminConfigurationTable[\s\S]*AdminCredentialField/,
   'the reference configuration page must reuse workbench, configuration-table, and credential primitives'
+);
+assert.match(
+  backofficeScaffoldSource,
+  /export function BackofficeConfigurationHeader[\s\S]*descriptionDisplay="hint"[\s\S]*actionPlacement="header"[\s\S]*contentClassName="px-4 py-3 md:px-4 md:py-3"[\s\S]*summaryClassName="px-4 py-2\.5 md:px-4 md:py-2\.5"[\s\S]*<BackofficeSummaryStrip[\s\S]*density="compact"/,
+  'the shared configuration header must own compact geometry, hint disclosure, action placement, and summary density'
+);
+for (const [name, source] of [
+  ['external services', externalServicesPageSource],
+  ['vector settings', vectorSettingsPageSource],
+  ['runtime profiles', runtimeProfilesPageSource],
+]) {
+  assert.match(source, /<BackofficeConfigurationHeader/, `${name} must use the shared configuration header`);
+  assert.doesNotMatch(source, /<BackofficePrimaryPanel/, `${name} must not fork configuration-header geometry`);
+  assert.match(source, /summaryItems=\{\[/, `${name} must project its readiness facts through the shared summary slot`);
+}
+assert.match(
+  externalServicesPageSource,
+  /<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{<Link href="\/admin\/troubleshooting"[\s\S]*summaryItems=\{\[/,
+  'external services must keep diagnostics secondary to row-level configuration work'
+);
+assert.match(
+  vectorSettingsPageSource,
+  /<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/vector-observability"[\s\S]*summaryItems=\{\[/,
+  'vector settings must keep diagnostics secondary to configuration work'
+);
+assert.match(
+  runtimeProfilesPageSource,
+  /data-page-model="configuration"[\s\S]*<BackofficeConfigurationHeader[\s\S]*secondaryAction=\{[\s\S]*href="\/admin\/ai-resources"[\s\S]*primaryAction=\{[\s\S]*saveProfiles\(\)[\s\S]*summaryItems=\{\[[\s\S]*summaryAside=/,
+  'runtime profiles must declare its page model and keep supplier navigation secondary to the one save action'
 );
 assert.match(
   configurationTableSource,
