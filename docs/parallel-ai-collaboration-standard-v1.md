@@ -56,6 +56,7 @@ handoff:
 
 ```text
 Parallel coordination
+- role: builder | integrator | investigator
 - conflict-domain owner: <scope or read-only>
 - branch/worktree: <branch and absolute worktree>
 - expected files/contracts: <bounded list>
@@ -63,6 +64,60 @@ Parallel coordination
 - shared runtime: none | requested | held for <candidate/revision>
 - dependencies or known peer owners: <tasks/PRs/scopes>
 ```
+
+When the operator is running several development sessions, each session MUST
+declare one role:
+
+- a **builder** owns one bounded conflict domain through a coherent commit and
+  narrow local verification, then stops at `local-ready`;
+- the single **integrator** owns admission to the protected merge lane, PR
+  publication, baseline refresh, required-check follow-up, and shared-runtime
+  scheduling;
+- an **investigator** remains read-only and returns evidence to a builder or
+  integrator.
+
+Only one integrator may be active for the current queue. A role is an
+operating boundary, not extra authority: conflict-domain ownership, the merge
+lane, and the shared runtime still follow the Three Uniques. In a normal
+single-session task with no declared parallel queue, the same session may
+perform the full builder and integrator lifecycle.
+
+### 3.1 Builder `local-ready` Boundary
+
+In a declared parallel queue, a builder reaches `local-ready` only when its
+bounded diff is committed, the worktree is clean, and the narrowest useful
+local gates have completed. The builder then sends this receipt:
+
+```text
+Local-ready receipt
+- conflict domain: <scope>
+- branch/worktree: <branch and absolute worktree>
+- commit/base: <commit and origin/master revision used>
+- changed files/contracts: <bounded list>
+- gates: <passed, failed, and not run>
+- runtime need: none | M4 sync | M4 deploy | other shared evidence
+- dependencies/rollback: <owners, order, and rollback>
+- next safe action: integrator admission or named blocker
+```
+
+After handoff, the builder MUST stop mutating the handed-off domain. It does
+not publish a merge-ready PR, request auto-merge, mutate M4, or rebase only to
+chase a moving `master`. It may push the clean topic branch when remote
+handoff is needed, but that push does not enter the merge lane. Further edits
+require an explicit handback from the integrator.
+
+The integrator explicitly accepts or rejects the receipt. Acceptance transfers
+delivery responsibility, not implementation history. The integrator refreshes
+against current `origin/master`, resolves admission-order dependencies with
+the builder when necessary, runs the affected gates, publishes the sole
+merge-ready PR, and owns required-check and M4 follow-up.
+
+The integrator keeps at most two accepted `local-ready` items waiting behind
+the item currently in the merge lane. When that waiting limit is reached, do
+not start another source mutation merely to increase concurrency. Additional
+sessions investigate, review, reproduce, or help clear the current queue.
+This is a scheduling limit recorded in task commentary or handoff evidence;
+it is not a repository queue service or mutable ownership registry.
 
 This declaration is coordination evidence, not conflict-domain authority by
 itself. The Git worktree lifecycle lock required by Section 4.1 protects a
@@ -293,6 +348,10 @@ Every parallel task closeout reports:
 - remaining peer dependencies and the next owner, if any;
 - known stale worktrees or untracked files that were intentionally preserved.
 
+A builder closeout may stop at `local-ready`; it must name the accepting
+integrator and include the Section 3.1 receipt. Only the integrator may report
+the later PR, merged, M4-accepted, or released-lane states for that delivery.
+
 Do not use "done" to collapse source, CI, M4, production, and human acceptance
 into one state.
 
@@ -302,13 +361,16 @@ For several active AI sessions, use this default schedule:
 
 1. allow parallel read-only audits and disjoint implementation;
 2. assign one owner for each hot conflict domain;
-3. choose the highest-value coherent change as the sole merge-lane owner;
-4. keep the shared M4 runtime with one owner until its candidate evidence is
+3. have each builder stop at a clean, committed `local-ready` receipt;
+4. let the single integrator admit the highest-value ready item while keeping
+   no more than two additional accepted items waiting;
+5. publish only the admitted item as the sole merge-lane owner;
+6. keep the shared M4 runtime with one owner until its candidate evidence is
    released;
-5. after the merge, refresh every dependent worktree from current
+7. after the merge, refresh every dependent worktree from current
    `origin/master`;
-6. admit the next ready PR to the merge lane;
-7. promote only clean merged source through the governed M4 path.
+8. admit the next ready item to the merge lane;
+9. promote only clean merged source through the governed M4 path.
 
 The objective is not maximum simultaneous mutation. It is maximum useful
 parallel investigation with one unambiguous source, merge, and runtime truth.

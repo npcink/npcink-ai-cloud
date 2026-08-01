@@ -53,6 +53,7 @@ Every task moves through explicit evidence states:
 | State | What it proves | What it does not prove |
 | --- | --- | --- |
 | `local verified` | the changed source seam passed its narrow local check | Docker/runtime behavior or merge eligibility |
+| `local-ready` | a parallel builder produced a clean focused commit and complete handoff receipt | current-base integration, PR checks, M4 behavior, or merge eligibility |
 | `candidate validated on M4` | the current worktree behaved in the M4 integration runtime | the source was committed, reviewed, or merged |
 | `PR verified` | the pushed revision passed required GitHub checks | the change is in `master` or visible on M4 |
 | `merged into master` | the reviewed change is integration truth | M4 is running that merged revision |
@@ -204,6 +205,26 @@ Do not commit every experimental save, and do not wait until after merge to
 discover whether the feature works in the real integration runtime. Candidate
 validation is intentionally before merge; accepted promotion is intentionally
 after merge.
+
+### Parallel builder and integrator variation
+
+When the operator declares a multi-session queue, split this loop at the
+`local-ready` boundary:
+
+1. each builder performs steps 1-4 in one owned conflict domain, inspects and
+   exactly stages the diff, commits it, verifies a clean worktree, and sends
+   the standard local-ready receipt;
+2. the builder stops changing that domain and does not publish a merge-ready
+   PR or mutate shared M4;
+3. the single integrator accepts at most two waiting ready items, admits one
+   item at a time, refreshes it against current `origin/master`, and performs
+   the remaining runtime, PR, CI, merge, and acceptance steps;
+4. failures return to the named builder through an explicit handback, or the
+   integrator owns the repair after an acknowledged ownership transfer.
+
+This variation shortens the critical delivery path by keeping parallel work
+away from the serialized merge and shared-runtime lanes. It does not weaken
+the evidence required by any later state.
 
 ## 6. Consumer Paths Must Stay Separate
 
