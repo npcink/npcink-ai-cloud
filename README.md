@@ -76,6 +76,7 @@ and other CMS adapters are post-P5 validation work.
 
 Evidence records (not target-contract completion proof):
 
+- [docs/ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md](docs/ai-development-stage-closeout-and-production-readiness-retrospective-2026-08-02.md)
 - [docs/ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md](docs/ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md)
 - [docs/production-master-delta-audit-2026-07-25.md](docs/production-master-delta-audit-2026-07-25.md)
 - [docs/refactor-baseline-2026-07-14.md](docs/refactor-baseline-2026-07-14.md)
