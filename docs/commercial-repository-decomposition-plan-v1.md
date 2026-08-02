@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 completed; Phase 2A candidate validated, PR pending
+状态：Phase 0 + Phase 1 + Phase 2A completed; Phase 2B candidate ready, PR pending
 
 日期：2026-08-03
 
@@ -341,8 +341,8 @@ M4 relay 本批实测 candidate upload/download 为 11/2 秒，promotion 为 12/
 
 ## 7. Phase 2A 建议：Support 无锁查询
 
-Phase 2A 已按本节 envelope 完成本地实现和 M4 candidate 验证；PR、合并与
-clean-master M4 acceptance 仍待后续证据，Phase 2B 未启动。
+Phase 2A 已按本节 envelope 完成本地实现和 M4 candidate 验证，并通过 PR #465
+合并及 clean-master M4 acceptance。Phase 2B 在完成双释放后才从新 worktree 启动。
 
 ### 7.1 实现目标
 
@@ -495,13 +495,85 @@ candidate 分层证据：
 运行 query repository 文件。`check:fast` 未运行：隔离 worktree 不含 `.env`，
 且本批没有额外风险需要重复 GitHub required checks 将承担的 broad merge gate。
 
-此处只能报告 `candidate validated on M4`。PR merged、current master revision 和
-`accepted on M4` 必须在实际发生后另行更新或在下一阶段基线刷新时补录，不能用
-candidate 状态预填。合并前五轴审阅和 formatter 产生的最终 source-only sync
-属于当前源码一致性证据，其最终 bundle/timing 在 PR 与任务回执中报告，本文不在
-sync 后再次改写自身以制造新的 source drift。
+Phase 2A 随后由 PR #465 合并为
+`origin/master@341716326e8954743d1697eda2b5f7238ccd335f`。从 clean current
+master 执行 promotion 后，M4 status 为 `acceptance_state=accepted`、
+`promotion_pr=465`、`source_branch=master`、`source_dirty=false`，聚焦 query
+repository smoke 为 7 passed。Cloud lane 与 shared M4 已分别释放。
 
-## 8. 回滚
+## 8. Phase 2B：Support 写入 repository
+
+### 8.1 Current-master 事务与锁清单
+
+Phase 2B 基线为
+`origin/master@341716326e8954743d1697eda2b5f7238ccd335f`。允许迁移 7 个方法：
+
+- `create_support_request`
+- `create_support_request_message`
+- `create_support_request_attachment`
+- `upsert_support_request_feedback`
+- `mark_support_request_complete`
+- `mark_support_request_waiting_for_operator`
+- `restore_support_request_waiting_state`
+
+前 4 个方法做 ORM mutation，并保持既有 `add`/`flush`；后 3 个 helper 只修改传入
+的 `SupportRequest`。这 7 个方法均不 `commit`、`rollback`，不执行
+`with_for_update` 或 advisory lock。事务仍由 `_support_mixin.py` 中 8 个 service
+流程拥有：同一 Session 内完成 Support mutation、service audit record 和最终
+`session.commit()`。本批不得把 commit 下沉到 repository，也不得拆开上述原子边界。
+
+### 8.2 实现 envelope
+
+- 新增 `app/adapters/repositories/commercial_support_repository.py`，其中
+  `CommercialSupportRepository` 继承 `CommercialSupportQueries`，形成可独立实例化
+  的完整 Support repository；
+- `CommercialRepository` 改为继承 `CommercialSupportRepository`，保留全部现有
+  domain/API 调用方式，不做调用方迁移；
+- 新增 `tests/domain/test_commercial_support_repository.py`，先锁定 flush 后可见性、
+  public/internal activity、waiting state、附件 byte size/count、feedback upsert 和
+  3 个 state helper，再迁移实现；
+- 既有 `tests/domain/test_support_request_queue.py` 与 Portal Support API 流程只作为
+  affected regression 运行，不因结构拆分修改；
+- 明确排除 assignment、AI reply、SLA、notification、API、数据库、migration、权限、
+  业务状态重新解释、其他商业域、Production、WordPress 和调用方批量迁移。
+
+### 8.3 保持合同与停止条件
+
+- 7 个方法的签名、默认值、方法体、`add`/`flush` 时点和返回 ORM identity 必须与
+  Phase 2B 基线一致；
+- customer/operator/internal 对 activity、first response、waiting_on 和
+  waiting_since 的影响保持不变；feedback update 忽略新的 feedback_id 并复用既有行；
+- 新 repository 与 facade 使用同一 Session 时，查询和 ORM identity 必须一致；
+- 若发现需要新增锁、commit/rollback、跨领域写入、状态机修复或调用方改造，立即停止。
+
+实施完成后门面预计从 3,695 行、134 个自有方法下降为 3,491 行、127 个自有方法。
+Phase 2B 完成不自动启动 Phase 3。
+
+### 8.4 Phase 2B 本地收口证据
+
+实际迁移了第 8.1 节 7 个方法。AST 对比确认方法集合、签名、decorator 与方法体均
+与 Phase 2B 基线一致。当前精确变更文件为：
+
+- 新增 `app/adapters/repositories/commercial_support_repository.py`
+- 修改 `app/adapters/repositories/commercial_repository.py`
+- 新增 `tests/domain/test_commercial_support_repository.py`
+- 更新 `docs/commercial-repository-decomposition-plan-v1.md`
+
+本地证据：
+
+| 层级 | 结果 |
+| --- | --- |
+| Pre-move characterization | Support write + 既有 queue：3 passed |
+| Post-move focused | Support write + query repository + queue：10 passed |
+| Affected API | Portal Support 主流程与无 Site 支持流程：2 passed，1 个既有 deprecation warning |
+| Static | Ruff 通过；全量 mypy 262 个源文件无问题 |
+| Policy | `check:anti-drift`、`check:release-policy`、`git diff --check` 通过 |
+| Transaction scan | 新 repository 无 commit、rollback、行锁、advisory lock 或 no_autoflush |
+
+门面实际下降为 3,491 行、127 个自有方法。M4 candidate、PR/CI、merged source 和
+clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
+
+## 9. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -509,7 +581,11 @@ Phase 2A 若实施，同样只允许精确 source revert：恢复 Support 查询
 移除新增继承/query 文件并回退对应 characterization。不得回滚
 `20260801_0078`、修改等待状态数据或触碰 M4/Production 数据来完成结构回滚。
 
-## 9. 后续批次启动规则
+Phase 2B 只允许恢复 7 个 Support mutation/helper 到门面、移除
+`CommercialSupportRepository` 继承与聚焦 characterization。不得通过数据修改、
+事务补偿或环境操作完成结构回滚。
+
+## 10. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
