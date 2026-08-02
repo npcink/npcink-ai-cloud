@@ -154,6 +154,26 @@ assert.match(
 );
 assert.match(
   source,
+  /normalizeAdminReturnTo\([\s\S]*searchParams\.get\(ADMIN_RETURN_TO_PARAM\)[\s\S]*ACCOUNTS_RETURN_CONTEXT_POLICY[\s\S]*secondaryAction=\{\([\s\S]*href=\{returnTo\}/,
+  'customer detail must normalize one Accounts queue return target for its header and fallback links'
+);
+assert.equal(
+  source.match(/href=\{returnTo\}/g)?.length || 0,
+  3,
+  'customer detail header, not-found, and empty-site returns must share one normalized target'
+);
+assert.match(
+  source,
+  /buildAdminAccountSiteReturnTo\([\s\S]*parentPathname: accountDetailPathname[\s\S]*buildAdminNestedDetailHref\([\s\S]*returnTo: accountSiteReturnTo/,
+  'customer Site entries must build one bounded parent Account context with at most one queue inner context'
+);
+assert.equal(
+  source.match(/href=\{siteDetailHref\(/g)?.length || 0,
+  2,
+  'every customer Site detail entry must share the nested return builder'
+);
+assert.match(
+  source,
   /data-ui="account-credit-operations"[\s\S]*data-ui="account-credit-summary"[\s\S]*data-ui="account-credit-support-rows"/,
   'credit state, actions, ledger summary, and resource summary must form one compact operating surface'
 );

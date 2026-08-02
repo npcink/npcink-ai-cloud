@@ -67,8 +67,18 @@ assert.doesNotMatch(
 );
 assert.match(
   directorySource,
-  /data-ui="customer-directory-row"[\s\S]*href=\{`\/admin\/accounts\/\$\{encodeURIComponent\(account\.account_id\)\}`\}[\s\S]*common\.details/,
-  'every customer row must lead directly to the specified customer detail'
+  /const queueReturnTo = useMemo\(\(\) => buildAdminQueueReturnTo\([\s\S]*const accountDetailHref = useCallback[\s\S]*buildAdminAccountDetailPathname\(accountId\)[\s\S]*returnTo: queueReturnTo/,
+  'customer detail links must use the shared current queue return context'
+);
+assert.equal(
+  directorySource.match(/href=\{accountDetailHref\(account\.account_id\)\}/g)?.length || 0,
+  2,
+  'customer name and row action must share the same safe detail href'
+);
+assert.match(
+  directorySource,
+  /router\.push\(accountDetailHref\(createdAccountId\)\)/,
+  'create success must carry the current queue context into the generated customer detail'
 );
 assert.doesNotMatch(
   directorySource,

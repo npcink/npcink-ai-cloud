@@ -210,9 +210,14 @@ test('customer directory persists customer filters and opens the specified custo
   await expect(page.getByRole('combobox').nth(0)).toHaveValue('suspended');
   await expect(directoryRows).toContainText('Zeta Customer');
 
-  await expect(
-    directoryRows.getByRole('link', { name: /^Details$|^详情$|^詳情$/i })
-  ).toHaveAttribute('href', '/admin/accounts/acct_zeta');
+  const detailHref = await directoryRows
+    .getByRole('link', { name: /^Details$|^详情$|^詳情$/i })
+    .getAttribute('href');
+  const detailUrl = new URL(detailHref || '', 'https://admin.example');
+  expect(detailUrl.pathname).toBe('/admin/accounts/acct_zeta');
+  expect(detailUrl.searchParams.get('return_to')).toBe(
+    '/admin/accounts?status=suspended&q=Zeta'
+  );
 
   mocks.failNextRequest();
   await page.getByLabel(/^Search$|^搜索$/i).fill('Missing');
@@ -249,7 +254,7 @@ test('customer creation uses a dialog, receives a generated ID, and binds Free b
   await page.getByLabel(/Operator note|运营备注|營運備註/i).fill('Internal launch note');
   await page.getByRole('button', { name: /Create customer|创建客户|建立客戶/i }).click();
 
-  await expect(page).toHaveURL(/\/admin\/accounts\/acct_generated_new_customer$/);
+  await expect(page).toHaveURL(/\/admin\/accounts\/acct_generated_new_customer\?return_to=%2Fadmin%2Faccounts$/);
   expect(mocks.getCreateRequestCount()).toBe(1);
   expect(mocks.getCreatePayload()).toMatchObject({
     name: 'New Customer',

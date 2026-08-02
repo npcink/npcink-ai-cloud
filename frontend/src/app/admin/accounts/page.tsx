@@ -31,6 +31,12 @@ import {
 } from '@/lib/customer-package-display';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  buildAdminAccountDetailPathname,
+  buildAdminDetailHref,
+  buildAdminQueueReturnTo,
+} from '@/lib/admin-return-context';
 import { formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
 type IdentityRelationshipState = 'healthy' | 'missing' | 'conflict' | 'access_disabled';
@@ -88,6 +94,10 @@ interface CreatedAccountPayload {
 }
 
 const MALFORMED_ACCOUNT_TEXT_RE = /Fatal error|Stack trace|Command line code|Uncaught ValueError|Path must not be empty/i;
+const ACCOUNTS_RETURN_CONTEXT_POLICY = {
+  allowedPathnames: [ADMIN_QUEUE_PATHNAMES.accounts],
+  fallback: ADMIN_QUEUE_PATHNAMES.accounts,
+} as const;
 const INTERNAL_TEST_ACCOUNT_RE = /(^|[_-])(smoke)([_-]|$)|codex_image_smoke|site_knowledge_smoke/i;
 const ACCOUNT_SORTS = new Set<AccountSort>(['display_name', 'created_at']);
 const PAGE_SIZE = 25;
@@ -191,6 +201,22 @@ function AccountsContent() {
   const showInternalAccounts = searchParams.get('internal') === '1';
   const sort = normalizeSort(searchParams.get('sort'));
   const offset = normalizeOffset(searchParams.get('offset'));
+  const queueReturnTo = useMemo(() => buildAdminQueueReturnTo({
+    pathname,
+    searchParams: searchParamsKey,
+    policy: ACCOUNTS_RETURN_CONTEXT_POLICY,
+  }), [pathname, searchParamsKey]);
+  const accountDetailHref = useCallback((accountId: string) => {
+    try {
+      return buildAdminDetailHref({
+        detailPathname: buildAdminAccountDetailPathname(accountId),
+        returnTo: queueReturnTo,
+        policy: ACCOUNTS_RETURN_CONTEXT_POLICY,
+      });
+    } catch {
+      return ADMIN_QUEUE_PATHNAMES.accounts;
+    }
+  }, [queueReturnTo]);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [total, setTotal] = useState(0);
@@ -375,7 +401,7 @@ function AccountsContent() {
       );
       setIsCreateOpen(false);
       createAccountForm.reset();
-      router.push(`/admin/accounts/${encodeURIComponent(createdAccountId)}`);
+      router.push(accountDetailHref(createdAccountId));
     } catch (err) {
       setActionError(resolveUiErrorMessage(err, t('error.failed_save')));
     } finally {
@@ -647,7 +673,7 @@ function AccountsContent() {
                   >
                     <td className="px-4 py-3">
                       <Link
-                        href={`/admin/accounts/${encodeURIComponent(account.account_id)}`}
+                        href={accountDetailHref(account.account_id)}
                         className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
                       >
                         {account.display_name}
@@ -714,7 +740,7 @@ function AccountsContent() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
-                        href={`/admin/accounts/${encodeURIComponent(account.account_id)}`}
+                        href={accountDetailHref(account.account_id)}
                         className="btn btn-primary btn-sm"
                       >
                         {t('common.details', {}, 'Details')}

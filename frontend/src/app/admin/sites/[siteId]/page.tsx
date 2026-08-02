@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   BackofficeDiagnosticNotice,
   BackofficeDisclosure,
@@ -34,6 +34,12 @@ import {
   formatCurrency,
   formatNumber as formatInteger,
 } from '@/lib/utils';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  ADMIN_RETURN_TO_PARAM,
+  buildAdminAccountDetailPathname,
+  normalizeAdminAccountSiteReturnTo,
+} from '@/lib/admin-return-context';
 
 interface SiteDetail {
   site_id: string;
@@ -197,6 +203,7 @@ function siteRuntimeExplanationText(
 
 function SiteDetailContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
   const { siteId } = params as { siteId: string };
@@ -439,6 +446,22 @@ function SiteDetailContent() {
     );
   }
 
+  let parentAccountPathname = null;
+  try {
+    parentAccountPathname = buildAdminAccountDetailPathname(site.account_id);
+  } catch {
+    parentAccountPathname = null;
+  }
+  const returnTo = parentAccountPathname
+    ? normalizeAdminAccountSiteReturnTo(
+        searchParams.get(ADMIN_RETURN_TO_PARAM),
+        {
+          parentPathname: parentAccountPathname,
+          fallback: ADMIN_QUEUE_PATHNAMES.accounts,
+        }
+      )
+    : ADMIN_QUEUE_PATHNAMES.accounts;
+
   const subscriptionStatus = site.subscription?.status || 'inactive';
   const graceActive = Boolean(site.subscription_grace?.active);
   const runBudget = site.budget_state?.runs || {};
@@ -490,7 +513,7 @@ function SiteDetailContent() {
               : t('admin.site_detail.healthy_desc', undefined, 'Commercial coverage, runtime signal, and key inventory are all readable from this surface.');
   const nextStep = site.status === 'suspended'
     ? {
-        href: `/admin/accounts/${site.account_id}`,
+        href: returnTo,
         label: t('admin.site_detail.open_account_action', undefined, 'Open account follow-up'),
         description: t('admin.site_detail.open_account_desc', undefined, 'Inspect the parent account before changing traffic or support posture for this site.'),
       }
@@ -508,12 +531,12 @@ function SiteDetailContent() {
           }
         : hasKeyCoverageGap
           ? {
-              href: `/admin/accounts/${site.account_id}`,
+              href: returnTo,
               label: t('admin.site_detail.review_account_access_action', undefined, 'Review account access'),
               description: t('admin.site_detail.review_account_access_desc', undefined, 'Use the account surface to confirm support posture and site access before rotating keys.'),
             }
           : {
-              href: `/admin/accounts/${site.account_id}`,
+              href: returnTo,
               label: t('admin.site_detail.review_parent_account_action', undefined, 'Review parent account'),
               description: t('admin.site_detail.review_parent_account_desc', undefined, 'The site is stable; move up one level only if you need broader account coverage or support context.'),
             };
@@ -603,6 +626,11 @@ function SiteDetailContent() {
                   : t('admin.site_detail.activate_action', undefined, 'Activate site')}
               </button>
             ) : undefined}
+        secondaryAction={(
+          <Link href={returnTo} className="btn btn-secondary">
+            {t('common.back', {}, 'Back')}
+          </Link>
+        )}
         summaryItems={[
           {
             label: t('admin.account_detail.user_site_workspace_metric', undefined, 'User site workspace'),
@@ -690,7 +718,7 @@ function SiteDetailContent() {
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               {site.related_surfaces?.account_href ? (
-                <Link href={site.related_surfaces.account_href} className="btn btn-secondary">
+                <Link href={returnTo} className="btn btn-secondary">
                   {t('common.account', {}, 'Customer')}
                 </Link>
               ) : null}
