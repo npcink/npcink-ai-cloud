@@ -1,8 +1,8 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Approved for phased local development
+状态：Phase 0 + Phase 1 completed; Phase 2A candidate validated, PR pending
 
-日期：2026-08-02
+日期：2026-08-03
 
 适用仓库：`npcink-ai-cloud`
 
@@ -21,7 +21,8 @@
 
 ## 2. 当前事实
 
-以 `origin/master@7936d9c023f64ba651bddabc79da14ceaee3f503` 为调查基线：
+初始调查基线为
+`origin/master@7936d9c023f64ba651bddabc79da14ceaee3f503`：
 
 - `app/adapters/repositories/commercial_repository.py` 为 4,202 行。
 - `CommercialRepository` 有 157 个方法。
@@ -30,6 +31,20 @@
 - Subscription 查询被 Billing、Admin、Portal、Payment、Runtime、Site 等多个 domain mixin 调用，直接一次性改调用方会扩大回归面。
 
 因此，首批应复用现有 query mixin 模式，保持所有调用方不变，只移动无锁纯查询实现。
+
+Phase 0 + Phase 1 已通过 PR
+[#464](https://github.com/npcink/npcink-ai-cloud/pull/464) 合并。当前集成基线为
+`origin/master@fd7e538e46f56a1b9c44777531f00fdb3281ba2b`：
+
+- `CommercialSubscriptionQueries` 已承接 11 个 Subscription 无锁纯查询；
+- `CommercialRepository` 通过继承继续暴露原公共入口，调用方未批量迁移；
+- 门面从 4,202 行、157 个自有方法下降到 4,010 行、146 个自有方法；
+- 合并后的 M4 状态为 `acceptance_state=accepted`、`promotion_pr=464`、
+  `source_branch=master`、`source_dirty=false`；
+- API、数据库、迁移、业务状态、权限、Production 与 WordPress 均未变化。
+
+上述 SHA、行数和方法数是 2026-08-03 的阶段收口事实。后续批次仍必须从最新
+`origin/master` 重新计算，不能把它们当作永久合同。
 
 ## 3. 决策
 
@@ -87,9 +102,10 @@ temporary compatibility facade: CommercialRepository
 
 目标：把支持请求、消息、附件、反馈及队列查询收敛到 Support 领域。
 
-- 先拆无锁读取与聚合。
-- 再在独立批次迁移创建、状态流转和反馈写入。
+- Phase 2A 只拆无锁读取、聚合及其 SQL helper，继续使用兼容门面，不迁移调用方。
+- Phase 2B 才允许在新的独立计划和事务清单下评估创建、状态流转和反馈写入。
 - 保持既有全局风险排序、分页和 `return_to` 合同。
+- Phase 2A 完成不自动授权 Phase 2B。
 
 ### Phase 3：Plan、Subscription 写入与订单
 
@@ -241,11 +257,259 @@ Subscription read queries。
 - M4 fingerprint 要求 deploy、存在 active lock/slot，或 candidate 来源不清。
 - 为通过测试需要修改 API、数据库、业务逻辑或首批排除的领域。
 
-## 6. 回滚
+## 6. Phase 0 + Phase 1 收口与经验
+
+### 6.1 实际迁移结果
+
+本批实际迁移了以下 11 个方法：
+
+- `get_subscription`
+- `list_account_subscriptions`
+- `list_subscriptions`
+- `count_subscriptions`
+- `summarize_subscription_status_counts`
+- `summarize_subscription_plan_counts`
+- `count_subscriptions_by_account`
+- `count_subscriptions_by_site`
+- `get_latest_account_subscription`
+- `get_runtime_subscription`
+- `count_subscriptions_expiring_by`
+
+`count_subscriptions_expiring_by` 在实施时重新确认仍为无锁、无写入的纯 count
+查询，没有新事务耦合，因此纳入。AST 对比确认迁移前后方法集合、签名和方法体
+一致；新 query class 不包含 `add`、`flush`、`commit`、`rollback` 或行锁。
+
+精确变更文件为：
+
+- `app/adapters/repositories/commercial_subscription_queries.py`
+- `app/adapters/repositories/commercial_repository.py`
+- `tests/domain/test_commercial_query_repositories.py`
+- `docs/commercial-repository-decomposition-plan-v1.md`
+
+### 6.2 分层证据
+
+| 层级 | 结果 |
+| --- | --- |
+| Characterization | 迁移前聚焦文件 5 passed |
+| Local focused | 迁移后聚焦文件 5 passed；Ruff 通过；全量 mypy 260 个源文件无问题 |
+| Local affected | Payment/SubscriptionCommerce 39 passed；Commercial runtime、Portal lock 和相关 Portal/Admin 节点 20 passed |
+| Local policy | `check:anti-drift` 通过 |
+| Local broad | 直接运行 contract/domain 选择：1,548 passed、3 skipped，732.09 秒 |
+| M4 candidate | source-only sync；聚焦 query repository 5 passed，2.57 秒 |
+| PR/CI | PR #464 required checks 全绿；backend-targeted 8 分 45 秒 |
+| Merged | `origin/master@fd7e538e46f56a1b9c44777531f00fdb3281ba2b` |
+| M4 accepted | `promotion_pr=464`；accepted smoke 1 passed，0.60 秒；`source_branch=master`、`source_dirty=false` |
+
+没有自然业务流量，因此 24 小时观察和真实稳定性指标记录为未测量/N/A；没有为
+制造数据调用付费 Provider。Production Issue #406 继续冻结。
+
+### 6.3 为什么本批耗时较长
+
+主要耗时不在约 190 行结构移动，而在必须串行闭环的证据链：
+
+1. 本地全量 contract/domain 测试耗时 732.09 秒；
+2. GitHub backend required check 耗时约 8 分 45 秒；
+3. M4 candidate 必须先于 PR 收口，合并后又必须从干净 current master promotion；
+4. `check:fast` 在不含 `.env` 的隔离 worktree 中于本地 Docker 前置检查退出，
+   随后为了补齐证据又直接运行了同范围测试；
+5. 文档 handoff、唯一文件 ownership、Cloud merge lane 和 shared M4 ownership
+   都需要按顺序取得和释放。
+
+其中第 4 项是可避免成本。缺少运行环境前置条件时，失败的 wrapper 不增加代码
+正确性证据，也不应通过复制 `.env` 或改用本地 Docker 补救。
+
+### 6.4 后续批次的验证去重规则
+
+后续纯查询抽取采用证据覆盖矩阵，不以“多跑一次”替代风险判断：
+
+1. 迁移前先跑 characterization tests；迁移后复跑同一聚焦集合。
+2. 本地固定执行 Ruff、全量 mypy、最窄调用链测试和 `check:anti-drift`。
+3. `check:fast` 只在集成风险确实要求且当前 worktree 满足其环境前提时运行。
+   缺少 `.env` 时直接记录 not run/环境不满足，不先制造一次预期失败。
+4. 对同一 revision，若 GitHub required checks 已承担完整 contract/domain merge
+   authority，本地不再无理由重复同范围全量套件。
+5. M4 candidate 只跑能证明迁移 seam 的精确文件或 node；合并后 promotion 只跑
+   最窄 smoke，不重复 CI 已覆盖的全套测试。
+6. CI 等待期间可以完成五轴 review、PR body 和证据整理，但 Cloud lane、M4
+   candidate、merge 与 clean-master promotion 的状态转换不得并行越过。
+7. source-only sync 若要求 deploy，或 fingerprint、ownership、lock/slot 异常，
+   立即停止，不 retry、recover 或 fallback。
+
+M4 relay 本批实测 candidate upload/download 为 11/2 秒，promotion 为 12/9 秒；
+这些不是主要瓶颈。下一批应优化的是本地重复 broad gate 和等待期间的工作编排，
+而不是削弱 merge authority 或 accepted 条件。
+
+## 7. Phase 2A 建议：Support 无锁查询
+
+Phase 2A 已按本节 envelope 完成本地实现和 M4 candidate 验证；PR、合并与
+clean-master M4 acceptance 仍待后续证据，Phase 2B 未启动。
+
+### 7.1 实现目标
+
+新增 `CommercialSupportQueries`，原样迁移 Support 的无锁读取、列表、计数和队列
+聚合。`CommercialRepository` 通过继承保留现有公共调用方式，第一批不修改
+domain/API 调用方，也不改变 ADR-038 的 server-owned waiting-state projection。
+
+当前 master 上建议纳入的 10 个公共方法为：
+
+- `get_support_request`
+- `get_support_request_message`
+- `list_support_request_messages`
+- `get_support_request_attachment`
+- `list_support_request_attachments`
+- `count_support_request_attachments`
+- `get_support_request_feedback`
+- `list_support_requests`
+- `count_support_requests`
+- `summarize_support_request_queue`
+
+同时迁移仅服务上述查询的两个私有 SQL helper：
+
+- `_support_request_risk_rank`
+- `_support_request_filters`
+
+若最新 master 仍保持该方法集合，完成后门面自有方法预计从 146 个下降到 134
+个。这个预计值只用于 change envelope；交付时必须重新以 AST/当前代码报告实际值。
+
+### 7.2 开始前必须处理的文档
+
+每次实现会话完整阅读并遵守：
+
+- `AGENTS.md` 与当前 `README.md`
+- `docs/development-validation-operating-model-v1.md`
+- `docs/parallel-ai-collaboration-standard-v1.md`
+- `docs/m4-preview-ai-development-standard-v1.md`
+- `docs/commercial-repository-decomposition-plan-v1.md`
+- `docs/decisions/038-server-owned-support-waiting-state-projection.md`
+- `docs/cloud-admin-support-requests-query-closeout-2026-07-29.md`
+- `docs/cloud-admin-support-request-queue-retrospective-2026-08-01.md`
+- `docs/cloud-admin-phase-c-support-request-queue-acceptance-2026-07-12.md`
+
+实现批默认只更新本计划的事实、方法清单和验收证据。纯结构迁移不新建 ADR，
+也不修改 ADR-038；若需要改变 waiting-state、48 小时阈值、Portal projection、
+排序或分页语义，立即停止并另开业务合同批次。
+
+### 7.3 首选文件范围
+
+- 新增 `app/adapters/repositories/commercial_support_queries.py`
+- 修改 `app/adapters/repositories/commercial_repository.py`
+- 扩展 `tests/domain/test_commercial_query_repositories.py`
+- 仅为锁定全局风险/分页 characterization 时扩展
+  `tests/domain/test_support_request_queue.py`
+- 收口时更新 `docs/commercial-repository-decomposition-plan-v1.md`
+
+除 characterization 无法清楚落入上述测试外，不新增大型测试文件，不整理 Support
+domain mixin、API route 或 Admin 前端。
+
+### 7.4 必须保持的查询合同
+
+- `get_*` 的 `None` 语义和同一 SQLAlchemy `Session` 注入方式不变；
+- message/attachment 默认只返回 public，`include_internal=True` 语义不变；
+- message 按 `created_at ASC, message_id ASC`，attachment 按
+  `created_at ASC, attachment_id ASC`；
+- attachment count 的空结果仍为 `0`；
+- request 的 account/site/principal/status/topic/query/attention 过滤完全不变；
+- 默认排序与 risk 排序、稳定 tie-breaker、offset、正 limit、`None`/非正 limit
+  语义不变；
+- risk、summary 和 attention 继续共享同一 48 小时 cutoff 与服务端投影；
+- 全局过滤和风险排序继续发生在分页之前；
+- 查询 class 不调用 `add`、`flush`、`commit`、`rollback`，不取得行锁，也不通过
+  `no_autoflush` 等方式改变现有 Session autoflush 行为；
+- 新 query class 与旧门面结果、签名、异常和调用顺序一致。
+
+### 7.5 明确排除
+
+- `create_support_request`
+- `create_support_request_message`
+- `create_support_request_attachment`
+- `upsert_support_request_feedback`
+- `mark_support_request_complete`
+- `mark_support_request_waiting_for_operator`
+- `restore_support_request_waiting_state`
+- 任何等待状态、首次响应、公开活动或 notification 事务语义变化
+- Support domain/API 调用方迁移、Admin UI、`return_to`、数据库和迁移变化
+- assignment、AI reply、SLA policy、Production、WordPress 和 Phase 2B
+
+### 7.6 Characterization 与验证目标
+
+实现前先锁定：getter `None`、public/internal timeline、升序 tie-breaker、附件零计数、
+所有 request filter、query 大小写归一化、默认/risk 排序、global-before-pagination、
+attention/summary 共用 cutoff，以及空结果 summary。时间相关测试使用固定
+`risk_as_of`，不依赖墙钟。
+
+验证顺序为：
+
+1. Support/query characterization focused pytest；
+2. 迁移后同一 focused pytest；
+3. Ruff、全量 mypy；
+4. `tests/domain/test_support_request_queue.py` 及最新调用图对应的最窄 Support
+   domain/API 节点；
+5. `pnpm run check:anti-drift`；
+6. 仅存在未覆盖集成风险且环境满足时运行 `check:fast`；否则由 GitHub required
+   checks 承担 broad merge authority；
+7. 一次 source-only M4 candidate 和精确 Support query focused test；
+8. PR 合并后 clean-master promotion、status 和一个最窄 Support queue smoke。
+
+### 7.7 Phase 2A 停止条件
+
+- 任一候选方法出现写入、显式/隐式事务依赖、行锁或跨领域副作用；
+- 移动 helper 需要改变 risk、attention、summary 或分页语义；
+- 写路径依赖查询发生在 flush 前后的具体副作用，而继承门面无法原样保持；
+- characterization 暴露 Portal/Admin 不一致，需要改 API 或 UI；
+- 相关文件已有其他会话 ownership，或 shared M4/Cloud lane 不可用；
+- 为通过测试需要纳入 Phase 2B 或修改 ADR-038。
+
+### 7.8 Phase 2A candidate 收口证据
+
+以 `origin/master@fd7e538e46f56a1b9c44777531f00fdb3281ba2b` 为实施基线，
+Phase 2A 实际迁移了第 7.1 节列出的 10 个公共查询和 2 个私有 SQL helper。
+AST 对比确认迁移前后的方法集合、签名和方法体全部一致。
+
+当前 candidate 的精确文件为：
+
+- 新增 `app/adapters/repositories/commercial_support_queries.py`
+- 修改 `app/adapters/repositories/commercial_repository.py`
+- 扩展 `tests/domain/test_commercial_query_repositories.py`
+- 更新 `docs/commercial-repository-decomposition-plan-v1.md`
+
+`tests/domain/test_support_request_queue.py` 作为既有 characterization 继续运行，
+但不需要修改。门面从 4,010 行、146 个自有方法下降为 3,695 行、134 个自有
+方法。新 query class 除 `__init__` 外为 12 个迁移方法，扫描确认没有
+`add`、`add_all`、`flush`、`commit`、`rollback`、`with_for_update` 或
+`no_autoflush`。
+
+candidate 分层证据：
+
+| 层级 | 结果 |
+| --- | --- |
+| Pre-move characterization | query repository + Support queue：8 passed |
+| Post-move focused | 相同集合：8 passed |
+| Static | Ruff 通过；全量 mypy 261 个源文件无问题 |
+| Affected API | Portal Support 主流程与无 Site 支持流程：2 passed，1 个既有 deprecation warning |
+| Policy | `check:anti-drift` 与 `git diff --check` 通过 |
+| Initial M4 candidate | source-only sync；relay upload/download 13/2 秒；query repository 7 passed，3.53 秒 |
+| M4 status | `acceptance_state=candidate`、`promotion_pr=none`、branch 为当前 topic、4 个 dirty task paths、Alembic head、HTTP healthy |
+
+第一次 M4 focused 命令因错误地传入两个 `--focused` scope，在本地参数解析阶段
+退出；没有 SSH、Docker 或 runtime mutation。随后按 wrapper 的单 scope 合同只
+运行 query repository 文件。`check:fast` 未运行：隔离 worktree 不含 `.env`，
+且本批没有额外风险需要重复 GitHub required checks 将承担的 broad merge gate。
+
+此处只能报告 `candidate validated on M4`。PR merged、current master revision 和
+`accepted on M4` 必须在实际发生后另行更新或在下一阶段基线刷新时补录，不能用
+candidate 状态预填。合并前五轴审阅和 formatter 产生的最终 source-only sync
+属于当前源码一致性证据，其最终 bundle/timing 在 PR 与任务回执中报告，本文不在
+sync 后再次改写自身以制造新的 source drift。
+
+## 8. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
-## 7. 后续批次启动规则
+Phase 2A 若实施，同样只允许精确 source revert：恢复 Support 查询与 helper 到门面、
+移除新增继承/query 文件并回退对应 characterization。不得回滚
+`20260801_0078`、修改等待状态数据或触碰 M4/Production 数据来完成结构回滚。
+
+## 9. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
