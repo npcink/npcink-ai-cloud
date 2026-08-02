@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 + Phase 3A + Phase 3B + Phase 3C completed; Phase 3D local verified
+状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 completed; Phase 4A local verified
 
 日期：2026-08-03
 
@@ -799,7 +799,62 @@ deprecation warning）。Ruff 通过，全量 mypy 266 个源文件无问题，
 门面实际下降为 3,168 行、112 个自有方法。M4 candidate、PR/CI、merged source
 和 clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
 
-## 13. 回滚
+Phase 3D 随后由 PR #470 合并为
+`origin/master@6cf3eb22f2c058f02fdd543dc1f9d498323e11f8`。测试 fixture 中与本批无关的
+高熵 idempotency 示例曾触发 Secret scan；将其收敛为 `None` 并 amend 单一 commit
+后，Secret scan 通过，未增加 allowlist 或削弱扫描。最终 backend-targeted 为
+8 分 34 秒。从 clean current master source-only promotion 后，M4 status 为
+`acceptance_state=accepted`、`promotion_pr=470`、`source_branch=master`、
+`source_dirty=false`；聚焦 SubscriptionOrder repository smoke 为 2 passed。
+Cloud lane、shared M4 与 task worktree lock 均已释放。
+
+## 13. Phase 4A：Payment、Refund 与 PaymentEvent 无锁查询
+
+### 13.1 Current-master 方法与属性
+
+Phase 4A 基线为
+`origin/master@6cf3eb22f2c058f02fdd543dc1f9d498323e11f8`。本批迁移：
+
+- `get_payment_order`
+- `get_payment_order_by_idempotency_key`
+- `get_payment_order_by_provider_external_order`
+- `list_payment_orders`
+- `list_pending_payment_orders_before`
+- `count_payment_orders_by_status`
+- `get_payment_refund`
+- `get_payment_refund_by_idempotency_key`
+- `list_payment_refunds`
+- `get_payment_event_by_idempotency_key`
+- `get_payment_event_by_provider_event`
+
+11 个方法均只使用 `session.get`、`select`、`scalar`、`scalars` 或 `execute`，没有
+add、flush、commit、rollback、`for_update` 或 advisory lock。
+
+### 13.2 实现 envelope 与合同
+
+- 新增 `app/adapters/repositories/commercial_payment_queries.py`；
+- `CommercialRepository` 增加 `CommercialPaymentQueries` 继承并移除类内重复查询；
+- 新增 `tests/domain/test_commercial_payment_queries.py`；
+- 保持 idempotency/external/provider 空值早返回、account/site/status/canceled cutoff
+  filter、offset/limit、pending cutoff 和 grouped status count；
+- 保持 PaymentOrder 的 `created_at DESC, order_id DESC` 与 Refund 的
+  `created_at DESC, refund_id DESC`；
+- 明确排除 `get_payment_order_for_update`、三个 create、Provider 调用、金额/货币、
+  状态机、API、schema/migration、调用方迁移、Production 和 WordPress。
+
+### 13.3 本地收口证据
+
+迁移前 characterization 为 1 passed；迁移后 facade 与新 query class 为 2 passed。
+AST 对比确认 11 个方法集合、签名和方法体与 current-master 基线完全一致；新 query
+class mutation/lock scan clean。Payment + Subscription Commerce 为 39 passed，Portal
+创建/通知与 Payment route 为 3 passed（1 个既有 Starlette deprecation warning）。
+Ruff 与精确 fixture Gitleaks 通过，全量 mypy 267 个源文件无问题，
+`check:anti-drift` 与 `git diff --check` 通过。
+
+门面实际下降为 3,032 行、101 个自有方法。M4 candidate、PR/CI、merged source
+和 clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
+
+## 14. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -825,7 +880,10 @@ Phase 3C 只允许恢复 `upsert_account_subscription` 到门面、恢复 Subscr
 Phase 3D 只允许恢复五个 SubscriptionOrder 方法到门面、移除新 repository 与
 聚焦 characterization。不得修改 PaymentOrder、Provider 结果或订单数据完成回滚。
 
-## 14. 后续批次启动规则
+Phase 4A 只允许恢复 11 个 Payment/Refund/Event 查询到门面、移除 query class 与
+聚焦 characterization。不得把锁读取、create、Provider 或支付数据纳入回滚。
+
+## 15. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
