@@ -1345,6 +1345,44 @@ source-only M4 candidate bundle 为
 API Key repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确释放。
 其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
 
+### 17.16 Phase 5F 合并与 M4 accepted
+
+Phase 5F 由 PR #481 合并为
+`d1eed51ba8300bc04986df2c8c7dff91379bab5f`；required `backend-targeted`
+为 8 分 51 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=481`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`f30bc891f3c0293986161c27ce6ed3cf10fa800019df95689ebf48ee8c097dbc`；
+聚焦 Site API Key repository smoke 为 2 passed。Cloud lane、shared M4 与 task worktree
+lock 均已释放。
+
+### 17.17 Phase 5G Trial/Entitlement repository
+
+Phase 5G 在 current `origin/master@d1eed51b` 上确认并迁移六个 Trial/Entitlement 方法：
+
+- `get_trial_claim`
+- `find_trial_claim`
+- `create_trial_claim`
+- `supersede_entitlement_snapshots`
+- `create_entitlement_snapshot`
+- `get_active_entitlement_snapshot`
+
+新增 `CommercialTrialEntitlementRepository`；facade 通过继承保持公共调用。保持 Trial
+OR-filter、无过滤返回 None、active snapshot 过滤、可选 subscription 过滤、
+`generated_at desc, id desc` 排序、supersede 范围、空结果及 add/flush 语义。
+repository 不取得行锁，不拥有 commit/rollback；订阅/支付状态机、entitlement 重算、
+调用方、权限/API、schema、runtime、Provider、Production 与 WordPress 明确排除。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
+2 passed。AST 对比确认六个方法的签名和方法体与 current-master 完全一致。Payment、
+SubscriptionCommerce、Billing/Commercial policy、Portal trial/fallback 与 runtime
+entitlement 调用图回归合计 49 passed，只有既有 Starlette deprecation warning；Ruff
+通过，全量 mypy 277 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。
+门面当前为 1,405 行、40 个自有方法。source-only M4 candidate bundle 为
+`4e1defb5691f071b37311583b54176f9c144c1914c42274c638260066c08eeeb`，聚焦
+Trial/Entitlement repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已
+明确释放。其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1410,6 +1448,10 @@ SiteQueries 的直接继承，并移除新 repository/characterization 与 Site 
 Phase 5F 只允许恢复六个 Site API Key 方法到门面、移除新 repository 与聚焦
 characterization。不得修改 key 数据、密文、轮换关系、事务补偿，或把
 Trial/Entitlement、权限/API 纳入回滚。
+
+Phase 5G 只允许恢复六个 Trial/Entitlement 方法到门面、移除新 repository 与聚焦
+characterization。不得修改 trial/snapshot 数据、重算 entitlement、事务补偿，或把
+Payment/Subscription 状态机与 runtime 纳入回滚。
 
 ## 19. 后续批次启动规则
 
