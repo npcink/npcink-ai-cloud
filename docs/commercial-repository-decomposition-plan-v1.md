@@ -1263,6 +1263,48 @@ source-only M4 candidate bundle 为
 `eca9b4fc93219faa8e2a5e427be80cf4d577c911059b56f1adcd62bd95b34033`，聚焦
 Access repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确释放。
 
+### 17.12 Phase 5D 合并与 M4 accepted
+
+Phase 5D 由 PR #479 合并为
+`2cd872b34399879e29eef69bbeb8a201102d2bac`；required `backend-targeted`
+为 8 分 5 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=479`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`18cb2026f582da5c2d06044add126d2866b35041226bc7af757a70ee6132bcba`；
+聚焦 Access repository smoke 为 2 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放。
+
+### 17.13 Phase 5E Account/Site repository
+
+Phase 5E 在 current `origin/master@2cd872b3` 上确认并迁移八个 Account/Site 方法：
+
+- `get_account_for_update`
+- `upsert_account`
+- `get_site_for_update`
+- `get_current_principal_site_binding`
+- `create_principal_site_binding`
+- `get_current_site_account_binding`
+- `create_site_account_binding`
+- `upsert_site`
+
+新增 `CommercialAccountSiteRepository`，继承既有 Account/Site query 层；facade 通过
+这一聚合层保持公共调用。保持 account/site row lock、binding 可选 row lock、current
+filters/order/limit、add/flush、WordPress-only platform 校验、metadata URL 清洗、
+provisioned-at 只填空及 None/缺失语义。repository 不拥有 commit/rollback，不新增
+advisory lock；Site API key、trial/entitlement、Payment/Credit/Usage/Audit、调用方、
+权限/API、schema、Production 与 WordPress 明确排除。
+
+迁移前 facade characterization 与 Site platform contract 为 8 passed；迁移后
+facade/direct Account/Site characterization 与双 repository Site contract 为 10 passed。
+AST 对比确认八个方法的签名和方法体与 current-master 完全一致。Payment、
+SubscriptionCommerce、Account/Site、service/Portal lock 与 authorization 回归合计
+53 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy 275 个源文件
+无问题，`check:anti-drift` 与 `git diff --check` 通过。门面当前为 1,631 行、52 个自有
+方法。source-only M4 candidate bundle 为
+`9942d0ae4c489ceda0265f31728b3019ce5294dd11d5438d84e2df5ad0e89086`，聚焦
+Account/Site repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确
+释放。其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1320,6 +1362,10 @@ identity/binding 数据、事务补偿，或把 Membership/Platform Admin mutati
 Phase 5D 只允许恢复四个 access mutation 到门面、恢复 facade 对 MembershipQueries
 与 PlatformAdminQueries 的直接继承，并移除新 repository/characterization。不得修改
 membership/grant 数据、事务补偿，或把 Site binding/权限 API 纳入回滚。
+
+Phase 5E 只允许恢复八个 Account/Site 方法到门面、恢复 facade 对 AccountQueries 与
+SiteQueries 的直接继承，并移除新 repository/characterization 与 Site contract 参数化。
+不得修改 account/site/binding 数据、事务补偿，或把 Site API key/entitlement 纳入回滚。
 
 ## 19. 后续批次启动规则
 
