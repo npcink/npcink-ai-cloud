@@ -231,6 +231,37 @@ handoff evidence. Preserve or transfer any recoverable work. Only the recorded
 owner, an acknowledged successor, or an operator may authorize unlock after
 that inventory; do not use a forced remove or unlock as a discovery mechanism.
 
+### 4.2 Exact Scope, Scope Amendments, and Baseline Drift
+
+The declared file list is a change boundary, not a prediction that may be
+silently widened. If implementation or a required gate discovers another
+necessary file, the owner stops and records:
+
+- why the original scope is insufficient;
+- the exact additional file and contract it protects;
+- whether the change is required, conditional, or only diagnostic;
+- the additional gate and rollback effect.
+
+The integrator or operator must acknowledge the amendment before that file is
+changed. Conditional generated artifacts, including visual snapshots, are
+updated only after the final source revision reproduces a stable intentional
+difference. A transient pixel difference, environment decoration, transport
+failure, or flaky render is not authority to refresh a baseline.
+
+When `origin/master` advances before publication:
+
+1. stop before M4 mutation or PR publication;
+2. inspect the exact upstream delta and both file and contract overlap;
+3. preserve a dirty coherent batch with an exact-file local checkpoint commit;
+4. rebase only the focused worktree onto current `origin/master`;
+5. stop on any conflict instead of selecting `ours` or `theirs` automatically;
+6. rerun the gates affected by the new base and recheck the exact file list.
+
+Do not rebase a dirty worktree, use a stash as a coordination mechanism, or
+claim safety merely because path names do not overlap. Shared types, generated
+artifacts, imports, configuration, and test assumptions can drift without a
+same-file conflict.
+
 ## 5. Unique Conflict-Domain Owner
 
 The implementation owner is accountable for the coherent diff and its
@@ -320,6 +351,28 @@ The shared-runtime owner releases ownership only after reporting the candidate
 state, revision, dirty state, locks, completed evidence, and any recovery
 needed by the next owner.
 
+### 7.1 Candidate Freshness and Browser Evidence
+
+Candidate evidence is revision-specific. Any source change after M4 sync or
+deploy invalidates the candidate claim for the changed behavior. The owner
+must run the relevant local gates again, reacquire the runtime, dispatch the
+new revision through the smallest valid lane, and release it again before
+continuing publication. A prior healthy candidate may remain useful history,
+but it is not evidence for the new head.
+
+Browser reachability and product behavior are separate facts. A tunnel, HTTP
+200, complete DOM, or successful static-asset request does not prove an
+interactive journey. When the governed browser preflight reports degraded
+transport, or navigation never reaches product assertions, record
+`browser_evidence=not_counted`. Use same-revision local production Playwright,
+an already authenticated approved browser, or another explicitly authorized
+consumer lane for product evidence. Never report a login redirect, transport
+timeout, screenshot refresh, or backend smoke as a passing browser journey.
+
+Likewise, a focused backend test may prove runtime and data-path health for a
+frontend-only change, but the closeout must say that it does not prove the
+frontend navigation contract.
+
 ## 8. Stop and Recovery Rules
 
 | Observed condition | Required response |
@@ -354,6 +407,24 @@ the later PR, merged, M4-accepted, or released-lane states for that delivery.
 
 Do not use "done" to collapse source, CI, M4, production, and human acceptance
 into one state.
+
+The following receipt boundaries are mandatory when the task uses the
+corresponding lane:
+
+- `local-ready`: exact base, commit, files, gates, known limitations, and
+  requested runtime lane;
+- `candidate release`: candidate revision, source dirty state, fingerprints,
+  focused evidence, browser evidence classification, locks, tunnel state, and
+  explicit shared-runtime release;
+- `PR lane`: PR number, head, base, exact scope, auto-merge state, and the lane
+  owner;
+- `accepted double release`: merge revision, clean-master promotion receipt,
+  focused smoke, remaining limitations, and independent release of both the
+  merge lane and shared runtime.
+
+A release receipt is evidence, not authorization for the next queued batch.
+The next owner starts only after the operator or integrator explicitly admits
+that batch.
 
 ## 10. Practical Scheduling Pattern
 
