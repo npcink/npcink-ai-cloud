@@ -1148,6 +1148,46 @@ candidate bundle 为
 Platform Admin query repository smoke 为 2 passed；未要求 deploy，shared M4 ownership
 已明确释放。
 
+### 17.6 Phase 5B2 合并与 M4 accepted
+
+Phase 5B2 由 PR #476 合并为
+`71db490fe5ae58b2edd975dee21974bf18a73e0e`；required `backend-targeted`
+为 8 分 20 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=476`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`708fadcf0f4ff7118a0fe8e31911ff6e4270ffaa90a612a64e5362e0213bd389`；
+聚焦 Platform Admin query repository smoke 为 2 passed。Cloud lane、shared M4 与
+task worktree lock 均已释放。
+
+### 17.7 Phase 5C1 Portal Auth repository
+
+Phase 5C1 在 current `origin/master@71db490f` 上确认并迁移七个 Portal Auth 方法：
+
+- `create_portal_login_code`
+- `expire_pending_portal_login_codes`
+- `list_portal_login_codes`
+- `get_principal_identity_by_email`
+- `purge_expired_portal_auth_evidence`
+- `get_portal_oauth_state`
+- `create_portal_oauth_state`
+
+新增 `CommercialPortalAuthRepository`，facade 通过继承维持公共调用；不迁移 domain/API
+调用方。原样保留 add/delete/flush、PostgreSQL transaction advisory lock、可选
+`with_for_update`、email lower-case、active-only 时钟、排序/limit、空 email、purge
+`1..1000` 边界、返回计数，以及 OAuth 空字段归一化。repository 不拥有 commit/rollback，
+不新增或扩大锁。IdentityProvider/Principal mutation、Membership、Platform Admin mutation、
+Site binding、权限/API、schema、Production 与 WordPress 明确排除。
+
+迁移前 facade characterization 为 2 passed；迁移后 facade/direct characterization 与
+advisory-lock tests 合计 9 passed。AST 对比确认七个方法的签名和方法体与 current-master
+完全一致。聚焦 repository/lock、WordPress Addon OAuth exchange、登录码 request/verify
+和 retention cleanup 合计 12 passed，只有既有 Starlette deprecation warning；Ruff
+通过，全量 mypy 272 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。
+门面当前为 2,037 行、68 个自有方法。其余 M4 candidate、PR/CI、merged source 与
+clean-master M4 accepted 继续分别记录。source-only M4 candidate bundle 为
+`853ce1c13b80022204e3a7eb73bb1085b5b160c5929cf2607a0dab3fd7fde964`，聚焦
+Portal Auth repository smoke 为 4 passed；未要求 deploy，shared M4 ownership 已明确释放。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1193,6 +1233,10 @@ Phase 5B1 只允许恢复九个 Membership/Site binding 无锁查询到门面、
 
 Phase 5B2 只允许恢复四个 Platform Admin 无锁查询到门面、移除 query class 与聚焦
 characterization。不得修改 grant 数据、权限、API，或把 upsert/delete 纳入回滚。
+
+Phase 5C1 只允许恢复七个 Portal Auth 方法到门面、移除 repository 与聚焦
+characterization，并回退既有 lock test 的 direct 参数化。不得修改认证证据数据、
+事务补偿、扩大锁，或把其他 Identity/Membership mutation 纳入回滚。
 
 ## 19. 后续批次启动规则
 
