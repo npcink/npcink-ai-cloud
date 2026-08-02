@@ -76,6 +76,7 @@ and other CMS adapters are post-P5 validation work.
 - [docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md](docs/decisions/034-fail-closed-principal-site-ownership-bootstrap.md)
 - [docs/decisions/036-single-account-single-identity-validation-stage.md](docs/decisions/036-single-account-single-identity-validation-stage.md)
 - [docs/customer-account-identity-stage-standard-v1.md](docs/customer-account-identity-stage-standard-v1.md)
+- [docs/commercial-repository-decomposition-plan-v1.md](docs/commercial-repository-decomposition-plan-v1.md)
 - [docs/decisions/037-separate-customer-directory-from-service-problem-queue.md](docs/decisions/037-separate-customer-directory-from-service-problem-queue.md)
 - [docs/decisions/038-server-owned-support-waiting-state-projection.md](docs/decisions/038-server-owned-support-waiting-state-projection.md)
 - [docs/cloud-admin-customer-operations-workspace-standard-v1.md](docs/cloud-admin-customer-operations-workspace-standard-v1.md)
@@ -83,6 +84,7 @@ and other CMS adapters are post-P5 validation work.
 Evidence records (not target-contract completion proof):
 
 - [docs/ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md](docs/ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md)
+- [docs/ai-parallel-remediation-stage-closeout-and-retrospective-2026-08-03.md](docs/ai-parallel-remediation-stage-closeout-and-retrospective-2026-08-03.md)
 - [docs/production-master-delta-audit-2026-07-25.md](docs/production-master-delta-audit-2026-07-25.md)
 - [docs/refactor-baseline-2026-07-14.md](docs/refactor-baseline-2026-07-14.md)
 - [docs/p5-hardening-release-audit-2026-07-17.md](docs/p5-hardening-release-audit-2026-07-17.md)
@@ -122,6 +124,7 @@ Operational references:
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
 - [docs/parallel-ai-collaboration-standard-v1.md](docs/parallel-ai-collaboration-standard-v1.md)
 - [docs/development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md)
+- [docs/structural-remediation-delivery-standard-v1.md](docs/structural-remediation-delivery-standard-v1.md)
 - [docs/hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md](docs/hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
 - [docs/cloud-admin-ui-review-and-delivery-playbook-v1.md](docs/cloud-admin-ui-review-and-delivery-playbook-v1.md)
 - [docs/engineering-command-inventory-standard-v1.md](docs/engineering-command-inventory-standard-v1.md)
