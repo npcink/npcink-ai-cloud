@@ -1226,6 +1226,43 @@ accepted 继续分别记录。source-only M4 candidate bundle 为
 `7377efa45ab84fcf95138bf55b438638d90e11f5325f596388212a79722fac90`，聚焦
 Identity repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确释放。
 
+### 17.10 Phase 5C2 合并与 M4 accepted
+
+Phase 5C2 由 PR #478 合并为
+`81ff2929ccf8831f31f9d66ce1e9d19db6b790cb`；required `backend-targeted`
+为 8 分 10 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=478`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`42450cc8db8382b3194d46104ea6ea667a425cc495c8b346ef161c57b33946e2`；
+聚焦 Identity repository smoke 为 2 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放。
+
+### 17.11 Phase 5D Access mutation
+
+Phase 5D 在 current `origin/master@81ff2929` 上确认并迁移四个 access mutation：
+
+- `upsert_account_user_membership`
+- `revoke_account_user_memberships`
+- `upsert_platform_admin_grant`
+- `delete_platform_admin_grant`
+
+新增 `CommercialAccessRepository`，继承既有 `CommercialMembershipQueries` 与
+`CommercialPlatformAdminQueries`；facade 通过这一聚合层保持公共调用。保持 membership
+唯一查找、`allowed_actions_json or []`、active-only revoke、grant create/update、delete
+bool、add/delete/flush 与零计数语义。repository 不拥有 commit/rollback，不新增锁；
+调用方、Site/principal binding、Account/Site、权限/API、schema、Production 与 WordPress
+明确排除。
+
+迁移前 facade characterization 为 1 passed，迁移后 facade/direct 为 2 passed；AST
+对比确认四个方法的签名和方法体与 current-master 完全一致。Access、Membership、
+Platform Admin、完整 Portal users 与相关 Admin session 回归合计 11 passed，只有既有
+Starlette deprecation warning；Ruff 通过，全量 mypy 274 个源文件无问题，
+`check:anti-drift` 与 `git diff --check` 通过。门面当前为 1,816 行、60 个自有方法。
+其余 M4 candidate、PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
+source-only M4 candidate bundle 为
+`eca9b4fc93219faa8e2a5e427be80cf4d577c911059b56f1adcd62bd95b34033`，聚焦
+Access repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确释放。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1279,6 +1316,10 @@ characterization，并回退既有 lock test 的 direct 参数化。不得修改
 Phase 5C2 只允许恢复四个 core Identity mutation 到门面、恢复 facade 对 IdentityQueries
 与 PortalAuthRepository 的直接继承，并移除新 repository/characterization。不得修改
 identity/binding 数据、事务补偿，或把 Membership/Platform Admin mutation 纳入回滚。
+
+Phase 5D 只允许恢复四个 access mutation 到门面、恢复 facade 对 MembershipQueries
+与 PlatformAdminQueries 的直接继承，并移除新 repository/characterization。不得修改
+membership/grant 数据、事务补偿，或把 Site binding/权限 API 纳入回滚。
 
 ## 19. 后续批次启动规则
 
