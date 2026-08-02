@@ -1915,11 +1915,9 @@ def test_retired_ops_secret_does_not_satisfy_production_config(monkeypatch) -> N
         Settings(_env_file=None)
 
 
-def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None:
+def test_baseline_scripts_lock_migration_and_schema_checks() -> None:
     cloud_root = _cloud_root()
     dev_compose_text = (cloud_root / "docker-compose.dev.yml").read_text()
-    preview_script_path = cloud_root / "scripts" / "remote-preview-mini.sh"
-    preview_script = preview_script_path.read_text()
     baseline_script = (_cloud_root() / "deploy" / "remote-baseline-status.sh").read_text()
     nginx_dev_conf = (_cloud_root() / "deploy" / "nginx.dev.conf").read_text()
     release_smoke_script = (_cloud_root() / "deploy" / "release-smoke.sh").read_text()
@@ -1933,49 +1931,15 @@ def test_preview_and_baseline_scripts_lock_migration_and_schema_checks() -> None
         _cloud_root() / "deploy" / "remote-provider-matrix-smoke.sh"
     ).read_text()
 
-    assert "alembic upgrade head" in preview_script
-    assert "python -m app.dev.baseline_status" in preview_script
-    assert (
-        'SERVICES="${SERVICES:-api worker callback-worker ops-worker frontend}"' in preview_script
-    )
-    assert "for service in ${SERVICES}; do" in preview_script
-    assert "fatal startup log detected" in preview_script
-    assert "NPCINK_CLOUD_TRUSTED_HOST_ALLOWLIST" in preview_script
-    assert "NPCINK_CLOUD_BROWSER_ORIGIN_ALLOWLIST" in preview_script
-    assert "NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT" in preview_script
-    assert "NPCINK_CLOUD_OTEL_TRACE_SINK_OTLP_ENDPOINT" not in preview_script
-    assert "NPCINK_CLOUD_OTEL_TRACE_QUERY_URL" in preview_script
-    assert "ensure_remote_trace_sink" in preview_script
-    assert "verify_remote_trace_sink" in preview_script
-    assert "reload_remote_proxy" in preview_script
-    assert ".cache/npcink-ai-cloud-mini" in preview_script
-    assert "PREVIEW_STACK_SERVICES" in preview_script
-    assert "DEPENDENCY_IMAGES=(" in preview_script
-    assert (
-        "keychain cannot be accessed because the current session does not allow user interaction"
-    ) in preview_script
-    assert "falling back to local dependency image transfer" in preview_script
-    assert "falling back to local build + image transfer" in preview_script
-    assert "--pull never" in preview_script
-    assert "http://host.docker.internal:4318/v1/traces" in preview_script
-    assert "http://${REMOTE_IP}:16686" in preview_script
-    assert "--set=receivers.otlp.protocols.http.endpoint=0.0.0.0:4318" in preview_script
-    assert "mini-preview-smoke-span" in preview_script
-    assert "force_flush()" in preview_script
-    assert "api:8000" in preview_script
-    assert "proxy:8080" in preview_script
     assert "proxy_set_header Host $host;" in nginx_dev_conf
     assert "proxy_set_header X-Forwarded-Host $host;" in nginx_dev_conf
     assert "location = /health/operational-ready" in nginx_dev_conf
     assert "location /open/" in nginx_dev_conf
     dev_open_block = nginx_dev_conf.split("location /open/ {", 1)[1].split("\n    }", 1)[0]
     assert "proxy_set_header Connection" not in dev_open_block
-    assert "callback-worker:" in preview_script
-    assert "ops-worker:" in preview_script
     assert "ops-worker:" in dev_compose_text
     assert "python -m app.workers.ops_cadence" in dev_compose_text
     assert "npcink-ai-cloud-ops-worker:dev" in dev_compose_text
-    assert "/health/operational-ready" in preview_script
     assert "python -m app.dev.baseline_status" in baseline_script
     assert "/internal/service/observability/summary" in release_smoke_script
     assert "/health/operational-ready" in release_smoke_script

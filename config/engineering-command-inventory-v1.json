@@ -360,27 +360,6 @@
     },
     {
       "package": "root",
-      "profile": "remote_state",
-      "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
-      "used_by": ["manual"],
-      "status": "deprecated",
-      "replacement": "Use the corresponding m4:preview:* command.",
-      "removal_condition": "Remove after repository and operator review confirms no bounded recovery caller still depends on the legacy remote-preview scripts.",
-      "evidence": ["docs/development-validation-operating-model-v1.md", "scripts/remote-preview-mini.sh"],
-      "commands": {
-        "sync:mini": "Legacy alias for remote Mac mini frontend preview sync.",
-        "sync:mini:local-build": "Legacy alias for local-build Mac mini frontend preview sync.",
-        "mini:preview": "Legacy remote Mac mini full preview build.",
-        "mini:preview:local-build": "Legacy local-build remote Mac mini preview.",
-        "mini:preview:frontend": "Legacy remote Mac mini frontend-only preview.",
-        "mini:preview:frontend:local-build": "Legacy local-build Mac mini frontend preview.",
-        "mini:preview:logs": "Inspect logs from the legacy remote Mac mini preview.",
-        "mini:preview:restart": "Restart services in the legacy remote Mac mini preview.",
-        "mini:preview:stop": "Stop the legacy remote Mac mini preview."
-      }
-    },
-    {
-      "package": "root",
       "profile": "m4_read",
       "owner_doc": "docs/m4-preview-ai-development-standard-v1.md",
       "used_by": ["runbook"],

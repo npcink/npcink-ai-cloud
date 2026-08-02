@@ -33,7 +33,7 @@ def test_engineering_command_inventory_covers_both_packages() -> None:
     }
 
 
-def test_deprecated_commands_keep_replacement_and_removal_evidence() -> None:
+def test_any_deprecated_commands_keep_replacement_and_removal_evidence() -> None:
     result = subprocess.run(
         [sys.executable, str(CHECKER), "--format", "json"],
         cwd=ROOT,
@@ -44,7 +44,6 @@ def test_deprecated_commands_keep_replacement_and_removal_evidence() -> None:
     commands = json.loads(result.stdout)["commands"]
     deprecated = [command for command in commands if command["status"] == "deprecated"]
 
-    assert deprecated
     assert all(command["replacement"] for command in deprecated)
     assert all(command["removal_condition"] for command in deprecated)
     protected_consumers = {"ci", "release", "runbook", "contract"}
