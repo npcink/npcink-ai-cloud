@@ -14,13 +14,19 @@ replacement for the plugin.
 
 Current focus lock:
 
-- main target: prove the user-facing hosted GPT5.5 text loop through the normal
-  runtime/toolbox path
+- completed development baseline: PR `#462` proved and repaired the normal
+  WordPress Ability -> Addon -> Cloud runtime -> Hosted GPT-5.5 -> editor
+  adoption loop; `master=4043d207...` was accepted on M4, but this is not
+  production or human acceptance
+- pending next task: observe the exact M4 accepted revision under the bounded
+  receipt and stop rules in
+  [docs/hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md](docs/hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md);
+  do not generate paid calls solely for the observation
 - keep only minimum usage, error, and provider evidence needed to support that
   loop
-- pause new admin governance pages, dashboards, reports, alert-ranking
-  expansion, and broad commercial front-office work until the core AI path is
-  proven
+- continue to pause new admin governance pages, dashboards, reports,
+  alert-ranking expansion, and broad commercial front-office work; proving the
+  core AI path does not automatically authorize those deferred initiatives
 - do not add new orchestration infrastructure or move local plugin truth into
   Cloud
 
@@ -116,6 +122,7 @@ Operational references:
 - [deploy/RELEASE_CHECKLIST.md](deploy/RELEASE_CHECKLIST.md)
 - [docs/parallel-ai-collaboration-standard-v1.md](docs/parallel-ai-collaboration-standard-v1.md)
 - [docs/development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md)
+- [docs/hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md](docs/hosted-wordpress-text-generation-closed-loop-validation-standard-v1.md)
 - [docs/cloud-admin-ui-review-and-delivery-playbook-v1.md](docs/cloud-admin-ui-review-and-delivery-playbook-v1.md)
 - [docs/engineering-command-inventory-standard-v1.md](docs/engineering-command-inventory-standard-v1.md)
 - [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
