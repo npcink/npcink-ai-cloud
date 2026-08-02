@@ -20,7 +20,7 @@ test('customer detail v2 keeps governed commercial and audited credit operations
   await expect(page.getByRole('button', { name: /Suspend account|暂停账户|暫停帳戶/i })).toBeVisible();
   await expect(page.getByText(/More account actions|更多账户操作|更多帳戶操作/i)).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Manage package|管理套餐|管理方案/i })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /Back to accounts|返回客户列表|返回客戶列表/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Back to customers|Back to accounts|返回客户列表|返回客戶列表/i })).toHaveAttribute('href', '/admin/accounts');
 
   const tabPositions = await detailTabs.evaluateAll((tabs) =>
     tabs.map((tab) => ({
@@ -81,6 +81,40 @@ test('customer detail v2 keeps governed commercial and audited credit operations
 
   await page.getByRole('tab', { name: /Audit|审计|稽核/i }).click();
   await expect(page.getByText('account.credit.adjustment')).toBeVisible();
+});
+
+test('customer and Site details preserve one filtered Accounts return context across refresh and browser history', async ({ page }) => {
+  await installAdminMocks(page);
+  const queuePath = '/admin/accounts?q=MVP&status=active&tag=one&tag=two';
+  const accountPath = `/admin/accounts/${LONG_ACCOUNT_ID}?return_to=${encodeURIComponent(queuePath)}`;
+
+  await page.goto(accountPath);
+  const accountReturn = page.getByRole('link', {
+    name: /Back to customers|Back to accounts|返回客户列表|返回客戶列表/i,
+  });
+  await expect(accountReturn).toHaveAttribute('href', queuePath);
+
+  await page.getByRole('tab', { name: /^Sites|^站点|^網站/i }).click();
+  const siteLink = page.getByRole('link', { name: 'site_mvp' }).first();
+  const siteHref = await siteLink.getAttribute('href');
+  const siteUrl = new URL(siteHref || '', 'https://admin.example');
+  expect(siteUrl.pathname).toBe('/admin/sites/site_mvp');
+  expect(siteUrl.searchParams.get('return_to')).toBe(accountPath);
+
+  await siteLink.click();
+  await expect(page.getByRole('heading', { name: 'MVP Site' })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`${LONG_ACCOUNT_ID}\\?return_to=`));
+  await page.goForward();
+  await expect(page.getByRole('heading', { name: 'MVP Site' })).toBeVisible();
+  await page.reload();
+
+  const siteReturn = page.getByRole('link', { name: /^Back$|^返回$/i }).first();
+  await expect(siteReturn).toHaveAttribute('href', accountPath);
+  await siteReturn.click();
+  await expect(accountReturn).toHaveAttribute('href', queuePath);
+  await accountReturn.click();
+  await expect(page).toHaveURL(new RegExp('/admin/accounts\\?q=MVP&status=active&tag=one&tag=two$'));
 });
 
 test('customer credit warning stays compact and exposes top-up plus resource evidence on demand', async ({ page }) => {

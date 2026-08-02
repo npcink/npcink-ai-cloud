@@ -9,7 +9,7 @@ import { AdminInspectorDrawer } from '@/components/admin/AdminInspectorDrawer';
 import { AdminRouteSkeleton } from '@/components/admin/AdminRouteSkeleton';
 import { AdminWorkbenchDialog } from '@/components/admin/AdminWorkbenchDialog';
 import { LoadingFallback } from '@/components/ui/LoadingFallback';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifier';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { ConfirmModal } from '@/components/ui/Modal';
@@ -58,6 +58,19 @@ import { formatAdminCurrency } from '@/lib/currency';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import { ApiError, resolveUiErrorMessage } from '@/lib/errors';
 import { translateStatusLabel } from '@/lib/status-display';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  ADMIN_RETURN_TO_PARAM,
+  buildAdminAccountDetailPathname,
+  buildAdminAccountSiteReturnTo,
+  buildAdminNestedDetailHref,
+  normalizeAdminReturnTo,
+} from '@/lib/admin-return-context';
+
+const ACCOUNTS_RETURN_CONTEXT_POLICY = {
+  allowedPathnames: [ADMIN_QUEUE_PATHNAMES.accounts],
+  fallback: ADMIN_QUEUE_PATHNAMES.accounts,
+} as const;
 
 interface AccountDetail {
   account_id: string;
@@ -412,9 +425,14 @@ function formatSignedCreditDelta(value: number): string {
 
 function AccountDetailContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const { t } = useLocale();
   const { success: showSuccessToast } = useToast();
   const { accountId } = params as { accountId: string };
+  const returnTo = normalizeAdminReturnTo(
+    searchParams.get(ADMIN_RETURN_TO_PARAM),
+    ACCOUNTS_RETURN_CONTEXT_POLICY
+  );
   
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -1081,7 +1099,7 @@ function AccountDetailContent() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">{t('admin.account_not_found')}</h2>
-          <Link href="/admin/accounts" className="text-blue-600 hover:underline">
+          <Link href={returnTo} className="text-blue-600 hover:underline">
             ← {t('admin.back_to_accounts')}
           </Link>
         </div>
@@ -1096,6 +1114,34 @@ function AccountDetailContent() {
         name: site.name || '',
       }))
     : [];
+  let accountDetailPathname = null;
+  try {
+    accountDetailPathname = buildAdminAccountDetailPathname(account.account_id);
+  } catch {
+    accountDetailPathname = null;
+  }
+  const accountSiteReturnTo = accountDetailPathname
+    ? buildAdminAccountSiteReturnTo({
+        parentPathname: accountDetailPathname,
+        searchParams,
+        accountsPolicy: ACCOUNTS_RETURN_CONTEXT_POLICY,
+      })
+    : ADMIN_QUEUE_PATHNAMES.accounts;
+  const siteDetailHref = (siteId: string) => {
+    if (!accountDetailPathname) return returnTo;
+    try {
+      return buildAdminNestedDetailHref({
+        detailPathname: `/admin/sites/${encodeURIComponent(siteId)}`,
+        returnTo: accountSiteReturnTo,
+        policy: {
+          parentPathname: accountDetailPathname,
+          fallback: ADMIN_QUEUE_PATHNAMES.accounts,
+        },
+      });
+    } catch {
+      return returnTo;
+    }
+  };
   const trustedSiteRuntimeData = siteRuntimeEvidenceComplete
     ? siteRuntimeData
     : {};
@@ -1603,6 +1649,11 @@ function AccountDetailContent() {
         title={accountTitle}
         description={postureDescription}
         summaryItems={headerMetrics}
+        secondaryAction={(
+          <Link href={returnTo} className="btn btn-secondary">
+            {t('admin.back_to_accounts')}
+          </Link>
+        )}
       />
       <div data-ui="account-detail-workspace" className="grid gap-5 xl:grid-cols-[12.5rem_minmax(0,1fr)] xl:items-start">
         <div
@@ -2746,7 +2797,7 @@ function AccountDetailContent() {
               title={t('admin.account_detail.sites_empty_title', undefined, 'No sites on this customer')}
               description={t('admin.account_detail.sites_empty_desc', undefined, 'This customer does not have a connected site yet. Open the customer list or wait for site onboarding before making coverage changes.')}
               action={
-                <Link href="/admin/accounts" className="btn btn-secondary">
+                <Link href={returnTo} className="btn btn-secondary">
                   {t('common.accounts', undefined, 'Accounts')}
                 </Link>
               }
@@ -2767,7 +2818,7 @@ function AccountDetailContent() {
                 {siteOptions.map((site) => (
                   <BackofficeStackCard key={site.site_id} className="flex items-center justify-between gap-4">
                     <div>
-                      <Link href={`/admin/sites/${site.site_id}`} className="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
+                      <Link href={siteDetailHref(site.site_id)} className="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
                         <BackofficeIdentifier value={site.site_id} className="text-sm text-blue-600 dark:text-blue-300" />
                       </Link>
                       {site.name ? (
@@ -2881,7 +2932,7 @@ function AccountDetailContent() {
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <Link href={`/admin/sites/${siteId}`} className="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
+                      <Link href={siteDetailHref(siteId)} className="font-mono text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
                         <BackofficeIdentifier value={siteId} className="text-sm text-blue-600 dark:text-blue-300" />
                       </Link>
                       <BackofficeStatusBadge status={healthStatus} label={

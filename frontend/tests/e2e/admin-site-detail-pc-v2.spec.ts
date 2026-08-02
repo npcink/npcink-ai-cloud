@@ -50,3 +50,18 @@ test('site detail failure preserves the PC shell and bounded retry', async ({ pa
   await expect.poll(() => attempts).toBe(2);
   await expect(page).toHaveURL(/\/admin\/sites\/site_mvp$/);
 });
+
+test('direct and tampered Site detail return contexts fail closed to Accounts', async ({ page }) => {
+  await installAdminMocks(page);
+  await page.goto('/admin/sites/site_mvp');
+  await expect(page.getByRole('link', { name: /^Back$|^返回$/i }).first()).toHaveAttribute(
+    'href',
+    '/admin/accounts'
+  );
+
+  await page.goto('/admin/sites/site_mvp?return_to=https%3A%2F%2Fevil.example');
+  await expect(page.getByRole('link', { name: /^Back$|^返回$/i }).first()).toHaveAttribute(
+    'href',
+    '/admin/accounts'
+  );
+});

@@ -34,6 +34,21 @@ const primarySource = page.slice(primaryStart, primaryEnd);
 assert.match(primarySource, /summaryItems=\{\[/, 'site detail must project compact operating facts through the shared page header');
 assert.doesNotMatch(primarySource, /<h2[^>]*>\{postureTitle\}<\/h2>[\s\S]*admin\.site_detail\.summary_desc/, 'site posture conclusion must not be duplicated in the summary strip');
 assert.doesNotMatch(primarySource, /href=\{`\/admin\/accounts\/\$\{site\.account_id\}`\}/, 'site header must not duplicate the current follow-up action');
+assert.match(
+  page,
+  /buildAdminAccountDetailPathname\(site\.account_id\)[\s\S]*normalizeAdminAccountSiteReturnTo\([\s\S]*searchParams\.get\(ADMIN_RETURN_TO_PARAM\)[\s\S]*parentPathname: parentAccountPathname/,
+  'site return context must allow only the authoritative exact parent Account pathname'
+);
+assert.match(
+  primarySource,
+  /secondaryAction=\{\([\s\S]*href=\{returnTo\}/,
+  'site header must expose the normalized refresh-safe return link'
+);
+assert.doesNotMatch(
+  page,
+  /href:\s*`\/admin\/accounts\/\$\{site\.account_id\}`|href=\{site\.related_surfaces\.account_href\}/,
+  'site account follow-ups must not bypass the normalized return contract'
+);
 
 for (const key of [
   'admin.site_detail.advanced_operational_evidence',
