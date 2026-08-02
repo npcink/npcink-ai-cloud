@@ -2,7 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import {
   BackofficeInfoHint,
@@ -162,11 +162,10 @@ function findCanonicalShellPlan(plans: PlanListItem[], tierId: string): PlanList
 function PlansContent() {
   const { t } = useLocale();
   const toast = useToast();
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-  const focusedTierId = searchParams.get('focus') || '';
+  const [focusedTierId, setFocusedTierId] = useState(searchParams.get('focus') || '');
   const [plans, setPlans] = useState<PlanListItem[]>([]);
   const [tierTemplates, setTierTemplates] = useState<TierSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -190,10 +189,19 @@ function PlansContent() {
     Object.entries(changes).forEach(([key, value]) => {
       if (!value) params.delete(key);
       else params.set(key, value);
+      if (key === 'focus') setFocusedTierId(value || '');
     });
     const next = params.toString();
-    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
-  }, [pathname, router, searchParamsKey]);
+    window.history.replaceState(
+      window.history.state,
+      '',
+      next ? `${pathname}?${next}` : pathname
+    );
+  }, [pathname, searchParamsKey]);
+
+  useEffect(() => {
+    setFocusedTierId(new URLSearchParams(searchParamsKey).get('focus') || '');
+  }, [searchParamsKey]);
 
   const loadPlans = useCallback(async (force = false) => {
     if (!force && activeRequestRef.current) return;
