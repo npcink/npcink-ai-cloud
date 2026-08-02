@@ -142,8 +142,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*field_feature_filter[\s\S]*action_more_filters[\s\S]*data-ui="model-sync-primary"[\s\S]*modelMoreFiltersOpen[\s\S]*field_show_deprecated_models/,
-  'Model search, frequent filters, and synchronization must stay stable while historical visibility uses the more-filters disclosure'
+  /data-ui="model-metadata-gap-filter"[\s\S]*data-ui="model-sync-primary"[\s\S]*data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*filter_all_visibility[\s\S]*field_feature_filter[\s\S]*filter_all_features/,
+  'Model synchronization and missing-intelligence triage must use the summary while search and named frequent filters remain stable in the toolbar'
 );
 
 assert.match(
@@ -160,8 +160,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /<details data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
-  'Reference source, manual additions, and bulk maintenance must use default-collapsed in-flow configuration rows'
+  /<details data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="historical-model-visibility"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
+  'Reference source, historical visibility, manual additions, and bulk maintenance must use default-collapsed in-flow configuration rows'
 );
 
 assert.match(

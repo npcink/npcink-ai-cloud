@@ -58,6 +58,7 @@ const staleWorkbench: ProviderWorkbenchState = {
   modelReferenceSearch: 'sonnet',
   modelReferenceFeatureFilter: 'text',
   modelReferenceVisibilityFilter: 'enabled',
+  modelReferenceIntelligenceFilter: 'missing',
   modelReferenceShowDeprecated: false,
   modelReferencePage: 4,
   confirmingClearModels: true,
@@ -99,6 +100,7 @@ describe('AI resources provider workbench state', () => {
       modelReferenceSearch: '',
       modelReferenceFeatureFilter: 'all',
       modelReferenceVisibilityFilter: 'all',
+      modelReferenceIntelligenceFilter: 'all',
       modelReferenceShowDeprecated: true,
       modelReferencePage: 1,
       confirmingClearModels: false,
@@ -213,6 +215,7 @@ describe('AI resources provider workbench state', () => {
     expect(state.modelReferenceSearch).toBe('');
     expect(state.modelReferenceFeatureFilter).toBe('all');
     expect(state.modelReferenceVisibilityFilter).toBe('all');
+    expect(state.modelReferenceIntelligenceFilter).toBe('all');
     expect(state.modelReferenceShowDeprecated).toBe(true);
     expect(state.confirmingClearModels).toBe(false);
     expect(state.customModelInput).toBe('');
@@ -232,6 +235,13 @@ describe('AI resources provider workbench state', () => {
     });
     expect(filtered.modelReferenceVisibilityFilter).toBe('disabled');
     expect(filtered.modelReferencePage).toBe(1);
+
+    const intelligenceFiltered = providerWorkbenchReducer(filtered, {
+      type: 'set_reference_intelligence_filter',
+      filter: 'missing',
+    });
+    expect(intelligenceFiltered.modelReferenceIntelligenceFilter).toBe('missing');
+    expect(intelligenceFiltered.modelReferencePage).toBe(1);
   });
 
   it('closes safely and resets the workflow after a successful save', () => {

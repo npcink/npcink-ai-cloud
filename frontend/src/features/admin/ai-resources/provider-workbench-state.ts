@@ -31,6 +31,8 @@ export type ModelReferenceFeatureFilter =
 
 export type ModelReferenceVisibilityFilter = 'all' | 'enabled' | 'disabled';
 
+export type ModelReferenceIntelligenceFilter = 'all' | 'missing';
+
 export type ModelReferenceIdentity = {
   model_id: string;
   provider_id?: string;
@@ -133,6 +135,7 @@ export type ProviderWorkbenchState = {
   modelReferenceSearch: string;
   modelReferenceFeatureFilter: ModelReferenceFeatureFilter;
   modelReferenceVisibilityFilter: ModelReferenceVisibilityFilter;
+  modelReferenceIntelligenceFilter: ModelReferenceIntelligenceFilter;
   modelReferenceShowDeprecated: boolean;
   modelReferencePage: number;
   confirmingClearModels: boolean;
@@ -150,6 +153,7 @@ export const INITIAL_PROVIDER_WORKBENCH_STATE: ProviderWorkbenchState = {
   modelReferenceSearch: '',
   modelReferenceFeatureFilter: 'all',
   modelReferenceVisibilityFilter: 'all',
+  modelReferenceIntelligenceFilter: 'all',
   modelReferenceShowDeprecated: false,
   modelReferencePage: 1,
   confirmingClearModels: false,
@@ -186,6 +190,10 @@ export type ProviderWorkbenchAction =
   | {
       type: 'set_reference_visibility_filter';
       filter: ModelReferenceVisibilityFilter;
+    }
+  | {
+      type: 'set_reference_intelligence_filter';
+      filter: ModelReferenceIntelligenceFilter;
     }
   | { type: 'set_show_deprecated'; show: boolean }
   | { type: 'set_reference_page'; page: number }
@@ -263,6 +271,7 @@ export function providerWorkbenchReducer(
         modelReferenceSearch: '',
         modelReferenceFeatureFilter: 'all',
         modelReferenceVisibilityFilter: 'all',
+        modelReferenceIntelligenceFilter: 'all',
         modelReferenceShowDeprecated: true,
         modelReferencePage: 1,
         customModelInput: '',
@@ -292,6 +301,8 @@ export function providerWorkbenchReducer(
       return { ...state, modelReferenceFeatureFilter: action.filter, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_reference_visibility_filter':
       return { ...state, modelReferenceVisibilityFilter: action.filter, modelReferencePage: 1, confirmingModelBatch: '' };
+    case 'set_reference_intelligence_filter':
+      return { ...state, modelReferenceIntelligenceFilter: action.filter, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_show_deprecated':
       return { ...state, modelReferenceShowDeprecated: action.show, modelReferencePage: 1, confirmingModelBatch: '' };
     case 'set_reference_page':

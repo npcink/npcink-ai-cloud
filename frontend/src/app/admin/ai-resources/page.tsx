@@ -34,7 +34,6 @@ import {
 } from '@/features/admin/ai-resources/directory';
 import {
   buildProviderConnectionForm,
-  computeModelReferenceCoverage,
   EMPTY_PROVIDER_CONNECTION_FORM,
   INITIAL_PROVIDER_WORKBENCH_STATE,
   providerWorkbenchReducer,
@@ -459,6 +458,7 @@ function AiResourcesContent() {
     modelReferenceSearch,
     modelReferenceFeatureFilter,
     modelReferenceVisibilityFilter,
+    modelReferenceIntelligenceFilter,
     modelReferenceShowDeprecated,
     modelReferencePage,
     confirmingClearModels,
@@ -470,7 +470,6 @@ function AiResourcesContent() {
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models'>('connection');
-  const [modelMoreFiltersOpen, setModelMoreFiltersOpen] = useState(false);
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -702,7 +701,9 @@ function AiResourcesContent() {
       });
       await loadModelReferences(normalizedProviderId);
       if (options.announce) {
-        setMessage(aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.'));
+        const successMessage = aiText('message_model_references_synced', 'Model reference data synced. It is reference-only and does not change billing or routing.');
+        setMessage('');
+        toast.success(successMessage, t('common.success'));
       }
     } finally {
       setSyncingModelReferences(false);
@@ -801,7 +802,7 @@ function AiResourcesContent() {
         setModelReferenceAutoSyncError(referenceSyncFailed);
         await loadModelReferences(referenceProviderId);
       }
-      setMessage(aiText(
+      const catalogMessage = aiText(
         referenceSyncFailed ? 'message_catalog_fetched_reference_failed' : 'message_catalog_and_references_synced',
         referenceSyncFailed
           ? 'Fetched {{count}} upstream models. Reference intelligence refresh failed; saved models and runtime calls are not affected.'
@@ -809,7 +810,13 @@ function AiResourcesContent() {
         {
           count: String(preview.model_count || preview.model_ids?.length || 0),
         }
-      ));
+      );
+      setMessage('');
+      if (referenceSyncFailed) {
+        toast.error(catalogMessage, t('common.error'));
+      } else {
+        toast.success(catalogMessage, t('common.success'));
+      }
     } catch (catalogError) {
       setError(resolveUiErrorMessage(catalogError, aiText('error_fetch_catalog', 'Failed to fetch upstream models.')));
     } finally {
@@ -840,7 +847,9 @@ function AiResourcesContent() {
         modelReferenceProviderId
       );
       await loadModelReferences(effectiveReferenceProviderId);
-      setError(resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.')));
+      const syncMessage = resolveUiErrorMessage(syncError, aiText('error_sync_model_references', 'Failed to sync model reference data.'));
+      setModelReferenceAutoSyncError(syncMessage);
+      toast.error(syncMessage, t('common.error'));
     }
   }
 
@@ -925,7 +934,6 @@ function AiResourcesContent() {
   function openNewProviderConnection() {
     setConfirmingDeleteConnectionId('');
     setProviderWorkbenchSection('connection');
-    setModelMoreFiltersOpen(false);
     dispatchProviderWorkbench({
       type: 'open_create',
       referenceProviderId: defaultReferenceProviderId(
@@ -940,7 +948,6 @@ function AiResourcesContent() {
   function editProviderConnection(connection: Connection) {
     setConfirmingDeleteConnectionId('');
     setProviderWorkbenchSection('connection');
-    setModelMoreFiltersOpen(false);
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
     setMessage('');
@@ -956,7 +963,6 @@ function AiResourcesContent() {
   function closeProviderForm() {
     dispatchProviderWorkbench({ type: 'close' });
     setProviderWorkbenchSection('connection');
-    setModelMoreFiltersOpen(false);
     setMessage('');
     setError('');
   }
@@ -1216,7 +1222,6 @@ function AiResourcesContent() {
     )).length,
     [modelReferenceProviderId, modelReferences, selectedProviderModelIds]
   );
-
   const modelsDevReferenceSource = useMemo(
     () => modelReferenceSources.find((source) => source.source_id === 'models.dev') || null,
     [modelReferenceSources]
@@ -1244,26 +1249,6 @@ function AiResourcesContent() {
     syncingModelReferences,
   ]);
 
-  const modelReferenceCoverage = useMemo(
-    () => computeModelReferenceCoverage({
-      providerId: modelReferenceProviderId,
-      targetModelIds: [
-        ...(providerCatalogPreview?.model_ids || []),
-        ...selectedProviderModelIds,
-      ],
-      references: modelReferences,
-    }),
-    [
-      modelReferenceProviderId,
-      modelReferences,
-      providerCatalogPreview?.model_ids,
-      selectedProviderModelIds,
-    ]
-  );
-  const modelReferenceCoverageBase = Math.max(
-    modelReferenceCoverage.total,
-    Number(providerCatalogPreview?.model_count ?? 0) || 0
-  );
   const modelReferenceCompactStatusText = useMemo(() => {
     if (autoSyncingModelReferences) {
       return aiText('model_reference_compact_auto_syncing', 'reference syncing');
@@ -1271,28 +1256,11 @@ function AiResourcesContent() {
     if (loadingModelReferences) {
       return aiText('model_reference_compact_loading', 'reference loading');
     }
-    if (
-      modelReferenceCoverageBase > 0
-      && modelReferenceCoverage.covered >= modelReferenceCoverageBase
-    ) {
-      return aiText('model_reference_compact_complete', 'intelligence complete {{covered}}/{{total}}', {
-        covered: String(modelReferenceCoverage.covered),
-        total: String(modelReferenceCoverageBase),
-      });
-    }
-    if (modelReferenceTotal > 0 && modelReferenceCoverageBase > 0) {
-      return aiText('model_reference_compact_partial', 'intelligence partial {{covered}}/{{total}}', {
-        covered: String(modelReferenceCoverage.covered),
-        total: String(modelReferenceCoverageBase),
-      });
-    }
-    if (modelReferenceTotal > 0) {
-      return aiText('model_reference_compact_unscoped', 'intelligence available {{count}} records; load a catalog to verify coverage', {
-        count: String(modelReferenceTotal),
-      });
-    }
     if (modelsDevReferenceSource?.status === 'error' || modelReferenceAutoSyncError) {
       return aiText('model_reference_compact_failed', 'reference sync failed');
+    }
+    if (modelsDevReferenceSource?.last_synced_at || modelReferenceTotal > 0) {
+      return aiText('model_reference_compact_synced', 'reference synced');
     }
     return aiText('model_reference_compact_not_synced', 'reference not synced');
   }, [
@@ -1300,8 +1268,6 @@ function AiResourcesContent() {
     autoSyncingModelReferences,
     loadingModelReferences,
     modelReferenceAutoSyncError,
-    modelReferenceCoverageBase,
-    modelReferenceCoverage.covered,
     modelReferenceTotal,
     modelsDevReferenceSource,
   ]);
@@ -1377,6 +1343,7 @@ function AiResourcesContent() {
         if (!modelReferenceShowDeprecated && row.deprecated && !row.selected) return false;
         if (modelReferenceVisibilityFilter === 'enabled' && !row.selected) return false;
         if (modelReferenceVisibilityFilter === 'disabled' && row.selected) return false;
+        if (modelReferenceIntelligenceFilter === 'missing' && row.reference) return false;
         if (modelReferenceFeatureFilter !== 'all' && normalizeModelReferenceFeature(row.feature) !== modelReferenceFeatureFilter) {
           return false;
         }
@@ -1393,6 +1360,7 @@ function AiResourcesContent() {
   }, [
     aiText,
     modelReferenceFeatureFilter,
+    modelReferenceIntelligenceFilter,
     modelReferenceSearch,
     modelReferenceShowDeprecated,
     modelReferenceVisibilityFilter,
@@ -1557,10 +1525,10 @@ function AiResourcesContent() {
                     type="button"
                     role="tab"
                     aria-selected={providerWorkbenchSection === 'connection'}
-                    className={`h-8 rounded px-3 text-sm font-semibold transition ${
+                    className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                       providerWorkbenchSection === 'connection'
-                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                        ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+                        : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
                     }`}
                     onClick={() => setProviderWorkbenchSection('connection')}
                   >
@@ -1570,15 +1538,17 @@ function AiResourcesContent() {
                     type="button"
                     role="tab"
                     aria-selected={providerWorkbenchSection === 'models'}
-                    className={`h-8 rounded px-3 text-sm font-semibold transition ${
+                    className={`h-8 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                       providerWorkbenchSection === 'models'
-                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                        ? 'border-slate-200 bg-slate-100 text-slate-950 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+                        : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
                     }`}
                     onClick={() => setProviderWorkbenchSection('models')}
                   >
                     {aiText('workbench_models_tab', 'Model management')}
-                    <span className="ml-1.5 text-xs opacity-70">{selectedProviderModelIds.length}</span>
+                    <span className="ml-1.5 rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {selectedProviderModelIds.length}
+                    </span>
                   </button>
                 </div>
                 {providerWorkbenchSection === 'connection' ? (
@@ -1775,51 +1745,86 @@ function AiResourcesContent() {
                 {providerWorkbenchSection === 'models' ? (
                 <section className="grid gap-3">
                   <div className="grid gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
-                      <p className="mt-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                        {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-slate-500 dark:text-slate-400">
-                        <span data-ui="model-visibility-status">
-                          {aiText(
-                            'model_visibility_operating_summary',
-                            'Enabled {{enabled}} / available {{available}} · upstream {{upstream}} · intelligence {{intelligence}} · {{provider}} · {{status}}',
-                            {
-                              enabled: String(selectedProviderModelIds.length),
-                              available: String(availableModelCount),
-                              upstream: providerCatalogPreview ? String(providerCatalogPreview.model_count) : '—',
-                              intelligence: String(modelReferenceTotal),
-                              provider: referenceProviderLabel(modelReferenceProviderId),
-                              status: modelReferenceCompactStatusText,
-                            }
-                          )}
-                        </span>
-                        {modelReferenceHasSyncError ? (
-                          <button
-                            type="button"
-                            data-ui="model-reference-retry"
-                            className="font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
-                            disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
-                            onClick={() => void syncModelReferences()}
-                          >
-                            {syncingModelReferences || autoSyncingModelReferences
-                              ? aiText('action_syncing_model_references', 'Syncing...')
-                              : aiText('action_sync_model_references', 'Retry intelligence only')}
-                          </button>
-                        ) : null}
-                      </div>
-                      {selectedModelMetadataGapCount ? (
-                        <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                          {aiText('model_metadata_gap_hint', '{{count}} enabled models lack reference intelligence. Refresh intelligence to fill capability, context, and price.', {
-                            count: String(selectedModelMetadataGapCount),
-                          })}
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
+                        <p className="sr-only">
+                          {aiText('model_visibility_allowlist_desc', 'Only enabled models in this list can enter hosted runtime profile candidate chains or be used by Cloud runtime.')}
                         </p>
-                      ) : null}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                          <span>{aiText('model_visibility_enabled_available', 'Enabled {{enabled}} / available {{available}}', {
+                            enabled: String(selectedProviderModelIds.length),
+                            available: String(availableModelCount),
+                          })}</span>
+                          {selectedModelMetadataGapCount ? (
+                            <button
+                              type="button"
+                              data-ui="model-metadata-gap-filter"
+                              aria-pressed={modelReferenceIntelligenceFilter === 'missing'}
+                              className={`rounded-full px-2 py-1 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                                modelReferenceIntelligenceFilter === 'missing'
+                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                                  : 'text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/60'
+                              }`}
+                              onClick={() => dispatchProviderWorkbench({
+                                type: 'set_reference_intelligence_filter',
+                                filter: modelReferenceIntelligenceFilter === 'missing' ? 'all' : 'missing',
+                              })}
+                            >
+                              {modelReferenceIntelligenceFilter === 'missing'
+                                ? aiText('action_show_all_models', 'Show all models')
+                                : aiText('model_metadata_gap_action', '{{count}} need intelligence →', {
+                                  count: String(selectedModelMetadataGapCount),
+                                })}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+                        <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                          <div data-ui="model-visibility-status">
+                            {aiText('model_reference_last_synced', 'Last synced {{time}}', {
+                              time: modelsDevReferenceSource?.last_synced_at
+                                ? formatDate(modelsDevReferenceSource.last_synced_at)
+                                : aiText('status_not_synced', 'Not synced'),
+                            })}
+                          </div>
+                          {loadingModelReferences || autoSyncingModelReferences || modelReferenceHasSyncError ? (
+                            <div className={`mt-0.5 ${modelReferenceHasSyncError ? 'text-amber-700 dark:text-amber-300' : ''}`}>
+                              {modelReferenceCompactStatusText}
+                            </div>
+                          ) : null}
+                          {modelReferenceHasSyncError ? (
+                            <button
+                              type="button"
+                              data-ui="model-reference-retry"
+                              className="mt-0.5 font-semibold text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
+                              disabled={syncingModelReferences || autoSyncingModelReferences || loadingModelReferences || savingConnection}
+                              onClick={() => void syncModelReferences()}
+                            >
+                              {syncingModelReferences || autoSyncingModelReferences
+                                ? aiText('action_syncing_model_references', 'Syncing...')
+                                : aiText('action_sync_model_references', 'Retry intelligence only')}
+                            </button>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          data-ui="model-sync-primary"
+                          className="btn btn-secondary h-10 shrink-0 px-3"
+                          disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
+                          onClick={() => void fetchProviderCatalogPreview()}
+                        >
+                          {fetchingProviderCatalog || syncingModelReferences
+                            ? aiText('action_fetching_upstream_models', 'Syncing...')
+                            : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
+                        </button>
+                      </div>
                     </div>
 
                     <div data-ui="model-visibility-toolbar" className="flex flex-wrap items-center gap-2">
-                      <label className="min-w-[16rem] flex-1">
+                      <label className="w-full sm:w-[22rem] lg:w-[24rem]">
                         <span className="sr-only">{aiText('field_search_models', 'Search models')}</span>
                         <input
                           className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
@@ -1840,7 +1845,7 @@ function AiResourcesContent() {
                         })}
                         aria-label={aiText('field_visibility_filter', 'Visibility')}
                       >
-                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="all">{aiText('filter_all_visibility', 'All visibility')}</option>
                         <option value="enabled">{aiText('filter_enabled_models', 'Enabled')}</option>
                         <option value="disabled">{aiText('filter_disabled_models', 'Disabled')}</option>
                       </select>
@@ -1853,56 +1858,18 @@ function AiResourcesContent() {
                         })}
                         aria-label={aiText('field_feature_filter', 'Feature')}
                       >
-                        <option value="all">{aiText('filter_all', 'All')}</option>
+                        <option value="all">{aiText('filter_all_features', 'All capabilities')}</option>
                         <option value="text">{aiText('model_feature_text_generation', 'Text generation')}</option>
                         <option value="image">{aiText('model_feature_image_generation', 'Image generation')}</option>
                         <option value="audio">{aiText('model_feature_audio_generation', 'Audio')}</option>
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
-                      <button
-                        type="button"
-                        className="btn btn-secondary h-10 shrink-0 px-3"
-                        aria-expanded={modelMoreFiltersOpen}
-                        onClick={() => setModelMoreFiltersOpen((current) => !current)}
-                      >
-                        {aiText('action_more_filters', 'More filters')}
-                        {modelReferenceShowDeprecated ? ' ·1' : ''}
-                      </button>
-                      <button
-                        type="button"
-                        data-ui="model-sync-primary"
-                        className="btn btn-secondary h-10 shrink-0 px-3"
-                        disabled={fetchingProviderCatalog || syncingModelReferences || autoSyncingModelReferences || savingConnection}
-                        onClick={() => void fetchProviderCatalogPreview()}
-                      >
-                        {fetchingProviderCatalog || syncingModelReferences
-                          ? aiText('action_fetching_upstream_models', 'Syncing...')
-                          : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
-                      </button>
                     </div>
-                    {modelMoreFiltersOpen ? (
-                      <div className="flex items-center border-t border-slate-200 pt-2 dark:border-slate-800">
-                        <label className="inline-flex min-h-8 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                          <input
-                            type="checkbox"
-                            checked={modelReferenceShowDeprecated}
-                            onChange={(event) => dispatchProviderWorkbench({
-                              type: 'set_show_deprecated',
-                              show: event.target.checked,
-                            })}
-                          />
-                          {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
-                        </label>
-                      </div>
-                    ) : null}
 
                     <details data-ui="model-maintenance-table" className="border-t border-slate-200 pt-2 dark:border-slate-800">
                       <summary className="cursor-pointer py-1 text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
                         {aiText('model_maintenance_disclosure', 'Manual and batch operations')}
-                        <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
-                          {aiText('model_maintenance_disclosure_hint', 'Reference source, manual IDs, matching batches, and clear all')}
-                        </span>
                       </summary>
                       <div className="mt-2">
                         <AdminConfigurationTable
@@ -1935,6 +1902,26 @@ function AiResourcesContent() {
                             detail={aiText('reference_provider_desc', 'Only compatible or custom channels need this. Clear provider types automatically use their own reference intelligence.')}
                           />
                         ) : null}
+                        <AdminConfigurationRow
+                          rowId="historical-model-visibility"
+                          label={aiText('historical_models_label', 'Historical models')}
+                          value={modelReferenceShowDeprecated
+                            ? aiText('status_included', 'Included')
+                            : aiText('status_hidden', 'Hidden')}
+                          detail={(
+                            <label className="inline-flex min-h-8 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={modelReferenceShowDeprecated}
+                                onChange={(event) => dispatchProviderWorkbench({
+                                  type: 'set_show_deprecated',
+                                  show: event.target.checked,
+                                })}
+                              />
+                              {aiText('field_show_deprecated_models_compact', 'Include historical/deprecated')}
+                            </label>
+                          )}
+                        />
                         <AdminConfigurationRow
                           rowId="manual-model-add"
                           label={aiText('manual_model_add_title', 'Add model ID manually')}
@@ -2093,19 +2080,19 @@ function AiResourcesContent() {
                       ) : modelVisibilityRows.length ? (
                         <div data-ui="model-visibility-directory" className="border-t border-slate-200 dark:border-slate-800">
                           <div className="relative max-h-[28rem] overflow-auto">
-                            <table className="w-full min-w-[50rem] text-left text-xs">
+                            <table className="w-full min-w-[44rem] table-fixed text-left text-xs">
+                            <colgroup>
+                              <col className="w-[12%]" />
+                              <col className="w-[38%]" />
+                              <col className="w-[22%]" />
+                              <col className="w-[28%]" />
+                            </colgroup>
                             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_rgba(30,41,59,0.9)]">
                               <tr>
                                 <th className="px-3 py-2 font-semibold">{aiText('column_model_visibility', 'Visibility')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_model', 'Model')}</th>
                                 <th className="px-3 py-2 font-semibold">{aiText('catalog_model_header_feature', 'Feature')}</th>
-                                <th className="px-3 py-2 font-semibold">{aiText('column_context_output', 'Context / output')}</th>
-                                <th className="px-3 py-2 font-semibold">
-                                  <span>{aiText('column_reference_price', 'Reference price')}</span>
-                                  <span className="mt-0.5 block text-[11px] font-normal text-slate-400 dark:text-slate-500">
-                                    {aiText('price_unit_per_1m', 'per 1M tokens')}
-                                  </span>
-                                </th>
+                                <th className="px-3 py-2 font-semibold">{aiText('column_model_intelligence', 'Intelligence')}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2115,8 +2102,23 @@ function AiResourcesContent() {
                                 const visibleTagLabels = tagLabels.slice(0, 3);
                                 const canRemoveManualModel = row.sourceKind === 'manual' && row.selected;
                                 const deprecatedEnableBlocked = row.deprecated && !row.selected;
+                                const referenceContext = row.reference
+                                  ? formatReferenceContext(row.reference, aiText('model_reference_missing_context', 'No context data'))
+                                  : '';
+                                const referencePrice = row.reference
+                                  ? formatReferencePrice(
+                                    row.reference,
+                                    aiText('price_cache_label', 'Cache'),
+                                    aiText('model_reference_missing_price', 'No reference price')
+                                  )
+                                  : '';
+                                const referenceHasContext = Boolean(
+                                  row.reference
+                                  && (typeof row.reference.context_window === 'number' || typeof row.reference.output_limit === 'number')
+                                );
+                                const referenceHasPriceValue = Boolean(row.reference && hasReferencePrice(row.reference));
                                 return (
-                                  <tr key={row.modelId}>
+                                  <tr key={row.modelId} className="group">
                                     <td className="px-3 py-2">
                                       <div className="flex flex-col gap-1">
                                         <button
@@ -2172,15 +2174,18 @@ function AiResourcesContent() {
                                       {canRemoveManualModel ? (
                                         <button
                                           type="button"
-                                          className="mt-1 text-xs font-semibold text-slate-500 underline-offset-2 transition hover:text-rose-700 hover:underline dark:text-slate-400 dark:hover:text-rose-300"
+                                          className="mt-1 text-xs font-semibold text-slate-500 opacity-0 underline-offset-2 transition hover:text-rose-700 hover:underline focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 dark:text-slate-400 dark:hover:text-rose-300"
+                                          aria-label={aiText('action_remove_model_named', 'Remove {{name}}', { name: row.modelId })}
                                           onClick={() => removeProviderModelId(row.modelId)}
                                         >
-                                          {aiText('action_remove_manual_model', 'Remove manual model')}
+                                          {aiText('action_remove_manual_model_short', 'Remove')}
                                         </button>
                                       ) : null}
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                                      {modelFeatureLabel(row.feature)}
+                                      {row.feature ? modelFeatureLabel(row.feature) : (
+                                        <span className="text-slate-400" title={aiText('model_feature_unknown', 'Unknown')}>—</span>
+                                      )}
                                       {tagLabels.length ? (
                                         <div
                                           className="mt-1 max-w-[16rem] truncate text-slate-500 dark:text-slate-400"
@@ -2191,22 +2196,35 @@ function AiResourcesContent() {
                                         </div>
                                       ) : null}
                                     </td>
-                                    <td
-                                      className="px-3 py-2 text-slate-600 dark:text-slate-300"
-                                      title={row.reference ? formatReferenceContextTitle(row.reference) : undefined}
-                                    >
-                                      {row.reference
-                                        ? formatReferenceContext(row.reference, aiText('model_reference_missing_context', 'No reference data'))
-                                        : aiText('model_reference_missing_context', 'No reference data')}
-                                    </td>
                                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                                      {row.reference
-                                        ? formatReferencePrice(
-                                          row.reference,
-                                          aiText('price_cache_label', 'Cache'),
-                                          aiText('model_reference_missing_price', 'No reference price')
-                                        )
-                                        : aiText('model_reference_missing_price', 'No reference price')}
+                                      {row.reference ? (
+                                        <details data-ui="model-reference-details">
+                                          <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
+                                            {referenceHasContext
+                                              ? referenceContext
+                                              : aiText('model_reference_recorded', 'Reference available')}
+                                            <span className="ml-1.5 font-normal text-slate-400 dark:text-slate-500">
+                                              · {referenceHasPriceValue
+                                                ? aiText('model_reference_price_available', 'priced')
+                                                : aiText('model_reference_price_missing_compact', 'no price')}
+                                            </span>
+                                          </summary>
+                                          <div className="mt-2 grid gap-1 border-l border-slate-200 pl-3 text-[11px] leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                            <div>
+                                              <span className="font-semibold">{aiText('column_context_output', 'Context / output')}：</span>
+                                              <span title={row.reference ? formatReferenceContextTitle(row.reference) : undefined}>{referenceContext}</span>
+                                            </div>
+                                            <div>
+                                              <span className="font-semibold">{aiText('column_reference_price', 'Reference price')}：</span>
+                                              <span>{referencePrice}</span>
+                                            </div>
+                                          </div>
+                                        </details>
+                                      ) : (
+                                        <span className="font-medium text-amber-700 dark:text-amber-300">
+                                          {aiText('model_reference_needs_intelligence', 'Needs intelligence')}
+                                        </span>
+                                      )}
                                     </td>
                                   </tr>
                                 );
