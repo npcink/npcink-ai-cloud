@@ -11,7 +11,9 @@ Every AI development session should start with:
    ownership, then report the session role, conflict-domain owner, merge-lane
    intent, and shared-runtime intent before editing.
 4. For feature, bug-fix, M4, or CI work, read
-   `docs/development-validation-operating-model-v1.md`.
+   `docs/development-validation-operating-model-v1.md` and
+   `docs/ai-development-validation-tiers-v1.md`. Classify the change as L0,
+   L1, or L2 before selecting preview and closeout gates.
 5. Read the relevant boundary docs before editing:
    - `docs/cloud-content-generation-boundary-v1.md`
    - `docs/cloud-task-pack-boundary-v1.md`
