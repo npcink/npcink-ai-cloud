@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 STANDARD = ROOT / "docs" / "ai-development-validation-tiers-v1.md"
 OPERATING_MODEL = ROOT / "docs" / "development-validation-operating-model-v1.md"
