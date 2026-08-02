@@ -4,9 +4,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_account_queries import CommercialAccountQueries
+from app.adapters.repositories.commercial_identity_queries import CommercialIdentityQueries
 from app.adapters.repositories.commercial_plan_queries import CommercialPlanQueries
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.adapters.repositories.commercial_site_queries import CommercialSiteQueries
@@ -20,6 +22,7 @@ from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     Account,
     AccountSubscription,
+    IdentityProviderBinding,
     Plan,
     PlanOffer,
     PlanVersion,
@@ -90,6 +93,156 @@ def test_account_queries_preserve_filters_order_limit_and_count(tmp_path: Path) 
         facade = CommercialRepository(session)
         assert facade.get_account("acct_alpha") is not None
         assert facade.count_accounts(status="suspended") == 1
+
+    dispose_engine(database_url)
+
+
+@pytest.mark.parametrize(
+    "query_type",
+    [CommercialRepository, CommercialIdentityQueries],
+)
+def test_identity_queries_preserve_lookups_filters_order_limits_and_empty_inputs(
+    tmp_path: Path,
+    query_type: type[CommercialIdentityQueries],
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / f'{query_type.__name__}.sqlite3'}"
+    init_schema(database_url)
+    now = datetime(2026, 8, 3, 9, 0, tzinfo=UTC)
+
+    with get_session(database_url) as session:
+        alpha = Principal(
+            principal_id="prn_identity_alpha",
+            email="alpha@example.test",
+            status="active",
+            session_version=1,
+            metadata_json=None,
+            created_at=now - timedelta(days=2),
+        )
+        beta = Principal(
+            principal_id="prn_identity_beta",
+            email="beta@example.test",
+            status="disabled",
+            session_version=1,
+            metadata_json=None,
+            created_at=now - timedelta(days=1),
+        )
+        gamma = Principal(
+            principal_id="prn_identity_gamma",
+            email=None,
+            status="active",
+            session_version=1,
+            metadata_json=None,
+            created_at=now - timedelta(days=1),
+        )
+        session.add_all([alpha, beta, gamma])
+        session.flush()
+
+        alpha_old = IdentityProviderBinding(
+            binding_id="binding_alpha_old",
+            principal_id=alpha.principal_id,
+            provider="qq",
+            external_subject_hash="subject_alpha_old",
+            unionid_hash="union_alpha_old",
+            status="revoked",
+            metadata_json=None,
+            last_login_at=None,
+            created_at=now - timedelta(days=2),
+        )
+        alpha_new = IdentityProviderBinding(
+            binding_id="binding_alpha_new",
+            principal_id=alpha.principal_id,
+            provider="qq",
+            external_subject_hash="subject_alpha_new",
+            unionid_hash="union_alpha_new",
+            status="active",
+            metadata_json=None,
+            last_login_at=now,
+            created_at=now,
+        )
+        beta_binding = IdentityProviderBinding(
+            binding_id="binding_beta",
+            principal_id=beta.principal_id,
+            provider="wechat",
+            external_subject_hash="subject_beta",
+            unionid_hash="union_shared",
+            status="active",
+            metadata_json=None,
+            last_login_at=None,
+            created_at=now - timedelta(days=1),
+        )
+        session.add_all([alpha_old, alpha_new, beta_binding])
+        session.flush()
+
+        queries = query_type(session)
+        assert isinstance(queries, CommercialIdentityQueries)
+
+        assert queries.get_principal_identity(alpha.principal_id) is alpha
+        assert queries.get_principal_identity("missing") is None
+        assert queries.get_principal_identity_by_ref(principal_id=beta.principal_id) is beta
+        assert queries.get_principal_identity_by_ref(principal_id="missing") is None
+        assert (
+            queries.get_identity_provider_binding(
+                provider="qq", external_subject_hash="subject_alpha_new"
+            )
+            is alpha_new
+        )
+        assert (
+            queries.get_identity_provider_binding(
+                provider="wechat", external_subject_hash="subject_alpha_new"
+            )
+            is None
+        )
+        assert (
+            queries.get_identity_provider_binding_by_unionid(
+                provider="wechat", unionid_hash="union_shared"
+            )
+            is beta_binding
+        )
+        assert (
+            queries.get_identity_provider_binding_by_unionid(provider="wechat", unionid_hash="")
+            is None
+        )
+        assert [
+            item.binding_id
+            for item in queries.list_identity_provider_bindings_for_principal(
+                principal_id=alpha.principal_id
+            )
+        ] == ["binding_alpha_new", "binding_alpha_old"]
+        assert [
+            item.binding_id
+            for item in queries.list_identity_provider_bindings_for_principal(
+                principal_id=alpha.principal_id,
+                provider="qq",
+                status="active",
+            )
+        ] == ["binding_alpha_new"]
+        assert [
+            item.binding_id
+            for item in queries.list_identity_provider_bindings(
+                principal_ids=[alpha.principal_id, beta.principal_id],
+                statuses=["active"],
+            )
+        ] == ["binding_alpha_new", "binding_beta"]
+        assert queries.list_identity_provider_bindings(principal_ids=[]) == []
+        assert queries.list_identity_provider_bindings(statuses=[]) == []
+
+        assert queries.count_principals() == 3
+        assert queries.count_principals(status="active") == 2
+        assert [item.principal_id for item in queries.list_principals()] == [
+            "prn_identity_beta",
+            "prn_identity_gamma",
+            "prn_identity_alpha",
+        ]
+        assert [
+            item.principal_id
+            for item in queries.list_principals(
+                status="active",
+                principal_ids=[alpha.principal_id, gamma.principal_id],
+                limit=1,
+            )
+        ] == ["prn_identity_gamma"]
+        assert queries.list_principals(principal_ids=[]) == []
+        assert len(queries.list_principals(limit=0)) == 3
 
     dispose_engine(database_url)
 
