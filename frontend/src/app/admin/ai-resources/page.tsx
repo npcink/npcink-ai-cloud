@@ -469,6 +469,8 @@ function AiResourcesContent() {
   const [message, setMessage] = useState('');
   const [lastReceipt, setLastReceipt] = useState<AdminMutationReceiptPayload | null>(null);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
+  const [providerWorkbenchSection, setProviderWorkbenchSection] = useState<'connection' | 'models'>('connection');
+  const [modelMoreFiltersOpen, setModelMoreFiltersOpen] = useState(false);
   const autoSyncedReferenceProviders = useRef<Set<string>>(new Set());
   const updateWorkspaceParams = useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -922,6 +924,8 @@ function AiResourcesContent() {
 
   function openNewProviderConnection() {
     setConfirmingDeleteConnectionId('');
+    setProviderWorkbenchSection('connection');
+    setModelMoreFiltersOpen(false);
     dispatchProviderWorkbench({
       type: 'open_create',
       referenceProviderId: defaultReferenceProviderId(
@@ -935,6 +939,8 @@ function AiResourcesContent() {
 
   function editProviderConnection(connection: Connection) {
     setConfirmingDeleteConnectionId('');
+    setProviderWorkbenchSection('connection');
+    setModelMoreFiltersOpen(false);
     const storedCatalogPreview = catalogPreviewFromConnection(connection);
     const providerPreset = inferProviderPreset(connection);
     setMessage('');
@@ -949,6 +955,8 @@ function AiResourcesContent() {
 
   function closeProviderForm() {
     dispatchProviderWorkbench({ type: 'close' });
+    setProviderWorkbenchSection('connection');
+    setModelMoreFiltersOpen(false);
     setMessage('');
     setError('');
   }
@@ -1536,9 +1544,44 @@ function AiResourcesContent() {
           saveLabel={aiText('action_save_and_test_connection', 'Save and test')}
           savingLabel={aiText('saving', 'Saving...')}
           footerNotice={aiText('save_test_notice', 'Saving will immediately run a masked provider test. Secrets are never returned to the browser.')}
+          density="compact"
           onClose={closeProviderForm}
           onSubmit={() => void saveProviderConnection()}
         >
+                <div
+                  role="tablist"
+                  aria-label={aiText('provider_workbench_sections', 'Provider workspace sections')}
+                  className="flex items-center gap-1 border-b border-slate-200 pb-2 dark:border-slate-800"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={providerWorkbenchSection === 'connection'}
+                    className={`h-8 rounded px-3 text-sm font-semibold transition ${
+                      providerWorkbenchSection === 'connection'
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                    }`}
+                    onClick={() => setProviderWorkbenchSection('connection')}
+                  >
+                    {aiText('workbench_connection_tab', 'Connection settings')}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={providerWorkbenchSection === 'models'}
+                    className={`h-8 rounded px-3 text-sm font-semibold transition ${
+                      providerWorkbenchSection === 'models'
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                    }`}
+                    onClick={() => setProviderWorkbenchSection('models')}
+                  >
+                    {aiText('workbench_models_tab', 'Model management')}
+                    <span className="ml-1.5 text-xs opacity-70">{selectedProviderModelIds.length}</span>
+                  </button>
+                </div>
+                {providerWorkbenchSection === 'connection' ? (
                 <AdminConfigurationTable
                   ariaLabel={aiText('provider_configuration_table_label', '{{name}} configuration', { name: providerDialogName })}
                   itemHeading={aiText('configuration_item_heading', 'Setting')}
@@ -1548,7 +1591,11 @@ function AiResourcesContent() {
                   <AdminConfigurationRow
                     rowId="provider-type"
                     label={aiText('field_provider_type', 'Provider type')}
-                    value={(
+                    value={providerFormMode === 'edit' ? (
+                      <span className="font-medium text-slate-900 dark:text-white">
+                        {providerPresetById(providerConnectionForm.providerPreset)?.label || providerKindLabel(providerConnectionForm.kind)}
+                      </span>
+                    ) : (
                       <select
                         className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                         value={providerConnectionForm.providerPreset}
@@ -1562,7 +1609,9 @@ function AiResourcesContent() {
                         ))}
                       </select>
                     )}
-                    detail={providerKindLabel(providerConnectionForm.kind)}
+                    detail={providerFormMode === 'edit'
+                      ? aiText('provider_type_locked_hint', 'Provider type is fixed after creation')
+                      : providerKindLabel(providerConnectionForm.kind)}
                   />
                   <AdminConfigurationRow
                     rowId="display-name"
@@ -1652,6 +1701,22 @@ function AiResourcesContent() {
                       </label>
                     )}
                   />
+                  <AdminConfigurationRow
+                    rowId="model-management-entry"
+                    label={aiText('model_visibility_title', 'Model visibility')}
+                    value={aiText('model_catalog_enabled_count_short', '{{count}} models', {
+                      count: String(selectedProviderModelIds.length),
+                    })}
+                    detail={(
+                      <button
+                        type="button"
+                        className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                        onClick={() => setProviderWorkbenchSection('models')}
+                      >
+                        {aiText('action_manage_models', 'Manage models')}
+                      </button>
+                    )}
+                  />
                   {providerUsesImageGeneration ? (
                     <>
                       <AdminConfigurationRow
@@ -1682,29 +1747,33 @@ function AiResourcesContent() {
                           </span>
                         )}
                       />
-                      <AdminConfigurationRow
-                        rowId="image-output-hosts"
-                        label={aiText('field_image_output_hosts', 'Image download hosts')}
-                        value={(
-                          <input
-                            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                            value={providerConnectionForm.imageOutputHosts}
-                            onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
-                            placeholder="images.provider.example, assets.provider.example"
-                            aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
-                            required={providerConnectionForm.imageResponseFormat === 'url'}
-                          />
-                        )}
-                        detail={aiText(
-                          'image_delivery_security_note_compact',
-                          'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
-                        )}
-                      />
+                      {providerConnectionForm.imageResponseFormat === 'url' ? (
+                        <AdminConfigurationRow
+                          rowId="image-output-hosts"
+                          label={aiText('field_image_output_hosts', 'Image download hosts')}
+                          value={(
+                            <input
+                              className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              value={providerConnectionForm.imageOutputHosts}
+                              onChange={(event) => updateProviderConnectionForm({ imageOutputHosts: event.target.value })}
+                              placeholder="images.provider.example, assets.provider.example"
+                              aria-label={aiText('field_image_output_hosts', 'Exact image download hosts')}
+                              required
+                            />
+                          )}
+                          detail={aiText(
+                            'image_delivery_security_note_compact',
+                            'URL mode accepts exact hosts only; no scheme, path, port, or wildcard.'
+                          )}
+                        />
+                      ) : null}
                     </>
                   ) : null}
                 </AdminConfigurationTable>
+                ) : null}
 
-                <section className="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+                {providerWorkbenchSection === 'models' ? (
+                <section className="grid gap-3">
                   <div className="grid gap-3">
                     <div className="min-w-0">
                       <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
@@ -1791,17 +1860,15 @@ function AiResourcesContent() {
                         <option value="video">{aiText('model_feature_video_generation', 'Video generation')}</option>
                         <option value="embedding">{aiText('model_feature_embedding', 'Embedding')}</option>
                       </select>
-                      <label className="inline-flex h-10 shrink-0 items-center gap-2 px-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={modelReferenceShowDeprecated}
-                          onChange={(event) => dispatchProviderWorkbench({
-                            type: 'set_show_deprecated',
-                            show: event.target.checked,
-                          })}
-                        />
-                        {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
-                      </label>
+                      <button
+                        type="button"
+                        className="btn btn-secondary h-10 shrink-0 px-3"
+                        aria-expanded={modelMoreFiltersOpen}
+                        onClick={() => setModelMoreFiltersOpen((current) => !current)}
+                      >
+                        {aiText('action_more_filters', 'More filters')}
+                        {modelReferenceShowDeprecated ? ' ·1' : ''}
+                      </button>
                       <button
                         type="button"
                         data-ui="model-sync-primary"
@@ -1814,9 +1881,31 @@ function AiResourcesContent() {
                           : aiText('action_fetch_upstream_models', 'Sync models and intelligence')}
                       </button>
                     </div>
+                    {modelMoreFiltersOpen ? (
+                      <div className="flex items-center border-t border-slate-200 pt-2 dark:border-slate-800">
+                        <label className="inline-flex min-h-8 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={modelReferenceShowDeprecated}
+                            onChange={(event) => dispatchProviderWorkbench({
+                              type: 'set_show_deprecated',
+                              show: event.target.checked,
+                            })}
+                          />
+                          {aiText('field_show_deprecated_models', 'Show historical/deprecated')}
+                        </label>
+                      </div>
+                    ) : null}
 
-                    <div data-ui="model-maintenance-table">
-                      <AdminConfigurationTable
+                    <details data-ui="model-maintenance-table" className="border-t border-slate-200 pt-2 dark:border-slate-800">
+                      <summary className="cursor-pointer py-1 text-sm font-semibold text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white">
+                        {aiText('model_maintenance_disclosure', 'Manual and batch operations')}
+                        <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                          {aiText('model_maintenance_disclosure_hint', 'Reference source, manual IDs, matching batches, and clear all')}
+                        </span>
+                      </summary>
+                      <div className="mt-2">
+                        <AdminConfigurationTable
                         ariaLabel={aiText('model_maintenance_table_label', 'Model maintenance')}
                         itemHeading={aiText('configuration_item_heading', 'Setting')}
                         valueHeading={aiText('configuration_value_heading', 'Current setting')}
@@ -1990,8 +2079,9 @@ function AiResourcesContent() {
                             </button>
                           )}
                         />
-                      </AdminConfigurationTable>
-                    </div>
+                        </AdminConfigurationTable>
+                      </div>
+                    </details>
 
                     {loadingModelReferences ? (
                         <div
@@ -2178,8 +2268,9 @@ function AiResourcesContent() {
                     )}
                   </div>
                 </section>
+                ) : null}
 
-                {providerUsesCustomRuntimeFields ? (
+                {providerWorkbenchSection === 'connection' && providerUsesCustomRuntimeFields ? (
                   <details className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
                     <summary className="cursor-pointer text-sm font-semibold text-slate-900 dark:text-white">
                       {aiText('advanced_settings_title', 'Advanced runtime settings')}

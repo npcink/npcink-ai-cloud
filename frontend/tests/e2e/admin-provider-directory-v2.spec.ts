@@ -279,7 +279,8 @@ test('supplier row keeps test feedback nearby and deletion under more actions', 
   await expect(moreButton).toBeFocused();
 
   await moreButton.click();
-  await supplierRow.getByRole('button', { name: /^Delete$|^删除$/i }).click();
+  await expect(supplierRow.getByRole('menuitem')).toHaveCount(4);
+  await supplierRow.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
   await expect(feedbackRow.getByRole('alert').filter({ hasText: /removes this runtime connection|移除这条运行时连接/i })).toBeVisible();
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toBeVisible();
   await feedbackRow.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
@@ -348,7 +349,7 @@ test('provider configuration dialog supports PC keyboard entry, focus loop, and 
 
 });
 
-test('editing a provider uses a dense connection table above the model workbench', async ({ page }, testInfo) => {
+test('editing a provider separates dense connection settings from model management', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installProviderDirectoryHarness(page);
@@ -364,16 +365,27 @@ test('editing a provider uses a dense connection table above the model workbench
   await expect(configurationTable).toBeVisible();
   await expect(configurationTable.locator('tbody tr')).toHaveCount(7);
   await expect(dialog.locator('[data-configuration-row="image-response-format"]')).toBeVisible();
+  await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toHaveCount(0);
+  await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('url');
   await expect(dialog.locator('[data-configuration-row="image-output-hosts"]')).toBeVisible();
+  await dialog.getByLabel(/Provider image response|服务商图片返回方式/i).selectOption('b64_json');
+  await expect(dialog.getByLabel(/Provider type|服务商类型/i)).toHaveCount(0);
   await expect(dialog.locator('details[data-ui="provider-connection-settings"]')).toHaveCount(0);
   await expect(dialog.locator('details[data-ui="image-delivery-settings"]')).toHaveCount(0);
+  await expect(dialog.getByRole('heading', { name: /Model visibility|模型可见性/i })).toHaveCount(0);
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  await expect(configurationTable).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: /Model visibility|模型可见性/i })).toBeVisible();
   await expect(dialog.locator('[data-ui="model-visibility-toolbar"]')).toBeVisible();
   await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeVisible();
-  await expect(dialog.getByText(/^More operations$|^更多操作$/i)).toHaveCount(0);
-  const maintenanceTable = dialog.locator('[data-ui="model-maintenance-table"]').getByRole('table');
-  await expect(maintenanceTable).toBeVisible();
-  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(4);
+  const moreFiltersButton = dialog.getByRole('button', { name: /More filters|更多筛选/i });
+  await expect(moreFiltersButton).toBeVisible();
+  await expect(dialog.getByText(/Show historical\/deprecated|显示历史\/废弃/i)).toHaveCount(0);
+  await moreFiltersButton.click();
+  await expect(dialog.getByText(/Show historical\/deprecated|显示历史\/废弃/i)).toBeVisible();
+  await moreFiltersButton.click();
+  const maintenanceDisclosure = dialog.locator('[data-ui="model-maintenance-table"]');
+  await expect(maintenanceDisclosure).not.toHaveAttribute('open', '');
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -381,12 +393,17 @@ test('editing a provider uses a dense connection table above the model workbench
     maxDiffPixelRatio: 0.015,
   });
 
+  await maintenanceDisclosure.locator('summary').click();
+  const maintenanceTable = maintenanceDisclosure.getByRole('table');
+  await expect(maintenanceTable).toBeVisible();
+  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(4);
   await dialog.locator('[data-ui="model-clear-all-request"]').click();
   await expect(dialog.locator('[data-ui="model-clear-all-confirm"]')).toBeVisible();
   await expect(dialog.getByText(/Disable all 2 currently enabled models|取消启用当前 2 个模型/i)).toBeVisible();
   await maintenanceTable.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
   await expect(dialog.locator('[data-ui="model-clear-all-request"]')).toBeVisible();
 
+  await dialog.getByRole('tab', { name: /Connection settings|连接设置/i }).click();
   const replaceCredentialButton = dialog.getByRole('button', { name: /Replace credential|替换凭据/i });
   await expect(replaceCredentialButton).toBeVisible();
   await expect(dialog.getByLabel(/API Key|Credential|凭据/i)).toHaveCount(0);
@@ -447,6 +464,7 @@ test('large model directories render one bounded page and reset pagination when 
   await supplierRow.getByRole('button', { name: /^Configure$|^配置$/i }).click();
 
   const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
   const directory = dialog.locator('[data-ui="model-visibility-directory"]');
   await expect(directory.locator('tbody tr')).toHaveCount(25);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/25.*62|62.*25/);
@@ -457,6 +475,7 @@ test('large model directories render one bounded page and reset pagination when 
   await expect(directory.locator('tbody tr')).toHaveCount(1);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/1 \/ 1|第 1 \/ 1 页/);
 
+  await dialog.locator('[data-ui="model-maintenance-table"] summary').click();
   await dialog.locator('[data-ui="model-filtered-enable-request"]').click();
   await expect(dialog.getByText(/enabled total will become 3|已启用总数为 3/i)).toBeVisible();
   await dialog.locator('[data-ui="model-filtered-batch-confirm"]').click();

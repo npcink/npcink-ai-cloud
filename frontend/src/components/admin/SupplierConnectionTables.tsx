@@ -2,7 +2,6 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
-import { ProviderReferenceLinks } from '@/components/admin/ProviderReferenceLinks';
 import type {
   ProviderConnectionTestResult,
   ResourceStatus,
@@ -28,9 +27,6 @@ const QUIET_STATUS_BADGE_CLASS =
 
 const TABLE_ACTION_BUTTON_CLASS =
   'rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700';
-
-const TABLE_DELETE_BUTTON_CLASS =
-  'rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900 dark:bg-slate-950 dark:text-rose-300 dark:hover:border-rose-800 dark:hover:bg-rose-950/20';
 
 const TABLE_CONFIRM_DELETE_BUTTON_CLASS =
   'rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:border-rose-400 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-700 dark:hover:bg-rose-950/50';
@@ -189,38 +185,49 @@ function SupplierMoreActions({
       <button
         ref={triggerRef}
         type="button"
-        className={`${TABLE_ACTION_BUTTON_CLASS} min-w-9 px-2`}
+        className={`${TABLE_ACTION_BUTTON_CLASS} h-9 w-9 px-0 text-base leading-none`}
         aria-label={translate('model_visibility_more_operations', 'More actions')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        ···
+        <span aria-hidden="true">⋯</span>
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-950"
+          className="absolute bottom-full right-0 z-30 mb-1.5 w-48 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-800 dark:bg-slate-950"
         >
-          <ProviderReferenceLinks
-            items={providerLinks}
-            label={translate('provider_links_title', 'Reference links')}
-            translate={translate}
-            variant="inline"
-          />
-          {connection.managed_by === 'cloud_provider_connections' ? (
-            <button
-              type="button"
-              className={`${TABLE_DELETE_BUTTON_CLASS} mt-3 w-full`}
-              disabled={isDeleting}
-              onClick={() => {
-                setOpen(false);
-                onSelectConnection();
-                onRequestDelete(connection.connection_id);
-              }}
+          {providerLinks.map((item) => (
+            <a
+              key={item.key}
+              role="menuitem"
+              className="flex min-h-9 items-center justify-between gap-3 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950 focus:bg-slate-50 focus:outline-none dark:text-slate-200 dark:hover:bg-slate-900 dark:hover:text-white dark:focus:bg-slate-900"
+              href={item.href}
+              target="_blank"
+              rel="noreferrer noopener"
+              onClick={() => setOpen(false)}
             >
-              {translate('action_delete', 'Delete')}
-            </button>
+              <span>{translate(item.labelKey, item.fallback)}</span>
+              <span aria-hidden="true" className="text-xs text-slate-400">↗</span>
+            </a>
+          ))}
+          {connection.managed_by === 'cloud_provider_connections' ? (
+            <div className={providerLinks.length ? 'mt-1 border-t border-slate-200 pt-1 dark:border-slate-800' : ''}>
+              <button
+                role="menuitem"
+                type="button"
+                className="flex min-h-9 w-full items-center px-3 text-left text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus:bg-rose-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-950/30 dark:focus:bg-rose-950/30"
+                disabled={isDeleting}
+                onClick={() => {
+                  setOpen(false);
+                  onSelectConnection();
+                  onRequestDelete(connection.connection_id);
+                }}
+              >
+                {translate('action_delete_connection', 'Delete connection…')}
+              </button>
+            </div>
           ) : null}
         </div>
       ) : null}

@@ -42,8 +42,8 @@ assert.match(
 
 assert.match(
   directorySource,
-  /event\.key !== 'Escape'[\s\S]*aria-haspopup="menu"[\s\S]*aria-expanded=\{open\}[\s\S]*absolute right-0 top-full/,
-  'Supplier overflow must be an overlay menu that closes with Escape without changing table row geometry'
+  /event\.key !== 'Escape'[\s\S]*aria-haspopup="menu"[\s\S]*aria-expanded=\{open\}[\s\S]*absolute bottom-full right-0/,
+  'Supplier overflow must open above the bounded table, close with Escape, and avoid changing row geometry'
 );
 
 assert.doesNotMatch(
@@ -142,8 +142,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*field_feature_filter[\s\S]*field_show_deprecated_models[\s\S]*data-ui="model-sync-primary"/,
-  'Model search, filters, history visibility, and synchronization must stay in one stable toolbar'
+  /data-ui="model-visibility-toolbar"[\s\S]*field_visibility_filter[\s\S]*field_feature_filter[\s\S]*action_more_filters[\s\S]*data-ui="model-sync-primary"[\s\S]*modelMoreFiltersOpen[\s\S]*field_show_deprecated_models/,
+  'Model search, frequent filters, and synchronization must stay stable while historical visibility uses the more-filters disclosure'
 );
 
 assert.match(
@@ -160,8 +160,8 @@ assert.match(
 
 assert.match(
   pageSource,
-  /data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
-  'Reference source, manual additions, and bulk maintenance must use in-flow configuration rows'
+  /<details data-ui="model-maintenance-table"[\s\S]*rowId="model-reference-provider"[\s\S]*rowId="manual-model-add"[\s\S]*rowId="enabled-model-bulk-maintenance"/,
+  'Reference source, manual additions, and bulk maintenance must use default-collapsed in-flow configuration rows'
 );
 
 assert.match(
