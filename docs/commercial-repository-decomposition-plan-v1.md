@@ -1105,12 +1105,48 @@ Phase 5B1 基线为
 AST 对比确认九个方法集合、签名和方法体与 current-master 完全一致；新 query class
 mutation/lock scan clean。
 
-门面当前为 2,278 行、79 个自有方法。其余本地回归、M4 candidate、PR/CI、merged
-source 与 clean-master M4 accepted 继续分别记录。
+门面在该批为 2,278 行、79 个自有方法。
 
 本地 characterization、完整 Portal users、Admin accounts 与三条 Portal authorization
 回归合计 12 passed，只有既有 Starlette deprecation warning。Ruff 与 format check
 通过，全量 mypy 270 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。
+
+### 17.4 Phase 5B1 合并与 M4 accepted
+
+Phase 5B1 由 PR #475 合并为
+`befe5638d9cd86a2d47742efbffd3e7bec6971c7`；required `backend-targeted`
+为 8 分 14 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=475`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`716fca4c837f9ba7b91f11513b89f122ab6a2c33004024260008e337c74fd0cf`；
+聚焦 membership repository smoke 为 2 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放。
+
+### 17.5 Phase 5B2 Platform Admin 无锁查询
+
+Phase 5B2 在 current `origin/master@befe5638` 上确认并迁移四个无锁纯查询：
+
+- `get_platform_admin_grant`
+- `get_platform_admin_grant_by_subject`
+- `get_platform_admin_grant_by_email`
+- `list_platform_admin_grants`
+
+新增 `CommercialPlatformAdminQueries`，facade 通过继承维持公共调用；第一批不迁移
+调用方。保持 provider/subject 精确匹配、email lower-case 比较、可选 status/role/provider
+过滤、`created_at DESC, principal_id ASC` 排序、正数 limit 才生效，以及 None/空列表
+语义。`upsert_platform_admin_grant`、`delete_platform_admin_grant`、权限/API、锁、schema、
+Production 与 WordPress 明确排除。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct 参数化为 2 passed。
+AST 对比确认四个方法的签名与方法体完全一致；新 query class mutation/lock scan clean。
+门面当前为 2,208 行、75 个自有方法。聚焦 characterization 与四个相关 Admin/Web
+节点合计 6 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy
+271 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。M4 candidate、
+PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。source-only M4
+candidate bundle 为
+`f9e09aa24802ec64e4c4c1dc2b52a3443b9cabf06cfb11103f89f05911d38de1`，聚焦
+Platform Admin query repository smoke 为 2 passed；未要求 deploy，shared M4 ownership
+已明确释放。
 
 ## 18. 回滚
 
@@ -1154,6 +1190,9 @@ characterization。不得改变 Admin service hydrate、权限、API、身份数
 
 Phase 5B1 只允许恢复九个 Membership/Site binding 无锁查询到门面、移除 query class
 与聚焦 characterization。不得把可选锁读取、mutation、权限或绑定数据修改纳入回滚。
+
+Phase 5B2 只允许恢复四个 Platform Admin 无锁查询到门面、移除 query class 与聚焦
+characterization。不得修改 grant 数据、权限、API，或把 upsert/delete 纳入回滚。
 
 ## 19. 后续批次启动规则
 
