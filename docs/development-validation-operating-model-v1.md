@@ -37,6 +37,7 @@ rehearsal after every edit.
 
 The authoritative details are:
 
+- [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md);
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md);
 - [M4 Preview Development Workflow](m4-preview-development-v1.md);
 - [ADR-023: Candidate and Accepted Promotion](decisions/023-m4-preview-candidate-acceptance-promotion.md);
@@ -145,6 +146,11 @@ tunnel. This is a concurrency exception for rendering only, not a second
 integration stack.
 
 ### Appearance-only preview-first lane
+
+The authoritative L0/L1/L2 classification, upward-reclassification triggers,
+parallel-session rules, and preview-versus-closeout receipts are defined in
+[AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md).
+The guidance below explains the appearance-only application of that standard.
 
 For a bounded Admin appearance change, separate two clocks:
 

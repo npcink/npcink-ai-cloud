@@ -18,6 +18,7 @@ SCRIPT = ROOT / "scripts" / "m4-preview.sh"
 REDACTOR = ROOT / "scripts" / "redact-m4-preview-logs.py"
 PACKAGE_PROXY = ROOT / "scripts" / "m4-package-proxy.py"
 OVERLAY = ROOT / "docker-compose.m4-preview.yml"
+PREVIEW_PROXY = ROOT / "deploy" / "nginx.m4-preview.conf"
 RUNBOOK = ROOT / "docs" / "m4-preview-development-v1.md"
 AI_STANDARD = ROOT / "docs" / "m4-preview-ai-development-standard-v1.md"
 VALIDATION_ADR = (
@@ -228,6 +229,21 @@ def test_m4_preview_commands_are_explicit() -> None:
         "m4:preview:stop": "bash scripts/m4-preview.sh stop",
     }
     assert {name: scripts.get(name) for name in expected} == expected
+
+
+def test_m4_preview_frontend_responses_cannot_reuse_stale_candidate_assets() -> None:
+    proxy = PREVIEW_PROXY.read_text(encoding="utf-8")
+
+    for location in ("location /_next/ {", "location /api/ {", "location / {"):
+        block = proxy.split(location, 1)[1].split("\n    }", 1)[0]
+        assert "proxy_hide_header Cache-Control;" in block
+        assert "proxy_hide_header Expires;" in block
+        assert (
+            'add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;'
+            in block
+        )
+        assert 'add_header Pragma "no-cache" always;' in block
+        assert 'add_header Expires "0" always;' in block
 
 
 def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
