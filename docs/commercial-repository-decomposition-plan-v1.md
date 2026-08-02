@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 completed; Phase 3A candidate ready, PR pending
+状态：Phase 0 + Phase 1 + Phase 2 + Phase 3A completed; Phase 3B local verified
 
 日期：2026-08-03
 
@@ -649,7 +649,59 @@ Phase 3A 完成不自动授权 Plan/Subscription 写入或订单拆分。
 M4 candidate、PR/CI、merged source 与 clean-master accepted 继续分层记录，不预填
 尚未发生的结果。
 
-## 10. 回滚
+Phase 3A 随后由 PR #467 合并为
+`origin/master@a0275099054cce383da4295f3b9d6178eea6df6a`。从 clean current
+master promotion 后，M4 status 为 `acceptance_state=accepted`、
+`promotion_pr=467`、`source_branch=master`、`source_dirty=false`；聚焦 Plan query
+repository smoke 为 8 passed。Cloud lane、shared M4 与 task worktree lock 均已释放。
+
+## 10. Phase 3B：Plan 写入
+
+### 10.1 Current-master 方法与事务清单
+
+Phase 3B 基线为
+`origin/master@a0275099054cce383da4295f3b9d6178eea6df6a`。本批只迁移：
+
+- `upsert_plan`
+- `upsert_plan_version`
+- `upsert_plan_offer`
+
+三个方法均复用 Phase 3A 的 getter，create 时 `session.add`，create/update 后
+`session.flush` 并返回同一 ORM identity；均不 `commit`、`rollback` 或取得行锁。
+commit 继续由 billing、subscription commerce 与 runtime service 的外层 session
+所有者执行。本批不迁移调用方，也不改变同一事务中的 audit、账户锁、Offer retire
+或 Subscription 写入顺序。
+
+### 10.2 实现 envelope 与合同
+
+- 新增 `app/adapters/repositories/commercial_plan_repository.py`，继承
+  `CommercialPlanQueries`；
+- `CommercialRepository` 改为继承 `CommercialPlanRepository` 并移除类内三个重复
+  upsert；
+- 新增聚焦 characterization
+  `tests/domain/test_commercial_plan_repository.py`；
+- Plan create 的空 name 回退 `plan_id`，update 的空 name 保留旧 name；
+- description 空字符串继续归一为 `None`；
+- PlanVersion 与 PlanOffer update 继续逐字段完整替换；
+- 明确排除 `upsert_account_subscription`、SubscriptionOrder、Payment/Refund、API、
+  schema/migration、业务状态、权限、调用方迁移、Production 和 WordPress。
+
+### 10.3 本地收口证据
+
+迁移前 characterization 为 1 passed。迁移后 AST 对比确认三个方法集合、签名和
+方法体与 current-master 基线完全一致；聚焦 Plan write + query repository 为
+10 passed，受影响 Payment、Subscription Commerce 与 runtime defaults 为 50 passed，
+Admin Plan 与 Payment API 为 2 passed（1 个既有 Starlette deprecation warning）。
+Ruff 通过，全量 mypy 264 个源文件无问题，`check:anti-drift` 与
+`git diff --check` 通过。
+
+门面实际下降为 3,304 行、118 个自有方法。source-only M4 candidate 没有要求
+deploy，并以 facade + 新 repository 的同一聚焦 Plan write characterization 作为
+runtime seam。精确 bundle 与通过数以本批最终交付证据为准，避免为把 candidate
+自身 fingerprint 写回 source 而制造循环重同步。PR/CI、merged source 和
+clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
+
+## 11. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -664,7 +716,11 @@ Phase 2B 只允许恢复 7 个 Support mutation/helper 到门面、移除
 Phase 3A 只允许恢复 6 个 Plan query 到门面、移除 query mixin 与对应
 characterization。不得把 Plan 写入、SubscriptionOrder 或数据操作纳入回滚。
 
-## 11. 后续批次启动规则
+Phase 3B 只允许恢复 3 个 Plan upsert 到门面、恢复 Plan query 继承并移除新的
+Plan repository 与聚焦 characterization。不得通过数据修改、事务补偿或环境操作
+完成结构回滚。
+
+## 12. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
