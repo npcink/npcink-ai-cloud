@@ -109,18 +109,20 @@ library checker still provides the narrow structural gate:
 python3 scripts/check_engineering_command_inventory.py
 ```
 
-## 5. Initial Baseline
+## 5. Current Baseline
 
-The v1 baseline inventories all commands without deleting any:
+After the reviewed legacy Mini Preview removal on 2026-08-03, the inventory
+contains:
 
-- root package: 115 commands;
-- frontend package: 32 commands;
-- total: 147 commands.
+- root package: 107 commands;
+- frontend package: 31 commands;
+- total: 138 commands.
 
-The legacy remote-Mac-mini preview aliases are deprecated because the current
-development standard assigns the shared Cloud preview lane to governed M4
-commands. Their scripts are retained for historical evidence and bounded
-recovery until the recorded removal condition is reviewed.
+The nine legacy remote-Mac-mini preview aliases and their four dedicated
+scripts were removed after repository search and operator review found no
+current bounded-recovery caller. Governed `m4:preview:*` commands remain the
+supported shared Cloud preview interface. Dated evidence continues to describe
+the historical commands without keeping them executable.
 
 This baseline is an observation and governance gate, not proof that every
 active command should exist forever. Later cleanup must use the inventory's
