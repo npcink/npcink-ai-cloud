@@ -19,6 +19,11 @@ import { createApiClient } from '@/lib/api-client';
 import { resolveAdminPackageLabel } from '@/lib/admin-plan-copy';
 import { formatAdminCurrency } from '@/lib/currency';
 import { resolveUiErrorMessage } from '@/lib/errors';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  buildAdminDetailHref,
+  buildAdminQueueReturnTo,
+} from '@/lib/admin-return-context';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
 interface Subscription {
@@ -349,9 +354,23 @@ function SubscriptionsContent() {
     selectedSubscriptionIndex >= 0 && selectedSubscriptionIndex < queuedSubscriptions.length - 1
       ? queuedSubscriptions[selectedSubscriptionIndex + 1]
       : null;
-  const currentQueueHref = searchParamsKey ? `${pathname}?${searchParamsKey}` : pathname;
+  const currentQueueHref = buildAdminQueueReturnTo({
+    pathname,
+    searchParams: searchParamsKey,
+    policy: {
+      allowedPathnames: [ADMIN_QUEUE_PATHNAMES.subscriptions],
+      fallback: ADMIN_QUEUE_PATHNAMES.subscriptions,
+    },
+  });
   const subscriptionDetailHref = (subscriptionId: string) =>
-    `/admin/subscriptions/${encodeURIComponent(subscriptionId)}?return_to=${encodeURIComponent(currentQueueHref)}`;
+    buildAdminDetailHref({
+      detailPathname: `/admin/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      returnTo: currentQueueHref,
+      policy: {
+        allowedPathnames: [ADMIN_QUEUE_PATHNAMES.subscriptions],
+        fallback: ADMIN_QUEUE_PATHNAMES.subscriptions,
+      },
+    });
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

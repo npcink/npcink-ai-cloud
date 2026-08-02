@@ -8,6 +8,7 @@ const source = [
   'src/features/admin/support-requests/api.ts',
   'src/features/admin/support-requests/directory-model.ts',
   'src/features/admin/support-requests/queries.ts',
+  'src/lib/admin-return-context.ts',
 ].map((path) => readFileSync(fromFrontendRoot(path), 'utf8')).join('\n');
 const detailSource = readFileSync(
   fromFrontendRoot('src/app/admin/support-requests/[requestId]/page.tsx'),
@@ -50,8 +51,8 @@ assert.match(source, /invalidateQueries[\s\S]*supportRequestKeys\.directories/, 
 assert.match(source, /setActionError[\s\S]*error=\{actionError\}/, 'ticket update failures must stay in the edit-dialog context');
 assert.match(source, /toast\.success/, 'successful ticket updates must use global toast feedback');
 assert.match(source, /admin\.support_requests_open_conversation_action/, 'the inspector must explicitly open the full conversation surface');
-assert.match(source, /return_to/, 'ticket detail links must preserve the queue return context');
-assert.match(detailSource, /sanitizeSupportRequestReturnPath/, 'ticket detail must reject untrusted return paths');
+assert.match(source, /buildAdminQueueReturnTo[\s\S]*buildAdminDetailHref[\s\S]*ADMIN_RETURN_TO_PARAM = 'return_to'/, 'ticket detail links must preserve the queue return context through the shared transport');
+assert.match(detailSource, /normalizeAdminReturnTo[\s\S]*ADMIN_QUEUE_PATHNAMES\.supportRequests/, 'ticket detail must use the shared contract to reject untrusted return paths');
 assert.match(source + detailSource, /\/admin\/accounts\/\$\{encodeURIComponent/, 'ticket context must link directly to the customer');
 assert.match(source + detailSource, /\/admin\/sites\/\$\{encodeURIComponent/, 'ticket context must link directly to the related site');
 assert.match(source, /no WordPress write is created/, 'the queue must state its Cloud service-plane boundary');

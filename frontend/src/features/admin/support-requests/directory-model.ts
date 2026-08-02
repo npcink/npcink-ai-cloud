@@ -63,35 +63,6 @@ export function buildSupportRequestsQuery(
   return params.toString();
 }
 
-export function buildSupportRequestQueueReturnPath(
-  pathname: string,
-  queueParamsKey: string,
-  requestId: string
-): string {
-  const params = new URLSearchParams(queueParamsKey);
-  params.set('focus', requestId);
-  return `${pathname}?${params.toString()}`;
-}
-
-export function buildSupportRequestDetailHref(
-  requestId: string,
-  returnPath: string
-): string {
-  const params = new URLSearchParams({ return_to: returnPath });
-  return `/admin/support-requests/${encodeURIComponent(requestId)}?${params.toString()}`;
-}
-
-export function sanitizeSupportRequestReturnPath(value: string | null): string {
-  const normalized = String(value || '').trim();
-  if (
-    normalized === '/admin/support-requests' ||
-    normalized.startsWith('/admin/support-requests?')
-  ) {
-    return normalized;
-  }
-  return '/admin/support-requests';
-}
-
 export function supportRequestsDisplayScope(input: {
   currentRequestKey: string;
   displayedRequestKey?: string;

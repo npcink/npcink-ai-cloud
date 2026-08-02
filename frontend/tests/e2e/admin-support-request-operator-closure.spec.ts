@@ -171,6 +171,15 @@ test('ticket operator preserves queue context through failed and successful publ
   await expect(page.locator('main h1').filter({ hasText: supportRequest.title })).toHaveCount(1);
   await expect(page).toHaveURL(new RegExp(`/admin/support-requests/${requestId}\\?return_to=`));
 
+  await page.reload();
+  await expect(detailWorkspace).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/status=open/);
+  await expect(page).toHaveURL(/q=Payment/);
+  await page.goForward();
+  await expect(detailWorkspace).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/admin/support-requests/${requestId}\\?return_to=`));
+
   const reply = page.getByLabel(/Public reply|公开回复/i);
   const sendReply = page.getByRole('button', { name: /Send public reply|发送公开回复/i });
   await expect(sendReply).toBeDisabled();
@@ -256,4 +265,21 @@ test('ticket operator preserves queue context through failed and successful publ
       { id: 'detail-return', status: 'pass', evidence: 'Back restored the exact filtered queue and reopened the focused ticket context' },
     ],
   });
+});
+
+test('ticket direct and invalid return contexts fail closed to the ticket queue', async ({ page }) => {
+  await installSupportRequestClosureHarness(page);
+
+  await page.goto(`/admin/support-requests/${requestId}`);
+  await expect(page.getByRole('link', { name: /^Back$|^返回$/i })).toHaveAttribute(
+    'href',
+    '/admin/support-requests'
+  );
+
+  const invalidReturnTo = encodeURIComponent('/admin/subscriptions/sub_mvp');
+  await page.goto(`/admin/support-requests/${requestId}?return_to=${invalidReturnTo}`);
+  await expect(page.getByRole('link', { name: /^Back$|^返回$/i })).toHaveAttribute(
+    'href',
+    '/admin/support-requests'
+  );
 });

@@ -10,6 +10,7 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
   const returnTo = '/admin/subscriptions?status=active&focus=sub_mvp';
+  await page.goto(returnTo);
   await page.goto(`/admin/subscriptions/sub_mvp?return_to=${encodeURIComponent(returnTo)}`);
 
   await expect(page.getByRole('heading', { name: /Subscription detail|订阅详情/i })).toBeVisible();
@@ -30,6 +31,14 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await expect(primaryAction).toHaveAttribute('href', `/admin/accounts/${LONG_ACCOUNT_ID}#coverage-actions`);
   const returnLink = page.getByRole('link', { name: /Back to subscription operations|返回订阅运营/i });
   await expect(returnLink).toBeVisible();
+  await expect(returnLink).toHaveAttribute('href', returnTo);
+
+  await page.reload();
+  await expect(returnLink).toHaveAttribute('href', returnTo);
+  await page.goBack();
+  await expect(page).toHaveURL(returnTo);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/admin\/subscriptions\/sub_mvp\?return_to=/);
   await expect(returnLink).toHaveAttribute('href', returnTo);
 
   await expect(page.getByText(/^Read current status and grace posture first\.$/)).toHaveCount(0);
@@ -67,6 +76,18 @@ test('subscription detail keeps one PC conclusion and uses dense evidence tables
   await expect(costCompleteness).toContainText(
     /Known CNY minimum.*missing call-time snapshots: 2|已知人民币成本下限.*缺少调用时快照：2/i
   );
+});
+
+test('subscription direct and invalid return contexts fail closed to the subscription queue', async ({ page }) => {
+  await installAdminMocks(page);
+
+  await page.goto('/admin/subscriptions/sub_mvp');
+  const returnLink = page.getByRole('link', { name: /Back to subscription operations|返回订阅运营/i });
+  await expect(returnLink).toHaveAttribute('href', '/admin/subscriptions');
+
+  const invalidReturnTo = encodeURIComponent('/admin/support-requests/sr_critical');
+  await page.goto(`/admin/subscriptions/sub_mvp?return_to=${invalidReturnTo}`);
+  await expect(returnLink).toHaveAttribute('href', '/admin/subscriptions');
 });
 
 test('subscription detail failure preserves the PC route shell and bounded retry', async ({ page }) => {

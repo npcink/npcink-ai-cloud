@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import {
-  buildSupportRequestDetailHref,
-  buildSupportRequestQueueReturnPath,
   buildSupportRequestsQuery,
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
   requestRisk,
-  sanitizeSupportRequestReturnPath,
   supportRequestsDisplayScope,
 } from '@/features/admin/support-requests/directory-model';
 import {
@@ -89,24 +86,6 @@ describe('Support request directory model', () => {
       waiting_on: 'none',
       waiting_since: undefined,
     }))).toBe('stable');
-  });
-
-  it('preserves queue context in detail links and rejects external returns', () => {
-    const returnPath = buildSupportRequestQueueReturnPath(
-      '/admin/support-requests',
-      'status=open&sort=updated_at&offset=20',
-      'sr_critical'
-    );
-    expect(returnPath).toBe(
-      '/admin/support-requests?status=open&sort=updated_at&offset=20&focus=sr_critical'
-    );
-    expect(buildSupportRequestDetailHref('sr_critical', returnPath)).toContain(
-      'return_to=%2Fadmin%2Fsupport-requests%3Fstatus%3Dopen'
-    );
-    expect(sanitizeSupportRequestReturnPath(returnPath)).toBe(returnPath);
-    expect(sanitizeSupportRequestReturnPath('https://example.com')).toBe(
-      '/admin/support-requests'
-    );
   });
 
   it('marks placeholder and failed-filter fallbacks as read-only scopes', () => {

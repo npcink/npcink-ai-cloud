@@ -19,6 +19,11 @@ import { ListPagination } from '@/components/ui/ListPagination';
 import { useToast } from '@/components/ui/Toast';
 import { useLocale } from '@/contexts/LocaleContext';
 import { resolveUiErrorMessage } from '@/lib/errors';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  buildAdminDetailHref,
+  buildAdminQueueReturnTo,
+} from '@/lib/admin-return-context';
 import { cn, formatDate, formatNumber as formatInteger } from '@/lib/utils';
 import {
   SUPPORT_REQUEST_ATTENTION_FILTERS,
@@ -26,8 +31,6 @@ import {
   SUPPORT_REQUEST_STATUS_FILTERS,
   SUPPORT_REQUEST_TOPICS,
   ageHours,
-  buildSupportRequestDetailHref,
-  buildSupportRequestQueueReturnPath,
   buildSupportRequestsQuery,
   normalizeSupportRequestOffset,
   normalizeSupportRequestSort,
@@ -230,6 +233,20 @@ export function SupportRequestsWorkspace() {
         ? t('admin.support_requests_reason_in_progress', {}, 'Work has started; keep the customer conversation and internal next step current.')
         : t('admin.support_requests_reason_complete', {}, 'The ticket is resolved or closed and remains available as support history.');
   const closeInspector = () => updateQueueUrl({ focus: null });
+  const supportReturnPolicy = {
+    allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
+    fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
+  } as const;
+  const supportRequestDetailHref = (requestId: string) => buildAdminDetailHref({
+    detailPathname: `/admin/support-requests/${encodeURIComponent(requestId)}`,
+    returnTo: buildAdminQueueReturnTo({
+      pathname,
+      searchParams: queueParamsKey,
+      policy: supportReturnPolicy,
+      focusId: requestId,
+    }),
+    policy: supportReturnPolicy,
+  });
   const openEditor = (item: SupportRequest) => {
     setActionError('');
     setEditRequest(item);
@@ -366,7 +383,7 @@ export function SupportRequestsWorkspace() {
                         <button ref={isSelected ? inspectorTriggerRef : undefined} type="button" className="btn btn-secondary btn-sm" aria-pressed={isSelected} onClick={(event) => { inspectorTriggerRef.current = event.currentTarget; updateQueueUrl({ focus: item.request_id }); }}>{t('admin.support_requests_inspect_action', {}, 'Inspect')}</button>
                         <Link
                           className="btn btn-primary btn-sm"
-                          href={buildSupportRequestDetailHref(item.request_id, buildSupportRequestQueueReturnPath(pathname, queueParamsKey, item.request_id))}
+                          href={supportRequestDetailHref(item.request_id)}
                         >
                           {t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}
                         </Link>
@@ -401,7 +418,7 @@ export function SupportRequestsWorkspace() {
         footer={selectedRequest ? (
           <>
             <button type="button" className="btn btn-secondary" disabled={displayScope.isRetainedScope} onClick={() => openEditor(selectedRequest)}>{t('admin.support_requests_edit_action', {}, 'Edit handling')}</button>
-            <Link className="btn btn-primary" href={buildSupportRequestDetailHref(selectedRequest.request_id, buildSupportRequestQueueReturnPath(pathname, queueParamsKey, selectedRequest.request_id))}>{t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}</Link>
+            <Link className="btn btn-primary" href={supportRequestDetailHref(selectedRequest.request_id)}>{t('admin.support_requests_open_conversation_action', {}, 'Open conversation')}</Link>
           </>
         ) : null}
       >

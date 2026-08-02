@@ -34,7 +34,7 @@ assert.match(source, /focusedSubscriptionId\s*\?[\s\S]*find\([\s\S]*: null/, 'th
 assert.doesNotMatch(source, /xl:grid-cols-\[minmax\(0,1\.65fr\)/, 'the subscription queue must remain full width while the drawer is closed');
 assert.match(source, /onClose=\{\(\) => updateQueueUrl\(\{ focus: null \}\)\}/, 'closing the drawer must clear only URL-backed focus');
 assert.match(source, /previousSubscription[\s\S]*nextSubscription[\s\S]*inspector_previous[\s\S]*inspector_next/, 'the drawer must support bounded previous and next inspection');
-assert.match(source, /currentQueueHref[\s\S]*return_to=\$\{encodeURIComponent\(currentQueueHref\)\}/, 'subscription detail links must preserve the current filtered queue return path');
+assert.match(source, /buildAdminQueueReturnTo[\s\S]*currentQueueHref[\s\S]*buildAdminDetailHref/, 'subscription detail links must use the shared contract to preserve the current filtered queue return path');
 assert.doesNotMatch(source, /admin\.back_to_coverage/, 'the independent subscription workspace must not offer a parent-workspace return action');
 assert.match(
   layoutSource,
