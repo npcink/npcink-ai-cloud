@@ -8,11 +8,14 @@ const wizardPath = resolve(root, 'src/components/setup/SetupWizard.tsx');
 const setupProxyPath = resolve(root, 'src/app/api/setup/_shared.ts');
 const setupRoutePath = resolve(root, 'src/app/api/setup/[...path]/route.ts');
 const globalProxyPath = resolve(root, 'src/proxy.ts');
+const installationStatePath = resolve(root, 'src/lib/installation-state.ts');
+const healthRoutePath = resolve(root, 'src/app/api/health/route.ts');
+const firstInstallE2ePath = resolve(root, 'tests/e2e/setup-first-install.spec.ts');
 const envPath = resolve(root, 'src/lib/env.ts');
 const serverEnvPath = resolve(root, 'src/lib/server-env.ts');
 const oldBootstrapPath = resolve(root, 'src/app/admin/auth/bootstrap/route.ts');
 
-for (const path of [setupPagePath, wizardPath, setupProxyPath, setupRoutePath, globalProxyPath]) {
+for (const path of [setupPagePath, wizardPath, setupProxyPath, setupRoutePath, globalProxyPath, installationStatePath, healthRoutePath, firstInstallE2ePath]) {
   assert.equal(existsSync(path), true, `missing first-install frontend file: ${path}`);
 }
 assert.equal(existsSync(oldBootstrapPath), false, 'retired bootstrap login BFF must be deleted');
@@ -21,6 +24,9 @@ const wizard = readFileSync(wizardPath, 'utf8');
 const setupProxy = readFileSync(setupProxyPath, 'utf8');
 const setupRoute = readFileSync(setupRoutePath, 'utf8');
 const globalProxy = readFileSync(globalProxyPath, 'utf8');
+const installationState = readFileSync(installationStatePath, 'utf8');
+const healthRoute = readFileSync(healthRoutePath, 'utf8');
+const firstInstallE2e = readFileSync(firstInstallE2ePath, 'utf8');
 const env = readFileSync(envPath, 'utf8');
 const serverEnv = readFileSync(serverEnvPath, 'utf8');
 
@@ -56,10 +62,18 @@ assert.match(
 );
 assert.match(globalProxy, /pathname === '\/setup\/'/);
 assert.match(globalProxy, /installationState === 'complete'/);
-assert.match(globalProxy, /let completedInstallationObserved = false/);
-assert.match(globalProxy, /completedInstallationObserved = true/);
-assert.match(globalProxy, /if \(completedInstallationObserved\) \{[\s\S]*installationState: 'complete'/);
-assert.doesNotMatch(globalProxy, /installation state.*pending/i);
+assert.match(installationState, /let completedInstallationObserved = false/);
+assert.match(installationState, /completedInstallationObserved = true/);
+assert.match(installationState, /if \(completedInstallationObserved\) \{[\s\S]*installationState: 'complete'/);
+assert.doesNotMatch(installationState, /installation state.*pending/i);
+assert.match(healthRoute, /await readInstallationState\(\)/);
+assert.match(healthRoute, /installation\.installationState !== 'complete'/);
+assert.match(healthRoute, /scope: 'frontend_container'[\s\S]*status: 'healthy'[\s\S]*statusCode: 200/);
+assert.match(
+  firstInstallE2e,
+  /test\.skip\([\s\S]*NPCINK_CLOUD_SETUP_STATE_OVERRIDE !== 'pending'/,
+  'first-install E2E must run only in the dedicated pending-installation lane'
+);
 assert.match(globalProxy, /_next\/static\(\?:\/\|\$\)[\s\S]*_next\/image\(\?:\/\|\$\)[\s\S]*favicon\\\\\.ico\$/);
 assert.doesNotMatch(
   globalProxy,
