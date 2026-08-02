@@ -1383,6 +1383,43 @@ entitlement 调用图回归合计 49 passed，只有既有 Starlette deprecation
 Trial/Entitlement repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已
 明确释放。其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
 
+### 17.18 Phase 5G 合并与 M4 accepted
+
+Phase 5G 由 PR #482 合并为
+`e0d87e7e4a8332406839d8af6a277eae490e37eb`；required `backend-targeted`
+为 8 分 32 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=482`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`b7ed05a5bc5ce7f6b7989ad347ae561edaea23002cb9fdb49be9f6965a60238b`；
+聚焦 Trial/Entitlement repository smoke 为 2 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放。
+
+### 17.19 Phase 5H Runtime/Site Knowledge queries
+
+Phase 5H 在 current `origin/master@e0d87e7e` 上确认并迁移四个无锁纯查询：
+
+- `count_active_runs`
+- `count_active_runs_by_site`
+- `summarize_site_knowledge_current_counts`
+- `summarize_site_knowledge_index_usage`
+
+新增只读 `CommercialRuntimeKnowledgeQueries`；facade 通过继承保持公共调用。保持
+queued/running 判定、空 `site_ids` 早返回、请求站点零填充、group-by、sum 零值，以及
+account/subscription/since/until 过滤边界。query class 不 add/flush/commit/rollback，
+不取得行锁；Run/Knowledge 写入、Usage/Provider 记录、调用方、权限/API、schema、
+Provider、Production 与 WordPress 明确排除。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
+2 passed。AST 对比确认四个方法的签名和方法体与 current-master 完全一致。Payment、
+SubscriptionCommerce、runtime defaults、Site monitoring、vector observability、Admin
+聚合与 runtime concurrency 调用图回归合计 62 passed，只有既有 Starlette deprecation
+warning；Ruff 通过，全量 mypy 278 个源文件无问题，`check:anti-drift` 与
+`git diff --check` 通过。门面当前为 1,313 行、36 个自有方法。source-only M4 candidate
+bundle 为 `c19ba292e094c76abc330bc90dc311036a21b2ecbfce880449da5f26b4f29cd1`，
+聚焦 Runtime/Site Knowledge queries smoke 为 2 passed；未要求 deploy，shared M4
+ownership 已明确释放。其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别
+记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1452,6 +1489,10 @@ Trial/Entitlement、权限/API 纳入回滚。
 Phase 5G 只允许恢复六个 Trial/Entitlement 方法到门面、移除新 repository 与聚焦
 characterization。不得修改 trial/snapshot 数据、重算 entitlement、事务补偿，或把
 Payment/Subscription 状态机与 runtime 纳入回滚。
+
+Phase 5H 只允许恢复四个 Runtime/Site Knowledge 查询到门面、移除 query class 与聚焦
+characterization。不得修改 Run/Knowledge/Usage/Provider 数据，或把任何写入、锁、
+API/runtime 行为纳入回滚。
 
 ## 19. 后续批次启动规则
 
