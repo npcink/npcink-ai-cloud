@@ -9,6 +9,7 @@ const vectorSettingsSource = read('src/app/admin/vector-settings/page.tsx');
 const layoutSource = read('src/app/admin/layout.tsx');
 const toolbarSource = read('src/components/admin/SupplierToolbar.tsx');
 const tablesSource = read('src/components/admin/SupplierConnectionTables.tsx');
+const actionMenuSource = read('src/components/admin/AdminActionMenu.tsx');
 const tableFrameSource = read('src/components/admin/AdminDataTableFrame.tsx');
 const providerWorkbenchStateSource = read(
   'src/features/admin/ai-resources/provider-workbench-state.ts'
@@ -108,7 +109,8 @@ assert.match(tablesSource, /headerActions=\{toolbar\}/);
 assert.match(tablesSource, /className="btn btn-secondary btn-sm shrink-0 whitespace-nowrap"/);
 assert.match(tablesSource, /connection\.verification_status === 'passed'/);
 assert.match(tablesSource, /connection\.attention_reasons/);
-assert.match(tablesSource, /role="menuitem"[\s\S]*action_delete_connection/);
+assert.match(tablesSource, /action_delete_connection[\s\S]*<AdminActionMenu/);
+assert.match(actionMenuSource, /item\.tone === 'danger'[\s\S]*role="menuitem"/);
 assert.doesNotMatch(tablesSource, /TABLE_DELETE_BUTTON_CLASS/);
 assert.doesNotMatch(tablesSource, /CapabilitySupplierTable|capability-supplier-directory|CapabilityProviderCategory/);
 assert.match(tableFrameSource, /headerActions\?: ReactNode/);
