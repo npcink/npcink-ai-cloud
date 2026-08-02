@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4A completed; Phase 4B local verified
+状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 completed; Phase 5A1 local verified
 
 日期：2026-08-03
 
@@ -921,7 +921,84 @@ PostgreSQL dialect 编译验证锁查询以 `FOR UPDATE` 结尾。AST 对比确�
 只有既有 Starlette deprecation warning。Ruff 与 format check 通过，全量 mypy 268 个
 源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。
 
-## 15. 回滚
+Phase 4B 的最终 source-only candidate bundle 为
+`e81e3bdd44810b819466072d2f19946eac31b4ddad4026a9030b78fae8acc6fd`，
+M4 聚焦测试为 4 passed。PR
+[#472](https://github.com/npcink/npcink-ai-cloud/pull/472) required checks 全绿，
+`backend-targeted` 为 8 分 35 秒；合并后的 master revision 为
+`e952de9ccd078e221748618a936a424dc2e025ce`。clean-master source-only promotion 后：
+
+- `acceptance_state=accepted`
+- `promotion_pr=472`
+- `source_branch=master`
+- `source_dirty=false`
+- accepted bundle
+  `f2406f03dab15705d112820ad6c948bd8ecac0687540fb33f01b767809a79a77`
+- `tests/domain/test_commercial_payment_repository.py`：4 passed
+
+Phase 4B 的 Cloud merge lane、shared M4 与 task worktree lock 已明确释放。
+
+### 14.4 Payment 调用方迁移审计
+
+Phase 4B accepted 后重新审计直接 Payment 调用图。17 个直接使用 Payment repository
+方法的 domain 函数中，多数同时依赖尚未拆出的 Account 行锁、Entitlement、PaidCredit、
+TrialClaim、SubscriptionOrder 或其他领域 mutation。此时逐方法替换会在一个 service
+事务内形成 `CommercialRepository` 与 `CommercialPaymentRepository` 双入口，却不能
+消除 facade 构造或证明更清晰的事务所有权。
+
+因此 Phase 4 不进行表面调用方迁移。Payment 调用方与其他领域调用方统一在所有 facade
+自有方法完成领域归属后迁移；届时同一 Session 可显式组合完整的领域 repository，并在
+同一批删除兼容门面。该只读审计没有 source deliverable、PR、M4 或 Cloud lane。
+
+## 15. Phase 5A1：Identity 核心无锁查询
+
+### 15.1 Current-master 方法与属性
+
+Phase 5A1 基线为
+`origin/master@e952de9ccd078e221748618a936a424dc2e025ce`。本批迁移：
+
+- `get_principal_identity`
+- `get_principal_identity_by_ref`
+- `get_identity_provider_binding`
+- `get_identity_provider_binding_by_unionid`
+- `list_identity_provider_bindings_for_principal`
+- `list_identity_provider_bindings`
+- `count_principals`
+- `list_principals`
+
+八个方法只使用 `session.get`、`select`、`scalar` 或 `scalars`，没有 add、delete、flush、
+commit、rollback、`for_update`、`with_for_update` 或 advisory lock。
+`get_principal_identity_by_email(for_update=...)`、`get_portal_oauth_state(for_update=...)`
+和 `list_portal_login_codes(for_update=...)` 明确排除，即使其默认调用通常不取锁。
+
+### 15.2 实现 envelope 与合同
+
+- 新增 `app/adapters/repositories/commercial_identity_queries.py`；
+- `CommercialRepository` 增加 `CommercialIdentityQueries` 继承并移除八个类内实现；
+- 扩展既有 `tests/domain/test_commercial_query_repositories.py`，不新增散落测试文件；
+- 保持 PK 与 ref lookup、unionid 空值早返回、provider/status filters、空列表早返回、
+  binding 的 `created_at DESC, binding_id DESC`、principal 的
+  `created_at DESC, principal_id ASC`、limit 非正值和 None/零值语义；
+- 第一批不迁移调用方；明确排除 OAuth/login code、Admin directory 大查询、mutation、
+  Membership/Site access/Platform admin、API、权限、schema/migration、Production 与
+  WordPress。
+
+### 15.3 Characterization 与本地结构证据
+
+迁移前 facade characterization 为 1 passed；迁移后 facade 与 direct query class
+参数化为 2 passed。测试覆盖 identity/ref lookup、binding provider/subject/unionid、
+principal/provider/status filters、空输入、排序 tie-breaker、limit 与 count。AST 对比
+确认八个方法的集合、签名和方法体与 current-master 完全一致；新 query class mutation/
+lock scan clean。
+
+门面当前为 2,809 行、89 个自有方法。其余本地回归、M4 candidate、PR/CI、merged
+source 与 clean-master M4 accepted 继续分别记录，不提前互相替代。
+
+本地完整 query repository、Auth 与三条 Portal identity 回归合计 118 passed，只有既有
+Starlette deprecation warning。Ruff 与 format check 通过，全量 mypy 269 个源文件无
+问题，`check:anti-drift` 与 `git diff --check` 通过。
+
+## 16. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -954,7 +1031,11 @@ Phase 4B 只允许恢复一个锁读取与三个 create 到门面、恢复 Payme
 移除新的 Payment repository 与聚焦 characterization。不得修改支付数据、事务补偿、
 状态机、Provider 或 API 完成结构回滚。
 
-## 16. 后续批次启动规则
+Phase 5A1 只允许恢复八个 Identity 无锁查询到门面、移除 identity query class 与既有
+query repository 文件中的聚焦 characterization。不得把任何可选锁查询、OAuth/login
+code、Admin directory、权限或身份数据变更纳入回滚。
+
+## 17. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
