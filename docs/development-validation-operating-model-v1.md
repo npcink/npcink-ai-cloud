@@ -40,6 +40,7 @@ The authoritative details are:
 - [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md);
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md);
 - [M4 Preview Development Workflow](m4-preview-development-v1.md);
+- [M4 Runtime-Bound Configuration Publication Standard](m4-preview-runtime-bound-config-publication-standard-v1.md);
 - [ADR-023: Candidate and Accepted Promotion](decisions/023-m4-preview-candidate-acceptance-promotion.md);
 - [ADR-024: Risk-Tiered Validation Authority](decisions/024-risk-tiered-development-validation-authority.md);
 - [ADR-025: Source-Only Authoring and AI Checkpoint Dispatch](decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md);

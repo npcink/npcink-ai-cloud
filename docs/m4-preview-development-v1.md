@@ -466,7 +466,9 @@ volume removal. Before the first live source change, the script validates
 Compose from the fully extracted incoming tree and runs `nginx -t` against the
 incoming M4 proxy configuration in a disposable, network-disabled Nginx
 container. A validation failure leaves the live source mirror and the running
-services unchanged. The live rsync uses delayed updates and delayed deletion.
+services unchanged. The normative publication and failure boundaries are in
+the [M4 Runtime-Bound Configuration Publication Standard](m4-preview-runtime-bound-config-publication-standard-v1.md).
+The live rsync uses delayed updates and delayed deletion.
 The single-file Nginx bind-mount source is excluded from rsync, copied to a
 same-directory incoming file, checksum-verified, and committed with an atomic
 rename only after rsync succeeds. When that file changed, deploy recreates the

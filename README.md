@@ -77,6 +77,7 @@ and other CMS adapters are post-P5 validation work.
 Evidence records (not target-contract completion proof):
 
 - [docs/ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md](docs/ai-assisted-development-tooling-and-parallel-session-closeout-2026-08-01.md)
+- [docs/m4-preview-atomic-nginx-config-closeout-and-development-retrospective-2026-08-02.md](docs/m4-preview-atomic-nginx-config-closeout-and-development-retrospective-2026-08-02.md)
 - [docs/production-master-delta-audit-2026-07-25.md](docs/production-master-delta-audit-2026-07-25.md)
 - [docs/refactor-baseline-2026-07-14.md](docs/refactor-baseline-2026-07-14.md)
 - [docs/p5-hardening-release-audit-2026-07-17.md](docs/p5-hardening-release-audit-2026-07-17.md)
@@ -118,6 +119,7 @@ Operational references:
 - [docs/development-validation-operating-model-v1.md](docs/development-validation-operating-model-v1.md)
 - [docs/engineering-command-inventory-standard-v1.md](docs/engineering-command-inventory-standard-v1.md)
 - [docs/m4-preview-ai-development-standard-v1.md](docs/m4-preview-ai-development-standard-v1.md)
+- [docs/m4-preview-runtime-bound-config-publication-standard-v1.md](docs/m4-preview-runtime-bound-config-publication-standard-v1.md)
 - [docs/image-processing-fc-oss-readiness-2026-07-20.md](docs/image-processing-fc-oss-readiness-2026-07-20.md)
 - [docs/m4-preview-development-v1.md](docs/m4-preview-development-v1.md)
 - [docs/m4-personal-preview-auto-route-retrospective-2026-07-25.md](docs/m4-personal-preview-auto-route-retrospective-2026-07-25.md)

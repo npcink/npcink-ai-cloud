@@ -30,6 +30,9 @@ The documents have separate responsibilities:
 - [M4 Preview Development Workflow](m4-preview-development-v1.md) is the
   operational runbook for hosts, ports, commands, recovery, and implementation
   details.
+- [M4 Preview Runtime-Bound Configuration Publication Standard](m4-preview-runtime-bound-config-publication-standard-v1.md)
+  defines staging validation, atomic publication, failure boundaries, and
+  evidence for files read directly through a live host bind mount.
 - This standard tells an AI agent which path to select, what evidence to
   collect, and when it may report the work complete.
 
@@ -333,7 +336,9 @@ MUST retain the previous complete bind-mounted configuration and running
 services. The Nginx bind-mount source MUST be committed by same-filesystem
 atomic rename rather than live rsync overwrite; existing deployment, relay,
 slot, candidate/accepted, promotion, and post-commit fail-closed boundaries
-remain in force.
+remain in force. The complete normative sequence, fault-injection requirements,
+and pre-commit/post-commit failure matrix are defined in the
+[runtime-bound configuration publication standard](m4-preview-runtime-bound-config-publication-standard-v1.md).
 
 Production validation, Cloudflare configuration, and external WordPress
 acceptance require separate explicit authorization.
