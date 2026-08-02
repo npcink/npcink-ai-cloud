@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 completed; Phase 5A1 local verified
+状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5A1 completed; Phase 5A2 local verified
 
 日期：2026-08-03
 
@@ -998,7 +998,60 @@ source 与 clean-master M4 accepted 继续分别记录，不提前互相替代�
 Starlette deprecation warning。Ruff 与 format check 通过，全量 mypy 269 个源文件无
 问题，`check:anti-drift` 与 `git diff --check` 通过。
 
-## 16. 回滚
+Phase 5A1 的 source-only candidate bundle 为
+`ccd568a99a3ffa7dfb1f95cc489b4ee140cf930bac044dd1ed5e14b8ae610602`，
+M4 聚焦 characterization 为 2 passed。PR
+[#473](https://github.com/npcink/npcink-ai-cloud/pull/473) required checks 全绿，
+`backend-targeted` 为 8 分 8 秒；合并后的 master revision 为
+`c6ee48513602507759ec5c6304e025fd8ef3227d`。clean-master promotion 后：
+
+- `acceptance_state=accepted`
+- `promotion_pr=473`
+- `source_branch=master`
+- `source_dirty=false`
+- accepted bundle
+  `ac915b70c34f69aa54bc7d604b87879d9f0b261f79fe423e2f7639c21cbbdfcf`
+- Identity 聚焦 smoke：2 passed
+
+Phase 5A1 的 Cloud merge lane、shared M4 与 task worktree lock 已明确释放。
+
+## 16. Phase 5A2：Admin Portal user directory 查询
+
+### 16.1 Current-master 方法与属性
+
+Phase 5A2 基线为
+`origin/master@c6ee48513602507759ec5c6304e025fd8ef3227d`。本批只迁移
+`query_admin_portal_user_directory_page` 及其 `PortalUserDirectorySummary`、
+`PortalUserDirectoryPage` 返回类型。该方法只执行 `select`、`execute` 与 `scalars`，
+没有写入、flush、commit、rollback 或行锁。
+
+### 16.2 实现 envelope 与合同
+
+- 把方法和返回类型原样移入既有 `CommercialIdentityQueries`；
+- facade 仅通过继承继续暴露入口，不迁移 Admin service 调用方；
+- 新增聚焦 `tests/domain/test_commercial_identity_queries.py`；该复杂窗口/聚合查询无法
+  清楚放入已经覆盖六个领域的通用 query test；
+- 保持 ranked membership/site/subscription 窗口排序、covered subscription 优先、
+  source/package 推断、QQ binding 聚合、literal `%`/`_`/反斜线转义、summary、
+  offset/limit 与 `principal_created_at DESC, principal_id ASC`；
+- 明确排除 Admin hydrate/projection、权限、API 响应、identity/membership mutation、
+  schema/migration、Production 与 WordPress。
+
+### 16.3 Characterization 与本地结构证据
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct 参数化为 2 passed。
+测试覆盖 source/status/package/QQ filters、site URL search、literal wildcard、summary、
+最终排序和分页。AST 对比确认方法签名与方法体与 current-master 完全一致；类型仅随方法
+移动，新 query class mutation/lock scan 继续 clean。
+
+门面当前为 2,502 行、88 个自有方法。本地回归、M4 candidate、PR/CI、merged source
+与 clean-master M4 accepted 继续分别记录，不提前互相替代。
+
+本地聚焦 characterization、Identity core 与完整 Portal users route 合计 7 passed，只有
+既有 Starlette deprecation warning。Ruff 与 format check 通过，全量 mypy 269 个源
+文件无问题，`check:anti-drift` 与 `git diff --check` 通过。
+
+## 17. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -1035,7 +1088,10 @@ Phase 5A1 只允许恢复八个 Identity 无锁查询到门面、移除 identity
 query repository 文件中的聚焦 characterization。不得把任何可选锁查询、OAuth/login
 code、Admin directory、权限或身份数据变更纳入回滚。
 
-## 17. 后续批次启动规则
+Phase 5A2 只允许恢复一个 Admin directory query 与两个返回类型到门面，并移除聚焦
+characterization。不得改变 Admin service hydrate、权限、API、身份数据或 SQL 语义。
+
+## 18. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
