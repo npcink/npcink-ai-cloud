@@ -1188,6 +1188,44 @@ clean-master M4 accepted 继续分别记录。source-only M4 candidate bundle �
 `853ce1c13b80022204e3a7eb73bb1085b5b160c5929cf2607a0dab3fd7fde964`，聚焦
 Portal Auth repository smoke 为 4 passed；未要求 deploy，shared M4 ownership 已明确释放。
 
+### 17.8 Phase 5C1 合并与 M4 accepted
+
+Phase 5C1 由 PR #477 合并为
+`cf174cf1327705dec4b7327f84509acb56650f1f`；required `backend-targeted`
+为 8 分 39 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=477`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`067c5e352b42a1d1b47a0c5f011afd520a41d3027bcd49309347f47282fd2b89`；
+聚焦 Portal Auth repository smoke 为 4 passed。Cloud lane、shared M4 与 task worktree
+lock 均已释放。
+
+### 17.9 Phase 5C2 Core Identity mutation
+
+Phase 5C2 在 current `origin/master@cf174cf1` 上确认并迁移四个 core Identity mutation：
+
+- `revoke_identity_provider_bindings`
+- `upsert_identity_provider_binding`
+- `upsert_principal_identity`
+- `increment_principal_session_version`
+
+新增 `CommercialIdentityRepository`，继承既有 `CommercialIdentityQueries` 与
+`CommercialPortalAuthRepository`，以原样保留 `upsert_principal_identity` 对
+`get_principal_identity_by_email` 的复用；facade 改为继承这一聚合层并保持公共调用。
+保持 provider subject/union principal 不可变错误、last-login None 不覆盖、email fallback、
+active binding revoke 计数、session version 零值递增、add/flush 与 None 返回。repository
+不拥有 commit/rollback，不新增锁；调用方、Membership、Platform Admin mutation、Account/Site、
+权限/API、schema、Production 与 WordPress 明确排除。
+
+迁移前 facade characterization 为 1 passed，迁移后 facade/direct 为 2 passed；AST
+对比确认四个方法的签名和方法体与 current-master 完全一致。Identity query、Portal Auth、
+identity contract、完整 Portal users、QQ/email binding、session revoke 与 Admin session
+相关回归合计 43 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy
+273 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。门面当前为 1,925
+行、64 个自有方法。其余 M4 candidate、PR/CI、merged source 与 clean-master M4
+accepted 继续分别记录。source-only M4 candidate bundle 为
+`7377efa45ab84fcf95138bf55b438638d90e11f5325f596388212a79722fac90`，聚焦
+Identity repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确释放。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1237,6 +1275,10 @@ characterization。不得修改 grant 数据、权限、API，或把 upsert/dele
 Phase 5C1 只允许恢复七个 Portal Auth 方法到门面、移除 repository 与聚焦
 characterization，并回退既有 lock test 的 direct 参数化。不得修改认证证据数据、
 事务补偿、扩大锁，或把其他 Identity/Membership mutation 纳入回滚。
+
+Phase 5C2 只允许恢复四个 core Identity mutation 到门面、恢复 facade 对 IdentityQueries
+与 PortalAuthRepository 的直接继承，并移除新 repository/characterization。不得修改
+identity/binding 数据、事务补偿，或把 Membership/Platform Admin mutation 纳入回滚。
 
 ## 19. 后续批次启动规则
 
