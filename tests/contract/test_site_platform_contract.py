@@ -11,6 +11,9 @@ from alembic.operations import Operations
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.api.routes.service import SiteProvisionPayload
 from app.core.models import PLATFORM_KIND_WORDPRESS, Base, Site
@@ -48,11 +51,18 @@ def test_site_model_has_first_class_url_and_wordpress_platform_defaults() -> Non
     assert platform_kind.index is True
 
 
-def test_site_repository_and_serializer_keep_one_url_truth() -> None:
+@pytest.mark.parametrize(
+    "repository_type",
+    [CommercialRepository, CommercialAccountSiteRepository],
+)
+def test_site_repository_and_serializer_keep_one_url_truth(
+    repository_type: type[CommercialAccountSiteRepository],
+) -> None:
     engine = sa.create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        repository = CommercialRepository(session)
+        repository = repository_type(session)
+        assert isinstance(repository, CommercialAccountSiteRepository)
         site = repository.upsert_site(
             site_id="site_contract",
             account_id=None,
@@ -178,15 +188,13 @@ def test_site_platform_migration_backfills_and_cleans_legacy_metadata_on_sqlite(
 
         reflected = sa.Table("sites", sa.MetaData(), autoload_with=connection)
         rows = {
-            str(row.site_id): row
-            for row in connection.execute(sa.select(reflected)).mappings()
+            str(row.site_id): row for row in connection.execute(sa.select(reflected)).mappings()
         }
         indexes = {index["name"] for index in sa.inspect(connection).get_indexes("sites")}
         migration.downgrade()
         downgraded = sa.Table("sites", sa.MetaData(), autoload_with=connection)
         downgraded_rows = {
-            str(row.site_id): row
-            for row in connection.execute(sa.select(downgraded)).mappings()
+            str(row.site_id): row for row in connection.execute(sa.select(downgraded)).mappings()
         }
         downgraded_columns = set(downgraded.c.keys())
 
@@ -205,9 +213,7 @@ def test_site_platform_migration_backfills_and_cleans_legacy_metadata_on_sqlite(
 
 
 def test_frontend_site_contract_reads_only_first_class_url() -> None:
-    display_source = (ROOT / "frontend/src/lib/portal-site-display.ts").read_text(
-        encoding="utf-8"
-    )
+    display_source = (ROOT / "frontend/src/lib/portal-site-display.ts").read_text(encoding="utf-8")
     client_source = (ROOT / "frontend/src/lib/portal-client.ts").read_text(encoding="utf-8")
     session_source = (ROOT / "frontend/src/hooks/useSession.ts").read_text(encoding="utf-8")
 
