@@ -15,7 +15,10 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { createApiClient } from '@/lib/api-client';
 import { resolveUiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/utils';
-import { sanitizeSupportRequestReturnPath } from '@/features/admin/support-requests/directory-model';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  normalizeAdminReturnTo,
+} from '@/lib/admin-return-context';
 
 type SupportRequestStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
@@ -187,7 +190,13 @@ export default function AdminSupportRequestDetailPage() {
   const params = useParams<{ requestId?: string }>();
   const searchParams = useSearchParams();
   const requestId = String(params?.requestId || '');
-  const returnPath = sanitizeSupportRequestReturnPath(searchParams.get('return_to'));
+  const returnPath = normalizeAdminReturnTo(
+    searchParams.get('return_to'),
+    {
+      allowedPathnames: [ADMIN_QUEUE_PATHNAMES.supportRequests],
+      fallback: ADMIN_QUEUE_PATHNAMES.supportRequests,
+    }
+  );
   const { t } = useLocale();
   const [supportRequest, setSupportRequest] = useState<SupportRequest | null>(null);
   const [messages, setMessages] = useState<SupportRequestMessage[]>([]);

@@ -4,8 +4,12 @@ import { resolve } from 'node:path';
 import { frontendRoot } from './_paths.mjs';
 
 const page = readFileSync(resolve(frontendRoot, 'src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
+const returnContext = readFileSync(resolve(frontendRoot, 'src/lib/admin-return-context.ts'), 'utf8');
 
-assert.match(page, /normalizeSubscriptionReturnTo[\s\S]*parsed\.pathname === '\/admin\/subscriptions'[\s\S]*admin\.back_to_subscriptions/, 'subscription detail must preserve only a safe return path to the subscription queue');
+assert.match(page, /normalizeAdminReturnTo[\s\S]*ADMIN_QUEUE_PATHNAMES\.subscriptions[\s\S]*admin\.back_to_subscriptions/, 'subscription detail must use the shared safe return path contract');
+assert.match(returnContext, /allowedPathnames[\s\S]*parsed\.pathname !== rawPathname[\s\S]*parsed\.hash/, 'shared return context must exact-match caller-allowed queues and reject fragments');
+assert.doesNotMatch(returnContext, /\bwindow\b|useRouter|usePathname|useSearchParams|permission|capability/, 'shared return context must remain a pure navigation contract without router, browser, or authorization ownership');
+assert.doesNotMatch(page, /normalizeSubscriptionReturnTo/, 'subscription detail must not restore a route-local return normalizer');
 const commercialCopy = readFileSync(resolve(frontendRoot, 'src/lib/admin-commercial-copy.ts'), 'utf8');
 const i18n = readFileSync(resolve(frontendRoot, 'src/lib/i18n.ts'), 'utf8');
 const auditSummary = readFileSync(resolve(frontendRoot, 'src/components/admin/AdminAuditSummaryPanel.tsx'), 'utf8');

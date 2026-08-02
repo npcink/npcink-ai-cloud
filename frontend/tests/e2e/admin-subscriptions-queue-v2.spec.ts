@@ -137,6 +137,22 @@ test('subscription risk queue persists server filters and inspector focus while 
       body: JSON.stringify(buildAdminApiEnvelope({ items, total: items.length, summary })),
     });
   });
+  await page.route('**/api/admin/subscriptions/sub_stale', async (route) => {
+    const item = SUBSCRIPTIONS[1];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildAdminApiEnvelope({
+        subscription: item.subscription,
+        account: item.account,
+        covered_sites: item.covered_sites,
+        plan: { plan_id: item.subscription.plan_id, display_name: item.coverage.package_alias },
+        plan_version: { plan_version_id: item.subscription.plan_version_id },
+        billing_snapshot_status: item.billing_snapshot_status,
+        usage_totals: { runs: 0, tokens: 0, cost_cny: 12.25 },
+      })),
+    });
+  });
 
   await page.goto('/admin/subscriptions');
   await expect(page.getByRole('heading', { name: /^Subscription operations$|^订阅运营$/i })).toBeVisible();
@@ -214,6 +230,22 @@ test('subscription risk queue persists server filters and inspector focus while 
   const detailLink = drawer.locator('a[href^="/admin/subscriptions/sub_stale?return_to="]');
   await expect(detailLink).toHaveCount(1);
   await expect(detailLink).toHaveAttribute('href', /return_to=%2Fadmin%2Fsubscriptions%3F/);
+
+  const queueUrl = new URL(page.url());
+  const expectedReturnTo = `${queueUrl.pathname}${queueUrl.search}`;
+  const expectedQueueUrl = `${queueUrl.origin}${expectedReturnTo}`;
+  await detailLink.click();
+  await expect(page.getByRole('heading', { name: /Subscription detail|订阅详情/i })).toBeVisible();
+  const returnLink = page.getByRole('link', { name: /Back to subscription operations|返回订阅运营/i });
+  await expect(returnLink).toHaveAttribute('href', expectedReturnTo);
+  await page.reload();
+  await expect(returnLink).toHaveAttribute('href', expectedReturnTo);
+  await page.goBack();
+  await expect(page).toHaveURL(expectedQueueUrl);
+  await page.goForward();
+  await expect(returnLink).toHaveAttribute('href', expectedReturnTo);
+  await returnLink.click();
+  await expect(page).toHaveURL(expectedQueueUrl);
 
   await page.reload();
   await expect(page.getByPlaceholder(/Account ID|账户 ID|帳戶 ID/i)).toHaveValue('acct_beta');

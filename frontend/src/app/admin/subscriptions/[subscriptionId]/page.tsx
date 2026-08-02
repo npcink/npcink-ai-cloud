@@ -27,6 +27,10 @@ import { BackofficeIdentifier } from '@/components/backoffice/BackofficeIdentifi
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminAuditSummaryPanel } from '@/components/admin/AdminAuditSummaryPanel';
 import { formatAdminCurrency } from '@/lib/currency';
+import {
+  ADMIN_QUEUE_PATHNAMES,
+  normalizeAdminReturnTo,
+} from '@/lib/admin-return-context';
 import { formatDate, formatNumber as formatInteger } from '@/lib/utils';
 
 type SubscriptionDetailPayload = {
@@ -129,31 +133,19 @@ type SubscriptionBillingSnapshotRebuildResult = {
 
 const subscriptionDetailClient = createApiClient({ idempotencyPrefix: 'admin_subscription_detail' });
 
-function normalizeSubscriptionReturnTo(value: string | null): string {
-  if (!value) {
-    return '/admin/subscriptions';
-  }
-  try {
-    const parsed = new URL(value, 'https://admin.local');
-    if (
-      parsed.origin === 'https://admin.local' &&
-      parsed.pathname === '/admin/subscriptions'
-    ) {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    }
-  } catch {
-    // Fall through to the canonical subscription queue.
-  }
-  return '/admin/subscriptions';
-}
-
 function SubscriptionDetailContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
   const { subscriptionId } = params as { subscriptionId: string };
-  const returnTo = normalizeSubscriptionReturnTo(searchParams.get('return_to'));
+  const returnTo = normalizeAdminReturnTo(
+    searchParams.get('return_to'),
+    {
+      allowedPathnames: [ADMIN_QUEUE_PATHNAMES.subscriptions],
+      fallback: ADMIN_QUEUE_PATHNAMES.subscriptions,
+    }
+  );
   const [detail, setDetail] = useState<SubscriptionDetailPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
