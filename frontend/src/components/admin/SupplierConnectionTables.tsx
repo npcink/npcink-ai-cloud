@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
+import { AdminActionMenu, type AdminActionMenuItem } from '@/components/admin/AdminActionMenu';
 import { BackofficeStatusBadge } from '@/components/backoffice/BackofficeStatusBadge';
 import { AdminDataTableFrame } from '@/components/admin/AdminDataTableFrame';
 import { AdminEmptyState } from '@/components/admin/AdminEmptyState';
@@ -153,85 +154,33 @@ function SupplierMoreActions({
   onRequestDelete,
   translate,
 }: SupplierMoreActionsProps) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open]);
+  const items: AdminActionMenuItem[] = providerLinks.map((item) => ({
+    key: item.key,
+    label: translate(item.labelKey, item.fallback),
+    href: item.href,
+    external: true,
+  }));
+  if (connection.managed_by === 'cloud_provider_connections') {
+    items.push({
+      key: 'delete-connection',
+      label: translate('action_delete_connection', 'Delete connection'),
+      tone: 'danger',
+      disabled: isDeleting,
+      onSelect: () => {
+        onSelectConnection();
+        onRequestDelete(connection.connection_id);
+      },
+    });
+  }
 
   return (
-    <div ref={containerRef} data-ui="supplier-more-actions" className="relative shrink-0 text-left">
-      <button
-        ref={triggerRef}
-        type="button"
-        className={`${TABLE_ACTION_BUTTON_CLASS} h-9 w-9 px-0 text-base leading-none`}
-        aria-label={translate('model_visibility_more_operations', 'More actions')}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span aria-hidden="true">⋯</span>
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          className="absolute bottom-full right-0 z-30 mb-1.5 w-48 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-800 dark:bg-slate-950"
-        >
-          {providerLinks.map((item) => (
-            <a
-              key={item.key}
-              role="menuitem"
-              className="flex min-h-9 items-center justify-between gap-3 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950 focus:bg-slate-50 focus:outline-none dark:text-slate-200 dark:hover:bg-slate-900 dark:hover:text-white dark:focus:bg-slate-900"
-              href={item.href}
-              target="_blank"
-              rel="noreferrer noopener"
-              onClick={() => setOpen(false)}
-            >
-              <span>{translate(item.labelKey, item.fallback)}</span>
-              <span aria-hidden="true" className="text-xs text-slate-400">↗</span>
-            </a>
-          ))}
-          {connection.managed_by === 'cloud_provider_connections' ? (
-            <div className={providerLinks.length ? 'mt-1 border-t border-slate-200 pt-1 dark:border-slate-800' : ''}>
-              <button
-                role="menuitem"
-                type="button"
-                className="flex min-h-9 w-full items-center px-3 text-left text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus:bg-rose-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:text-rose-300 dark:hover:bg-rose-950/30 dark:focus:bg-rose-950/30"
-                disabled={isDeleting}
-                onClick={() => {
-                  setOpen(false);
-                  onSelectConnection();
-                  onRequestDelete(connection.connection_id);
-                }}
-              >
-                {translate('action_delete_connection', 'Delete connection…')}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    <AdminActionMenu
+      dataUi="supplier-more-actions"
+      triggerLabel={translate('model_visibility_more_operations', 'More actions')}
+      triggerClassName={`${TABLE_ACTION_BUTTON_CLASS} h-9 w-9 px-0 text-base leading-none`}
+      disabled={isDeleting}
+      items={items}
+    />
   );
 }
 

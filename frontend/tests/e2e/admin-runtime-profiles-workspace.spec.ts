@@ -417,6 +417,8 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   const workbench = page.getByRole('dialog', { name: /Configure candidate chain|配置候选链/i });
   await expect(workbench.locator('[data-ui="admin-configuration-table"]')).toBeVisible();
   await expect(workbench.locator('[data-ui="runtime-profile-candidate-table"]')).toBeVisible();
+  await expect(workbench).toHaveCSS('overflow-y', 'hidden');
+  await expect(workbench.locator('[data-content-mode="contained"]')).toBeVisible();
   const modelToolbar = workbench.locator('[data-ui="runtime-profile-model-toolbar"]');
   const candidateTable = workbench.locator('[data-ui="runtime-profile-candidate-table"]');
   const providerFilter = modelToolbar.getByRole('combobox', { name: /Supplier|供应商/i });
@@ -436,6 +438,14 @@ test('runtime profile table and workbench keep the accepted PC density', async (
   expect(Math.abs(providerBox.y - searchBox.y)).toBeLessThanOrEqual(1);
   expect(candidateTableBox.y - (toolbarBox.y + toolbarBox.height)).toBeGreaterThanOrEqual(9);
   expect(candidateTableBox.y - (toolbarBox.y + toolbarBox.height)).toBeLessThanOrEqual(11);
+  const runtimeScrollOwners = await workbench.evaluate((element) => [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))]
+    .filter((candidate) => {
+      const style = window.getComputedStyle(candidate);
+      return /(auto|scroll)/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
+    })
+    .map((candidate) => candidate.dataset.ui || candidate.tagName.toLowerCase()));
+  expect(runtimeScrollOwners.every((owner) => owner === 'runtime-profile-candidate-table')).toBe(true);
+  expect(runtimeScrollOwners.length).toBeLessThanOrEqual(1);
   await expect(workbench.getByRole('radio')).toHaveCount(6);
   await expect(candidateRow(page, 'text.unavailable')).toContainText(/Unavailable|不可用/i);
   await expect(candidateRow(page, 'text.unavailable').getByRole('radio').first()).toBeDisabled();

@@ -272,15 +272,24 @@ test('supplier row keeps test feedback nearby and deletion under more actions', 
   const rowHeightBefore = await supplierRow.evaluate((element) => element.getBoundingClientRect().height);
   const moreButton = supplierRow.getByRole('button', { name: /More actions|更多操作/i });
   await moreButton.click();
-  await expect(supplierRow.getByRole('menu')).toBeVisible();
+  const actionMenu = page.getByRole('menu');
+  await expect(actionMenu).toBeVisible();
   await expect(supplierRow).toHaveCSS('height', `${rowHeightBefore}px`);
+  const [triggerBox, menuBox] = await Promise.all([moreButton.boundingBox(), actionMenu.boundingBox()]);
+  expect(triggerBox).not.toBeNull();
+  expect(menuBox).not.toBeNull();
+  expect(menuBox!.x).toBeGreaterThanOrEqual(8);
+  expect(menuBox!.y).toBeGreaterThanOrEqual(8);
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(1432);
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(1042);
+  expect(Math.abs((menuBox!.x + menuBox!.width) - (triggerBox!.x + triggerBox!.width))).toBeLessThanOrEqual(12);
   await page.keyboard.press('Escape');
-  await expect(supplierRow.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(moreButton).toBeFocused();
 
   await moreButton.click();
-  await expect(supplierRow.getByRole('menuitem')).toHaveCount(4);
-  await supplierRow.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
+  await expect(page.getByRole('menuitem')).toHaveCount(4);
+  await page.getByRole('menuitem', { name: /Delete connection|删除连接/i }).click();
   await expect(feedbackRow.getByRole('alert').filter({ hasText: /removes this runtime connection|移除这条运行时连接/i })).toBeVisible();
   await expect(feedbackRow.getByRole('button', { name: /Confirm delete|确认删除/i })).toBeVisible();
   await feedbackRow.getByRole('button', { name: /^Cancel$|^取消$/i }).click();
@@ -465,8 +474,16 @@ test('large model directories render one bounded page and reset pagination when 
 
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('tab', { name: /Model management|模型管理/i }).click();
+  await expect(dialog.locator('[data-content-mode="contained"]')).toBeVisible();
   const directory = dialog.locator('[data-ui="model-visibility-directory"]');
   await expect(directory.locator('tbody tr')).toHaveCount(25);
+  const verticalScrollOwners = await dialog.evaluate((element) => [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))]
+    .filter((candidate) => {
+      const style = window.getComputedStyle(candidate);
+      return /(auto|scroll)/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
+    })
+    .map((candidate) => candidate.dataset.ui || candidate.tagName.toLowerCase()));
+  expect(verticalScrollOwners).toEqual(['model-visibility-scroll']);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/25.*62|62.*25/);
   const intelligenceDetails = directory.locator('details[data-ui="model-reference-details"]');
   expect(await intelligenceDetails.count()).toBeGreaterThan(0);

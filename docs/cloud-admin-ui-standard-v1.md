@@ -341,6 +341,11 @@ and [ADR-038](decisions/038-server-owned-support-waiting-state-projection.md).
   overlay.
 - The dialog must trap focus, close with `Escape` when safe, and return focus
   to the meaningful trigger.
+- A workbench uses one vertical scroll owner for one continuous task. When a
+  table, log, or preview pane owns scrolling, set the shared dialog to
+  `contentMode="contained"`; the overlay and dialog body stay non-scrolling.
+- Split panes may scroll independently only when they are sibling work regions
+  with distinct jobs. Never put either pane inside another vertical scroller.
 - Essential connection values use one dense configuration table during routine
   editing; only advanced runtime metadata starts collapsed.
 - Put the main work object, such as model visibility, in the default view.
@@ -377,6 +382,7 @@ Prefer these shared surfaces:
 - `BackofficeLayer`, `BackofficeSummaryStrip`, and
   `BackofficeDiagnosticNotice`;
 - `AdminDataTableFrame`;
+- `AdminActionMenu` for collision-aware, keyboard-accessible low-frequency row actions;
 - `AdminConfigurationTable`;
 - `AdminWorkbenchDialog`;
 - `AdminCredentialField`;

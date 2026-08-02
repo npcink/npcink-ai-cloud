@@ -20,6 +20,7 @@ export type AdminWorkbenchDialogProps = {
   hideFooterActions?: boolean;
   width?: 'wide' | 'compact';
   density?: 'standard' | 'compact';
+  contentMode?: 'scroll' | 'contained';
   onClose: () => void;
   onSubmit: (formData: FormData) => void;
   children: ReactNode;
@@ -42,6 +43,7 @@ export function AdminWorkbenchDialog({
   hideFooterActions = false,
   width = 'wide',
   density = 'standard',
+  contentMode = 'scroll',
   onClose,
   onSubmit,
   children,
@@ -110,7 +112,9 @@ export function AdminWorkbenchDialog({
     <div
       data-ui="admin-workbench-dialog"
       data-density={density}
-      className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 ${
+      className={`fixed inset-0 z-50 flex items-start justify-center bg-slate-950/45 ${
+        contentMode === 'contained' ? 'overflow-hidden' : 'overflow-y-auto'
+      } ${
         density === 'compact' ? 'px-2 py-2 sm:px-4 sm:py-4' : 'px-4 py-6 backdrop-blur-sm sm:py-10'
       }`}
       role="dialog"
@@ -121,8 +125,13 @@ export function AdminWorkbenchDialog({
       <div
         ref={dialogRef}
         data-width={width}
+        data-content-mode={contentMode}
         className={`${width === 'compact' ? 'admin-workbench-dialog-compact' : 'admin-workbench-dialog'} ${
-          density === 'compact'
+          contentMode === 'contained'
+            ? density === 'compact'
+              ? 'admin-compact-surface h-[min(calc(100dvh-2rem),48rem)] shadow-lg'
+              : `h-[min(calc(100dvh-3rem),52rem)] ${width === 'compact' ? 'rounded-xl' : 'rounded-2xl'} shadow-2xl`
+            : density === 'compact'
             ? 'admin-compact-surface max-h-[calc(100vh-2rem)] shadow-lg'
             : `max-h-[calc(100vh-3rem)] ${width === 'compact' ? 'rounded-xl' : 'rounded-2xl'} shadow-2xl`
         } flex w-full flex-col overflow-hidden border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950`}
@@ -178,8 +187,12 @@ export function AdminWorkbenchDialog({
         ) : null}
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-          <div className={`grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto ${
-            density === 'compact' ? '!gap-2 px-4 py-3' : 'px-5 py-4'
+          <div className={`${contentMode === 'contained'
+            ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+            : 'grid min-h-0 flex-1 auto-rows-max content-start gap-3 overflow-y-auto'} ${
+            density === 'compact'
+              ? `${contentMode === 'contained' ? 'gap-2' : '!gap-2'} px-4 py-3`
+              : 'gap-3 px-5 py-4'
           }`}>
             {children}
           </div>

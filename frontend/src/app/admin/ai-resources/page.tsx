@@ -1513,6 +1513,7 @@ function AiResourcesContent() {
           savingLabel={aiText('saving', 'Saving...')}
           footerNotice={aiText('save_test_notice', 'Saving will immediately run a masked provider test. Secrets are never returned to the browser.')}
           density="compact"
+          contentMode={providerWorkbenchSection === 'models' ? 'contained' : 'scroll'}
           onClose={closeProviderForm}
           onSubmit={() => void saveProviderConnection()}
         >
@@ -1743,8 +1744,8 @@ function AiResourcesContent() {
                 ) : null}
 
                 {providerWorkbenchSection === 'models' ? (
-                <section className="grid gap-3">
-                  <div className="grid gap-3">
+                <section className="flex min-h-0 flex-1 flex-col">
+                  <div className="flex min-h-0 flex-1 flex-col gap-3">
                     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                       <div className="min-w-0">
                         <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{aiText('model_visibility_title', 'Model visibility')}</h3>
@@ -2078,8 +2079,8 @@ function AiResourcesContent() {
                           {aiText('loading_model_references', 'Loading model reference data...')}
                         </div>
                       ) : modelVisibilityRows.length ? (
-                        <div data-ui="model-visibility-directory" className="border-t border-slate-200 dark:border-slate-800">
-                          <div className="relative max-h-[28rem] overflow-auto">
+                        <div data-ui="model-visibility-directory" className="flex min-h-0 flex-1 flex-col border-t border-slate-200 dark:border-slate-800">
+                          <div data-ui="model-visibility-scroll" className="relative min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
                             <table className="w-full min-w-[44rem] table-fixed text-left text-xs">
                             <colgroup>
                               <col className="w-[12%]" />

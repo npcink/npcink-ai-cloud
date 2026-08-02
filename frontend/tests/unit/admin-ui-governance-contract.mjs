@@ -181,6 +181,7 @@ assert.doesNotMatch(
 );
 
 for (const primitive of [
+  'AdminActionMenu',
   'AdminConfigurationTable',
   'AdminDataTableFrame',
   'AdminEmptyState',

@@ -1971,11 +1971,12 @@ export default function AdminServiceSettingsPage() {
           </div>
         )}
         density="compact"
+        contentMode="contained"
         onClose={() => setEmailPreviewOpen(false)}
         onSubmit={() => void loadEmailPreview()}
       >
-            <div className="grid h-[calc(100vh-10rem)] min-h-0 overflow-hidden lg:grid-cols-[16rem_1fr]">
-              <aside className="space-y-3 overflow-auto border-b border-slate-200 pr-4 dark:border-slate-800 lg:border-b-0 lg:border-r">
+            <div data-ui="email-preview-workspace-scroll" className="grid min-h-0 flex-1 overflow-y-auto overscroll-contain lg:grid-cols-[16rem_1fr] lg:overflow-hidden">
+              <aside data-ui="email-preview-settings-scroll" className="space-y-3 border-b border-slate-200 pr-4 dark:border-slate-800 lg:overflow-auto lg:border-b-0 lg:border-r">
                 <label className={labelClassName()}>
                   {t('admin.service_settings.email_preview_type_label', {}, '邮件类型')}
                   <select
@@ -2027,7 +2028,7 @@ export default function AdminServiceSettingsPage() {
                 </div>
               </aside>
 
-              <div className="flex min-h-0 flex-col overflow-hidden pl-4">
+              <div className="flex min-h-[24rem] flex-col overflow-hidden pl-4 lg:min-h-0">
                 <div className="flex items-center justify-between border-b border-slate-200 bg-white pb-2 dark:border-slate-800 dark:bg-slate-950">
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                     {emailPreviewMode === 'html'
@@ -2060,7 +2061,7 @@ export default function AdminServiceSettingsPage() {
                       srcDoc={emailPreview.html}
                     />
                   ) : (
-                    <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap bg-white p-5 text-sm leading-6 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                    <pre data-ui="email-preview-content-scroll" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap bg-white p-5 text-sm leading-6 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
                       {emailPreview.text}
                     </pre>
                   )
