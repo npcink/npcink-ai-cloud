@@ -327,6 +327,14 @@ replace, or take over that listener; the standard Ollama.app handoff requires
 explicit operator approval, and an unknown process requires read-only
 investigation.
 
+M4 source application MUST validate the fully extracted incoming Compose and
+Nginx inputs before changing the live source mirror. A configuration failure
+MUST retain the previous complete bind-mounted configuration and running
+services. The Nginx bind-mount source MUST be committed by same-filesystem
+atomic rename rather than live rsync overwrite; existing deployment, relay,
+slot, candidate/accepted, promotion, and post-commit fail-closed boundaries
+remain in force.
+
 Production validation, Cloudflare configuration, and external WordPress
 acceptance require separate explicit authorization.
 

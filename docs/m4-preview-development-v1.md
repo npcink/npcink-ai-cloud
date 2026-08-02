@@ -462,11 +462,23 @@ repository-controlled `m4:frontend:release` command. Active, expired, and
 drifted slot leases are never released or deleted automatically. The later
 consumer re-check closes the image-build claim window; exact Compose
 volume-label verification still runs before the primary stop and again before
-volume removal. After the first guard passes, the script marks the stack
-touched immediately before live source synchronization. A later build or
-deploy failure therefore deliberately stops the application services rather
-than leaving partially synchronized source running under accepted-state
-evidence.
+volume removal. Before the first live source change, the script validates
+Compose from the fully extracted incoming tree and runs `nginx -t` against the
+incoming M4 proxy configuration in a disposable, network-disabled Nginx
+container. A validation failure leaves the live source mirror and the running
+services unchanged. The live rsync uses delayed updates and delayed deletion.
+The single-file Nginx bind-mount source is excluded from rsync, copied to a
+same-directory incoming file, checksum-verified, and committed with an atomic
+rename only after rsync succeeds. When that file changed, deploy recreates the
+proxy only after the candidate preflight and atomic commit. Thus Nginx can see
+the previous complete file or the next complete file, never an rsync partial.
+
+After the first guard passes, the script marks the stack touched immediately
+before that atomic live-source commit. A later build or runtime failure still
+deliberately stops the application services rather than leaving committed
+candidate source running under accepted-state evidence. Transfer, extraction,
+Compose, or Nginx-candidate validation failures happen earlier and retain the
+previous running services.
 
 The overlay explicitly marks the frontend as development and uses the
 repository's development-only completed-installation override. This keeps the

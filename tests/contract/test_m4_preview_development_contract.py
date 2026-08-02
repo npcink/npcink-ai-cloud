@@ -313,6 +313,12 @@ def test_m4_preview_shell_contract_is_syntax_valid_and_fail_closed() -> None:
     assert 'frontend_volume="${project_name}_cloud-frontend-node-modules-dev"' in source
     assert "com.docker.compose.project" in source
     assert "prepare complete: images and Compose config are ready" in source
+    assert "validate_staged_runtime_inputs" in source
+    assert "nginx:1.27-alpine nginx -t" in source
+    assert "--delay-updates --delete-delay" in source
+    assert "--exclude 'deploy/nginx.m4-preview.conf'" in source
+    assert 'mv -f "${nginx_config_incoming}"' in source
+    assert "--force-recreate proxy" in source
     assert "equivalent_gate=pnpm run check:fast" in source
     assert "test_scope=focused" in source
     assert "test_scope=contract" in source
@@ -377,7 +383,8 @@ def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -
     guard_call = source.index(
         'guard_frontend_dependency_volume_consumers "${frontend_volume}"'
     )
-    live_rsync = source.index("\trs" + "ync -a --delete")
+    staged_validation = source.index("\nvalidate_staged_runtime_inputs\n")
+    live_rsync = source.index("\trs" + "ync -a --delay-updates --delete-delay")
     live_stack_touched = source.rindex("\tstack_touched=1", guard_call, live_rsync)
     build_call = source.index(
         "\tprefetch_base_images\n"
@@ -392,7 +399,7 @@ def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -
         refresh_call,
     )
 
-    assert slot_lock_call < guard_call < live_stack_touched < live_rsync
+    assert staged_validation < slot_lock_call < guard_call < live_stack_touched < live_rsync
     assert live_rsync < build_call < refresh_call < migrate
 
     refresh_function = source.split(
@@ -444,6 +451,124 @@ def test_m4_deploy_guards_frontend_dependency_volume_before_runtime_mutation() -
         '"${compose[@]}" up -d --no-build --pull never'
     )
     assert refresh < start_data < migrate_data < start_stack
+
+
+def test_m4_staged_nginx_validation_precedes_atomic_live_commit() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    validation_block = source.index("# BEGIN staged runtime input validation")
+    validation_call = source.index("\nvalidate_staged_runtime_inputs\n")
+    live_touch = source.index("\tstack_touched=1", validation_call)
+    atomic_block = source.index("# BEGIN atomic M4 source commit")
+    install_candidate = source.index("\tinstall -m 644", atomic_block)
+    live_rsync = source.index(
+        "\trsync -a --delay-updates --delete-delay",
+        atomic_block,
+    )
+    atomic_rename = source.index(
+        '\tmv -f "${nginx_config_incoming}"',
+        live_rsync,
+    )
+    runtime_branch = source.index('elif [ "${mode}" = "deploy" ]; then', atomic_rename)
+    proxy_recreate = source.index("--force-recreate proxy", runtime_branch)
+
+    assert validation_block < validation_call < live_touch < atomic_block
+    assert live_rsync < install_candidate < atomic_rename < proxy_recreate
+
+
+def test_m4_atomic_nginx_commit_preserves_old_config_until_rsync_succeeds(
+    tmp_path: Path,
+) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    commit_block = _marked_shell_block(source, "atomic M4 source commit")
+    staging = tmp_path / "staging"
+    remote = tmp_path / "remote"
+    fake_bin = tmp_path / "bin"
+    (staging / "deploy").mkdir(parents=True)
+    (remote / "deploy").mkdir(parents=True)
+    fake_bin.mkdir()
+    candidate = "events { worker_connections 16; } http { server { listen 8080; } }\n"
+    previous = "events { worker_connections 8; } http { server { listen 8080; } }\n"
+    (staging / "deploy" / "nginx.m4-preview.conf").write_text(
+        candidate, encoding="utf-8"
+    )
+    live_config = remote / "deploy" / "nginx.m4-preview.conf"
+    live_config.write_text(previous, encoding="utf-8")
+    fake_rsync = fake_bin / "rsync"
+    fake_rsync.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            test "$(cat "$LIVE_CONFIG")" = "$EXPECTED_OLD" || exit 91
+            exit 23
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_rsync.chmod(0o755)
+    harness = tmp_path / "commit.sh"
+    harness.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            staging={staging}
+            remote_dir={remote}
+            run_id=fault-injection
+            nginx_config_incoming=""
+            {commit_block}
+            """
+        ),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "LIVE_CONFIG": str(live_config),
+            "EXPECTED_OLD": previous.rstrip("\n"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 23
+    assert live_config.read_text(encoding="utf-8") == previous
+    incoming = remote / "deploy" / ".nginx.m4-preview.conf.fault-injection.incoming"
+    assert not incoming.exists()
+
+    fake_rsync.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            test "$(cat "$LIVE_CONFIG")" = "$EXPECTED_OLD" || exit 91
+            exit 0
+            """
+        ),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "LIVE_CONFIG": str(live_config),
+            "EXPECTED_OLD": previous.rstrip("\n"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert live_config.read_text(encoding="utf-8") == candidate
+    assert not incoming.exists()
 
 
 def test_m4_deploy_refuses_an_inflight_slot_before_live_source_mutation(
@@ -1874,7 +1999,10 @@ def test_m4_runbook_preserves_source_cloudflare_and_recovery_boundaries() -> Non
     assert "acceptance_state=accepted" in runbook
     assert "failed Docker query is not treated as an absent volume" in runbook
     assert "deliberately stops the application services" in runbook
-    assert "partially synchronized source" in runbook
+    assert "fully extracted incoming tree" in runbook
+    assert "same-directory incoming file" in runbook
+    assert "never an rsync partial" in runbook
+    assert "previous running services" in runbook
     assert "receives no M4 SSH credential" in runbook
     assert "m4:preview:test -- --focused" in runbook
     assert "GitHub required" in runbook
