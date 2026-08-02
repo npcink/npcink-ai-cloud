@@ -4,6 +4,11 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
+from app.adapters.repositories.commercial_portal_auth_repository import (
+    CommercialPortalAuthRepository,
+)
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import build_postgres_advisory_lock_material
 
@@ -22,11 +27,16 @@ class _PostgresSession:
         return None
 
 
+@pytest.mark.parametrize(
+    "repository_type",
+    [CommercialRepository, CommercialPortalAuthRepository],
+)
 def test_portal_login_code_advisory_lock_uses_postgres_safe_text(
     monkeypatch: Any,
+    repository_type: type[CommercialPortalAuthRepository],
 ) -> None:
     session = _PostgresSession()
-    repository = CommercialRepository(cast(Any, session))
+    repository = repository_type(cast(Any, session))
     monkeypatch.setattr(repository, "list_portal_login_codes", lambda **_kwargs: [])
 
     repository.expire_pending_portal_login_codes(
@@ -40,11 +50,16 @@ def test_portal_login_code_advisory_lock_uses_postgres_safe_text(
     assert "\0" not in lock_material
 
 
+@pytest.mark.parametrize(
+    "repository_type",
+    [CommercialRepository, CommercialPortalAuthRepository],
+)
 def test_portal_login_code_advisory_lock_key_is_unambiguous(
     monkeypatch: Any,
+    repository_type: type[CommercialPortalAuthRepository],
 ) -> None:
     session = _PostgresSession()
-    repository = CommercialRepository(cast(Any, session))
+    repository = repository_type(cast(Any, session))
     monkeypatch.setattr(repository, "list_portal_login_codes", lambda **_kwargs: [])
     now = datetime(2026, 8, 1, tzinfo=UTC)
 
