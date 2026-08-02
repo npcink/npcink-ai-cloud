@@ -1422,6 +1422,8 @@ source_bundle_partial="${source_bundle}.partial"
 stack_touched=0
 lock_acquired=0
 frontend_slot_locks_acquired=0
+nginx_config_incoming=""
+nginx_config_changed=0
 prefetch_archive=""
 package_proxy_pid=""
 package_proxy_ready=""
@@ -1462,6 +1464,9 @@ cleanup_remote() {
 	done
 	if [ -d "${staging}" ]; then
 		find "${staging}" -depth -delete
+	fi
+	if [ -n "${nginx_config_incoming}" ]; then
+		rm -f "${nginx_config_incoming}"
 	fi
 	if [ "${status}" -ne 0 ] && [ "${stack_touched}" = "1" ]; then
 		for cleanup_service in api frontend proxy worker callback-worker ops-worker; do
@@ -1510,6 +1515,9 @@ lock_acquired=1
 } > "${lock_dir}/owner.txt"
 
 command -v docker >/dev/null
+command -v cmp >/dev/null
+command -v install >/dev/null
+command -v mv >/dev/null
 command -v rsync >/dev/null
 command -v shasum >/dev/null
 
@@ -1894,6 +1902,31 @@ test -f "${staging}/deploy/nginx.m4-preview.conf"
 test -f "${staging}/scripts/m4-package-proxy.py"
 test -f "${staging}/scripts/redact-m4-preview-logs.py"
 
+# BEGIN staged runtime input validation
+validate_staged_runtime_inputs() {
+	local candidate_compose=()
+	ln -s "${remote_dir}/.env" "${staging}/.env"
+	ln -s "${remote_dir}/.env.local" "${staging}/.env.local"
+	candidate_compose=(
+		docker compose
+		-p "${project_name}"
+		--env-file "${staging}/.env"
+		--env-file "${staging}/.env.local"
+		--profile runtime
+		--profile callback
+		--profile ops
+		-f "${staging}/docker-compose.dev.yml"
+		-f "${staging}/docker-compose.m4-preview.yml"
+	)
+	"${candidate_compose[@]}" config --quiet
+	docker run --rm --pull never --network none \
+		--mount "type=bind,src=${staging}/deploy/nginx.m4-preview.conf,dst=/etc/nginx/conf.d/default.conf,readonly" \
+		nginx:1.27-alpine nginx -t >/dev/null
+}
+# END staged runtime input validation
+
+validate_staged_runtime_inputs
+
 needs_build=0
 if [ ! -f "${built_image_marker}" ] ||
 	[ "$(cat "${built_image_marker}")" != "${image_input_sha}" ]; then
@@ -1956,12 +1989,16 @@ if [ "${mode}" = "deploy" ]; then
 fi
 
 if [ "${mode}" = "prepare" ]; then
-	ln -s "${remote_dir}/.env" "${staging}/.env"
-	ln -s "${remote_dir}/.env.local" "${staging}/.env.local"
 	work_dir="${staging}"
 else
+	if ! cmp -s \
+		"${staging}/deploy/nginx.m4-preview.conf" \
+		"${remote_dir}/deploy/nginx.m4-preview.conf"; then
+		nginx_config_changed=1
+	fi
 	stack_touched=1
-	rsync -a --delete \
+	# BEGIN atomic M4 source commit
+	rsync -a --delay-updates --delete-delay \
 		--exclude '.env' \
 		--exclude '.env.local' \
 		--exclude '.env.deploy' \
@@ -1979,7 +2016,19 @@ else
 		--exclude 'frontend/node_modules' \
 		--exclude 'frontend/playwright-report' \
 		--exclude 'frontend/test-results' \
+		--exclude 'deploy/nginx.m4-preview.conf' \
 		"${staging}/" "${remote_dir}/"
+	nginx_config_incoming="${remote_dir}/deploy/.nginx.m4-preview.conf.${run_id}.incoming"
+	test ! -e "${nginx_config_incoming}"
+	install -m 644 \
+		"${staging}/deploy/nginx.m4-preview.conf" \
+		"${nginx_config_incoming}"
+	test "$(shasum -a 256 "${nginx_config_incoming}" | awk '{print $1}')" = \
+		"$(shasum -a 256 "${staging}/deploy/nginx.m4-preview.conf" | awk '{print $1}')"
+	mv -f "${nginx_config_incoming}" \
+		"${remote_dir}/deploy/nginx.m4-preview.conf"
+	nginx_config_incoming=""
+	# END atomic M4 source commit
 	work_dir="${remote_dir}"
 fi
 
@@ -2276,7 +2325,12 @@ elif [ "${mode}" = "deploy" ]; then
 	"${compose[@]}" up -d --pull never postgres redis
 	"${compose[@]}" run --interactive=false -T --rm --pull never api alembic upgrade head
 	"${compose[@]}" up -d --no-build --pull never \
-		postgres redis api frontend proxy worker callback-worker ops-worker
+		postgres redis api frontend worker callback-worker ops-worker
+	if [ "${nginx_config_changed}" = "1" ]; then
+		"${compose[@]}" up -d --no-build --pull never --force-recreate proxy
+	else
+		"${compose[@]}" up -d --no-build --pull never proxy
+	fi
 else
 	stack_touched=1
 	"${compose[@]}" run --interactive=false -T --rm --no-deps api alembic upgrade head
