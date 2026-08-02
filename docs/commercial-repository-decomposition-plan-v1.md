@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 + Phase 3A completed; Phase 3B local verified
+状态：Phase 0 + Phase 1 + Phase 2 + Phase 3A + Phase 3B completed; Phase 3C local verified
 
 日期：2026-08-03
 
@@ -701,7 +701,54 @@ runtime seam。精确 bundle 与通过数以本批最终交付证据为准，避
 自身 fingerprint 写回 source 而制造循环重同步。PR/CI、merged source 和
 clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
 
-## 11. 回滚
+Phase 3B 随后由 PR #468 合并为
+`origin/master@df7f1d50eab5a50b1fef284a9f7ac73225faf410`。required checks 全绿，
+其中 backend-targeted 为 7 分 54 秒。从 clean current master source-only promotion
+后，M4 status 为 `acceptance_state=accepted`、`promotion_pr=468`、
+`source_branch=master`、`source_dirty=false`；聚焦 Plan write repository smoke 为
+2 passed。Cloud lane、shared M4 与 task worktree lock 均已释放。
+
+## 11. Phase 3C：AccountSubscription 写入
+
+### 11.1 Current-master 方法与事务清单
+
+Phase 3C 基线为
+`origin/master@df7f1d50eab5a50b1fef284a9f7ac73225faf410`。本批只迁移
+`upsert_account_subscription`。该方法复用 Phase 1 的 `get_subscription`，create
+时 `session.add`，create/update 后 `session.flush` 并返回同一 ORM identity；不
+`commit`、`rollback` 或取得行锁。
+
+调用方位于 Account、Billing 与 Subscription Commerce 流程。commit 及同一事务中
+的 Plan ensure、entitlement snapshot、billing snapshot、audit、PaymentOrder 与
+SubscriptionOrder 状态继续由既有 domain service 所有；本批不迁移调用方或重排
+这些步骤。
+
+### 11.2 实现 envelope 与合同
+
+- 新增 `app/adapters/repositories/commercial_subscription_repository.py`，继承
+  `CommercialSubscriptionQueries`；
+- `CommercialRepository` 改为继承 `CommercialSubscriptionRepository` 并移除
+  类内单一 upsert；
+- 新增 `tests/domain/test_commercial_subscription_repository.py`；
+- create/update 的 account、plan/version、status、period、started/canceled/
+  suspended 与 metadata 字段语义保持不变；
+- 不在 upsert 参数中的 scheduled plan/version/change 字段在 update 时继续保留；
+- 明确排除直接 Subscription 状态流转整理、SubscriptionOrder、Payment/Refund、
+  API、schema/migration、调用方迁移、权限、Production 和 WordPress。
+
+### 11.3 本地收口证据
+
+迁移前 characterization 为 1 passed。迁移后 facade 与新 repository 共同运行同一
+合同；subscription write + query repository 为 10 passed。AST 对比确认签名和
+方法体与 current-master 基线完全一致；受影响 Payment、Subscription Commerce 与
+runtime defaults 为 50 passed，Entitlement API 为 6 passed（1 个既有 Starlette
+deprecation warning）。Ruff 通过，全量 mypy 265 个源文件无问题，
+`check:anti-drift` 与 `git diff --check` 通过。
+
+门面实际下降为 3,259 行、117 个自有方法。M4 candidate、PR/CI、merged source
+和 clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
+
+## 12. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -720,7 +767,11 @@ Phase 3B 只允许恢复 3 个 Plan upsert 到门面、恢复 Plan query 继承�
 Plan repository 与聚焦 characterization。不得通过数据修改、事务补偿或环境操作
 完成结构回滚。
 
-## 12. 后续批次启动规则
+Phase 3C 只允许恢复 `upsert_account_subscription` 到门面、恢复 Subscription query
+继承并移除新的 Subscription repository 与聚焦 characterization。不得修改订阅
+数据、补偿事务或把 SubscriptionOrder 纳入回滚。
+
+## 13. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
