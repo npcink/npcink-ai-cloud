@@ -1305,6 +1305,46 @@ SubscriptionCommerce、Account/Site、service/Portal lock 与 authorization 回�
 Account/Site repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确
 释放。其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
 
+### 17.14 Phase 5E 合并与 M4 accepted
+
+Phase 5E 由 PR #480 合并为
+`b020d8ad69dd94e78f9560af7e085ca35beb4622`；required `backend-targeted`
+为 8 分 31 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=480`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`9e13dc87af7e0c7935ea56002799943b7384304ffe8170986ab7814e07403adc`；
+聚焦 Account/Site repository smoke 为 2 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放。
+
+### 17.15 Phase 5F Site API Key repository
+
+Phase 5F 在 current `origin/master@b020d8ad` 上确认并迁移六个 Site API Key 方法：
+
+- `get_site_key`
+- `list_site_keys`
+- `count_site_keys`
+- `count_site_keys_by_site`
+- `count_site_keys_total`
+- `upsert_site_key`
+
+新增 `CommercialSiteApiKeyRepository`；facade 通过继承保持公共调用。保持按
+`created_at desc, key_id desc` 排序、offset/正 limit 规则、空 `site_ids` 早返回、空
+statuses 不过滤、None/空列表/零计数、label 空串归一为 None、轮换关联字段、敏感密文
+字段及 add/flush 语义。repository 不取得行锁，不拥有 commit/rollback；key
+issue/rotate/revoke/expire 业务规则、调用方、权限/API、schema、Provider、Production 与
+WordPress 明确排除。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 与
+既有 Service pagination contract 为 3 passed。AST 对比确认六个方法的签名和方法体与
+current-master 完全一致。Payment、SubscriptionCommerce、Site monitoring、Service、
+Portal、runtime authorization 与 internal-alpha 调用图回归合计 52 passed，只有既有
+Starlette deprecation warning；Ruff 通过，全量 mypy 276 个源文件无问题，
+`check:anti-drift` 与 `git diff --check` 通过。门面当前为 1,534 行、46 个自有方法。
+source-only M4 candidate bundle 为
+`17c492154e6384fec3b8ec59cc3294c971c31e3cc97413ee7ddfb7c0fb2e7124`，聚焦 Site
+API Key repository smoke 为 2 passed；未要求 deploy，shared M4 ownership 已明确释放。
+其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1366,6 +1406,10 @@ membership/grant 数据、事务补偿，或把 Site binding/权限 API 纳入�
 Phase 5E 只允许恢复八个 Account/Site 方法到门面、恢复 facade 对 AccountQueries 与
 SiteQueries 的直接继承，并移除新 repository/characterization 与 Site contract 参数化。
 不得修改 account/site/binding 数据、事务补偿，或把 Site API key/entitlement 纳入回滚。
+
+Phase 5F 只允许恢复六个 Site API Key 方法到门面、移除新 repository 与聚焦
+characterization。不得修改 key 数据、密文、轮换关系、事务补偿，或把
+Trial/Entitlement、权限/API 纳入回滚。
 
 ## 19. 后续批次启动规则
 
