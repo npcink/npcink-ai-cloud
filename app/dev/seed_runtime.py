@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from app.adapters.providers.registry import build_provider_adapters
+from app.adapters.providers.registry import resolve_live_provider_adapters
 from app.core.config import Settings
 from app.core.security import build_secret_hash
 from app.domain.catalog.service import CatalogService
@@ -69,7 +69,10 @@ def main() -> None:
     settings = Settings()
     catalog_service = CatalogService(
         settings.database_url,
-        providers=build_provider_adapters(settings),
+        providers=resolve_live_provider_adapters(
+            settings,
+            include_enabled_connections=True,
+        ),
     )
     scopes = [scope.strip() for scope in args.scopes.split(",") if scope.strip()]
 

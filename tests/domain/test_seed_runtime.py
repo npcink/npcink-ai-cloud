@@ -45,8 +45,10 @@ def test_seed_runtime_uses_provider_registry(monkeypatch, capsys) -> None:
     )
     monkeypatch.setattr(
         seed_runtime,
-        "build_provider_adapters",
-        lambda settings: sentinel_providers,
+        "resolve_live_provider_adapters",
+        lambda settings, *, include_enabled_connections: (
+            sentinel_providers if include_enabled_connections else {}
+        ),
     )
     monkeypatch.setattr(seed_runtime, "CatalogService", DummyCatalogService)
     monkeypatch.setattr(
