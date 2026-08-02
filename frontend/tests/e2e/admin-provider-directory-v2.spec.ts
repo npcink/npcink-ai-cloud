@@ -378,12 +378,11 @@ test('editing a provider separates dense connection settings from model manageme
   await expect(dialog.getByRole('heading', { name: /Model visibility|模型可见性/i })).toBeVisible();
   await expect(dialog.locator('[data-ui="model-visibility-toolbar"]')).toBeVisible();
   await expect(dialog.locator('[data-ui="model-sync-primary"]')).toBeVisible();
-  const moreFiltersButton = dialog.getByRole('button', { name: /More filters|更多筛选/i });
-  await expect(moreFiltersButton).toBeVisible();
-  await expect(dialog.getByText(/Show historical\/deprecated|显示历史\/废弃/i)).toHaveCount(0);
-  await moreFiltersButton.click();
-  await expect(dialog.getByText(/Show historical\/deprecated|显示历史\/废弃/i)).toBeVisible();
-  await moreFiltersButton.click();
+  await expect(dialog.getByRole('option', { name: /All visibility|全部可见性/i })).toHaveCount(1);
+  await expect(dialog.getByRole('option', { name: /All capabilities|全部能力/i })).toHaveCount(1);
+  await expect(dialog.locator('[data-ui="model-metadata-gap-filter"]')).toBeVisible();
+  await expect(dialog.getByText(/Include historical\/deprecated|含历史\/废弃/i)).toBeHidden();
+  await expect(dialog.getByRole('button', { name: /More filters|更多筛选/i })).toHaveCount(0);
   const maintenanceDisclosure = dialog.locator('[data-ui="model-maintenance-table"]');
   await expect(maintenanceDisclosure).not.toHaveAttribute('open', '');
   await expect(dialog.locator('.admin-workbench-dialog')).toHaveScreenshot('admin-provider-workbench-pc.png', {
@@ -396,7 +395,8 @@ test('editing a provider separates dense connection settings from model manageme
   await maintenanceDisclosure.locator('summary').click();
   const maintenanceTable = maintenanceDisclosure.getByRole('table');
   await expect(maintenanceTable).toBeVisible();
-  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(4);
+  await expect(maintenanceTable.locator('tbody tr')).toHaveCount(5);
+  await expect(dialog.getByText(/Include historical\/deprecated|含历史\/废弃/i)).toBeVisible();
   await dialog.locator('[data-ui="model-clear-all-request"]').click();
   await expect(dialog.locator('[data-ui="model-clear-all-confirm"]')).toBeVisible();
   await expect(dialog.getByText(/Disable all 2 currently enabled models|取消启用当前 2 个模型/i)).toBeVisible();
@@ -468,6 +468,14 @@ test('large model directories render one bounded page and reset pagination when 
   const directory = dialog.locator('[data-ui="model-visibility-directory"]');
   await expect(directory.locator('tbody tr')).toHaveCount(25);
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/25.*62|62.*25/);
+  const intelligenceDetails = directory.locator('details[data-ui="model-reference-details"]');
+  expect(await intelligenceDetails.count()).toBeGreaterThan(0);
+  await intelligenceDetails.first().locator('summary').click();
+  await expect(intelligenceDetails.first()).toHaveAttribute('open', '');
+  await dialog.locator('[data-ui="model-metadata-gap-filter"]').click();
+  await expect(directory.locator('tbody tr')).toHaveCount(2);
+  await dialog.locator('[data-ui="model-metadata-gap-filter"]').click();
+  await expect(directory.locator('tbody tr')).toHaveCount(25);
   await dialog.getByRole('button', { name: /^Next$|^下一页$/i }).click();
   await expect(dialog.locator('[data-ui="model-visibility-pagination"]')).toContainText(/2 \/ 3|第 2 \/ 3 页/);
 
