@@ -32,6 +32,16 @@ assert.match(page, /onClick=\{restoreActiveGroup\}[\s\S]*restore_saved_values/, 
 assert.match(page, /data-ui="service-settings-high-risk"[\s\S]*payment_high_risk_title[\s\S]*payment_high_risk_desc/, 'payment credentials and callback identity must carry an explicit high-risk warning');
 assert.match(page, /if \(loading && !data\)[\s\S]*AdminRouteSkeleton/, 'initial loading must preserve the admin route shell');
 assert.match(page, /if \(!data\)[\s\S]*BackofficeDiagnosticNotice[\s\S]*onRetry=\{\(\) => void loadSettings\(\)\}/, 'initial failure must preserve the shell and retry only the bounded read');
+assert.match(
+  page,
+  /emailPreviewOpen[\s\S]*contentMode="contained"[\s\S]*email-preview-workspace-scroll[\s\S]*overflow-y-auto overscroll-contain[\s\S]*lg:overflow-hidden[\s\S]*email-preview-settings-scroll[\s\S]*lg:overflow-auto[\s\S]*email-preview-content-scroll/,
+  'email preview must disable workbench-body scrolling, use one mobile workspace scroller, and keep desktop scrolling inside non-nested split panes'
+);
+assert.doesNotMatch(
+  page,
+  /emailPreviewOpen[\s\S]*h-\[calc\(100vh-10rem\)\]/,
+  'email preview must not size a nested child independently from the contained workbench'
+);
 
 for (const key of [
   'admin.service_settings.unsaved_short',

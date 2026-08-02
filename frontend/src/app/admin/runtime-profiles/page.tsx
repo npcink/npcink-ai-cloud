@@ -637,12 +637,14 @@ export default function RuntimeProfilesPage() {
           </button>
         )}
         density="compact"
+        contentMode="contained"
         onClose={() => setEditingProfileId('')}
         onSubmit={() => setEditingProfileId('')}
       >
         {editingProfile ? (
-          <>
-            <AdminConfigurationTable
+          <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+            <div className="shrink-0">
+              <AdminConfigurationTable
               ariaLabel={copy('profile_configuration_table_label', '{{name}} runtime profile configuration', {
                 name: editingProfile.label || editingProfile.profile_id,
               })}
@@ -731,9 +733,10 @@ export default function RuntimeProfilesPage() {
                 )}
                 detail={copy('retry_note', 'Bounded to 0 or 1 retry.')}
               />
-            </AdminConfigurationTable>
+              </AdminConfigurationTable>
+            </div>
 
-            <section className="grid gap-2.5 pt-1">
+            <section className="flex min-h-0 flex-1 flex-col gap-2.5 pt-1">
               <div data-ui="runtime-profile-model-toolbar" className="flex items-center gap-3">
                 <div className="flex min-w-0 flex-1 items-baseline gap-2">
                   <h3 className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">
@@ -764,7 +767,7 @@ export default function RuntimeProfilesPage() {
                 </div>
               </div>
               {candidates.length ? (
-                <div data-ui="runtime-profile-candidate-table" className="max-h-[25rem] overflow-auto">
+                <div data-ui="runtime-profile-candidate-table" className="min-h-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]">
                   <table className="w-full min-w-[960px] table-auto text-left text-sm">
                     <colgroup>
                       <col className="w-[22%]" />
@@ -842,7 +845,7 @@ export default function RuntimeProfilesPage() {
                 <BackofficeEmptyState title={copy('models_empty_title', 'No matching models')} description={copy('models_empty_description', 'Enable a compatible model in Model suppliers or clear the current filters.')} />
               )}
             </section>
-          </>
+          </div>
         ) : null}
       </AdminWorkbenchDialog>
 

@@ -6,6 +6,7 @@ import { frontendRoot } from './_paths.mjs';
 const root = frontendRoot;
 const pageSource = readFileSync(resolve(root, 'src/app/admin/ai-resources/page.tsx'), 'utf8');
 const directorySource = readFileSync(resolve(root, 'src/components/admin/SupplierConnectionTables.tsx'), 'utf8');
+const actionMenuSource = readFileSync(resolve(root, 'src/components/admin/AdminActionMenu.tsx'), 'utf8');
 const toolbarSource = readFileSync(resolve(root, 'src/components/admin/SupplierToolbar.tsx'), 'utf8');
 const adminLayoutSource = readFileSync(resolve(root, 'src/app/admin/layout.tsx'), 'utf8');
 const globalStyleSource = readFileSync(resolve(root, 'src/app/globals.css'), 'utf8');
@@ -42,8 +43,20 @@ assert.match(
 
 assert.match(
   directorySource,
-  /event\.key !== 'Escape'[\s\S]*aria-haspopup="menu"[\s\S]*aria-expanded=\{open\}[\s\S]*absolute bottom-full right-0/,
-  'Supplier overflow must open above the bounded table, close with Escape, and avoid changing row geometry'
+  /action_delete_connection[\s\S]*<AdminActionMenu[\s\S]*dataUi="supplier-more-actions"/,
+  'Supplier overflow must use the shared collision-aware action menu and retain the bounded destructive action'
+);
+
+assert.match(
+  actionMenuSource,
+  /FloatingPortal[\s\S]*placement: 'bottom-end'[\s\S]*strategy: 'fixed'[\s\S]*flip\(\{ padding: 8 \}\)[\s\S]*shift\(\{ padding: 8 \}\)/,
+  'Admin action menus must portal outside table overflow and use collision-aware viewport placement'
+);
+
+assert.match(
+  actionMenuSource,
+  /useDismiss[\s\S]*useListNavigation[\s\S]*FloatingFocusManager[\s\S]*returnFocus/,
+  'Admin action menus must support dismissal, keyboard navigation, and trigger-focus restoration'
 );
 
 assert.doesNotMatch(
@@ -120,6 +133,18 @@ assert.match(
   dialogSource,
   /data-ui="admin-workbench-dialog"[\s\S]*admin-workbench-dialog/,
   'The provider editor must use a wide PC workbench dialog'
+);
+
+assert.match(
+  pageSource,
+  /contentMode=\{providerWorkbenchSection === 'models' \? 'contained' : 'scroll'\}[\s\S]*model-visibility-directory" className="flex min-h-0 flex-1 flex-col[\s\S]*min-h-0 flex-1 overflow-auto overscroll-contain/,
+  'Model management must keep one bounded table scrollbar instead of nesting it inside a scrolling dialog body'
+);
+
+assert.match(
+  dialogSource,
+  /contentMode === 'contained' \? 'overflow-hidden' : 'overflow-y-auto'[\s\S]*contentMode === 'contained'[\s\S]*flex min-h-0 flex-1 flex-col overflow-hidden/,
+  'Contained workbenches must disable overlay and body scrolling so a declared child remains the sole vertical scroll owner'
 );
 
 assert.match(

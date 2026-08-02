@@ -192,6 +192,7 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await expect(baseUrlInput).toHaveValue('https://saved.example.test');
   await expect(saveBaseUrl).toBeDisabled();
   expect(settingsReadCount).toBe(2);
+  await page.getByRole('button', { name: 'Close notification' }).click();
 
   await page.getByRole('tab', { name: /QQ login|QQ 登录/i }).click();
   await page.getByRole('switch', { name: /Enable QQ quick login|启用 QQ 快捷登录/i }).click();
@@ -209,6 +210,51 @@ test('service settings v2 preserves dirty input, guards navigation, validates, s
   await previewButton.click();
   const previewDialog = page.getByRole('dialog', { name: /Preview email|预览邮件效果/i });
   await expect(previewDialog).toBeVisible();
+  await expect(previewDialog).toHaveCSS('overflow-y', 'hidden');
+  await expect(previewDialog.locator('[data-content-mode="contained"]')).toBeVisible();
+  const previewScrollOwners = await previewDialog.evaluate((element) => [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))]
+    .filter((candidate) => {
+      const style = window.getComputedStyle(candidate);
+      return /(auto|scroll)/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
+    })
+    .map((candidate) => candidate.dataset.ui || candidate.tagName.toLowerCase()));
+  expect(previewScrollOwners.every((owner) => owner === 'email-preview-settings-scroll' || owner === 'email-preview-content-scroll')).toBe(true);
+  expect(previewScrollOwners.length).toBeLessThanOrEqual(1);
+  const emailPreviewScreenshotPath = testInfo.outputPath('admin-email-preview-contained-pc.png');
+  await previewDialog.locator('.admin-workbench-dialog').screenshot({
+    path: emailPreviewScreenshotPath,
+    animations: 'disabled',
+  });
+  await testInfo.attach('admin-email-preview-contained-pc', {
+    path: emailPreviewScreenshotPath,
+    contentType: 'image/png',
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobilePreviewScrollOwners = await previewDialog.evaluate((element) => [element, ...Array.from(element.querySelectorAll<HTMLElement>('*'))]
+    .filter((candidate) => {
+      const style = window.getComputedStyle(candidate);
+      return /(auto|scroll)/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
+    })
+    .map((candidate) => candidate.dataset.ui || candidate.tagName.toLowerCase()));
+  expect(mobilePreviewScrollOwners).toEqual(['email-preview-workspace-scroll']);
+  const mobilePreviewLayout = await previewDialog.evaluate((dialogElement) => ({
+    dialogWidth: dialogElement.clientWidth,
+    scrollWidth: dialogElement.scrollWidth,
+    offenders: [...dialogElement.querySelectorAll<HTMLElement>('*')]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          ui: element.dataset.ui || element.tagName,
+          left: Math.round(rect.left),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width),
+        };
+      })
+      .filter((item) => item.left < -1 || item.right > dialogElement.clientWidth + 1)
+      .slice(0, 8),
+  }));
+  expect(mobilePreviewLayout).toEqual({ dialogWidth: 390, scrollWidth: 390, offenders: [] });
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await page.keyboard.press('Escape');
   await expect(previewDialog).toHaveCount(0);
   await expect(previewButton).toBeFocused();
