@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2A completed; Phase 2B candidate ready, PR pending
+状态：Phase 0 + Phase 1 + Phase 2 completed; Phase 3A candidate ready, PR pending
 
 日期：2026-08-03
 
@@ -573,7 +573,83 @@ Phase 2B 完成不自动启动 Phase 3。
 门面实际下降为 3,491 行、127 个自有方法。M4 candidate、PR/CI、merged source 和
 clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
 
-## 9. 回滚
+Phase 2B 随后由 PR #466 合并为
+`origin/master@b660bd20baf76d168101f6f3715e8830f56fe6f9`。从 clean current
+master promotion 后，M4 status 为 `acceptance_state=accepted`、
+`promotion_pr=466`、`source_branch=master`、`source_dirty=false`；聚焦 Support
+write repository smoke 为 2 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放。
+
+## 9. Phase 3A：Plan 无锁查询
+
+### 9.1 Current-master 方法与调用图
+
+Phase 3A 基线为
+`origin/master@b660bd20baf76d168101f6f3715e8830f56fe6f9`。本批只迁移：
+
+- `get_plan`
+- `list_plans`
+- `get_plan_version`
+- `list_plan_versions`
+- `get_plan_offer`
+- `list_plan_offers`
+
+六个方法均只使用 `session.get`、`select`、`scalars`，没有 `add`、`flush`、
+`commit`、`rollback`、行锁或 advisory lock。调用方分布在 billing、account、
+subscription commerce、payment 和 runtime service mixin，但本批全部继续通过
+`CommercialRepository` facade 调用，不批量迁移。
+
+### 9.2 实现 envelope
+
+- 新增 `app/adapters/repositories/commercial_plan_queries.py`；
+- `CommercialRepository` 增加 `CommercialPlanQueries` 继承并移除类内重复实现；
+- 扩展 `tests/domain/test_commercial_query_repositories.py`；
+- 更新本文，记录 Phase 2B accepted 与 Phase 3A 合同；
+- 明确排除 `upsert_plan`、`upsert_plan_version`、`upsert_plan_offer`、
+  `upsert_account_subscription`、SubscriptionOrder、Payment/Refund、调用方迁移、
+  API、数据库、migration、权限、Production 和 WordPress。
+
+### 9.3 必须保持的查询合同
+
+- getter 的命中 ORM identity 与缺失 `None`；
+- Plan 按 `created_at DESC, plan_id DESC`，PlanVersion 按
+  `created_at DESC, plan_version_id DESC`；
+- Plan/Version 的 status、plan_id filter，以及 `limit <= 0` 不限量；
+- 无 account_id 时 Offer 只返回 global offer；有 account_id 时只返回 global 加该
+  account 的 offer；
+- Offer 的 status、self-serve filter，`valid_from_at <= now` 和
+  `valid_until_at > now`；
+- Offer 按 `amount ASC, offer_id ASC`；新 query class 与 facade 结果一致；
+- 若出现写入、锁、隐式事务或需要修改调用方/旧语义，立即停止。
+
+迁移后门面预计从 3,491 行、127 个自有方法下降为 3,425 行、121 个自有方法。
+Phase 3A 完成不自动授权 Plan/Subscription 写入或订单拆分。
+
+### 9.4 Phase 3A 本地收口证据
+
+实际迁移第 9.1 节 6 个方法。AST 对比确认方法集合、签名和方法体与 Phase 3A
+基线一致；新 query class 无 mutation、flush、事务控制或锁。精确变更文件为：
+
+- 新增 `app/adapters/repositories/commercial_plan_queries.py`
+- 修改 `app/adapters/repositories/commercial_repository.py`
+- 扩展 `tests/domain/test_commercial_query_repositories.py`
+- 更新 `docs/commercial-repository-decomposition-plan-v1.md`
+
+本地证据：
+
+| 层级 | 结果 |
+| --- | --- |
+| Pre-move characterization | Plan query node：1 passed |
+| Post-move focused/affected domain | query repository + Subscription Commerce + Payment：47 passed |
+| Affected API | Admin Plan + anonymous public catalog：2 passed，1 个既有 deprecation warning |
+| Static | Ruff 通过；全量 mypy 263 个源文件无问题 |
+| Policy | `check:anti-drift`、`check:release-policy`、`git diff --check` 通过 |
+| Structural | facade 为 3,425 行、121 个自有方法；query mutation/lock scan clean |
+
+M4 candidate、PR/CI、merged source 与 clean-master accepted 继续分层记录，不预填
+尚未发生的结果。
+
+## 10. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -585,7 +661,10 @@ Phase 2B 只允许恢复 7 个 Support mutation/helper 到门面、移除
 `CommercialSupportRepository` 继承与聚焦 characterization。不得通过数据修改、
 事务补偿或环境操作完成结构回滚。
 
-## 10. 后续批次启动规则
+Phase 3A 只允许恢复 6 个 Plan query 到门面、移除 query mixin 与对应
+characterization。不得把 Plan 写入、SubscriptionOrder 或数据操作纳入回滚。
+
+## 11. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 

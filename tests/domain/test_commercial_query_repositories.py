@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.adapters.repositories.commercial_account_queries import CommercialAccountQueries
+from app.adapters.repositories.commercial_plan_queries import CommercialPlanQueries
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.adapters.repositories.commercial_site_queries import CommercialSiteQueries
 from app.adapters.repositories.commercial_subscription_queries import (
@@ -18,6 +20,9 @@ from app.core.db import dispose_engine, get_session, init_schema
 from app.core.models import (
     Account,
     AccountSubscription,
+    Plan,
+    PlanOffer,
+    PlanVersion,
     Principal,
     Site,
     SupportRequest,
@@ -85,6 +90,296 @@ def test_account_queries_preserve_filters_order_limit_and_count(tmp_path: Path) 
         facade = CommercialRepository(session)
         assert facade.get_account("acct_alpha") is not None
         assert facade.count_accounts(status="suspended") == 1
+
+    dispose_engine(database_url)
+
+
+def test_plan_queries_preserve_filters_order_limits_visibility_and_validity(
+    tmp_path: Path,
+) -> None:
+    database_url = _sqlite_url(tmp_path)
+    init_schema(database_url)
+    now = datetime(2026, 8, 3, 3, 0, tzinfo=UTC)
+
+    with get_session(database_url) as session:
+        session.add_all(
+            [
+                Account(account_id="acct_plan_alpha", name="Alpha", status="active"),
+                Account(account_id="acct_plan_beta", name="Beta", status="active"),
+                Plan(
+                    plan_id="plan_alpha",
+                    name="Alpha",
+                    status="published",
+                    description=None,
+                    metadata_json=None,
+                    created_at=now - timedelta(days=2),
+                ),
+                Plan(
+                    plan_id="plan_beta",
+                    name="Beta",
+                    status="draft",
+                    description=None,
+                    metadata_json=None,
+                    created_at=now - timedelta(days=1),
+                ),
+                Plan(
+                    plan_id="plan_gamma",
+                    name="Gamma",
+                    status="published",
+                    description=None,
+                    metadata_json=None,
+                    created_at=now - timedelta(days=1),
+                ),
+                PlanVersion(
+                    plan_version_id="version_alpha_old",
+                    plan_id="plan_alpha",
+                    version_label="old",
+                    status="archived",
+                    currency="CNY",
+                    entitlements_json={},
+                    budgets_json={},
+                    concurrency_json={},
+                    policy_json={},
+                    metadata_json=None,
+                    created_at=now - timedelta(days=3),
+                ),
+                PlanVersion(
+                    plan_version_id="version_alpha_live",
+                    plan_id="plan_alpha",
+                    version_label="live",
+                    status="published",
+                    currency="CNY",
+                    entitlements_json={},
+                    budgets_json={},
+                    concurrency_json={},
+                    policy_json={},
+                    metadata_json=None,
+                    created_at=now - timedelta(days=1),
+                ),
+                PlanVersion(
+                    plan_version_id="version_gamma_live",
+                    plan_id="plan_gamma",
+                    version_label="live",
+                    status="published",
+                    currency="CNY",
+                    entitlements_json={},
+                    budgets_json={},
+                    concurrency_json={},
+                    policy_json={},
+                    metadata_json=None,
+                    created_at=now - timedelta(days=1),
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                PlanOffer(
+                    offer_id="offer_global_low",
+                    plan_id="plan_alpha",
+                    plan_version_id="version_alpha_live",
+                    account_id=None,
+                    tier_id="alpha",
+                    billing_cycle="monthly",
+                    amount=Decimal("10.00"),
+                    currency="CNY",
+                    purchase_mode="self_serve",
+                    status="active",
+                    trial_enabled=False,
+                    trial_days=0,
+                    trial_ai_credit_limit=0,
+                    trial_requires_approval=False,
+                    valid_from_at=now,
+                    valid_until_at=now + timedelta(days=1),
+                    metadata_json=None,
+                ),
+                PlanOffer(
+                    offer_id="offer_alpha_same_amount",
+                    plan_id="plan_alpha",
+                    plan_version_id="version_alpha_live",
+                    account_id="acct_plan_alpha",
+                    tier_id="alpha",
+                    billing_cycle="monthly",
+                    amount=Decimal("20.00"),
+                    currency="CNY",
+                    purchase_mode="self_serve",
+                    status="active",
+                    trial_enabled=False,
+                    trial_days=0,
+                    trial_ai_credit_limit=0,
+                    trial_requires_approval=False,
+                    valid_from_at=now - timedelta(days=1),
+                    valid_until_at=None,
+                    metadata_json=None,
+                ),
+                PlanOffer(
+                    offer_id="offer_global_same_amount",
+                    plan_id="plan_gamma",
+                    plan_version_id="version_gamma_live",
+                    account_id=None,
+                    tier_id="gamma",
+                    billing_cycle="monthly",
+                    amount=Decimal("20.00"),
+                    currency="CNY",
+                    purchase_mode="quote",
+                    status="active",
+                    trial_enabled=False,
+                    trial_days=0,
+                    trial_ai_credit_limit=0,
+                    trial_requires_approval=False,
+                    valid_from_at=None,
+                    valid_until_at=None,
+                    metadata_json=None,
+                ),
+                PlanOffer(
+                    offer_id="offer_beta_private",
+                    plan_id="plan_gamma",
+                    plan_version_id="version_gamma_live",
+                    account_id="acct_plan_beta",
+                    tier_id="gamma",
+                    billing_cycle="monthly",
+                    amount=Decimal("5.00"),
+                    currency="CNY",
+                    purchase_mode="self_serve",
+                    status="active",
+                    trial_enabled=False,
+                    trial_days=0,
+                    trial_ai_credit_limit=0,
+                    trial_requires_approval=False,
+                    valid_from_at=None,
+                    valid_until_at=None,
+                    metadata_json=None,
+                ),
+                PlanOffer(
+                    offer_id="offer_expired",
+                    plan_id="plan_alpha",
+                    plan_version_id="version_alpha_live",
+                    account_id=None,
+                    tier_id="alpha",
+                    billing_cycle="monthly",
+                    amount=Decimal("1.00"),
+                    currency="CNY",
+                    purchase_mode="self_serve",
+                    status="active",
+                    trial_enabled=False,
+                    trial_days=0,
+                    trial_ai_credit_limit=0,
+                    trial_requires_approval=False,
+                    valid_from_at=None,
+                    valid_until_at=now,
+                    metadata_json=None,
+                ),
+                PlanOffer(
+                    offer_id="offer_future",
+                    plan_id="plan_alpha",
+                    plan_version_id="version_alpha_live",
+                    account_id=None,
+                    tier_id="alpha",
+                    billing_cycle="monthly",
+                    amount=Decimal("2.00"),
+                    currency="CNY",
+                    purchase_mode="self_serve",
+                    status="inactive",
+                    trial_enabled=False,
+                    trial_days=0,
+                    trial_ai_credit_limit=0,
+                    trial_requires_approval=False,
+                    valid_from_at=now + timedelta(seconds=1),
+                    valid_until_at=None,
+                    metadata_json=None,
+                ),
+            ]
+        )
+        session.commit()
+
+        facade = CommercialRepository(session)
+        queries = CommercialPlanQueries(session)
+        assert facade.get_plan("plan_alpha") is not None
+        assert facade.get_plan("plan_missing") is None
+        assert [item.plan_id for item in facade.list_plans()] == [
+            "plan_gamma",
+            "plan_beta",
+            "plan_alpha",
+        ]
+        assert [item.plan_id for item in facade.list_plans(status="published", limit=1)] == [
+            "plan_gamma"
+        ]
+        assert len(facade.list_plans(limit=0)) == 3
+        assert len(facade.list_plans(limit=-1)) == 3
+
+        assert facade.get_plan_version("version_alpha_live") is not None
+        assert facade.get_plan_version("version_missing") is None
+        assert [item.plan_version_id for item in facade.list_plan_versions()] == [
+            "version_gamma_live",
+            "version_alpha_live",
+            "version_alpha_old",
+        ]
+        assert [
+            item.plan_version_id
+            for item in facade.list_plan_versions(
+                plan_id="plan_alpha",
+                status="published",
+                limit=1,
+            )
+        ] == ["version_alpha_live"]
+        assert len(facade.list_plan_versions(limit=0)) == 3
+
+        assert facade.get_plan_offer("offer_global_low") is not None
+        assert facade.get_plan_offer("offer_missing") is None
+        assert [
+            item.offer_id
+            for item in facade.list_plan_offers(
+                account_id="acct_plan_alpha",
+                status="active",
+                now=now,
+            )
+        ] == [
+            "offer_global_low",
+            "offer_alpha_same_amount",
+            "offer_global_same_amount",
+        ]
+        assert [item.offer_id for item in facade.list_plan_offers()] == [
+            "offer_expired",
+            "offer_future",
+            "offer_global_low",
+            "offer_global_same_amount",
+        ]
+        assert [
+            item.offer_id
+            for item in facade.list_plan_offers(
+                account_id="acct_plan_beta",
+                self_serve_only=True,
+                now=now,
+            )
+        ] == ["offer_beta_private", "offer_global_low"]
+        assert queries.get_plan("plan_alpha") is facade.get_plan("plan_alpha")
+        assert [item.plan_id for item in queries.list_plans()] == [
+            item.plan_id for item in facade.list_plans()
+        ]
+        assert queries.get_plan_version("version_alpha_live") is facade.get_plan_version(
+            "version_alpha_live"
+        )
+        assert [item.plan_version_id for item in queries.list_plan_versions()] == [
+            item.plan_version_id for item in facade.list_plan_versions()
+        ]
+        assert queries.get_plan_offer("offer_global_low") is facade.get_plan_offer(
+            "offer_global_low"
+        )
+        assert [
+            item.offer_id
+            for item in queries.list_plan_offers(
+                account_id="acct_plan_alpha",
+                status="active",
+                now=now,
+            )
+        ] == [
+            item.offer_id
+            for item in facade.list_plan_offers(
+                account_id="acct_plan_alpha",
+                status="active",
+                now=now,
+            )
+        ]
 
     dispose_engine(database_url)
 
