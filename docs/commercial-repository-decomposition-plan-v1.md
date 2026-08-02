@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 completed; Phase 4A local verified
+状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4A completed; Phase 4B local verified
 
 日期：2026-08-03
 
@@ -852,9 +852,76 @@ Ruff 与精确 fixture Gitleaks 通过，全量 mypy 267 个源文件无问题�
 `check:anti-drift` 与 `git diff --check` 通过。
 
 门面实际下降为 3,032 行、101 个自有方法。M4 candidate、PR/CI、merged source
-和 clean-master M4 accepted 继续作为不同证据层；本节不预填尚未发生的结果。
+和 clean-master M4 accepted 继续作为不同证据层。
 
-## 14. 回滚
+Phase 4A 的 source-only candidate bundle 为
+`3ccc9c2e55ae20d33835fe57d204b14b43f9f726c1a950e25f929d33f069d2d3`，
+M4 聚焦测试为 2 passed。PR
+[#471](https://github.com/npcink/npcink-ai-cloud/pull/471) 的 required checks 全绿，
+其中 `backend-targeted` 为 7 分 54 秒；合并后的 master revision 为
+`86fdc9427f610d72309234dd364e7092babf5185`。clean-master source-only promotion 后：
+
+- `acceptance_state=accepted`
+- `promotion_pr=471`
+- `source_branch=master`
+- `source_dirty=false`
+- accepted bundle
+  `527d8a4caa6bbf7389767dcd0d2ea2d53912452df60f713fa590129ad73f76b5`
+- `tests/domain/test_commercial_payment_queries.py`：2 passed
+
+Phase 4A 的 Cloud merge lane、shared M4 与 task worktree lock 已明确释放。
+
+## 14. Phase 4B：Payment、Refund 与 PaymentEvent 写入及锁读取
+
+### 14.1 Current-master 方法、调用方与事务属性
+
+Phase 4B 基线为
+`origin/master@86fdc9427f610d72309234dd364e7092babf5185`。本批迁移：
+
+- `get_payment_order_for_update`
+- `create_payment_order`
+- `create_payment_refund`
+- `create_payment_event`
+
+`get_payment_order_for_update` 使用单行 `SELECT ... FOR UPDATE`；三个 create 均只做
+模型字段映射、`session.add`、`session.flush` 并返回同一 ORM identity。四个方法不
+commit 或 rollback，事务生命周期继续由 Payment 与 SubscriptionCommerce service
+的现有 `with get_session(...)` 调用流拥有。锁读取仍与调用方的状态机更新保持在同一
+Session 内，本批不把锁拆出事务，也不改变任何幂等或状态判断。
+
+直接调用集中在 `_payment_mixin.py` 与 `_subscription_commerce_mixin.py`；现有
+Payment service、Subscription Commerce、Portal 支付创建/通知及 payment route 测试
+是本批最窄回归图。第一批继续通过 facade 兼容，不迁移这些调用方。
+
+### 14.2 实现 envelope 与合同
+
+- 新增 `app/adapters/repositories/commercial_payment_repository.py`，继承
+  `CommercialPaymentQueries`；
+- `CommercialRepository` 改为继承 `CommercialPaymentRepository` 并移除四个类内
+  重复实现；
+- 新增 `tests/domain/test_commercial_payment_repository.py`；
+- 保持四个方法的签名、返回类型、模型字段映射、flush、identity、rollback 和
+  PostgreSQL `FOR UPDATE`；
+- repository 不拥有 commit/rollback，不新增 advisory lock，不扩大锁范围；
+- 明确排除支付状态机、幂等判定、Provider、金额/货币、支付宝回调、API、schema/
+  migration、调用方迁移、Production 与 WordPress。
+
+### 14.3 Characterization 与本地结构证据
+
+迁移前 facade characterization 为 2 passed；迁移后 facade 与 direct repository
+参数化为 4 passed。SQLite 路径验证三个 create 的字段、flush/identity 与 rollback，
+PostgreSQL dialect 编译验证锁查询以 `FOR UPDATE` 结尾。AST 对比确认四个方法集合、
+签名和方法体与 current-master 基线完全一致；新 repository 没有 commit/rollback。
+
+门面当前为 2,914 行、97 个自有方法。本地回归、M4 candidate、PR/CI、merged source
+和 clean-master M4 accepted 继续分别记录，不提前互相替代。
+
+本地受影响验证：Payment query/repository、Payment service 与 Subscription Commerce
+合计 45 passed；Portal 创建月付订单、开放支付宝通知与 payment route 合计 3 passed，
+只有既有 Starlette deprecation warning。Ruff 与 format check 通过，全量 mypy 268 个
+源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。
+
+## 15. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
 
@@ -883,7 +950,11 @@ Phase 3D 只允许恢复五个 SubscriptionOrder 方法到门面、移除新 rep
 Phase 4A 只允许恢复 11 个 Payment/Refund/Event 查询到门面、移除 query class 与
 聚焦 characterization。不得把锁读取、create、Provider 或支付数据纳入回滚。
 
-## 15. 后续批次启动规则
+Phase 4B 只允许恢复一个锁读取与三个 create 到门面、恢复 Payment query 继承并
+移除新的 Payment repository 与聚焦 characterization。不得修改支付数据、事务补偿、
+状态机、Provider 或 API 完成结构回滚。
+
+## 16. 后续批次启动规则
 
 Phase 2 及以后不得因 Phase 1 本地完成而自动启动。每批都必须重新：
 
