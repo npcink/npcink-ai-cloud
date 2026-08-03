@@ -12,6 +12,25 @@ from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+M4_DEPLOY_INPUTS = {
+    ".dockerignore",
+    "Dockerfile",
+    "deploy/nginx.m4-frontend-slot.conf.template",
+    "deploy/nginx.m4-preview.conf",
+    "docker-compose.dev.yml",
+    "docker-compose.m4-frontend-slot.yml",
+    "docker-compose.m4-preview.yml",
+    "frontend/Dockerfile.dev",
+    "frontend/package.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "pyproject.toml",
+    "scripts/m4-package-proxy.py",
+    "scripts/m4-preview.sh",
+    "scripts/redact-m4-preview-logs.py",
+    "uv.lock",
+}
 
 
 def _git(*args: str) -> str:
@@ -33,9 +52,9 @@ def collect_changed_paths(base_ref: str) -> list[str]:
 
     merge_base = _git("merge-base", "HEAD", base_ref).strip()
     outputs = [
-        _git("diff", "--name-only", "--diff-filter=ACMR", f"{merge_base}...HEAD"),
-        _git("diff", "--name-only", "--cached", "--diff-filter=ACMR"),
-        _git("diff", "--name-only", "--diff-filter=ACMR"),
+        _git("diff", "--name-only", "--diff-filter=ACMRD", f"{merge_base}...HEAD"),
+        _git("diff", "--name-only", "--cached", "--diff-filter=ACMRD"),
+        _git("diff", "--name-only", "--diff-filter=ACMRD"),
         _git("ls-files", "--others", "--exclude-standard"),
     ]
     return sorted({line for output in outputs for line in output.splitlines() if line})
@@ -101,18 +120,10 @@ def classify(paths: list[str]) -> dict[str, bool]:
             "tests/contract/test_engineering_command_inventory_contract.py",
         }
     )
+    migration = any_path(lambda path: path.startswith("migrations/"))
     build_runtime = any_path(
-        lambda path: path
-        in {
-            "package.json",
-            "frontend/package.json",
-            "pnpm-lock.yaml",
-            "uv.lock",
-            "pyproject.toml",
-        }
-        or path.startswith(("deploy/", "migrations/"))
-        or "Dockerfile" in path
-        or path.startswith("docker-compose")
+        lambda path: path in M4_DEPLOY_INPUTS
+        or Path(path).name.startswith("Dockerfile")
     )
     cloud_source = any_path(
         lambda path: path.startswith(("app/", "frontend/", "migrations/"))
@@ -132,15 +143,20 @@ def classify(paths: list[str]) -> dict[str, bool]:
         "shell": shell,
         "node_script": node_script,
         "inventory": inventory,
+        "migration": migration,
         "build_runtime": build_runtime,
         "cloud_source": cloud_source,
         "policy": policy,
     }
 
 
-def build_plan(paths: list[str], python_bin: str) -> dict[str, object]:
+def build_plan(paths: list[str], python_bin: str, base_ref: str) -> dict[str, object]:
     kinds = classify(paths)
-    commands: list[list[str]] = [["git", "diff", "--check"]]
+    commands: list[list[str]] = [
+        ["git", "diff", "--check", f"{base_ref}...HEAD"],
+        ["git", "diff", "--cached", "--check"],
+        ["git", "diff", "--check"],
+    ]
     followups: list[str] = []
 
     if kinds["policy"]:
@@ -201,6 +217,25 @@ def build_plan(paths: list[str], python_bin: str) -> dict[str, object]:
             if path.startswith("frontend/tests/unit/") and path.endswith(".mjs")
         ]
         commands.extend([["node", path] for path in changed_node_contracts])
+        changed_vitest_tests = [
+            path.removeprefix("frontend/")
+            for path in paths
+            if path.startswith("frontend/tests/vitest/")
+            and path.endswith((".test.ts", ".test.tsx"))
+            and (ROOT / path).is_file()
+        ]
+        if changed_vitest_tests:
+            commands.append(
+                [
+                    "pnpm",
+                    "--dir",
+                    "frontend",
+                    "exec",
+                    "vitest",
+                    "run",
+                    *changed_vitest_tests,
+                ]
+            )
 
     if kinds["admin"]:
         followups.append(
@@ -213,6 +248,10 @@ def build_plan(paths: list[str], python_bin: str) -> dict[str, object]:
     elif kinds["cloud_source"]:
         followups.append(
             "Cloud source changed: use m4:preview:sync after local gates when runtime behavior is in scope."
+        )
+    if kinds["migration"]:
+        followups.append(
+            "Migration changed: use source sync plus migration-head, persistence, and rollback evidence; do not cold-build unless a fingerprint input also changed."
         )
     if not any(kinds.values()):
         followups.append(
@@ -243,7 +282,7 @@ def main() -> int:
     python_bin = os.environ.get(
         "NPCINK_CLOUD_PYTHON_BIN", str(ROOT / ".venv" / "bin" / "python")
     )
-    plan = build_plan(paths, python_bin)
+    plan = build_plan(paths, python_bin, args.base)
     if args.format == "json":
         print(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True))
     else:
