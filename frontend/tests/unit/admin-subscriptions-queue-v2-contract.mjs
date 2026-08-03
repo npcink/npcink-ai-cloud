@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { frontendRoot } from './_paths.mjs';
 
 const source = readFileSync(resolve(frontendRoot, 'src/app/admin/subscriptions/page.tsx'), 'utf8');
+const layoutSource = readFileSync(resolve(frontendRoot, 'src/app/admin/layout.tsx'), 'utf8');
 
 assert.match(source, /BackofficeLayer[\s\S]*BackofficeSummaryStrip/, 'subscription queue must start with a compact operating layer and summary strip');
 assert.doesNotMatch(source, /BackofficeMetricStrip|BackofficePrimaryPanel|BackofficeStackCard/, 'subscription queue must not regress to metric cards or a landing-page hero');
@@ -24,6 +25,13 @@ assert.match(source, /role="list"[\s\S]*data-ui="subscription-queue-item"/, 'sub
 assert.doesNotMatch(source, /<table/, 'the primary subscription queue must not depend on a desktop table');
 assert.match(source, /aria-controls="subscription-inspector"[\s\S]*id="subscription-inspector"/, 'row inspection must have an explicit accessible inspector target');
 assert.match(source, /focus: subscription\.subscription_id/, 'inspector focus must persist in the URL');
+assert.match(source, /currentQueueHref[\s\S]*return_to=\$\{encodeURIComponent\(currentQueueHref\)\}/, 'subscription detail links must preserve the current filtered queue return path');
+assert.doesNotMatch(source, /admin\.back_to_coverage/, 'the independent subscription workspace must not offer a parent-workspace return action');
+assert.match(
+  layoutSource,
+  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
+  'subscription queue and detail routes must own their sidebar state'
+);
 
 assert.match(source, /params\.set\('sort', sort\)[\s\S]*params\.set\('limit'[\s\S]*<ListPagination/, 'server-filtered results must send an explicit sort and keep pagination');
 assert.match(source, /Filters, risk classification, and sorting are applied across all matching subscriptions by the service API/, 'the UI must state the backend-owned global queue scope');

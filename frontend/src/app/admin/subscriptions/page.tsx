@@ -317,6 +317,9 @@ function SubscriptionsContent() {
     queuedSubscriptions.find((item) => item.subscription_id === focusedSubscriptionId) ||
     queuedSubscriptions[0] ||
     null;
+  const currentQueueHref = searchParamsKey ? `${pathname}?${searchParamsKey}` : pathname;
+  const subscriptionDetailHref = (subscriptionId: string) =>
+    `/admin/subscriptions/${encodeURIComponent(subscriptionId)}?return_to=${encodeURIComponent(currentQueueHref)}`;
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -378,28 +381,23 @@ function SubscriptionsContent() {
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
         eyebrow={t('admin.subscriptions.workspace_eyebrow', {}, 'Subscription operations')}
-        title={t('admin.coverage_workspace_subscriptions_title', {}, 'Service risk queue')}
+        title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription risk')}
         description={t(
           'admin.subscriptions.workspace_desc',
           {},
           'Review the current filtered subscription register by service risk, then open one bounded detail surface for evidence and follow-up.'
         )}
         actions={(
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void loadSubscriptions(true)}
-              disabled={isRefreshing}
-            >
-              {isRefreshing
-                ? t('common.loading', {}, 'Loading...')
-                : t('admin.subscriptions.refresh_action', {}, 'Refresh subscriptions')}
-            </button>
-            <Link href="/admin/coverage" className="btn btn-secondary">
-              {t('admin.back_to_coverage', {}, 'Back to coverage')}
-            </Link>
-          </>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void loadSubscriptions(true)}
+            disabled={isRefreshing}
+          >
+            {isRefreshing
+              ? t('common.loading', {}, 'Loading...')
+              : t('admin.subscriptions.refresh_action', {}, 'Refresh subscriptions')}
+          </button>
         )}
       />
 
@@ -642,7 +640,7 @@ function SubscriptionsContent() {
                       >
                         {t('admin.subscriptions.inspect_action', {}, 'Inspect')}
                       </button>
-                      <Link href={`/admin/subscriptions/${subscription.subscription_id}`} className="btn btn-primary btn-sm whitespace-nowrap">
+                      <Link href={subscriptionDetailHref(subscription.subscription_id)} className="btn btn-primary btn-sm whitespace-nowrap">
                         {t('admin.coverage_open_subscription_detail_action', {}, 'Inspect detail')}
                       </Link>
                     </div>
@@ -663,11 +661,7 @@ function SubscriptionsContent() {
                 <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>
                   {t('common.clear_filters', {}, 'Clear filters')}
                 </button>
-              ) : (
-                <Link href="/admin/coverage" className="btn btn-secondary btn-sm">
-                  {t('admin.back_to_coverage', {}, 'Back to coverage')}
-                </Link>
-              )}
+              ) : undefined}
             />
           )}
 
@@ -730,7 +724,7 @@ function SubscriptionsContent() {
                 </dl>
 
                 <div className="flex flex-wrap gap-2">
-                  <Link href={`/admin/subscriptions/${selectedSubscription.subscription_id}`} className="btn btn-primary btn-sm">
+                  <Link href={subscriptionDetailHref(selectedSubscription.subscription_id)} className="btn btn-primary btn-sm">
                     {t('admin.coverage_open_subscription_detail_action', {}, 'Inspect detail')}
                   </Link>
                   <Link href={`/admin/accounts/${selectedSubscription.account_id}`} className="btn btn-secondary btn-sm">

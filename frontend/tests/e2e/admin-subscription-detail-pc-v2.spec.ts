@@ -9,7 +9,8 @@ test('subscription detail keeps one PC conclusion and defers operational evidenc
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await installAdminMocks(page);
-  await page.goto('/admin/subscriptions/sub_mvp');
+  const returnTo = '/admin/subscriptions?status=active&focus=sub_mvp';
+  await page.goto(`/admin/subscriptions/sub_mvp?return_to=${encodeURIComponent(returnTo)}`);
 
   await expect(page.getByRole('heading', { name: /Service status detail|服务状态详情/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Customer coverage needs follow-up|客户覆盖需要跟进/i })).toHaveCount(1);
@@ -17,7 +18,9 @@ test('subscription detail keeps one PC conclusion and defers operational evidenc
   const primaryAction = page.getByRole('link', { name: /Open customer coverage|打开客户覆盖/i });
   await expect(primaryAction).toBeVisible();
   await expect(primaryAction).toHaveAttribute('href', `/admin/accounts/${LONG_ACCOUNT_ID}#coverage-actions`);
-  await expect(page.getByRole('link', { name: /Back to subscriptions|返回订阅/i })).toHaveCount(0);
+  const returnLink = page.getByRole('link', { name: /Back to subscription risk|返回订阅风险/i });
+  await expect(returnLink).toBeVisible();
+  await expect(returnLink).toHaveAttribute('href', returnTo);
 
   await expect(page.getByText(/^Read current status and grace posture first\.$/)).toHaveCount(0);
   await expect(page.getByText(/^Open site detail for runtime and entitlement impact\.$/)).toHaveCount(0);

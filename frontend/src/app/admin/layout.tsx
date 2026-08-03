@@ -199,8 +199,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         {
           href: '/admin/coverage',
           labelKey: 'admin.nav_coverage',
-          fallback: 'Service Status',
-          activePrefixes: ['/admin/coverage', '/admin/subscriptions'],
+          fallback: 'Service Risks',
+          activePrefixes: ['/admin/coverage'],
+        },
+        {
+          href: '/admin/subscriptions',
+          labelKey: 'admin.nav_subscriptions',
+          fallback: 'Subscriptions',
+          activePrefixes: ['/admin/subscriptions'],
         },
         {
           href: '/admin/plans',

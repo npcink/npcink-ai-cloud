@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const page = readFileSync(resolve(process.cwd(), 'src/app/admin/subscriptions/[subscriptionId]/page.tsx'), 'utf8');
+
+assert.match(page, /normalizeSubscriptionReturnTo[\s\S]*parsed\.pathname === '\/admin\/subscriptions'[\s\S]*admin\.back_to_subscriptions/, 'subscription detail must preserve only a safe return path to the subscription queue');
 const commercialCopy = readFileSync(resolve(process.cwd(), 'src/lib/admin-commercial-copy.ts'), 'utf8');
 const i18n = readFileSync(resolve(process.cwd(), 'src/lib/i18n.ts'), 'utf8');
 

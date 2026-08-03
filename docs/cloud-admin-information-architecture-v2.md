@@ -72,7 +72,8 @@ The primary navigation is organized into four domains.
 ### 4.2 Customer Operations
 
 - Customers (`/admin/accounts`)
-- Service queue (`/admin/coverage`)
+- Service risks (`/admin/coverage`)
+- Subscriptions (`/admin/subscriptions`)
 - Tickets (`/admin/support-requests`)
 - Packages and credits (`/admin/plans`)
 
@@ -81,13 +82,15 @@ inside the Customers workspace. The validation-stage product must not expose a
 second Portal-users customer directory; see ADR-036 and
 `customer-account-identity-stage-standard-v1.md`.
 
-Customers is the customer-information directory. Service queue is the
+Customers is the customer-information directory. Service risks is the
 cross-customer problem queue. The two routes must not be merged or reproduce
 each other's default ordering, reasons, or actions; see ADR-037.
 
-`/admin/subscriptions` is a service-queue view. `/admin/credit-packs` is a
-package-and-credit view. They may keep stable routes during migration, but they
-must share their parent workspace navigation and visual model.
+Subscriptions is the commercial lifecycle and billing-evidence queue. It keeps
+its own top-level navigation entry, URL-owned filters, risk ordering, and detail
+return path instead of presenting itself as a child of Service risks.
+`/admin/credit-packs` remains a package-and-credit view under Packages and
+credits.
 
 ### 4.3 Runtime Operations
 
@@ -222,9 +225,9 @@ consolidation.
 | `/admin/accounts` | Customer Operations | `queue` | Customers | Canonical customer directory; no risk queue or row inspector |
 | `/admin/accounts/[accountId]` | Customer Operations | `detail` | Customers | Overview, commercial, credits, sites, access, and audit tabs |
 | `/admin/sites/[siteId]` | Customer Operations | `detail` | Customers | Rebuild around health, coverage, runtime, usage, keys/audit tabs |
-| `/admin/coverage` | Customer Operations | `queue` | Service queue | Canonical cross-customer problem queue; needs-action default |
-| `/admin/subscriptions` | Customer Operations | `queue` | Service queue | Keep route; render as subscription-risk view of service queue |
-| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Service queue | Keep; one reconciliation action and contextual evidence |
+| `/admin/coverage` | Customer Operations | `queue` | Service risks | Canonical cross-customer problem queue; needs-action default |
+| `/admin/subscriptions` | Customer Operations | `queue` | Subscriptions | Independent subscription lifecycle and billing-risk queue |
+| `/admin/subscriptions/[subscriptionId]` | Customer Operations | `detail` | Subscriptions | Keep; one reconciliation action, contextual evidence, and filtered-queue return |
 | `/admin/support-requests` | Customer Operations | `queue` | Tickets | Keep; split customer conversation from internal handling |
 | `/admin/support-requests/[requestId]` | Customer Operations | `detail` | Tickets | Keep; timeline-first ticket detail |
 | `/admin/plans` | Customer Operations | `queue` | Packages and credits | Canonical catalog plus shared package-management workbench |

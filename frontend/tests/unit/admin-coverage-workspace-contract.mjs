@@ -118,10 +118,10 @@ assert.doesNotMatch(
   'Coverage table must leave key, billing, and internal identifier diagnostics to customer detail'
 );
 
-assert.doesNotMatch(
+assert.match(
   layoutSource,
-  /href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'/,
-  'Subscription risk must not return as a top-level admin sidebar entry'
+  /href: '\/admin\/coverage'[\s\S]*activePrefixes: \['\/admin\/coverage'\][\s\S]*href: '\/admin\/subscriptions'[\s\S]*labelKey: 'admin\.nav_subscriptions'[\s\S]*activePrefixes: \['\/admin\/subscriptions'\]/,
+  'Service risks and subscriptions must be independent top-level sidebar destinations'
 );
 
 assert.match(
