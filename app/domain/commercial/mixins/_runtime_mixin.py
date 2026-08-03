@@ -187,6 +187,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
         execution_kind: str,
         execution_tier: str,
         data_classification: str,
+        execution_pattern: str = "inline",
         trace_id: str = "",
         idempotency_key: str | None = None,
         request_kind: str = "execute",
@@ -434,7 +435,15 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
             session.commit()
             raise error
 
-        active_runs = repository.count_active_runs(site_id)
+        concurrency_patterns = (
+            ("inline",)
+            if execution_pattern == "inline"
+            else ("step_offload", "whole_run_offload")
+        )
+        active_runs = repository.count_active_runs(
+            site_id,
+            execution_patterns=concurrency_patterns,
+        )
         concurrency = service._normalize_concurrency(
             getattr(entitlement_source, "concurrency_json", None)
         )
@@ -460,6 +469,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 idempotency_key=idempotency_key,
                 payload_json={
                     "active_runs": active_runs,
+                    "execution_pattern": execution_pattern,
                     "max_active_runs": max_active_runs,
                 },
             )
@@ -666,6 +676,7 @@ class CommercialServiceRuntimeMixin(CommercialServiceAuditMixin):
                 "batch_limits": batch_limits,
                 "pro_cloud_runtime": pro_cloud_runtime,
                 "active_runs": active_runs,
+                "execution_pattern": execution_pattern,
                 "policy": policy,
                 "policy_actions": policy_actions,
                 "runtime_policy_overrides": effective_runtime_policy_overrides,
