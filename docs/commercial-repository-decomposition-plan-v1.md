@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7C M4 accepted；Phase 7D local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7D M4 accepted；Phase 7E local verified
 
 日期：2026-08-03
 
@@ -1836,6 +1836,40 @@ production facade importer 从 9 下降到 8，构造点从 113 下降到 99，�
 Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-master M4 accepted
 继续分别记录，不以本地绿色替代后续证据。
 
+Phase 7D 随后由 PR #494 squash merge 为
+`dc63492c05d1c7229d4448d30b6e60d27fa3a558`；required `backend-targeted`
+为 8 分 22 秒通过，且无 review 变更请求。clean current `origin/master` source-only
+promotion 显示 `acceptance_state=accepted`、`promotion_pr=494`、
+`source_branch=master`、`source_dirty=false`，accepted source bundle 为
+`e6e10cff31ed867c1c9710f9f0b7e1db2a9e2dce97392b95290b83fe602951b2`；
+post-merge retirement contract smoke 为 4 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放。
+
+### 17.41 Phase 7E Admin Identity/Access caller
+
+Phase 7E 在 current
+`origin/master@dc63492c05d1c7229d4448d30b6e60d27fa3a558` 上迁移 Admin mixin 中
+八个身份与访问入口：platform-admin grant 的 upsert/resolve/delete/list、Portal user
+directory/audit/disable/batch-disable，以及 `_build_admin_identity_projections` helper。
+
+这些入口按真实 owner 使用 `CommercialIdentityRepository`、
+`CommercialAccessRepository`、`CommercialServiceAuditRepository`、
+`CommercialAccountSiteRepository` 与 `CommercialSubscriptionRepository`。所有 wrapper
+继续共享原 SQLAlchemy Session；grant mutation、principal session-version increment、
+membership/binding revoke、audit record 和最终 commit 的顺序及原子边界不变。三个仍使用
+facade 的 Admin dashboard 调用点只为 identity projection helper 额外构造 Identity/Access
+repository，不迁移其余职责。
+
+迁移前 retirement characterization 为 4 passed、1 expected failed；迁移后为 5 passed。
+Portal user directory characterization 原先 monkeypatch facade 的 `list_principals`，本批仅将
+patch owner 改为新的 Identity repository，分页后 hydrate 的断言不变。Grant、Portal user、
+Identity、Access 与 Service Audit 最窄调用图为 16 passed，只有既有 Starlette deprecation
+warning；Ruff 通过，全量 mypy 285 个源文件无问题。production facade importer 暂保持 8，
+构造点从 99 降至 91，名称引用从 154 降至 145，helper 注解从 55 降至 54，均由 AST
+核定。Admin overview/coverage/credit、账户 reconciliation、API/schema/权限模型、数据库、
+Provider、Production 与 WordPress 明确不在本批。M4 candidate、PR/CI、merged source 与
+clean-master M4 accepted 继续分层记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1952,6 +1986,11 @@ payload redaction、事务、数据，或把其他 commercial mixin 纳入回滚
 Phase 7D 只允许恢复 Support mixin 的 facade import、14 个构造与一个 helper 注解，并
 移除本批聚焦 retirement characterization。不得修改 Support/Access/Service Audit
 repository 实现、Support 状态机、权限、事务、数据，或把其他 commercial mixin 纳入回滚。
+
+Phase 7E 只允许恢复上述八个 Admin Identity/Access 入口与 identity projection helper 的
+facade 使用，并把聚焦 API characterization 的 monkeypatch owner 恢复到 facade。不得修改
+repository 实现、身份/权限模型、session-version、revoke/audit/commit 语义，或纳入其他
+Admin dashboard 与商业 mixin。
 
 ## 19. 后续批次启动规则
 
