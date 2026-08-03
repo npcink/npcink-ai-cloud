@@ -21,12 +21,18 @@ from app.adapters.repositories.commercial_decision_repository import (
 from app.adapters.repositories.commercial_identity_repository import (
     CommercialIdentityRepository,
 )
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_plan_repository import CommercialPlanRepository
+from app.adapters.repositories.commercial_runtime_knowledge_queries import (
+    CommercialRuntimeKnowledgeQueries,
+)
 from app.adapters.repositories.commercial_service_audit_repository import (
     CommercialServiceAuditRepository,
 )
 from app.adapters.repositories.commercial_site_api_key_repository import (
     CommercialSiteApiKeyRepository,
+)
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
 )
 from app.adapters.repositories.commercial_subscription_repository import (
     CommercialSubscriptionRepository,
@@ -1934,20 +1940,26 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
 
     def get_admin_account(self, account_id: str) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
+            lifecycle_repository = CommercialSubscriptionLifecycleRepository(session)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            site_key_repository = CommercialSiteApiKeyRepository(session)
+            account = account_site_repository.get_account(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
             reconciled = cast(Any, self)._reconcile_account_subscription_state_in_session(
-                repository=repository,
+                repository=lifecycle_repository,
                 account_id=account_id,
                 now=self.now_factory(),
             )
-            sites = repository.list_sites(account_id=account_id, limit=None)
-            subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
+            sites = account_site_repository.list_sites(account_id=account_id, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_id=account_id,
+                limit=None,
+            )
             primary_subscription = cast(Any, self)._select_primary_subscription(subscriptions)
             if primary_subscription is not None:
                 subscriptions = [
@@ -1958,7 +1970,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                         if subscription.subscription_id != primary_subscription.subscription_id
                     ],
                 ]
-            active_key_counts = repository.count_site_keys_by_site(
+            active_key_counts = site_key_repository.count_site_keys_by_site(
                 site_ids=[site.site_id for site in sites],
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
             )
@@ -2000,30 +2012,44 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
     def get_admin_account_quota_summary(self, account_id: str) -> dict[str, object]:
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
+            lifecycle_repository = CommercialSubscriptionLifecycleRepository(session)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            plan_repository = CommercialPlanRepository(session)
+            usage_repository = CommercialUsageRepository(session)
+            credit_repository = CommercialCreditRepository(session)
+            decision_repository = CommercialDecisionRepository(session)
+            site_key_repository = CommercialSiteApiKeyRepository(session)
+            runtime_knowledge_queries = CommercialRuntimeKnowledgeQueries(session)
+            account = account_site_repository.get_account(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
             reconciled = cast(Any, self)._reconcile_account_subscription_state_in_session(
-                repository=repository,
+                repository=lifecycle_repository,
                 account_id=account_id,
                 now=now,
             )
             sites = [
                 site
-                for site in repository.list_sites(account_id=account_id, limit=None)
+                for site in account_site_repository.list_sites(
+                    account_id=account_id,
+                    limit=None,
+                )
                 if str(getattr(site, "status", "") or "") != SITE_STATUS_ARCHIVED
             ]
             site_ids = [str(site.site_id or "") for site in sites if str(site.site_id or "")]
-            subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_id=account_id,
+                limit=None,
+            )
             if reconciled is not None:
                 session.commit()
             primary_subscription = cast(Any, self)._select_primary_subscription(subscriptions)
             plan_version = cast(Any, self)._resolve_current_subscription_plan_version(
-                repository,
+                plan_repository,
                 primary_subscription,
             )
             period_start_at, period_end_at = cast(Any, self)._resolve_period(
@@ -2032,7 +2058,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )
             meter_events = [
                 event
-                for event in repository.list_usage_meter_events_for_admin(
+                for event in usage_repository.list_usage_meter_events_for_admin(
                     account_ids=[account_id],
                     since=period_start_at,
                     limit=None,
@@ -2050,7 +2076,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     )
                 )
             ]
-            credit_ledger_entries = repository.list_credit_ledger_entries(
+            credit_ledger_entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 subscription_id=(
                     primary_subscription.subscription_id
@@ -2063,7 +2089,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 limit=None,
             )
             paid_credit = cast(Any, self)._paid_credit_balance_in_session(
-                repository,
+                credit_repository,
                 account_id=account_id,
                 now=now,
             )
@@ -2079,20 +2105,24 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 getattr(plan_version, "policy_json", None)
             )
             budget_state = cast(Any, self)._build_budget_policy_state(
-                repository=repository,
+                repository=decision_repository,
                 subscription=primary_subscription,
                 policy=policy,
                 budgets=budgets,
                 totals=totals,
                 period_start_at=period_start_at,
             )
-            active_key_counts = repository.count_site_keys_by_site(
+            active_key_counts = site_key_repository.count_site_keys_by_site(
                 site_ids=site_ids,
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
             )
-            active_runs_by_site = repository.count_active_runs_by_site(site_ids=site_ids)
-            knowledge_counts = repository.summarize_site_knowledge_current_counts(site_ids=site_ids)
-            knowledge_index_usage = repository.summarize_site_knowledge_index_usage(
+            active_runs_by_site = runtime_knowledge_queries.count_active_runs_by_site(
+                site_ids=site_ids
+            )
+            knowledge_counts = runtime_knowledge_queries.summarize_site_knowledge_current_counts(
+                site_ids=site_ids
+            )
+            knowledge_index_usage = runtime_knowledge_queries.summarize_site_knowledge_index_usage(
                 account_id=account_id,
                 subscription_id=(
                     primary_subscription.subscription_id

@@ -7,6 +7,9 @@ from typing import Any, cast
 from uuid import uuid4
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -307,7 +310,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _bind_default_free_subscription_for_account_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         audit_context: ServiceAuditContext | None,
     ) -> dict[str, object] | None:
@@ -357,7 +360,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _restore_default_free_subscription_for_account_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
         reason: str,
@@ -414,7 +417,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _reconcile_account_subscription_state_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
         audit_context: ServiceAuditContext | None = None,
@@ -605,7 +608,7 @@ class CommercialServiceAccountMixin(CommercialServiceAuditMixin):
     def _cancel_covered_subscriptions_for_replacement(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
         reason: str,

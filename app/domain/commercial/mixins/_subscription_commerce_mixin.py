@@ -9,6 +9,9 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_subscription_lifecycle_repository import (
+    CommercialSubscriptionLifecycleRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     PAYMENT_ORDER_STATUS_CANCELED,
@@ -926,7 +929,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _apply_due_free_downgrade_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
     ) -> object | None:
@@ -964,7 +967,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _apply_subscription_order_payment_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         order: PaymentOrder,
         event: PaymentEvent,
         provider_trade_no: str,
@@ -1069,7 +1072,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _close_other_pending_subscription_orders_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         paid_subscription_order_id: str,
         now: datetime,
@@ -1122,7 +1125,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _activate_due_subscription_orders_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         account_id: str,
         now: datetime,
     ) -> list[object]:
@@ -1233,7 +1236,7 @@ class CommercialServiceSubscriptionCommerceMixin(CommercialServiceAuditMixin):
     def _activate_subscription_order_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialSubscriptionLifecycleRepository,
         subscription_order: SubscriptionOrder,
         payment_order: PaymentOrder,
         now: datetime,

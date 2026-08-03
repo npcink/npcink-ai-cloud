@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7E M4 accepted；Phase 7F local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7F M4 accepted；Phase 7G local verified
 
 日期：2026-08-03
 
@@ -1911,6 +1911,46 @@ base 与唯一 `__init__`。上述数值均由 current diff 的 AST 扫描核定
 数据库、Provider、Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-
 master M4 accepted 继续分层记录，不以本地绿色替代后续证据。
 
+Phase 7F 随后由 PR #496 squash merge 为
+`86503ba5386c9eacf7de5e4a098e944bebb1f6d2`；required `backend-targeted`
+为 7 分 59 秒通过，且无有效 review 变更请求。clean current `origin/master`
+source-only promotion 显示 `acceptance_state=accepted`、`promotion_pr=496`、
+`source_branch=master`、`source_dirty=false`，accepted source bundle 为
+`61da5c0cbbe096391312089f21389c50ec17942ca0fd0469fb475dc979b8609c`；
+post-merge retirement contract smoke 为 6 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放。
+
+### 17.43 Phase 7G Admin cross-domain lifecycle caller
+
+Phase 7G 在 current
+`origin/master@86503ba5386c9eacf7de5e4a098e944bebb1f6d2` 上迁移 Admin mixin 最后两个
+facade 入口：`get_admin_account` 与 `get_admin_account_quota_summary`。审计确认两者共同
+调用的 reconciliation 不是纯查询：它可能激活 SubscriptionOrder、执行到期 free
+downgrade、终止 paid trial、恢复默认 Free Subscription、刷新 entitlement/billing
+snapshot、记录 service audit，并显式 flush/commit。因此本批不把它机械拆成松散查询，
+而是新增有界的 `CommercialSubscriptionLifecycleRepository`，明确组合 Account/Site、
+Plan、Subscription、SubscriptionOrder、Trial/Entitlement、Payment、Usage、Billing 与
+Service Audit 九个既有 owner，作为一个 subscription lifecycle transaction seam。
+
+该 lifecycle repository 只有 Session 初始化，不新增查询、写入或兼容转发方法；它不是
+第二个通用 facade。原 reconciliation 及下游 helper 的执行逻辑、顺序、flush/commit
+位置均不变，只把类型合同收窄到该事务 owner。Admin 的账户、站点、订阅、Plan、Usage、
+Credit、Decision、Site API Key、Runtime Knowledge、Identity 与 Access 查询继续使用各自
+显式 repository。quota 中 paid-credit backfill 仍在同一 Session，并由 Credit repository
+持有；plan lookup、budget decision count 与 runtime knowledge 也分别归还真实 owner。
+
+迁移前 architecture characterization 为 5 passed、3 expected failed；迁移后为 8 passed。
+PaymentService、SubscriptionCommerce 与 Admin quota/credit 最窄事务调用图为 43 passed，
+只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy 286 个源文件无问题。
+production facade importer 从 8 降至 7，构造点从 85 降至 83，名称引用从 139 降至
+119，helper 注解从 54 降至 36。facade 本体从 60 行、16 个 bases 收缩为 36 行、8 个
+bases；lifecycle repository 为 40 行、9 个 bases 与唯一 `__init__`。上述数值均由 AST
+扫描核定。
+
+本批不修改 reconciliation 业务语义、repository 方法、API/schema/权限、数据库/迁移、
+Provider、Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-master
+M4 accepted 继续分层记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -2037,6 +2077,11 @@ Phase 7F 只允许恢复上述六个 Admin dashboard/credit 入口的 facade 构
 聚焦 retirement characterization。不得修改 repository 实现、credit/audit/commit 原子
 边界、账户 reconciliation、plan/quota helper、API/权限、数据，或把其他 commercial
 mixin 纳入回滚。
+
+Phase 7G 只允许恢复 Admin 最后两个 facade 构造、恢复 facade 的直接 repository bases、
+恢复 lifecycle 调用链的原类型注解，并移除 lifecycle repository 与本批聚焦
+characterization。不得修改 reconciliation/paid-credit/quota 业务语义、flush/commit
+位置、数据、API/权限，或把其他 production caller 纳入回滚。
 
 ## 19. 后续批次启动规则
 

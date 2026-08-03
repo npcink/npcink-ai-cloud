@@ -5,25 +5,32 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FACADE_PATH = ROOT / "app/adapters/repositories/commercial_repository.py"
+LIFECYCLE_REPOSITORY_PATH = (
+    ROOT / "app/adapters/repositories/commercial_subscription_lifecycle_repository.py"
+)
 AUDIT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_audit_mixin.py"
 SUPPORT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_support_mixin.py"
 ADMIN_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_admin_mixin.py"
 
 ALLOWED_FACADE_BASES = {
     "CommercialAccessRepository",
-    "CommercialAccountSiteRepository",
-    "CommercialBillingRepository",
     "CommercialCreditRepository",
     "CommercialDecisionRepository",
     "CommercialIdentityRepository",
+    "CommercialRuntimeKnowledgeQueries",
+    "CommercialSiteApiKeyRepository",
+    "CommercialSubscriptionLifecycleRepository",
+    "CommercialSupportRepository",
+}
+
+LIFECYCLE_REPOSITORY_BASES = {
+    "CommercialAccountSiteRepository",
+    "CommercialBillingRepository",
     "CommercialPaymentRepository",
     "CommercialPlanRepository",
-    "CommercialRuntimeKnowledgeQueries",
     "CommercialServiceAuditRepository",
-    "CommercialSiteApiKeyRepository",
     "CommercialSubscriptionOrderRepository",
     "CommercialSubscriptionRepository",
-    "CommercialSupportRepository",
     "CommercialTrialEntitlementRepository",
     "CommercialUsageRepository",
 }
@@ -92,6 +99,23 @@ def test_commercial_repository_facade_cannot_regain_business_responsibilities() 
     }
     assert own_methods == {"__init__"}
     assert {ast.unparse(base) for base in facade.bases} == ALLOWED_FACADE_BASES
+
+
+def test_subscription_lifecycle_repository_has_bounded_transaction_owners() -> None:
+    tree = _tree(LIFECYCLE_REPOSITORY_PATH)
+    repository = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "CommercialSubscriptionLifecycleRepository"
+    )
+    own_methods = {
+        node.name
+        for node in repository.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    assert own_methods == {"__init__"}
+    assert {ast.unparse(base) for base in repository.bases} == LIFECYCLE_REPOSITORY_BASES
 
 
 def test_commercial_repository_production_dependency_can_only_shrink() -> None:
@@ -267,6 +291,49 @@ def test_admin_dashboard_flows_use_explicit_domain_repositories() -> None:
         "CommercialIdentityRepository",
         "CommercialServiceAuditRepository",
         "CommercialSiteApiKeyRepository",
+        "CommercialSubscriptionRepository",
+        "CommercialUsageRepository",
+    }
+    imported_names = {
+        name.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for name in node.names
+    }
+    assert expected_repositories <= imported_names
+
+
+def test_admin_cross_domain_flows_use_explicit_transaction_and_query_owners() -> None:
+    tree = _tree(ADMIN_MIXIN_PATH)
+    assert not _imports_facade(tree)
+
+    selected_methods = {
+        "get_admin_account",
+        "get_admin_account_quota_summary",
+    }
+    methods = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name in selected_methods
+    }
+    assert methods.keys() == selected_methods
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "CommercialRepository"
+        for method in methods.values()
+        for node in ast.walk(method)
+    )
+
+    expected_repositories = {
+        "CommercialAccessRepository",
+        "CommercialAccountSiteRepository",
+        "CommercialCreditRepository",
+        "CommercialDecisionRepository",
+        "CommercialIdentityRepository",
+        "CommercialPlanRepository",
+        "CommercialRuntimeKnowledgeQueries",
+        "CommercialSiteApiKeyRepository",
+        "CommercialSubscriptionLifecycleRepository",
         "CommercialSubscriptionRepository",
         "CommercialUsageRepository",
     }

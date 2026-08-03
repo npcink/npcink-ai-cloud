@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from app.adapters.repositories.commercial_credit_repository import CommercialCreditRepository
 from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.core.db import get_session
 from app.core.models import (
@@ -1507,7 +1508,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
 
     def _ensure_paid_credit_grants_from_ledger_in_session(
         self,
-        repository: CommercialRepository,
+        repository: CommercialCreditRepository,
         *,
         account_id: str,
     ) -> None:
@@ -1572,7 +1573,7 @@ class CommercialServicePaymentMixin(CommercialServiceAuditMixin):
 
     def _paid_credit_balance_in_session(
         self,
-        repository: CommercialRepository,
+        repository: CommercialCreditRepository,
         *,
         account_id: str,
         now: datetime,
