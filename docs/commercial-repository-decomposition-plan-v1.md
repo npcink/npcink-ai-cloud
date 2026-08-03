@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7F M4 accepted；Phase 7G local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7G M4 accepted；Phase 7H local verified
 
 日期：2026-08-03
 
@@ -1951,6 +1951,41 @@ bases；lifecycle repository 为 40 行、9 个 bases 与唯一 `__init__`。上
 Provider、Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-master
 M4 accepted 继续分层记录。
 
+Phase 7G 随后由 PR #497 squash merge 为
+`be26bce244b77d00857ba18439a0313ce5b8b4fd`；required `backend-targeted`
+为 6 分 48 秒通过，且无有效 review 变更请求。clean current `origin/master`
+source-only promotion 显示 `acceptance_state=accepted`、`promotion_pr=497`、
+`source_branch=master`、`source_dirty=false`，accepted source bundle 为
+`97757fc9878c3ed548f86f9efbee3cd19ae0a4bd37dd031c5e881ceed8e40ffd`；
+post-merge lifecycle smoke 为 11 passed，只有既有 Starlette deprecation warning。
+Cloud lane、shared M4 与 task worktree lock 均已释放。
+
+### 17.44 Phase 7H Account caller
+
+Phase 7H 在 current
+`origin/master@be26bce244b77d00857ba18439a0313ce5b8b4fd` 上迁移 Account mixin 的
+五个 facade 构造：`upsert_account`、`set_account_status`、
+`upsert_account_subscription`、`suspend_account_subscription` 与
+`cancel_account_subscription`，并把 `_upsert_account_subscription_in_session`、
+`_assert_account_site_capacity` helper 注解收窄到 lifecycle transaction repository。
+
+`upsert_account` 在同一 SQLAlchemy Session 内分别使用 Account/Site、Identity、Access、
+Subscription Lifecycle 与 Service Audit owner；账户行锁、identity `for_update`、单一
+membership 约束、默认 Free 绑定、audit 与最终 commit 顺序不变。账户状态修改使用
+Account/Site + Service Audit；subscription upsert 使用 lifecycle transaction seam；
+suspend/cancel 使用 Subscription + Service Audit。所有 mutation 仍由原 model/repository
+执行，未增加 flush、commit 或锁。
+
+迁移前 retirement characterization 为 8 passed、1 expected failed；迁移后为 9 passed。
+Account service、identity membership limit、default Free 与 billing snapshot 最窄 API
+调用图共 15 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy
+286 个源文件无问题。production facade importer 从 7 降至 6，构造点从 83 降至 78，
+名称引用从 119 降至 112，helper 注解从 36 降至 34，均由 AST 扫描核定。
+
+本批不修改 SubscriptionCommerce、repository 方法、业务状态、API/schema/权限、数据库、
+Provider、Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-master
+M4 accepted 继续分层记录。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -2082,6 +2117,10 @@ Phase 7G 只允许恢复 Admin 最后两个 facade 构造、恢复 facade 的直
 恢复 lifecycle 调用链的原类型注解，并移除 lifecycle repository 与本批聚焦
 characterization。不得修改 reconciliation/paid-credit/quota 业务语义、flush/commit
 位置、数据、API/权限，或把其他 production caller 纳入回滚。
+
+Phase 7H 只允许恢复 Account mixin 的五个 facade 构造与两个 helper 注解，并移除本批
+聚焦 characterization。不得修改账户锁、identity/membership、subscription lifecycle、
+audit/commit 语义、数据、API/权限，或把 SubscriptionCommerce 纳入回滚。
 
 ## 19. 后续批次启动规则
 
