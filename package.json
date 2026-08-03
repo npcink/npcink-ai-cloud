@@ -22,6 +22,8 @@
     "check:release-policy": "bash scripts/check-release-policy.sh",
     "test:pr-body-contract": "python3 scripts/test-pr-body-contract.py",
     "check:pr-backend": "bash scripts/check-pr-backend-gate.sh",
+    "check:changed": "python3 scripts/check_changed.py",
+    "worktree:audit": "python3 scripts/audit_worktrees.py",
     "pr:publish": "bash scripts/publish-pr.sh",
     "check:seam": "pnpm run test:api && pnpm run check:perimeter",
     "check:perimeter": "make perimeter",

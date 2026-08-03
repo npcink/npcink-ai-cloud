@@ -3,9 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLOUD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PYTHON_BIN="${NPCINK_CLOUD_PYTHON_BIN:-${CLOUD_DIR}/.venv/bin/python}"
 
-if [ ! -x "${CLOUD_DIR}/.venv/bin/python" ]; then
-	echo "[fail] Missing ${CLOUD_DIR}/.venv/bin/python. Run 'make bootstrap-dev' first." >&2
+if [ ! -x "${PYTHON_BIN}" ]; then
+	echo "[fail] Missing Python environment: ${PYTHON_BIN}. Run 'make bootstrap-dev' first or set NPCINK_CLOUD_PYTHON_BIN." >&2
 	exit 1
 fi
 
@@ -64,7 +65,7 @@ EOF
 cd "${CLOUD_DIR}"
 
 echo "[run] mypy targeted files with an isolated config"
-"${CLOUD_DIR}/.venv/bin/python" -m mypy \
+"${PYTHON_BIN}" -m mypy \
 	--config-file "${tmp_config}" \
 	--follow-imports=skip \
 	"${targets[@]}"

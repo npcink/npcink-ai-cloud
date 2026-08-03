@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLOUD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="${CLOUD_DIR}"
 BASE_REF="${NPCINK_CLOUD_CHANGED_BASE_REF:-origin/master}"
+PYTHON_BIN="${NPCINK_CLOUD_PYTHON_BIN:-${CLOUD_DIR}/.venv/bin/python}"
 
 TMP_PATHS="$(mktemp)"
 trap 'rm -f "${TMP_PATHS}"' EXIT
@@ -91,8 +92,8 @@ fi
 
 sort -u "${TMP_PATHS}" -o "${TMP_PATHS}"
 
-if [ ! -x "${CLOUD_DIR}/.venv/bin/python" ]; then
-	echo "[fail] Missing ${CLOUD_DIR}/.venv/bin/python. Run 'make bootstrap-dev' first." >&2
+if [ ! -x "${PYTHON_BIN}" ]; then
+	echo "[fail] Missing Python environment: ${PYTHON_BIN}. Run 'make bootstrap-dev' first or set NPCINK_CLOUD_PYTHON_BIN." >&2
 	exit 1
 fi
 
@@ -115,7 +116,7 @@ echo "[info] Changed cloud Python files:"
 sed 's/^/ - /' "${TMP_PATHS}"
 
 echo "[run] ruff check changed files (correctness/import subset)"
-"${CLOUD_DIR}/.venv/bin/python" -m ruff check --select I,F,E9 "${ruff_targets[@]}"
+"${PYTHON_BIN}" -m ruff check --select I,F,E9 "${ruff_targets[@]}"
 
 if [ "${#mypy_targets[@]}" -eq 0 ]; then
 	echo "[ok] No changed cloud app Python files detected for mypy."
@@ -123,4 +124,4 @@ if [ "${#mypy_targets[@]}" -eq 0 ]; then
 fi
 
 echo "[run] mypy targeted changed app files"
-bash "${CLOUD_DIR}/scripts/mypy-targeted.sh" "${mypy_targets[@]}"
+NPCINK_CLOUD_PYTHON_BIN="${PYTHON_BIN}" bash "${CLOUD_DIR}/scripts/mypy-targeted.sh" "${mypy_targets[@]}"

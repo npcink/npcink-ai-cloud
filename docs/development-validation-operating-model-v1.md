@@ -78,23 +78,24 @@ Before editing:
 3. fetch `origin` when the current integration baseline matters;
 4. preserve all existing user changes;
 5. create a clean `codex/*` worktree from current `origin/master` when the
-   active checkout is dirty, stale, or on unrelated work;
+   active checkout is dirty, stale, or on unrelated work; otherwise reuse the
+   clean current task worktree;
 6. immediately lock any auxiliary worktree created by the session with
    `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
    verify its reason in `git worktree list --porcelain`;
 7. state the change envelope before modifying files.
 
-The change envelope records:
+The default change envelope records:
 
 - focused repository and module;
 - intended outcome;
 - explicit non-goals;
 - public contracts touched;
-- expected and forbidden files;
-- environments and external systems that must not change;
-- narrow and integration gates;
-- cross-repository matrix requirement;
-- rollback.
+- expected files;
+- verification and rollback.
+
+Add forbidden files, external systems, cross-repository matrix requirements,
+or environment restrictions only when the task actually touches those seams.
 
 For `pnpm run check:anti-drift`, contract selection is deterministic:
 
@@ -114,13 +115,15 @@ Never obtain a clean tree by resetting, stashing, checking out over, or broadly
 staging user work. A clean focused worktree is cheaper than reconstructing
 ownership after unrelated changes are mixed.
 
-The worktree lock is a lifecycle guard, not a substitute for conflict-domain,
-merge-lane, or shared-runtime ownership. Keep it through implementation,
-review, and merge. Unlock only after the task has ended, the PR is confirmed
-merged, and the worktree is clean. No-deliverable closeout, handoff, and
-stale-lock recovery follow
-[Parallel AI Collaboration Standard Section 4.1](parallel-ai-collaboration-standard-v1.md#41-task-worktree-lifecycle-lock);
-path names and modification times are not cleanup authority.
+The worktree lock is a lifecycle guard against accidental automation or
+operator cleanup. Keep it through implementation, review, and merge. Unlock
+only after the task has ended, the PR is confirmed merged, and the worktree is
+clean. No-deliverable closeout and stale-lock recovery follow the
+[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md);
+path names and modification times are not cleanup authority. Explicit parallel
+handoffs add the rules in the parallel collaboration standard.
+The default topology and read-only audit command are defined in
+[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md).
 
 ## 4. Select the Smallest Valid Development Lane
 
@@ -152,17 +155,15 @@ discovery in a large Python and TypeScript repository. It remains advisory:
 6. Treat a missing, stale, or unavailable index as a navigation fallback, not
    a development blocker.
 
-For a frontend-only appearance change, an owned ephemeral slot may replace the
-primary `sync` checkpoint when it needs no mutation, dependency, API,
-migration, worker, persistence, proxy, or runtime-config change. The slot must
-attach to a clean accepted primary runtime and use its foreground loopback
-tunnel. This is a concurrency exception for rendering only, not a second
-integration stack.
+In explicitly enabled parallel mode, a frontend-only appearance change may use
+the bounded ephemeral-slot exception defined by the M4 standard. Single-session
+work uses its focused local/browser lane and the primary M4 lane only when its
+declared risk requires M4.
 
 ### Appearance-only preview-first lane
 
 The authoritative L0/L1/L2 classification, upward-reclassification triggers,
-parallel-session rules, and preview-versus-closeout receipts are defined in
+and preview-versus-closeout receipts are defined in
 [AI Development Validation Tiers v1](ai-development-validation-tiers-v1.md).
 The guidance below explains the appearance-only application of that standard.
 
@@ -226,9 +227,10 @@ discover whether the feature works in the real integration runtime. Candidate
 validation is intentionally before merge; accepted promotion is intentionally
 after merge.
 
-### Parallel builder and integrator variation
+### Optional parallel builder and integrator variation
 
-When the operator declares a multi-session queue, split this loop at the
+Only when the operator explicitly declares a multi-session queue, split this
+loop at the
 `local-ready` boundary:
 
 1. each builder performs steps 1-4 in one owned conflict domain, inspects and
@@ -284,6 +286,17 @@ The inner loop and the acceptance loop answer different questions:
 4. post-merge promotion answers whether visible M4 runtime source equals clean
    reviewed `master`;
 5. a full M4 suite answers an additional M4-specific high-risk question.
+
+Use the local changed-file router when the correct first gate is not obvious:
+
+```bash
+pnpm run check:changed -- --plan
+pnpm run check:changed
+```
+
+The plan is read-only. Execution runs only local focused gates; it reports M4
+sync/deploy and browser work as explicit follow-ups and never mutates M4,
+production, Cloudflare, Provider budgets, or external systems automatically.
 
 The normal bug-fix target is:
 
@@ -472,9 +485,15 @@ formatting, and protected docs-only CI instead.
 
 ## 13. Development-Stage Closeout
 
-Task completion and development-stage completion are different scopes. One
-task may be merged and accepted while later batches still own the merge queue,
-shared M4, or a declared conflict domain.
+Task completion and development-stage completion are different scopes. In the
+default single-session mode, a stage closes after its admitted tasks are
+merged or explicitly withdrawn, required clean-master M4 acceptance is
+complete, no stage candidate remains active, and remaining work or rollback is
+recorded.
+
+When the operator explicitly declares a multi-session queue, the additional
+ownership, double-release, scheduling, and release-handoff rules are normative
+in [Parallel AI Collaboration Standard Section 11](parallel-ai-collaboration-standard-v1.md#11-development-stage-closeout-and-release-handoff).
 
 Before declaring a development stage closed:
 
@@ -483,14 +502,11 @@ Before declaring a development stage closed:
    later stage;
 3. confirm clean-current-`master` M4 acceptance where required;
 4. confirm that no stage candidate remains active;
-5. obtain explicit release of both the human Cloud merge lane and shared M4;
-6. record local-only candidates, retained worktrees, blockers, rollback, and
-   next owners;
-7. record the operator decision that selects the next queue.
+5. record local-only candidates, retained worktrees, blockers, rollback, and
+   next work;
+6. record the operator decision that selects the next priority.
 
 If the next queue is controlled production validation, create a durable
 handoff but do not treat that record as deployment authorization. Freeze the
 exact candidate only after the stage-close conditions hold, then follow the
-current production release policy and checklist. The full ownership,
-double-release, scheduling, and release-handoff rules are normative in
-[Parallel AI Collaboration Standard Section 11](parallel-ai-collaboration-standard-v1.md#11-development-stage-closeout-and-release-handoff).
+current production release policy and checklist.

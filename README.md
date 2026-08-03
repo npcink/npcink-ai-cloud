@@ -37,7 +37,8 @@ evidence.
 Start with:
 
 - [Development and Validation Operating Model](docs/development-validation-operating-model-v1.md)
-- [Parallel AI Collaboration Standard](docs/parallel-ai-collaboration-standard-v1.md)
+- [Single-Session Worktree Lifecycle](docs/single-session-worktree-lifecycle-v1.md)
+- [Parallel AI Collaboration Standard](docs/parallel-ai-collaboration-standard-v1.md) — read only when the operator explicitly enables multi-session work
 - [Cloud Content Generation Boundary](docs/cloud-content-generation-boundary-v1.md)
 - [Cloud Production Release Policy](docs/cloud-production-release-policy-v1.md)
 - [M4 Preview AI Development Standard](docs/m4-preview-ai-development-standard-v1.md)
@@ -136,9 +137,9 @@ Every development session starts by:
 2. reading `AGENTS.md`, this README, the development operating model, and the
    relevant boundary document;
 3. refreshing `origin/master` when the integration baseline matters;
-4. inspecting active task, worktree, PR, merge-lane, and M4 ownership;
-5. using a clean locked `codex/*` worktree when the visible checkout is dirty,
-   stale, or owned by another task;
+4. using the current worktree when it is clean and current, otherwise using
+   one clean locked `codex/*` task worktree;
+5. inspecting shared M4 state before a mutating M4 operation;
 6. declaring a compact change envelope before editing.
 
 Use the narrowest validation lane that answers the changed seam:
@@ -148,13 +149,16 @@ Use the narrowest validation lane that answers the changed seam:
 | Documentation/policy | links, formatting, focused policy contract | no M4 by default |
 | Backend contract/domain | focused pytest, Ruff, mypy | source-only M4 sync when runtime behavior changes |
 | API/auth/perimeter | focused API tests plus `check:perimeter` | focused M4 consumer proof |
-| Frontend/Admin | type-check, targeted lint, UI contracts | browser gate; M4 slot or primary lane by risk |
+| Frontend/Admin | type-check, targeted lint, UI contracts | browser gate; M4 only when the declared risk requires it |
 | Dependency/Docker/Compose/deploy | focused contract and release checks | M4 deploy only when fingerprint requires it |
 | CI-only | focused script/contract replay | GitHub Actions is the runtime |
 
 Common commands:
 
 ```bash
+pnpm run check:changed -- --plan
+pnpm run check:changed
+pnpm run worktree:audit
 pnpm run test:contract
 pnpm run test:domain
 pnpm run test:api
@@ -197,9 +201,10 @@ pnpm run m4:preview:status
 pnpm run m4:preview:promote -- --pr <merged-pr-number>
 ```
 
-Do not overwrite another candidate, seize locks, recover/retry/fallback without
-authority, silently substitute local Docker, or report a direct sync as
-accepted source.
+Do not seize operation locks, recover/retry/fallback without authority,
+silently substitute local Docker, or report a direct sync as accepted source.
+When the operator explicitly enables multiple sessions, also apply the
+parallel collaboration standard before sharing M4 or the protected merge lane.
 
 Key M4 decisions and measurements remain directly discoverable:
 

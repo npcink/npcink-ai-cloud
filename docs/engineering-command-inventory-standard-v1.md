@@ -114,9 +114,15 @@ python3 scripts/check_engineering_command_inventory.py
 After the reviewed legacy Mini Preview removal on 2026-08-03, the inventory
 contains:
 
-- root package: 107 commands;
+- root package: 109 commands;
 - frontend package: 31 commands;
-- total: 138 commands.
+- total: 140 commands.
+
+`check:changed` is the single-session local gate router. It classifies the
+current diff, runs only focused local checks, and reports browser or M4 work as
+follow-up evidence rather than mutating shared or external systems.
+`worktree:audit` inventories registered worktrees without unlocking, pruning,
+removing, or changing them.
 
 The nine legacy remote-Mac-mini preview aliases and their four dedicated
 scripts were removed after repository search and operator review found no

@@ -6,10 +6,10 @@ Every AI development session should start with:
 
 1. Run `git status --short --branch`.
 2. Read `README.md`.
-3. Read `docs/parallel-ai-collaboration-standard-v1.md`. When another session
-   may be active, inspect worktrees, open human PRs, and available task
-   ownership, then report the session role, conflict-domain owner, merge-lane
-   intent, and shared-runtime intent before editing.
+3. Assume one active AI development session unless the operator explicitly
+   declares a multi-session queue. Only in that declared mode, read
+   `docs/parallel-ai-collaboration-standard-v1.md` and report its coordination
+   declaration before editing.
 4. For feature, bug-fix, M4, or CI work, read
    `docs/development-validation-operating-model-v1.md` and
    `docs/ai-development-validation-tiers-v1.md`. Classify the change as L0,
@@ -46,21 +46,16 @@ prompt/router/preset local truth, or WordPress write owner.
 
 ## AI Development Rules
 
-- Write a compact change envelope before editing: target repositories, focused
-  module, intended change, explicit non-goals, public contracts touched,
-  expected files, files or areas that must not change, required gates,
-  cross-repo matrix requirement, and rollback plan.
-- When sessions run in parallel, follow the Three Uniques in
+- Write a compact change envelope before editing: focused module, intended
+  outcome, explicit non-goals, public contracts touched, expected files, and
+  verification plus rollback. Add external-system, cross-repository, or
+  forbidden-file detail only when the task actually touches those seams.
+- When the operator explicitly declares sessions to be running in parallel,
+  follow the Three Uniques in
   `docs/parallel-ai-collaboration-standard-v1.md`: one implementation owner per
   conflict domain, one human-authored PR in the protected merge lane, and one
   shared-runtime operation owner. Parallel investigation and disjoint local
   work remain allowed.
-- In an operator-declared multi-session queue, builders stop at a clean,
-  committed `local-ready` receipt. The single integrator admits at most one
-  item to the merge lane and keeps at most two additional accepted ready items
-  waiting. Builders do not publish merge-ready PRs, request auto-merge, mutate
-  M4, or chase `master` after handoff; follow Section 3.1 of the parallel
-  collaboration standard.
 - Whenever an AI session creates an auxiliary linked worktree, it must
   immediately run
   `git worktree lock --reason "codex:<task-id>" <absolute-worktree-path>` and
@@ -69,7 +64,12 @@ prompt/router/preset local truth, or WordPress write owner.
   review, or merge is still open. Unlock it only after the task has ended, its
   PR is confirmed merged, and the worktree is clean, subject to the
   no-deliverable and recovery rules in
-  `docs/parallel-ai-collaboration-standard-v1.md`.
+  `docs/single-session-worktree-lifecycle-v1.md`.
+- In the default single-session mode, prefer one clean development worktree,
+  the stable M4 operations worktree, and at most one auxiliary AI task
+  worktree. Use `pnpm run worktree:audit` for read-only inventory and follow
+  `docs/single-session-worktree-lifecycle-v1.md`; never treat an audit candidate
+  as deletion authorization.
 - Keep changes scoped to one module per session.
 - Before staging, inspect `git status --short --branch` and `git diff --stat`.
   Stage only files changed for the current task. Do not use `git add -A` in a
@@ -84,8 +84,7 @@ prompt/router/preset local truth, or WordPress write owner.
   into Cloud:
   `composer quality:matrix` for status and `composer quality:matrix:run` before
   cross-repo closeout.
-- Except for a builder stopping at `local-ready`, publish a completed clean
-  topic branch with
+- Publish a completed clean topic branch with
   `pnpm run pr:publish -- --title "<title>" --body-file <path>`. Start the body
   from `.github/pull_request_template.md`; do not replace it with ad hoc
   `gh pr create --body` text that omits `Scope`, `Boundary`, `Verification`, or
@@ -205,10 +204,8 @@ whitespace or quiet solid dividers as defined by
 - A user-authorized Cloud source or build/runtime task also authorizes the
   corresponding candidate preview action. After a coherent task checkpoint
   and the narrowest useful local source/static gate, run `m4:preview:sync` or
-  `m4:preview:deploy` without waiting for the user to ask again. In a declared
-  multi-session queue, the integrator schedules and runs that authorized
-  checkpoint after accepting the builder's `local-ready` receipt; the builder
-  records the runtime need and does not seize the shared runtime.
+  `m4:preview:deploy` without waiting for the user to ask again. A declared
+  multi-session queue follows the separate parallel standard instead.
 - Automatic checkpoint dispatch means an explicit agent action in the active
   task. Do not add per-save watchers, background daemons, Git hooks, or
   GitHub-hosted M4 deployment credentials. Batch related edits into a coherent

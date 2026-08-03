@@ -1,17 +1,28 @@
 # Parallel AI Collaboration Standard v1
 
-Status: active repository policy.
+Status: active conditional repository policy.
 
 Purpose: allow several AI sessions to investigate and implement independent
 Cloud work without mixing source ownership, repeatedly invalidating protected
 merge checks, or overwriting the shared M4 candidate. This standard applies
-whenever two or more human or AI sessions are active against this repository.
+only when the operator explicitly declares that two or more human or AI
+development sessions are active against this repository. Mere existence of
+old worktrees, open PRs, scheduled cleanup, or read-only observers does not
+enable parallel mode.
 The task-worktree lifecycle rule in Section 4.1 also applies when a single AI
 session creates an auxiliary linked worktree.
 
 This document governs coordination only. It does not change Cloud product
 ownership, GitHub branch protection, M4 acceptance authority, production
 approval, or the requirement to preserve user work.
+
+The default single-session workflow is owned by
+[Development and Validation Operating Model](development-validation-operating-model-v1.md).
+Single-session work does not declare builder/integrator roles, conflict-domain
+ownership, a merge queue, `local-ready`, or frontend-slot ownership. Shared
+runtime operation locks and auxiliary-worktree lifecycle locks still apply
+because they protect system state from automation and operator actions rather
+than only from peer AI sessions.
 
 ## 1. The Three Uniques
 

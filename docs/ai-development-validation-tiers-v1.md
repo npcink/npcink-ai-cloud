@@ -2,7 +2,7 @@
 
 Status: active engineering standard.
 
-Purpose: give human operators and parallel AI sessions one fast, risk-based
+Purpose: give human operators and AI development sessions one fast, risk-based
 answer to three questions:
 
 1. how soon a change may be shown for feedback;
@@ -38,7 +38,7 @@ before editing the higher-risk seam.
 | Tier | Typical scope | Preview gate | Closeout gate |
 | --- | --- | --- | --- |
 | **L0: appearance only** | copy, color, icon, local spacing, or other presentation that does not change layout geometry, actions, state, interaction, shared primitives, or runtime inputs | exact source/static check plus one target-route PC browser check | relevant source contract and required PR checks; no M4 by default |
-| **L1: route composition** | page layout, fold/disclosure, filter presentation, column visibility/order, action placement, responsive composition, or route-local interaction | focused route contract/behavior check plus focused PC browser receipt; an owned frontend slot is preferred when a shared runtime is needed | `check:admin-ui` for Admin work, relevant focused interaction test, required PR checks, and the complete visual matrix once only when the changed seam requires it |
+| **L1: route composition** | page layout, fold/disclosure, filter presentation, column visibility/order, action placement, responsive composition, or route-local interaction | focused route contract/behavior check plus focused PC browser receipt | `check:admin-ui` for Admin work, relevant focused interaction test, required PR checks, and the complete visual matrix once only when the changed seam requires it |
 | **L2: shared or runtime-sensitive** | API/data semantics, auth, credentials, destructive behavior, shared primitives/tokens, dependencies, persistence, migration, worker, proxy, Compose, Dockerfile, deployment scripts, or runtime configuration | focused source/contract evidence, then the appropriate isolated candidate runtime | full relevant chain, candidate M4 where in scope, required PR checks, merge, clean-master promotion, status, and relevant smoke |
 
 The older Admin labels map as follows: `low` is L0, `material` route layout is
@@ -102,9 +102,12 @@ Stop the current lane and reclassify as soon as any of these appears:
 Reclassification is not failure. It prevents an initially small task from
 silently bypassing the controls required by its actual diff.
 
-## 4. Parallel AI Sessions
+## 4. Optional Parallel AI Sessions
 
-For three to five simultaneous AI sessions:
+The default repository mode is one active AI development session. Only when
+the operator explicitly declares a multi-session queue, follow the
+[Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md).
+In that mode:
 
 1. each builder owns one conflict domain and stops at a clean, committed
    `local-ready` receipt;
@@ -122,19 +125,21 @@ integration and shared runtime mutation intentionally serial.
 
 ## 5. Evidence Receipts
 
-Every handoff or completion report records:
+Every completion report records:
 
 - tier and the reason for that tier;
 - exact source revision and worktree cleanliness;
-- changed conflict domain and named files;
+- changed module and named files;
 - preview evidence, if any, with route, viewport, and observed state;
 - gates run, exact result, and intentionally omitted gates;
-- highest evidence state actually reached: `local verified`, `local-ready`,
-  `candidate validated on M4`, `PR verified`, `merged into master`,
+- highest evidence state actually reached: `local verified`, `candidate validated on M4`,
+  `PR verified`, `merged into master`,
   `accepted on M4`, or `production validated`;
-- owner and release state for the PR lane, primary M4 lane, frontend slot, and
-  tunnel when used;
+- M4 or tunnel state when either was used;
 - rollback.
+
+Parallel-only handoffs add the owner, `local-ready`, merge-lane, runtime-lane,
+and frontend-slot fields required by the parallel standard.
 
 HTTP `200`, a screenshot, a pushed branch, merged source, M4 acceptance,
 production deployment, and human approval are never interchangeable.
