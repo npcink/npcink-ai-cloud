@@ -1,0 +1,25 @@
+{
+  "version": "cloud-anti-drift-default-contract-v1",
+  "change_classification": "cloud detail",
+  "truth_owner": "npcink-ai-cloud hosted runtime and bounded operator/customer surfaces",
+  "final_write_owner": "wordpress_local",
+  "fail_closed_expectation": "Cloud changes must preserve the documented WordPress/local truth boundary, reject incomplete or ambiguous authority, and avoid introducing a second control plane or final-write owner",
+  "human_review_required": true,
+  "required_docs": [
+    "README.md",
+    "docs/cloud-content-generation-boundary-v1.md",
+    "docs/cloud-task-pack-boundary-v1.md",
+    "docs/cloud-agent-workflow-metadata-projection-v1.md",
+    "docs/cloud-agent-feedback-quality-gate-v1.md",
+    "docs/cloud-production-release-policy-v1.md"
+  ],
+  "required_gates": [
+    "pnpm run check:anti-drift",
+    "pnpm run check:perimeter",
+    "pnpm run check:release-policy",
+    "pnpm run check:fast",
+    "pnpm run smoke:local-alpha",
+    "pnpm run check:risk"
+  ],
+  "description": "Repository-wide anti-drift baseline used only when no active root task-contract-*.json is present. A task-specific contract may override this baseline through --contract or a single root task contract."
+}

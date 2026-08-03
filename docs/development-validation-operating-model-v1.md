@@ -96,6 +96,20 @@ The change envelope records:
 - cross-repository matrix requirement;
 - rollback.
 
+For `pnpm run check:anti-drift`, contract selection is deterministic:
+
+1. `--contract <path>` selects an explicit task contract;
+2. otherwise, exactly one root `task-contract-*.json` selects the active task
+   contract;
+3. with no root task contract, the checker uses
+   `config/cloud-anti-drift-default-contract-v1.json`;
+4. multiple root task contracts are ambiguous and fail closed until the caller
+   passes `--contract` or archives completed contracts under `docs/history/`.
+
+The default contract is the repository-wide boundary baseline. A dated task
+contract is a temporary change envelope and must not remain at the repository
+root after that task closes.
+
 Never obtain a clean tree by resetting, stashing, checking out over, or broadly
 staging user work. A clean focused worktree is cheaper than reconstructing
 ownership after unrelated changes are mixed.
