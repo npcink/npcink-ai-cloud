@@ -5,7 +5,10 @@ const assert = require( 'assert' );
 const fs = require( 'fs' );
 const path = require( 'path' );
 
-const { checkCloudAntiDrift } = require( './check-cloud-anti-drift.js' );
+const {
+	checkCloudAntiDrift,
+	selectDiscoveredContractPath,
+} = require( './check-cloud-anti-drift.js' );
 
 const cloudRoot = path.resolve( __dirname, '..' );
 const tempRoot = path.join( cloudRoot, '.tmp', 'anti-drift-test' );
@@ -49,6 +52,26 @@ function hasViolations( result ) {
 }
 
 try {
+	assert.strictEqual(
+		selectDiscoveredContractPath( [ 'README.md', 'package.json' ] ),
+		path.join( cloudRoot, 'config', 'cloud-anti-drift-default-contract-v1.json' )
+	);
+	assert.strictEqual(
+		selectDiscoveredContractPath( [
+			'README.md',
+			'task-contract-current-work.json',
+		] ),
+		path.join( cloudRoot, 'task-contract-current-work.json' )
+	);
+	assert.throws(
+		() =>
+			selectDiscoveredContractPath( [
+				'task-contract-a.json',
+				'task-contract-b.json',
+			] ),
+		/Multiple root task contracts found.*pass --contract/u
+	);
+
 	writeFile(
 		contractPath,
 		JSON.stringify(
@@ -75,6 +98,10 @@ try {
 		files: [ relativeToCloudRoot( hardcodedAdminFile ) ],
 	} );
 	assert.strictEqual( hardcodedResult.is_cloud_task, true );
+	assert.strictEqual(
+		hardcodedResult.contract_path,
+		relativeToCloudRoot( contractPath )
+	);
 	assert.match(
 		hardcodedResult.violations.metadata_projection_hardcoding.join( '\n' ),
 		/internal_ops_advisor_agent/u
@@ -104,7 +131,36 @@ try {
 	} );
 	assert.strictEqual( hasViolations( testResult ), false );
 
-	console.log( '[ok] cloud anti-drift metadata projection tests passed.' );
+	const defaultContractResult = checkCloudAntiDrift( {
+		contractPath: '',
+		files: [ 'scripts/check-cloud-anti-drift.js' ],
+	} );
+	assert.strictEqual(
+		defaultContractResult.contract_path,
+		'config/cloud-anti-drift-default-contract-v1.json'
+	);
+	assert.strictEqual( hasViolations( defaultContractResult ), false );
+	const defaultExecutableResult = checkCloudAntiDrift( {
+		contractPath: '',
+		files: [ 'app/example.py', 'tests/example.py' ],
+	} );
+	assert.deepStrictEqual(
+		defaultExecutableResult.violations.missing_required_gates,
+		[]
+	);
+
+	const missingContractResult = checkCloudAntiDrift( {
+		contractPath: path.join( tempRoot, 'missing-task-contract.json' ),
+		files: [ 'README.md' ],
+	} );
+	assert.deepStrictEqual(
+		missingContractResult.violations.missing_contract_fields,
+		[ 'task_contract_required_for_cloud_changes' ]
+	);
+
+	console.log(
+		'[ok] cloud anti-drift contract discovery and metadata projection tests passed.'
+	);
 } finally {
 	fs.rmSync( path.dirname( hardcodedAdminFile ), { recursive: true, force: true } );
 	fs.rmSync( path.dirname( projectedPortalFile ), { recursive: true, force: true } );

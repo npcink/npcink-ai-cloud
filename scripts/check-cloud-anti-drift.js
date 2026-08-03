@@ -10,6 +10,11 @@ const manifestPath = path.join(
 	'config',
 	'cloud-anti-drift-high-risk-surfaces-v1.json'
 );
+const defaultContractPath = path.join(
+	cloudRoot,
+	'config',
+	'cloud-anti-drift-default-contract-v1.json'
+);
 const validChangeClassification = new Set( [
 	'local truth',
 	'cloud runtime',
@@ -251,20 +256,28 @@ function loadManifest() {
 	};
 }
 
-function discoverContractPath() {
-	try {
-		const entries = fs.readdirSync( workspaceRoot );
-		const candidates = entries.filter(
-			( entry ) =>
-				entry.startsWith( 'task-contract-' ) && entry.endsWith( '.json' )
-		);
-		if ( candidates.length === 1 ) {
-			return path.resolve( workspaceRoot, candidates[ 0 ] );
-		}
-	} catch {
-		// ignore
+function selectDiscoveredContractPath( entries ) {
+	const candidates = entries.filter(
+		( entry ) =>
+			entry.startsWith( 'task-contract-' ) && entry.endsWith( '.json' )
+	).sort();
+
+	if ( candidates.length === 0 ) {
+		return defaultContractPath;
 	}
-	return '';
+
+	if ( candidates.length === 1 ) {
+		return path.resolve( workspaceRoot, candidates[ 0 ] );
+	}
+
+	const candidateList = candidates.join( ', ' );
+	throw new Error(
+		`Multiple root task contracts found (${ candidateList }); pass --contract <path> explicitly.`
+	);
+}
+
+function discoverContractPath() {
+	return selectDiscoveredContractPath( fs.readdirSync( workspaceRoot ) );
 }
 
 function checkCloudAntiDrift( { contractPath, files } ) {
@@ -321,6 +334,9 @@ function checkCloudAntiDrift( { contractPath, files } ) {
 
 	const result = {
 		is_cloud_task: isCloudTask,
+		contract_path: absoluteContractPath
+			? toWorkspaceValue( absoluteContractPath )
+			: '',
 		changed_files: changedFiles,
 		violations: {
 			missing_contract_fields: [],
@@ -335,18 +351,19 @@ function checkCloudAntiDrift( { contractPath, files } ) {
 		notes: [],
 	};
 
-	if ( ! isCloudTask ) {
-		result.notes.push( 'No cloud task indicators detected; checker skipped.' );
-		return result;
-	}
-
 	if ( ! hasContract ) {
 		result.violations.missing_contract_fields.push(
 			'task_contract_required_for_cloud_changes'
 		);
+		const selectedPath = result.contract_path || 'unknown';
 		result.notes.push(
-			'Cloud-related changes were detected without a task contract; CI/PR should block this merge.'
+			`Selected anti-drift contract is missing: ${ selectedPath }; CI/PR should block this merge.`
 		);
+		return result;
+	}
+
+	if ( ! isCloudTask ) {
+		result.notes.push( 'No cloud task indicators detected; checker skipped.' );
 		return result;
 	}
 
@@ -458,11 +475,12 @@ function checkCloudAntiDrift( { contractPath, files } ) {
 
 	if (
 		touchesExecutableSeam &&
+		! contractRequiredGates.includes( 'pnpm run check:fast' ) &&
 		! contractRequiredGates.includes( 'pnpm run check:risk' ) &&
 		! contractRequiredGates.includes( 'pnpm run check:founder:heavy' )
 	) {
 		result.violations.missing_required_gates.push(
-			'pnpm run check:risk'
+			'pnpm run check:fast'
 		);
 	}
 
@@ -490,6 +508,9 @@ if ( require.main === module ) {
 
 	console.log(
 		`[cloud-anti-drift] cloud_task=${ result.is_cloud_task ? 'yes' : 'no' }`
+	);
+	console.log(
+		`[cloud-anti-drift] contract=${ result.contract_path || 'missing' }`
 	);
 
 	if ( ! result.is_cloud_task && ! hasViolations ) {
@@ -519,4 +540,5 @@ if ( require.main === module ) {
 
 module.exports = {
 	checkCloudAntiDrift,
+	selectDiscoveredContractPath,
 };
