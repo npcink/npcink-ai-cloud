@@ -8,7 +8,15 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_access_repository import (
+    CommercialAccessRepository,
+)
+from app.adapters.repositories.commercial_service_audit_repository import (
+    CommercialServiceAuditRepository,
+)
+from app.adapters.repositories.commercial_support_repository import (
+    CommercialSupportRepository,
+)
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_USER_MEMBERSHIP_STATUS_ACTIVE,
@@ -226,7 +234,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         profile = self.get_portal_principal_profile(principal_id=normalized_principal_id)
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.create_support_request(
                 request_id=f"sr_{uuid4().hex}",
                 account_id=normalized_account_id,
@@ -254,8 +262,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 activity_at=now,
             )
             payload = self._serialize_portal_support_request(request)
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.created",
                 outcome="succeeded",
@@ -293,7 +302,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         safe_limit = max(1, min(100, int(limit or 20)))
         safe_offset = max(0, int(offset or 0))
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             items = repository.list_support_requests(
                 account_id=normalized_account_id,
                 principal_id=normalized_principal_id,
@@ -334,7 +343,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_principal_id = str(principal_id or "").strip()
         normalized_account_id = str(account_id or "").strip()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if (
                 request is None
@@ -345,8 +354,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -393,7 +403,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         safe_offset = max(0, int(offset or 0))
         risk_as_of = datetime.now(UTC)
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             items = repository.list_support_requests(
                 status=normalized_status or None,
                 topic=normalized_topic or None,
@@ -435,7 +445,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         request_id: str,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -482,15 +492,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None or request.principal_id != normalized_principal_id:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -516,8 +527,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "request": self._serialize_portal_support_request(request),
                 "message": self._serialize_portal_support_request_message(message),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.message_created",
                 outcome="succeeded",
@@ -554,7 +566,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
             )
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -582,8 +594,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "request": self._serialize_support_request(request),
                 "message": self._serialize_support_request_message(message),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.message_created",
                 outcome="succeeded",
@@ -621,15 +634,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_message_id = str(message_id or "").strip()
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None or request.principal_id != normalized_principal_id:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -673,8 +687,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "request": self._serialize_portal_support_request(request),
                 "attachment": self._serialize_portal_support_request_attachment(attachment),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.attachment_created",
                 outcome="succeeded",
@@ -712,7 +727,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_message_id = str(message_id or "").strip()
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -747,8 +762,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "request": self._serialize_support_request(request),
                 "attachment": self._serialize_support_request_attachment(attachment),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.attachment_created",
                 outcome="succeeded",
@@ -777,7 +793,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
     ) -> dict[str, object]:
         normalized_principal_id = str(principal_id or "").strip()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
@@ -793,8 +809,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                     "service.support_request_attachment_not_found",
                     "support request attachment was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -812,7 +829,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         attachment_id: str,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             attachment = repository.get_support_request_attachment(
                 str(attachment_id or "").strip()
@@ -844,15 +861,16 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_comment = _trim_support_text(comment, max_length=2000)
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None or request.principal_id != normalized_principal_id:
                 raise CommercialNotFoundError(
                     "service.support_request_not_found",
                     "support request was not found",
                 )
+            access_repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
-                repository=repository,
+                repository=access_repository,
                 principal_id=normalized_principal_id,
                 account_id=str(request.account_id or ""),
             )
@@ -891,8 +909,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 "request": self._serialize_portal_support_request(request),
                 "feedback": self._serialize_portal_support_request_feedback(feedback),
             }
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.feedback_submitted",
                 outcome="succeeded",
@@ -924,7 +943,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         normalized_note = _trim_support_text(admin_note, max_length=2000)
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialSupportRepository(session)
             request = repository.get_support_request(str(request_id or "").strip())
             if request is None:
                 raise CommercialNotFoundError(
@@ -965,8 +984,9 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
                 )
             session.flush()
             payload = self._serialize_support_request(request)
+            audit_repository = CommercialServiceAuditRepository(session)
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="support_request.updated",
                 outcome="succeeded",
@@ -991,7 +1011,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
         account_id: str,
     ) -> None:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialAccessRepository(session)
             self._assert_portal_account_access_in_session(
                 repository=repository,
                 principal_id=principal_id,
@@ -1001,7 +1021,7 @@ class CommercialServiceSupportMixin(CommercialServiceAuditMixin):
     def _assert_portal_account_access_in_session(
         self,
         *,
-        repository: CommercialRepository,
+        repository: CommercialAccessRepository,
         principal_id: str,
         account_id: str,
     ) -> None:

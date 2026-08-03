@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FACADE_PATH = ROOT / "app/adapters/repositories/commercial_repository.py"
 AUDIT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_audit_mixin.py"
+SUPPORT_MIXIN_PATH = ROOT / "app/domain/commercial/mixins/_support_mixin.py"
 
 ALLOWED_FACADE_BASES = {
     "CommercialAccessRepository",
@@ -152,6 +153,37 @@ def test_audit_mixin_uses_explicit_audit_and_decision_repositories() -> None:
     ]
     assert constructions.count("CommercialDecisionRepository") == 2
     assert constructions.count("CommercialServiceAuditRepository") == 3
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "CommercialRepository"
+        for node in ast.walk(tree)
+    )
+
+
+def test_support_mixin_uses_explicit_support_access_and_audit_repositories() -> None:
+    tree = _tree(SUPPORT_MIXIN_PATH)
+    assert not _imports_facade(tree)
+
+    expected_repositories = {
+        "CommercialAccessRepository",
+        "CommercialServiceAuditRepository",
+        "CommercialSupportRepository",
+    }
+    imported_names = {
+        name.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for name in node.names
+    }
+    assert expected_repositories <= imported_names
+
+    constructions = [
+        ast.unparse(node.func)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) in expected_repositories
+    ]
+    assert constructions.count("CommercialSupportRepository") == 13
+    assert constructions.count("CommercialAccessRepository") == 6
+    assert constructions.count("CommercialServiceAuditRepository") == 7
     assert not any(
         isinstance(node, ast.Name) and node.id == "CommercialRepository"
         for node in ast.walk(tree)

@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B M4 accepted；Phase 7C local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B 至 Phase 7C M4 accepted；Phase 7D local verified
 
 日期：2026-08-03
 
@@ -1798,6 +1798,44 @@ Ruff 通过，全量 mypy 285 个源文件无问题，`check:anti-drift` 与 `gi
 177 降至 169，helper 注解从 59 降至 56。M4 candidate、PR/CI、merged source 与
 clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
 
+Phase 7C 随后由 PR #493 squash merge 为
+`86abe217494f03810b5733d31fc29adcfd19bcb2`；required `backend-targeted`
+为 7 分 7 秒通过。clean current `origin/master` source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=493`、`source_branch=master`、
+`source_dirty=false`，accepted source bundle 为
+`defb1a615a00ed75f976b1896aab21c6605bc5deef6d51f32740f537ce11b9a2`；
+post-merge retirement contract smoke 为 3 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放。
+
+### 17.40 Phase 7D Support mixin caller
+
+Phase 7D 在 current
+`origin/master@86abe217494f03810b5733d31fc29adcfd19bcb2` 上迁移
+`app/domain/commercial/mixins/_support_mixin.py`：
+
+- 13 个 Support 构造直接使用 `CommercialSupportRepository`；
+- 7 条与 Support mutation 共用同一 Session 的审计写入，使用独立的
+  `CommercialServiceAuditRepository`；
+- 6 条 Portal account membership access 查询使用
+  `CommercialAccessRepository`，包括 helper 参数注解。
+
+原门面共有 14 个构造点；其中一个只执行 membership access，不应误归为 Support。
+characterization 初稿据调用点名称曾把该职责猜为 Identity，随后全量 mypy 证明
+`get_account_user_membership` 的实际 owner 是继承 `CommercialMembershipQueries` 的
+`CommercialAccessRepository`，据真实继承图修正测试和实现。所有 repository 继续接收
+同一个 SQLAlchemy Session；commit、flush 时点、Support 状态机、Portal 权限判断和审计
+原子边界均不改变。
+
+迁移前 retirement characterization 为 3 passed、1 expected failed；迁移后为
+4 passed。Support repository/queue 与 Portal/Admin Support 最窄调用图为 5 passed，
+只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy 285 个源文件无问题。
+production facade importer 从 9 下降到 8，构造点从 113 下降到 99，名称引用
+从 169 下降到 154，helper 注解从 56 下降到 55；上述数值已由 current diff 的 AST
+扫描核定。
+本批不修改 repository 实现、API/schema/权限合同、Support 状态机、数据库、Provider、
+Production 或 WordPress。M4 candidate、PR/CI、merged source 与 clean-master M4 accepted
+继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1910,6 +1948,10 @@ repository 实现、调用参数、事务、数据，或把 commercial mixin 迁
 Phase 7C 只允许恢复 Audit mixin 的 facade import、五个构造与三个 helper 注解，并
 移除本批聚焦 retirement characterization。不得修改 Audit/Decision repository 实现、
 payload redaction、事务、数据，或把其他 commercial mixin 纳入回滚。
+
+Phase 7D 只允许恢复 Support mixin 的 facade import、14 个构造与一个 helper 注解，并
+移除本批聚焦 retirement characterization。不得修改 Support/Access/Service Audit
+repository 实现、Support 状态机、权限、事务、数据，或把其他 commercial mixin 纳入回滚。
 
 ## 19. 后续批次启动规则
 
