@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5A completed; Phase 5B1 local verified
+状态：Phase 0 至 Phase 5H M4 accepted；Phase 6A local verified
 
 日期：2026-08-03
 
@@ -1420,6 +1420,51 @@ bundle 为 `c19ba292e094c76abc330bc90dc311036a21b2ecbfce880449da5f26b4f29cd1`，
 ownership 已明确释放。其余 PR/CI、merged source 与 clean-master M4 accepted 继续分别
 记录。
 
+### 17.20 Phase 5H 合并与 M4 accepted
+
+Phase 5H 由 PR #483 合并为
+`59b1379af9d6f1c3d6df409faca175b7671ebb8b`；required `backend-targeted`
+为 8 分 29 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=483`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`fe6a3ccbc23825e8169991f01338cb9bd3d196a7af557e25a8a967bad947c9f8`；
+聚焦 Runtime/Site Knowledge queries smoke 为 2 passed。Cloud lane、shared M4 与 task
+worktree lock 均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，
+且未调用付费 Provider。
+
+### 17.21 Phase 6A Credit Ledger queries
+
+Phase 6A 在 current
+`origin/master@59b1379af9d6f1c3d6df409faca175b7671ebb8b` 上确认并迁移六个无锁纯查询：
+
+- `list_credit_ledger_entries`
+- `summarize_credit_consumption_buckets`
+- `list_portal_credit_event_groups`
+- `list_credit_ledger_entries_for_event_groups`
+- `summarize_portal_credit_event_buckets`
+- `count_credit_ledger_entries`
+
+新增只读 `CommercialCreditLedgerQueries`；facade 通过继承保持公共调用。保持账户、站点、
+订阅、event/source type、since/until 过滤，空列表早返回，`created_at desc,
+ledger_entry_id desc` 排序，正 offset/limit 规则，消费 bucket、Portal group/feature、
+SQLite/PostgreSQL epoch floor 和 None/零值语义。query class 不 add/flush/commit/rollback，
+不取得行锁。
+
+重新审计确认 `get_paid_credit_grant_by_order` 与 `list_available_paid_credit_grants` 都有
+可选 `for_update`，因此与 `consume_paid_credit_grants`、`refund_paid_credit_grant`、
+`upsert_paid_credit_grant` 一并留给独立 PaidCreditGrant 事务批次；Usage 写入、Admin
+usage/provider/billing、Audit/Decision、调用方、权限/API、schema、Provider、Production
+与 WordPress 同样排除。
+
+迁移前 facade characterization 为 2 passed；迁移后 facade/direct characterization 为
+4 passed。AST 对比确认六个方法的签名和方法体与 current-master 完全一致。Runtime
+defaults、Payment、SubscriptionCommerce、Portal credit event/trend/bucket 与 Admin credit
+ledger 调用图回归合计 56 passed，只有既有 Starlette deprecation warning；Ruff 通过，
+全量 mypy 279 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。五轴 review
+未发现 correctness、security、compatibility、performance 或 maintainability blocker。
+门面当前为 940 行、30 个自有方法。M4 candidate、PR/CI、merged source 与 clean-master
+M4 accepted 继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1493,6 +1538,10 @@ Payment/Subscription 状态机与 runtime 纳入回滚。
 Phase 5H 只允许恢复四个 Runtime/Site Knowledge 查询到门面、移除 query class 与聚焦
 characterization。不得修改 Run/Knowledge/Usage/Provider 数据，或把任何写入、锁、
 API/runtime 行为纳入回滚。
+
+Phase 6A 只允许恢复六个 Credit Ledger 查询到门面、移除 query class 与聚焦
+characterization。不得把 PaidCreditGrant、Usage 写入、Admin usage/provider/billing、
+Audit/Decision、事务补偿或数据修改纳入回滚。
 
 ## 19. 后续批次启动规则
 
