@@ -201,6 +201,40 @@ Do not overwrite another candidate, seize locks, recover/retry/fallback without
 authority, silently substitute local Docker, or report a direct sync as
 accepted source.
 
+Key M4 decisions and measurements remain directly discoverable:
+
+- [ADR-024 validation authority](docs/decisions/024-risk-tiered-development-validation-authority.md)
+- [ADR-025 checkpoint dispatch](docs/decisions/025-source-only-authoring-and-ai-m4-checkpoint-dispatch.md)
+- [ADR-026 private source relay](docs/decisions/026-private-source-relay-transfer.md)
+- [ADR-027 package proxy cache](docs/decisions/027-m4-package-proxy-streaming-cache.md)
+- [Package proxy validation](docs/m4-package-proxy-streaming-cache-validation-2026-07-25.md)
+
+## Target Refactor Contracts
+
+These are the accepted target contracts for the P0-P5 refactor. They define the
+WordPress-first through P5 direction; other CMS adapters are post-P5 validation work.
+A target contract is not evidence that implementation is complete.
+
+- [Refactor master plan](docs/refactor-master-plan-v1.md)
+- [WordPress-first Cloud runtime decision](docs/decisions/004-wordpress-first-cloud-runtime-refactor.md)
+- [Multi-platform connector boundary](docs/multi-platform-connector-boundary-v1.md)
+- [Media runtime boundary](docs/media-runtime-boundary-v1.md)
+- [Refactor deletion inventory](docs/refactor-deletion-inventory-v1.md)
+
+Evidence records (not target-contract completion proof):
+
+- [Pre-refactor baseline](docs/refactor-baseline-2026-07-14.md)
+- [P5 hardening and release audit](docs/p5-hardening-release-audit-2026-07-17.md)
+- [P5-B1 hosted-profile cutover](docs/p5-b1-hosted-profile-contract-cutover-2026-07-17.md)
+
+Bounded provider-connection operations and hosted
+runtime-profile configuration remain current Cloud responsibilities. Broader
+model-governance surfaces are not implied by those bounded operations.
+
+Negative boundary contracts also remain visible from the repository entry
+point: [prohibited Cloud bulk article generation](docs/cloud-bulk-article-run-v1.md)
+and the [local-schedule Nightly Intelligence boundary](docs/nightly-site-inspection-morning-brief-v1.md).
+
 ## Admin and Portal
 
 The Admin surface is a dense PC-first operator workbench for accounts, sites,
@@ -253,6 +287,20 @@ passwords, SSH keys, or encryption roots.
   ignored `.runtime/` or `.tmp/` paths.
 - Redact credentials and customer content from logs, receipts, screenshots,
   documentation, and PR bodies.
+
+Canonical production configuration names include
+`NPCINK_CLOUD_ADMIN_SESSION_SECRET`, `NPCINK_CLOUD_ADMIN_KEY`,
+`NPCINK_CLOUD_OPS_CADENCE_POLL_SECONDS`,
+`NPCINK_CLOUD_RUNTIME_CALLBACK_WORKER_POLL_SECONDS`,
+`NPCINK_CLOUD_WORKER_HEARTBEAT_INTERVAL_SECONDS`,
+`NPCINK_CLOUD_PROVIDER_HEALTH_SCAN_INTERVAL_SECONDS`,
+`NPCINK_CLOUD_OTEL_EXPORTER_OTLP_ENDPOINT`, and
+`NPCINK_CLOUD_OTEL_TRACE_QUERY_URL`. Values belong in the governed protected
+configuration path, never in this document or source control.
+
+The OpenAI provider ceiling defaults to 60 seconds so bounded long-form calls
+can complete; shorter tasks remain constrained by the smaller value selected
+for their own runtime path.
 
 Remote Portal bootstrap may reuse an existing site and key, but key issuance is
 host-local only and requires `NPCINK_CLOUD_SECRET` from a protected process
