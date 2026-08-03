@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6F M4 accepted；Phase 6G local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A local verified
 
 日期：2026-08-03
 
@@ -1698,6 +1698,39 @@ diagnostics 调用图回归合计 14 passed，只有既有 Starlette deprecation
 M4 candidate、PR/CI、merged source 与 clean-master M4 accepted 继续分别记录，不以
 本地绿色替代后续证据。
 
+### 17.34 Phase 6G 合并与 M4 accepted
+
+Phase 6G 由 PR #490 合并为
+`6cc899e39af8356f5b186b3ff3c4d678c6f04edb`。自动 review 识别 facade MRO 会让通用
+`_serialize_datetime` 被更早的 Usage 基类截获；同一 PR 将 helper 收紧为 Decision
+专属名称，并增加反证 characterization，review thread 已 resolved。修正版 required
+`backend-targeted` 为 8 分 32 秒通过。clean current `origin/master` 的 source-only
+promotion 显示 `acceptance_state=accepted`、`promotion_pr=490`、
+`source_branch=master`、`source_dirty=false`，source bundle 为
+`215d8e7dbd639abf001c45ddfe7d0c0dcb411afed9e4a34f45d0565d233657d3`；
+聚焦 Commercial Decision repository smoke 为 2 passed。Cloud lane、shared M4 与
+task worktree lock 均已释放；没有自然业务流量或观察窗口，24 小时业务观察为
+N/A/未测量，且未调用付费 Provider。
+
+### 17.35 Phase 7A facade retirement freeze
+
+Phase 7A 在 current
+`origin/master@6cc899e39af8356f5b186b3ff3c4d678c6f04edb` 上建立 retirement
+architecture contract，不迁移调用方：
+
+- facade 自有方法固定为 `__init__`，不得重新吸收业务职责；
+- 16 个现有领域 repository/query 基类集合被冻结，不得增加新的兼容继承；
+- production importer 固定为 current-master 18 个文件的子集，后续可删除但不可新增；
+- production 构造点不超过 126、名称引用不超过 185、参数类型注解不超过 59，作为
+  后续批次只能净递减的 burn-down 基线；
+- facade alias 被显式禁止，避免绕过统计。
+
+本批只新增 contract 与更新计划，不修改 `app/**`、runtime、API、事务、锁、schema、
+权限、Provider、Production 或 WordPress。focused contract 为 2 passed，Ruff 与 mypy
+通过，`check:anti-drift` 与 diff check 在收口执行。按 M4 标准分类为 local-only
+test/docs 变化，不产生 candidate、不占 shared M4。下一批从低耦合 production caller
+开始迁移，随后再按 commercial mixin 事务域分批收敛；不得用新的通用代理替换旧 facade。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1800,6 +1833,9 @@ Decision、调用方迁移、API/权限纳入回滚。
 Phase 6G 只允许恢复四个 Commercial Decision 业务方法与两个 helper 到门面、移除
 Commercial Decision repository 与聚焦 characterization。不得修改 decision 数据、
 执行事务补偿，或把调用方迁移、facade 删除、API/权限纳入回滚。
+
+Phase 7A 只允许移除 retirement architecture contract 与本批计划记录。不得恢复 facade
+业务方法、扩大 importer allowlist，或借回滚改变任何生产调用方、runtime 与数据。
 
 ## 19. 后续批次启动规则
 
