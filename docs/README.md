@@ -57,6 +57,7 @@ deleting the old decision history.
 - [Development and Validation Operating Model](development-validation-operating-model-v1.md)
 - [AI Development Validation Tiers](ai-development-validation-tiers-v1.md)
 - [Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md)
+- [Single-Session AI Development Closeout and Retrospective](single-session-ai-development-closeout-and-retrospective-2026-08-04.md)
 - [Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md)
 - [M4 Preview AI Development Standard](m4-preview-ai-development-standard-v1.md)
 - [M4 Preview Development Workflow](m4-preview-development-v1.md)
