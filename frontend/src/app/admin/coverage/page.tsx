@@ -414,24 +414,29 @@ function AdminCoverageContent() {
   return (
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
-        eyebrow={t('admin.coverage.primary_queue_eyebrow', {}, 'Customer operations')}
-        title={t('admin.coverage_surface_title', {}, 'Service status')}
+        eyebrow={t('admin.coverage.primary_queue_eyebrow', {}, 'Work queue')}
+        title={t('admin.coverage_surface_title', {}, 'Customer service risk queue')}
         description={t(
           'admin.coverage_surface_desc',
           {},
           'Find affected customers, understand the blocker, and open the exact action that resolves it.'
         )}
         actions={(
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => void loadCoverage(true)}
-            disabled={isRefreshing}
-          >
-            {isRefreshing
-              ? t('common.loading', {}, 'Loading...')
-              : t('admin.coverage.refresh_action', {}, 'Refresh')}
-          </button>
+          <>
+            <Link href="/admin/subscriptions" className="btn btn-secondary">
+              {t('admin.coverage_open_subscription_queue_action', {}, 'Open subscription risk')}
+            </Link>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void loadCoverage(true)}
+              disabled={isRefreshing}
+            >
+              {isRefreshing
+                ? t('common.loading', {}, 'Loading...')
+                : t('admin.coverage.refresh_action', {}, 'Refresh queue')}
+            </button>
+          </>
         )}
       />
 

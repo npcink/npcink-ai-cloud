@@ -105,6 +105,14 @@ const evidenceLanes: EvidenceLane[] = [
     descKey: 'admin.advanced.agent_feedback_desc',
     descFallback: 'Read-only quality signals from local operator feedback across Cloud-backed AI assistance.',
   },
+  {
+    id: 'advisor',
+    href: '/admin/ai-advisor',
+    titleKey: 'admin.ai_advisor.title',
+    titleFallback: 'Operations Advisor',
+    descKey: 'admin.advanced.ai_advisor_desc',
+    descFallback: 'AI-assisted diagnosis for selected operational signals.',
+  },
 ];
 
 const runtimeEvidenceItems = [

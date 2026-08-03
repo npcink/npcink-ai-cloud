@@ -317,6 +317,9 @@ function SubscriptionsContent() {
     queuedSubscriptions.find((item) => item.subscription_id === focusedSubscriptionId) ||
     queuedSubscriptions[0] ||
     null;
+  const currentQueueHref = searchParamsKey ? `${pathname}?${searchParamsKey}` : pathname;
+  const subscriptionDetailHref = (subscriptionId: string) =>
+    `/admin/subscriptions/${encodeURIComponent(subscriptionId)}?return_to=${encodeURIComponent(currentQueueHref)}`;
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -378,7 +381,7 @@ function SubscriptionsContent() {
     <BackofficePageStack className="space-y-5">
       <BackofficeLayer
         eyebrow={t('admin.subscriptions.workspace_eyebrow', {}, 'Subscription operations')}
-        title={t('admin.coverage_workspace_subscriptions_title', {}, 'Service risk queue')}
+        title={t('admin.coverage_workspace_subscriptions_title', {}, 'Subscription risk')}
         description={t(
           'admin.subscriptions.workspace_desc',
           {},
@@ -642,7 +645,7 @@ function SubscriptionsContent() {
                       >
                         {t('admin.subscriptions.inspect_action', {}, 'Inspect')}
                       </button>
-                      <Link href={`/admin/subscriptions/${subscription.subscription_id}`} className="btn btn-primary btn-sm whitespace-nowrap">
+                      <Link href={subscriptionDetailHref(subscription.subscription_id)} className="btn btn-primary btn-sm whitespace-nowrap">
                         {t('admin.coverage_open_subscription_detail_action', {}, 'Inspect detail')}
                       </Link>
                     </div>
@@ -730,7 +733,7 @@ function SubscriptionsContent() {
                 </dl>
 
                 <div className="flex flex-wrap gap-2">
-                  <Link href={`/admin/subscriptions/${selectedSubscription.subscription_id}`} className="btn btn-primary btn-sm">
+                  <Link href={subscriptionDetailHref(selectedSubscription.subscription_id)} className="btn btn-primary btn-sm">
                     {t('admin.coverage_open_subscription_detail_action', {}, 'Inspect detail')}
                   </Link>
                   <Link href={`/admin/accounts/${selectedSubscription.account_id}`} className="btn btn-secondary btn-sm">
