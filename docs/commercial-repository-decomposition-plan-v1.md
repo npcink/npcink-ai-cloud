@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B M4 accepted；Phase 7C local verified
 
 日期：2026-08-03
 
@@ -1766,6 +1766,38 @@ site 过滤、usage dedupe 或 metering 语义；未引入新的 repository bund
 PR/CI、merged source 与 clean-master M4 accepted 继续分别记录，不以本地绿色替代
 后续证据。
 
+### 17.38 Phase 7B 合并与 M4 accepted
+
+Phase 7B 由 PR #492 squash merge 为
+`88f0d9a41b5d63f64c10f69fe4a7d45dad15dbf0`。required backend full-shard gate
+全部通过，其中 shard 1/2/3 分别耗时 32 分 22 秒、8 分 51 秒、9 分 38 秒；该差异是
+pytest duration weights 失衡证据，不属于本批 repository caller 行为失败，也不在本批
+调整 CI 基础设施。clean current `origin/master` source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=492`、`source_branch=master`、
+`source_dirty=false`，accepted source bundle 为
+`ca53e8c5a1c3a316a6dd915df9fb99d8348908550f0f5bb5bd040aac015c504f`；
+post-merge retirement contract smoke 为 2 passed。Cloud lane 与 shared M4 均已释放。
+
+### 17.39 Phase 7C Audit mixin caller
+
+Phase 7C 在 current
+`origin/master@88f0d9a41b5d63f64c10f69fe4a7d45dad15dbf0` 上迁移
+`app/domain/commercial/mixins/_audit_mixin.py`：
+
+- 三个 ServiceAudit 构造与 `_record_service_audit_in_session` 注解直接使用
+  `CommercialServiceAuditRepository`；
+- 两个 Decision 构造以及 `_record_commercial_decision_in_session`、
+  `_build_budget_policy_state` 注解直接使用 `CommercialDecisionRepository`。
+
+本批不改方法调用、Session、commit、返回序列化、payload redaction、grace count 或任何
+repository 实现。先新增 retirement characterization，迁移前为 2 passed、1 expected
+failed，迁移后为 3 passed；Service Audit、Decision、Service route、Payment 与
+SubscriptionCommerce 调用图为 67 passed，只有既有 Starlette deprecation warning。
+Ruff 通过，全量 mypy 285 个源文件无问题，`check:anti-drift` 与 `git diff --check`
+通过。production facade importer 从 10 降至 9，构造点从 118 降至 113，名称引用从
+177 降至 169，helper 注解从 59 降至 56。M4 candidate、PR/CI、merged source 与
+clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1874,6 +1906,10 @@ Phase 7A 只允许移除 retirement architecture contract 与本批计划记录�
 
 Phase 7B 只允许逐文件恢复上述八个低耦合 caller 的 facade import/构造。不得修改
 repository 实现、调用参数、事务、数据，或把 commercial mixin 迁移纳入回滚。
+
+Phase 7C 只允许恢复 Audit mixin 的 facade import、五个构造与三个 helper 注解，并
+移除本批聚焦 retirement characterization。不得修改 Audit/Decision repository 实现、
+payload redaction、事务、数据，或把其他 commercial mixin 纳入回滚。
 
 ## 19. 后续批次启动规则
 
