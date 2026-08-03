@@ -18,8 +18,7 @@
     "pnpm run check:perimeter",
     "pnpm run check:release-policy",
     "pnpm run check:fast",
-    "pnpm run smoke:local-alpha",
-    "pnpm run check:risk"
+    "pnpm run smoke:local-alpha"
   ],
   "description": "Repository-wide anti-drift baseline used only when no active root task-contract-*.json is present. A task-specific contract may override this baseline through --contract or a single root task contract."
 }

@@ -140,6 +140,14 @@ try {
 		'config/cloud-anti-drift-default-contract-v1.json'
 	);
 	assert.strictEqual( hasViolations( defaultContractResult ), false );
+	const defaultExecutableResult = checkCloudAntiDrift( {
+		contractPath: '',
+		files: [ 'app/example.py', 'tests/example.py' ],
+	} );
+	assert.deepStrictEqual(
+		defaultExecutableResult.violations.missing_required_gates,
+		[]
+	);
 
 	const missingContractResult = checkCloudAntiDrift( {
 		contractPath: path.join( tempRoot, 'missing-task-contract.json' ),

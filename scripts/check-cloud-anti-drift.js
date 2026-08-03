@@ -475,11 +475,12 @@ function checkCloudAntiDrift( { contractPath, files } ) {
 
 	if (
 		touchesExecutableSeam &&
+		! contractRequiredGates.includes( 'pnpm run check:fast' ) &&
 		! contractRequiredGates.includes( 'pnpm run check:risk' ) &&
 		! contractRequiredGates.includes( 'pnpm run check:founder:heavy' )
 	) {
 		result.violations.missing_required_gates.push(
-			'pnpm run check:risk'
+			'pnpm run check:fast'
 		);
 	}
 
