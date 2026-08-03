@@ -218,19 +218,62 @@ def test_admin_identity_flows_use_explicit_domain_repositories() -> None:
     )
 
     expected_constructions = {
-        "CommercialAccessRepository": 10,
+        "CommercialAccessRepository": 7,
         "CommercialAccountSiteRepository": 1,
-        "CommercialIdentityRepository": 11,
+        "CommercialIdentityRepository": 8,
         "CommercialServiceAuditRepository": 5,
         "CommercialSubscriptionRepository": 1,
     }
     constructions = [
         ast.unparse(node.func)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and ast.unparse(node.func) in expected_constructions
+        for method in methods.values()
+        for node in ast.walk(method)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) in expected_constructions
     ]
     assert {
         repository: constructions.count(repository)
         for repository in expected_constructions
     } == expected_constructions
+
+
+def test_admin_dashboard_flows_use_explicit_domain_repositories() -> None:
+    tree = _tree(ADMIN_MIXIN_PATH)
+    selected_methods = {
+        "get_admin_overview",
+        "get_commercial_shadow_pricing_summary",
+        "list_admin_accounts",
+        "get_admin_coverage_work_queue",
+        "apply_admin_account_credit_adjustment",
+        "get_admin_account_credit_ledger",
+    }
+    methods = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name in selected_methods
+    }
+    assert methods.keys() == selected_methods
+    assert not any(
+        isinstance(node, ast.Name) and node.id == "CommercialRepository"
+        for method in methods.values()
+        for node in ast.walk(method)
+    )
+
+    expected_repositories = {
+        "CommercialAccountSiteRepository",
+        "CommercialBillingRepository",
+        "CommercialCreditRepository",
+        "CommercialDecisionRepository",
+        "CommercialIdentityRepository",
+        "CommercialServiceAuditRepository",
+        "CommercialSiteApiKeyRepository",
+        "CommercialSubscriptionRepository",
+        "CommercialUsageRepository",
+    }
+    imported_names = {
+        name.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for name in node.names
+    }
+    assert expected_repositories <= imported_names

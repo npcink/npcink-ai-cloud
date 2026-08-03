@@ -13,6 +13,11 @@ from app.adapters.repositories.commercial_access_repository import CommercialAcc
 from app.adapters.repositories.commercial_account_site_repository import (
     CommercialAccountSiteRepository,
 )
+from app.adapters.repositories.commercial_billing_repository import CommercialBillingRepository
+from app.adapters.repositories.commercial_credit_repository import CommercialCreditRepository
+from app.adapters.repositories.commercial_decision_repository import (
+    CommercialDecisionRepository,
+)
 from app.adapters.repositories.commercial_identity_repository import (
     CommercialIdentityRepository,
 )
@@ -20,9 +25,13 @@ from app.adapters.repositories.commercial_repository import CommercialRepository
 from app.adapters.repositories.commercial_service_audit_repository import (
     CommercialServiceAuditRepository,
 )
+from app.adapters.repositories.commercial_site_api_key_repository import (
+    CommercialSiteApiKeyRepository,
+)
 from app.adapters.repositories.commercial_subscription_repository import (
     CommercialSubscriptionRepository,
 )
+from app.adapters.repositories.commercial_usage_repository import CommercialUsageRepository
 from app.core.db import get_session
 from app.core.models import (
     ACCOUNT_STATUS_ACTIVE,
@@ -311,45 +320,58 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             SUBSCRIPTION_STATUS_SUSPENDED,
         ]
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            accounts_total = repository.count_accounts()
-            principals_active = repository.count_principals(status=PRINCIPAL_STATUS_ACTIVE)
-            sites_total = repository.count_sites()
-            sites_active = repository.count_sites(status=SITE_STATUS_ACTIVE)
-            subscriptions_total = repository.count_subscriptions()
-            subscriptions_active = repository.count_subscriptions(
+            account_site_repository = CommercialAccountSiteRepository(session)
+            identity_repository = CommercialIdentityRepository(session)
+            site_key_repository = CommercialSiteApiKeyRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            decision_repository = CommercialDecisionRepository(session)
+            usage_repository = CommercialUsageRepository(session)
+            accounts_total = account_site_repository.count_accounts()
+            principals_active = identity_repository.count_principals(
+                status=PRINCIPAL_STATUS_ACTIVE
+            )
+            sites_total = account_site_repository.count_sites()
+            sites_active = account_site_repository.count_sites(status=SITE_STATUS_ACTIVE)
+            subscriptions_total = subscription_repository.count_subscriptions()
+            subscriptions_active = subscription_repository.count_subscriptions(
                 statuses=active_subscription_statuses
             )
-            active_site_key_count = repository.count_site_keys_total(
+            active_site_key_count = site_key_repository.count_site_keys_total(
                 statuses=[SITE_API_KEY_STATUS_ACTIVE]
             )
-            expiring_in_7_days = repository.count_subscriptions_expiring_by(
+            expiring_in_7_days = subscription_repository.count_subscriptions_expiring_by(
                 before=now + timedelta(days=7),
                 statuses=active_subscription_statuses,
             )
-            expiring_in_30_days = repository.count_subscriptions_expiring_by(
+            expiring_in_30_days = subscription_repository.count_subscriptions_expiring_by(
                 before=now + timedelta(days=30),
                 statuses=active_subscription_statuses,
             )
-            recent_audit = repository.summarize_service_audit_events(
+            recent_audit = audit_repository.summarize_service_audit_events(
                 since=audit_since,
                 limit=5,
             )
-            recent_decisions = repository.summarize_commercial_decision_events(
+            recent_decisions = decision_repository.summarize_commercial_decision_events(
                 since=audit_since,
                 limit=5,
             )
-            status_counts = repository.summarize_subscription_status_counts()
-            plan_counts = repository.summarize_subscription_plan_counts()
-            usage_summary = repository.summarize_usage_meter_events_for_admin(since=usage_since)
-            expiring_subscriptions = repository.list_subscriptions(
+            status_counts = subscription_repository.summarize_subscription_status_counts()
+            plan_counts = subscription_repository.summarize_subscription_plan_counts()
+            usage_summary = usage_repository.summarize_usage_meter_events_for_admin(
+                since=usage_since
+            )
+            expiring_subscriptions = subscription_repository.list_subscriptions(
                 statuses=active_subscription_statuses,
                 current_period_end_before=now + timedelta(days=30),
                 limit=None,
             )
-            attention_subscriptions = repository.list_subscriptions(
+            attention_subscriptions = subscription_repository.list_subscriptions(
                 status=SUBSCRIPTION_STATUS_PAST_DUE, limit=5
-            ) + repository.list_subscriptions(status=SUBSCRIPTION_STATUS_SUSPENDED, limit=5)
+            ) + subscription_repository.list_subscriptions(
+                status=SUBSCRIPTION_STATUS_SUSPENDED,
+                limit=5,
+            )
             detail_account_ids = sorted(
                 {
                     subscription.account_id
@@ -358,12 +380,12 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 }
             )
             accounts = (
-                repository.list_accounts(account_ids=detail_account_ids, limit=None)
+                account_site_repository.list_accounts(account_ids=detail_account_ids, limit=None)
                 if detail_account_ids
                 else []
             )
             sites = (
-                repository.list_sites(account_ids=detail_account_ids, limit=None)
+                account_site_repository.list_sites(account_ids=detail_account_ids, limit=None)
                 if detail_account_ids
                 else []
             )
@@ -482,21 +504,21 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         start_at = now - timedelta(days=resolved_window_days)
 
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            runs = repository.list_run_records_for_admin(
+            usage_repository = CommercialUsageRepository(session)
+            runs = usage_repository.list_run_records_for_admin(
                 site_id=site_id,
                 ability_family=ability_family,
                 since=start_at,
                 limit=None,
             )
             run_lookup = {str(run.run_id or ""): run for run in runs}
-            provider_calls = repository.list_provider_call_records_for_admin(
+            provider_calls = usage_repository.list_provider_call_records_for_admin(
                 site_id=site_id,
                 ability_family=ability_family,
                 since=start_at,
                 limit=None,
             )
-            token_events = repository.list_usage_meter_events_for_admin(
+            token_events = usage_repository.list_usage_meter_events_for_admin(
                 site_ids=[site_id] if site_id else None,
                 ability_family=ability_family,
                 meter_keys=["tokens_total"],
@@ -1398,10 +1420,11 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )
 
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
             filtered_account_ids: set[str] | None = None
             if expires_before is not None:
-                expiring_subscriptions = repository.list_subscriptions(
+                expiring_subscriptions = subscription_repository.list_subscriptions(
                     current_period_end_before=expires_before,
                     limit=None,
                 )
@@ -1415,7 +1438,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     if filtered_account_ids is None
                     else filtered_account_ids & expiring_account_ids
                 )
-            accounts = repository.list_accounts(
+            accounts = account_site_repository.list_accounts(
                 status=status,
                 account_ids=(
                     sorted(filtered_account_ids) if filtered_account_ids is not None else None
@@ -1430,8 +1453,8 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 else limit,
             )
             account_ids = [account.account_id for account in accounts]
-            site_counts = repository.count_sites_by_account(account_ids=account_ids)
-            subscription_counts = repository.count_subscriptions_by_account(
+            site_counts = account_site_repository.count_sites_by_account(account_ids=account_ids)
+            subscription_counts = subscription_repository.count_subscriptions_by_account(
                 account_ids=account_ids,
                 statuses=[
                     SUBSCRIPTION_STATUS_TRIALING,
@@ -1440,7 +1463,10 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                     SUBSCRIPTION_STATUS_SUSPENDED,
                 ],
             )
-            subscriptions = repository.list_subscriptions(account_ids=account_ids, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_ids=account_ids,
+                limit=None,
+            )
             identity_repository = CommercialIdentityRepository(session)
             access_repository = CommercialAccessRepository(session)
             identity_projections = self._build_admin_identity_projections(
@@ -1603,17 +1629,23 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         limit: int = 100,
     ) -> dict[str, object]:
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            accounts = repository.list_accounts(limit=None)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            site_key_repository = CommercialSiteApiKeyRepository(session)
+            billing_repository = CommercialBillingRepository(session)
+            accounts = account_site_repository.list_accounts(limit=None)
             account_ids = [account.account_id for account in accounts]
-            subscriptions = repository.list_subscriptions(account_ids=account_ids, limit=None)
-            sites = repository.list_sites(account_ids=account_ids, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_ids=account_ids,
+                limit=None,
+            )
+            sites = account_site_repository.list_sites(account_ids=account_ids, limit=None)
             site_ids = [site.site_id for site in sites]
-            active_key_counts = repository.count_site_keys_by_site(
+            active_key_counts = site_key_repository.count_site_keys_by_site(
                 site_ids=site_ids,
                 statuses=[SITE_API_KEY_STATUS_ACTIVE],
             )
-            latest_billing_by_site = repository.get_latest_billing_snapshots_by_site(
+            latest_billing_by_site = billing_repository.get_latest_billing_snapshots_by_site(
                 site_ids=site_ids,
             )
             identity_repository = CommercialIdentityRepository(session)
@@ -2343,14 +2375,20 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
 
         now = self.now_factory()
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            credit_repository = CommercialCreditRepository(session)
+            audit_repository = CommercialServiceAuditRepository(session)
+            account = account_site_repository.get_account(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
-            subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_id=account_id,
+                limit=None,
+            )
             primary_subscription = cast(Any, self)._select_primary_subscription(subscriptions)
             if primary_subscription is None:
                 raise CommercialValidationError(
@@ -2365,7 +2403,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 f"account_credit_adjustment:{account_id}:"
                 f"{audit_context.idempotency_key if audit_context else uuid4().hex}"
             )
-            entry = repository.record_credit_ledger_entry(
+            entry = credit_repository.record_credit_ledger_entry(
                 account_id=account_id,
                 site_id=None,
                 subscription_id=primary_subscription.subscription_id,
@@ -2392,7 +2430,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 },
                 created_at=now,
             )
-            summary_entries = repository.list_credit_ledger_entries(
+            summary_entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 subscription_id=primary_subscription.subscription_id,
                 event_types=AI_CREDIT_VISIBLE_LEDGER_EVENT_TYPES,
@@ -2408,7 +2446,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 "summary": self._summarize_credit_ledger_entries(summary_entries),
             }
             self._record_service_audit_in_session(
-                repository=repository,
+                repository=audit_repository,
                 audit_context=audit_context,
                 event_kind="credit_ledger.adjustment",
                 outcome="succeeded",
@@ -2438,14 +2476,20 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
         normalized_source_type = str(source_type or "").strip()
         source_types = [normalized_source_type] if normalized_source_type else None
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
-            account = repository.get_account(account_id)
+            account_site_repository = CommercialAccountSiteRepository(session)
+            subscription_repository = CommercialSubscriptionRepository(session)
+            credit_repository = CommercialCreditRepository(session)
+            usage_repository = CommercialUsageRepository(session)
+            account = account_site_repository.get_account(account_id)
             if account is None:
                 raise CommercialNotFoundError(
                     "service.account_not_found",
                     f"account '{account_id}' was not found",
                 )
-            subscriptions = repository.list_subscriptions(account_id=account_id, limit=None)
+            subscriptions = subscription_repository.list_subscriptions(
+                account_id=account_id,
+                limit=None,
+            )
             primary_subscription = cast(Any, self)._select_primary_subscription(subscriptions)
             period_start_at, period_end_at = cast(Any, self)._resolve_period(
                 primary_subscription,
@@ -2454,7 +2498,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             subscription_id = (
                 primary_subscription.subscription_id if primary_subscription is not None else None
             )
-            entries = repository.list_credit_ledger_entries(
+            entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
                 subscription_id=subscription_id,
@@ -2465,7 +2509,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 limit=normalized_limit,
                 offset=normalized_offset,
             )
-            total = repository.count_credit_ledger_entries(
+            total = credit_repository.count_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
                 subscription_id=subscription_id,
@@ -2474,7 +2518,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
                 since=period_start_at,
                 until=period_end_at,
             )
-            summary_entries = repository.list_credit_ledger_entries(
+            summary_entries = credit_repository.list_credit_ledger_entries(
                 account_ids=[account_id],
                 site_ids=site_ids,
                 subscription_id=subscription_id,
@@ -2486,7 +2530,7 @@ class CommercialServiceAdminMixin(CommercialServiceAuditMixin):
             )
             run_records_by_id = {
                 str(run.run_id): run
-                for run in repository.list_run_records_by_ids(
+                for run in usage_repository.list_run_records_by_ids(
                     [
                         str(getattr(entry, "run_id", "") or "")
                         for entry in entries
