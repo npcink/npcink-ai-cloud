@@ -9,7 +9,9 @@ from typing import Any, cast
 
 import httpx
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
 from app.core.callback_security import (
     RuntimeCallbackTargetValidationError,
     validate_runtime_callback_target,
@@ -195,7 +197,7 @@ def run_once(
     )
 
     with get_session(settings.database_url) as session:
-        sites = CommercialRepository(session).list_sites(
+        sites = CommercialAccountSiteRepository(session).list_sites(
             status=SITE_STATUS_ACTIVE,
             limit=settings.router_performance_worker_site_limit,
         )

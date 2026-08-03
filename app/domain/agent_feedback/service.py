@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_usage_repository import CommercialUsageRepository
 from app.core.db import get_session
 from app.core.models import UsageMeterEvent
 from app.domain.agent_feedback.contracts import (
@@ -52,7 +52,7 @@ class AgentFeedbackService:
         dedupe_key = f"agent-feedback:{site_id}:{idempotency_key}"
 
         with get_session(self.database_url) as session:
-            repository = CommercialRepository(session)
+            repository = CommercialUsageRepository(session)
             event = repository.record_usage_meter_event(
                 account_id=None,
                 site_id=site_id,
