@@ -181,6 +181,28 @@
     },
     {
       "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/development-validation-operating-model-v1.md",
+      "used_by": ["runbook", "contract", "automation"],
+      "status": "active",
+      "evidence": ["README.md", "scripts/check_changed.py", "tests/contract/test_check_changed_contract.py"],
+      "commands": {
+        "check:changed": "Plan and run the narrowest safe local gates for the current diff."
+      }
+    },
+    {
+      "package": "root",
+      "profile": "local_read",
+      "owner_doc": "docs/single-session-worktree-lifecycle-v1.md",
+      "used_by": ["runbook", "contract", "automation"],
+      "status": "active",
+      "evidence": ["AGENTS.md", "scripts/audit_worktrees.py", "tests/contract/test_worktree_audit_contract.py"],
+      "commands": {
+        "worktree:audit": "Inventory and conservatively classify repository worktrees without mutation."
+      }
+    },
+    {
+      "package": "root",
       "profile": "github_publish",
       "owner_doc": "docs/parallel-ai-collaboration-standard-v1.md",
       "used_by": ["runbook"],

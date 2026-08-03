@@ -1,0 +1,68 @@
+# Single-Session Worktree Lifecycle v1
+
+Status: active engineering standard.
+
+Purpose: keep the default one-AI workflow small while protecting dirty work,
+M4 operations, and scheduled cleanup from ambiguous worktree state.
+
+## Default Topology
+
+The repository defaults to one active AI development session. Prefer:
+
+1. one clean current development worktree;
+2. the existing stable M4 operations worktree;
+3. at most one auxiliary AI task worktree when the visible checkout is dirty,
+   stale, or contains unrelated work.
+
+Old registered worktrees do not enable parallel-development mode. Multiple AI
+builders, integrators, merge queues, conflict-domain owners, and frontend slots
+are used only when the operator explicitly enables the
+[Parallel AI Collaboration Standard](parallel-ai-collaboration-standard-v1.md).
+
+## Task Worktree Rule
+
+Reuse the current worktree when it is clean, current, and focused on the task.
+If isolation is required, create one `codex/*` worktree from current
+`origin/master`, immediately lock it as `codex:<task-id>`, and verify the lock
+before editing. The lock protects the task from scheduled cleanup as well as
+operator error; it does not grant M4 or production authority.
+
+Keep the task worktree locked until the task ends, its PR is confirmed merged
+when applicable, and the worktree is clean with no unpreserved deliverable.
+Unlocking, removal, and branch deletion are separate actions and require fresh
+exact-path evidence.
+
+## Read-Only Audit
+
+Use:
+
+```bash
+pnpm run worktree:audit
+pnpm run worktree:audit -- --format json
+```
+
+The audit classifies the current task, primary/locked/dirty/long-lived
+worktrees, and clean unlocked auxiliaries needing manual review. It never
+unlocks, removes, prunes, or changes a worktree.
+
+`manual_review` is not deletion authorization. Before exact non-force removal,
+separately prove that the worktree is non-primary, unlocked, unoccupied,
+clean, inactive, fully represented in current Git history, has no unique
+commit or open PR, has no task/handoff owner, and is not a long-lived M4,
+preview, production, acceptance, runtime, or operations checkout.
+
+If task or PR evidence is unavailable, keep the worktree protected and report
+the missing evidence. Never use age, path name, a clean status, or an apparent
+stale registration alone as removal authority.
+
+## Closeout Receipt
+
+A normal single-session closeout reports only:
+
+- task worktree and lock state;
+- changed files and highest evidence state reached;
+- whether the worktree remains required for an open PR or handoff;
+- the exact missing evidence when cleanup is deferred.
+
+Do not add builder, integrator, conflict-domain, merge-queue, or frontend-slot
+fields unless the operator explicitly enabled parallel mode.

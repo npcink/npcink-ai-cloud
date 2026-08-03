@@ -94,7 +94,9 @@ cleanup; it is not the M4 operation lock and does not grant shared-runtime
 ownership. Keep it while the task or PR is open. Unlock it only after the task
 has ended, the PR is confirmed merged, and the worktree is clean, using the
 no-deliverable, handoff, and stale-lock recovery rules in
-[Parallel AI Collaboration Standard Section 4.1](parallel-ai-collaboration-standard-v1.md#41-task-worktree-lifecycle-lock).
+[Single-Session Worktree Lifecycle](single-session-worktree-lifecycle-v1.md).
+Explicit parallel handoffs add the coordination rules in the parallel
+collaboration standard.
 
 ## 4. Select the Smallest Valid Lane
 
@@ -107,7 +109,8 @@ change before selecting commands.
 | Cloud source | ordinary `app/**`, `frontend/**`, worker, migration, or runtime integration behavior | focused local gate, then `pnpm run m4:preview:sync` |
 | Build/runtime | dependency manifests or locks; Dockerfiles; Compose, proxy, base-image, or M4 deployment-script inputs | focused local gate, then `pnpm run m4:preview:deploy` |
 
-Frontend-only visual work MAY use an ephemeral frontend slot instead of
+When the operator explicitly enables the parallel collaboration mode,
+frontend-only visual work MAY use an ephemeral frontend slot instead of
 replacing the primary candidate when all of these are true:
 
 - the change needs no API, migration, worker, persistence, dependency, image,
@@ -488,8 +491,9 @@ Cloud integration runtime while:
   working day;
 - the full gate is reserved for closeout or high-risk changes;
 - single-operator use does not create material queueing.
-- two normal frontend-only visual slots absorb bounded UI concurrency without
-  multiplying the backend, database, workers, or accepted-state authority.
+- explicitly enabled parallel work may use the two bounded frontend-only
+  visual slots without multiplying the backend, database, workers, or
+  accepted-state authority.
 
 Reassess the setup when the thresholds are repeatedly exceeded, M4 downtime
 costs more than 30-60 minutes per week, multiple developers need concurrent
