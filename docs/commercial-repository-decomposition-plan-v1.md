@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6C M4 accepted；Phase 6D local verified
+状态：Phase 0 至 Phase 6D M4 accepted；Phase 6E local verified
 
 日期：2026-08-03
 
@@ -1582,6 +1582,37 @@ usage evidence、Agent Feedback 幂等与 Site Knowledge index usage 调用图�
 业务方法，其余为 `__init__` 与三个 helper。M4 candidate、PR/CI、merged source 与
 clean-master M4 accepted 继续分别记录，不以本地绿色替代后续证据。
 
+### 17.28 Phase 6D 合并与 M4 accepted
+
+Phase 6D 由 PR #487 合并为
+`1d98743f3446b6ba053dd0674d1223b3e90548f0`；required `backend-targeted`
+为 8 分 26 秒通过。clean current `origin/master` 的 source-only promotion 显示
+`acceptance_state=accepted`、`promotion_pr=487`、`source_branch=master`、
+`source_dirty=false`，source bundle 为
+`695e1a95174e210d5ffd85c5aa1b13b83c20c5508de697b6c5333da0f55359b4`；
+聚焦 Usage repository smoke 为 4 passed。Cloud lane、shared M4 与 task worktree lock
+均已释放；没有自然业务流量或观察窗口，24 小时业务观察为 N/A/未测量，且未调用付费
+Provider。
+
+### 17.29 Phase 6E Billing repository
+
+Phase 6E 在 current
+`origin/master@1d98743f3446b6ba053dd0674d1223b3e90548f0` 上新增
+`CommercialBillingRepository`，原样迁移 `list_billing_snapshots`、
+`get_latest_billing_snapshots_by_site` 与 `upsert_billing_snapshot`。保持 site 过滤、
+period/start/snapshot 排序、空 site id 列表早返回、每站 latest 的 period end/generated/
+snapshot 优先级、主键 get 后 insert/update、全部字段覆盖与 `add + flush`；repository
+不 commit/rollback，不取得行锁。facade 通过继承保持调用方式，API/domain/dev 调用方
+不在本批迁移。
+
+迁移前 facade characterization 为 1 passed；迁移后 facade/direct characterization 为
+2 passed。Billing rebuild、Usage service 与 Site monitoring 调用图回归 7 passed，只有
+既有 Starlette deprecation warning；Ruff 通过，全量 mypy 283 个源文件无问题。
+AST 对比确认三个方法签名和方法体与 current-master 完全一致。门面当前为 471 行、
+13 个自有方法，其中九个为 Service Audit/Commercial Decision 业务方法，其余为
+`__init__` 与三个 helper。M4 candidate、PR/CI、merged source 与 clean-master M4
+accepted 继续分别记录，不以本地绿色替代后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1671,6 +1702,10 @@ characterization。不得把 Usage 写入、BillingSnapshot、Audit/Decision、�
 Phase 6D 只允许恢复 `record_usage_meter_event` 到门面、恢复 facade 对 Usage queries
 的直接继承，并移除新 repository/characterization。不得修改 Usage 数据、执行事务
 补偿，或把 BillingSnapshot、Audit/Decision 与调用方迁移纳入回滚。
+
+Phase 6E 只允许恢复三个 BillingSnapshot 方法到门面、移除 Billing repository 与聚焦
+characterization。不得修改 billing 数据、执行事务补偿，或把 Service Audit、
+Commercial Decision 与调用方迁移纳入回滚。
 
 ## 19. 后续批次启动规则
 
