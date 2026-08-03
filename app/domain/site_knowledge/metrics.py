@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_usage_repository import CommercialUsageRepository
 from app.core.config import Settings
 from app.core.db import get_session
 from app.core.models import (
@@ -573,7 +573,7 @@ def _record_index_usage_meter_events(
     run: RunRecord,
     metric: SiteKnowledgeIndexJobMetric,
 ) -> None:
-    repository = CommercialRepository(session)
+    repository = CommercialUsageRepository(session)
     for source_type, quantity in (
         ("vector_documents", metric.indexed_documents),
         ("vector_chunks", metric.indexed_chunks),

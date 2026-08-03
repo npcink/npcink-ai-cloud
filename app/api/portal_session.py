@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.api.auth import (
     AUTHORIZATION_HEADER,
     PortalAuthContext,
@@ -406,7 +406,7 @@ def _resolve_portal_principal_session_version(
 ) -> int:
     settings = get_cloud_services(request).settings
     with get_session(settings.database_url) as session:
-        repository = CommercialRepository(session)
+        repository = CommercialIdentityRepository(session)
         identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
         session_version = getattr(identity, "session_version", None)
         if (

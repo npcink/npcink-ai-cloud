@@ -1,6 +1,6 @@
 # CommercialRepository 渐进拆分实施计划 v1
 
-状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A local verified
+状态：Phase 0 至 Phase 6G M4 accepted；Phase 7A merged（M4 N/A）；Phase 7B local verified
 
 日期：2026-08-03
 
@@ -1731,6 +1731,41 @@ architecture contract，不迁移调用方：
 test/docs 变化，不产生 candidate、不占 shared M4。下一批从低耦合 production caller
 开始迁移，随后再按 commercial mixin 事务域分批收敛；不得用新的通用代理替换旧 facade。
 
+### 17.36 Phase 7A 合并
+
+Phase 7A 由 PR #491 合并为
+`4d2f0ae99fe4d069ad10cd5b340a2fa2357f5289`；required `backend-targeted`
+为 8 分 37 秒通过。该批只有 test/docs 变化，M4 candidate、promotion 与 accepted 均为
+N/A，shared M4 始终未占用；Cloud lane 与 task worktree lock 已释放。
+
+### 17.37 Phase 7B 低耦合 production caller
+
+Phase 7B 在 current
+`origin/master@4d2f0ae99fe4d069ad10cd5b340a2fa2357f5289` 上迁移八个低耦合
+production caller：
+
+- `app/api/auth.py` 与 `app/api/portal_session.py` 直接使用
+  `CommercialIdentityRepository`；
+- `app/domain/agent_feedback/service.py` 与 `app/domain/site_knowledge/metrics.py`
+  直接使用 `CommercialUsageRepository`；
+- `alert_provider_degradation.py`、`latency_probe_summary.py`、
+  `router_diagnostics_summary.py`、`router_performance_snapshot.py` 直接使用
+  `CommercialAccountSiteRepository`。
+
+两个 worker 测试中的站点 fixture 也改为直接使用
+`CommercialAccountSiteRepository`，使可执行 seam 的既有 pytest 同时成为本批
+anti-drift backstop；测试仅替换 repository 构造，不改变 fixture 数据或断言。
+
+每处继续使用原 SQLAlchemy Session、同一方法参数和返回处理，不改变事务提交、异常、
+site 过滤、usage dedupe 或 metering 语义；未引入新的 repository bundle、factory、alias
+或通用代理。production facade importer 从 18 降至 10，构造点从 126 降至 118，名称引用
+从 185 降至 177，59 个 commercial mixin helper 注解暂未处理。retirement contract 为
+2 passed；认证/session、Agent Feedback、Site Knowledge metering 与四个 worker 的最窄
+调用图为 121 passed，只有既有 Starlette deprecation warning；Ruff 通过，全量 mypy
+285 个源文件无问题，`check:anti-drift` 与 `git diff --check` 通过。M4 candidate、
+PR/CI、merged source 与 clean-master M4 accepted 继续分别记录，不以本地绿色替代
+后续证据。
+
 ## 18. 回滚
 
 Phase 1 是无数据变更的单批结构迁移。回滚应为精确 revert：恢复门面内原查询方法、移除新增继承与 query 文件、回退对应测试。不得通过数据库迁移、数据修复或环境操作完成回滚。
@@ -1836,6 +1871,9 @@ Commercial Decision repository 与聚焦 characterization。不得修改 decisio
 
 Phase 7A 只允许移除 retirement architecture contract 与本批计划记录。不得恢复 facade
 业务方法、扩大 importer allowlist，或借回滚改变任何生产调用方、runtime 与数据。
+
+Phase 7B 只允许逐文件恢复上述八个低耦合 caller 的 facade import/构造。不得修改
+repository 实现、调用参数、事务、数据，或把 commercial mixin 迁移纳入回滚。
 
 ## 19. 后续批次启动规则
 

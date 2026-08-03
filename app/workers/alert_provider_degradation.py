@@ -4,7 +4,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_account_site_repository import (
+    CommercialAccountSiteRepository,
+)
 from app.core.config import Settings, get_settings
 from app.core.db import get_session, require_database_connection
 from app.core.logging import configure_logging, get_logger
@@ -38,7 +40,7 @@ def run_once(
     now = factory()
 
     with get_session(settings.database_url) as session:
-        sites = CommercialRepository(session).list_sites(
+        sites = CommercialAccountSiteRepository(session).list_sites(
             status=SITE_STATUS_ACTIVE,
             limit=settings.alert_worker_site_limit,
         )

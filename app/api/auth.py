@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from jwt import InvalidTokenError
 from sqlalchemy import text
 
-from app.adapters.repositories.commercial_repository import CommercialRepository
+from app.adapters.repositories.commercial_identity_repository import CommercialIdentityRepository
 from app.api.envelope import build_envelope
 from app.core.config import Settings
 from app.core.db import build_postgres_advisory_lock_material, get_session
@@ -477,7 +477,7 @@ def validate_portal_principal_session(
             "invalid portal bearer token",
         )
     with get_session(settings.database_url) as session:
-        repository = CommercialRepository(session)
+        repository = CommercialIdentityRepository(session)
         identity = repository.get_principal_identity_by_ref(principal_id=principal_id)
         current_session_version = getattr(identity, "session_version", None)
         if (
